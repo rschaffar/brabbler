@@ -24,7 +24,11 @@
 # misc
 .DS_Store
 *.pem
-/.agents/
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/writing-plans/
+!/.agents/skills/writing-plans/**
 /skills-lock.json
 
 # debug

@@ -1,5 +1,28 @@
 # Pi Web - Development Notes
 
+<!-- project-workflow-align: baseline-v3 -->
+## Project Git Profile
+
+The global `git-worktrees` skill owns worktree choice, feature history, rebasing,
+verification, exact-state approval, local integration choices, remote boundaries,
+and cleanup. This repository records only its compatible additions, restrictions,
+and intentional deviations.
+
+- **Canonical instruction owner:** `AGENTS.md`; there are no harness-specific instruction files that need delegation.
+- **Default local target:** No project-specific default; use the final target choice from the global lifecycle.
+- **Allowed target alternatives:** The original local base, another compatible local branch, or no integration.
+- **Allowed local integration methods:** No project-specific restriction; use a method offered and approved through the global lifecycle.
+- **Commit signing and authorship:** No project-specific signing or identity requirement; the global lifecycle applies.
+- **Required verification:** Use the common checks in this file and `README.md`: `npm test`, `node_modules/.bin/tsc --noEmit`, and `npm run lint`, narrowed or extended for the affected area. Run `npm run test:e2e` for affected browser flows and `npm run test:terminal` for terminal integration changes. Never run `next build` or `npm run build` during normal development; production builds are release-only.
+- **Publication constraints:** `docs/release.md` owns the release process. GitHub pushes/releases and npm publication require separate, explicit authorization for the exact remote operation.
+- **Planning workflow:** `.agents/skills/writing-plans/SKILL.md` owns plans under `docs/plans/`; durable decisions belong in `docs/adr/`, and current operational or contributor behavior belongs in the focused guide under `docs/` or `README.md`/`AGENTS.md`.
+- **Intentional deviations or incompatible rules:** None known. Preserve the stronger no-build-during-development rule above.
+
+Do not copy the global lifecycle into this section. If an applicable repository
+rule is incompatible with `git-worktrees`, stop before mutation and ask which
+rule applies to the bounded task. A task-specific answer does not rewrite this
+profile.
+
 ## Quick Start
 
 ```bash
