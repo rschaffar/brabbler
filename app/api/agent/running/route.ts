@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSessionListVersion } from "@/lib/session-reader";
+import { getQueuedSubagentSessionIds } from "@/lib/subagent-runtime";
 import {
   getCompletionNotificationSuppressedRpcSessionIds,
+  getRpcSessionAttention,
+  getRecentRpcSessionCompletions,
   getRunningRpcSessionIds,
 } from "@/lib/rpc-manager";
 
@@ -13,6 +16,9 @@ export async function GET() {
     {
       sessionListVersion: getSessionListVersion(),
       runningSessionIds: getRunningRpcSessionIds(),
+      queuedSessionIds: getQueuedSubagentSessionIds(),
+      attention: getRpcSessionAttention(),
+      completedRuns: getRecentRpcSessionCompletions(),
       completionNotificationSuppressedSessionIds: getCompletionNotificationSuppressedRpcSessionIds(),
     },
     { headers: { "Cache-Control": "no-store" } },

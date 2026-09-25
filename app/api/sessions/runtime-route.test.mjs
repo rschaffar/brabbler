@@ -65,6 +65,7 @@ test("list versions expose idle session creation, rename and deletion to other w
   assert.equal(renamed.status, 200);
   const poll = await (await getRunningSessions()).json();
   assert.deepEqual(poll.runningSessionIds, []);
+  assert.deepEqual(poll.attention, [], "on-disk sessions are not assumed to need input");
   assert.ok(poll.sessionListVersion > created.sessionListVersion);
   const updated = await list();
   assert.equal(updated.sessionListVersion, poll.sessionListVersion);
@@ -121,6 +122,29 @@ test("session detail reports a possible interrupted run without reopening it; di
   assert.equal((await (await getSessionDetail(new Request(url), context)).json()).possibleInterruptedRun, null);
   assert.equal((await deleteSession(new Request(url, { method: "DELETE" }), context)).status, 200);
   assert.equal(readPossibleInterruptedRun(id, root, () => false), null);
+});
+
+test("running snapshot exposes only live wrapper attention without opening sessions", async () => {
+  const previous = globalThis.__piSessions;
+  const previousCompletions = globalThis.__piSessionCompletedAt;
+  const previousSubagents = globalThis.__piSubagentRuns;
+  globalThis.__piSessionCompletedAt = new Map([["finished", 42]]);
+  globalThis.__piSubagentRuns = new Map([["queued", { run: { status: "queued" } }]]);
+  const waiting = { sessionId: "waiting", isRunning: () => true, hasSuppressedCompletionNotifications: () => false,
+    getPendingAttention: () => ({ sessionId: "waiting", method: "ask_user", summary: "Choose?", since: 42 }) };
+  globalThis.__piSessions = new Map([["waiting", waiting]]);
+  try {
+    const snapshot = await (await getRunningSessions()).json();
+    assert.deepEqual(snapshot.runningSessionIds, ["waiting"]);
+    assert.deepEqual(snapshot.queuedSessionIds, ["queued"]);
+    assert.deepEqual(snapshot.attention, [{ sessionId: "waiting", method: "ask_user", summary: "Choose?", since: 42 }]);
+    assert.deepEqual(snapshot.completedRuns, [{ sessionId: "finished", at: 42 }]);
+    assert.equal(globalThis.__piSessions.size, 1);
+  } finally {
+    globalThis.__piSessions = previous;
+    globalThis.__piSessionCompletedAt = previousCompletions;
+    globalThis.__piSubagentRuns = previousSubagents;
+  }
 });
 
 test("archive and restore preserve the session file and refresh the catalogue", async (t) => {

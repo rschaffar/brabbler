@@ -12,6 +12,7 @@ import { chromium } from "playwright";
 import { checkFilePanel, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
+import { checkActivityOverview } from "./activity.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -22,8 +23,10 @@ const artifacts = join(root, "test-results/e2e");
 mkdirSync(artifacts, { recursive: true });
 const agentDir = mkdtempSync(join(tmpdir(), "pi-web-e2e-"));
 const project = join(agentDir, "project");
+const otherProject = join(agentDir, "other-project");
 const sessionDir = join(agentDir, "sessions", "e2e");
 mkdirSync(project);
+mkdirSync(otherProject);
 const previewFile = join(project, "preview.html");
 writeFileSync(previewFile, filePanelFixture);
 mkdirSync(sessionDir, { recursive: true });
@@ -34,6 +37,7 @@ const RICH = "e2e-rich-session";
 const COMPACTED = "e2e-compacted-session";
 const APPEND = "e2e-external-append-session";
 const ARCHIVE = "e2e-archive-session";
+const OTHER = "e2e-other-project";
 const text = (i) => `E2E message ${String(i).padStart(4, "0")}`;
 const ids = (start, end) => Array.from({ length: end - start }, (_, i) => `e${start + i}`);
 
@@ -41,8 +45,8 @@ function message(id, parentId, role, content) {
   return { type: "message", id, parentId, timestamp, message: { role, content } };
 }
 
-function writeSession(id, entries) {
-  const header = { type: "session", version: 3, id, timestamp, cwd: project };
+function writeSession(id, entries, cwd = project) {
+  const header = { type: "session", version: 3, id, timestamp, cwd };
   writeFileSync(join(sessionDir, `2026-08-23T00-00-00-000Z_${id}.jsonl`),
     [header, ...entries].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
 }
@@ -143,6 +147,10 @@ try {
     message("reply", "root", "assistant", "E2E wrapper reply"),
   ]);
   writeSession(ARCHIVE, [message("root", null, "user", "E2E archive fixture")]);
+  writeSession(OTHER, [
+    message("root", null, "user", "Other workspace task"),
+    message("reply", "root", "assistant", "Waiting for more work"),
+  ], otherProject);
 
   const probe = createServer();
   probe.listen(0, "127.0.0.1");
@@ -184,7 +192,7 @@ try {
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE].sort());
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER].sort());
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
@@ -299,7 +307,11 @@ try {
   browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
     ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
     : {});
-  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    ...(process.env.E2E_ACTIVITY_ONLY === "1" ? [{ width: 700, height: 800 }] : []),
+    { width: 390, height: 844 },
+  ]) {
     context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
     await context.tracing.start({ screenshots: true, snapshots: true });
     page = await context.newPage();
@@ -313,6 +325,17 @@ try {
       const url = new URL(response.url());
       if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
     });
+    if (process.env.E2E_ACTIVITY_ONLY === "1") {
+      await checkActivityOverview(page, viewport.width, {
+        base, api, post, artifacts, waitingSessionId: RICH, selectedSessionId: BRANCH, otherSessionId: OTHER,
+      });
+      assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      await context.tracing.stop();
+      await context.close();
+      context = undefined;
+      page = undefined;
+      continue;
+    }
     if (process.env.E2E_ASK_USER_ONLY === "1") {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();

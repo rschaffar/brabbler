@@ -105,6 +105,11 @@ function getSubagentRuns(): Map<string, StoredSubagentExecution> {
   return globalThis.__piSubagentRuns;
 }
 
+/** Only live queue entries, not an on-disk `queued` status left by a server restart. */
+export function getQueuedSubagentSessionIds(): string[] {
+  return [...getSubagentRuns()].filter(([, stored]) => stored.run.status === "queued").map(([id]) => id);
+}
+
 function getSubagentQueue(): SubagentQueue<SubagentRunInfo> {
   if (!globalThis.__piSubagentQueue) globalThis.__piSubagentQueue = new SubagentQueue();
   return globalThis.__piSubagentQueue;

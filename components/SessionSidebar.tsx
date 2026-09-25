@@ -8,6 +8,11 @@ import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import { getProjectActivity, getRecentProjects, sessionsForProject } from "@/lib/project-groups";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
+import type { SessionAttention, SessionCompletion } from "@/lib/types";
+import {
+  hasReviewedRunBaseline, loadReviewedRunTimes, mergeReviewedRunTimes,
+  reconcileCompletedRuns, REVIEWED_RUN_TIMES_STORAGE_KEY, saveReviewedRunTimes,
+} from "@/lib/activity-review";
 import { formatRelativeTime } from "@/lib/i18n/format";
 import { useI18n } from "@/hooks/useI18n";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -135,6 +140,8 @@ interface Props {
    *  Lets the app play a cross-workspace completion tone. */
   onBackgroundTaskDone?: () => void;
   onRunningSessionIdsChange?: (ids: Set<string>) => void;
+  onQueuedSessionIdsChange?: (ids: Set<string>) => void;
+  onActivityChange?: (attention: SessionAttention[], reviewIds: Set<string>, available: boolean) => void;
   onSessionsChange?: (sessions: SessionInfo[]) => void;
 }
 
@@ -171,6 +178,7 @@ interface ValidatedProject {
 }
 
 const UNREAD_SESSIONS_STORAGE_KEY = "pi-web:unread-session-ids";
+const SUBAGENT_REVIEW_STORAGE_KEY = "pi-web:subagent-review-ids";
 const LAST_CUSTOM_CWD_STORAGE_KEY = "pi-web:last-custom-cwd";
 const RUNNING_SESSIONS_POLL_MS = 2500;
 const SESSION_DETAILS_HYDRATION_DELAY_MS = 750;
@@ -197,10 +205,10 @@ function saveLastCustomCwd(cwd: string): void {
   }
 }
 
-function loadUnreadSessionIds(): Set<string> {
+function loadUnreadSessionIds(key = UNREAD_SESSIONS_STORAGE_KEY): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
-    const raw = window.localStorage.getItem(UNREAD_SESSIONS_STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return new Set();
     const parsed = JSON.parse(raw) as unknown;
     if (Array.isArray(parsed)) return new Set(parsed.filter((id): id is string => typeof id === "string"));
@@ -210,11 +218,15 @@ function loadUnreadSessionIds(): Set<string> {
   }
 }
 
-function saveUnreadSessionIds(ids: Set<string>): void {
+function sameIdSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  return a.size === b.size && [...a].every((id) => b.has(id));
+}
+
+function saveUnreadSessionIds(ids: Set<string>, key = UNREAD_SESSIONS_STORAGE_KEY): void {
   if (typeof window === "undefined") return;
   try {
-    if (ids.size === 0) window.localStorage.removeItem(UNREAD_SESSIONS_STORAGE_KEY);
-    else window.localStorage.setItem(UNREAD_SESSIONS_STORAGE_KEY, JSON.stringify([...ids]));
+    if (ids.size === 0) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, JSON.stringify([...ids]));
   } catch {
     // ignore storage quota / privacy-mode errors
   }
@@ -387,9 +399,16 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onQueuedSessionIdsChange, onActivityChange, onSessionsChange }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
+  const allSessionsRef = useRef(allSessions);
+  const selectedSessionIdRef = useRef(selectedSessionId);
+  allSessionsRef.current = allSessions;
+  selectedSessionIdRef.current = selectedSessionId;
+  const completedRunTimesRef = useRef(new Map<string, number>());
+  const reviewedRunTimesRef = useRef(loadReviewedRunTimes());
+  const reviewedBaselineRef = useRef(hasReviewedRunBaseline());
   const [showArchived, setShowArchived] = useState(false);
   // Tracked in a ref only: the version is compared against the polled value to
   // decide whether the list needs reloading, and no render reads it.
@@ -430,7 +449,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [changesCollapsed, setChangesCollapsed] = useState(true);
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
+  const [queuedSessionIds, setQueuedSessionIds] = useState<Set<string>>(() => new Set());
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
+  const [subagentReviewIds, setSubagentReviewIds] = useState<Set<string>>(() => loadUnreadSessionIds(SUBAGENT_REVIEW_STORAGE_KEY));
+  const [storageReady, setStorageReady] = useState(false);
+  const [attention, setAttention] = useState<SessionAttention[]>([]);
+  const [activityAvailable, setActivityAvailable] = useState(true);
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
   const currentSuppressedCompletionSessionIdsRef = useRef<Set<string>>(new Set());
   const previousSuppressedCompletionSessionIdsRef = useRef<Set<string>>(new Set());
@@ -547,6 +571,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         const next = new Set([...prev].filter((id) => unreadEligibleIds.has(id)));
         return next.size === prev.size ? prev : next;
       });
+      const subagentIds = new Set(data.sessions.filter((session) =>
+        session.relation?.kind === "subagent" && !session.archived,
+      ).map((session) => session.id));
+      setSubagentReviewIds((prev) => {
+        const next = new Set([...prev].filter((id) => subagentIds.has(id)));
+        return next.size === prev.size ? prev : next;
+      });
       setError(null);
     } catch (e) {
       if (loadId === sessionLoadIdRef.current) setError(String(e));
@@ -591,13 +622,59 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setExplorerOpen(loadExplorerOpen());
   }, []);
 
-  // Persist unread markers so they survive a browser refresh before the user
-  // has actually opened the completed session.
+  // Server rendering has no localStorage. Restore it *after* hydration, before
+  // any persistence or polling can overwrite another tab's review markers.
   useEffect(() => {
-    saveUnreadSessionIds(unreadSessionIds);
-  }, [unreadSessionIds]);
+    setUnreadSessionIds(loadUnreadSessionIds());
+    setSubagentReviewIds(loadUnreadSessionIds(SUBAGENT_REVIEW_STORAGE_KEY));
+    reviewedRunTimesRef.current = loadReviewedRunTimes();
+    reviewedBaselineRef.current = hasReviewedRunBaseline();
+    setStorageReady(true);
+  }, []);
 
   useEffect(() => {
+    if (storageReady) saveUnreadSessionIds(unreadSessionIds);
+  }, [unreadSessionIds, storageReady]);
+  useEffect(() => {
+    if (storageReady) saveUnreadSessionIds(subagentReviewIds, SUBAGENT_REVIEW_STORAGE_KEY);
+  }, [subagentReviewIds, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === UNREAD_SESSIONS_STORAGE_KEY) setUnreadSessionIds((prev) => {
+        const stored = loadUnreadSessionIds();
+        return sameIdSet(prev, stored) ? prev : stored;
+      });
+      if (event.key === SUBAGENT_REVIEW_STORAGE_KEY) setSubagentReviewIds((prev) => {
+        const stored = loadUnreadSessionIds(SUBAGENT_REVIEW_STORAGE_KEY);
+        return sameIdSet(prev, stored) ? prev : stored;
+      });
+      if (event.key !== REVIEWED_RUN_TIMES_STORAGE_KEY) return;
+      const stored = loadReviewedRunTimes();
+      const merged = mergeReviewedRunTimes(reviewedRunTimesRef.current, stored);
+      reviewedRunTimesRef.current = merged;
+      reviewedBaselineRef.current = true;
+      if ([...merged].some(([id, at]) => stored.get(id) !== at)) saveReviewedRunTimes(merged);
+      const unreviewed = (id: string) => {
+        const completedAt = completedRunTimesRef.current.get(id);
+        return !completedAt || completedAt > (merged.get(id) ?? 0);
+      };
+      setUnreadSessionIds((prev) => {
+        const next = new Set([...prev].filter(unreviewed));
+        return sameIdSet(prev, next) ? prev : next;
+      });
+      setSubagentReviewIds((prev) => {
+        const next = new Set([...prev].filter(unreviewed));
+        return sameIdSet(prev, next) ? prev : next;
+      });
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let controller: AbortController | null = null;
@@ -623,24 +700,61 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           cache: "no-store",
           signal: current.signal,
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!stopped && controller === current) setActivityAvailable(false);
+          return;
+        }
         const data = await res.json() as {
           sessionListVersion: number;
           runningSessionIds?: string[];
+          queuedSessionIds?: string[];
           completionNotificationSuppressedSessionIds?: string[];
+          attention?: SessionAttention[];
+          completedRuns?: SessionCompletion[];
         };
         if (stopped || controller !== current) return;
         runningPollAuthoritativeRef.current = true;
+        setAttention(data.attention ?? []);
+        setActivityAvailable(true);
+        const running = new Set(data.runningSessionIds ?? []);
+        for (const { sessionId, at } of data.completedRuns ?? []) {
+          completedRunTimesRef.current.set(sessionId, at);
+        }
+        reviewedRunTimesRef.current = mergeReviewedRunTimes(reviewedRunTimesRef.current, loadReviewedRunTimes());
+        if (!reviewedBaselineRef.current) {
+          reviewedRunTimesRef.current = saveReviewedRunTimes(mergeReviewedRunTimes(
+            reviewedRunTimesRef.current,
+            new Map((data.completedRuns ?? []).map(({ sessionId, at }) => [sessionId, at])),
+          ));
+          reviewedBaselineRef.current = true;
+        }
+        const reviewed = reconcileCompletedRuns(
+          data.completedRuns ?? [], reviewedRunTimesRef.current, selectedSessionIdRef.current,
+          running, allSessionsRef.current,
+        );
+        if ([...reviewed.acknowledged].some(([id, at]) => reviewedRunTimesRef.current.get(id) !== at)) {
+          reviewedRunTimesRef.current = saveReviewedRunTimes(reviewed.acknowledged);
+        }
+        if (reviewed.rootReady.size) setUnreadSessionIds((prev) => {
+          const next = new Set([...prev, ...reviewed.rootReady]);
+          return next.size === prev.size ? prev : next;
+        });
+        if (reviewed.subagentReady.size) setSubagentReviewIds((prev) => {
+          const next = new Set([...prev, ...reviewed.subagentReady]);
+          return next.size === prev.size ? prev : next;
+        });
         currentSuppressedCompletionSessionIdsRef.current = new Set(
           data.completionNotificationSuppressedSessionIds ?? [],
         );
         setRunningSessionIds(new Set(data.runningSessionIds ?? []));
+        setQueuedSessionIds(new Set(data.queuedSessionIds ?? []));
         if (data.sessionListVersion !== sessionListVersionRef.current) {
           // Reuse the invalidated cache; forcing a scan would change the version again.
           await loadSessions();
         }
       } catch {
-        // Keep the last known state; the next visible-tab poll retries.
+        // Keep the last known state, but do not present it as live.
+        if (!stopped && document.visibilityState === "visible") setActivityAvailable(false);
       } finally {
         if (controller === current) controller = null;
         schedule();
@@ -665,11 +779,19 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       controller?.abort();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [loadSessions]);
+  }, [loadSessions, storageReady]);
 
   useEffect(() => {
     onRunningSessionIdsChange?.(runningSessionIds);
   }, [onRunningSessionIdsChange, runningSessionIds]);
+
+  useEffect(() => {
+    onQueuedSessionIdsChange?.(queuedSessionIds);
+  }, [onQueuedSessionIdsChange, queuedSessionIds]);
+
+  useEffect(() => {
+    onActivityChange?.(attention, new Set([...unreadSessionIds, ...subagentReviewIds]), activityAvailable);
+  }, [onActivityChange, attention, unreadSessionIds, subagentReviewIds, activityAvailable]);
 
   useEffect(() => {
     onSessionsChange?.(allSessions);
@@ -683,8 +805,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         .filter((session) => session.relation?.kind === "subagent")
         .map((session) => session.id),
     );
+    const unreviewedCompletion = (id: string) => {
+      const completedAt = completedRunTimesRef.current.get(id);
+      return !completedAt || completedAt > (reviewedRunTimesRef.current.get(id) ?? 0);
+    };
     const completedWithNotifications = completedInBackground.filter(
-      (id) => !previousSuppressedCompletionSessionIdsRef.current.has(id) && !knownSubagentIds.has(id),
+      (id) => !previousSuppressedCompletionSessionIdsRef.current.has(id)
+        && !knownSubagentIds.has(id) && unreviewedCompletion(id),
     );
     const newlyRunning = [...runningSessionIds].filter((id) => !previous.has(id));
 
@@ -693,6 +820,15 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         const next = new Set(prev);
         runningSessionIds.forEach((id) => next.delete(id));
         completedWithNotifications.forEach((id) => next.add(id));
+        return next;
+      });
+    }
+    const completedSubagents = completedInBackground.filter((id) => knownSubagentIds.has(id) && unreviewedCompletion(id));
+    if (completedSubagents.length > 0 || newlyRunning.length > 0) {
+      setSubagentReviewIds((prev) => {
+        const next = new Set(prev);
+        runningSessionIds.forEach((id) => next.delete(id));
+        completedSubagents.forEach((id) => next.add(id));
         return next;
       });
     }
@@ -715,14 +851,25 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [runningSessionIds, selectedSessionId, allSessions, loadSessions, onBackgroundTaskDone]);
 
   useEffect(() => {
-    if (!selectedSessionId) return;
+    if (!selectedSessionId || !storageReady) return;
+    const completedAt = completedRunTimesRef.current.get(selectedSessionId);
+    if (completedAt && completedAt > (reviewedRunTimesRef.current.get(selectedSessionId) ?? 0)) {
+      reviewedRunTimesRef.current.set(selectedSessionId, completedAt);
+      reviewedRunTimesRef.current = saveReviewedRunTimes(reviewedRunTimesRef.current);
+    }
     setUnreadSessionIds((prev) => {
       if (!prev.has(selectedSessionId)) return prev;
       const next = new Set(prev);
       next.delete(selectedSessionId);
       return next;
     });
-  }, [selectedSessionId]);
+    setSubagentReviewIds((prev) => {
+      if (!prev.has(selectedSessionId)) return prev;
+      const next = new Set(prev);
+      next.delete(selectedSessionId);
+      return next;
+    });
+  }, [selectedSessionId, storageReady]);
 
   useEffect(() => {
     if (explorerRefreshKey !== undefined) setExplorerKey((k) => k + 1);

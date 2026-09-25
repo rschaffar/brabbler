@@ -10,6 +10,7 @@ npm run test:e2e
 ```
 
 For a focused browser-native `ask_user` run, set `E2E_ASK_USER_ONLY=1`.
+For the Activity overview, set `E2E_ACTIVITY_ONLY=1`.
 If the Playwright-managed Chromium is unavailable, set
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a compatible local Chrome/Chromium
 binary; the default CI path remains the Playwright-managed browser.
@@ -41,6 +42,9 @@ Coverage:
   collapse/expand draft preservation, countdown display, and server-side expiry.
 - The native `ask_user` form checks single/multi selection, freeform answers,
   comments, collapse preservation, cancellation, and expiry at desktop and mobile widths.
+- The focused Activity run checks background questions, short-run completion/review,
+  first-browser baselines, cross-tab acknowledgement and reload, cross-project
+  filtering, and navigation at 1280px, 700px, and 390px without model credentials.
 
 Model prompts, live model streaming, and agent execution are outside this suite.
 Failures save a screenshot, Playwright trace, and server log under

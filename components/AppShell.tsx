@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
+import { ActivityOverview } from "./ActivityOverview";
+import { getActivitySections } from "@/lib/activity";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
@@ -54,7 +56,7 @@ import {
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
 } from "@/lib/panel-layout";
-import type { BlockingExtensionUiRequest, SessionInfo, SessionTreeNode } from "@/lib/types";
+import type { BlockingExtensionUiRequest, SessionAttention, SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { SessionStatsInfo } from "@/lib/pi-types";
@@ -146,6 +148,26 @@ export function AppShell() {
   );
   const hasSubagentSessions = Boolean(activeSessionFamily?.subagents.length);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
+  const [queuedSessionIds, setQueuedSessionIds] = useState<Set<string>>(() => new Set());
+  const handleQueuedSessionIdsChange = useCallback((ids: Set<string>) => {
+    setQueuedSessionIds((previous) => previous.size === ids.size && [...ids].every((id) => previous.has(id)) ? previous : ids);
+  }, []);
+  const [activityAttention, setActivityAttention] = useState<SessionAttention[]>([]);
+  const [reviewSessionIds, setReviewSessionIds] = useState<Set<string>>(() => new Set());
+  const [activityAvailable, setActivityAvailable] = useState(true);
+  const handleActivityChange = useCallback((attention: SessionAttention[], reviewIds: Set<string>, available: boolean) => {
+    setActivityAttention((previous) => previous.length === attention.length && previous.every((item, index) => {
+      const next = attention[index];
+      return item.sessionId === next.sessionId && item.method === next.method
+        && item.summary === next.summary && item.since === next.since;
+    }) ? previous : attention);
+    setReviewSessionIds((previous) => previous.size === reviewIds.size
+      && [...reviewIds].every((id) => previous.has(id)) ? previous : reviewIds);
+    setActivityAvailable(available);
+  }, []);
+  const activityNeedsCount = useMemo(() => getActivitySections(
+    sessionsWithSelection, runningSessionIds, activityAttention, reviewSessionIds, null, queuedSessionIds,
+  )["needs-you"].length, [sessionsWithSelection, runningSessionIds, queuedSessionIds, activityAttention, reviewSessionIds]);
   const handleRunningSessionIdsChange = useCallback((ids: Set<string>) => {
     setRunningSessionIds((previous) => {
       if (previous.size === ids.size && [...ids].every((id) => previous.has(id))) return previous;
@@ -178,6 +200,12 @@ export function AppShell() {
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
   const [projectTrustError, setProjectTrustError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => !initialNavigation.sidebarCollapsed);
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [activityMobileList, setActivityMobileList] = useState(true);
+  const closeActivity = useCallback(() => {
+    setActivityOpen(false);
+    setActivityMobileList(true);
+  }, []);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelExpanded, setRightPanelExpanded] = useState(false);
   const rightPanelFullWidth = rightPanelOpen && rightPanelExpanded && !isMobile;
@@ -832,6 +860,15 @@ export function AppShell() {
       .catch(() => {});
   }, []);
 
+  const handleActivitySelectSession = useCallback((session: SessionInfo) => {
+    handleSelectSession(session);
+    if (isMobile) setActivityMobileList(false);
+  }, [handleSelectSession, isMobile]);
+  const handleSidebarSelectSession = useCallback((session: SessionInfo, isRestore?: boolean, entryId?: string, blockIndex?: number) => {
+    closeActivity();
+    handleSelectSession(session, isRestore, entryId, blockIndex);
+  }, [closeActivity, handleSelectSession]);
+
   const handleOpenSession = useCallback(async (sessionId: string) => {
     // Prefer the catalogue the sidebar already delivered: selecting from it
     // avoids a full detail round trip just to obtain the SessionInfo.
@@ -1177,7 +1214,7 @@ export function AppShell() {
     <>
       <SessionSidebar
         selectedSessionId={selectedSession?.id ?? null}
-        onSelectSession={handleSelectSession}
+        onSelectSession={handleSidebarSelectSession}
         onNewSession={handleNewSession}
         initialSessionId={initialSessionId}
         skipInitialProjectSelection={initialNavigation.requestedCwd !== null}
@@ -1195,6 +1232,8 @@ export function AppShell() {
         onAtMentions={handleAtMentions}
         onBackgroundTaskDone={handleBackgroundTaskDone}
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
+        onQueuedSessionIdsChange={handleQueuedSessionIdsChange}
+        onActivityChange={handleActivityChange}
         onSessionsChange={handleSessionsChange}
       />
       <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
@@ -1964,7 +2003,34 @@ export function AppShell() {
               </svg>
             )}
           </button>
-          {isMobile && (
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTopPanel(null);
+              setMobileToolbarMoreOpen(false);
+              if (activityOpen && isMobile && !activityMobileList) {
+                setActivityMobileList(true);
+              } else if (activityOpen) {
+                closeActivity();
+              } else {
+                setActivityMobileList(true);
+                setActivityOpen(true);
+                setRightPanelOpen(false);
+                if (isMobile || window.innerWidth < 1000) setSidebarOpen(false);
+              }
+            }}
+            aria-label={activityOpen && isMobile && !activityMobileList
+              ? translate("activity.back")
+              : activityNeedsCount ? `${translate("activity.title")} · ${translate("activity.needsCount", { count: activityNeedsCount })}` : translate("activity.title")}
+            aria-pressed={activityOpen && (!isMobile || activityMobileList)}
+            title={activityOpen && isMobile && !activityMobileList ? translate("activity.back") : translate("activity.title")}
+            className="activity-top-button"
+            style={{ position: "relative", width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0, border: 0, borderRight: "1px solid var(--border)", background: activityOpen ? "var(--bg-selected)" : "none", color: "var(--text-muted)", cursor: "pointer" }}
+          >
+            {activityOpen && isMobile && !activityMobileList ? "←" : "◉"}
+            {activityNeedsCount > 0 && !(activityOpen && isMobile && !activityMobileList) && <span className="activity-top-count" aria-hidden="true">{activityNeedsCount > 9 ? "9+" : activityNeedsCount}</span>}
+          </button>
+          {isMobile && !(activityOpen && activityMobileList) && (
             <div
               ref={mobileToolbarRef}
               data-mobile-toolbar="true"
@@ -2302,11 +2368,26 @@ export function AppShell() {
           )}
 
         </div>
-        {isMobile && renderProjectTrustWarning(true)}
+        {isMobile && !(activityOpen && activityMobileList) && renderProjectTrustWarning(true)}
         </div>
 
         {/* Chat content */}
-        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+        <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex" }}>
+          {activityOpen && (
+            <ActivityOverview
+              sessions={sessionsWithSelection}
+              runningIds={runningSessionIds}
+              queuedIds={queuedSessionIds}
+              attention={activityAttention}
+              reviewIds={reviewSessionIds}
+              available={activityAvailable}
+              selectedId={selectedSession?.id ?? null}
+              onSelect={handleActivitySelectSession}
+              onClose={closeActivity}
+              hidden={isMobile && !activityMobileList}
+            />
+          )}
+          <div inert={activityOpen && isMobile && activityMobileList} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
           {showChat ? (
             <ChatWindow
               key={sessionKey}
@@ -2383,6 +2464,7 @@ export function AppShell() {
               </div>
             )
           ) : null}
+          </div>
         </div>
       </div>
 
