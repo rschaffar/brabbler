@@ -2034,6 +2034,7 @@ span.token.table {
 .activity-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex: none; }
 .activity-item-needs-you .activity-dot { background: #e59a37; }
 .activity-item-working .activity-dot { background: var(--accent); }
+.activity-item-interrupted .activity-dot { background: #e59a37; }
 .activity-item-ready .activity-dot { background: #5bb987; }
 .activity-item-meta, .activity-item-reason { display: block; margin: 3px 0 0 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted); }
 .activity-item-reason { color: var(--text); }

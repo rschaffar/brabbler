@@ -162,6 +162,7 @@ export interface UseAgentSessionOptions {
   newSessionCwd: string | null;
   newSessionDraftKey: string | null;
   onAgentEnd?: () => void;
+  onRecoveryDismissed?: () => void;
   onAttentionNeeded?: (request: BlockingExtensionUiRequest) => void;
   onSessionCreated?: (session: SessionInfo, sourceDraftKey: string) => void;
   onSessionForked?: (newSessionId: string) => void;
@@ -299,7 +300,7 @@ type SlashCommandsResponse = {
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
-    session, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked,
+    session, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
   } = opts;
 
@@ -2236,11 +2237,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const result = await response.json() as { possibleInterruptedRun: SessionData["possibleInterruptedRun"] };
       if (sessionIdRef.current === sid) {
         setPossibleInterruptedRun((current) => current?.runId === run.runId ? result.possibleInterruptedRun ?? null : current);
+        onRecoveryDismissed?.();
       }
     } catch (error) {
       addNotice({ type: "error", message: `Could not dismiss interruption notice: ${String(error)}` });
     }
-  }, [possibleInterruptedRun, addNotice]);
+  }, [possibleInterruptedRun, addNotice, onRecoveryDismissed]);
 
   // Load session on mount
   useEffect(() => {

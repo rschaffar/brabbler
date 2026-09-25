@@ -1,14 +1,26 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 
-export async function checkActivityOverview(page, width, { base, api, post, waitingSessionId, selectedSessionId, otherSessionId, artifacts }) {
+export async function checkActivityOverview(page, width, { base, api, post, waitingSessionId, selectedSessionId, otherSessionId, artifacts, seedInterruptedRun }) {
   const mobile = width <= 640;
   await page.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /^Activity/ }).waitFor();
+  await page.getByText("Active branch answer", { exact: true }).waitFor();
+  assert.equal(await page.getByText("A previous run may have been interrupted", { exact: false }).count(), 0);
+  seedInterruptedRun();
   await page.waitForFunction(() => localStorage.getItem("pi-web:reviewed-run-times") !== null);
   await page.getByRole("button", { name: /^Activity/ }).click();
-  assert.equal(await page.getByRole("region", { name: "Activity" }).locator(".activity-item-ready").count(), 0,
+  const recoveryOverview = page.getByRole("region", { name: "Activity" });
+  assert.equal(await recoveryOverview.locator(".activity-item-ready").count(), 0,
     "a new browser must not inherit prior clients' completed-run backlog");
+  const interrupted = recoveryOverview.locator(".activity-item-interrupted").filter({ hasText: "Branch root" });
+  await interrupted.waitFor();
+  await interrupted.click();
+  await page.getByText("A previous run may have been interrupted", { exact: false }).waitFor();
+  if (mobile) await recoveryOverview.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Dismiss" }).click();
+  if (mobile) await page.getByRole("button", { name: "Back to Activity" }).click();
+  await interrupted.waitFor({ state: "hidden", timeout: 15000 });
   await page.getByRole("button", { name: "Close Activity" }).click();
 
   // Starring an idle sidebar session keeps it in Activity across reloads,

@@ -90,11 +90,11 @@ try {
   ]);
   const recoveryDir = join(agentDir, "pi-web", "run-journal", "v1", BRANCH);
   mkdirSync(recoveryDir, { recursive: true });
-  const recoveryRunId = "11111111-1111-4111-8111-111111111111";
-  writeFileSync(join(recoveryDir, `${recoveryRunId}.start.json`), JSON.stringify({
-    version: 1, runId: recoveryRunId, sessionId: BRANCH, ownerPid: 99999999,
+  const seedRecoveryRun = (runId) => writeFileSync(join(recoveryDir, `${runId}.start.json`), JSON.stringify({
+    version: 1, runId, sessionId: BRANCH, ownerPid: 99999999,
     startedAt: new Date().toISOString(),
   }));
+  if (process.env.E2E_ACTIVITY_ONLY !== "1") seedRecoveryRun("11111111-1111-4111-8111-111111111111");
   const toolResult = message("result", "call", "toolResult", [{ type: "text", text: "E2E tool output" }]);
   Object.assign(toolResult.message, { toolCallId: "t1", toolName: "bash", isError: false });
   const richEntries = [
@@ -327,8 +327,11 @@ try {
       if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
     });
     if (process.env.E2E_ACTIVITY_ONLY === "1") {
+      // Seed only after the selected chat has loaded, so clicking its newly
+      // discovered Activity row must refresh the warning in that same chat.
       await checkActivityOverview(page, viewport.width, {
         base, api, post, artifacts, waitingSessionId: RICH, selectedSessionId: BRANCH, otherSessionId: OTHER,
+        seedInterruptedRun: () => seedRecoveryRun(`${viewport.width}-activity-recovery`),
       });
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
       await context.tracing.stop();
@@ -403,6 +406,13 @@ try {
     const interruption = page.getByText("A previous run may have been interrupted", { exact: false });
     if (viewport.width === 1280) {
       await interruption.waitFor();
+      await page.getByRole("button", { name: /^Activity/ }).click();
+      const overview = page.getByRole("region", { name: "Activity" });
+      const interruptedRow = overview.locator(".activity-item-interrupted").filter({ hasText: "Branch root" });
+      await interruptedRow.waitFor();
+      await interruptedRow.click();
+      await interruption.waitFor();
+      await page.getByRole("button", { name: "Close Activity" }).click();
       await page.reload({ waitUntil: "domcontentloaded" });
       await interruption.waitFor();
       await page.getByRole("button", { name: "Dismiss" }).click();

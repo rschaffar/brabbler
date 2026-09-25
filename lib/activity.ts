@@ -1,7 +1,7 @@
 import type { SessionAttention, SessionInfo } from "./types";
 import { workspaceKeyOf } from "./workspace-memory";
 
-export type ActivityStatus = "needs-you" | "working" | "queued" | "ready";
+export type ActivityStatus = "needs-you" | "working" | "queued" | "interrupted" | "ready";
 export interface ActivityItem {
   session: SessionInfo;
   status: ActivityStatus;
@@ -31,10 +31,11 @@ export function getActivitySections(
   reviewIds: ReadonlySet<string>,
   projectFilter: string | null = null,
   queuedIds: ReadonlySet<string> = new Set(),
+  interruptedIds: ReadonlySet<string> = new Set(),
 ): ActivitySections {
   const byId = new Map(sessions.map((session) => [session.id, session]));
   const attentionById = new Map(attention.map((request) => [request.sessionId, request]));
-  const sections: ActivitySections = { "needs-you": [], working: [], queued: [], ready: [] };
+  const sections: ActivitySections = { "needs-you": [], working: [], queued: [], interrupted: [], ready: [] };
   const statusById = new Map<string, ActivityStatus>();
   const isArchived = (session: SessionInfo): boolean => {
     const visited = new Set<string>();
@@ -55,6 +56,7 @@ export function getActivitySections(
     // A live run supersedes an old unread marker; an actual dialog supersedes both.
     const status = request ? "needs-you" : runningIds.has(session.id) ? "working"
       : queuedIds.has(session.id) ? "queued"
+      : !session.transient && interruptedIds.has(session.id) ? "interrupted"
       : reviewIds.has(session.id) ? "ready" : null;
     if (!status) continue;
     statusById.set(session.id, status);

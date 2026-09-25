@@ -45,6 +45,7 @@ interface Props {
   newSessionCwd: string | null;
   newSessionDraftKey: string | null;
   onAgentEnd?: () => void;
+  onRecoveryDismissed?: () => void;
   onAttentionNeeded?: (request: BlockingExtensionUiRequest) => void;
   onSessionCreated?: (session: SessionInfo, sourceDraftKey: string) => void;
   onSessionForked?: (newSessionId: string) => void;
@@ -243,7 +244,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
@@ -297,7 +298,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands, scrollUserMsgToTop,
     loadContext, activeLeafId, scrollToBottom, scrollToMessage,
   } = useAgentSession({
-    session, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd: wrappedOnAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked,
+    session, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd: wrappedOnAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
     deferInitialScroll: Boolean(pendingScrollRestore),
   });

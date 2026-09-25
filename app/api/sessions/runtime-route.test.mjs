@@ -20,6 +20,7 @@ const { GET: getSessionList } = await jiti.import("./route.ts");
 const { GET: getRunningSessions } = await jiti.import("../agent/running/route.ts");
 const { GET: getSessionState } = await jiti.import("./[id]/state/route.ts");
 const { POST: dismissRecovery } = await jiti.import("./[id]/recovery/route.ts");
+const { GET: listInterrupted } = await jiti.import("./interrupted/route.ts");
 const { recordRunStart, readPossibleInterruptedRun } = await jiti.import("../../../lib/session-run-recovery.ts");
 const {
   cacheSessionPath,
@@ -99,6 +100,7 @@ test("session detail reports a possible interrupted run without reopening it; di
   const runId = recordRunStart(id);
   const root = join(dir, "pi-web", "run-journal", "v1");
   const startFile = join(root, id, `${runId}.start.json`);
+  assert.deepEqual((await (await listInterrupted()).json()).interruptedSessionIds, [], "live owner must not appear in Activity");
   const start = JSON.parse(await readFile(startFile, "utf8"));
   await writeFile(startFile, JSON.stringify({ ...start, ownerPid: 99999999 }));
   const context = { params: Promise.resolve({ id }) };
@@ -106,6 +108,7 @@ test("session detail reports a possible interrupted run without reopening it; di
   const detail = await getSessionDetail(new Request(`${url}?force=1`), context);
   assert.equal(detail.status, 200);
   assert.equal((await detail.json()).possibleInterruptedRun.runId, runId);
+  assert.deepEqual((await (await listInterrupted()).json()).interruptedSessionIds, [id]);
   const wrongRun = await dismissRecovery(new Request(`${url}/recovery`, { method: "POST", body: JSON.stringify({ runId: "wrong" }) }), context);
   assert.equal(wrongRun.status, 409);
   const secondRun = recordRunStart(id);
@@ -119,6 +122,7 @@ test("session detail reports a possible interrupted run without reopening it; di
   const dismissSecond = await dismissRecovery(new Request(`${url}/recovery`, { method: "POST", body: JSON.stringify({ runId: secondRun }) }), context);
   assert.equal(dismissSecond.status, 200);
   assert.equal((await dismissSecond.json()).possibleInterruptedRun, null);
+  assert.deepEqual((await (await listInterrupted()).json()).interruptedSessionIds, []);
   assert.equal((await (await getSessionDetail(new Request(url), context)).json()).possibleInterruptedRun, null);
   assert.equal((await deleteSession(new Request(url, { method: "DELETE" }), context)).status, 200);
   assert.equal(readPossibleInterruptedRun(id, root, () => false), null);
