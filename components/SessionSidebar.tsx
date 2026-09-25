@@ -5,6 +5,7 @@ import type { SessionInfo } from "@/lib/types";
 import { listSessionFamilies } from "@/lib/session-family";
 import { loadExplorerOpen, saveExplorerOpen } from "@/lib/file-explorer-state";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
+import { useStarredSessions } from "@/hooks/useStarredSessions";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import { getProjectActivity, getRecentProjects, sessionsForProject } from "@/lib/project-groups";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
@@ -402,6 +403,7 @@ function PiWebTitle() {
 export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onQueuedSessionIdsChange, onActivityChange, onSessionsChange }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
+  const { starredIds, toggleStarred } = useStarredSessions();
   const allSessionsRef = useRef(allSessions);
   const selectedSessionIdRef = useRef(selectedSessionId);
   allSessionsRef.current = allSessions;
@@ -1997,6 +1999,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     isSelected={familySessions.some((session) => session.id === selectedSessionId)}
                     isRunning={familySessions.some((session) => runningSessionIds.has(session.id))}
                     isUnread={familySessions.some((session) => unreadSessionIds.has(session.id))}
+                    isStarred={starredIds.has(family.root.id)}
+                    onToggleStar={() => toggleStarred(family.root.id)}
                     onClick={() => handleSelectSessionFromList(family.root)}
                     onRenamed={loadSessions}
                     archivedView={showArchived}
@@ -2302,6 +2306,8 @@ function SessionItem({
   isSelected,
   isRunning,
   isUnread,
+  isStarred = false,
+  onToggleStar,
   onClick,
   onRenamed,
   onDeleted,
@@ -2316,6 +2322,8 @@ function SessionItem({
   isSelected: boolean;
   isRunning?: boolean;
   isUnread?: boolean;
+  isStarred?: boolean;
+  onToggleStar?: () => void;
   onClick: () => void;
   onRenamed?: () => void;
   onDeleted?: (id: string) => void;
@@ -2659,6 +2667,17 @@ function SessionItem({
                 </svg>
               </button>
               <div className="session-row-actions" data-open={actionsOpen}>
+                <button
+                  onClick={(event) => { event.stopPropagation(); onToggleStar?.(); }}
+                  title={t(isStarred ? "sidebar.unstarSession" : "sidebar.starSession")}
+                  aria-label={t(isStarred ? "sidebar.unstarSession" : "sidebar.starSession")}
+                  aria-pressed={isStarred}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, padding: 0, background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 7, color: isStarred ? "#eab308" : "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill={isStarred ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="12 2 15 9 22 9 17 14 19 22 12 18 5 22 7 14 2 9 9 9 12 2" />
+                  </svg>
+                </button>
                 <button
                   onClick={handleArchive}
                   disabled={archiveBusy || isRunning}

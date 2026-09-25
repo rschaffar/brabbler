@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useStarredSessions } from "@/hooks/useStarredSessions";
 import { useI18n } from "@/hooks/useI18n";
 import { activityProjectName, activitySessionName, getActivitySections, type ActivityItem, type ActivityStatus } from "@/lib/activity";
 import type { SessionAttention, SessionInfo } from "@/lib/types";
@@ -23,12 +24,16 @@ const STATUS_ORDER: ActivityStatus[] = ["needs-you", "working", "queued", "ready
 
 export function ActivityOverview({ sessions, runningIds, queuedIds, attention, reviewIds, available, selectedId, onSelect, onClose, hidden = false }: Props) {
   const { t, locale } = useI18n();
+  const { starredIds, toggleStarred } = useStarredSessions();
   const [projectFilter, setProjectFilter] = useState("");
   const all = useMemo(() => getActivitySections(sessions, runningIds, attention, reviewIds, null, queuedIds),
     [sessions, runningIds, queuedIds, attention, reviewIds]);
   const projects = useMemo(() => {
     const keys = new Map<string, string>();
     for (const item of Object.values(all).flat()) keys.set(item.projectKey, activityProjectName(item.session));
+    for (const session of sessions) {
+      if (starredIds.has(session.id)) keys.set(workspaceKeyOf(session), activityProjectName(session));
+    }
     // Keep an emptied selection visible, rather than showing "All projects"
     // while silently retaining a filter with no matches.
     if (projectFilter && !keys.has(projectFilter)) {
@@ -36,11 +41,14 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
       keys.set(projectFilter, session ? activityProjectName(session) : projectFilter);
     }
     return [...keys].sort((a, b) => a[1].localeCompare(b[1]));
-  }, [all, projectFilter, sessions]);
+  }, [all, projectFilter, sessions, starredIds]);
+  const starredSessions = useMemo(() => sessions
+    .filter((session) => starredIds.has(session.id) && (!projectFilter || workspaceKeyOf(session) === projectFilter))
+    .sort((a, b) => Date.parse(b.modified) - Date.parse(a.modified)), [sessions, starredIds, projectFilter]);
   const sections = useMemo(() => projectFilter
     ? getActivitySections(sessions, runningIds, attention, reviewIds, projectFilter, queuedIds) : all,
   [projectFilter, sessions, runningIds, queuedIds, attention, reviewIds, all]);
-  const total = Object.values(sections).reduce((count, items) => count + items.length, 0);
+  const total = starredSessions.length + Object.values(sections).reduce((count, items) => count + items.length, 0);
   const sectionTitle: Record<ActivityStatus, string> = {
     "needs-you": t("activity.needsYou"), working: t("activity.working"), queued: t("activity.queued"), ready: t("activity.ready"),
   };
@@ -71,6 +79,27 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
       {!available && <p role="status" className="activity-unavailable">{t("activity.unavailable")}</p>}
       {total === 0 && <p className="activity-empty">{t("activity.empty")}</p>}
       <div className="activity-sections">
+        {starredSessions.length > 0 && (
+          <section aria-label={t("activity.starred")} className="activity-section">
+            <h2>{t("activity.starred")} <span>{starredSessions.length}</span></h2>
+            <div role="list" className="activity-items">
+              {starredSessions.map((session) => {
+                const label = activitySessionName(session);
+                return <div role="listitem" key={session.id} className="activity-starred-item">
+                  <button type="button" className={`activity-item${selectedId === session.id ? " activity-selected" : ""}`} onClick={() => onSelect(session)} aria-label={`${label} · ${activityProjectName(session)} · ${t("activity.open")}`}>
+                    <span className="activity-item-top">
+                      <span className="activity-star" aria-hidden="true">★</span>
+                      <span className="activity-item-title" title={label}>{label}</span>
+                      <span className="activity-item-action">{t("activity.open")}</span>
+                    </span>
+                    <span className="activity-item-meta" title={session.projectRoot ?? session.cwd}>{activityProjectName(session)}</span>
+                  </button>
+                  <button type="button" className="activity-unstar" onClick={() => toggleStarred(session.id)} aria-label={t("sidebar.unstarSession")} title={t("sidebar.unstarSession")}>×</button>
+                </div>;
+              })}
+            </div>
+          </section>
+        )}
         {STATUS_ORDER.map((status) => sections[status].length > 0 && (
           <section key={status} aria-label={sectionTitle[status]} className="activity-section">
             <h2>{sectionTitle[status]} <span>{sections[status].length}</span></h2>
