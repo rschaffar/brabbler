@@ -290,6 +290,7 @@ export const zhCNLocale: LocalePlugin = {
     "sidebar.newSessionActivity": "会话有新活动",
     "sidebar.deleteSession": "删除 {title}？",
     "sidebar.archive": "归档",
+    "sidebar.sessionActions": "会话操作",
     "sidebar.restore": "恢复",
     "sidebar.archivedSessions": "已归档会话",
     "sidebar.activeSessions": "活动会话",

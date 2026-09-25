@@ -36,7 +36,7 @@ test("session windows stay valid after a project shrinks and before the viewport
 test("only Shift+click bypasses session deletion confirmation", () => {
   assert.match(
     sessionItemSource,
-    /const handleDeleteClick[\s\S]*?if \(e\.shiftKey\) \{\s*void performDelete\(\);\s*\} else \{\s*setConfirmDelete\(true\);/,
+    /const handleDeleteClick[\s\S]*?if \(e\.shiftKey\) \{\s*void performDelete\(\);\s*\} else \{\s*setActionsOpen\(false\);\s*setConfirmDelete\(true\);/,
   );
 });
 
@@ -170,9 +170,11 @@ test("archive and restore immediately update the visible family before a forced 
   assert.match(source, /sessionLoadIdRef\.current \+= 1;[\s\S]*?setAllSessions\(\(current\) => updateSessionArchiveState\(current, id, archived\)\);[\s\S]*?void loadSessions\(false, true\)/);
 });
 
-test("touch devices can tap centered session actions without revealing hover controls first", () => {
-  assert.match(sessionItemSource, /className="session-row-actions"/);
+test("touch rows show one compact toggle and reveal centered actions only after expansion", () => {
+  assert.match(sessionItemSource, /className="session-row-actions-toggle"/);
+  assert.match(sessionItemSource, /aria-expanded=\{actionsOpen\}/);
+  assert.match(sessionItemSource, /className="session-row-actions" data-open=\{actionsOpen\}/);
   assert.match(sessionItemSource, /display: "flex", alignItems: "center", justifyContent: "center", width: 32/);
-  assert.match(globalStyles, /@media \(hover: none\), \(pointer: coarse\) \{\s*\.session-row-actions \{\s*display: flex;/);
-  assert.match(globalStyles, /\.session-row-actions > button \{\s*min-width: 40px;\s*min-height: 40px;/);
+  assert.match(globalStyles, /@media \(hover: none\), \(pointer: coarse\) \{\s*\.session-row-actions-toggle \{\s*display: flex;\s*\}\s*\.session-row-actions\[data-open="true"\] \{\s*display: flex;/);
+  assert.doesNotMatch(globalStyles, /min-width: 40px;/);
 });
