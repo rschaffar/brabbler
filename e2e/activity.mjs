@@ -43,7 +43,21 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   assert.equal(await activityWithStar.locator(".activity-item-ready").count(), 0, "starring does not mark a session ready to review");
   await page.getByRole("button", { name: "Starred", exact: true }).click();
   const starredOverview = page.getByRole("region", { name: "Starred" });
-  await starredOverview.getByRole("button", { name: /Branch root/ }).waitFor();
+  const starredBranch = starredOverview.locator(".activity-starred-item").filter({ hasText: "Branch root" });
+  await starredBranch.getByRole("button", { name: /Branch root/ }).waitFor();
+  // Simulate a live registry snapshot to verify that Starred tracks the same
+  // visible-tab running poll as Activity, without starting a model request.
+  await page.route("**/api/agent/running", async (route) => {
+    const response = await route.fetch();
+    const snapshot = await response.json();
+    await route.fulfill({ response, json: {
+      ...snapshot, runningSessionIds: [...new Set([...snapshot.runningSessionIds, selectedSessionId])],
+    } });
+  });
+  await starredBranch.getByText("Working", { exact: true }).waitFor({ timeout: 15000 });
+  assert.match(await starredBranch.locator(".activity-item").getAttribute("aria-label"), /Working/);
+  await page.unroute("**/api/agent/running");
+  await starredBranch.getByText("Working", { exact: true }).waitFor({ state: "hidden", timeout: 15000 });
   await page.evaluate((id) => {
     const key = "pi-web:starred-sessions";
     const ids = JSON.parse(localStorage.getItem(key) ?? "[]");
@@ -74,6 +88,13 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   if (await page.getByRole("button", { name: "Show sidebar" }).count()) await page.getByRole("button", { name: "Show sidebar" }).click();
   await page.locator(`[data-session-id="${selectedSessionId}"]`).locator(".activity-star").waitFor({ state: "hidden" });
   if (mobile) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
+  // Keep the waiting session starred while its real background dialog runs.
+  // The Starred list must surface Needs you without moving it into Activity.
+  await page.evaluate((id) => {
+    const key = "pi-web:starred-sessions";
+    localStorage.setItem(key, JSON.stringify([id]));
+    window.dispatchEvent(new StorageEvent("storage", { key }));
+  }, waitingSessionId);
   // Extension commands keep the POST open until the user responds. Launch it
   // without awaiting so the browser can see and answer the background dialog.
   const prompting = post(`/api/agent/${waitingSessionId}`, { type: "prompt", message: "/e2e-ask-user single" });
@@ -82,6 +103,11 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
     const snapshot = await response.json();
     return snapshot.attention.some((item) => item.sessionId === id && item.method === "ask_user");
   }, waitingSessionId);
+  await page.getByRole("button", { name: "Starred", exact: true }).click();
+  const starredNeeds = page.getByRole("region", { name: "Starred" }).locator(".activity-starred-item")
+    .filter({ hasText: "Render **E2E markdown**" });
+  await starredNeeds.getByText("Needs you").waitFor();
+  assert.match(await starredNeeds.locator(".activity-item").getAttribute("aria-label"), /Needs you/);
   await page.getByRole("button", { name: /Activity.*1 awaiting input/ }).click();
   const overview = page.getByRole("region", { name: "Activity" });
   await overview.getByRole("heading", { name: /Needs you/ }).waitFor();
@@ -108,6 +134,10 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await page.getByText(/E2E ask_user result:/).last().waitFor();
   if (mobile) await page.getByRole("button", { name: "Back to Activity" }).click();
   await overview.locator(".activity-item-needs-you").waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Starred", exact: true }).click();
+  await starredNeeds.getByText("Needs you").waitFor({ state: "hidden" });
+  await starredNeeds.getByRole("button", { name: "Unstar session" }).click();
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
   const snapshot = await api("/api/agent/running");
   assert.equal(snapshot.attention.some((item) => item.sessionId === waitingSessionId), false);
 
