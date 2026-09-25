@@ -23,8 +23,6 @@ type UsageMetric = { id: string; label: string; value: number | string; unit?: s
 type UsageReport = { capturedAt: number; buckets: UsageBucket[]; metrics: UsageMetric[]; notes?: string[] };
 type UsageResponse = { providerId: string; status: "ready" | "auth-unavailable" | "query-failed"; report?: UsageReport; message?: string };
 
-const STORAGE_PREFIX = "pi-web:provider-usage:";
-
 export function ProviderUsageSummary({ providerId, enabled }: { providerId: string; enabled: boolean }) {
   if (!isProviderUsageId(providerId)) return null;
   return <ProviderUsageContent providerId={providerId} enabled={enabled} />;
@@ -42,17 +40,6 @@ function ProviderUsageContent({ providerId, enabled }: { providerId: string; ena
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     setRefreshDone(false);
     setSnapshot(null);
-    try {
-      const cached = localStorage.getItem(`${STORAGE_PREFIX}${providerId}`);
-      if (cached) {
-        const parsed = JSON.parse(cached) as UsageResponse;
-        if (parsed?.status === "ready" && parsed.report && Array.isArray(parsed.report.buckets) && Array.isArray(parsed.report.metrics)) {
-          setSnapshot(parsed);
-        }
-      }
-    } catch {
-      try { localStorage.removeItem(`${STORAGE_PREFIX}${providerId}`); } catch {}
-    }
     setError(null);
     return () => {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
@@ -72,7 +59,6 @@ function ProviderUsageContent({ providerId, enabled }: { providerId: string; ena
       if (!response.ok) throw new Error(result.error ?? `HTTP ${response.status}`);
       if (result.status === "ready") {
         setSnapshot(result);
-        try { localStorage.setItem(`${STORAGE_PREFIX}${providerId}`, JSON.stringify(result)); } catch {}
         setRefreshDone(true);
         if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
         refreshTimerRef.current = setTimeout(() => setRefreshDone(false), 2000);

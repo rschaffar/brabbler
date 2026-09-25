@@ -340,6 +340,24 @@ try {
       page = undefined;
       continue;
     }
+    if (process.env.E2E_ACCOUNT_ONLY === "1") {
+      const { oauthProviders } = await api("/api/auth/providers");
+      const oauthEntry = oauthProviders.find((item) => item.id === "github-copilot") ?? oauthProviders[0];
+      assert.ok(oauthEntry, "OAuth provider required for account browser fixture");
+      const { account } = await post("/api/auth/accounts", { provider: oauthEntry.id, label: `E2E device ${viewport.width}`, type: "oauth" });
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await checkProviderAccountAuthorization(page, { base, sessionId: RICH, provider: oauthEntry.id,
+        providerName: oauthEntry.name, accountLabel: account.label, width: viewport.width, artifacts });
+      const removedFixture = await fetch(`${base}/api/auth/accounts`, { method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: account.id }) });
+      assert.equal(removedFixture.status, 200);
+      assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      await context.tracing.stop();
+      await context.close();
+      context = undefined;
+      page = undefined;
+      continue;
+    }
     if (process.env.E2E_ASK_USER_ONLY === "1") {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
@@ -625,21 +643,23 @@ try {
   context = undefined;
   page = undefined;
 
-  const { oauthProviders } = await api("/api/auth/providers");
-  const oauthEntry = oauthProviders.find((item) => item.id === "github-copilot") ?? oauthProviders[0];
-  assert.ok(oauthEntry, "OAuth provider required for browser authorization fixture");
-  const oauthProvider = oauthEntry.id;
-  const { account: deviceAccount } = await post("/api/auth/accounts", { provider: oauthProvider, label: "E2E device", type: "oauth" });
-  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 600 }]) {
-    context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-    page = await context.newPage();
-    page.setDefaultTimeout(30_000);
-    await checkProviderAccountAuthorization(page, { base, sessionId: RICH, provider: oauthProvider,
-      providerName: oauthEntry.name, accountLabel: deviceAccount.label, width: viewport.width, artifacts });
-    await context.close();
-    context = undefined;
-    page = undefined;
+  if (process.env.E2E_ACCOUNT_ONLY !== "1") {
+    const { oauthProviders } = await api("/api/auth/providers");
+    const oauthEntry = oauthProviders.find((item) => item.id === "github-copilot") ?? oauthProviders[0];
+    assert.ok(oauthEntry, "OAuth provider required for browser authorization fixture");
+    const oauthProvider = oauthEntry.id;
+    const { account: deviceAccount } = await post("/api/auth/accounts", { provider: oauthProvider, label: "E2E device", type: "oauth" });
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 600 }]) {
+      context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      page = await context.newPage();
+      page.setDefaultTimeout(30_000);
+      await checkProviderAccountAuthorization(page, { base, sessionId: RICH, provider: oauthProvider,
+        providerName: oauthEntry.name, accountLabel: deviceAccount.label, width: viewport.width, artifacts });
+      await context.close();
+      context = undefined;
+      page = undefined;
+    }
   }
 } catch (error) {
   console.error(error);

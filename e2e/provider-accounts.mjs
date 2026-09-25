@@ -9,7 +9,7 @@ export async function checkProviderAccountAuthorization(page, { base, sessionId,
     window.__openedAuthUrls = [];
     window.EventSource = function (url, ...args) {
       if (!String(url).startsWith("/api/auth/login/")) return new OriginalEventSource(url, ...args);
-      const source = { onmessage: null, onerror: null, closed: false, close() { this.closed = true; } };
+      const source = { url: String(url), onmessage: null, onerror: null, closed: false, close() { this.closed = true; } };
       window.__accountOAuthSources.push(source);
       return source;
     };
@@ -36,7 +36,14 @@ export async function checkProviderAccountAuthorization(page, { base, sessionId,
     "managing another provider must not change the model-provider indicator");
   await panel.getByRole("button", { name: "Accounts…" }).click();
   await panel.getByText(accountLabel, { exact: false }).waitFor();
+  await panel.getByRole("button", { name: "Change login" }).first().click();
+  assert.equal(await page.evaluate(() => window.__accountOAuthSources.length), 1);
+  assert.equal(await page.evaluate(() => window.__accountOAuthSources.at(-1).url), `/api/auth/login/${encodeURIComponent(provider)}`,
+    "Pi default uses the provider-wide login, not a secondary account");
+  await panel.getByRole("button", { name: "Cancel" }).click();
   await panel.getByRole("button", { name: "Retry login" }).click();
+  assert.match(await page.evaluate(() => window.__accountOAuthSources.at(-1).url), /\?accountId=/,
+    "secondary-account reauthorization remains scoped to its ID");
   await page.evaluate(() => window.__emitAccountOAuth({ type: "device_code", verificationUri: "https://github.com/login/device",
     userCode: "WXYZ-1234", expiresInSeconds: 600 }));
   const link = panel.getByRole("link", { name: /Open verification page/ });
@@ -92,6 +99,37 @@ export async function checkProviderAccountAuthorization(page, { base, sessionId,
     assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1,
       "the account popover stays within the mobile viewport");
   } else {
+    // Account-aware usage is a subscription quota, not API-key spend. Mock only
+    // the browser's API responses; no live provider credentials are needed.
+    const fakeAccount = { id: "e2e-codex-secondary", provider: "openai-codex", label: "Second Codex", type: "oauth", authorized: true };
+    const queriedAccounts = [];
+    const selectionRoute = async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      await route.fulfill({ response, json: { ...data, accounts: [...data.accounts, fakeAccount] } });
+    };
+    const usageRoute = async (route) => {
+      const { providerId, accountId } = route.request().postDataJSON();
+      if (providerId !== "openai-codex") return route.continue();
+      queriedAccounts.push(accountId);
+      const secondary = accountId === fakeAccount.id;
+      await route.fulfill({ json: { providerId, status: "ready", report: { providerId, capturedAt: Date.now(), metrics: [], buckets: [
+        { id: "primary", label: "5h", windowMinutes: 300, remaining: secondary ? 50 : 90, unit: "percent" },
+        { id: "secondary", label: "Weekly", windowMinutes: 10080, remaining: secondary ? 25 : 70, unit: "percent" },
+      ] } } });
+    };
+    await page.route("**/api/auth/accounts/selection?*", selectionRoute);
+    await page.route("**/api/provider-usage/query", usageRoute);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: /^Account for/ }).click();
+    const usagePanel = page.getByRole("region", { name: "Provider accounts" });
+    await usagePanel.getByLabel("Account provider").selectOption("openai-codex");
+    await usagePanel.getByRole("button", { name: "Accounts…" }).click();
+    await usagePanel.getByText("Weekly 70% remaining · 5h 90% remaining").waitFor();
+    await usagePanel.getByText("Weekly 25% remaining · 5h 50% remaining").waitFor();
+    assert.ok(queriedAccounts.includes(null) && queriedAccounts.includes(fakeAccount.id), "usage requests are account-specific");
+    await page.unroute("**/api/auth/accounts/selection?*", selectionRoute);
+    await page.unroute("**/api/provider-usage/query", usageRoute);
     // Start the independent Pi-default settings flow from a fresh page.
     await page.reload({ waitUntil: "domcontentloaded" });
     // Next's development indicator overlaps the sidebar footer in headless mode;
