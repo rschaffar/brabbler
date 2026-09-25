@@ -23,8 +23,8 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await interrupted.waitFor({ state: "hidden", timeout: 15000 });
   await page.getByRole("button", { name: "Close Activity" }).click();
 
-  // Starring an idle sidebar session keeps it in Activity across reloads,
-  // independently of the live/unread triage. Touch rows expose actions via More.
+  // Starring an idle session marks its project row and keeps it in the separate
+  // Starred view across reloads. Touch rows expose actions via More.
   if (await page.getByRole("button", { name: "Show sidebar" }).count()) {
     await page.getByRole("button", { name: "Show sidebar" }).click();
   }
@@ -34,19 +34,46 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   else await sessionRow.hover();
   await sessionRow.getByRole("button", { name: "Star session" }).click();
   await sessionRow.getByRole("button", { name: "Unstar session" }).waitFor();
+  if (!mobile) await page.mouse.move(width - 10, 100);
+  assert.equal(await sessionRow.locator(".activity-star").isVisible(), true, "star remains visible without hovering or opening actions");
   if (mobile) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
   await page.getByRole("button", { name: /^Activity/ }).click();
-  const starredOverview = page.getByRole("region", { name: "Activity" });
-  const starred = starredOverview.getByRole("region", { name: "Starred" });
-  await starred.getByRole("button", { name: /Branch root/ }).waitFor();
-  assert.equal(await starredOverview.locator(".activity-item-ready").count(), 0, "starring does not mark a session ready to review");
+  const activityWithStar = page.getByRole("region", { name: "Activity" });
+  assert.equal(await activityWithStar.getByRole("region", { name: "Starred" }).count(), 0, "Activity excludes the Starred list");
+  assert.equal(await activityWithStar.locator(".activity-item-ready").count(), 0, "starring does not mark a session ready to review");
+  await page.getByRole("button", { name: "Starred", exact: true }).click();
+  const starredOverview = page.getByRole("region", { name: "Starred" });
+  await starredOverview.getByRole("button", { name: /Branch root/ }).waitFor();
+  await page.evaluate((id) => {
+    const key = "pi-web:starred-sessions";
+    const ids = JSON.parse(localStorage.getItem(key) ?? "[]");
+    localStorage.setItem(key, JSON.stringify([...ids, id]));
+    window.dispatchEvent(new StorageEvent("storage", { key }));
+  }, otherSessionId);
+  await starredOverview.getByRole("button", { name: /Other workspace task/ }).waitFor();
+  await starredOverview.getByRole("combobox", { name: "Project" }).selectOption({ label: "project" });
+  await starredOverview.getByRole("button", { name: /Branch root/ }).waitFor();
+  assert.equal(await starredOverview.getByRole("button", { name: /Other workspace task/ }).count(), 0, "project filter excludes other stars");
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByText("Active branch answer", { exact: true }).waitFor();
-  await page.getByRole("button", { name: /^Activity/ }).click();
-  await page.getByRole("region", { name: "Starred" }).getByRole("button", { name: /Branch root/ }).waitFor();
-  await page.getByRole("region", { name: "Starred" }).getByRole("button", { name: "Unstar session" }).click();
-  await page.getByRole("region", { name: "Starred" }).waitFor({ state: "hidden" });
-  await page.getByRole("button", { name: "Close Activity" }).click();
+  if (await page.getByRole("button", { name: "Show sidebar" }).count()) await page.getByRole("button", { name: "Show sidebar" }).click();
+  await page.locator(`[data-session-id="${selectedSessionId}"]`).locator(".activity-star").waitFor({ state: "visible" });
+  if (mobile) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
+  await page.getByRole("button", { name: "Starred", exact: true }).click();
+  const restoredStarred = page.getByRole("region", { name: "Starred" });
+  await restoredStarred.getByRole("button", { name: /Branch root/ }).click();
+  if (mobile) {
+    await restoredStarred.waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "Back to Starred" }).click();
+  }
+  await restoredStarred.locator(".activity-starred-item").filter({ hasText: "Branch root" }).getByRole("button", { name: "Unstar session" }).click();
+  await restoredStarred.getByRole("button", { name: /Other workspace task/ }).waitFor();
+  await restoredStarred.getByRole("button", { name: "Unstar session" }).click();
+  await restoredStarred.getByText("No starred sessions yet.").waitFor();
+  await page.getByRole("button", { name: "Close Starred" }).click();
+  if (await page.getByRole("button", { name: "Show sidebar" }).count()) await page.getByRole("button", { name: "Show sidebar" }).click();
+  await page.locator(`[data-session-id="${selectedSessionId}"]`).locator(".activity-star").waitFor({ state: "hidden" });
+  if (mobile) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
   // Extension commands keep the POST open until the user responds. Launch it
   // without awaiting so the browser can see and answer the background dialog.
   const prompting = post(`/api/agent/${waitingSessionId}`, { type: "prompt", message: "/e2e-ask-user single" });

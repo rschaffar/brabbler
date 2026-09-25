@@ -2598,6 +2598,7 @@ function SessionItem({
               }}
               title={title}
             >
+              {isStarred && <span className="activity-star" aria-hidden="true">★</span>}
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
                 {title}
               </span>

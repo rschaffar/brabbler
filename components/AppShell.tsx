@@ -6,6 +6,7 @@ import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { ActivityOverview } from "./ActivityOverview";
+import { StarredOverview } from "./StarredOverview";
 import { getActivitySections, type ActivityStatus } from "@/lib/activity";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { FileViewer } from "./FileViewer";
@@ -202,11 +203,11 @@ export function AppShell() {
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
   const [projectTrustError, setProjectTrustError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => !initialNavigation.sidebarCollapsed);
-  const [activityOpen, setActivityOpen] = useState(false);
-  const [activityMobileList, setActivityMobileList] = useState(true);
-  const closeActivity = useCallback(() => {
-    setActivityOpen(false);
-    setActivityMobileList(true);
+  const [activeOverview, setActiveOverview] = useState<"activity" | "starred" | null>(null);
+  const [overviewMobileList, setOverviewMobileList] = useState(true);
+  const closeOverview = useCallback(() => {
+    setActiveOverview(null);
+    setOverviewMobileList(true);
   }, []);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelExpanded, setRightPanelExpanded] = useState(false);
@@ -871,12 +872,12 @@ export function AppShell() {
     } else {
       handleSelectSession(session);
     }
-    if (isMobile) setActivityMobileList(false);
+    if (isMobile) setOverviewMobileList(false);
   }, [handleSelectSession, isMobile, selectedSession?.id]);
   const handleSidebarSelectSession = useCallback((session: SessionInfo, isRestore?: boolean, entryId?: string, blockIndex?: number) => {
-    closeActivity();
+    closeOverview();
     handleSelectSession(session, isRestore, entryId, blockIndex);
-  }, [closeActivity, handleSelectSession]);
+  }, [closeOverview, handleSelectSession]);
 
   const handleOpenSession = useCallback(async (sessionId: string) => {
     // Prefer the catalogue the sidebar already delivered: selecting from it
@@ -2017,29 +2018,53 @@ export function AppShell() {
             onClick={() => {
               setActiveTopPanel(null);
               setMobileToolbarMoreOpen(false);
-              if (activityOpen && isMobile && !activityMobileList) {
-                setActivityMobileList(true);
-              } else if (activityOpen) {
-                closeActivity();
+              if (activeOverview === "activity" && isMobile && !overviewMobileList) {
+                setOverviewMobileList(true);
+              } else if (activeOverview === "activity") {
+                closeOverview();
               } else {
-                setActivityMobileList(true);
-                setActivityOpen(true);
+                setOverviewMobileList(true);
+                setActiveOverview("activity");
                 setRightPanelOpen(false);
                 if (isMobile || window.innerWidth < 1000) setSidebarOpen(false);
               }
             }}
-            aria-label={activityOpen && isMobile && !activityMobileList
+            aria-label={activeOverview === "activity" && isMobile && !overviewMobileList
               ? translate("activity.back")
               : activityNeedsCount ? `${translate("activity.title")} · ${translate("activity.needsCount", { count: activityNeedsCount })}` : translate("activity.title")}
-            aria-pressed={activityOpen && (!isMobile || activityMobileList)}
-            title={activityOpen && isMobile && !activityMobileList ? translate("activity.back") : translate("activity.title")}
+            aria-pressed={activeOverview === "activity" && (!isMobile || overviewMobileList)}
+            title={activeOverview === "activity" && isMobile && !overviewMobileList ? translate("activity.back") : translate("activity.title")}
             className="activity-top-button"
-            style={{ position: "relative", width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0, border: 0, borderRight: "1px solid var(--border)", background: activityOpen ? "var(--bg-selected)" : "none", color: "var(--text-muted)", cursor: "pointer" }}
+            style={{ position: "relative", width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0, border: 0, borderRight: "1px solid var(--border)", background: activeOverview === "activity" ? "var(--bg-selected)" : "none", color: "var(--text-muted)", cursor: "pointer" }}
           >
-            {activityOpen && isMobile && !activityMobileList ? "←" : "◉"}
-            {activityNeedsCount > 0 && !(activityOpen && isMobile && !activityMobileList) && <span className="activity-top-count" aria-hidden="true">{activityNeedsCount > 9 ? "9+" : activityNeedsCount}</span>}
+            {activeOverview === "activity" && isMobile && !overviewMobileList ? "←" : "◉"}
+            {activityNeedsCount > 0 && !(activeOverview === "activity" && isMobile && !overviewMobileList) && <span className="activity-top-count" aria-hidden="true">{activityNeedsCount > 9 ? "9+" : activityNeedsCount}</span>}
           </button>
-          {isMobile && !(activityOpen && activityMobileList) && (
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTopPanel(null);
+              setMobileToolbarMoreOpen(false);
+              if (activeOverview === "starred" && isMobile && !overviewMobileList) {
+                setOverviewMobileList(true);
+              } else if (activeOverview === "starred") {
+                closeOverview();
+              } else {
+                setOverviewMobileList(true);
+                setActiveOverview("starred");
+                setRightPanelOpen(false);
+                if (isMobile || window.innerWidth < 1000) setSidebarOpen(false);
+              }
+            }}
+            aria-label={activeOverview === "starred" && isMobile && !overviewMobileList ? translate("starred.back") : translate("activity.starred")}
+            aria-pressed={activeOverview === "starred" && (!isMobile || overviewMobileList)}
+            title={activeOverview === "starred" && isMobile && !overviewMobileList ? translate("starred.back") : translate("activity.starred")}
+            className="activity-top-button"
+            style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0, border: 0, borderRight: "1px solid var(--border)", background: activeOverview === "starred" ? "var(--bg-selected)" : "none", color: "#eab308", cursor: "pointer" }}
+          >
+            {activeOverview === "starred" && isMobile && !overviewMobileList ? "←" : "★"}
+          </button>
+          {isMobile && !(activeOverview && overviewMobileList) && (
             <div
               ref={mobileToolbarRef}
               data-mobile-toolbar="true"
@@ -2377,12 +2402,12 @@ export function AppShell() {
           )}
 
         </div>
-        {isMobile && !(activityOpen && activityMobileList) && renderProjectTrustWarning(true)}
+        {isMobile && !(activeOverview && overviewMobileList) && renderProjectTrustWarning(true)}
         </div>
 
         {/* Chat content */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex" }}>
-          {activityOpen && (
+          {activeOverview === "activity" && (
             <ActivityOverview
               sessions={sessionsWithSelection}
               runningIds={runningSessionIds}
@@ -2393,11 +2418,20 @@ export function AppShell() {
               recoveryRefreshKey={recoveryRefreshKey}
               selectedId={selectedSession?.id ?? null}
               onSelect={handleActivitySelectSession}
-              onClose={closeActivity}
-              hidden={isMobile && !activityMobileList}
+              onClose={closeOverview}
+              hidden={isMobile && !overviewMobileList}
             />
           )}
-          <div inert={activityOpen && isMobile && activityMobileList} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
+          {activeOverview === "starred" && (
+            <StarredOverview
+              sessions={sessionsWithSelection}
+              selectedId={selectedSession?.id ?? null}
+              onSelect={handleActivitySelectSession}
+              onClose={closeOverview}
+              hidden={isMobile && !overviewMobileList}
+            />
+          )}
+          <div inert={Boolean(activeOverview && isMobile && overviewMobileList)} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
           {showChat ? (
             <ChatWindow
               key={sessionKey}
