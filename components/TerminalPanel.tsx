@@ -8,6 +8,9 @@ import { createTerminalWriter, terminalRequest } from "@/lib/terminal-client";
 import type { TerminalEvent } from "@/lib/terminal-manager";
 import type { TerminalTab } from "./terminal-tab-state";
 
+const TERMINAL_FONT_KEY = "pi-web:terminal-font";
+type TerminalFont = "nerd" | "system";
+
 interface Props {
   tab: TerminalTab;
   active: boolean;
@@ -21,6 +24,10 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
   const { id, cwd, restored } = tab;
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  const [font, setFont] = useState<TerminalFont>("nerd");
+  const fontRef = useRef(font);
+  fontRef.current = font;
   const startRef = useRef<Promise<void>>(Promise.resolve());
   const writerRef = useRef<ReturnType<typeof createTerminalWriter> | null>(null);
   const callbacksRef = useRef({ onClosed, onCloseError });
@@ -29,6 +36,12 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
   const [error, setError] = useState<string | null>(null);
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [reconnectKey, setReconnectKey] = useState(0);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(TERMINAL_FONT_KEY) === "system") setFont("system");
+    } catch { /* Storage can be unavailable in private browsing. */ }
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -45,7 +58,9 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
 
     const terminal = new Terminal({
       cursorBlink: true,
-      fontFamily: getComputedStyle(container).getPropertyValue("--font-mono").trim() || "monospace",
+      fontFamily: fontRef.current === "nerd"
+        ? '"Pi Web Nerd Font", monospace'
+        : getComputedStyle(container).getPropertyValue("--font-mono").trim() || "monospace",
       fontSize: 13,
       lineHeight: 1.25,
       scrollback: 8000,
@@ -64,6 +79,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     terminalRef.current = terminal;
     const fit = new FitAddon();
     terminal.loadAddon(fit);
+    fitRef.current = fit;
     terminal.open(container);
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== "keydown") return true;
@@ -174,8 +190,32 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       window.removeEventListener("online", connect);
       terminal.dispose();
       terminalRef.current = null;
+      fitRef.current = null;
     };
   }, [id, cwd, restored, reconnectKey]);
+
+  // Font loads and font changes can alter cell width; refit without restarting
+  // the PTY (and let the existing resize handler update its dimensions).
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    const fit = fitRef.current;
+    const container = containerRef.current;
+    if (!terminal || !fit || !container) return;
+    let cancelled = false;
+    const update = async () => {
+      if (font === "nerd") {
+        try { await document.fonts.load('13px "Pi Web Nerd Font"'); }
+        catch { /* Keep the fallback font when loading fails. */ }
+      }
+      if (cancelled) return;
+      terminal.options.fontFamily = font === "nerd"
+        ? '"Pi Web Nerd Font", monospace'
+        : getComputedStyle(container).getPropertyValue("--font-mono").trim() || "monospace";
+      if (container.offsetWidth && container.offsetHeight) fit.fit();
+    };
+    void update();
+    return () => { cancelled = true; };
+  }, [font]);
 
   useEffect(() => {
     if (active) terminalRef.current?.focus();
@@ -206,6 +246,22 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
           <span className={`terminal-status-dot is-${status}`} title={t(`terminal.${status}`)} />
           <span title={cwd}>{cwd}</span>
         </div>
+        <label className="terminal-font-choice">
+          {t("terminal.font")}
+          <select
+            aria-label={t("terminal.font")}
+            value={font}
+            onChange={(event) => {
+              const next = event.target.value as TerminalFont;
+              setFont(next);
+              try { localStorage.setItem(TERMINAL_FONT_KEY, next); }
+              catch { /* Continue without persistence. */ }
+            }}
+          >
+            <option value="nerd">{t("terminal.fontNerd")}</option>
+            <option value="system">{t("terminal.fontSystem")}</option>
+          </select>
+        </label>
         {status === "error" && (
           <button type="button" onClick={() => setReconnectKey((key) => key + 1)} disabled={Boolean(tab.closing)} title={t("terminal.reconnect")} aria-label={t("terminal.reconnect")}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

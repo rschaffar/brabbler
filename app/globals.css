@@ -328,6 +328,14 @@ html.dark .web-login-error {
   cursor: not-allowed;
 }
 
+@font-face {
+  font-family: "Pi Web Nerd Font";
+  src: url("/fonts/JetBrainsMonoNerdFontMono-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 .terminal-panel {
   display: grid;
   grid-template-rows: 38px auto minmax(0, 1fr);
@@ -355,6 +363,7 @@ html.dark .web-login-error {
   display: flex;
   align-items: center;
   min-width: 0;
+  flex: 1;
   gap: 8px;
 }
 
@@ -375,6 +384,24 @@ html.dark .web-login-error {
 .terminal-status-dot.is-ready { background: #4ade80; }
 .terminal-status-dot.is-exited,
 .terminal-status-dot.is-error { background: #f87171; }
+
+.terminal-font-choice {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 8px;
+  flex-shrink: 0;
+}
+
+.terminal-font-choice select {
+  max-width: 110px;
+  padding: 3px 4px;
+  border: 1px solid #343a46;
+  border-radius: 5px;
+  background: #181b21;
+  color: #e5e7eb;
+  font: inherit;
+}
 
 .terminal-panel-header button {
   display: inline-flex;

@@ -42,7 +42,7 @@ const base = `http://127.0.0.1:${port}`;
 const log = createWriteStream(join(artifacts, "server.log"));
 const server = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "dev", "-H", "127.0.0.1", "-p", String(port)], {
   cwd: root,
-  env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1", HISTFILE: process.platform === "win32" ? "NUL" : "/dev/null", BASH_SILENCE_DEPRECATION_WARNING: "1", SHELL: process.platform === "win32" ? process.env.SHELL : "/bin/bash" },
+  env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1", HISTFILE: process.platform === "win32" ? "NUL" : "/dev/null", BASH_SILENCE_DEPRECATION_WARNING: "1", SHELL: process.platform === "win32" ? process.env.SHELL : (process.env.PI_WEB_TEST_SHELL || "/bin/bash") },
   stdio: ["ignore", "pipe", "pipe"],
 });
 server.stdout.pipe(log, { end: false });
@@ -56,7 +56,9 @@ try {
     assert.ok(i < 120 && server.exitCode === null, "Server did not become ready");
     await delay(500);
   }
-  browser = await chromium.launch();
+  browser = await chromium.launch(process.env.PI_WEB_TEST_CHROMIUM
+    ? { executablePath: process.env.PI_WEB_TEST_CHROMIUM }
+    : undefined);
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
     const context = await browser.newContext({ viewport, locale: "en-US" });
     const page = await context.newPage();
@@ -93,6 +95,13 @@ try {
       await showSidebar();
       await page.getByRole("button", { name: "Open workspace terminal", exact: true }).click();
       await ready();
+      const fontSelect = page.getByRole("combobox", { name: "Terminal font" });
+      assert.equal(await fontSelect.inputValue(), "nerd");
+      await page.waitForFunction(() => document.fonts.check('13px "Pi Web Nerd Font"'));
+      assert.equal((await fetch(`${base}/fonts/JetBrainsMonoNerdFontMono-Regular.ttf`)).status, 200);
+      await fontSelect.selectOption("system");
+      assert.equal(await page.evaluate(() => localStorage.getItem("pi-web:terminal-font")), "system");
+      await fontSelect.selectOption("nerd");
       await run("export PR695_TOKEN=alive; printf '\\nTOKEN:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput("TOKEN:alive:[0-9]+");
       const pid = (await text()).match(/TOKEN:alive:(\d+)/)[1];
@@ -114,8 +123,11 @@ try {
       await run("printf '\\nSESSION:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput(`SESSION:alive:${pid}`);
 
+      await fontSelect.selectOption("system");
       await page.reload();
       await ready();
+      assert.equal(await fontSelect.inputValue(), "system", "font choice survives page reload");
+      await fontSelect.selectOption("nerd");
       await run("printf '\\nREFRESH:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput(`REFRESH:alive:${pid}`);
       assert.equal(created.size, 1, "refresh must reconnect, not create");
