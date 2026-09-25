@@ -16,6 +16,7 @@ Local browser UI for the [pi coding agent](https://github.com/earendil-works/pi)
 - **Git worktrees**: switch checkouts from the sidebar while keeping sessions from the same repository grouped together.
 - **Workspace terminal**: open it from the File Explorer toolbar. It defaults to a bundled JetBrains Mono Nerd Font (no browser font installation needed); use the terminal header to switch to the system font. The choice is saved in browser storage.
 - **Web-based configuration**: manage provider login and API keys, models, model tests, plugin packages, and skills without leaving Pi Web.
+- **Browser-native `ask_user`**: answer agent questions with described choices, multi-selection, freeform text, and optional comments without a terminal-style popup.
 - **English, Simplified Chinese, and Traditional Chinese UI**: Pi Web follows the browser language initially and provides a language switcher in the top bar.
 
 ## Quick Start
@@ -124,6 +125,12 @@ coordinates, and a `refresh()` callback for actions that change the session
 list. If no listener cancels the extension event, Pi Web preserves the
 browser's native context menu. This hook is browser-side and independent of
 Pi agent extensions.
+
+### Browser-native `ask_user`
+
+Pi Web includes a web-focused adaptation of [pi-ask-user](https://github.com/edlsh/pi-ask-user) v0.15.0 (MIT; see `lib/ask-user.LICENSE`). In ordinary web sessions and subagents that load extensions, it replaces the recognized external `pi-ask-user` package's tool, preserving its parameter names, answer/result format, and `ask:answered` / `ask:cancelled` events. The browser form uses Pi Web's existing per-session extension UI transport, so pending questions survive an SSE reconnect and expire or close on Stop. The standalone Pi terminal still uses its separately installed extension. Chat-only sessions load no extensions, including `ask_user`.
+
+Terminal-only layout and shortcut options remain accepted for compatibility but do not alter the browser form. Unrelated extensions that also register `ask_user` are not silently suppressed; resolve those tool collisions explicitly.
 
 ### Extension Session Liveness
 

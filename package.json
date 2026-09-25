@@ -25,6 +25,7 @@
     "!.next/**/*.js.map",
     "public",
     "next.config.ts",
+    "lib/ask-user.LICENSE",
     "package.json"
   ],
   "scripts": {

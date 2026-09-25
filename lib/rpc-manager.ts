@@ -43,6 +43,8 @@ import { isBuiltInSubagentsEnabled } from "./subagent-settings";
 import { resolveShellTools } from "./powershell-settings";
 import { CHAT_ONLY_RESOURCE_LOADER_OPTIONS, contextFilesSystemPrompt } from "./chat-only";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
+import { createAskUserExtension, preferPiWebAskUserExtension, type AskUserUiContext } from "./ask-user-extension";
+import { normalizeAskUserAnswer } from "./ask-user";
 import {
   appendClearedSessionToolSelection,
   appendSessionToolSelection,
@@ -1089,6 +1091,9 @@ export class AgentSessionWrapper {
   private resolveExtensionUiResponse(response: ExtensionUiResponse): void {
     const pending = this.pendingUiResponses.get(response.id);
     if (!pending) return;
+    const request = this.pendingUiRequests.get(response.id) as ExtensionUiRequest | undefined;
+    if (request?.method === "ask_user" && !("cancelled" in response)
+      && (!("answer" in response) || !normalizeAskUserAnswer(response.answer, request))) return;
     pending.resolve(response);
   }
 
@@ -1487,7 +1492,7 @@ export class AgentSessionWrapper {
     });
   }
 
-  private createExtensionUiContext(): ExtensionUiContextLike {
+  private createExtensionUiContext(): ExtensionUiContextLike & AskUserUiContext {
     return {
       select: (title, options, opts) => this.requestExtensionUi(
         { method: "select", title, options, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
@@ -1516,6 +1521,13 @@ export class AgentSessionWrapper {
         (response) => "value" in response ? response.value : undefined,
         opts?.timeout,
         opts?.signal,
+      ),
+      askUser: (question, timeout, signal) => this.requestExtensionUi(
+        { method: "ask_user", ...question },
+        null,
+        (response) => "answer" in response ? normalizeAskUserAnswer(response.answer, question) : null,
+        timeout,
+        signal,
       ),
       notify: (message, type) => {
         this.emit({
@@ -2047,7 +2059,13 @@ export async function startRpcSession(
                 }
               : {}),
             appendSystemPrompt: subagentResources.appendSystemPrompt,
-            ...(usesExactSystemPrompt ? { extensionFactories: [exactSystemPromptExtension] } : {}),
+            ...(usesExactSystemPrompt || subagentResources.loadExtensions
+              ? { extensionFactories: [
+                  ...(usesExactSystemPrompt ? [exactSystemPromptExtension] : []),
+                  ...(subagentResources.loadExtensions ? [createAskUserExtension()] : []),
+                ] }
+              : {}),
+            ...(subagentResources.loadExtensions ? { extensionsOverride: preferPiWebAskUserExtension } : {}),
           }
         : chatOnly
           ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension] }
@@ -2062,8 +2080,9 @@ export async function startRpcSession(
                 () => listSubagentProfiles(sessionCwd),
                 isBuiltInSubagentsEnabled,
               ),
+              createAskUserExtension(),
             ],
-            extensionsOverride: (base) => preferUserBashExtension(preferPiWebSubagentExtension(base)),
+            extensionsOverride: (base) => preferUserBashExtension(preferPiWebAskUserExtension(preferPiWebSubagentExtension(base))),
           },
       ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
     });

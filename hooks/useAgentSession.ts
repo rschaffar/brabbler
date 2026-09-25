@@ -105,7 +105,7 @@ function normalizeQueuedMessages(q?: { steering?: string[]; followUp?: string[] 
   return { steering: q?.steering ?? [], followUp: q?.followUp ?? [] };
 }
 
-type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" }>;
+type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" | "ask_user" }>;
 type ExtensionUiCustomRequest = Extract<ExtensionUiRequest, { method: "custom" }>;
 export type NoticeType = "info" | "success" | "warning" | "error";
 
@@ -938,7 +938,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const respondToExtensionUi = useCallback(async (
     request: ExtensionUiDialogRequest,
-    response: { value: string } | { confirmed: boolean } | { cancelled: true },
+    response: { value: string } | { confirmed: boolean } | { cancelled: true } | { answer: import("@/lib/ask-user").AskUserAnswer },
   ) => {
     const sid = sessionIdRef.current;
     setExtensionDialog((current) => current?.id === request.id ? null : current);
@@ -989,6 +989,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "confirm":
       case "input":
       case "editor":
+      case "ask_user":
         setExtensionDialog(request);
         break;
       case "notify": {

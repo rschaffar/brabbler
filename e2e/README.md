@@ -9,6 +9,11 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
+For a focused browser-native `ask_user` run, set `E2E_ASK_USER_ONLY=1`.
+If the Playwright-managed Chromium is unavailable, set
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a compatible local Chrome/Chromium
+binary; the default CI path remains the Playwright-managed browser.
+
 The script starts and stops its own Turbopack dev server on an available
 loopback port. Run it in a checkout without an active dev server; Next.js
 shares `.next/dev/lock` within a checkout. All fixtures are created before
@@ -34,6 +39,8 @@ Coverage:
 - Unknown sessions and paths outside the fixture project are rejected.
 - A local extension checks dialog keyboard navigation, Esc cancellation,
   collapse/expand draft preservation, countdown display, and server-side expiry.
+- The native `ask_user` form checks single/multi selection, freeform answers,
+  comments, collapse preservation, cancellation, and expiry at desktop and mobile widths.
 
 Model prompts, live model streaming, and agent execution are outside this suite.
 Failures save a screenshot, Playwright trace, and server log under

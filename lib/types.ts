@@ -1,4 +1,5 @@
 // Types mirrored from pi-mono coding-agent session-manager
+import type { AskUserAnswer, AskUserQuestion } from "./ask-user";
 
 export interface SessionHeader {
   type: "session";
@@ -168,6 +169,7 @@ export type ExtensionUiRequest =
       timeout?: number;
       expiresAt?: number;
     }
+  | ({ type: "extension_ui_request"; id: string; method: "ask_user"; timeout?: number; expiresAt?: number } & AskUserQuestion)
   | {
       type: "extension_ui_request";
       id: string;
@@ -212,13 +214,14 @@ export type ExtensionUiRequest =
 
 export type BlockingExtensionUiRequest = Extract<
   ExtensionUiRequest,
-  { method: "select" | "confirm" | "input" | "editor" | "custom" }
+  { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "custom" }
 >;
 
 export type ExtensionUiResponse =
   | { type: "extension_ui_response"; id: string; value: string }
   | { type: "extension_ui_response"; id: string; confirmed: boolean }
-  | { type: "extension_ui_response"; id: string; cancelled: true };
+  | { type: "extension_ui_response"; id: string; cancelled: true }
+  | { type: "extension_ui_response"; id: string; answer: AskUserAnswer };
 
 export interface ExtensionStatusItem {
   key: string;

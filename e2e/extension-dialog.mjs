@@ -16,6 +16,24 @@ export const extensionSource = `export default function (pi) {
       ctx.ui.notify("E2E " + mode + " result: " + String(result));
     },
   });
+  pi.registerCommand("e2e-ask-user", {
+    handler: async (mode, ctx) => {
+      const question = {
+        question: "E2E browser question",
+        context: mode === "long" ? "More background. ".repeat(30) : "A detailed reason for asking",
+        options: mode === "freeform" ? [] : [
+          { title: "First", description: "A helpful description" },
+          { title: "Second", description: "Another description" },
+        ],
+        allowMultiple: mode === "multi",
+        allowFreeform: true,
+        allowComment: true,
+        contextExpanded: false,
+      };
+      const answer = await ctx.ui.askUser(question, mode === "timeout" ? 2500 : undefined);
+      ctx.ui.notify("E2E ask_user result: " + JSON.stringify(answer));
+    },
+  });
 }`;
 
 export async function checkExtensionDialogs(page, artifacts, width) {

@@ -15,6 +15,7 @@ import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { AnsiText } from "./AnsiText";
+import { AskUserDialog } from "./AskUserDialog";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -981,9 +982,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       </div>
 
       <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        {extensionDialog && (
-          <ExtensionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
-        )}
+        {extensionDialog?.method === "ask_user"
+          ? <AskUserDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
+          : extensionDialog && <ExtensionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />}
         {extensionCustomUi && (
           <ExtensionCustomPanel key={extensionCustomUi.id} request={extensionCustomUi} onInput={sendExtensionCustomInput} />
         )}

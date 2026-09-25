@@ -928,7 +928,7 @@ export function AppShell() {
       title: translate("i18n.attentionNeeded"),
       body: request.method === "custom"
         ? translate("i18n.extensionInputNeeded")
-        : request.title,
+        : request.method === "ask_user" ? request.question : request.title,
       tag: `pi-extension-ui:${request.id}`,
     });
   }, [deliverSessionNotification, selectedSession, translate]);

@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { checkFilePanel, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
+import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -64,6 +65,14 @@ try {
   // Seed before startup so the first catalogue scan sees every fixture.
   mkdirSync(join(agentDir, "extensions"));
   writeFileSync(join(agentDir, "extensions", "e2e-dialog.js"), extensionSource);
+  // Simulate the recognized external package so the browser owns ask_user exactly once.
+  mkdirSync(join(agentDir, "extensions", "pi-ask-user"));
+  writeFileSync(join(agentDir, "extensions", "pi-ask-user", "index.js"), `export default function (pi) {
+    pi.registerTool({ name: "ask_user", label: "External Ask", description: "External copy",
+      parameters: { type: "object", properties: { question: { type: "string" } }, required: ["question"] },
+      execute: async () => ({ content: [{ type: "text", text: "External copy ran" }], details: undefined }),
+    });
+  }`);
   const longEntries = Array.from({ length: 5000 }, (_, i) =>
     message(`e${i}`, i ? `e${i - 1}` : null, i % 2 ? "assistant" : "user", text(i)));
   longEntries.splice(1, 0, message("alternate", "e0", "user", "E2E alternate history branch"));
@@ -218,7 +227,9 @@ try {
     console.log("PASS: external session-file appends are visible on force/mount reads");
   }
 
-  browser = await chromium.launch();
+  browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+    ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+    : {});
   for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
     context = await browser.newContext({ viewport, locale: "en-US" });
     await context.tracing.start({ screenshots: true, snapshots: true });
@@ -233,6 +244,20 @@ try {
       const url = new URL(response.url());
       if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
     });
+    if (process.env.E2E_ASK_USER_ONLY === "1") {
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await page.locator(".markdown-code-block pre").waitFor();
+      const { data: tools } = await post(`/api/agent/${RICH}`, { type: "get_tools" });
+      assert.deepEqual(tools.filter((tool) => tool.name === "ask_user").map((tool) => tool.active), [true]);
+      assert.match(tools.find((tool) => tool.name === "ask_user").description, /^Ask the user a question/);
+      await checkAskUserDialog(page, viewport.width);
+      assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      await context.tracing.stop();
+      await context.close();
+      context = undefined;
+      page = undefined;
+      continue;
+    }
     const stateReady = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/sessions/${LONG}/state`);
     await page.goto(`${base}/?session=${LONG}`, { waitUntil: "domcontentloaded" });
     assert.equal((await stateReady).status(), 200);
@@ -400,6 +425,7 @@ try {
     await page.locator(".markdown-code-block pre").waitFor();
     await checkFilePanel(page, previewFile);
     await checkExtensionDialogs(page, artifacts, viewport.width);
+    await checkAskUserDialog(page, viewport.width);
     if (viewport.width > 600) {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();

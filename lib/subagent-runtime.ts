@@ -33,6 +33,7 @@ import {
 import type { SessionEntry } from "./types";
 import { buildSubagentPromptPlan } from "./subagent-prompt";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
+import { createAskUserExtension, preferPiWebAskUserExtension } from "./ask-user-extension";
 import { appendSubagentInputFiles, loadSubagentInputFiles } from "./subagent-input";
 import { projectTrustReloadOptions } from "./project-trust";
 import { resolveShellTools } from "./powershell-settings";
@@ -234,9 +235,14 @@ export function createSubagentController(
             : {}),
           appendSystemPrompt,
           // The exact prompt is sent through before_agent_start; see lib/exact-system-prompt.ts.
-          ...(promptPlan.exactSystemPrompt !== undefined
-            ? { extensionFactories: [createExactSystemPromptExtension(() => promptPlan.exactSystemPrompt)] }
+          ...(promptPlan.exactSystemPrompt !== undefined || profile.loadExtensions
+            ? { extensionFactories: [
+                ...(promptPlan.exactSystemPrompt !== undefined
+                  ? [createExactSystemPromptExtension(() => promptPlan.exactSystemPrompt)] : []),
+                ...(profile.loadExtensions ? [createAskUserExtension()] : []),
+              ] }
             : {}),
+          ...(profile.loadExtensions ? { extensionsOverride: preferPiWebAskUserExtension } : {}),
         },
         ...((profile.loadExtensions || profile.loadSkills)
           ? { resourceLoaderReloadOptions: projectTrustReloadOptions(childCwd, agentDir) }
