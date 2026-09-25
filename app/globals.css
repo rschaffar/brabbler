@@ -506,21 +506,32 @@ html.dark .web-login-error {
   background-color: var(--text-dim);
 }
 
-/* Desktop rows reveal actions on hover; touch rows need visible tap targets
-   before the first tap, or the tap selects the row instead. */
-.session-row-actions {
-  display: none;
+/* Keep the row compact on touch; expand its actions only after tapping More. */
+.session-row-action-controls {
+  display: flex;
+  align-items: center;
   gap: 4px;
   flex-shrink: 0;
 }
-@media (hover: none), (pointer: coarse) {
-  .session-row-actions {
+.session-row-actions-toggle,
+.session-row-actions {
+  display: none;
+}
+.session-row-actions {
+  gap: 4px;
+  flex-shrink: 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  .session-row:hover .session-row-actions {
     display: flex;
-    gap: 2px;
   }
-  .session-row-actions > button {
-    min-width: 40px;
-    min-height: 40px;
+}
+@media (hover: none), (pointer: coarse) {
+  .session-row-actions-toggle {
+    display: flex;
+  }
+  .session-row-actions[data-open="true"] {
+    display: flex;
   }
 }
 

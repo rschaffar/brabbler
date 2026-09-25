@@ -538,7 +538,17 @@ try {
       await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
       const row = page.locator(`[data-session-id="${ARCHIVE}"]`);
       await row.scrollIntoViewIfNeeded();
+      const actionsToggle = row.getByRole("button", { name: "Session actions", exact: true });
       const archiveButton = row.getByRole("button", { name: "Archive", exact: true });
+      await actionsToggle.waitFor({ state: "visible" });
+      assert.ok(await actionsToggle.evaluate((button) => button.getBoundingClientRect().width <= 34));
+      assert.equal(await archiveButton.isVisible(), false, "Only the compact toggle should show initially");
+      await actionsToggle.click();
+      await archiveButton.waitFor({ state: "visible" });
+      assert.equal(await actionsToggle.getAttribute("aria-expanded"), "true");
+      await page.keyboard.press("Escape");
+      assert.equal(await archiveButton.isVisible(), false, "Escape should collapse the actions");
+      await actionsToggle.click();
       await archiveButton.waitFor({ state: "visible" });
       const iconOffset = await archiveButton.evaluate((button) => {
         const bounds = button.getBoundingClientRect();
@@ -551,7 +561,10 @@ try {
       await row.waitFor({ state: "detached" });
       assert.equal((await api("/api/sessions")).sessions.find((session) => session.id === ARCHIVE)?.archived, true);
       await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
-      await row.getByRole("button", { name: "Restore", exact: true }).click();
+      const restoreButton = row.getByRole("button", { name: "Restore", exact: true });
+      assert.equal(await restoreButton.isVisible(), false);
+      await row.getByRole("button", { name: "Session actions", exact: true }).click();
+      await restoreButton.click();
       await row.waitFor({ state: "detached" });
       assert.equal((await api("/api/sessions")).sessions.find((session) => session.id === ARCHIVE)?.archived, undefined);
       console.log("PASS: mobile session archive and restore update without a page reload");

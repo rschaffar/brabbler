@@ -290,6 +290,7 @@ export const enLocale: LocalePlugin = {
     "sidebar.newSessionActivity": "New session activity",
     "sidebar.deleteSession": "Delete {title}?",
     "sidebar.archive": "Archive",
+    "sidebar.sessionActions": "Session actions",
     "sidebar.restore": "Restore",
     "sidebar.archivedSessions": "Archived sessions",
     "sidebar.activeSessions": "Active sessions",

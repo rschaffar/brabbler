@@ -290,6 +290,7 @@ export const zhTWLocale: LocalePlugin = {
     "sidebar.newSessionActivity": "工作階段有新活動",
     "sidebar.deleteSession": "刪除 {title}？",
     "sidebar.archive": "封存",
+    "sidebar.sessionActions": "工作階段操作",
     "sidebar.restore": "還原",
     "sidebar.archivedSessions": "已封存工作階段",
     "sidebar.activeSessions": "使用中的工作階段",
