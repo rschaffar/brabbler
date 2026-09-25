@@ -164,7 +164,7 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
                       type="button"
                       className={`activity-item activity-item-${status}${item.nested ? " activity-nested" : ""}${selectedId === session.id ? " activity-selected" : ""}`}
                       onClick={() => onSelect(session, status)}
-                      aria-label={`${label} · ${activityProjectName(session)}${item.parentName ? ` · ${t("activity.childOf", { name: item.parentName })}` : ""} · ${sectionTitle[status]}${status === "needs-you" ? ` · ${methodLabel(item)}${item.attention?.summary ? ` · ${item.attention.summary}` : ""}` : ""} · ${action}`}
+                      aria-label={`${label} · ${activityProjectName(session)}${item.parentName ? ` · ${t("activity.childOf", { name: item.parentName })}` : ""}${session.relation?.kind === "subagent" ? ` · ${t("activity.subagent")}` : ""} · ${sectionTitle[status]}${status === "needs-you" ? ` · ${methodLabel(item)}${item.attention?.summary ? ` · ${item.attention.summary}` : ""}` : ""} · ${action}`}
                     >
                       <span className="activity-item-top">
                         <span className="activity-dot" aria-hidden="true" />
@@ -172,9 +172,9 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
                         <span className="activity-item-action">{action}</span>
                       </span>
                       <span className="activity-item-meta" title={session.projectRoot ?? session.cwd}>
+                        {session.relation?.kind === "subagent" ? `${t("activity.subagent")} · ` : ""}
                         {activityProjectName(session)}
                         {item.parentName && !item.nested ? ` · ${t("activity.childOf", { name: item.parentName })}` : ""}
-                        {item.nested ? ` · ${t("activity.subagent")}` : ""}
                       </span>
                       {status === "needs-you" && <span className="activity-item-reason">
                         {methodLabel(item)}{item.attention?.summary ? ` · ${item.attention.summary}` : ""}
