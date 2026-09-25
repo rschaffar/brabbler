@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStarredSessions } from "@/hooks/useStarredSessions";
 import { useI18n } from "@/hooks/useI18n";
 import { activityProjectName, activitySessionName, getActivitySections, type ActivityItem, type ActivityStatus } from "@/lib/activity";
@@ -15,19 +15,66 @@ interface Props {
   reviewIds: ReadonlySet<string>;
   available: boolean;
   selectedId: string | null;
-  onSelect: (session: SessionInfo) => void;
+  onSelect: (session: SessionInfo, status?: ActivityStatus) => void;
   onClose: () => void;
   hidden?: boolean;
+  recoveryRefreshKey?: number;
 }
 
-const STATUS_ORDER: ActivityStatus[] = ["needs-you", "working", "queued", "ready"];
+const STATUS_ORDER: ActivityStatus[] = ["needs-you", "working", "queued", "interrupted", "ready"];
 
-export function ActivityOverview({ sessions, runningIds, queuedIds, attention, reviewIds, available, selectedId, onSelect, onClose, hidden = false }: Props) {
+export function ActivityOverview({ sessions, runningIds, queuedIds, attention, reviewIds, available, selectedId, onSelect, onClose, hidden = false, recoveryRefreshKey = 0 }: Props) {
   const { t, locale } = useI18n();
   const { starredIds, toggleStarred } = useStarredSessions();
   const [projectFilter, setProjectFilter] = useState("");
-  const all = useMemo(() => getActivitySections(sessions, runningIds, attention, reviewIds, null, queuedIds),
-    [sessions, runningIds, queuedIds, attention, reviewIds]);
+  const [interruptedIds, setInterruptedIds] = useState<Set<string>>(() => new Set());
+  const [recoveryAvailable, setRecoveryAvailable] = useState(true);
+  const [recoveryLoading, setRecoveryLoading] = useState(true);
+
+  // Do not add journal scans to the sidebar's frequent running-state poll.
+  // Only an open, visible Activity panel needs this read-only snapshot.
+  useEffect(() => {
+    if (hidden) return;
+    let controller: AbortController | null = null;
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      controller?.abort();
+      const request = new AbortController();
+      controller = request;
+      void fetch("/api/sessions/interrupted", { cache: "no-store", signal: request.signal })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json() as Promise<{ interruptedSessionIds: string[] }>;
+        })
+        .then(({ interruptedSessionIds }) => {
+          if (!request.signal.aborted) {
+            setInterruptedIds(new Set(interruptedSessionIds));
+            setRecoveryAvailable(true);
+            setRecoveryLoading(false);
+          }
+        })
+        .catch(() => {
+          if (!request.signal.aborted) {
+            setInterruptedIds(new Set());
+            setRecoveryAvailable(false);
+            setRecoveryLoading(false);
+          }
+        });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 15_000);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("online", refresh);
+    return () => {
+      controller?.abort();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("online", refresh);
+    };
+  }, [hidden, recoveryRefreshKey]);
+
+  const all = useMemo(() => getActivitySections(sessions, runningIds, attention, reviewIds, null, queuedIds, interruptedIds),
+    [sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds]);
   const projects = useMemo(() => {
     const keys = new Map<string, string>();
     for (const item of Object.values(all).flat()) keys.set(item.projectKey, activityProjectName(item.session));
@@ -46,11 +93,12 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
     .filter((session) => starredIds.has(session.id) && (!projectFilter || workspaceKeyOf(session) === projectFilter))
     .sort((a, b) => Date.parse(b.modified) - Date.parse(a.modified)), [sessions, starredIds, projectFilter]);
   const sections = useMemo(() => projectFilter
-    ? getActivitySections(sessions, runningIds, attention, reviewIds, projectFilter, queuedIds) : all,
-  [projectFilter, sessions, runningIds, queuedIds, attention, reviewIds, all]);
+    ? getActivitySections(sessions, runningIds, attention, reviewIds, projectFilter, queuedIds, interruptedIds) : all,
+  [projectFilter, sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds, all]);
   const total = starredSessions.length + Object.values(sections).reduce((count, items) => count + items.length, 0);
   const sectionTitle: Record<ActivityStatus, string> = {
-    "needs-you": t("activity.needsYou"), working: t("activity.working"), queued: t("activity.queued"), ready: t("activity.ready"),
+    "needs-you": t("activity.needsYou"), working: t("activity.working"), queued: t("activity.queued"),
+    interrupted: t("activity.interrupted"), ready: t("activity.ready"),
   };
   const methodLabel = (item: ActivityItem): string => {
     switch (item.attention?.method) {
@@ -77,7 +125,8 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
         </select>
       </div>
       {!available && <p role="status" className="activity-unavailable">{t("activity.unavailable")}</p>}
-      {total === 0 && <p className="activity-empty">{t("activity.empty")}</p>}
+      {!recoveryAvailable && <p role="status" className="activity-unavailable">{t("activity.recoveryUnavailable")}</p>}
+      {total === 0 && !recoveryLoading && available && recoveryAvailable && <p className="activity-empty">{t("activity.empty")}</p>}
       <div className="activity-sections">
         {starredSessions.length > 0 && (
           <section aria-label={t("activity.starred")} className="activity-section">
@@ -114,7 +163,7 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
                     <button
                       type="button"
                       className={`activity-item activity-item-${status}${item.nested ? " activity-nested" : ""}${selectedId === session.id ? " activity-selected" : ""}`}
-                      onClick={() => onSelect(session)}
+                      onClick={() => onSelect(session, status)}
                       aria-label={`${label} · ${activityProjectName(session)}${item.parentName ? ` · ${t("activity.childOf", { name: item.parentName })}` : ""} · ${sectionTitle[status]}${status === "needs-you" ? ` · ${methodLabel(item)}${item.attention?.summary ? ` · ${item.attention.summary}` : ""}` : ""} · ${action}`}
                     >
                       <span className="activity-item-top">
@@ -131,6 +180,7 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
                         {methodLabel(item)}{item.attention?.summary ? ` · ${item.attention.summary}` : ""}
                         {item.attention?.since ? ` · ${new Date(item.attention.since).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}` : ""}
                       </span>}
+                      {status === "interrupted" && <span className="activity-item-reason">{t("activity.interruptedHint")}</span>}
                     </button>
                   </div>
                 );

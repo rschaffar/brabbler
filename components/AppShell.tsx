@@ -6,7 +6,7 @@ import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { ActivityOverview } from "./ActivityOverview";
-import { getActivitySections } from "@/lib/activity";
+import { getActivitySections, type ActivityStatus } from "@/lib/activity";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
@@ -155,6 +155,8 @@ export function AppShell() {
   const [activityAttention, setActivityAttention] = useState<SessionAttention[]>([]);
   const [reviewSessionIds, setReviewSessionIds] = useState<Set<string>>(() => new Set());
   const [activityAvailable, setActivityAvailable] = useState(true);
+  const [recoveryRefreshKey, setRecoveryRefreshKey] = useState(0);
+  const handleRecoveryDismissed = useCallback(() => setRecoveryRefreshKey((key) => key + 1), []);
   const handleActivityChange = useCallback((attention: SessionAttention[], reviewIds: Set<string>, available: boolean) => {
     setActivityAttention((previous) => previous.length === attention.length && previous.every((item, index) => {
       const next = attention[index];
@@ -860,10 +862,17 @@ export function AppShell() {
       .catch(() => {});
   }, []);
 
-  const handleActivitySelectSession = useCallback((session: SessionInfo) => {
-    handleSelectSession(session);
+  const handleActivitySelectSession = useCallback((session: SessionInfo, status?: ActivityStatus) => {
+    // Activity can discover a journal entry after this chat's initial load.
+    // Re-selecting the same interrupted row must refresh its warning instead
+    // of taking handleSelectSession's usual no-remount fast path.
+    if (status === "interrupted" && selectedSession?.id === session.id) {
+      setSessionKey((key) => key + 1);
+    } else {
+      handleSelectSession(session);
+    }
     if (isMobile) setActivityMobileList(false);
-  }, [handleSelectSession, isMobile]);
+  }, [handleSelectSession, isMobile, selectedSession?.id]);
   const handleSidebarSelectSession = useCallback((session: SessionInfo, isRestore?: boolean, entryId?: string, blockIndex?: number) => {
     closeActivity();
     handleSelectSession(session, isRestore, entryId, blockIndex);
@@ -2381,6 +2390,7 @@ export function AppShell() {
               attention={activityAttention}
               reviewIds={reviewSessionIds}
               available={activityAvailable}
+              recoveryRefreshKey={recoveryRefreshKey}
               selectedId={selectedSession?.id ?? null}
               onSelect={handleActivitySelectSession}
               onClose={closeActivity}
@@ -2400,6 +2410,7 @@ export function AppShell() {
               newSessionCwd={effectiveNewSessionCwd}
               newSessionDraftKey={newSessionDraftKey}
               onAgentEnd={handleAgentEnd}
+              onRecoveryDismissed={handleRecoveryDismissed}
               onAttentionNeeded={handleAttentionNeeded}
               onSessionCreated={handleSessionCreated}
               onSessionForked={handleSessionForked}

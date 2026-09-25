@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync, type Dirent } from "fs";
 import { join } from "path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
@@ -109,6 +109,26 @@ export function acknowledgePossibleInterruptedRun(sessionId: string, runId: stri
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
+}
+
+// Read only the journal directory, not every Pi transcript. The caller
+// intersects this with the normal session catalogue before displaying rows.
+export function listPossibleInterruptedSessionIds(
+  root = runRoot(),
+  ownerAlive?: (pid: number) => boolean,
+): string[] {
+  let entries: Dirent[];
+  try { entries = readdirSync(root, { withFileTypes: true }); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const interrupted: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !validId(entry.name)) continue;
+    if (readPossibleInterruptedRun(entry.name, root, ownerAlive)) interrupted.push(entry.name);
+  }
+  return interrupted;
 }
 
 export function clearSessionRunRecovery(sessionId: string, root = runRoot()): void {
