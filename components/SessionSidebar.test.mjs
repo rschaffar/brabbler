@@ -4,7 +4,7 @@ import test from "node:test";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { jsx: { runtime: "automatic" }, tsconfigPaths: true });
-const { getSessionListIndices } = await jiti.import("./SessionSidebar.tsx");
+const { getSessionListIndices, updateSessionArchiveState } = await jiti.import("./SessionSidebar.tsx");
 
 const source = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
 const globalStyles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -139,7 +139,7 @@ test("lifecycle refreshes bypass the cache while cross-window polling reuses it"
 
 test("does not expose disk-backed actions for transient sessions", () => {
   assert.match(sessionItemSource, /if \(session\.transient\) return;/);
-  assert.match(sessionItemSource, /\{hovered && !session\.transient && \(/);
+  assert.match(sessionItemSource, /\{!session\.transient && \(/);
 });
 
 test("hides subagent rows and aggregates their state into the main session row", () => {
@@ -153,6 +153,23 @@ test("offers archive and restore beside permanent deletion", () => {
   assert.match(source, /setShowArchived\(\(value\) => !value\)/);
   assert.match(sessionItemSource, /body: JSON\.stringify\(\{ archived: !archivedView \}\)/);
   assert.match(sessionItemSource, /if \(!response\.ok\) throw new Error/);
-  assert.match(sessionItemSource, /onArchived\?\.\(session\.id\)/);
+  assert.match(sessionItemSource, /onArchived\?\.\(session\.id, !archivedView\)/);
   assert.match(sessionItemSource, /onDeleted\?\.\(session\.id\)/);
+});
+
+test("archive and restore immediately update the visible family before a forced refresh", () => {
+  const sessions = [{ id: "root", archived: false }, { id: "child" }];
+  const archived = updateSessionArchiveState(sessions, "root", true);
+  assert.equal(archived[0].archived, true);
+  assert.equal(archived[1], sessions[1]);
+  assert.equal(sessions[0].archived, false);
+  assert.equal(updateSessionArchiveState(archived, "root", false)[0].archived, false);
+  assert.match(source, /sessionLoadIdRef\.current \+= 1;[\s\S]*?setAllSessions\(\(current\) => updateSessionArchiveState\(current, id, archived\)\);[\s\S]*?void loadSessions\(false, true\)/);
+});
+
+test("touch devices can tap centered session actions without revealing hover controls first", () => {
+  assert.match(sessionItemSource, /className="session-row-actions"/);
+  assert.match(sessionItemSource, /display: "flex", alignItems: "center", justifyContent: "center", width: 32/);
+  assert.match(globalStyles, /@media \(hover: none\), \(pointer: coarse\) \{\s*\.session-row-actions \{\s*display: flex;/);
+  assert.match(globalStyles, /\.session-row-actions > button \{\s*min-width: 40px;\s*min-height: 40px;/);
 });

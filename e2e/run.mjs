@@ -33,6 +33,7 @@ const BRANCH = "e2e-branch-session";
 const RICH = "e2e-rich-session";
 const COMPACTED = "e2e-compacted-session";
 const APPEND = "e2e-external-append-session";
+const ARCHIVE = "e2e-archive-session";
 const text = (i) => `E2E message ${String(i).padStart(4, "0")}`;
 const ids = (start, end) => Array.from({ length: end - start }, (_, i) => `e${start + i}`);
 
@@ -134,6 +135,7 @@ try {
     message("root", null, "user", "E2E wrapper root"),
     message("reply", "root", "assistant", "E2E wrapper reply"),
   ]);
+  writeSession(ARCHIVE, [message("root", null, "user", "E2E archive fixture")]);
 
   const probe = createServer();
   probe.listen(0, "127.0.0.1");
@@ -175,7 +177,7 @@ try {
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND].sort());
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE].sort());
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
@@ -291,7 +293,7 @@ try {
     ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
     : {});
   for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
-    context = await browser.newContext({ viewport, locale: "en-US" });
+    context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
     await context.tracing.start({ screenshots: true, snapshots: true });
     page = await context.newPage();
     page.setDefaultTimeout(30_000);
@@ -486,6 +488,30 @@ try {
     await checkFilePanel(page, previewFile);
     await checkExtensionDialogs(page, artifacts, viewport.width);
     await checkAskUserDialog(page, viewport.width);
+    if (viewport.width <= 600) {
+      await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });
+      await page.getByText("E2E archive fixture", { exact: true }).first().waitFor();
+      await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+      const row = page.locator(`[data-session-id="${ARCHIVE}"]`);
+      await row.scrollIntoViewIfNeeded();
+      const archiveButton = row.getByRole("button", { name: "Archive", exact: true });
+      await archiveButton.waitFor({ state: "visible" });
+      const iconOffset = await archiveButton.evaluate((button) => {
+        const bounds = button.getBoundingClientRect();
+        const icon = button.querySelector("svg").getBoundingClientRect();
+        return [Math.abs((icon.left + icon.right - bounds.left - bounds.right) / 2),
+          Math.abs((icon.top + icon.bottom - bounds.top - bounds.bottom) / 2)];
+      });
+      assert.ok(iconOffset.every((offset) => offset <= 1), `Archive icon is off-center: ${iconOffset}`);
+      await archiveButton.click();
+      await row.waitFor({ state: "detached" });
+      assert.equal((await api("/api/sessions")).sessions.find((session) => session.id === ARCHIVE)?.archived, true);
+      await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
+      await row.getByRole("button", { name: "Restore", exact: true }).click();
+      await row.waitFor({ state: "detached" });
+      assert.equal((await api("/api/sessions")).sessions.find((session) => session.id === ARCHIVE)?.archived, undefined);
+      console.log("PASS: mobile session archive and restore update without a page reload");
+    }
     if (viewport.width > 600) {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();

@@ -20,6 +20,10 @@ import { SessionSearch } from "./SessionSearch";
 // height, so the list can be windowed (only the visible slice is mounted).
 const SESSION_LIST_ITEM_HEIGHT = 54;
 
+export function updateSessionArchiveState(sessions: readonly SessionInfo[], id: string, archived: boolean): SessionInfo[] {
+  return sessions.map((session) => session.id === id ? { ...session, archived } : session);
+}
+
 export function getSessionListIndices(count: number, scrollTop: number, viewportHeight: number, focusedIndex = -1): number[] {
   const overscan = 8;
   const visibleCount = Math.ceil((viewportHeight || 600) / SESSION_LIST_ITEM_HEIGHT) + overscan * 2;
@@ -1849,9 +1853,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     onClick={() => handleSelectSessionFromList(family.root)}
                     onRenamed={loadSessions}
                     archivedView={showArchived}
-                    onArchived={(id) => {
+                    onArchived={(id, archived) => {
+                      // An older in-flight list response must not undo this action.
+                      sessionLoadIdRef.current += 1;
+                      setAllSessions((current) => updateSessionArchiveState(current, id, archived));
                       onSessionArchived?.(familySessions.some((item) => item.id === selectedSessionId) ? selectedSessionId! : id);
-                      loadSessions();
+                      void loadSessions(false, true);
                     }}
                     onDeleted={(id) => {
                       onSessionDeleted?.(id);
@@ -2165,7 +2172,7 @@ function SessionItem({
   onClick: () => void;
   onRenamed?: () => void;
   onDeleted?: (id: string) => void;
-  onArchived?: (id: string) => void;
+  onArchived?: (id: string, archived: boolean) => void;
   archivedView?: boolean;
   depth?: number;
   hasChildren?: boolean;
@@ -2252,7 +2259,7 @@ function SessionItem({
         body: JSON.stringify({ archived: !archivedView }),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      onArchived?.(session.id);
+      onArchived?.(session.id, !archivedView);
     } catch (error) {
       setActionError(String(error));
     } finally {
@@ -2297,6 +2304,7 @@ function SessionItem({
   // Fixed-height outer wrapper — content swaps in place so the list never reflows
   return (
     <div
+      data-session-id={session.id}
       onClick={confirmDelete || renaming ? undefined : onClick}
       onContextMenu={confirmDelete || renaming ? undefined : handleContextMenu}
       onMouseEnter={() => setHovered(true)}
@@ -2462,15 +2470,15 @@ function SessionItem({
             </button>
           )}
 
-          {/* Action buttons — shown on hover */}
-          {hovered && !session.transient && (
-            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          {/* Keep row actions mounted for touch devices, where hover cannot reveal them. */}
+          {!session.transient && (
+            <div className="session-row-actions" style={{ display: hovered ? "flex" : undefined }}>
               <button
                 onClick={handleArchive}
                 disabled={archiveBusy || isRunning}
                 title={isRunning ? t("sidebar.archiveRunning") : t(archivedView ? "sidebar.restore" : "sidebar.archive")}
                 aria-label={t(archivedView ? "sidebar.restore" : "sidebar.archive")}
-                style={{ width: 32, height: 32, padding: 0, background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 7, color: "var(--text-muted)", cursor: isRunning ? "not-allowed" : "pointer", flexShrink: 0 }}
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, padding: 0, background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 7, color: "var(--text-muted)", cursor: isRunning ? "not-allowed" : "pointer", flexShrink: 0 }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v12h14V8M10 12h4" />
