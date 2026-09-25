@@ -277,7 +277,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   const [restoreAnchorReady, setRestoreAnchorReady] = useState(false);
 
   const {
-    loading, error, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamState,
+    loading, error, possibleInterruptedRun, dismissPossibleInterruption, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamState,
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, modelSwitching, sessionStats,
@@ -982,6 +982,12 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         <NoticeShelf notices={notices} floating onPauseChange={setNoticePaused} />
       </div>
 
+      {possibleInterruptedRun && (
+        <div role="status" className="mx-4 mt-3 flex items-start gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-text">
+          <span className="min-w-0 flex-1">{t("chat.possibleInterruptedRun")}</span>
+          <button type="button" onClick={() => void dismissPossibleInterruption()} className="shrink-0 text-accent hover:underline" aria-label={t("chat.dismissInterruption")}>{t("chat.dismissInterruption")}</button>
+        </div>
+      )}
       <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
         {extensionDialog?.method === "ask_user"
           ? <AskUserDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />

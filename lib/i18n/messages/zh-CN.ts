@@ -378,6 +378,8 @@ export const zhCNLocale: LocalePlugin = {
     "chat.followUpHint": "在 Agent 完成后排队此消息",
     "chat.inputHistory": "输入历史",
     "chat.modelError": "模型错误",
+    "chat.possibleInterruptedRun": "上一次运行可能因服务器重启而中断。已保存的对话仍可查看，但未恢复执行中的任务。继续前请检查工具操作的结果；系统不会自动重发消息。",
+    "chat.dismissInterruption": "关闭提示",
     "chat.modelScopeWarning": "模型范围警告",
     "chat.modelScopeWarnings": "模型范围警告",
     "chat.send": "发送",

@@ -19,6 +19,8 @@ const { DELETE: deleteSession, GET: getSessionDetail, PATCH: renameSession } = a
 const { GET: getSessionList } = await jiti.import("./route.ts");
 const { GET: getRunningSessions } = await jiti.import("../agent/running/route.ts");
 const { GET: getSessionState } = await jiti.import("./[id]/state/route.ts");
+const { POST: dismissRecovery } = await jiti.import("./[id]/recovery/route.ts");
+const { recordRunStart, readPossibleInterruptedRun } = await jiti.import("../../../lib/session-run-recovery.ts");
 const {
   cacheSessionPath,
   invalidateSessionPathCache,
@@ -74,6 +76,51 @@ test("list versions expose idle session creation, rename and deletion to other w
   assert.ok(deleted.sessionListVersion > updated.sessionListVersion);
   assert.deepEqual(deleted.sessions, []);
   assert.equal((await (await getRunningSessions()).json()).sessionListVersion, deleted.sessionListVersion);
+});
+
+test("session detail reports a possible interrupted run without reopening it; dismissal and deletion persist", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-web-restart-recovery-"));
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = dir;
+  let id;
+  t.after(async () => {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    if (id) invalidateSessionPathCache(id);
+    invalidateSessionListCache();
+    await rm(dir, { recursive: true, force: true });
+  });
+  const manager = SessionManager.create(dir);
+  manager.appendMessage({ role: "user", content: "Saved prompt", timestamp: Date.now() });
+  manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "Saved response" }], timestamp: Date.now() });
+  id = manager.getSessionId();
+  cacheSessionPath(id, manager.getSessionFile());
+  const runId = recordRunStart(id);
+  const root = join(dir, "pi-web", "run-journal", "v1");
+  const startFile = join(root, id, `${runId}.start.json`);
+  const start = JSON.parse(await readFile(startFile, "utf8"));
+  await writeFile(startFile, JSON.stringify({ ...start, ownerPid: 99999999 }));
+  const context = { params: Promise.resolve({ id }) };
+  const url = `http://localhost/api/sessions/${id}`;
+  const detail = await getSessionDetail(new Request(`${url}?force=1`), context);
+  assert.equal(detail.status, 200);
+  assert.equal((await detail.json()).possibleInterruptedRun.runId, runId);
+  const wrongRun = await dismissRecovery(new Request(`${url}/recovery`, { method: "POST", body: JSON.stringify({ runId: "wrong" }) }), context);
+  assert.equal(wrongRun.status, 409);
+  const secondRun = recordRunStart(id);
+  const secondStartFile = join(root, id, `${secondRun}.start.json`);
+  const secondStart = JSON.parse(await readFile(secondStartFile, "utf8"));
+  await writeFile(secondStartFile, JSON.stringify({ ...secondStart, ownerPid: 99999999,
+    startedAt: new Date(Date.parse(start.startedAt) - 60_000).toISOString() }));
+  const dismiss = await dismissRecovery(new Request(`${url}/recovery`, { method: "POST", body: JSON.stringify({ runId }) }), context);
+  assert.equal(dismiss.status, 200);
+  assert.equal((await dismiss.json()).possibleInterruptedRun.runId, secondRun);
+  const dismissSecond = await dismissRecovery(new Request(`${url}/recovery`, { method: "POST", body: JSON.stringify({ runId: secondRun }) }), context);
+  assert.equal(dismissSecond.status, 200);
+  assert.equal((await dismissSecond.json()).possibleInterruptedRun, null);
+  assert.equal((await (await getSessionDetail(new Request(url), context)).json()).possibleInterruptedRun, null);
+  assert.equal((await deleteSession(new Request(url, { method: "DELETE" }), context)).status, 200);
+  assert.equal(readPossibleInterruptedRun(id, root, () => false), null);
 });
 
 test("archive and restore preserve the session file and refresh the catalogue", async (t) => {

@@ -378,6 +378,8 @@ export const enLocale: LocalePlugin = {
     "chat.followUpHint": "Queue this message after the agent finishes",
     "chat.inputHistory": "Input history",
     "chat.modelError": "Model error",
+    "chat.possibleInterruptedRun": "A previous run may have been interrupted by a server restart. The saved conversation is available, but in-flight work was not resumed. Check any tool effects before continuing; nothing will be resent automatically.",
+    "chat.dismissInterruption": "Dismiss",
     "chat.modelScopeWarning": "Model scope warning",
     "chat.modelScopeWarnings": "Model scope warnings",
     "chat.send": "Send",
