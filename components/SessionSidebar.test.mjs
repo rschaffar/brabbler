@@ -78,7 +78,7 @@ test("exposes the loaded session catalog to the shell", () => {
   assert.match(source, /onSessionsChange\?\.\(allSessions\)/);
 });
 
-test("subagent completion stays silent and never becomes unread", () => {
+test("subagent completion stays silent in the sidebar but is reviewable in Activity", () => {
   assert.match(source, /completionNotificationSuppressedSessionIds\?: string\[\]/);
   assert.match(
     source,
@@ -90,6 +90,9 @@ test("subagent completion stays silent and never becomes unread", () => {
     source,
     /filter\(\(session\) => session\.relation\?\.kind !== "subagent" && !session\.archived\)[\s\S]*?unreadEligibleIds\.has\(id\)/,
   );
+  assert.match(source, /const completedSubagents = completedInBackground\.filter\(\(id\) => knownSubagentIds\.has\(id\) && unreviewedCompletion\(id\)\)/);
+  assert.match(source, /saveUnreadSessionIds\(subagentReviewIds, SUBAGENT_REVIEW_STORAGE_KEY\)/);
+  assert.match(source, /onActivityChange\?\.\(attention, new Set\(\[\.\.\.unreadSessionIds, \.\.\.subagentReviewIds\]\), activityAvailable\)/);
 });
 
 test("includes project activity counts in accessible labels", () => {

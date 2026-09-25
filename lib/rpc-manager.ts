@@ -23,9 +23,12 @@ import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type {
+  BlockingExtensionUiRequest,
   ExtensionUiRequest,
   ExtensionUiResponse,
   ExtensionWidgetItem,
+  SessionAttention,
+  SessionCompletion,
   SessionEntry,
   SessionInfo,
   SessionMessageEntry,
@@ -48,6 +51,7 @@ import { CHAT_ONLY_RESOURCE_LOADER_OPTIONS, contextFilesSystemPrompt } from "./c
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createAskUserExtension, preferPiWebAskUserExtension, type AskUserUiContext } from "./ask-user-extension";
 import { normalizeAskUserAnswer } from "./ask-user";
+import { isBlockingExtensionUiRequest } from "./browser-notifications";
 import {
   appendClearedSessionToolSelection,
   appendSessionToolSelection,
@@ -66,6 +70,12 @@ export interface AgentEvent {
 
 type EventListener = (event: AgentEvent) => void;
 type AgentRunCompleteListener = (sessionId: string) => void;
+
+function attentionSummary(request: BlockingExtensionUiRequest): string {
+  if (request.method === "custom") return "";
+  if (request.method === "ask_user") return request.question.trim().replace(/\s+/g, " ").slice(0, 160);
+  return request.title.trim().replace(/\s+/g, " ").slice(0, 160);
+}
 
 type PendingUiResponse = {
   resolve: (response: ExtensionUiResponse) => void;
@@ -230,6 +240,7 @@ export class AgentSessionWrapper {
   private activeToolEvents = new Map<string, AgentEvent>();
   private pendingUiResponses = new Map<string, PendingUiResponse>();
   private pendingUiRequests = new Map<string, AgentEvent>();
+  private pendingUiStartedAt = new Map<string, number>();
   private activeCustomUis = new Map<string, ActiveCustomUi>();
   private extensionUiAbortController = new AbortController();
   private extensionStatuses = new Map<string, string>();
@@ -295,6 +306,23 @@ export class AgentSessionWrapper {
     return this._alive && (this.pendingPromptCount > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning);
   }
 
+  getPendingAttention(): SessionAttention | null {
+    if (!this._alive) return null;
+    const requests = [...this.pendingUiRequests.entries()]
+      .filter(([, event]) => isBlockingExtensionUiRequest(event as ExtensionUiRequest));
+    if (requests.length === 0) return null;
+    const [id, event] = requests.sort(([a], [b]) =>
+      (this.pendingUiStartedAt.get(a) ?? 0) - (this.pendingUiStartedAt.get(b) ?? 0))[0];
+    const request = event as ExtensionUiRequest;
+    if (!isBlockingExtensionUiRequest(request)) return null;
+    return {
+      sessionId: this.sessionId,
+      method: request.method,
+      summary: attentionSummary(request),
+      since: this.pendingUiStartedAt.get(id) ?? Date.now(),
+    };
+  }
+
   /**
    * Drop this idle wrapper when the on-disk JSONL has an entry the in-memory
    * index never saw (another pi process appended). Rechecks isRunning() so a
@@ -342,6 +370,7 @@ export class AgentSessionWrapper {
   private notifyAgentRunCompleteIfIdle(): void {
     if (!this.agentRunNeedsCompletion || this.isRunning()) return;
     this.agentRunNeedsCompletion = false;
+    recordRpcSessionCompletion(this.sessionId);
     if (this.suppressCompletionNotifications) return;
     try {
       this.onAgentRunComplete?.(this.sessionId);
@@ -1051,6 +1080,7 @@ export class AgentSessionWrapper {
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
     this.pendingUiResponses.clear();
     this.pendingUiRequests.clear();
+    this.pendingUiStartedAt.clear();
     this.activeToolEvents.clear();
     this.clearExtensionWidgets(false);
 
@@ -1351,6 +1381,7 @@ export class AgentSessionWrapper {
       method: "custom",
       lines,
     } as ExtensionUiRequest as AgentEvent;
+    this.pendingUiStartedAt.set(id, this.pendingUiStartedAt.get(id) ?? Date.now());
     this.pendingUiRequests.set(id, event);
     this.emit(event);
   }
@@ -1361,6 +1392,7 @@ export class AgentSessionWrapper {
     custom.settled = true;
     this.activeCustomUis.delete(id);
     this.pendingUiRequests.delete(id);
+    this.pendingUiStartedAt.delete(id);
     try {
       custom.component.dispose?.();
     } catch {
@@ -1495,6 +1527,7 @@ export class AgentSessionWrapper {
         if (timeoutId) clearTimeout(timeoutId);
         abortSignal.removeEventListener("abort", onAbort);
         this.pendingUiRequests.delete(id);
+        this.pendingUiStartedAt.delete(id);
         this.pendingUiResponses.delete(id);
         this.emit({ type: "extension_ui_closed", id });
       };
@@ -1510,6 +1543,7 @@ export class AgentSessionWrapper {
       if (timeout) timeoutId = setTimeout(() => settle(defaultValue), timeout);
       abortSignal.addEventListener("abort", onAbort, { once: true });
 
+      this.pendingUiStartedAt.set(id, Date.now());
       this.pendingUiRequests.set(id, fullRequest as AgentEvent);
       this.pendingUiResponses.set(id, {
         resolve: (response) => settle(parseResponse(response)),
@@ -1695,6 +1729,25 @@ declare global {
   var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
   var __piAccountSwitchLocks: Map<string, Promise<void>> | undefined;
   var __piStartingSessionCwds: Map<string, number> | undefined;
+  var __piSessionCompletedAt: Map<string, number> | undefined;
+}
+
+function getCompletionRegistry(): Map<string, number> {
+  return globalThis.__piSessionCompletedAt ??= new Map();
+}
+
+function recordRpcSessionCompletion(sessionId: string): void {
+  const registry = getCompletionRegistry();
+  const at = Math.max(Date.now(), (registry.get(sessionId) ?? 0) + 1);
+  // A bounded recent-run ledger covers short turns that finish between polls.
+  // Browser acknowledgements persist independently; this is not transcript history.
+  registry.delete(sessionId);
+  registry.set(sessionId, at);
+  if (registry.size > 1000) registry.delete(registry.keys().next().value!);
+}
+
+export function getRecentRpcSessionCompletions(): SessionCompletion[] {
+  return [...getCompletionRegistry()].map(([sessionId, at]) => ({ sessionId, at }));
 }
 
 function getRegistry(): Map<string, AgentSessionWrapper> {
@@ -2014,6 +2067,13 @@ export async function destroyRpcSessionsForCwd(cwd: string): Promise<number> {
   );
   await Promise.all(sessions.map((session) => session.shutdown()));
   return sessions.length;
+}
+
+export function getRpcSessionAttention(): SessionAttention[] {
+  return [...getRegistry().values()].flatMap((session) => {
+    const attention = session.getPendingAttention?.();
+    return attention ? [attention] : [];
+  });
 }
 
 export function getRunningRpcSessionIds(): string[] {

@@ -217,6 +217,19 @@ export type BlockingExtensionUiRequest = Extract<
   { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "custom" }
 >;
 
+/** Lightweight, read-only attention metadata from Pi Web's live wrappers. */
+export interface SessionAttention {
+  sessionId: string;
+  method: BlockingExtensionUiRequest["method"];
+  summary: string;
+  since: number;
+}
+
+export interface SessionCompletion {
+  sessionId: string;
+  at: number;
+}
+
 export type ExtensionUiResponse =
   | { type: "extension_ui_response"; id: string; value: string }
   | { type: "extension_ui_response"; id: string; confirmed: boolean }

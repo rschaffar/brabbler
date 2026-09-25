@@ -11,6 +11,7 @@ Local browser UI for the [pi coding agent](https://github.com/earendil-works/pi)
 ## Features
 
 - **Session workspace**: browse, resume, rename, archive, restore, export, and delete conversations grouped by project, with running state, context usage, cost, and compaction details.
+- **Activity overview**: triage Pi Web-managed sessions and subagents across projects by requests for input, working and queued runs, and results not yet reviewed in this browser. Open a row to answer in the existing chat; desktop keeps the queue alongside it, while mobile provides a back-to-Activity path. External Pi CLI, Herdr, and remote agents are not monitored.
 - **Two ways to branch**: **New session** creates an independent session file from an earlier message; **Edit from here** creates a branch inside the current session.
 - **Project file tools**: browse and upload files, inspect Git diffs, and preview source, Markdown, images, audio, PDFs, and DOCX files with automatic refresh.
 - **Git worktrees**: switch checkouts from the sidebar while keeping sessions from the same repository grouped together.
@@ -139,6 +140,10 @@ Pi agent extensions.
 Pi Web includes a web-focused adaptation of [pi-ask-user](https://github.com/edlsh/pi-ask-user) v0.15.0 (MIT; see `lib/ask-user.LICENSE`). In ordinary web sessions and subagents that load extensions, it replaces the recognized external `pi-ask-user` package's tool, preserving its parameter names, answer/result format, and `ask:answered` / `ask:cancelled` events. The browser form uses Pi Web's existing per-session extension UI transport, so pending questions survive an SSE reconnect and expire or close on Stop. The standalone Pi terminal still uses its separately installed extension. Chat-only sessions load no extensions, including `ask_user`.
 
 Terminal-only layout and shortcut options remain accepted for compatibility but do not alter the browser form. Unrelated extensions that also register `ask_user` are not silently suppressed; resolve those tool collisions explicitly.
+
+### Activity overview
+
+Use the Activity button in the top bar to see **Needs you**, **Working**, **Queued**, and **Ready to review** across projects; filter the list by project. Needs you requires an actual pending extension question or interactive dialog. Ready to review is tracked per browser for Pi Web runs that finished while another chat was selected, including subagents (without adding subagent completion sounds). Opening a result acknowledges it across tabs in that browser. A new browser starts with a clean review baseline rather than treating the server's older completed runs as new results. The overview uses the current Pi Web server's in-memory status and cannot determine whether a separate Pi CLI or Herdr process is running. After a Pi Web server restart, previously unobserved completions are not reconstructed from idle session files.
 
 ### Extension Session Liveness
 
