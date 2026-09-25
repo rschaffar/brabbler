@@ -1,4 +1,5 @@
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { accountCredentialStore, validateAccountSelection } from "./provider-accounts";
 import type { ProviderUsageId } from "./provider-usage-ids";
 
 export { PROVIDER_USAGE_IDS, isProviderUsageId, type ProviderUsageId } from "./provider-usage-ids";
@@ -74,8 +75,16 @@ const CURRENCY: Record<"moonshotai" | "moonshotai-cn" | "minimax" | "minimax-cn"
   "minimax-cn": "CNY",
 };
 
-export async function queryProviderUsage(providerId: ProviderUsageId): Promise<ProviderUsageResult> {
-  const runtime = await ModelRuntime.create({ refreshOnCreate: false });
+export async function queryProviderUsage(providerId: ProviderUsageId, accountId: string | null = null): Promise<ProviderUsageResult> {
+  if (accountId !== null) {
+    // Validate before constructing the runtime. A missing, wrong-provider, or pending account
+    // must never resolve through the Pi default (or an ambient provider credential).
+    validateAccountSelection({ [providerId]: accountId });
+  }
+  const runtime = await ModelRuntime.create({
+    refreshOnCreate: false,
+    ...(accountId === null ? {} : { credentials: accountCredentialStore({ [providerId]: accountId }) }),
+  });
   const provider = runtime.getProvider(providerId);
   // Catalog providers such as opencode-go carry their base URL per model rather than on the
   // provider, so fall back to the first model before rejecting a non-official origin.
@@ -94,7 +103,7 @@ export async function queryProviderUsage(providerId: ProviderUsageId): Promise<P
   }
 
   try {
-    const payload = await fetchJson(providerId, resolved.auth);
+    const payload = await fetchJson(providerId, resolved.auth, accountId !== null);
     const capturedAt = Date.now();
     return {
       providerId,
@@ -110,7 +119,7 @@ async function fetchJson(providerId: ProviderUsageId, auth: {
   apiKey?: string;
   headers?: Record<string, string | null>;
   baseUrl?: string;
-}): Promise<Record<string, unknown>> {
+}, accountBound: boolean): Promise<Record<string, unknown>> {
   if (auth.baseUrl && !isOfficialProviderUsageOrigin(providerId, auth.baseUrl)) {
     throw new Error("A custom provider origin cannot be used for official usage queries.");
   }
@@ -119,6 +128,13 @@ async function fetchJson(providerId: ProviderUsageId, auth: {
     if (typeof value === "string") headers.set(name, value);
   }
   if (!headers.has("authorization") && auth.apiKey) headers.set("Authorization", `Bearer ${auth.apiKey}`);
+  if (providerId === "openai-codex") {
+    // Match the SDK's Codex requests: the account is identified by a claim in the access
+    // token, not by our local account id. Never use a caller-supplied account header.
+    const accountId = codexAccountId(auth.apiKey);
+    if (accountId) headers.set("chatgpt-account-id", accountId);
+    else if (accountBound) throw new Error("Codex account ID is unavailable.");
+  }
 
   let endpoint = ENDPOINTS[providerId];
   if (providerId === "minimax" || providerId === "minimax-cn") {
@@ -355,6 +371,19 @@ function windowLabel(seconds: number | undefined): string {
   if (minutes >= 10_080) return "Weekly";
   if (minutes >= 60) return `${Math.round(minutes / 60)}h`;
   return `${minutes}m`;
+}
+
+function codexAccountId(token: string | undefined): string | undefined {
+  if (!token || token.split(".").length !== 3) return undefined;
+  try {
+    const payload: unknown = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
+    const auth = record(record(payload)?.["https://api.openai.com/auth"]);
+    const id = auth?.chatgpt_account_id;
+    // Headers must be safe even if a malformed JWT supplies control characters.
+    return typeof id === "string" && /^[\x21-\x7e]{1,256}$/u.test(id) ? id : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function bearerToken(value: string | null): string | undefined {

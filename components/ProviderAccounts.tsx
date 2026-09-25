@@ -4,6 +4,9 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
 import { safeAuthorizationUrl } from "@/lib/oauth-url";
+import { isProviderUsageId } from "@/lib/provider-usage-ids";
+import { remainingRateLimits } from "@/lib/provider-usage-limits";
+import type { ProviderUsageResult } from "@/lib/provider-usage";
 import { DeviceAuthorization } from "./DeviceAuthorization";
 
 type Account = { id: string; provider: string; label: string; type: "oauth" | "api_key"; authorized: boolean };
@@ -34,9 +37,19 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [manualProvider, setManualProvider] = useState("");
   const [providerChoices, setProviderChoices] = useState<string[]>([]);
+  const [oauthChoices, setOauthChoices] = useState<string[]>([]);
+  const [apiKeyChoices, setApiKeyChoices] = useState<string[]>([]);
+  const [editingDefaultKey, setEditingDefaultKey] = useState(false);
+  const [defaultApiKey, setDefaultApiKey] = useState("");
+  const [usage, setUsage] = useState<Record<string, ProviderUsageResult>>({});
+  const usageRequestsRef = useRef(new Map<string, symbol>());
+  const usageFetchedRef = useRef(new Map<string, number>());
   const provider = manualProvider || currentProvider;
   const [project, setProject] = useState<Selection>({});
   const [session, setSession] = useState<Selection | null>(null);
+  const [loadedFor, setLoadedFor] = useState("");
+  const selectionIdentity = JSON.stringify([cwd, sessionId]);
+  const selectionReady = loadedFor === selectionIdentity;
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [type, setType] = useState<"oauth" | "api_key">("oauth");
@@ -57,14 +70,46 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
     setAccounts(result.accounts);
     setProject(result.project);
     setSession(result.session);
+    setLoadedFor(JSON.stringify([cwd, sessionId]));
   }, [cwd, sessionId]);
   useEffect(() => { void reload().catch((cause) => setError(String(cause))); }, [reload]);
-  useEffect(() => {
-    void fetch("/api/auth/providers").then(async (response) => {
-      if (!response.ok) return;
-      const result = await response.json() as { oauthProviders?: { id: string }[]; apiKeyProviders?: { id: string }[] };
-      setProviderChoices([...new Set([...(result.oauthProviders ?? []), ...(result.apiKeyProviders ?? [])].map((item) => item.id))].sort());
-    }).catch(() => {});
+  const reloadProviders = useCallback(async () => {
+    const response = await fetch("/api/auth/providers");
+    if (!response.ok) return;
+    const result = await response.json() as { oauthProviders?: { id: string }[]; apiKeyProviders?: { id: string }[] };
+    setOauthChoices((result.oauthProviders ?? []).map((item) => item.id));
+    setApiKeyChoices((result.apiKeyProviders ?? []).map((item) => item.id));
+    setProviderChoices([...new Set([...(result.oauthProviders ?? []), ...(result.apiKeyProviders ?? [])].map((item) => item.id))].sort());
+  }, []);
+  useEffect(() => { void reloadProviders().catch(() => {}); }, [reloadProviders]);
+  const usageKey = (providerId: string, accountId: string | null) => JSON.stringify([providerId, accountId]);
+  const clearUsage = (providerId: string, accountId: string | null) => {
+    const key = usageKey(providerId, accountId);
+    usageFetchedRef.current.delete(key);
+    usageRequestsRef.current.delete(key);
+    setUsage((previous) => { const next = { ...previous }; delete next[key]; return next; });
+  };
+  const queryUsage = useCallback(async (providerId: string, accountId: string | null, force = false) => {
+    if (!isProviderUsageId(providerId)) return;
+    const key = JSON.stringify([providerId, accountId]);
+    if (usageRequestsRef.current.has(key) || (!force && Date.now() - (usageFetchedRef.current.get(key) ?? 0) < 60_000)) return;
+    const requestId = Symbol(key);
+    usageRequestsRef.current.set(key, requestId);
+    try {
+      const response = await fetch("/api/provider-usage/query", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerId, accountId }),
+      });
+      if (!response.ok) throw new Error("Usage unavailable");
+      const result = await response.json() as ProviderUsageResult;
+      if (usageRequestsRef.current.get(key) !== requestId) return;
+      usageFetchedRef.current.set(key, Date.now());
+      setUsage((previous) => ({ ...previous, [key]: result }));
+    } catch {
+      if (usageRequestsRef.current.get(key) !== requestId) return;
+      usageFetchedRef.current.set(key, Date.now() - 45_000);
+      setUsage((previous) => ({ ...previous, [key]: { providerId, status: "query-failed", message: "Usage unavailable" } as ProviderUsageResult }));
+    } finally { if (usageRequestsRef.current.get(key) === requestId) usageRequestsRef.current.delete(key); }
   }, []);
   useEffect(() => () => { eventsRef.current?.close(); eventsRef.current = null; }, []);
 
@@ -122,11 +167,40 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
 
   const available = accounts.filter((account) => account.provider === provider && account.authorized);
   // An existing session never silently follows a later change to the project default.
-  const selected = (session ?? project)[provider] ?? "";
-  const currentId = (session ?? project)[currentProvider] ?? "";
-  const currentAccount = currentId
+  const selected = selectionReady ? (session ?? project)[provider] ?? "" : "";
+  const currentId = selectionReady ? (session ?? project)[currentProvider] ?? "" : "";
+  const currentAccount = !selectionReady ? "Loading account…" : currentId
     ? accounts.find((account) => account.id === currentId && account.provider === currentProvider && account.authorized)?.label ?? "Unavailable account"
     : "Pi default";
+  useEffect(() => {
+    if (!selectionReady || !currentProvider || currentAccount === "Unavailable account") return;
+    void queryUsage(currentProvider, currentId || null);
+  }, [selectionReady, currentProvider, currentId, currentAccount, queryUsage]);
+  useEffect(() => {
+    if (!selectionReady || !currentProvider || currentAccount === "Unavailable account") return;
+    const refreshOnReturn = () => { if (document.visibilityState === "visible") void queryUsage(currentProvider, currentId || null); };
+    window.addEventListener("focus", refreshOnReturn);
+    document.addEventListener("visibilitychange", refreshOnReturn);
+    return () => { window.removeEventListener("focus", refreshOnReturn); document.removeEventListener("visibilitychange", refreshOnReturn); };
+  }, [selectionReady, currentProvider, currentId, currentAccount, queryUsage]);
+  useEffect(() => {
+    if (!open || !adding || !provider) return;
+    void queryUsage(provider, null);
+    for (const account of accounts) {
+      if (account.provider === provider && account.authorized) void queryUsage(provider, account.id);
+    }
+  }, [open, adding, provider, accounts, queryUsage]);
+  const usageText = (providerId: string, accountId: string | null) => {
+    if (!isProviderUsageId(providerId)) return "Usage not supported";
+    const snapshot = usage[usageKey(providerId, accountId)];
+    if (!snapshot) return "Loading usage…";
+    if (snapshot.status !== "ready") return snapshot.message;
+    return remainingRateLimits(snapshot.report).join(" · ") || "No weekly or 5h limit reported";
+  };
+  const currentLimits = selectionReady && isProviderUsageId(currentProvider) && currentAccount !== "Unavailable account"
+    ? usage[usageKey(currentProvider, currentId || null)] : undefined;
+  const currentUsage = currentLimits?.status === "ready" ? remainingRateLimits(currentLimits.report).join(" · ") : "";
+  const compactUsage = currentUsage.replaceAll("Weekly ", "W ").replaceAll(" remaining", "");
 
   const changeSession = async (value: string) => {
     setPending(true); setError("");
@@ -157,10 +231,10 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
     setPending(false); setOauthPending(false); setDevice(null); setOauthUrl(""); setManualRequest(null);
     setMessage(""); setError("");
   };
-  const startOAuth = (id: string) => {
+  const startOAuth = (id: string | null) => {
     eventsRef.current?.close();
     const loginProvider = provider;
-    const events = new EventSource(`/api/auth/login/${encodeURIComponent(loginProvider)}?accountId=${encodeURIComponent(id)}`);
+    const events = new EventSource(`/api/auth/login/${encodeURIComponent(loginProvider)}${id ? `?accountId=${encodeURIComponent(id)}` : ""}`);
     eventsRef.current = events;
     setPending(true); setOauthPending(true); setError(""); setDevice(null); setOauthUrl(""); setManualRequest(null);
     setMessage("Waiting for authorization…");
@@ -193,7 +267,10 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
         events.close(); eventsRef.current = null;
         setPending(false); setOauthPending(false); setAdding(false); setOauthUrl(""); setDevice(null); setManualRequest(null);
         setMessage("Account authorized");
-        void Promise.all([reload(), onAccountsChanged()]).catch((cause) => setError(String(cause)));
+        clearUsage(loginProvider, id);
+        void Promise.all([reload(), reloadProviders(), onAccountsChanged()]).then(() => {
+          void queryUsage(loginProvider, id, true);
+        }).catch((cause) => setError(String(cause)));
       } else if (data.type === "error" || data.type === "cancelled") {
         events.close(); eventsRef.current = null;
         setPending(false); setOauthPending(false); setOauthUrl(""); setDevice(null); setManualRequest(null);
@@ -228,14 +305,14 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
   };
 
   return <div className="min-w-0 shrink-0">
-    <button ref={triggerRef} type="button" className="flex h-8 min-w-0 max-w-[100px] items-center gap-1 rounded-lg px-2 text-xs text-text-muted hover:bg-bg-hover"
-      title={t("auth.accountFor", { provider: currentProvider || t("auth.account"), account: currentAccount })}
-      aria-label={t("auth.accountFor", { provider: currentProvider || t("auth.account"), account: currentAccount })}
+    <button ref={triggerRef} type="button" className="flex h-8 min-w-0 items-center gap-1 rounded-lg px-2 text-xs text-text-muted hover:bg-bg-hover" style={{ maxWidth: "min(58vw, 280px)" }}
+      title={`${t("auth.accountFor", { provider: currentProvider || t("auth.account"), account: currentAccount })}${currentUsage ? ` · ${currentUsage}` : ""}`}
+      aria-label={`${t("auth.accountFor", { provider: currentProvider || t("auth.account"), account: currentAccount })}${currentUsage ? ` · ${currentUsage}` : ""}`}
       aria-expanded={open} aria-controls={panelId}
       onClick={() => setOpen((value) => !value)}>
       <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
         <circle cx="12" cy="8" r="3" /><path d="M5 20a7 7 0 0 1 14 0" />
-      </svg><span className="min-w-0 truncate">{currentAccount}</span>
+      </svg><span className="min-w-0 truncate">{currentAccount}</span>{compactUsage && <span className="truncate whitespace-nowrap text-[10px] text-text-dim">{compactUsage}</span>}
     </button>
     {open && createPortal(<div ref={panelRef} id={panelId} role="region" aria-label="Provider accounts"
       className="overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg-panel p-3 text-xs text-text-muted shadow-xl"
@@ -246,7 +323,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
       </div>
       <div className="flex flex-col gap-2">
         <label className="flex flex-col gap-1">Account provider
-          <select className={field} aria-label="Account provider" value={provider} disabled={oauthPending} onChange={(event) => setManualProvider(event.target.value)}>
+          <select className={field} aria-label="Account provider" value={provider} disabled={oauthPending} onChange={(event) => { setManualProvider(event.target.value); setEditingDefaultKey(false); setDefaultApiKey(""); }}>
             <option value="">Choose a provider…</option>
             {currentProvider && !providerChoices.includes(currentProvider) && <option value={currentProvider}>{currentProvider}</option>}
             {providerChoices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}
@@ -254,7 +331,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
         </label>
         {provider && <>
           <label className="flex flex-col gap-1">{provider} account
-            <select className={field} aria-label="Session account" value={selected} disabled={busy || pending}
+            <select className={field} aria-label="Session account" value={selected} disabled={!selectionReady || busy || pending}
               onChange={(event) => void changeSession(event.target.value)}>
               <option value="">Pi default</option>
               {available.map((account) => <option key={account.id} value={account.id}>{account.label}</option>)}
@@ -262,7 +339,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
             </select>
           </label>
           <label className="flex flex-col gap-1" title="Default for new sessions in this project (including worktrees)">New sessions in project
-            <select className={field} aria-label="Project account default" value={project[provider] ?? ""} disabled={pending}
+            <select className={field} aria-label="Project account default" value={project[provider] ?? ""} disabled={!selectionReady || pending}
               onChange={(event) => void changeProject(event.target.value)}>
               <option value="">Pi default</option>
               {available.map((account) => <option key={account.id} value={account.id}>{account.label}</option>)}
@@ -278,6 +355,20 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
         </select>
         {type === "api_key" && <input className={field} aria-label="API key for new account" type="password" autoComplete="off" placeholder="API key" value={apiKey} onChange={(event) => setApiKey(event.target.value)} />}
         <button className={`${field} self-start`} type="button" disabled={pending || !label.trim() || (type === "api_key" && !apiKey.trim())} onClick={() => void addAccount()}>Authorize account</button>
+        <div className="flex flex-wrap items-center gap-1 border-b border-border pb-2">
+          <strong className="text-text">Pi default</strong>
+          {oauthChoices.includes(provider) && <button className={field} type="button" disabled={pending} onClick={() => startOAuth(null)}>Change login</button>}
+          {apiKeyChoices.includes(provider) && <button className={field} type="button" disabled={pending} onClick={() => setEditingDefaultKey((value) => !value)}>Change API key</button>}
+          {editingDefaultKey && apiKeyChoices.includes(provider) && <form className="flex w-full gap-1" onSubmit={(event) => { event.preventDefault(); if (!defaultApiKey.trim()) return;
+            setPending(true); setError("");
+            void jsonRequest(`/api/auth/api-key/${encodeURIComponent(provider)}`, "POST", { apiKey: defaultApiKey })
+              .then(async () => { clearUsage(provider, null); setDefaultApiKey(""); setEditingDefaultKey(false); await onAccountsChanged(); await queryUsage(provider, null, true); })
+              .catch((cause) => setError(String(cause))).finally(() => setPending(false));
+          }}><input className={`${field} flex-1`} type="password" autoComplete="off" aria-label="Pi default API key" value={defaultApiKey} onChange={(event) => setDefaultApiKey(event.target.value)} />
+            <button type="submit" className={field} disabled={pending || !defaultApiKey.trim()}>Save</button></form>}
+          <span className="w-full text-text-dim">{usageText(provider, null)}</span>
+          {isProviderUsageId(provider) && <button type="button" className={field} onClick={() => void queryUsage(provider, null, true)}>Refresh usage</button>}
+        </div>
         {accounts.filter((account) => account.provider === provider).map((account) => <div key={account.id} className="flex flex-wrap items-center gap-1">
           <span>{account.label}{!account.authorized ? " (not authorized)" : ""}</span>
           <button className={field} type="button" disabled={pending} onClick={() => {
@@ -289,7 +380,9 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
               void jsonRequest("/api/auth/accounts", "DELETE", { id: account.id }).then(reload).catch((cause) => setError(String(cause)));
             }
           }}>Remove</button>
-          {!account.authorized && account.type === "oauth" && <button className={field} type="button" disabled={pending} onClick={() => startOAuth(account.id)}>Retry login</button>}
+          {account.type === "oauth" && <button className={field} type="button" disabled={pending} onClick={() => startOAuth(account.id)}>{account.authorized ? "Change login" : "Retry login"}</button>}
+          <span className="w-full text-text-dim">{account.authorized ? usageText(provider, account.id) : "Sign in to see usage"}</span>
+          {account.authorized && isProviderUsageId(provider) && <button type="button" className={field} onClick={() => void queryUsage(provider, account.id, true)}>Refresh usage</button>}
         </div>)}
       </div>}
       {message && <p role="status" className="mt-2 break-words">{message}</p>}
