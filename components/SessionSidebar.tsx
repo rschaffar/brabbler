@@ -114,6 +114,7 @@ interface Props {
   onInitialRestoreDone?: () => void;
   refreshKey?: number;
   onSessionDeleted?: (sessionId: string) => void;
+  onSessionArchived?: (sessionId: string) => void;
   selectedCwd?: string | null;
   onCwdChange?: (
     cwd: string | null,
@@ -382,9 +383,10 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
   // Tracked in a ref only: the version is compared against the polled value to
   // decide whether the list needs reloading, and no render reads it.
   const sessionListVersionRef = useRef<number | null>(null);
@@ -533,7 +535,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       // is intentionally silent even if an older client marked them unread.
       const unreadEligibleIds = new Set(
         data.sessions
-          .filter((session) => session.relation?.kind !== "subagent")
+          .filter((session) => session.relation?.kind !== "subagent" && !session.archived)
           .map((session) => session.id),
       );
       setUnreadSessionIds((prev) => {
@@ -1040,7 +1042,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Per-project activity counts (running / unread) for the workspace selector.
   // Uses the same stable server key as the project list and filtering.
   const projectActivity = useMemo(
-    () => getProjectActivity(allSessions, runningSessionIds, unreadSessionIds),
+    () => getProjectActivity(allSessions.filter((session) => !session.archived), runningSessionIds, unreadSessionIds),
     [allSessions, runningSessionIds, unreadSessionIds],
   );
 
@@ -1087,7 +1089,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         }
       : null);
 
-  const sessionFamilies = useMemo(() => listSessionFamilies(filteredSessions), [filteredSessions]);
+  const sessionFamilies = useMemo(
+    () => listSessionFamilies(filteredSessions).filter((family) => Boolean(family.root.archived) === showArchived),
+    [filteredSessions, showArchived],
+  );
 
   const virtualIndices = useMemo(() => getSessionListIndices(
     sessionFamilies.length,
@@ -1778,7 +1783,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           overflow: "hidden",
         }}
       >
-        <SessionSearch open={sessionSearchOpen} query={sessionSearchQuery} selectedSessionId={selectedSessionId} onSelectSession={handleSelectSessionFromList}>
+        <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 10px" }}>
+        <button
+          type="button"
+          onClick={() => setShowArchived((value) => !value)}
+          aria-pressed={showArchived}
+          style={{ border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, padding: "4px 6px" }}
+        >
+          {showArchived ? t("sidebar.activeSessions") : t("sidebar.archivedSessions")}
+        </button>
+      </div>
+      <SessionSearch open={sessionSearchOpen} query={sessionSearchQuery} selectedSessionId={selectedSessionId} onSelectSession={handleSelectSessionFromList}>
         <div
           ref={listScrollRef}
           onScroll={handleListScroll}
@@ -1833,6 +1848,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     isUnread={familySessions.some((session) => unreadSessionIds.has(session.id))}
                     onClick={() => handleSelectSessionFromList(family.root)}
                     onRenamed={loadSessions}
+                    archivedView={showArchived}
+                    onArchived={(id) => {
+                      onSessionArchived?.(familySessions.some((item) => item.id === selectedSessionId) ? selectedSessionId! : id);
+                      loadSessions();
+                    }}
                     onDeleted={(id) => {
                       onSessionDeleted?.(id);
                       loadSessions();
@@ -2131,6 +2151,8 @@ function SessionItem({
   onClick,
   onRenamed,
   onDeleted,
+  onArchived,
+  archivedView = false,
   depth = 0,
   hasChildren = false,
   collapsed = false,
@@ -2143,6 +2165,8 @@ function SessionItem({
   onClick: () => void;
   onRenamed?: () => void;
   onDeleted?: (id: string) => void;
+  onArchived?: (id: string) => void;
+  archivedView?: boolean;
   depth?: number;
   hasChildren?: boolean;
   collapsed?: boolean;
@@ -2154,6 +2178,8 @@ function SessionItem({
   const [renameValue, setRenameValue] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Select the whole name once the rename input is mounted (startRename's
@@ -2187,14 +2213,15 @@ function SessionItem({
     // a skill-invoked session stays a no-op instead of persisting raw XML.)
     if (renameValue === title || name === (session.name ?? "")) return;
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       onRenamed?.();
-    } catch {
-      // ignore
+    } catch (error) {
+      setActionError(String(error));
     }
   }, [renameValue, session.id, session.name, onRenamed, title]);
 
@@ -2203,12 +2230,35 @@ function SessionItem({
     setConfirmDelete(false);
     setDeleting(true);
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       onDeleted?.(session.id);
-    } catch {
+    } catch (error) {
+      setActionError(String(error));
+    } finally {
       setDeleting(false);
     }
   }, [session.id, session.transient, onDeleted]);
+
+  const handleArchive = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (session.transient || archiveBusy || isRunning) return;
+    setArchiveBusy(true);
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: !archivedView }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      onArchived?.(session.id);
+    } catch (error) {
+      setActionError(String(error));
+    } finally {
+      setArchiveBusy(false);
+    }
+  }, [session.id, session.transient, archiveBusy, isRunning, archivedView, onArchived]);
 
   const handleDeleteClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -2251,6 +2301,7 @@ function SessionItem({
       onContextMenu={confirmDelete || renaming ? undefined : handleContextMenu}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); }}
+      title={actionError ?? undefined}
       style={{
         height: SESSION_LIST_ITEM_HEIGHT,
         display: "flex",
@@ -2414,6 +2465,17 @@ function SessionItem({
           {/* Action buttons — shown on hover */}
           {hovered && !session.transient && (
             <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+              <button
+                onClick={handleArchive}
+                disabled={archiveBusy || isRunning}
+                title={isRunning ? t("sidebar.archiveRunning") : t(archivedView ? "sidebar.restore" : "sidebar.archive")}
+                aria-label={t(archivedView ? "sidebar.restore" : "sidebar.archive")}
+                style={{ width: 32, height: 32, padding: 0, background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 7, color: "var(--text-muted)", cursor: isRunning ? "not-allowed" : "pointer", flexShrink: 0 }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v12h14V8M10 12h4" />
+                </svg>
+              </button>
               <button
                 onClick={startRename}
                 title={t("sidebar.rename")}

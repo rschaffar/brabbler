@@ -28,6 +28,7 @@ export interface MockSession {
   cwd: string;
   created: string;
   name?: string;
+  archived?: boolean;
   relation?: SessionInfo["relation"];
   parentSessionId?: string;
   entries: SessionEntry[];
@@ -187,6 +188,7 @@ export function sessionInfo(session: MockSession): SessionInfo {
     modified: lastActivity(session),
     messageCount: stats.totalMessages,
     firstMessage,
+    ...(session.archived ? { archived: true } : {}),
     ...(session.parentSessionId ? { parentSessionId: session.parentSessionId } : {}),
     ...(session.relation ? { relation: session.relation } : {}),
     transient: session.transient,

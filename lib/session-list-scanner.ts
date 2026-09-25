@@ -11,6 +11,7 @@ import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "./atomic-file";
+import { SESSION_ARCHIVE_TYPE } from "./session-archive";
 
 export interface ScannedSessionInfo {
 	path: string;
@@ -21,6 +22,7 @@ export interface ScannedSessionInfo {
 	modified: Date;
 	messageCount: number;
 	firstMessage: string;
+	archived?: boolean;
 	parentSessionPath?: string;
 	/** True when only header/stat metadata was available for this listing. */
 	detailsPending?: boolean;
@@ -123,6 +125,18 @@ function deferredSessionInfo(
 	};
 }
 
+async function readArchiveState(filePath: string): Promise<boolean> {
+	let archived = false;
+	const lines = createInterface({ input: createReadStream(filePath, { encoding: "utf8" }), crlfDelay: Infinity });
+	for await (const line of lines) {
+		if (!line.includes(SESSION_ARCHIVE_TYPE)) continue;
+		const entry = parseLine(line);
+		if (entry?.type !== "custom" || entry.customType !== SESSION_ARCHIVE_TYPE || !isRecord(entry.data)) continue;
+		if (entry.data.version === 1 && typeof entry.data.archived === "boolean") archived = entry.data.archived;
+	}
+	return archived;
+}
+
 function extractTextContent(message: RawEntry): string {
 	const content = message.content;
 	if (typeof content === "string") return content;
@@ -165,6 +179,7 @@ export async function scanSessionFileInfo(
 		let messageCount = 0;
 		let firstMessage = "";
 		let lastActivityTime: number | undefined;
+		let archived = false;
 
 		const rl = createInterface({
 			input: createReadStream(filePath, { encoding: "utf8" }),
@@ -181,6 +196,10 @@ export async function scanSessionFileInfo(
 				continue;
 			}
 
+			if (entry.type === "custom" && entry.customType === SESSION_ARCHIVE_TYPE) {
+				const data = entry.data as RawEntry | undefined;
+				if (data?.version === 1 && typeof data.archived === "boolean") archived = data.archived;
+			}
 			if (entry.type === "session_info") {
 				name =
 					typeof entry.name === "string" && entry.name.trim()
@@ -237,6 +256,7 @@ export async function scanSessionFileInfo(
 			modified,
 			messageCount,
 			firstMessage: firstMessage || "(no messages)",
+			...(archived ? { archived: true } : {}),
 		};
 	} catch {
 		return null;
@@ -312,6 +332,7 @@ function loadPersistedIndex(): void {
 				typeof info.cwd !== "string" ||
 				typeof info.firstMessage !== "string" ||
 				(info.name !== undefined && typeof info.name !== "string") ||
+				(info.archived !== undefined && typeof info.archived !== "boolean") ||
 				(info.parentSessionPath !== undefined && typeof info.parentSessionPath !== "string") ||
 				typeof info.messageCount !== "number" || !Number.isSafeInteger(info.messageCount) || info.messageCount < 0 ||
 				typeof info.created !== "string" || typeof info.modified !== "string"
@@ -326,6 +347,7 @@ function loadPersistedIndex(): void {
 					id: info.id,
 					cwd: info.cwd,
 					name: info.name,
+					...(info.archived ? { archived: true } : {}),
 					parentSessionPath: info.parentSessionPath,
 					firstMessage: info.firstMessage,
 					messageCount: info.messageCount,
@@ -412,17 +434,29 @@ export async function listSessionsIncremental(
 			continue;
 		}
 		if (deferDetails) {
-			// Header and stat only: a later normal listing fills in the transcript
-			// details, so a first paint does not wait on parsing every file.
+			// Archive markers can occur anywhere in an append-only transcript.
+			// Resolve them even for pending rows so a cold first paint never
+			// briefly reveals an archived session as active.
 			const summary = deferredSessionInfo(filePath, fp);
-			if (summary) results[resultIndex] = summary;
-			else index.delete(filePath);
+			if (summary) {
+				changed.push({ filePath, fp, resultIndex });
+				results[resultIndex] = summary;
+			} else index.delete(filePath);
 			continue;
 		}
 		changed.push({ filePath, fp, resultIndex });
 	}
 
 	await runPool(changed, async ({ filePath, fp, resultIndex }) => {
+		if (deferDetails) {
+			try {
+				const summary = results[resultIndex];
+				if (summary) summary.archived = await readArchiveState(filePath);
+			} catch {
+				results[resultIndex] = null;
+			}
+			return;
+		}
 		const info = await scanSessionFileInfo(filePath);
 		if (info) {
 			index.set(filePath, { fp, info });

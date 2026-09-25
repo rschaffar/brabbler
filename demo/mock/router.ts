@@ -57,9 +57,14 @@ async function sessionsRoute(request: MockRequest): Promise<Response> {
   if (!session) return error("Session not found", 404);
   if (!sub) {
     if (request.method === "PATCH") {
-      const body = await request.json<{ name?: string }>();
-      if (typeof body.name !== "string") return error("name is required", 400);
-      session.name = body.name.trim() || undefined;
+      const body = await request.json<{ name?: string; archived?: boolean }>();
+      if (typeof body.archived === "boolean" && body.name === undefined) {
+        if (session.transient) return error("Session not found", 404);
+        if (session.live?.running) return error("Stop the session before archiving it", 409);
+        session.archived = body.archived;
+      } else if (typeof body.name === "string" && body.archived === undefined) {
+        session.name = body.name.trim() || undefined;
+      } else return error("name or archived is required", 400);
       markTouched();
       bumpSessionListVersion();
       return json({ ok: true });

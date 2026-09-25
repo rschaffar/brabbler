@@ -10,7 +10,7 @@ Local browser UI for the [pi coding agent](https://github.com/earendil-works/pi)
 
 ## Features
 
-- **Session workspace**: browse, resume, rename, export, and delete conversations grouped by project, with running state, context usage, cost, and compaction details.
+- **Session workspace**: browse, resume, rename, archive, restore, export, and delete conversations grouped by project, with running state, context usage, cost, and compaction details.
 - **Two ways to branch**: **New session** creates an independent session file from an earlier message; **Edit from here** creates a branch inside the current session.
 - **Project file tools**: browse and upload files, inspect Git diffs, and preview source, Markdown, images, audio, PDFs, and DOCX files with automatic refresh.
 - **Git worktrees**: switch checkouts from the sidebar while keeping sessions from the same repository grouped together.
@@ -97,6 +97,7 @@ npx @agegr/pi-web@latest
 ## Notes
 
 - **Agent data**: Pi Web reads pi data from `~/.pi/agent` by default, including session files under `sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`. Set `PI_CODING_AGENT_DIR` to use another pi agent directory.
+- **Session archive**: Archiving hides a session (and its subagents) from the active list and content search without moving or deleting its Pi session file. Switch to **Archived sessions** in the sidebar to restore it or delete it permanently. Stop a running session before archiving it.
 - **Filesystem access**: Pi Web must be able to read the agent data directory and the working directories recorded by its sessions. Run Pi Web in the same filesystem environment as pi when sharing existing sessions.
 - **Shared configuration**: the Models panel uses pi's model, settings, and credential storage, so changes are visible to both interfaces.
 - **File access boundary**: the file browser is limited to working directories selected in Pi Web and project or session roots it already knows about; it is not a general filesystem browser.

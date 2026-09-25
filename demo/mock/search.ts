@@ -15,8 +15,10 @@ export async function searchSessions(query: string) {
   const needle = query.trim().toLowerCase();
   const results: unknown[] = [];
   if (!needle) return { results, truncated: false };
-  for (const session of allSessions()) {
-    if (session.transient) continue;
+  const sessions = allSessions();
+  const archivedIds = new Set(sessions.filter((session) => session.archived).map((session) => session.id));
+  for (const session of sessions) {
+    if (session.transient || session.archived || session.relation?.kind === "subagent" && archivedIds.has(session.relation.parentSessionId)) continue;
     for (const entry of session.entries) {
       const blocks = blocksOf(entry);
       for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {

@@ -76,6 +76,59 @@ test("list versions expose idle session creation, rename and deletion to other w
   assert.equal((await (await getRunningSessions()).json()).sessionListVersion, deleted.sessionListVersion);
 });
 
+test("archive and restore preserve the session file and refresh the catalogue", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-web-archive-"));
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = dir;
+  invalidateSessionListCache();
+  let id;
+  t.after(async () => {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    if (id) invalidateSessionPathCache(id);
+    invalidateSessionListCache();
+    await rm(dir, { recursive: true, force: true });
+  });
+  const manager = SessionManager.create(dir);
+  manager.appendMessage({ role: "user", content: "Archive fixture", timestamp: Date.now() });
+  manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "Done" }], timestamp: Date.now() });
+  id = manager.getSessionId();
+  const path = manager.getSessionFile();
+  cacheSessionPath(id, path);
+  invalidateSessionListCache();
+  const context = { params: Promise.resolve({ id }) };
+  const url = `http://localhost/api/sessions/${id}`;
+  const patch = (body) => renameSession(new Request(url, { method: "PATCH", body: JSON.stringify(body) }), context);
+  const list = async (summary = false) => (await getSessionList(new Request(`http://localhost/api/sessions${summary ? "?summary=1" : ""}`))).json();
+  const before = await list();
+  assert.equal((await patch({ archived: true })).status, 200);
+  const archived = await list();
+  assert.match(await readFile(path, "utf8"), /pi-web:archive/);
+  assert.ok(archived.sessionListVersion > before.sessionListVersion);
+  assert.equal(archived.sessions.find((session) => session.id === id)?.archived, true);
+  assert.equal((await list(true)).sessions.find((session) => session.id === id)?.archived, true);
+  assert.match(await readFile(path, "utf8"), /pi-web:archive/);
+  assert.equal((await patch({ archived: false })).status, 200);
+  assert.equal((await list()).sessions.find((session) => session.id === id)?.archived, undefined);
+  assert.equal((await patch({ archived: "yes" })).status, 400);
+  assert.equal((await patch({ name: "x", archived: true })).status, 400);
+  const transient = SessionManager.create(dir);
+  cacheSessionPath(transient.getSessionId(), transient.getSessionFile());
+  assert.equal((await renameSession(
+    new Request(`http://localhost/api/sessions/${transient.getSessionId()}`, { method: "PATCH", body: JSON.stringify({ archived: true }) }),
+    { params: Promise.resolve({ id: transient.getSessionId() }) },
+  )).status, 409);
+  invalidateSessionPathCache(transient.getSessionId());
+  const previousRegistry = globalThis.__piSessions;
+  globalThis.__piSessions = new Map([[id, { isRunning: () => true }]]);
+  try {
+    assert.equal((await patch({ archived: true })).status, 409);
+    assert.match(await readFile(path, "utf8"), /"archived":false/);
+  } finally {
+    globalThis.__piSessions = previousRegistry;
+  }
+});
+
 test("session listing returns a gzip-compressed response when the client accepts it", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-list-gzip-"));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;

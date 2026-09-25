@@ -24,6 +24,7 @@ import { computeSessionRevision } from "@/lib/session-revision";
 import type { SessionEntry } from "@/lib/types";
 import { readSubagentRun, readSubagentSessionResources, SUBAGENT_META_TYPE } from "@/lib/subagents";
 import { readSessionToolSelection } from "@/lib/session-tool-selection";
+import { appendSessionArchiveState, isSessionArchived } from "@/lib/session-archive";
 import { jsonResponse } from "@/lib/json-response";
 
 export async function GET(
@@ -116,6 +117,7 @@ export async function GET(
       created: header.timestamp,
       modified,
       messageCount: stats.totalMessages,
+      archived: isSessionArchived(entries as never),
       firstMessage: firstUserMessage
         ? (() => {
             const c = (firstUserMessage as { content: unknown }).content;
@@ -169,25 +171,41 @@ export async function GET(
   }
 }
 
-// PATCH /api/sessions/[id]  body: { name: string }
+// PATCH /api/sessions/[id] body: { name: string } | { archived: boolean }
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
   try {
-    const { name } = await req.json() as { name?: string };
-    if (typeof name !== "string") {
-      return NextResponse.json({ error: "name is required" }, { status: 400 });
-    }
+    const body = await req.json() as { name?: unknown; archived?: unknown };
     const filePath = await resolveSessionPath(id);
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    // PATCH writes via appendSessionInfo — open fresh, bypassing the cache.
+    if ((typeof body.archived !== "boolean" && typeof body.name !== "string")
+      || (body.archived !== undefined && body.name !== undefined)) {
+      return NextResponse.json({ error: "name or archived is required" }, { status: 400 });
+    }
+    if (typeof body.archived === "boolean") {
+      if (!existsSync(filePath)) return NextResponse.json({ error: "Session not persisted yet" }, { status: 409 });
+      const rpc = getRpcSession(id);
+      if (rpc?.isRunning()) {
+        return NextResponse.json({ error: "Stop the session before archiving it" }, { status: 409 });
+      }
+      // An idle wrapper still holds a stale SessionManager. Evict it before
+      // appending so a later prompt reloads the archive marker from disk.
+      await rpc?.shutdown();
+    }
+    // PATCH writes via a fresh manager, bypassing the cache.
     const sm = openSessionManager(filePath, { mutable: true });
-    sm.appendSessionInfo(name.trim());
+    if (typeof body.archived === "boolean") {
+      const archived = isSessionArchived(sm.getEntries() as never);
+      if (archived !== body.archived) appendSessionArchiveState(sm, body.archived);
+    } else {
+      sm.appendSessionInfo((body.name as string).trim());
+    }
     invalidateSessionManagerCache(filePath);
     invalidateSessionListCache();
     return NextResponse.json({ ok: true });

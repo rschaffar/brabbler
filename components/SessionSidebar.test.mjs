@@ -88,7 +88,7 @@ test("subagent completion stays silent and never becomes unread", () => {
   assert.match(source, /if \(completedWithNotifications\.length > 0\) \{\s*onBackgroundTaskDone\?\.\(\)/);
   assert.match(
     source,
-    /filter\(\(session\) => session\.relation\?\.kind !== "subagent"\)[\s\S]*?unreadEligibleIds\.has\(id\)/,
+    /filter\(\(session\) => session\.relation\?\.kind !== "subagent" && !session\.archived\)[\s\S]*?unreadEligibleIds\.has\(id\)/,
   );
 });
 
@@ -143,8 +143,16 @@ test("does not expose disk-backed actions for transient sessions", () => {
 });
 
 test("hides subagent rows and aggregates their state into the main session row", () => {
-  assert.match(source, /const sessionFamilies = useMemo\(\(\) => listSessionFamilies\(filteredSessions\)/);
+  assert.match(source, /listSessionFamilies\(filteredSessions\)\.filter\(\(family\) => Boolean\(family\.root\.archived\) === showArchived\)/);
   assert.match(source, /familySessions\.some\(\(session\) => session\.id === selectedSessionId\)/);
   assert.match(source, /familySessions\.some\(\(session\) => runningSessionIds\.has\(session\.id\)\)/);
   assert.doesNotMatch(source, /function SessionTreeItem/);
+});
+
+test("offers archive and restore beside permanent deletion", () => {
+  assert.match(source, /setShowArchived\(\(value\) => !value\)/);
+  assert.match(sessionItemSource, /body: JSON\.stringify\(\{ archived: !archivedView \}\)/);
+  assert.match(sessionItemSource, /if \(!response\.ok\) throw new Error/);
+  assert.match(sessionItemSource, /onArchived\?\.\(session\.id\)/);
+  assert.match(sessionItemSource, /onDeleted\?\.\(session\.id\)/);
 });

@@ -361,6 +361,8 @@ export interface SessionInfo {
   modified: string;
   messageCount: number;
   firstMessage: string;
+  /** True when this session is hidden from the active-session list. */
+  archived?: boolean;
   /** True while the sidebar has only header/stat metadata for this session. */
   detailsPending?: boolean;
   parentSessionId?: string; // source session for a fork, or parent session for a subagent
