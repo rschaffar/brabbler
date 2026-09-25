@@ -65,6 +65,7 @@ export interface SessionData {
   stats?: SessionFileStats;
   /** True when GET ?force=1 dropped a stale live wrapper and rebuilt from disk. */
   wrapperRebuilt?: boolean;
+  possibleInterruptedRun?: { runId: string; startedAt: string } | null;
 }
 
 interface AgentEvent {
@@ -307,6 +308,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [data, setData] = useState<SessionData | null>(null);
   const [loading, setLoading] = useState(!isNew);
   const [error, setError] = useState<string | null>(null);
+  const [possibleInterruptedRun, setPossibleInterruptedRun] = useState<{ runId: string; startedAt: string } | null>(null);
   const [activeLeafId, setActiveLeafId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [activeToolResults, setActiveToolResults] = useState<Map<string, ToolResultMessage>>(new Map());
@@ -550,6 +552,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           setEntryIds([]);
           setHistoryCursor(null);
           setHasEarlierMessages(false);
+          setPossibleInterruptedRun(null);
           setError(null);
         }
         deleteSessionViewSnapshot(sid);
@@ -638,6 +641,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setLiveThinkingLevel(asConcreteThinkingLevel(d.context.thinkingLevel));
       }
 
+      setPossibleInterruptedRun(d.possibleInterruptedRun ?? null);
       messagesLoaded = true;
       if (showLoading) setLoading(false);
       if (!includeState) return null;
@@ -2218,6 +2222,26 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [scrollToBottom]);
 
+  const dismissPossibleInterruption = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    const run = possibleInterruptedRun;
+    if (!sid || !run) return;
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sid)}/recovery`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId: run.runId }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = await response.json() as { possibleInterruptedRun: SessionData["possibleInterruptedRun"] };
+      if (sessionIdRef.current === sid) {
+        setPossibleInterruptedRun((current) => current?.runId === run.runId ? result.possibleInterruptedRun ?? null : current);
+      }
+    } catch (error) {
+      addNotice({ type: "error", message: `Could not dismiss interruption notice: ${String(error)}` });
+    }
+  }, [possibleInterruptedRun, addNotice]);
+
   // Load session on mount
   useEffect(() => {
     sessionHookMountedRef.current = true;
@@ -2455,7 +2479,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   return {
     // State
-    data, loading, error, activeLeafId, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamState,
+    data, loading, error, possibleInterruptedRun, dismissPossibleInterruption, activeLeafId, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamState,
     agentRunning, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, modelSwitching, sessionStats, autoCompactionEnabled,

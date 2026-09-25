@@ -26,6 +26,7 @@ import { readSubagentRun, readSubagentSessionResources, SUBAGENT_META_TYPE } fro
 import { readSessionToolSelection } from "@/lib/session-tool-selection";
 import { appendSessionArchiveState, isSessionArchived } from "@/lib/session-archive";
 import { jsonResponse } from "@/lib/json-response";
+import { clearSessionRunRecovery, readPossibleInterruptedRun } from "@/lib/session-run-recovery";
 
 export async function GET(
   req: Request,
@@ -133,6 +134,12 @@ export async function GET(
       transient: !filePath || !existsSync(filePath),
     }]))[0] : null;
 
+    // Recovery metadata is independent of the transcript snapshot: never
+    // instantiate a wrapper or mutate Pi JSONL merely to inspect it.
+    let possibleInterruptedRun = null;
+    try { possibleInterruptedRun = readPossibleInterruptedRun(id); }
+    catch (error) { console.error("[pi-web] Could not inspect run journal:", error); }
+
     return perf?.attach(jsonResponse(
       req,
       {
@@ -146,6 +153,7 @@ export async function GET(
         context,
         stats,
         totalActiveMs,
+        possibleInterruptedRun,
         ...(toolNames !== undefined ? { toolNames } : {}),
         ...(wrapperRebuilt ? { wrapperRebuilt: true } : {}),
       },
@@ -162,6 +170,7 @@ export async function GET(
         context,
         stats,
         totalActiveMs,
+        possibleInterruptedRun,
         ...(toolNames !== undefined ? { toolNames } : {}),
         ...(wrapperRebuilt ? { wrapperRebuilt: true } : {}),
       },
@@ -373,6 +382,7 @@ export async function DELETE(
       invalidateSessionPathCache(deletedId);
       invalidateSessionManagerCache(deletedPath);
     }
+    for (const deletedId of deletedSessionIds) clearSessionRunRecovery(deletedId);
     invalidateSessionListCache();
     return NextResponse.json({ ok: true });
   } catch (error) {

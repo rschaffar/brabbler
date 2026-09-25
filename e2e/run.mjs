@@ -83,6 +83,13 @@ try {
     message("old", "root", "assistant", "Inactive branch answer"),
     message("new", "root", "assistant", "Active branch answer"),
   ]);
+  const recoveryDir = join(agentDir, "pi-web", "run-journal", "v1", BRANCH);
+  mkdirSync(recoveryDir, { recursive: true });
+  const recoveryRunId = "11111111-1111-4111-8111-111111111111";
+  writeFileSync(join(recoveryDir, `${recoveryRunId}.start.json`), JSON.stringify({
+    version: 1, runId: recoveryRunId, sessionId: BRANCH, ownerPid: 99999999,
+    startedAt: new Date().toISOString(),
+  }));
   const toolResult = message("result", "call", "toolResult", [{ type: "text", text: "E2E tool output" }]);
   Object.assign(toolResult.message, { toolCallId: "t1", toolName: "bash", isError: false });
   const richEntries = [
@@ -369,6 +376,20 @@ try {
     await page.goto(`${base}/?session=${BRANCH}`, { waitUntil: "domcontentloaded" });
     await page.getByText("Active branch answer", { exact: true }).waitFor();
     assert.equal(await page.getByText("Inactive branch answer", { exact: true }).count(), 0);
+    const interruption = page.getByText("A previous run may have been interrupted", { exact: false });
+    if (viewport.width === 1280) {
+      await interruption.waitFor();
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await interruption.waitFor();
+      await page.getByRole("button", { name: "Dismiss" }).click();
+      await interruption.waitFor({ state: "detached" });
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.getByText("Active branch answer", { exact: true }).waitFor();
+      assert.equal(await interruption.count(), 0);
+    } else {
+      assert.equal(await interruption.count(), 0, "acknowledgement persists across tabs");
+    }
+    console.log("PASS: interrupted run notice survives reload until dismissed and never replaces saved history");
     const thinkingRequests = [];
     page.on("request", (request) => {
       if (new URL(request.url()).pathname.endsWith("/thinking")) thinkingRequests.push(request.url());

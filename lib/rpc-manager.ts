@@ -3,6 +3,7 @@ import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
+import { recordRunStart, recordRunSettlement } from "./session-run-recovery";
 import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { accountCredentialStore, getProjectAccounts, validateAccountSelection, type AccountSelection } from "./provider-accounts";
@@ -588,15 +589,26 @@ export class AgentSessionWrapper {
           const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
           const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
           let preflightAccepted = false;
+          const journalSessionId = this.inner.sessionId;
+          let journalRunId: string | null = null;
           let preflightSettled = false;
           let promptSettled = false;
           let acceptPreflight!: () => void;
           let rejectPreflight!: (error: unknown) => void;
           const preflight = new Promise<void>((resolve, reject) => {
             acceptPreflight = () => {
+              if (preflightSettled) return;
               preflightAccepted = true;
               this.agentRunNeedsCompletion = true;
-              if (preflightSettled) return;
+              // The SDK invokes this after successful preflight, before running
+              // the agent (also for intercepted commands that settle immediately).
+              // Never fail an accepted submission because the journal is unavailable.
+              // Pi session IDs are UUIDs; test doubles and temporary wrapper
+              // keys are not persisted sessions and must not pollute user state.
+              if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(journalSessionId)) {
+                try { journalRunId = recordRunStart(journalSessionId); }
+                catch (error) { console.error("[pi-web] Could not record prompt acceptance:", error); }
+              }
               preflightSettled = true;
               resolve();
             };
@@ -609,6 +621,10 @@ export class AgentSessionWrapper {
           const finishPrompt = () => {
             if (promptSettled) return;
             promptSettled = true;
+            if (journalRunId) {
+              try { recordRunSettlement(journalSessionId, journalRunId); }
+              catch (error) { console.error("[pi-web] Could not record prompt settlement:", error); }
+            }
             this.pendingPromptCount = Math.max(0, this.pendingPromptCount - 1);
             this.resetIdleTimer();
             this.notifyAgentRunCompleteIfIdle();
