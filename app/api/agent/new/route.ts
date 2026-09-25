@@ -45,7 +45,11 @@ export async function POST(req: Request) {
     }
 
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
-    const { provider, modelId, toolNames, thinkingLevel, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; [key: string]: unknown };
+    const { provider, modelId, toolNames, thinkingLevel, accounts, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; accounts?: unknown; [key: string]: unknown };
+    if (accounts !== undefined && (accounts === null || typeof accounts !== "object" || Array.isArray(accounts)
+      || Object.entries(accounts).some(([key, value]) => !key || typeof value !== "string"))) {
+      throw new Error("accounts must map provider IDs to account IDs");
+    }
     if ((provider && !modelId) || (!provider && modelId)) {
       throw new Error("provider and modelId must be provided together");
     }
@@ -57,6 +61,7 @@ export async function POST(req: Request) {
     const tempKey = `__new__${randomUUID()}`;
     const { session, realSessionId } = await startRpcSession(tempKey, "", cwd, {
       ...(toolNames ? { toolNames } : {}),
+      ...(accounts ? { accounts: accounts as Record<string, string> } : {}),
       ...(provider && modelId ? { initialModel: { provider, modelId } } : {}),
       ...(explicitThinkingLevel ? { thinkingLevel: explicitThinkingLevel } : {}),
     });

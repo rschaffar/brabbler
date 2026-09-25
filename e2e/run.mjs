@@ -227,6 +227,66 @@ try {
     console.log("PASS: external session-file appends are visible on force/mount reads");
   }
 
+  let secondaryAccountId;
+  // Secondary provider identities stay out of pi's auth.json and project
+  // defaults are snapshotted when each session is created.
+  {
+    const unsupported = await fetch(`${base}/api/auth/accounts`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "not-a-provider", label: "Invalid", type: "oauth" }),
+    });
+    assert.equal(unsupported.status, 400);
+    const invalidOAuth = await fetch(`${base}/api/auth/login/anthropic?accountId=missing`);
+    assert.match(await invalidOAuth.text(), /OAuth account not found for provider/);
+    const { account } = await post("/api/auth/accounts", { provider: "anthropic", label: "E2E work", type: "api_key" });
+    assert.equal(account.authorized, false);
+    secondaryAccountId = account.id;
+    const secret = "e2e-secondary-key-only";
+    await post(`/api/auth/accounts/${account.id}/api-key`, { apiKey: secret });
+    const metadata = await api("/api/auth/accounts");
+    assert.equal(JSON.stringify(metadata).includes(secret), false, "Account metadata must never contain credentials");
+    assert.equal(metadata.accounts.find((entry) => entry.id === account.id).authorized, true);
+    const response = await fetch(`${base}/api/auth/accounts/selection`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "project", cwd: project, provider: "anthropic", accountId: account.id }),
+    });
+    assert.equal(response.status, 200);
+    const first = await post("/api/agent/new", { cwd: project, type: "ensure_session", toolNames: ["read"] });
+    assert.equal((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${first.sessionId}`)).session.anthropic, account.id);
+    const removedDefault = await fetch(`${base}/api/auth/accounts/selection`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "project", cwd: project, provider: "anthropic", accountId: null }),
+    });
+    assert.equal(removedDefault.status, 200);
+    assert.equal((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${first.sessionId}`)).session.anthropic, account.id,
+      "existing sessions must retain their project-default snapshot");
+    const second = await post("/api/agent/new", { cwd: project, type: "ensure_session" });
+    assert.deepEqual((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${second.sessionId}`)).session, {});
+    const switched = await fetch(`${base}/api/auth/accounts/selection`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "session", sessionId: first.sessionId, provider: "anthropic", accountId: null }),
+    });
+    assert.equal(switched.status, 200);
+    const switchedId = (await switched.json()).sessionId;
+    assert.ok(switchedId);
+    assert.deepEqual((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${switchedId}`)).session, {});
+    const tools = (await post(`/api/agent/${switchedId}`, { type: "get_tools" })).data;
+    assert.equal(tools.find((entry) => entry.name === "read")?.active, true);
+    assert.equal(tools.find((entry) => entry.name === "bash")?.active, false,
+      "transient account switches must retain the tool preset");
+    const { account: other } = await post("/api/auth/accounts", { provider: "openai", label: "E2E other", type: "api_key" });
+    await post(`/api/auth/accounts/${other.id}/api-key`, { apiKey: "e2e-other-key" });
+    const setSession = (provider, accountId) => fetch(`${base}/api/auth/accounts/selection`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "session", sessionId: APPEND, provider, accountId }),
+    });
+    const changes = await Promise.all([setSession("anthropic", account.id), setSession("openai", other.id)]);
+    assert.deepEqual(changes.map((entry) => entry.status), [200, 200]);
+    assert.deepEqual((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${APPEND}`)).session,
+      { anthropic: account.id, openai: other.id }, "concurrent switches must preserve both providers");
+    console.log("PASS: isolated account creation, metadata redaction, project defaults, transient switching and concurrent persisted switches");
+  }
+
   browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
     ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
     : {});
@@ -438,6 +498,30 @@ try {
     context = undefined;
     page = undefined;
   }
+  context = await browser.newContext();
+  page = await context.newPage();
+  await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+  await page.getByLabel("Account provider").selectOption("anthropic");
+  const accountPicker = page.getByLabel("Session account", { exact: true });
+  await accountPicker.selectOption(secondaryAccountId);
+  assert.equal((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${RICH}`)).session.anthropic, secondaryAccountId);
+  console.log("PASS: browser session account selector persists an idle-session switch");
+  const removed = await fetch(`${base}/api/auth/accounts`, {
+    method: "DELETE", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: secondaryAccountId }),
+  });
+  assert.equal(removed.status, 200);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByLabel("Account provider").selectOption("anthropic");
+  const unavailablePicker = page.getByLabel("Session account", { exact: true });
+  await unavailablePicker.selectOption(secondaryAccountId);
+  assert.equal(await unavailablePicker.locator("option:checked").innerText(), "Unavailable account");
+  await unavailablePicker.selectOption("");
+  assert.deepEqual((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${RICH}`)).session, {});
+  console.log("PASS: deleted account remains visible and can be explicitly switched to Pi default");
+  await context.close();
+  context = undefined;
+  page = undefined;
 } catch (error) {
   console.error(error);
   process.exitCode = 1;

@@ -32,6 +32,7 @@ import {
 } from "./subagents";
 import type { SessionEntry } from "./types";
 import { buildSubagentPromptPlan } from "./subagent-prompt";
+import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createAskUserExtension, preferPiWebAskUserExtension } from "./ask-user-extension";
 import { appendSubagentInputFiles, loadSubagentInputFiles } from "./subagent-input";
@@ -284,6 +285,8 @@ export function createSubagentController(
         ...(isolatedWorktree ? { worktreePath: isolatedWorktree.path, worktreeBranch: isolatedWorktree.branch } : {}),
       };
       sessionManager.appendCustomEntry(SUBAGENT_META_TYPE, metadata);
+      const inheritedAccounts = readSessionAccounts(parent.inner.sessionManager.getEntries() as SessionEntry[]);
+      if (inheritedAccounts) appendSessionAccounts(sessionManager, inheritedAccounts);
       sessionManager.appendSessionInfo(metadata.description);
 
       const requestedModel = parseSubagentModel(parentModelRuntime, request.model ?? profile.model);

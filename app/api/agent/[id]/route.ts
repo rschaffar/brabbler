@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { resolveSessionPath } from "@/lib/session-reader";
-import { startRpcSession, getRpcSession, setRpcSessionTools } from "@/lib/rpc-manager";
+import { startRpcSession, getRpcSession, setRpcSessionTools, waitForSessionAccountSwitch } from "@/lib/rpc-manager";
 
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(
@@ -23,6 +23,8 @@ export async function POST(
     }
     const toolNames = requestedToolNames as string[] | undefined;
 
+    // A prompt arriving during an account change must not reach the old runtime.
+    await waitForSessionAccountSwitch(id);
     // Fast path: already-running session
     const existing = getRpcSession(id);
     if (body.type === "set_tools") {

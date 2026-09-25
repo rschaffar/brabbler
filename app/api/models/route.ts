@@ -1,6 +1,12 @@
 import { stat } from "fs/promises";
 import { resolve } from "path";
-import { createAgentSessionServices, getAgentDir, type SettingsManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionServices, getAgentDir, ModelRuntime, SessionManager, type SettingsManager } from "@earendil-works/pi-coding-agent";
+import { join } from "node:path";
+import { accountCredentialStore, getProjectAccounts, validateAccountSelection, type AccountSelection } from "@/lib/provider-accounts";
+import { readSessionAccounts } from "@/lib/session-accounts";
+import { getRpcSession } from "@/lib/rpc-manager";
+import { resolveSessionPath } from "@/lib/session-reader";
+import type { SessionEntry } from "@/lib/types";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import {
   loadModelsWithCache,
@@ -25,7 +31,7 @@ function compareModelEntries(
     || modelNameCollator.compare(a.id, b.id);
 }
 
-async function loadModels(cwd: string): Promise<ModelsData> {
+async function loadModels(cwd: string, accounts: AccountSelection = {}): Promise<ModelsData> {
   const nameMap = new Map<string, string>();
   let modelList: { id: string; name: string; provider: string }[] = [];
   let defaultModel: { provider: string; modelId: string } | null = null;
@@ -37,9 +43,17 @@ async function loadModels(cwd: string): Promise<ModelsData> {
   // runs a repository's .pi/extensions factories, so honor project trust here
   // too (see lib/project-trust.ts, #236).
   const trustReloadOptions = projectTrustReloadOptions(cwd, agentDir);
+  const modelRuntime = Object.keys(accounts).length > 0
+    ? await ModelRuntime.create({
+        credentials: accountCredentialStore(accounts),
+        modelsPath: join(agentDir, "models.json"),
+        modelsStorePath: join(agentDir, "models-store.json"),
+      })
+    : undefined;
   const services = await createAgentSessionServices({
     cwd,
     agentDir,
+    ...(modelRuntime ? { modelRuntime } : {}),
     ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
   });
   const modelError = services.modelRuntime.getError();
@@ -125,7 +139,24 @@ export async function GET(req: Request) {
   }
 
   try {
-    return Response.json(await loadModelsWithCache(cwd, () => loadModels(cwd)));
+    const params = new URL(req.url).searchParams;
+    let accounts: AccountSelection;
+    const sessionId = params.get("sessionId");
+    const explicit = params.get("accounts");
+    if (sessionId) {
+      const live = getRpcSession(sessionId);
+      const entries = live?.isAlive() ? live.inner.sessionManager.getEntries()
+        : await resolveSessionPath(sessionId).then((path) => path ? SessionManager.open(path, undefined).getEntries() : []);
+      accounts = readSessionAccounts(entries as unknown as SessionEntry[]) ?? {};
+    } else if (explicit) {
+      const parsed: unknown = JSON.parse(explicit);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid account selection");
+      accounts = parsed as AccountSelection;
+    } else accounts = await getProjectAccounts(cwd);
+    validateAccountSelection(accounts);
+    return Response.json(Object.keys(accounts).length
+      ? await loadModels(cwd, accounts)
+      : await loadModelsWithCache(cwd, () => loadModels(cwd)));
   } catch {
     return Response.json(withSafeModelLoadFailure(EMPTY_MODELS));
   }

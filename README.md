@@ -62,6 +62,12 @@ pi-web --help
 pi-web -p 8080 -H 0.0.0.0 --no-open
 ```
 
+### Multiple model-provider accounts
+
+Pi Web can keep additional OAuth and API-key identities for the same provider. In a chat, use the **Account provider** control above the composer, then **Accounts…** to authorize, rename, or remove an identity. Use **Session account** to switch an idle session and **New sessions in project** to set the default for newly created sessions in that project. Linked Git worktrees share one project default. A new session can override it before its first message; changing the project default never changes existing sessions. Subagents inherit their parent session's account.
+
+**Pi default** means pi's normal provider authentication (`auth.json` or its configured ambient sources), including for legacy sessions; the shared credential and the existing Models panel remain compatible with the pi CLI. Additional identities and project defaults live in `~/.pi/agent/pi-web-accounts.json` (or the directory selected by `PI_CODING_AGENT_DIR`), with file permissions limited to the owner. The account file contains credentials: protect and back it up as you would `auth.json`, and never commit it to a repository. Sessions persist only opaque account IDs, not credentials. Removing an identity leaves previously bound sessions unable to use that provider until you select another account; they never fall back to Pi default without an explicit switch.
+
 ### Remote Access
 
 Binding to a non-loopback address exposes an agent that can execute high-privilege actions. On a trusted LAN, require a long random password:
@@ -99,7 +105,7 @@ npx @agegr/pi-web@latest
 - **Agent data**: Pi Web reads pi data from `~/.pi/agent` by default, including session files under `sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`. Set `PI_CODING_AGENT_DIR` to use another pi agent directory.
 - **Session archive**: Archiving hides a session (and its subagents) from the active list and content search without moving or deleting its Pi session file. Switch to **Archived sessions** in the sidebar to restore it or delete it permanently. Stop a running session before archiving it.
 - **Filesystem access**: Pi Web must be able to read the agent data directory and the working directories recorded by its sessions. Run Pi Web in the same filesystem environment as pi when sharing existing sessions.
-- **Shared configuration**: the Models panel uses pi's model, settings, and credential storage, so changes are visible to both interfaces.
+- **Shared configuration**: the Models panel uses pi's model, settings, and Pi-default credential storage, so those changes are visible to both interfaces. Additional provider identities are Pi Web-only.
 - **File access boundary**: the file browser is limited to working directories selected in Pi Web and project or session roots it already knows about; it is not a general filesystem browser.
 - **Git worktrees**: see [Worktrees in Pi Web](./docs/worktrees.md) for switcher visibility, worktree creation, and removal behavior.
 

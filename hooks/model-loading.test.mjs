@@ -32,10 +32,10 @@ function setup(fetchImpl) {
   const writes = [];
   const delays = [];
   const context = {
-    Error, DOMException,
+    Error, DOMException, URLSearchParams,
     controller: new AbortController(),
     newSessionCwd: "/project", session: null, isNew: true,
-    sessionIdRef: { current: null }, thinkingLevelOverrideRef: { current: null },
+    sessionIdRef: { current: null }, newSessionAccountsRef: { current: null }, thinkingLevelOverrideRef: { current: null },
     thinkingLevelPinsRef: { current: {} }, defaultThinkingLevelRef: { current: null },
     asConcreteThinkingLevel: (value) => (!value || value === "auto" ? null : value),
     fetch: fetchImpl,

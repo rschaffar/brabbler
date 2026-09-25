@@ -2,6 +2,7 @@ import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import { randomUUID } from "node:crypto";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { createModelRuntimeWithExtensions } from "@/lib/model-runtime";
+import { accountCredentialStore, listProviderAccounts } from "@/lib/provider-accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -60,9 +61,25 @@ export async function GET(
 
   const stream = new ReadableStream({
     async start(controller) {
-      const modelRuntime = await createModelRuntimeWithExtensions();
-      if (!modelRuntime.getProvider(provider)?.auth.oauth) {
-        send(controller, { type: "error", message: `Unknown provider: ${provider}` });
+      let modelRuntime;
+      try {
+        const accountId = new URL(req.url).searchParams.get("accountId");
+        const account = accountId ? listProviderAccounts().find((item) => item.id === accountId) : undefined;
+        if (accountId && (!account || account.provider !== provider || account.type !== "oauth")) {
+          send(controller, { type: "error", message: "OAuth account not found for provider" });
+          controller.close();
+          return;
+        }
+        modelRuntime = await createModelRuntimeWithExtensions(
+          account ? accountCredentialStore({ [provider]: account.id }, undefined, undefined, { allowPendingLogin: true }) : undefined,
+        );
+        if (!modelRuntime.getProvider(provider)?.auth.oauth) {
+          send(controller, { type: "error", message: `Unknown provider: ${provider}` });
+          controller.close();
+          return;
+        }
+      } catch {
+        send(controller, { type: "error", message: "Could not initialize provider authorization" });
         controller.close();
         return;
       }

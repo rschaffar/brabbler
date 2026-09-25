@@ -383,6 +383,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const ensuringNewSessionRef = useRef<Promise<string | null> | null>(null);
   const newSessionPromotedRef = useRef(false);
   const newSessionModelOverrideRef = useRef<SelectedModel | null>(null);
+  const newSessionAccountsRef = useRef<Record<string, string> | null>(null);
   const thinkingLevelOverrideRef = useRef<ConcreteThinkingLevel | null>(null);
   const thinkingLevelPinsRef = useRef<Record<string, string>>({});
   const defaultThinkingLevelRef = useRef<ConcreteThinkingLevel | null>(null);
@@ -778,6 +779,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         body: JSON.stringify({
           cwd: newSessionCwd,
           type: "ensure_session",
+          ...(newSessionAccountsRef.current ? { accounts: newSessionAccountsRef.current } : {}),
           ...(toolNames !== undefined ? { toolNames } : {}),
           ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
           ...(selectedThinkingLevel
@@ -1736,6 +1738,22 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [loadContext]);
 
+  const handleSessionAccountChange = useCallback(async (provider: string, accountId: string | null, selection: Record<string, string>) => {
+    const sid = sessionIdRef.current;
+    if (!sid) {
+      newSessionAccountsRef.current = { ...selection };
+      return;
+    }
+    const response = await fetch("/api/auth/accounts/selection", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "session", sessionId: sid, provider, accountId }),
+    });
+    const result = await response.json() as { sessionId?: string; error?: string };
+    if (!response.ok || !result.sessionId) throw new Error(result.error ?? "Could not switch account");
+    if (sessionIdRef.current === sid) sessionIdRef.current = result.sessionId;
+    newSessionAccountsRef.current = { ...selection };
+  }, []);
+
   const handleModelChange = useCallback(async (provider: string, modelId: string) => {
     if (isNew) {
       const selectedModel = { provider, modelId };
@@ -1808,7 +1826,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const loadModels = useCallback(async (signal?: AbortSignal) => {
     const modelCwd = newSessionCwd ?? session?.cwd ?? "";
-    const modelsUrl = modelCwd ? `/api/models?cwd=${encodeURIComponent(modelCwd)}` : "/api/models";
+    const modelsParams = new URLSearchParams();
+    if (modelCwd) modelsParams.set("cwd", modelCwd);
+    if (sessionIdRef.current) modelsParams.set("sessionId", sessionIdRef.current);
+    else if (newSessionAccountsRef.current) modelsParams.set("accounts", JSON.stringify(newSessionAccountsRef.current));
+    const modelsUrl = `/api/models?${modelsParams}`;
     let d: ModelsResponse;
     try {
       const res = await fetch(modelsUrl, signal ? { signal } : undefined);
@@ -2449,7 +2471,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     sessionIdRef, scrollContainerRef,
     lastUserMsgRef, pendingScrollToUserRef, initialScrollDoneRef,
     // Actions
-    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
+    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange, handleSessionAccountChange, loadModels,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,

@@ -12,6 +12,7 @@ import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { MessageView } from "./MessageView";
 import { MarkdownBody } from "./MarkdownBody";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
+import { ProviderAccounts } from "./ProviderAccounts";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { AnsiText } from "./AnsiText";
@@ -289,7 +290,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     showScrollToBottom,
     sessionIdRef, scrollContainerRef,
     lastUserMsgRef, promptAnchorActive,
-    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
+    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange, handleSessionAccountChange, loadModels,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
@@ -1368,6 +1369,18 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
             </div>
           </div>
         )}
+        {(session?.cwd ?? newSessionCwd) && <ProviderAccounts
+          key={`${session?.id ?? newSessionCwd}:${displayModelValue?.provider ?? "none"}`}
+          cwd={(session?.cwd ?? newSessionCwd)!}
+          sessionId={session?.id ?? sessionIdRef.current}
+          provider={displayModelValue?.provider ?? ""}
+          busy={sessionBusy || modelSwitching}
+          onSessionChange={async (provider, id, selection) => {
+            await handleSessionAccountChange(provider, id, selection);
+            await loadModels();
+          }}
+          onAccountsChanged={async () => { await loadModels(); }}
+        />}
         {chatInputElement}
         <ExtensionStatusBar statuses={extensionStatuses} widgets={extensionWidgets} />
       </div>

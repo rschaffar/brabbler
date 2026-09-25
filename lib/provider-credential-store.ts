@@ -25,9 +25,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-async function updateStoredCredentials<T>(
+export async function updateStoredCredentials<T>(
   authPath: string,
-  update: (credentials: Record<string, unknown>) => { result: T; changed: boolean },
+  update: (credentials: Record<string, unknown>) => Promise<{ result: T; changed: boolean }> | { result: T; changed: boolean },
 ): Promise<T> {
   ensureAuthFile(authPath);
 
@@ -55,7 +55,7 @@ async function updateStoredCredentials<T>(
     const parsed: unknown = JSON.parse(readFileSync(authPath, "utf-8"));
     if (!isRecord(parsed)) throw new Error("Invalid auth.json: expected an object");
 
-    const { result, changed } = update(parsed);
+    const { result, changed } = await update(parsed);
     if (changed) {
       throwIfCompromised();
       writeFileSync(authPath, JSON.stringify(parsed, null, 2), AUTH_FILE_WRITE_OPTIONS);

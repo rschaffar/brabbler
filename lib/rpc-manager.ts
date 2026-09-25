@@ -1,10 +1,12 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, ModelRuntime, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
+import { accountCredentialStore, getProjectAccounts, validateAccountSelection, type AccountSelection } from "./provider-accounts";
+import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import {
@@ -164,6 +166,7 @@ const COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT = new Set([
 
 export interface RpcSessionStartOptions {
   toolNames?: string[];
+  accounts?: AccountSelection;
   initialModel?: { provider: string; modelId: string };
   allowInitialModelFallback?: boolean;
   thinkingLevel?: ThinkingLevel;
@@ -760,6 +763,8 @@ export class AgentSessionWrapper {
             writeFileSync(newSessionFile, content, { encoding: "utf8", flag: "wx" });
           }
 
+          const accountSelection = readSessionAccounts(sessionManager.getEntries() as unknown as SessionEntry[]);
+          if (accountSelection) appendSessionAccounts(SessionManager.open(newSessionFile, sessionDir), accountSelection);
           const newSessionId = forkedManager.getSessionId();
           cacheSessionPath(newSessionId, newSessionFile);
           invalidateSessionListCache();
@@ -784,7 +789,10 @@ export class AgentSessionWrapper {
         const forkedPath = sourceManager.createBranchedSession(entryId);
         if (!forkedPath) throw new Error("Failed to create forked session");
 
-        const newSessionId = SessionManager.open(forkedPath, sessionDir).getSessionId();
+        const forkedManager = SessionManager.open(forkedPath, sessionDir);
+        const accountSelection = readSessionAccounts(sessionManager.getEntries() as unknown as SessionEntry[]);
+        if (accountSelection) appendSessionAccounts(forkedManager, accountSelection);
+        const newSessionId = forkedManager.getSessionId();
         cacheSessionPath(newSessionId, forkedPath);
         invalidateSessionListCache();
         return { cancelled: false, newSessionId };
@@ -810,7 +818,10 @@ export class AgentSessionWrapper {
           const clonedPath = sourceManager.createBranchedSession(leafId);
           if (!clonedPath || !existsSync(clonedPath)) throw new Error("Failed to clone current session branch");
 
-          const newSessionId = SessionManager.open(clonedPath, sessionDir).getSessionId();
+          const clonedManager = SessionManager.open(clonedPath, sessionDir);
+          const accountSelection = readSessionAccounts(sessionManager.getEntries() as unknown as SessionEntry[]);
+          if (accountSelection) appendSessionAccounts(clonedManager, accountSelection);
+          const newSessionId = clonedManager.getSessionId();
           cacheSessionPath(newSessionId, clonedPath);
           invalidateSessionListCache();
           await this.shutdownAfterSessionReplacement("clone");
@@ -1666,6 +1677,7 @@ export class AgentSessionWrapper {
 declare global {
   var __piSessions: Map<string, AgentSessionWrapper> | undefined;
   var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
+  var __piAccountSwitchLocks: Map<string, Promise<void>> | undefined;
   var __piStartingSessionCwds: Map<string, number> | undefined;
 }
 
@@ -1839,6 +1851,60 @@ export async function setRpcSessionTools(
   return { session: started.session, sessionId: started.realSessionId, recreated: true };
 }
 
+export function waitForSessionAccountSwitch(sessionId: string): Promise<void> | undefined {
+  return globalThis.__piAccountSwitchLocks?.get(sessionId);
+}
+
+export async function setRpcSessionAccount(sessionId: string, sessionFile: string | undefined, provider: string, accountId: string | null): Promise<string> {
+  const locks = (globalThis.__piAccountSwitchLocks ??= new Map<string, Promise<void>>());
+  const previous = locks.get(sessionId);
+  let release!: () => void;
+  const finished = new Promise<void>((resolve) => { release = resolve; });
+  locks.set(sessionId, finished);
+  try {
+    if (previous) await previous;
+    const existing = getRpcSession(sessionId);
+    if (existing?.isRunning()) throw new Error("Cannot switch accounts while the session is running");
+    const manager = existing?.isAlive() ? existing.inner.sessionManager
+      : sessionFile ? SessionManager.open(sessionFile, undefined) : undefined;
+    if (!manager) throw new Error("Session not found");
+    if (readSubagentSessionResources(manager.getEntries() as unknown as SessionEntry[])) {
+      throw new Error("Subagent accounts are inherited from the parent run");
+    }
+    const current = readSessionAccounts(manager.getEntries() as unknown as SessionEntry[]) ?? {};
+    const next = { ...current };
+    if (accountId === null) delete next[provider];
+    else next[provider] = accountId;
+    validateAccountSelection(next);
+    const pinnedTools = readSessionToolSelection(manager.getEntries() as unknown as SessionEntry[]);
+    const model = existing?.isAlive() ? existing.inner.model : null;
+    const thinking = existing?.isAlive() ? existing.inner.agent.state?.thinkingLevel : undefined;
+    if (existing?.isAlive()) await existing.shutdown();
+    const persisted = manager.getSessionFile();
+    if (persisted && existsSync(persisted)) {
+      appendSessionAccounts(manager, next);
+      invalidateSessionListCache();
+      const started = await startRpcSession(sessionId, persisted, undefined);
+      return started.realSessionId;
+    }
+    // An initialized composer has not written a session file yet: preserve its
+    // model, thinking and tool choices when creating the replacement wrapper.
+    const started = await startRpcSession(`__recreate__${randomUUID()}`, "", manager.getCwd(), {
+      accounts: next,
+      ...(pinnedTools !== undefined ? { toolNames: pinnedTools } : {}),
+      ...(model ? { initialModel: { provider: model.provider, modelId: model.id } } : {}),
+      allowInitialModelFallback: true,
+      ...(thinking && THINKING_LEVEL_NAMES.has(thinking as ThinkingLevel)
+        ? { thinkingLevel: thinking as ThinkingLevel }
+        : {}),
+    });
+    return started.realSessionId;
+  } finally {
+    release();
+    if (locks.get(sessionId) === finished) locks.delete(sessionId);
+  }
+}
+
 function runtimeMessageText(entry: SessionMessageEntry): string {
   if (entry.message.role === "bashExecution") return "";
   const content = entry.message.content;
@@ -1995,6 +2061,12 @@ export async function startRpcSession(
     ? undefined
     : readSessionToolSelection(sessionManager.getEntries() as unknown as SessionEntry[]);
   const selectedToolNames = subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
+  // Project defaults are snapshotted only at creation. Old sessions with no
+  // entry remain bound to Pi's default auth.json, regardless of project changes.
+  const accounts = readSessionAccounts(sessionManager.getEntries() as unknown as SessionEntry[])
+    ?? (sessionFile ? {} : options.accounts ?? await getProjectAccounts(sessionCwd));
+  validateAccountSelection(accounts);
+  if (!sessionFile) appendSessionAccounts(sessionManager, accounts);
   if (!subagentResources && persistedToolNames === undefined && requestedToolNames !== undefined) {
     appendSessionToolSelection(sessionManager, requestedToolNames);
   }
@@ -2041,8 +2113,16 @@ export async function startRpcSession(
     const exactSystemPromptRef: { current?: () => string } = {};
     const exactSystemPromptExtension = createExactSystemPromptExtension(() => exactSystemPromptRef.current?.());
     const usesExactSystemPrompt = chatOnly || subagentResources?.exactSystemPrompt !== undefined;
+    const accountRuntime = Object.keys(accounts).length > 0
+      ? await ModelRuntime.create({
+          credentials: accountCredentialStore(accounts),
+          modelsPath: resolve(agentDir, "models.json"),
+          modelsStorePath: resolve(agentDir, "models-store.json"),
+        })
+      : undefined;
     const services = await createAgentSessionServices({
       cwd: sessionCwd,
+      ...(accountRuntime ? { modelRuntime: accountRuntime } : {}),
       agentDir,
       settingsManager,
       resourceLoaderOptions: subagentResources
