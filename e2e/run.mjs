@@ -13,6 +13,7 @@ import { checkFilePanel, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
+import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -494,6 +495,12 @@ try {
       const answerHeading = page.getByRole("heading", { name: "E2E reading position", exact: true });
       const answerOffset = await positionForReading(answerHeading);
       await selectSession(text(0), "e4920");
+      // The message can become visible before its post-layout scroll restoration runs.
+      await page.waitForFunction(({ expected }) => {
+        const element = document.querySelector('[data-entry-id="e4920"]:not([data-message-role])');
+        const scroll = element?.closest(".overflow-y-auto");
+        return element && scroll && Math.abs(element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - expected) < 5;
+      }, { expected: olderOffset }, { timeout: 8000 });
       assert.ok(Math.abs(await readingOffset(olderMessage) - olderOffset) < 5, "Returning to older history must restore its reading offset");
       await selectSession("Render **E2E markdown**", "user");
       assert.equal(await process.getAttribute("aria-expanded"), "false");
@@ -584,6 +591,7 @@ try {
   context = await browser.newContext();
   page = await context.newPage();
   await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /^Account for/ }).click();
   await page.getByLabel("Account provider").selectOption("anthropic");
   const accountPicker = page.getByLabel("Session account", { exact: true });
   await accountPicker.selectOption(secondaryAccountId);
@@ -595,6 +603,7 @@ try {
   });
   assert.equal(removed.status, 200);
   await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /^Account for/ }).click();
   await page.getByLabel("Account provider").selectOption("anthropic");
   const unavailablePicker = page.getByLabel("Session account", { exact: true });
   await unavailablePicker.selectOption(secondaryAccountId);
@@ -605,6 +614,23 @@ try {
   await context.close();
   context = undefined;
   page = undefined;
+
+  const { oauthProviders } = await api("/api/auth/providers");
+  const oauthEntry = oauthProviders.find((item) => item.id === "github-copilot") ?? oauthProviders[0];
+  assert.ok(oauthEntry, "OAuth provider required for browser authorization fixture");
+  const oauthProvider = oauthEntry.id;
+  const { account: deviceAccount } = await post("/api/auth/accounts", { provider: oauthProvider, label: "E2E device", type: "oauth" });
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 600 }]) {
+    context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    page = await context.newPage();
+    page.setDefaultTimeout(30_000);
+    await checkProviderAccountAuthorization(page, { base, sessionId: RICH, provider: oauthProvider,
+      providerName: oauthEntry.name, accountLabel: deviceAccount.label, width: viewport.width, artifacts });
+    await context.close();
+    context = undefined;
+    page = undefined;
+  }
 } catch (error) {
   console.error(error);
   process.exitCode = 1;

@@ -880,6 +880,18 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       modelScopeWarnings={modelScopeWarnings}
       onModelChange={handleModelChange}
       modelSwitching={modelSwitching}
+      accountControl={(session?.cwd ?? newSessionCwd) && <ProviderAccounts
+        key={session?.id ?? newSessionCwd}
+        cwd={(session?.cwd ?? newSessionCwd)!}
+        sessionId={session?.id ?? sessionIdRef.current}
+        provider={displayModelValue?.provider ?? ""}
+        busy={sessionBusy || modelSwitching}
+        onSessionChange={async (provider, id, selection) => {
+          await handleSessionAccountChange(provider, id, selection);
+          await loadModels();
+        }}
+        onAccountsChanged={async () => { await loadModels(); }}
+      />}
       onCompact={session || isNew ? handleCompact : undefined}
       onAbortCompaction={handleAbortCompaction}
       isCompacting={isCompacting}
@@ -1375,18 +1387,6 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
             </div>
           </div>
         )}
-        {(session?.cwd ?? newSessionCwd) && <ProviderAccounts
-          key={`${session?.id ?? newSessionCwd}:${displayModelValue?.provider ?? "none"}`}
-          cwd={(session?.cwd ?? newSessionCwd)!}
-          sessionId={session?.id ?? sessionIdRef.current}
-          provider={displayModelValue?.provider ?? ""}
-          busy={sessionBusy || modelSwitching}
-          onSessionChange={async (provider, id, selection) => {
-            await handleSessionAccountChange(provider, id, selection);
-            await loadModels();
-          }}
-          onAccountsChanged={async () => { await loadModels(); }}
-        />}
         {chatInputElement}
         <ExtensionStatusBar statuses={extensionStatuses} widgets={extensionWidgets} />
       </div>

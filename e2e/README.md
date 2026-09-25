@@ -45,6 +45,9 @@ Coverage:
 - The focused Activity run checks background questions, short-run completion/review,
   first-browser baselines, cross-tab acknowledgement and reload, cross-project
   filtering, and navigation at 1280px, 700px, and 390px without model credentials.
+- The account controls test checks compact model-adjacent placement, popup-blocked OAuth
+  links, device link/code/copy, progress persistence, invalid URL rejection, and
+  cancellation at 1280px and 390px using mocked SSE (no provider credentials).
 
 Model prompts, live model streaming, and agent execution are outside this suite.
 Failures save a screenshot, Playwright trace, and server log under

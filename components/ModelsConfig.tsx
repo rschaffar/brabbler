@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { safeAuthorizationUrl } from "@/lib/oauth-url";
+import { DeviceAuthorization } from "./DeviceAuthorization";
 import type { ModelCatalogPreset, ModelCatalogRecommendation } from "@/lib/model-catalog";
 import type { DiscoveredModel } from "@/lib/model-discovery";
 import {
@@ -77,7 +79,7 @@ type OAuthLoginState =
   | { phase: "idle" }
   | { phase: "connecting" }
   | { phase: "auth"; url: string; instructions: string | null; token: string }
-  | { phase: "device_code"; userCode: string; verificationUri: string; intervalSeconds: number | null; expiresInSeconds: number | null }
+  | { phase: "device_code"; userCode: string; verificationUri: string; intervalSeconds: number | null; expiresInSeconds: number | null; progress?: string }
   | { phase: "prompt"; message: string; placeholder: string | null; token: string }
   | { phase: "select"; message: string; options: { id: string; label: string }[]; token: string }
   | { phase: "progress"; message: string }
@@ -1333,47 +1335,55 @@ function OAuthDetail({ provider, onRefresh, enabledModels }: {
     eventSourceRef.current = es;
 
     es.onmessage = (e) => {
+      if (eventSourceRef.current !== es) return;
       const data = JSON.parse(e.data) as {
         type: string; url?: string; instructions?: string | null;
         token?: string; message?: string; placeholder?: string | null;
         userCode?: string; verificationUri?: string; intervalSeconds?: number | null; expiresInSeconds?: number | null;
         options?: { id: string; label: string }[];
       };
-      if (data.type === "auth") {
-        setLoginState({ phase: "auth", url: data.url!, instructions: data.instructions ?? null, token: data.token! });
-        window.open(data.url!, "_blank", "noopener,noreferrer");
-      } else if (data.type === "device_code") {
-        setLoginState({
-          phase: "device_code",
-          userCode: data.userCode!,
-          verificationUri: data.verificationUri!,
-          intervalSeconds: data.intervalSeconds ?? null,
-          expiresInSeconds: data.expiresInSeconds ?? null,
-        });
-        window.open(data.verificationUri!, "_blank", "noopener,noreferrer");
+      if (data.type === "auth" || data.type === "device_code") {
+        const url = safeAuthorizationUrl(data.type === "auth" ? data.url : data.verificationUri);
+        if (!url) {
+          es.close(); eventSourceRef.current = null;
+          setLoginState({ phase: "error", message: t("auth.invalidUrl") });
+          return;
+        }
+        if (data.type === "auth") {
+          setLoginState({ phase: "auth", url, instructions: data.instructions ?? null, token: data.token! });
+        } else {
+          setLoginState({
+            phase: "device_code", userCode: data.userCode!, verificationUri: url,
+            intervalSeconds: data.intervalSeconds ?? null, expiresInSeconds: data.expiresInSeconds ?? null,
+          });
+        }
+        // Browser popup policy may block this: the page always keeps a clickable link.
+        window.open(url, "_blank", "noopener,noreferrer");
       } else if (data.type === "prompt_request") {
         setLoginState({ phase: "prompt", message: data.message!, placeholder: data.placeholder ?? null, token: data.token! });
       } else if (data.type === "select_request") {
         setLoginState({ phase: "select", message: data.message!, options: data.options ?? [], token: data.token! });
       } else if (data.type === "progress") {
-        setLoginState({ phase: "progress", message: data.message! });
+        setLoginState((prev) => prev.phase === "device_code"
+          ? { ...prev, progress: data.message } : { phase: "progress", message: data.message! });
       } else if (data.type === "success") {
-        es.close();
+        es.close(); eventSourceRef.current = null;
         setLoginState({ phase: "success" });
         onRefresh();
       } else if (data.type === "error") {
-        es.close();
+        es.close(); eventSourceRef.current = null;
         setLoginState({ phase: "error", message: data.message! });
       } else if (data.type === "cancelled") {
-        es.close();
+        es.close(); eventSourceRef.current = null;
         setLoginState({ phase: "idle" });
       }
     };
     es.onerror = () => {
-      es.close();
+      if (eventSourceRef.current !== es) return;
+      es.close(); eventSourceRef.current = null;
       setLoginState((prev) => prev.phase === "success" ? prev : { phase: "error", message: "Connection lost" });
     };
-  }, [provider.id, onRefresh]);
+  }, [provider.id, onRefresh, t]);
 
   const handleLogout = useCallback(async () => {
     await fetch(`/api/auth/logout/${encodeURIComponent(provider.id)}`, { method: "POST" });
@@ -1439,7 +1449,7 @@ function OAuthDetail({ provider, onRefresh, enabledModels }: {
           {isWorking ? (
             <ConfigButton
               size="small"
-              onClick={() => { eventSourceRef.current?.close(); setLoginState({ phase: "idle" }); }}
+              onClick={() => { eventSourceRef.current?.close(); eventSourceRef.current = null; setLoginState({ phase: "idle" }); }}
             >
               {t("i18n.cancel")}
             </ConfigButton>
@@ -1500,7 +1510,7 @@ function OAuthDetail({ provider, onRefresh, enabledModels }: {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
               {loginState.phase === "auth"
-                ? "Complete sign-in in the browser, then copy the redirect URL from the address bar and paste it below."
+                ? (loginState.instructions || "Complete sign-in in the browser, then copy the redirect URL from the address bar and paste it below.")
                 : loginState.message}
             </p>
             {loginState.phase === "auth" && (
@@ -1533,18 +1543,8 @@ function OAuthDetail({ provider, onRefresh, enabledModels }: {
         )}
         {loginState.phase === "device_code" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-              Open the verification page and enter this code:
-            </p>
-            <div style={{ padding: "8px 10px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", fontSize: 16, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: 0 }}>
-              {loginState.userCode}
-            </div>
-            <p style={{ margin: 0, fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
-              <a href={loginState.verificationUri} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)", wordBreak: "break-all" }}>
-                {loginState.verificationUri}
-              </a>
-              {loginState.expiresInSeconds ? ` Expires in ${Math.ceil(loginState.expiresInSeconds / 60)} minutes.` : ""}
-            </p>
+            <DeviceAuthorization verificationUri={loginState.verificationUri} userCode={loginState.userCode} expiresInSeconds={loginState.expiresInSeconds} />
+            {loginState.progress && <p role="status" style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>{loginState.progress}</p>}
           </div>
         )}
         {loginState.phase === "progress" && (
