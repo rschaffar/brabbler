@@ -2037,6 +2037,11 @@ span.token.table {
 .activity-item-ready .activity-dot { background: #5bb987; }
 .activity-item-meta, .activity-item-reason { display: block; margin: 3px 0 0 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted); }
 .activity-item-reason { color: var(--text); }
+.activity-starred-item { display: flex; align-items: stretch; }
+.activity-starred-item > .activity-item { flex: 1; min-width: 0; }
+.activity-star { color: #eab308; flex: none; font-size: 13px; }
+.activity-unstar { width: 34px; flex: none; border: 0; background: transparent; color: var(--text-muted); font-size: 20px; cursor: pointer; }
+.activity-unstar:hover, .activity-unstar:focus-visible { color: var(--text); background: var(--bg-hover); }
 @media (max-width: 640px) {
   .activity-overview { position: absolute; inset: 0; z-index: 5; width: 100%; min-width: 0; border-right: 0; }
   .activity-item { min-height: 64px; }

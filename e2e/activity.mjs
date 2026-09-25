@@ -10,6 +10,31 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   assert.equal(await page.getByRole("region", { name: "Activity" }).locator(".activity-item-ready").count(), 0,
     "a new browser must not inherit prior clients' completed-run backlog");
   await page.getByRole("button", { name: "Close Activity" }).click();
+
+  // Starring an idle sidebar session keeps it in Activity across reloads,
+  // independently of the live/unread triage. Touch rows expose actions via More.
+  if (await page.getByRole("button", { name: "Show sidebar" }).count()) {
+    await page.getByRole("button", { name: "Show sidebar" }).click();
+  }
+  const sessionRow = page.locator(`[data-session-id="${selectedSessionId}"]`);
+  await sessionRow.waitFor({ state: "visible" });
+  if (mobile) await sessionRow.getByRole("button", { name: "Session actions" }).click();
+  else await sessionRow.hover();
+  await sessionRow.getByRole("button", { name: "Star session" }).click();
+  await sessionRow.getByRole("button", { name: "Unstar session" }).waitFor();
+  if (mobile) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
+  await page.getByRole("button", { name: /^Activity/ }).click();
+  const starredOverview = page.getByRole("region", { name: "Activity" });
+  const starred = starredOverview.getByRole("region", { name: "Starred" });
+  await starred.getByRole("button", { name: /Branch root/ }).waitFor();
+  assert.equal(await starredOverview.locator(".activity-item-ready").count(), 0, "starring does not mark a session ready to review");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByText("Active branch answer", { exact: true }).waitFor();
+  await page.getByRole("button", { name: /^Activity/ }).click();
+  await page.getByRole("region", { name: "Starred" }).getByRole("button", { name: /Branch root/ }).waitFor();
+  await page.getByRole("region", { name: "Starred" }).getByRole("button", { name: "Unstar session" }).click();
+  await page.getByRole("region", { name: "Starred" }).waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Close Activity" }).click();
   // Extension commands keep the POST open until the user responds. Launch it
   // without awaiting so the browser can see and answer the background dialog.
   const prompting = post(`/api/agent/${waitingSessionId}`, { type: "prompt", message: "/e2e-ask-user single" });
@@ -98,5 +123,5 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Render **E2E markdown**" }).waitFor();
   assert.equal(await reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Other workspace task" }).count(), 0,
     "reviewed runs must not reappear after reloading this browser");
-  console.log(`PASS: ${width}px Activity background question, review, project filter and chat navigation`);
+  console.log(`PASS: ${width}px Activity starring, background question, review, project filter and chat navigation`);
 }
