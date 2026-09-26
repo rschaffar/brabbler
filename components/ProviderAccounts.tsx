@@ -27,7 +27,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
   onSessionChange: (provider: string, id: string | null, selection: Selection) => Promise<void>;
   onAccountsChanged: () => Promise<void>;
 }) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const panelId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -206,7 +206,11 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
     const snapshot = usage[usageKey(providerId, accountId)];
     if (!snapshot) return "Loading usage…";
     if (snapshot.status !== "ready") return snapshot.message;
-    return remainingRateLimits(snapshot.report).join(" · ") || "No weekly or 5h limit reported";
+    const limits = remainingRateLimits(snapshot.report, locale).join(" · ") || "No weekly or 5h limit reported";
+    const resets = snapshot.report.bankedResets;
+    return providerId === "openai-codex" && resets !== undefined
+      ? `${limits} · ${resets} banked ${resets === 1 ? "reset" : "resets"} available`
+      : limits;
   };
   const currentLimits = selectionReady && isProviderUsageId(currentProvider) && currentAccount !== "Unavailable account"
     ? usage[usageKey(currentProvider, currentId || null)] : undefined;
