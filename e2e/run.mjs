@@ -421,6 +421,28 @@ try {
       page = undefined;
       continue;
     }
+    // Use a separate tab: a deliberate full-page reload must not alter the
+    // reading-position and session-history fixtures exercised below.
+    const versionPage = await context.newPage();
+    try {
+      await versionPage.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      const reloadWeb = versionPage.getByRole("button", { name: "Reload Pi Web" });
+      assert.equal(await reloadWeb.count(), 0, "The running version should not show a reload prompt");
+      await versionPage.route("**/api/app-version", (route) => route.fulfill({ json: { version: "99.99.99" } }));
+      await versionPage.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await reloadWeb.waitFor();
+      assert.ok(await versionPage.getByText("Pi Web v99.99.99 is running.").isVisible());
+      versionPage.once("dialog", (dialog) => dialog.dismiss());
+      await reloadWeb.click();
+      await reloadWeb.waitFor();
+      await versionPage.unroute("**/api/app-version");
+      versionPage.once("dialog", (dialog) => dialog.accept());
+      await Promise.all([versionPage.waitForNavigation(), reloadWeb.click()]);
+      await reloadWeb.waitFor({ state: "detached" });
+      console.log(`PASS: ${viewport.width}px version mismatch prompts before page reload`);
+    } finally {
+      await versionPage.close();
+    }
     const stateReady = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/sessions/${LONG}/state`);
     await page.goto(`${base}/?session=${LONG}`, { waitUntil: "domcontentloaded" });
     assert.equal((await stateReady).status(), 200);

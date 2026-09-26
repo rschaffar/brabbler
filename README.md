@@ -40,7 +40,7 @@ npm install -g @agegr/pi-web@latest
 pi-web
 ```
 
-To update, stop the running process with `Ctrl+C` and run the same install command again. To uninstall, run `npm uninstall -g @agegr/pi-web`.
+To update, stop the running process with `Ctrl+C` and run the same install command again. Tabs left open across a server update show **Reload Pi Web** when the server's running version differs from the page's version. This refreshes the page, not the agent session; confirm only after copying any unsent drafts or attachments, which are not saved across page reloads. A newer npm release alone does not trigger the prompt until it is installed and running. To uninstall, run `npm uninstall -g @agegr/pi-web`.
 
 ## Configuration
 
@@ -52,7 +52,7 @@ For port and hostname, command-line options override the corresponding environme
 | `--port <port>`, `-p <port>`, or `PORT` | Server port | `30141` |
 | `--hostname <host>`, `-H <host>`, or `PI_WEB_HOSTNAME` | Bind hostname | `127.0.0.1` |
 | `--no-open` or `PI_WEB_NO_OPEN=1` | Do not open a browser automatically | Browser opens |
-| `PI_WEB_SKIP_VERSION_CHECK=1` | Disable Pi Web update checks | Unset |
+| `PI_WEB_SKIP_VERSION_CHECK=1` | Disable npm release checks and running-version reload prompts | Unset |
 | `PI_WEB_ALLOWED_HOSTS` | Additional exact proxy or custom hostnames, comma-separated | Unset |
 | `PI_WEB_PASSWORD` | Enable browser password login; API clients may use Basic Auth with username `pi` | Authentication disabled |
 | `PI_WEB_IDLE_TIMEOUT_MS` | Session idle timeout in milliseconds, up to `2147483647`; `0` disables idle shutdown; invalid or out-of-range values use the default | `600000` (10 min) |
