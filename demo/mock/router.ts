@@ -49,9 +49,16 @@ async function sessionsRoute(request: MockRequest): Promise<Response> {
   const [, , id, sub, entryId, leaf] = request.segments; // api / sessions / :id / ...
   if (!id) return json(sessionsPayload());
   if (id === "search") {
-    const query = request.query("q") ?? "";
-    if (query.length > 200) return error("Search query exceeds 200 characters", 400);
-    return json(await searchSessions(query));
+    const query = (request.query("q") ?? "").trim();
+    const projectKey = request.query("projectKey");
+    const scope = request.query("scope");
+    const status = request.query("status");
+    if (query.length > 200 || !["active", "archived", "both"].includes(status ?? "")
+      || (scope !== "all" && (!projectKey || scope !== null))
+      || (scope === "all" && projectKey !== null) || request.query("includeArchived") !== null) {
+      return error("Invalid search query or scope", 400);
+    }
+    return json(await searchSessions(query, { projectKey: projectKey ?? undefined, allProjects: scope === "all", status: status as "active" | "archived" | "both" }));
   }
   const session = getSession(id);
   if (!session) return error("Session not found", 404);

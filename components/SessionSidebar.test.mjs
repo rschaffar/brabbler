@@ -10,6 +10,19 @@ const source = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), 
 const globalStyles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const sessionItemSource = source.slice(source.indexOf("function SessionItem("));
 
+test("session search inherits the selected project and archive view unless widened explicitly", async () => {
+  const searchSource = await readFile(new URL("./SessionSearch.tsx", import.meta.url), "utf8");
+  assert.match(source, /projectKey=\{searchAllProjects \? null : selectedProject\?\.key \?\? null\}/);
+  assert.match(source, /status=\{searchBothStatuses \? "both" : showArchived \? "archived" : "active"\}/);
+  assert.match(source, /setSearchAllProjects\(false\);\s*setSearchBothStatuses\(false\)/);
+  assert.match(source, /checked=\{searchAllProjects\}/);
+  assert.match(source, /checked=\{searchBothStatuses\}/);
+  assert.match(searchSource, /if \(allProjects\) params\.set\("scope", "all"\);\s*else if \(projectKey\) params\.set\("projectKey", projectKey\)/);
+  assert.match(searchSource, /if \(!open \|\| !search \|\| !canSearch\) return/);
+  assert.match(searchSource, /const response = state\.key === requestKey \? state\.response : undefined/);
+  assert.match(searchSource, /controller\.abort\(\)/);
+});
+
 test("scrolling keeps the focused session and the viewport mounted without expanding the whole window", () => {
   for (const [scrollTop, focusedIndex] of [[0, 1999], [10000, 0]]) {
     const indices = getSessionListIndices(2000, scrollTop, 335, focusedIndex);

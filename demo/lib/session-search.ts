@@ -10,6 +10,8 @@ const TIME_BUDGET_MS = 3000;
 
 export interface SessionSearchResult {
   session: SessionInfo;
+  kind: "title" | "preview" | "id" | "message";
+  familyArchived?: boolean;
   entryId?: string;
   blockIndex: number;
   before: string;
