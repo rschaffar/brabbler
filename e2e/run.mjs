@@ -398,6 +398,29 @@ try {
       page = undefined;
       continue;
     }
+    if (process.env.E2E_MOVE_ONLY === "1") {
+      const moveId = viewport.width <= 600 ? ARCHIVE : APPEND;
+      await page.goto(`${base}/?session=${moveId}`, { waitUntil: "domcontentloaded" });
+      const row = page.locator(`[data-session-id="${moveId}"]`);
+      if (viewport.width <= 600) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+      await row.scrollIntoViewIfNeeded();
+      if (viewport.width <= 600) await row.getByRole("button", { name: "Session actions", exact: true }).click();
+      else await row.hover();
+      await row.getByRole("button", { name: "Move to project…", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Move to project…" });
+      await dialog.getByLabel("Destination project").selectOption(otherProject);
+      await dialog.getByRole("button", { name: "Move", exact: true }).click();
+      await dialog.waitFor({ state: "detached" });
+      await row.waitFor({ state: "detached" });
+      assert.equal((await api("/api/sessions?force=1")).sessions.find((session) => session.id === moveId)?.cwd, otherProject);
+      assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      console.log(`PASS: ${viewport.width}px session move via project picker`);
+      await context.tracing.stop();
+      await context.close();
+      context = undefined;
+      page = undefined;
+      continue;
+    }
     const stateReady = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/sessions/${LONG}/state`);
     await page.goto(`${base}/?session=${LONG}`, { waitUntil: "domcontentloaded" });
     assert.equal((await stateReady).status(), 200);
@@ -638,6 +661,18 @@ try {
       await row.waitFor({ state: "detached" });
       assert.equal((await api("/api/sessions")).sessions.find((session) => session.id === ARCHIVE)?.archived, undefined);
       console.log("PASS: mobile session archive and restore update without a page reload");
+      await page.getByRole("button", { name: "Active sessions", exact: true }).click();
+      await row.getByRole("button", { name: "Session actions", exact: true }).click();
+      await row.getByRole("button", { name: "Move to project…", exact: true }).click();
+      const moveDialog = page.getByRole("dialog", { name: "Move to project…" });
+      await moveDialog.getByLabel("Destination project").selectOption(otherProject);
+      await moveDialog.getByRole("button", { name: "Move", exact: true }).click();
+      await moveDialog.waitFor({ state: "detached" });
+      await row.waitFor({ state: "detached" });
+      const moved = (await api("/api/sessions?force=1")).sessions.find((session) => session.id === ARCHIVE);
+      assert.equal(moved?.cwd, otherProject);
+      assert.equal(moved?.projectRoot, otherProject);
+      console.log("PASS: mobile session move changes the saved project and refreshes the sidebar");
     }
     if (viewport.width > 600) {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });

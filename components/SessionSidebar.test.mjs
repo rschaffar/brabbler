@@ -40,6 +40,15 @@ test("only Shift+click bypasses session deletion confirmation", () => {
   );
 });
 
+test("move action confirms a different project and includes touch rows", () => {
+  assert.match(sessionItemSource, /onMove\?\.\(\)/);
+  assert.match(sessionItemSource, /disabled=\{isRunning\}[\s\S]*?sidebar\.moveSession/);
+  assert.match(source, /<DirectoryPicker[\s\S]*?setMoveDestination\(path\)/);
+  assert.match(source, /recentProjects\.filter\(\(project\) => project\.key !== movingSession\.projectKey\)/);
+  assert.match(source, /\/move`, \{[\s\S]*?method: "POST"/);
+  assert.match(source, /data\.movedIds\?\.includes\(selectedSessionId\)/);
+});
+
 test("persists and exposes a vertical session/explorer resize handle", () => {
   assert.match(source, /axis: "vertical"/);
   assert.match(source, /storageKey: "pi-web:sidebar-session-pane-height"/);
@@ -141,7 +150,7 @@ test("does not expose disk-backed actions for transient sessions", () => {
 test("hides subagent rows and aggregates their state into the main session row", () => {
   assert.match(source, /listSessionFamilies\(filteredSessions\)\.filter\(\(family\) => Boolean\(family\.root\.archived\) === showArchived\)/);
   assert.match(source, /familySessions\.some\(\(session\) => session\.id === selectedSessionId\)/);
-  assert.match(source, /familySessions\.some\(\(session\) => runningSessionIds\.has\(session\.id\)\)/);
+  assert.match(source, /familySessions\.some\(\(session\) => runningSessionIds\.has\(session\.id\) \|\| queuedSessionIds\.has\(session\.id\)\)/);
   assert.doesNotMatch(source, /function SessionTreeItem/);
 });
 
