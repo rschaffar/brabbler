@@ -144,6 +144,8 @@ export const zhTWLocale: LocalePlugin = {
     "activity.subagent": "子 Agent",
     "activity.needsCount": "{count} 項待處理",
     "appUpdate.releaseNotes": "Pi Web v{version} 已推出，查看版本資訊",
+    "chat.contextFilesChanged": "工作階段指令檔案已變更。重新載入工作階段以套用變更。",
+    "chat.contextReloadFailed": "重新載入失敗，請重試。",
     "sidebar.hide": "隱藏側邊欄",
     "sidebar.show": "顯示側邊欄",
     "theme.light": "主題：淺色",

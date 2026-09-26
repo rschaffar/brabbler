@@ -17,6 +17,7 @@ import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { AnsiText } from "./AnsiText";
 import { AskUserDialog } from "./AskUserDialog";
+import { ContextReloadNotice } from "./ContextReloadNotice";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -995,6 +996,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         <NoticeShelf notices={notices} floating onPauseChange={setNoticePaused} />
       </div>
 
+      <ContextReloadNotice sessionId={session?.id ?? null} busy={sessionBusy || isCompacting} />
       {possibleInterruptedRun && (
         <div role="status" className="mx-4 mt-3 flex items-start gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-text">
           <span className="min-w-0 flex-1">{t("chat.possibleInterruptedRun")}</span>

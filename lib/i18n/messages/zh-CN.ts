@@ -144,6 +144,8 @@ export const zhCNLocale: LocalePlugin = {
     "activity.subagent": "子 Agent",
     "activity.needsCount": "{count} 项待处理",
     "appUpdate.releaseNotes": "Pi Web v{version} 可用，查看更新说明",
+    "chat.contextFilesChanged": "会话指令文件已更改。重新加载会话以应用更改。",
+    "chat.contextReloadFailed": "重新加载失败，请重试。",
     "sidebar.hide": "隐藏侧边栏",
     "sidebar.show": "显示侧边栏",
     "theme.light": "主题：浅色",
