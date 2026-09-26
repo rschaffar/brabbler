@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import type { SessionInfo } from "@/lib/types";
 import { listSessionFamilies } from "@/lib/session-family";
+import { runBulkSessionAction, type BulkSessionAction } from "@/lib/bulk-session-actions";
 import { loadExplorerOpen, saveExplorerOpen } from "@/lib/file-explorer-state";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
 import { useStarredSessions } from "@/hooks/useStarredSessions";
@@ -25,6 +26,7 @@ import { SessionSearch } from "./SessionSearch";
 // Fixed row height for the session list. SessionItem renders at exactly this
 // height, so the list can be windowed (only the visible slice is mounted).
 const SESSION_LIST_ITEM_HEIGHT = 54;
+const BULK_BUTTON_CLASS = "rounded-md border border-border bg-bg-hover px-2 py-1 text-xs text-text-muted hover:bg-bg-selected disabled:cursor-not-allowed disabled:opacity-50";
 
 export function updateSessionArchiveState(sessions: readonly SessionInfo[], id: string, archived: boolean): SessionInfo[] {
   return sessions.map((session) => session.id === id ? { ...session, archived } : session);
@@ -391,6 +393,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const reviewAckInFlightRef = useRef(false);
   const reviewAckFailedRef = useRef(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [bulkModeScope, setBulkModeScope] = useState<string | null>(null);
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkConfirmDelete, setBulkConfirmDelete] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkCompleted, setBulkCompleted] = useState(0);
+  const [bulkError, setBulkError] = useState<string | null>(null);
   // Tracked in a ref only: the version is compared against the polled value to
   // decide whether the list needs reloading, and no render reads it.
   const sessionListVersionRef = useRef<number | null>(null);
@@ -1249,6 +1257,68 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     [filteredSessions, showArchived],
   );
 
+  const bulkScope = `${selectedProject?.key ?? ""}:${showArchived}`;
+  const bulkSelecting = selectedProject !== null && bulkModeScope === bulkScope && !sessionSearchActive;
+  const selectedFamilyIds = useMemo(() => new Set(
+    sessionFamilies.filter((family) => !family.root.transient && bulkSelectedIds.has(family.root.id))
+      .map((family) => family.root.id),
+  ), [sessionFamilies, bulkSelectedIds]);
+  const selectableFamilyIds = useMemo(() => sessionFamilies.filter((family) => !family.root.transient)
+    .map((family) => family.root.id), [sessionFamilies]);
+
+  // A selection belongs to one project and one archive view, never to search
+  // results. The mode itself is opt-in and resets when that scope changes.
+  useEffect(() => {
+    if (bulkModeScope === null || (bulkModeScope === bulkScope && !sessionSearchActive)) return;
+    setBulkModeScope(null);
+    setBulkSelectedIds(new Set());
+    setBulkConfirmDelete(false);
+    setBulkError(null);
+  }, [bulkModeScope, bulkScope, sessionSearchActive]);
+
+  const exitBulkMode = () => {
+    setBulkModeScope(null);
+    setBulkSelectedIds(new Set());
+    setBulkConfirmDelete(false);
+    setBulkError(null);
+  };
+
+  const performBulkAction = async (action: BulkSessionAction) => {
+    if (bulkBusy || !bulkSelecting || selectedFamilyIds.size === 0) return;
+    const ids = [...selectedFamilyIds];
+    const selectedFamilies = sessionFamilies.filter((family) => selectedFamilyIds.has(family.root.id));
+    setBulkConfirmDelete(false);
+    setBulkError(null);
+    setBulkCompleted(0);
+    setBulkBusy(true);
+    try {
+      const result = await runBulkSessionAction(ids, action, fetch, setBulkCompleted);
+      if (result.succeeded.length > 0) {
+        // Discard older list fetches so an in-flight response cannot undo the update.
+        sessionLoadIdRef.current += 1;
+        if (action !== "delete") {
+          const succeeded = new Set(result.succeeded);
+          setAllSessions((current) => current.map((session) => succeeded.has(session.id)
+            ? { ...session, archived: action === "archive" } : session));
+        }
+        for (const family of selectedFamilies.filter((item) => result.succeeded.includes(item.root.id))) {
+          const affected = [family.root, ...family.subagents].some((item) => item.id === selectedSessionIdRef.current);
+          if (affected) {
+            if (action === "delete") onSessionDeleted?.(selectedSessionIdRef.current!);
+            else onSessionArchived?.(selectedSessionIdRef.current!);
+          }
+        }
+      }
+      setBulkSelectedIds(new Set(result.failed.map((item) => item.id)));
+      if (result.failed.length === 0) exitBulkMode();
+      else setBulkError(t("sidebar.bulkFailed", { count: result.failed.length, succeeded: result.succeeded.length })
+        + ` (${result.failed.slice(0, 3).map((item) => `${item.id}: ${item.status}`).join(", ")})`);
+      if (result.succeeded.length > 0) await loadSessions(false, true);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   const virtualIndices = useMemo(() => getSessionListIndices(
     sessionFamilies.length,
     listScrollTop,
@@ -1981,16 +2051,54 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           overflow: "hidden",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 10px" }}>
-        <button
-          type="button"
-          onClick={() => setShowArchived((value) => !value)}
-          aria-pressed={showArchived}
-          style={{ border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, padding: "4px 6px" }}
-        >
-          {showArchived ? t("sidebar.activeSessions") : t("sidebar.archivedSessions")}
-        </button>
-      </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 10px", gap: 8 }}>
+          {!sessionSearchActive && selectedProject && (
+            <button type="button" disabled={bulkBusy} onClick={() => {
+              if (bulkSelecting) exitBulkMode();
+              else { setBulkSelectedIds(new Set()); setBulkError(null); setBulkModeScope(bulkScope); }
+            }} style={{ border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, padding: "4px 6px" }}>
+              {t(bulkSelecting ? "sidebar.bulkDone" : "sidebar.bulkSelect")}
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => setShowArchived((value) => !value)}
+            aria-pressed={showArchived}
+            style={{ border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, padding: "4px 6px" }}
+          >
+            {showArchived ? t("sidebar.activeSessions") : t("sidebar.archivedSessions")}
+          </button>
+        </div>
+        {bulkSelecting && (
+          <div style={{ padding: "4px 12px 8px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12, color: "var(--text-muted)" }}>
+            <button type="button" className={BULK_BUTTON_CLASS} disabled={bulkBusy || selectableFamilyIds.length === 0} onClick={() => {
+              setBulkSelectedIds(selectedFamilyIds.size === selectableFamilyIds.length
+                ? new Set() : new Set(selectableFamilyIds));
+              setBulkConfirmDelete(false);
+              setBulkError(null);
+            }}>{t(selectedFamilyIds.size === selectableFamilyIds.length && selectableFamilyIds.length > 0 ? "sidebar.bulkClear" : "sidebar.bulkSelectAll")}</button>
+            <span role="status">{bulkBusy
+              ? t("sidebar.bulkProgress", { done: bulkCompleted, count: selectedFamilyIds.size })
+              : t("sidebar.bulkSelected", { count: selectedFamilyIds.size })}</span>
+            {!bulkConfirmDelete && (
+              <>
+                <button type="button" className={BULK_BUTTON_CLASS} disabled={bulkBusy || selectedFamilyIds.size === 0} onClick={() => void performBulkAction(showArchived ? "restore" : "archive")}>
+                  {t(showArchived ? "sidebar.restore" : "sidebar.archive")}
+                </button>
+                <button type="button" className={BULK_BUTTON_CLASS} disabled={bulkBusy || selectedFamilyIds.size === 0} onClick={() => setBulkConfirmDelete(true)}>{t("sidebar.delete")}</button>
+              </>
+            )}
+            {bulkConfirmDelete && (
+              <>
+                <span>{t("sidebar.bulkDeleteConfirm", { count: selectedFamilyIds.size })}</span>
+                <button type="button" className={BULK_BUTTON_CLASS} disabled={bulkBusy} onClick={() => void performBulkAction("delete")} style={{ color: "#ef4444" }}>{t("sidebar.delete")}</button>
+                <button type="button" className={BULK_BUTTON_CLASS} onClick={() => setBulkConfirmDelete(false)}>{t("sidebar.cancel")}</button>
+              </>
+            )}
+            {bulkError && <div role="alert" style={{ width: "100%", color: "#ef4444" }}>{bulkError}</div>}
+          </div>
+        )}
       <SessionSearch open={sessionSearchOpen} query={sessionSearchQuery} includeArchived={searchIncludesArchived} selectedSessionId={selectedSessionId} onSelectSession={handleSelectSessionFromList}>
         <div
           ref={listScrollRef}
@@ -2041,7 +2149,20 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 >
                   <SessionItem
                     session={displaySession}
-                    isSelected={familySessions.some((session) => session.id === selectedSessionId)}
+                    isSelected={bulkSelecting ? selectedFamilyIds.has(family.root.id) : familySessions.some((session) => session.id === selectedSessionId)}
+                    bulkSelecting={bulkSelecting}
+                    bulkSelected={selectedFamilyIds.has(family.root.id)}
+                    bulkBusy={bulkBusy}
+                    onToggleBulk={() => {
+                      setBulkSelectedIds((current) => {
+                        const next = new Set(current);
+                        if (next.has(family.root.id)) next.delete(family.root.id);
+                        else next.add(family.root.id);
+                        return next;
+                      });
+                      setBulkConfirmDelete(false);
+                      setBulkError(null);
+                    }}
                     isRunning={familySessions.some((session) => runningSessionIds.has(session.id) || queuedSessionIds.has(session.id))}
                     isUnread={familySessions.some((session) => unreadSessionIds.has(session.id))}
                     isStarred={starredIds.has(family.root.id)}
@@ -2350,6 +2471,10 @@ function showProjectActivity(
 function SessionItem({
   session,
   isSelected,
+  bulkSelecting = false,
+  bulkSelected = false,
+  bulkBusy = false,
+  onToggleBulk,
   isRunning,
   isUnread,
   isStarred = false,
@@ -2367,6 +2492,10 @@ function SessionItem({
 }: {
   session: SessionInfo;
   isSelected: boolean;
+  bulkSelecting?: boolean;
+  bulkSelected?: boolean;
+  bulkBusy?: boolean;
+  onToggleBulk?: () => void;
   isRunning?: boolean;
   isUnread?: boolean;
   isStarred?: boolean;
@@ -2533,8 +2662,8 @@ function SessionItem({
     <div
       className="session-row"
       data-session-id={session.id}
-      onClick={confirmDelete || renaming ? undefined : onClick}
-      onContextMenu={confirmDelete || renaming ? undefined : handleContextMenu}
+      onClick={bulkSelecting ? (bulkBusy || session.transient ? undefined : onToggleBulk) : confirmDelete || renaming ? undefined : onClick}
+      onContextMenu={bulkSelecting || confirmDelete || renaming ? undefined : handleContextMenu}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); }}
       title={actionError ?? undefined}
@@ -2544,7 +2673,7 @@ function SessionItem({
         alignItems: "center",
         paddingLeft: depth > 0 ? depth * 12 + 14 : 14,
         paddingRight: 8,
-        cursor: confirmDelete || renaming ? "default" : "pointer",
+        cursor: bulkBusy || (bulkSelecting && session.transient) || confirmDelete || renaming ? "default" : "pointer",
         background: confirmDelete
           ? "rgba(239,68,68,0.06)"
           : isSelected ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
@@ -2625,6 +2754,13 @@ function SessionItem({
       ) : (
         /* ── Normal view ── */
         <>
+          {bulkSelecting && (
+            <input type="checkbox" checked={bulkSelected} disabled={bulkBusy || session.transient}
+              aria-label={t("sidebar.bulkSelectSession", { title })}
+              onClick={(event) => event.stopPropagation()}
+              onChange={() => onToggleBulk?.()}
+              style={{ flexShrink: 0, width: 16, height: 16, accentColor: "var(--accent)" }} />
+          )}
           {/* Subagent indicator for child sessions */}
           {depth > 0 && (
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -2700,7 +2836,7 @@ function SessionItem({
           )}
 
           {/* Touch rows show one compact control; desktop rows reveal actions on hover. */}
-          {!session.transient && (
+          {!session.transient && !bulkSelecting && (
             <div ref={actionsRef} className="session-row-action-controls">
               <button
                 ref={actionsToggleRef}
