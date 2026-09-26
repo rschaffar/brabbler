@@ -145,6 +145,7 @@ interface Props {
   onRunningSessionIdsChange?: (ids: Set<string>) => void;
   onQueuedSessionIdsChange?: (ids: Set<string>) => void;
   onActivityChange?: (attention: SessionAttention[], reviewIds: Set<string>, available: boolean) => void;
+  onReviewReadReady?: (markRead: ((id: string) => void) | null) => void;
   onSessionsChange?: (sessions: SessionInfo[]) => void;
 }
 
@@ -379,7 +380,7 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onQueuedSessionIdsChange, onActivityChange, onSessionsChange }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onQueuedSessionIdsChange, onActivityChange, onReviewReadReady, onSessionsChange }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const { starredIds, starredProjectKeys, toggleStarred, toggleStarredProject } = useStarredSessions();
@@ -640,12 +641,30 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     }
   }, []);
 
-  const acknowledgeReview = useCallback((id: string, at: number) => {
-    if (at <= (reviewedRunTimesRef.current.get(id) ?? 0)) return;
+  const markReviewRead = useCallback((id: string) => {
+    const at = completedRunTimesRef.current.get(id);
+    if (!at || at <= (reviewedRunTimesRef.current.get(id) ?? 0) || runningSessionIds.has(id)) return;
     reviewedRunTimesRef.current.set(id, at);
     pendingReviewAcksRef.current.set(id, Math.max(at, pendingReviewAcksRef.current.get(id) ?? 0));
+    setUnreadSessionIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    setSubagentReviewIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     void flushReviewAcks();
-  }, [flushReviewAcks]);
+  }, [flushReviewAcks, runningSessionIds]);
+
+  useEffect(() => {
+    onReviewReadReady?.(markReviewRead);
+    return () => onReviewReadReady?.(null);
+  }, [markReviewRead, onReviewReadReady]);
 
   // Import only timestamped legacy receipts. ID-only unread flags cannot prove
   // that a run actually settled; the server is authoritative after this point.
@@ -735,10 +754,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           mergeReviewedRunTimes(retainedReviewed, serverReviewed), pendingReviewAcksRef.current,
         );
         const reviewed = reconcileCompletedRuns(
-          data.completedRuns ?? [], reviewedRunTimesRef.current, selectedSessionIdRef.current,
-          running, allSessionsRef.current,
+          data.completedRuns ?? [], reviewedRunTimesRef.current, running, allSessionsRef.current,
         );
-        for (const [id, at] of reviewed.acknowledged) acknowledgeReview(id, at);
         void flushReviewAcks();
         setUnreadSessionIds((prev) => sameIdSet(prev, reviewed.rootReady) ? prev : reviewed.rootReady);
         setSubagentReviewIds((prev) => sameIdSet(prev, reviewed.subagentReady) ? prev : reviewed.subagentReady);
@@ -778,7 +795,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       controller?.abort();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [acknowledgeReview, flushReviewAcks, loadSessions, storageReady]);
+  }, [flushReviewAcks, loadSessions, storageReady]);
 
   useEffect(() => {
     onRunningSessionIdsChange?.(runningSessionIds);
@@ -831,24 +848,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       ),
     );
   }, [runningSessionIds, selectedSessionId, allSessions, loadSessions, onBackgroundTaskDone]);
-
-  useEffect(() => {
-    if (!selectedSessionId || !storageReady) return;
-    const completedAt = completedRunTimesRef.current.get(selectedSessionId);
-    if (completedAt) acknowledgeReview(selectedSessionId, completedAt);
-    setUnreadSessionIds((prev) => {
-      if (!prev.has(selectedSessionId)) return prev;
-      const next = new Set(prev);
-      next.delete(selectedSessionId);
-      return next;
-    });
-    setSubagentReviewIds((prev) => {
-      if (!prev.has(selectedSessionId)) return prev;
-      const next = new Set(prev);
-      next.delete(selectedSessionId);
-      return next;
-    });
-  }, [acknowledgeReview, selectedSessionId, storageReady]);
 
   useEffect(() => {
     if (explorerRefreshKey !== undefined) setExplorerKey((k) => k + 1);

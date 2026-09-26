@@ -2032,6 +2032,10 @@ span.token.table {
 .activity-item-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 550; }
 .activity-item-action { flex: none; color: var(--accent); font-size: 11px; }
 .activity-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex: none; }
+.activity-review-item { display: flex; align-items: stretch; }
+.activity-review-item > .activity-item { flex: 1; min-width: 0; }
+.activity-mark-read { flex: none; padding: 0 16px; border: 0; background: transparent; color: var(--accent); font-size: 11px; cursor: pointer; }
+.activity-mark-read:hover, .activity-mark-read:focus-visible { background: var(--bg-hover); text-decoration: underline; }
 .activity-item-needs-you .activity-dot { background: #e59a37; }
 .activity-item-working .activity-dot { background: var(--accent); }
 .activity-item-interrupted .activity-dot { background: #e59a37; }

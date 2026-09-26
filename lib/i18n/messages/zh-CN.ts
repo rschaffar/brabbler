@@ -144,6 +144,8 @@ export const zhCNLocale: LocalePlugin = {
     "activity.inputRequested": "需要输入",
     "activity.openAndAnswer": "打开并回答",
     "activity.review": "查看",
+    "activity.markRead": "已读",
+    "activity.markReadSession": "将{name}标记为已读",
     "activity.open": "打开",
     "activity.close": "关闭动态",
     "activity.back": "返回动态",

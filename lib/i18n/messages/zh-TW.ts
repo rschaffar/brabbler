@@ -144,6 +144,8 @@ export const zhTWLocale: LocalePlugin = {
     "activity.inputRequested": "需要輸入",
     "activity.openAndAnswer": "開啟並回答",
     "activity.review": "檢視",
+    "activity.markRead": "已讀",
+    "activity.markReadSession": "將{name}標記為已讀",
     "activity.open": "開啟",
     "activity.close": "關閉動態",
     "activity.back": "返回動態",

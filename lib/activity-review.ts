@@ -37,24 +37,18 @@ export function saveReviewedRunTimes(times: ReadonlyMap<string, number>): Map<st
   return merged;
 }
 
-/** Acknowledge only completions actually viewed; do not infer completion from idle history. */
+/** List unacknowledged completions; opening a session never marks it read. */
 export function reconcileCompletedRuns(
   completions: readonly SessionCompletion[],
   acknowledged: ReadonlyMap<string, number>,
-  selectedId: string | null,
   runningIds: ReadonlySet<string>,
   sessions: readonly SessionInfo[],
-): { rootReady: Set<string>; subagentReady: Set<string>; acknowledged: Map<string, number> } {
+): { rootReady: Set<string>; subagentReady: Set<string> } {
   const rootReady = new Set<string>();
   const subagentReady = new Set<string>();
-  const next = new Map(acknowledged);
   const byId = new Map(sessions.map((session) => [session.id, session]));
   for (const { sessionId, at } of completions) {
-    if (!Number.isFinite(at) || at <= (next.get(sessionId) ?? 0)) continue;
-    if (sessionId === selectedId) {
-      next.set(sessionId, at);
-      continue;
-    }
+    if (!Number.isFinite(at) || at <= (acknowledged.get(sessionId) ?? 0)) continue;
     if (runningIds.has(sessionId)) continue;
     const session = byId.get(sessionId);
     if (!session) continue; // A version-driven catalogue refresh may still be in flight.
@@ -69,5 +63,5 @@ export function reconcileCompletedRuns(
     if (archived) continue;
     (session.relation?.kind === "subagent" ? subagentReady : rootReady).add(sessionId);
   }
-  return { rootReady, subagentReady, acknowledged: next };
+  return { rootReady, subagentReady };
 }

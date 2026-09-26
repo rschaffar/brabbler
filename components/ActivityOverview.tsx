@@ -15,6 +15,7 @@ interface Props {
   available: boolean;
   selectedId: string | null;
   onSelect: (session: SessionInfo, status?: ActivityStatus) => void;
+  onMarkRead: (id: string) => void;
   onClose: () => void;
   hidden?: boolean;
   recoveryRefreshKey?: number;
@@ -22,7 +23,7 @@ interface Props {
 
 const STATUS_ORDER: ActivityStatus[] = ["needs-you", "working", "queued", "interrupted", "ready"];
 
-export function ActivityOverview({ sessions, runningIds, queuedIds, attention, reviewIds, available, selectedId, onSelect, onClose, hidden = false, recoveryRefreshKey = 0 }: Props) {
+export function ActivityOverview({ sessions, runningIds, queuedIds, attention, reviewIds, available, selectedId, onSelect, onMarkRead, onClose, hidden = false, recoveryRefreshKey = 0 }: Props) {
   const { t, locale } = useI18n();
   const [projectFilter, setProjectFilter] = useState("");
   const [interruptedIds, setInterruptedIds] = useState<Set<string>>(() => new Set());
@@ -130,7 +131,7 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
                 const action = status === "needs-you" ? t("activity.openAndAnswer")
                   : status === "ready" ? t("activity.review") : t("activity.open");
                 return (
-                  <div role="listitem" key={session.id}>
+                  <div role="listitem" key={session.id} className={status === "ready" ? "activity-review-item" : undefined}>
                     <button
                       type="button"
                       className={`activity-item activity-item-${status}${item.nested ? " activity-nested" : ""}${selectedId === session.id ? " activity-selected" : ""}`}
@@ -153,6 +154,9 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
                       </span>}
                       {status === "interrupted" && <span className="activity-item-reason">{t("activity.interruptedHint")}</span>}
                     </button>
+                    {status === "ready" && <button type="button" className="activity-mark-read"
+                      aria-label={t("activity.markReadSession", { name: label })}
+                      onClick={() => onMarkRead(session.id)}>{t("activity.markRead")}</button>}
                   </div>
                 );
               })}

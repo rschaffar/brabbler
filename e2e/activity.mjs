@@ -161,6 +161,8 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await ready.waitFor({ timeout: 15000 });
   await ready.click();
   if (mobile) await page.getByRole("button", { name: "Back to Activity" }).click();
+  await ready.waitFor();
+  await overview.getByRole("button", { name: "Mark Branch root as read" }).click();
   await ready.waitFor({ state: "hidden" });
 
   await post(`/api/agent/${waitingSessionId}`, { type: "prompt", message: "/e2e-ask-user timeout" });
@@ -175,8 +177,8 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await overview.getByRole("combobox", { name: "Project" }).selectOption({ label: "other-project" });
   await otherReady.waitFor();
   await originalReady.waitFor({ state: "hidden" });
-  // A separate browser context has no shared localStorage. Acknowledging on
-  // this device must still clear its queue on the server's next visible poll.
+  // A separate browser context has no shared localStorage. Explicitly marking
+  // this result read must still clear its queue on the server's next visible poll.
   const peerContext = width === 1280 ? await page.context().browser().newContext({ viewport: { width, height: 900 }, locale: "en-US" }) : null;
   const peer = peerContext ? await peerContext.newPage() : null;
   if (peer) {
@@ -194,13 +196,15 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
       .filter({ hasText: "Other workspace task" }).waitFor();
   }
   await otherReady.click();
+  await page.waitForURL((url) => url.searchParams.get("session") === otherSessionId);
+  if (mobile) await page.getByRole("button", { name: "Back to Activity" }).click();
+  await otherReady.waitFor();
+  await overview.getByRole("button", { name: "Mark Other workspace task as read" }).click();
   if (peer) {
     await peer.getByRole("region", { name: "Activity" }).locator(".activity-item-ready")
       .filter({ hasText: "Other workspace task" }).waitFor({ state: "hidden", timeout: 15000 });
     await peerContext.close();
   }
-  await page.waitForURL((url) => url.searchParams.get("session") === otherSessionId);
-  if (mobile) await page.getByRole("button", { name: "Back to Activity" }).click();
   await otherReady.waitFor({ state: "hidden" });
   assert.equal(await overview.getByRole("combobox", { name: "Project" }).evaluate((select) => select.selectedOptions[0]?.textContent), "other-project",
     "a project filter stays visibly selected after its final row is reviewed");
