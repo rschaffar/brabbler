@@ -38,6 +38,7 @@ const RICH = "e2e-rich-session";
 const COMPACTED = "e2e-compacted-session";
 const APPEND = "e2e-external-append-session";
 const ARCHIVE = "e2e-archive-session";
+const BULK = ["e2e-bulk-desktop-a", "e2e-bulk-desktop-b", "e2e-bulk-mobile-a", "e2e-bulk-mobile-b"];
 const OTHER = "e2e-other-project";
 const text = (i) => `E2E message ${String(i).padStart(4, "0")}`;
 const ids = (start, end) => Array.from({ length: end - start }, (_, i) => `e${start + i}`);
@@ -148,6 +149,7 @@ try {
     message("reply", "root", "assistant", "E2E wrapper reply"),
   ]);
   writeSession(ARCHIVE, [message("root", null, "user", "E2E archive fixture")]);
+  for (const id of BULK) writeSession(id, [message("root", null, "user", `E2E bulk ${id}`)]);
   writeSession(OTHER, [
     message("root", null, "user", "Other workspace task"),
     message("reply", "root", "assistant", "Waiting for more work"),
@@ -193,7 +195,7 @@ try {
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER].sort());
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, ...BULK].sort());
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
@@ -392,6 +394,68 @@ try {
       assert.match(tools.find((tool) => tool.name === "ask_user").description, /^Ask the user a question/);
       await checkAskUserDialog(page, viewport.width);
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      await context.tracing.stop();
+      await context.close();
+      context = undefined;
+      page = undefined;
+      continue;
+    }
+    if (process.env.E2E_BULK_ONLY === "1") {
+      const ids = viewport.width <= 600 ? BULK.slice(2) : BULK.slice(0, 2);
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await page.locator(".markdown-code-block pre").waitFor();
+      if (viewport.width <= 600) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+      const first = page.locator(`[data-session-id="${ids[0]}"]`);
+      const second = page.locator(`[data-session-id="${ids[1]}"]`);
+      const select = page.getByRole("button", { name: "Select", exact: true });
+      await select.waitFor();
+      assert.equal(await first.getByRole("checkbox").count(), 0, "Selection controls stay hidden until Select");
+      await select.click();
+      await first.scrollIntoViewIfNeeded();
+      await first.getByRole("checkbox").check();
+      await second.scrollIntoViewIfNeeded();
+      await second.getByRole("checkbox").check();
+      await page.getByText("2 selected", { exact: true }).waitFor();
+      const archiveConflict = `**/api/sessions/${ids[0]}`;
+      const failArchive = (route) => route.request().method() === "PATCH"
+        ? route.fulfill({ status: 409, json: { error: "Session is running" } }) : route.continue();
+      await page.route(archiveConflict, failArchive);
+      await page.getByRole("button", { name: "Archive", exact: true }).click();
+      await page.getByRole("alert").getByText("1 failed, 1 succeeded", { exact: false }).waitFor();
+      const expectedConflict = errors.indexOf("Failed to load resource: the server responded with a status of 409 (Conflict)");
+      assert.notEqual(expectedConflict, -1, "Simulated archive conflict should reach the browser");
+      errors.splice(expectedConflict, 1);
+      assert.ok(await first.getByRole("checkbox").isChecked(), "Failed session stays selected for retry");
+      assert.equal((await api("/api/sessions?force=1")).sessions.find((s) => s.id === ids[1])?.archived, true);
+      await page.unroute(archiveConflict, failArchive);
+      await page.getByRole("button", { name: "Archive", exact: true }).click();
+      await first.waitFor({ state: "detached" });
+      const archivedSessions = (await api("/api/sessions?force=1")).sessions;
+      assert.ok(ids.every((id) => archivedSessions.find((s) => s.id === id)?.archived === true));
+      await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
+      await page.getByRole("button", { name: "Select", exact: true }).click();
+      await first.scrollIntoViewIfNeeded();
+      await first.getByRole("checkbox").check();
+      await second.scrollIntoViewIfNeeded();
+      await second.getByRole("checkbox").check();
+      await page.getByRole("button", { name: "Restore", exact: true }).click();
+      await first.waitFor({ state: "detached" });
+      await page.getByRole("button", { name: "Active sessions", exact: true }).click();
+      await page.getByRole("button", { name: "Select", exact: true }).click();
+      await first.scrollIntoViewIfNeeded();
+      await first.getByRole("checkbox").check();
+      await page.getByRole("button", { name: "Delete", exact: true }).click();
+      await page.getByText("Permanently delete selected sessions (1) and their subagents? Forks will remain.").waitFor();
+      assert.ok((await api("/api/sessions?force=1")).sessions.some((s) => s.id === ids[0]), "Delete requires confirmation");
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("button", { name: "Delete", exact: true }).click();
+      await page.getByRole("button", { name: "Delete", exact: true }).last().click();
+      await first.waitFor({ state: "detached" });
+      assert.ok(!(await api("/api/sessions?force=1")).sessions.some((s) => s.id === ids[0]));
+      assert.ok((await api("/api/sessions?force=1")).sessions.some((s) => s.id === ids[1]));
+      assert.equal(await second.getByRole("checkbox").count(), 0, "Selection mode exits after success");
+      assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      console.log(`PASS: ${viewport.width}px opt-in bulk archive, restore, and confirmed delete`);
       await context.tracing.stop();
       await context.close();
       context = undefined;

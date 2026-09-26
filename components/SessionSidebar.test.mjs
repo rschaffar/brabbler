@@ -125,7 +125,7 @@ test("offers the downstream context-menu hook only on a normal session row", () 
   assert.match(sessionItemSource, /const handleContextMenu[\s\S]*?dispatchSessionRowContextMenu\(\{/);
   assert.match(
     sessionItemSource,
-    /onContextMenu=\{confirmDelete \|\| renaming \? undefined : handleContextMenu\}/,
+    /onContextMenu=\{bulkSelecting \|\| confirmDelete \|\| renaming \? undefined : handleContextMenu\}/,
   );
 });
 
@@ -144,7 +144,7 @@ test("lifecycle refreshes bypass the cache while cross-window polling reuses it"
 
 test("does not expose disk-backed actions for transient sessions", () => {
   assert.match(sessionItemSource, /if \(session\.transient\) return;/);
-  assert.match(sessionItemSource, /\{!session\.transient && \(/);
+  assert.match(sessionItemSource, /\{!session\.transient && !bulkSelecting && \(/);
 });
 
 test("hides subagent rows and aggregates their state into the main session row", () => {
@@ -170,6 +170,18 @@ test("archive and restore immediately update the visible family before a forced 
   assert.equal(sessions[0].archived, false);
   assert.equal(updateSessionArchiveState(archived, "root", false)[0].archived, false);
   assert.match(source, /sessionLoadIdRef\.current \+= 1;[\s\S]*?setAllSessions\(\(current\) => updateSessionArchiveState\(current, id, archived\)\);[\s\S]*?void loadSessions\(false, true\)/);
+});
+
+test("bulk selection is opt-in, family-root scoped, and hides row actions", () => {
+  assert.match(source, /bulkModeScope === bulkScope && !sessionSearchActive/);
+  assert.match(source, /sessionFamilies\.filter\(\(family\) => !family\.root\.transient && bulkSelectedIds\.has\(family\.root\.id\)\)/);
+  assert.match(source, /setBulkModeScope\(bulkScope\)/);
+  assert.match(source, /if \(bulkSelecting\) exitBulkMode\(\)/);
+  assert.match(source, /bulkConfirmDelete && \([\s\S]*?sidebar\.bulkDeleteConfirm[\s\S]*?performBulkAction\("delete"\)/);
+  assert.match(source, /setBulkSelectedIds\(new Set\(result\.failed\.map\(\(item\) => item\.id\)\)\)/);
+  assert.match(sessionItemSource, /bulkSelecting \? \(bulkBusy \|\| session\.transient \? undefined : onToggleBulk\) :/);
+  assert.match(sessionItemSource, /\{bulkSelecting && \(\s*<input type="checkbox"/);
+  assert.match(sessionItemSource, /\{!session\.transient && !bulkSelecting && \(/);
 });
 
 test("touch rows show one compact toggle and reveal centered actions only after expansion", () => {
