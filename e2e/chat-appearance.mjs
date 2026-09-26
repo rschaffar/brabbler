@@ -48,6 +48,17 @@ export async function checkChatAppearance(page) {
   };
 
   await openSettings();
+  const titleLanguage = page.getByRole("combobox", { name: "Generated title language" });
+  await titleLanguage.selectOption("en");
+  await page.waitForFunction(async () => {
+    const response = await fetch("/api/sessions/title-language");
+    return response.ok && (await response.json()).language === "en";
+  });
+  await closeSettings();
+  await openSettings();
+  await page.waitForFunction(() => document.querySelector("#settings-title-language")?.value === "en");
+  assert.equal(await titleLanguage.inputValue(), "en", "The title language must reload from the server");
+  await titleLanguage.selectOption("auto");
   assert.equal(await width.inputValue(), "820");
   assert.equal(await fontSize.inputValue(), "14");
   await width.press("End");
