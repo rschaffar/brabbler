@@ -13,6 +13,15 @@ export interface ActivityItem {
 }
 export type ActivitySections = Record<ActivityStatus, ActivityItem[]>;
 
+/** A blocking request takes precedence over a run in both Activity and Starred. */
+export function liveSessionActivityStatus(
+  sessionId: string,
+  runningIds: ReadonlySet<string>,
+  attentionById: ReadonlyMap<string, SessionAttention>,
+): "needs-you" | "working" | null {
+  return attentionById.has(sessionId) ? "needs-you" : runningIds.has(sessionId) ? "working" : null;
+}
+
 export function activitySessionName(session: SessionInfo): string {
   return session.name?.trim() || (session.relation?.kind === "subagent" ? session.relation.description?.trim() : "")
     || session.firstMessage?.trim() || session.id;
@@ -54,10 +63,10 @@ export function getActivitySections(
     if (projectFilter && projectKey !== projectFilter) continue;
     const request = attentionById.get(session.id);
     // A live run supersedes an old unread marker; an actual dialog supersedes both.
-    const status = request ? "needs-you" : runningIds.has(session.id) ? "working"
-      : queuedIds.has(session.id) ? "queued"
-      : !session.transient && interruptedIds.has(session.id) ? "interrupted"
-      : reviewIds.has(session.id) ? "ready" : null;
+    const status = liveSessionActivityStatus(session.id, runningIds, attentionById)
+      ?? (queuedIds.has(session.id) ? "queued"
+        : !session.transient && interruptedIds.has(session.id) ? "interrupted"
+        : reviewIds.has(session.id) ? "ready" : null);
     if (!status) continue;
     statusById.set(session.id, status);
     sections[status].push({ session, status, ...(request ? { attention: request } : {}), nested: false, projectKey });
