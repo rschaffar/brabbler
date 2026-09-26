@@ -144,6 +144,8 @@ export const enLocale: LocalePlugin = {
     "activity.inputRequested": "Input requested",
     "activity.openAndAnswer": "Open & answer",
     "activity.review": "Review",
+    "activity.markRead": "Read",
+    "activity.markReadSession": "Mark {name} as read",
     "activity.open": "Open",
     "activity.close": "Close Activity",
     "activity.back": "Back to Activity",

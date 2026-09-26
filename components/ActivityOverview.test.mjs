@@ -16,7 +16,7 @@ const session = (id, relation) => ({
 function render(sessions, runningIds, reviewIds) {
   return renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(ActivityOverview, {
     sessions, runningIds: new Set(runningIds), queuedIds: new Set(), attention: [], reviewIds: new Set(reviewIds),
-    available: true, selectedId: null, onSelect() {}, onClose() {},
+    available: true, selectedId: null, onSelect() {}, onMarkRead() {}, onClose() {},
   })));
 }
 
@@ -30,6 +30,8 @@ test("ready subagents are identified even when their parent is working or absent
   assert.match(html, /class="activity-item-meta"[^>]*>Sub-agent · project<\/span>/);
   assert.match(html, /aria-label="ready-root · project · Ready to review · Review"/);
   assert.doesNotMatch(html, /aria-label="ready-root[^\"]*Sub-agent/);
+  assert.match(html, /aria-label="Mark ready-root as read"[^>]*>Read<\/button>/);
+  assert.match(html, /aria-label="Mark ready-child as read"[^>]*>Read<\/button>/);
 });
 
 test("nested subagents retain their indentation and label", () => {

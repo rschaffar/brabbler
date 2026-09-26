@@ -156,6 +156,11 @@ export function AppShell() {
   }, []);
   const [activityAttention, setActivityAttention] = useState<SessionAttention[]>([]);
   const [reviewSessionIds, setReviewSessionIds] = useState<Set<string>>(() => new Set());
+  const markReviewReadRef = useRef<((id: string) => void) | null>(null);
+  const handleReviewReadReady = useCallback((markRead: ((id: string) => void) | null) => {
+    markReviewReadRef.current = markRead;
+  }, []);
+  const handleMarkReviewRead = useCallback((id: string) => markReviewReadRef.current?.(id), []);
   const [activityAvailable, setActivityAvailable] = useState(true);
   const [recoveryRefreshKey, setRecoveryRefreshKey] = useState(0);
   const handleRecoveryDismissed = useCallback(() => setRecoveryRefreshKey((key) => key + 1), []);
@@ -1245,6 +1250,7 @@ export function AppShell() {
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
         onQueuedSessionIdsChange={handleQueuedSessionIdsChange}
         onActivityChange={handleActivityChange}
+        onReviewReadReady={handleReviewReadReady}
         onSessionsChange={handleSessionsChange}
       />
       <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
@@ -2420,6 +2426,7 @@ export function AppShell() {
               recoveryRefreshKey={recoveryRefreshKey}
               selectedId={selectedSession?.id ?? null}
               onSelect={handleActivitySelectSession}
+              onMarkRead={handleMarkReviewRead}
               onClose={closeOverview}
               hidden={isMobile && !overviewMobileList}
             />
