@@ -6,6 +6,8 @@ import { listSessionFamilies } from "@/lib/session-family";
 import { runBulkSessionAction, type BulkSessionAction } from "@/lib/bulk-session-actions";
 import { loadExplorerOpen, saveExplorerOpen } from "@/lib/file-explorer-state";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
+import { sessionDeepLink } from "@/lib/session-reference";
+import { copyText } from "@/lib/clipboard";
 import { useStarredSessions } from "@/hooks/useStarredSessions";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import { getProjectActivity, getRecentProjects, sessionsForProject } from "@/lib/project-groups";
@@ -2719,6 +2721,17 @@ function SessionItem({
     }
   }, [session.id, session.transient, archiveBusy, isRunning, archivedView, onArchived]);
 
+  const handleCopyLink = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActionsOpen(false);
+    try {
+      await copyText(sessionDeepLink(window.location.origin, session.id));
+      setActionError(null);
+    } catch (error) {
+      setActionError(String(error));
+    }
+  }, [session.id]);
+
   const handleDeleteClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     if (e.shiftKey) {
@@ -2944,6 +2957,14 @@ function SessionItem({
                 </svg>
               </button>
               <div className="session-row-actions" data-open={actionsOpen}>
+                <button
+                  onClick={handleCopyLink}
+                  title={t("sidebar.copySessionLink")}
+                  aria-label={t("sidebar.copySessionLink")}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, padding: 0, background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 7, color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-2 2" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l2-2" /></svg>
+                </button>
                 <button
                   onClick={(event) => { event.stopPropagation(); onToggleStar?.(); }}
                   title={t(isStarred ? "sidebar.unstarSession" : "sidebar.starSession")}

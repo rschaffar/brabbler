@@ -355,6 +355,7 @@ export const enLocale: LocalePlugin = {
     "sidebar.moveRunning": "Stop the session before moving",
     "sidebar.move": "Move",
     "sidebar.rename": "Rename",
+    "sidebar.copySessionLink": "Copy session link",
     "sidebar.delete": "Delete",
     "sidebar.deleteWithShiftClick": "Delete (Shift+click to delete without confirmation)",
     "sidebar.expandSubagents": "Expand subagents",
