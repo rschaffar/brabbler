@@ -112,6 +112,17 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
     } finally { if (usageRequestsRef.current.get(key) === requestId) usageRequestsRef.current.delete(key); }
   }, []);
   useEffect(() => () => { eventsRef.current?.close(); eventsRef.current = null; }, []);
+  useEffect(() => {
+    if (open) return;
+    setAdding(false);
+    setLabel("");
+    setApiKey("");
+  }, [open]);
+  useEffect(() => {
+    setAdding(false);
+    setLabel("");
+    setApiKey("");
+  }, [provider]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -184,12 +195,12 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
     return () => { window.removeEventListener("focus", refreshOnReturn); document.removeEventListener("visibilitychange", refreshOnReturn); };
   }, [selectionReady, currentProvider, currentId, currentAccount, queryUsage]);
   useEffect(() => {
-    if (!open || !adding || !provider) return;
+    if (!open || !provider) return;
     void queryUsage(provider, null);
     for (const account of accounts) {
       if (account.provider === provider && account.authorized) void queryUsage(provider, account.id);
     }
-  }, [open, adding, provider, accounts, queryUsage]);
+  }, [open, provider, accounts, queryUsage]);
   const usageText = (providerId: string, accountId: string | null) => {
     if (!isProviderUsageId(providerId)) return "Usage not supported";
     const snapshot = usage[usageKey(providerId, accountId)];
@@ -345,7 +356,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
               {available.map((account) => <option key={account.id} value={account.id}>{account.label}</option>)}
             </select>
           </label>
-          <button className={`${field} self-start`} type="button" onClick={() => setAdding(!adding)} aria-expanded={adding}>Accounts…</button>
+          <button className={`${field} self-start`} type="button" disabled={oauthPending} onClick={() => { setAdding(!adding); setLabel(""); setApiKey(""); }} aria-expanded={adding}>{adding ? "Close add form" : "Add account"}</button>
         </>}
       </div>
       {adding && provider && <div className="mt-2 flex flex-col gap-2 rounded border border-border bg-bg-panel p-2">
@@ -355,6 +366,8 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
         </select>
         {type === "api_key" && <input className={field} aria-label="API key for new account" type="password" autoComplete="off" placeholder="API key" value={apiKey} onChange={(event) => setApiKey(event.target.value)} />}
         <button className={`${field} self-start`} type="button" disabled={pending || !label.trim() || (type === "api_key" && !apiKey.trim())} onClick={() => void addAccount()}>Authorize account</button>
+      </div>}
+      {provider && <div className="mt-2 flex flex-col gap-2 rounded border border-border bg-bg-panel p-2" aria-label={`${provider} accounts`}>
         <div className="flex flex-wrap items-center gap-1 border-b border-border pb-2">
           <strong className="text-text">Pi default</strong>
           {oauthChoices.includes(provider) && <button className={field} type="button" disabled={pending} onClick={() => startOAuth(null)}>Change login</button>}

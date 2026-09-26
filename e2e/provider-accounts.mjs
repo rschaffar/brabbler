@@ -34,8 +34,20 @@ export async function checkProviderAccountAuthorization(page, { base, sessionId,
   await panel.getByLabel("Account provider").selectOption(provider);
   assert.match(await chip.getAttribute("aria-label"), /^Account for .*Pi default/,
     "managing another provider must not change the model-provider indicator");
-  await panel.getByRole("button", { name: "Accounts…" }).click();
   await panel.getByText(accountLabel, { exact: false }).waitFor();
+  assert.equal(await panel.getByLabel("Account label").count(), 0, "add-account form stays hidden while existing accounts are visible");
+  await panel.getByRole("button", { name: "Add account" }).click();
+  await panel.getByLabel("Account label").waitFor();
+  await panel.getByRole("button", { name: "Close add form" }).click();
+  assert.equal(await panel.getByLabel("Account label").count(), 0);
+  await panel.getByText(accountLabel, { exact: false }).waitFor();
+  await panel.getByRole("button", { name: "Add account" }).click();
+  await page.keyboard.press("Escape");
+  await panel.waitFor({ state: "hidden" });
+  await chip.click();
+  assert.equal(await panel.getByLabel("Account label").count(), 0, "reopening the popover does not reopen the add form");
+  await panel.getByText(accountLabel, { exact: false }).waitFor();
+  await panel.getByRole("button", { name: "Add account" }).click();
   await panel.getByRole("button", { name: "Change login" }).first().click();
   assert.equal(await page.evaluate(() => window.__accountOAuthSources.length), 1);
   assert.equal(await page.evaluate(() => window.__accountOAuthSources.at(-1).url), `/api/auth/login/${encodeURIComponent(provider)}`,
@@ -124,7 +136,7 @@ export async function checkProviderAccountAuthorization(page, { base, sessionId,
     await page.getByRole("button", { name: /^Account for/ }).click();
     const usagePanel = page.getByRole("region", { name: "Provider accounts" });
     await usagePanel.getByLabel("Account provider").selectOption("openai-codex");
-    await usagePanel.getByRole("button", { name: "Accounts…" }).click();
+    assert.equal(await usagePanel.getByLabel("Account label").count(), 0);
     await usagePanel.getByText("Weekly 70% remaining · 5h 90% remaining").waitFor();
     await usagePanel.getByText("Weekly 25% remaining · 5h 50% remaining").waitFor();
     assert.ok(queriedAccounts.includes(null) && queriedAccounts.includes(fakeAccount.id), "usage requests are account-specific");
