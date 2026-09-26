@@ -19,7 +19,7 @@ Local browser UI for the [pi coding agent](https://github.com/earendil-works/pi)
 - **Workspace terminal**: open it from the File Explorer toolbar. It defaults to a bundled JetBrains Mono Nerd Font (no browser font installation needed); use the terminal header to switch to the system font. The choice is saved in browser storage.
 - **Web-based configuration**: manage provider login and API keys, models, model tests, plugin packages, and skills without leaving Pi Web.
 - **Browser-native `ask_user`**: answer agent questions with described choices, multi-selection, freeform text, and optional comments without a terminal-style popup.
-- **English, Simplified Chinese, and Traditional Chinese UI**: Pi Web follows the browser language initially and provides a language switcher in the top bar.
+- **English, Simplified Chinese, and Traditional Chinese UI**: Pi Web follows the browser language initially and provides a language switcher in the top bar. In **Settings → General**, the separate **Generated title language** setting chooses Auto, English, German, Simplified Chinese, or Traditional Chinese for all future Generate title actions. This preference is saved on the server in `~/.pi/agent/pi-web/title-settings.json` and shared by browsers using that server; it does not rename existing sessions or change the UI language.
 
 ## Quick Start
 

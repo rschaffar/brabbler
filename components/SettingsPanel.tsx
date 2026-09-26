@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme } from "@/hooks/useTheme";
 import { THEME_OPTIONS } from "@/lib/theme";
+import { TITLE_LANGUAGES, type TitleLanguage } from "@/lib/title-language-options";
 import { ThemeIcon } from "./ThemeIcon";
 import {
   CHAT_CONTENT_WIDTH_DEFAULT,
@@ -69,6 +70,9 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
   const [shellSettings, setShellSettings] = useState<ShellToolSettingsResponse | null>(null);
   const [shellSaving, setShellSaving] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
+  const [titleLanguage, setTitleLanguage] = useState<TitleLanguage | null>(null);
+  const [titleLanguageSaving, setTitleLanguageSaving] = useState(false);
+  const [titleLanguageError, setTitleLanguageError] = useState<string | null>(null);
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [pushRegistering, setPushRegistering] = useState(false);
   const [pushStatus, setPushStatus] = useState<{ kind: "ok" | "error"; message: string } | null>(null);
@@ -111,6 +115,42 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
       });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/sessions/title-language")
+      .then(async (response) => {
+        const data = await response.json() as { language?: TitleLanguage; error?: string };
+        if (!response.ok || !data.language || !TITLE_LANGUAGES.includes(data.language)) {
+          throw new Error(data.error ?? `HTTP ${response.status}`);
+        }
+        if (!cancelled) setTitleLanguage(data.language);
+      })
+      .catch((cause) => {
+        if (!cancelled) setTitleLanguageError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const updateTitleLanguage = async (language: TitleLanguage) => {
+    if (titleLanguageSaving) return;
+    setTitleLanguageSaving(true);
+    setTitleLanguageError(null);
+    try {
+      const response = await fetch("/api/sessions/title-language", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ language }),
+      });
+      const data = await response.json() as { language?: TitleLanguage; error?: string };
+      if (!response.ok || data.language !== language) throw new Error(data.error ?? `HTTP ${response.status}`);
+      setTitleLanguage(language);
+    } catch (cause) {
+      setTitleLanguageError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setTitleLanguageSaving(false);
+    }
+  };
 
   const togglePowerShell = async (enabled: boolean) => {
     setShellSaving(true);
@@ -266,6 +306,26 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
             />
           </div>
         </div>
+      </section>
+
+      <section className="settings-general-section">
+        <h3 className="settings-general-heading">{t("settings.titleLanguage")}</h3>
+        <p className="settings-general-description">{t("settings.titleLanguageDescription")}</p>
+        <div className="settings-shell-option">
+          <label htmlFor="settings-title-language">{t("settings.titleLanguage")}</label>
+          <select
+            id="settings-title-language"
+            className="settings-title-language-select"
+            value={titleLanguage ?? "auto"}
+            disabled={titleLanguage === null || titleLanguageSaving}
+            onChange={(event) => void updateTitleLanguage(event.target.value as TitleLanguage)}
+          >
+            {TITLE_LANGUAGES.map((language) => (
+              <option key={language} value={language}>{t(`settings.titleLanguage.${language}`)}</option>
+            ))}
+          </select>
+        </div>
+        {titleLanguageError && <p role="alert" className="settings-general-error">{titleLanguageError}</p>}
       </section>
 
       {shellSettings?.isWindows && (

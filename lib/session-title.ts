@@ -10,6 +10,8 @@ import {
   type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { readTitleLanguage } from "./title-language";
+import { titleLanguageInstruction, type TitleLanguage } from "./title-language-options";
 
 const TITLE_TIMEOUT_MS = 90_000;
 const TITLE_MAX_TOKENS = 256;
@@ -41,7 +43,7 @@ const IMAGE_PLACEHOLDER = "[image]";
 const TITLE_PROMPT = `Create a concise title for this session based on the conversation above.
 
 Requirements:
-- Match the primary language used by the user.
+- {{language}}
 - Describe the user's concrete goal or the outcome, not the act of chatting.
 - Use 4-12 words for space-separated languages, or 8-24 characters for CJK text when practical.
 - Do not call any tools.
@@ -85,16 +87,18 @@ export function resolveTitleThinkingLevel(model: Model<Api>): ThinkingLevel {
  * session id, and cacheRetention "none". The request is too small and too
  * unique to reuse the live session's prefix or write a cache nobody will read.
  */
-export function buildTitleRequest(source: Agent, transcript: string): TitleRequest {
+export function buildTitleRequest(source: Agent, transcript: string, language: TitleLanguage = "auto"): TitleRequest {
   const model = source.state.model;
   const thinkingLevel = resolveTitleThinkingLevel(model);
   return {
     model,
     context: {
-      systemPrompt: TITLE_SYSTEM_PROMPT,
+      systemPrompt: language === "auto"
+        ? TITLE_SYSTEM_PROMPT
+        : `${TITLE_SYSTEM_PROMPT} ${titleLanguageInstruction(language)}`,
       messages: [{
         role: "user",
-        content: [{ type: "text", text: `${transcript}\n\n${TITLE_PROMPT}` }],
+        content: [{ type: "text", text: `${transcript}\n\n${TITLE_PROMPT.replace("{{language}}", titleLanguageInstruction(language))}` }],
         timestamp: Date.now(),
       }],
     },
@@ -288,7 +292,7 @@ export async function generateSessionTitle(source: AgentSession): Promise<Genera
     throw new Error("The session has no usable text to name");
   }
 
-  const { model, context, options } = buildTitleRequest(sourceAgent, transcript);
+  const { model, context, options } = buildTitleRequest(sourceAgent, transcript, readTitleLanguage());
   const apiKey = await sourceAgent.getApiKey?.(model.provider);
   const controller = new AbortController();
   const requestOptions: SimpleStreamOptions = {

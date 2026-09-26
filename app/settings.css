@@ -1302,6 +1302,21 @@
   font-size: 12px;
 }
 
+.settings-title-language-select {
+  max-width: 60%;
+  min-width: 140px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.settings-title-language-select:disabled {
+  opacity: 0.6;
+}
+
 .settings-general-error {
   margin: 8px 0 0;
   color: #ef4444;
