@@ -762,6 +762,11 @@ try {
       await actionsToggle.click();
       await archiveButton.waitFor({ state: "visible" });
       assert.equal(await actionsToggle.getAttribute("aria-expanded"), "true");
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await row.getByRole("button", { name: "Copy session link" }).click();
+      assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `${base}/?session=${ARCHIVE}`);
+      assert.equal(new URL(page.url()).searchParams.get("session"), ARCHIVE, "Copy must not select a different row");
+      await actionsToggle.click();
       await page.keyboard.press("Escape");
       assert.equal(await archiveButton.isVisible(), false, "Escape should collapse the actions");
       await actionsToggle.click();

@@ -355,6 +355,7 @@ export const zhTWLocale: LocalePlugin = {
     "sidebar.moveRunning": "請先停止工作階段再移動",
     "sidebar.move": "移動",
     "sidebar.rename": "重新命名",
+    "sidebar.copySessionLink": "複製工作階段連結",
     "sidebar.delete": "刪除",
     "sidebar.deleteWithShiftClick": "刪除（按住 Shift 點選可跳過確認）",
     "sidebar.expandSubagents": "展開子代理",

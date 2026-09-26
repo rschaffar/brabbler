@@ -53,6 +53,12 @@ test("only Shift+click bypasses session deletion confirmation", () => {
   );
 });
 
+test("every persisted session row copies its deep link without selecting the row", () => {
+  assert.match(sessionItemSource, /handleCopyLink[\s\S]*?e\.stopPropagation\(\);[\s\S]*?copyText\(sessionDeepLink\(window\.location\.origin, session\.id\)\)/);
+  assert.match(sessionItemSource, /onClick=\{handleCopyLink\}[\s\S]*?aria-label=\{t\("sidebar\.copySessionLink"\)\}/);
+  assert.match(sessionItemSource, /\{!session\.transient && !bulkSelecting && \([\s\S]*?onClick=\{handleCopyLink\}/);
+});
+
 test("move action confirms a different project and includes touch rows", () => {
   assert.match(sessionItemSource, /onMove\?\.\(\)/);
   assert.match(sessionItemSource, /disabled=\{isRunning\}[\s\S]*?sidebar\.moveSession/);
