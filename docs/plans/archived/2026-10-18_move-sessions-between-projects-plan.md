@@ -29,10 +29,14 @@ On failure before commit, remove staged destinations and leave original files in
 - [x] Add destination selection and explicit confirmation to sidebar actions; `SessionSidebar.test.mjs` checks destination options, browse, touch action, and selected chat handling. Browser E2E remains open below.
 - [x] Document behavior in `README.md` and `AGENTS.md`; `npm test` (1,374 passing), `node_modules/.bin/tsc --noEmit`, and `npm run lint` passed after the queue-safety change.
 - [x] Verify affected desktop and mobile browser flows with `E2E_MOVE_ONLY=1 npm run test:e2e` and a temporary `LD_LIBRARY_PATH` assembled from available x86-64 Nix store libraries; both move flows passed.
-- [ ] Run the full `npm run test:e2e`: earlier scroll-restoration assertion at `e2e/run.mjs:553` timed out twice before the move flow ran.
+- [x] Run the full `npm run test:e2e` with the same temporary library path: desktop and mobile flows, including the mobile move, passed after returning to Active sessions before moving the restored fixture.
+
+## Verification note
+
+The scroll-restoration assertion at `e2e/run.mjs:553` timed out twice on earlier runs before reaching the move flow; a later run passed it without changes to that test or product scroll logic. This was timing-sensitive, **not** evidence that move blocked restoration. The subsequent run exposed an error in this plan's own E2E test: after restoring the archived fixture, the sidebar remained in Archived view. The test now returns to Active sessions before moving; the complete suite passes. No scroll behavior was changed by this feature.
 
 ## Completion Checklist
 
 - [x] Session and subagent files open under the new cwd and appear in the destination project; forks still resolve their origin and retain their cwd (`move-route.test.mjs`).
 - [x] Running and queued sessions and destination collisions do not modify files (`move-route.test.mjs`); transient sessions are refused by the move service and lack a sidebar action.
-- [x] Focused desktop/mobile browser move flows, unit tests, typecheck, and lint passed. Full E2E remains blocked by an earlier scroll-restoration timeout (open task above).
+- [x] Unit tests (1,374 passing), typecheck, lint, focused desktop/mobile browser moves, and the full browser suite passed. The intermittent scroll assertion remains noted above.

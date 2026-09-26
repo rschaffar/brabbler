@@ -661,6 +661,7 @@ try {
       await row.waitFor({ state: "detached" });
       assert.equal((await api("/api/sessions")).sessions.find((session) => session.id === ARCHIVE)?.archived, undefined);
       console.log("PASS: mobile session archive and restore update without a page reload");
+      await page.getByRole("button", { name: "Active sessions", exact: true }).click();
       await row.getByRole("button", { name: "Session actions", exact: true }).click();
       await row.getByRole("button", { name: "Move to project…", exact: true }).click();
       const moveDialog = page.getByRole("dialog", { name: "Move to project…" });
