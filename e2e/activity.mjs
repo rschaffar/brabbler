@@ -23,6 +23,16 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await interrupted.waitFor({ state: "hidden", timeout: 15000 });
   await page.getByRole("button", { name: "Close Activity" }).click();
 
+  // Upgrade an existing browser's stars into server storage on the next load.
+  await page.evaluate((id) => localStorage.setItem("pi-web:starred-sessions", JSON.stringify([id])), otherSessionId);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(async (id) => {
+    const response = await fetch("/api/starred-sessions", { cache: "no-store" });
+    return (await response.json()).ids.includes(id) && localStorage.getItem("pi-web:starred-sessions") === null;
+  }, otherSessionId);
+  await post("/api/starred-sessions", { op: "set", id: otherSessionId, starred: false });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
   // Starring an idle session marks its project row and keeps it in the separate
   // Starred view across reloads. Touch rows expose actions via More.
   if (await page.getByRole("button", { name: "Show sidebar" }).count()) {
@@ -34,6 +44,10 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   else await sessionRow.hover();
   await sessionRow.getByRole("button", { name: "Star session" }).click();
   await sessionRow.getByRole("button", { name: "Unstar session" }).waitFor();
+  await page.waitForFunction(async (id) => {
+    const response = await fetch("/api/starred-sessions", { cache: "no-store" });
+    return (await response.json()).ids.includes(id);
+  }, selectedSessionId);
   if (!mobile) await page.mouse.move(width - 10, 100);
   assert.equal(await sessionRow.locator(".activity-star").isVisible(), true, "star remains visible without hovering or opening actions");
   if (mobile) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
@@ -58,18 +72,16 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   assert.match(await starredBranch.locator(".activity-item").getAttribute("aria-label"), /Working/);
   await page.unroute("**/api/agent/running");
   await starredBranch.getByText("Working", { exact: true }).waitFor({ state: "hidden", timeout: 15000 });
-  await page.evaluate((id) => {
-    const key = "pi-web:starred-sessions";
-    const ids = JSON.parse(localStorage.getItem(key) ?? "[]");
-    localStorage.setItem(key, JSON.stringify([...ids, id]));
-    window.dispatchEvent(new StorageEvent("storage", { key }));
-  }, otherSessionId);
+  await post("/api/starred-sessions", { op: "set", id: otherSessionId, starred: true });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await starredOverview.getByRole("button", { name: /Other workspace task/ }).waitFor();
   await starredOverview.getByRole("combobox", { name: "Project" }).selectOption({ label: "project" });
   await starredOverview.getByRole("button", { name: /Branch root/ }).waitFor();
   assert.equal(await starredOverview.getByRole("button", { name: /Other workspace task/ }).count(), 0, "project filter excludes other stars");
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByText("Active branch answer", { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("pi-web:starred-sessions")), null,
+    "stars are stored on the server rather than in this browser");
   if (await page.getByRole("button", { name: "Show sidebar" }).count()) await page.getByRole("button", { name: "Show sidebar" }).click();
   await page.locator(`[data-session-id="${selectedSessionId}"]`).locator(".activity-star").waitFor({ state: "visible" });
   if (mobile) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
@@ -90,11 +102,8 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   if (mobile) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
   // Keep the waiting session starred while its real background dialog runs.
   // The Starred list must surface Needs you without moving it into Activity.
-  await page.evaluate((id) => {
-    const key = "pi-web:starred-sessions";
-    localStorage.setItem(key, JSON.stringify([id]));
-    window.dispatchEvent(new StorageEvent("storage", { key }));
-  }, waitingSessionId);
+  await post("/api/starred-sessions", { op: "set", id: waitingSessionId, starred: true });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   // Extension commands keep the POST open until the user responds. Launch it
   // without awaiting so the browser can see and answer the background dialog.
   const prompting = post(`/api/agent/${waitingSessionId}`, { type: "prompt", message: "/e2e-ask-user single" });
