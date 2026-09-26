@@ -302,6 +302,7 @@ export const zhCNLocale: LocalePlugin = {
     "sidebar.unstarSession": "取消会话星标",
     "sidebar.restore": "恢复",
     "sidebar.archivedSessions": "已归档会话",
+    "sidebar.searchIncludeArchived": "包含已归档会话",
     "sidebar.activeSessions": "活动会话",
     "sidebar.archiveRunning": "请先停止会话再归档",
     "sidebar.rename": "重命名",

@@ -446,6 +446,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [fileSearchOpen, setFileSearchOpen] = useState(false);
   const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
   const [sessionSearchQuery, setSessionSearchQuery] = useState("");
+  const [searchIncludesArchived, setSearchIncludesArchived] = useState(false);
   const sessionSearchActive = sessionSearchOpen && Boolean(sessionSearchQuery.trim());
   const [changesCount, setChangesCount] = useState(0);
   const [changesCollapsed, setChangesCollapsed] = useState(true);
@@ -1551,23 +1552,34 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         </div>
 
         {sessionSearchOpen && (
-          <input
-            id="session-search-input"
-            type="search"
-            autoFocus
-            value={sessionSearchQuery}
-            maxLength={200}
-            aria-label={t("sidebar.searchSessions")}
-            placeholder={t("sidebar.searchSessions")}
-            onChange={(event) => setSessionSearchQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.stopPropagation();
-                setSessionSearchQuery("");
-              }
-            }}
-            className="mt-[6px] block h-[29px] w-full min-w-0 rounded-[7px] border border-border bg-bg px-[10px] text-xs text-text focus:outline-2 focus:outline-accent"
-          />
+          <div className="mt-[6px] flex flex-col gap-1">
+            <input
+              id="session-search-input"
+              type="search"
+              autoFocus
+              value={sessionSearchQuery}
+              maxLength={200}
+              aria-label={t("sidebar.searchSessions")}
+              placeholder={t("sidebar.searchSessions")}
+              onChange={(event) => setSessionSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.stopPropagation();
+                  setSessionSearchQuery("");
+                }
+              }}
+              className="block h-[29px] w-full min-w-0 rounded-[7px] border border-border bg-bg px-[10px] text-xs text-text focus:outline-2 focus:outline-accent"
+            />
+            <label className="flex w-fit cursor-pointer items-center gap-1.5 text-xs text-text-muted">
+              <input
+                type="checkbox"
+                checked={searchIncludesArchived}
+                onChange={(event) => setSearchIncludesArchived(event.target.checked)}
+                className="accent-accent"
+              />
+              {t("sidebar.searchIncludeArchived")}
+            </label>
+          </div>
         )}
 
         {/* Worktree switcher — shown only for git projects at a checkout top
@@ -1946,7 +1958,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           {showArchived ? t("sidebar.activeSessions") : t("sidebar.archivedSessions")}
         </button>
       </div>
-      <SessionSearch open={sessionSearchOpen} query={sessionSearchQuery} selectedSessionId={selectedSessionId} onSelectSession={handleSelectSessionFromList}>
+      <SessionSearch open={sessionSearchOpen} query={sessionSearchQuery} includeArchived={searchIncludesArchived} selectedSessionId={selectedSessionId} onSelectSession={handleSelectSessionFromList}>
         <div
           ref={listScrollRef}
           onScroll={handleListScroll}

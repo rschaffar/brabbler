@@ -595,6 +595,15 @@ try {
       await archiveButton.click();
       await row.waitFor({ state: "detached" });
       assert.equal((await api("/api/sessions")).sessions.find((session) => session.id === ARCHIVE)?.archived, true);
+      const searchToggle = page.getByRole("button", { name: "Search conversations", exact: true });
+      await searchToggle.click();
+      await page.getByRole("searchbox", { name: "Search conversations or session IDs..." }).fill("E2E archive fixture");
+      await page.getByText("No matching conversations").waitFor();
+      await page.getByRole("checkbox", { name: "Include archived" }).check();
+      await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
+      await page.getByRole("checkbox", { name: "Include archived" }).uncheck();
+      await page.getByText("No matching conversations").waitFor();
+      await searchToggle.click();
       await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
       const restoreButton = row.getByRole("button", { name: "Restore", exact: true });
       assert.equal(await restoreButton.isVisible(), false);

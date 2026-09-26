@@ -6,42 +6,46 @@ import { formatRelativeTime } from "@/lib/i18n/format";
 import type { SessionInfo } from "@/lib/types";
 import type { SessionSearchResponse } from "@/lib/session-search";
 
-export function SessionSearch({ open, query, children, selectedSessionId, onSelectSession }: {
+export function SessionSearch({ open, query, includeArchived, children, selectedSessionId, onSelectSession }: {
   open: boolean;
   query: string;
+  includeArchived: boolean;
   children: ReactNode;
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, entryId?: string, blockIndex?: number) => void;
 }) {
   const { t, locale } = useI18n();
-  const [state, setState] = useState<{ query: string; response?: SessionSearchResponse; failed?: boolean }>({ query: "" });
+  const [state, setState] = useState<{ key: string; response?: SessionSearchResponse; failed?: boolean }>({ key: "" });
   const search = query.trim();
-  const response = state.query === search ? state.response : undefined;
-  const failed = state.query === search && state.failed;
+  const params = new URLSearchParams({ q: search });
+  if (includeArchived) params.set("includeArchived", "1");
+  const searchKey = params.toString();
+  const response = state.key === searchKey ? state.response : undefined;
+  const failed = state.key === searchKey && state.failed;
 
-  // Re-runs only when the query changes. It deliberately does not depend on the
-  // session-list version: ordinary agent activity bumps that version every few
+  // Re-runs only when the query or archived scope changes. It deliberately does
+  // not depend on the session-list version: ordinary agent activity bumps it every few
   // seconds, which used to refetch (and re-order) results while they were being
   // read.
   useEffect(() => {
     if (!open || !search) return;
     const controller = new AbortController();
-    setState({ query: search });
+    setState({ key: searchKey });
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/sessions/search?${new URLSearchParams({ q: search })}`, { signal: controller.signal });
+        const res = await fetch(`/api/sessions/search?${searchKey}`, { signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json() as SessionSearchResponse;
-        if (!controller.signal.aborted) setState({ query: search, response: data });
+        if (!controller.signal.aborted) setState({ key: searchKey, response: data });
       } catch {
-        if (!controller.signal.aborted) setState({ query: search, failed: true });
+        if (!controller.signal.aborted) setState({ key: searchKey, failed: true });
       }
     }, 300);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [open, search]);
+  }, [open, search, searchKey]);
 
   return !open || !search ? children : (
     <div className="min-h-20 flex-1 overflow-y-auto" aria-busy={!response && !failed}>
@@ -61,7 +65,10 @@ export function SessionSearch({ open, query, children, selectedSessionId, onSele
           aria-current={session.id === selectedSessionId ? "true" : undefined}
           className={`block w-full cursor-pointer border-b border-border px-3 py-2 text-left hover:bg-bg-hover focus-visible:outline-2 focus-visible:outline-accent ${session.id === selectedSessionId ? "bg-bg-selected" : ""}`}
         >
-          <span className="block truncate text-xs font-medium text-text">{session.name || session.firstMessage}</span>
+          <span className="flex items-center gap-2 text-xs font-medium text-text">
+            <span className="min-w-0 truncate">{session.name || session.firstMessage}</span>
+            {session.archived && <span className="shrink-0 text-[10px] font-normal text-text-dim">{t("sidebar.archivedSessions")}</span>}
+          </span>
           <span className="mt-1 flex min-w-0 gap-2 text-[10px] text-text-dim">
             <span className="min-w-0 flex-1 truncate" title={session.cwd}>{session.cwd}</span>
             <span className="shrink-0">{formatRelativeTime(session.modified, locale)}</span>
