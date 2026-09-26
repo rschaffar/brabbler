@@ -38,9 +38,9 @@ Coverage:
 - Chat width and font size persist, existing drafts resize, and short settings
   panels keep every language option reachable on desktop and mobile.
 - Unknown sessions and paths outside the fixture project are rejected.
-- A local extension checks dialog keyboard navigation, Esc cancellation,
-  collapse/expand draft preservation, countdown display, and server-side expiry.
-- The native `ask_user` form checks single/multi selection, freeform answers,
+- A local extension checks inline question cards in the chat scroller, keyboard navigation,
+  Esc cancellation, collapse/expand draft preservation, countdown display, and server-side expiry.
+- The native inline `ask_user` card checks single/multi selection, freeform answers,
   comments, collapse preservation, cancellation, and expiry at desktop and mobile widths.
 - The focused Activity run checks background questions, short-run completion/review,
   first-browser baselines, cross-tab acknowledgement and reload, cross-project

@@ -12,9 +12,10 @@ export async function checkAskUserDialog(page, width) {
     await page.locator("[data-minimap-preview-box]").waitFor({ state: "hidden" });
     await page.locator("textarea").last().fill(`/e2e-ask-user ${mode}`);
     await page.getByRole("button", { name: "Send", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "E2E browser question" });
-    await dialog.waitFor();
-    return dialog;
+    const card = page.getByRole("group", { name: "E2E browser question" });
+    await card.waitFor();
+    assert.equal(await card.locator("xpath=ancestor::div[contains(@class, 'overflow-y-auto')]").count() > 0, true, "Question card belongs to the chat scroller");
+    return card;
   };
   const finish = async (answer) => {
     await page.getByText(`E2E ask_user result: ${JSON.stringify(answer)}`, { exact: true }).last().waitFor();
