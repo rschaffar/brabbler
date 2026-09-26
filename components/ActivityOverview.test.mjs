@@ -26,15 +26,18 @@ test("ready subagents are identified even when their parent is working or absent
   ["ready-child", "orphan", "ready-root"]);
   assert.match(html, /aria-label="ready-child · project · in working-parent · Sub-agent · Ready to review · Review"/);
   assert.match(html, /aria-label="orphan · project · Sub-agent · Ready to review · Review"/);
-  assert.match(html, /class="activity-item-meta"[^>]*>Sub-agent · project · in working-parent<\/span>/);
-  assert.match(html, /class="activity-item-meta"[^>]*>Sub-agent · project<\/span>/);
+  assert.match(html, /class="activity-item-meta"[^>]*>project · in working-parent<\/span>/);
+  assert.match(html, /class="activity-item-meta"[^>]*>project<\/span>/);
+  assert.equal((html.match(/class="activity-subagent-icon" title="Sub-agent"/g) ?? []).length, 2);
+  assert.doesNotMatch(html, /Sub-agent · project/);
   assert.match(html, /aria-label="ready-root · project · Ready to review · Review"/);
   assert.doesNotMatch(html, /aria-label="ready-root[^\"]*Sub-agent/);
   assert.match(html, /aria-label="Mark ready-root as read"[^>]*>Read<\/button>/);
   assert.match(html, /aria-label="Mark ready-child as read"[^>]*>Read<\/button>/);
 });
 
-test("nested subagents retain their indentation and label", () => {
+test("nested subagents retain their indentation and icon", () => {
   const html = render([session("ready-parent"), session("nested", "ready-parent")], [], ["ready-parent", "nested"]);
   assert.match(html, /class="activity-item activity-item-ready activity-nested"[^>]*aria-label="nested · project · in ready-parent · Sub-agent · Ready to review · Review"/);
+  assert.equal((html.match(/class="activity-subagent-icon" title="Sub-agent"/g) ?? []).length, 1);
 });

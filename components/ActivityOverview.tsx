@@ -5,6 +5,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { activityProjectName, activitySessionName, getActivitySections, type ActivityItem, type ActivityStatus } from "@/lib/activity";
 import type { SessionAttention, SessionInfo } from "@/lib/types";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
+import { SubagentIcon } from "./SubagentIcon";
 
 interface Props {
   sessions: SessionInfo[];
@@ -140,11 +141,13 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
                     >
                       <span className="activity-item-top">
                         <span className="activity-dot" aria-hidden="true" />
+                        {session.relation?.kind === "subagent" && (
+                          <span className="activity-subagent-icon" title={t("activity.subagent")}><SubagentIcon /></span>
+                        )}
                         <span className="activity-item-title" title={label}>{label}</span>
                         <span className="activity-item-action">{action}</span>
                       </span>
                       <span className="activity-item-meta" title={session.projectRoot ?? session.cwd}>
-                        {session.relation?.kind === "subagent" ? `${t("activity.subagent")} · ` : ""}
                         {activityProjectName(session)}
                         {item.parentName && !item.nested ? ` · ${t("activity.childOf", { name: item.parentName })}` : ""}
                       </span>

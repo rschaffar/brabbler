@@ -7,6 +7,7 @@ const cssSource = await readFile(new URL("../app/settings.css", import.meta.url)
 const globalCssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const shellSource = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 const sidebarSource = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
+const subagentIconSource = await readFile(new URL("./SubagentIcon.tsx", import.meta.url), "utf8");
 const themeSource = await readFile(new URL("../hooks/useTheme.ts", import.meta.url), "utf8");
 const themeOptionsSource = await readFile(new URL("../lib/theme.ts", import.meta.url), "utf8");
 const enSource = await readFile(new URL("../lib/i18n/messages/en.ts", import.meta.url), "utf8");
@@ -128,7 +129,8 @@ test("labels agent profiles as sub-agents", () => {
 test("uses the child-session robot glyph for the sub-agents tab", () => {
   const robotGlyph = /<rect x="5" y="7" width="14" height="11" rx="2" \/>\s*<path d="M9 11h\.01M15 11h\.01M9 15h6M12 7V4M10 4h4" \/>/;
   assert.match(panelSource, robotGlyph);
-  assert.match(sidebarSource, robotGlyph);
+  assert.match(subagentIconSource, robotGlyph);
+  assert.match(sidebarSource, /<SubagentIcon size=\{11\} \/>/);
   assert.match(panelSource, /section === "agents"[\s\S]*?className="settings-section-icon is-agent"/);
   assert.match(cssSource, /\.settings-section-icon\.is-agent \{[\s\S]*?transform: scale\(1\.25\)/);
 });

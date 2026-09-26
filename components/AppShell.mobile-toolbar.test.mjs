@@ -24,6 +24,11 @@ test("uses a compact narrow-mobile toolbar with a floating action layer", () => 
   }
 });
 
+test("shows a persistent subagent marker in the chat toolbar, outside the mobile overflow menu", () => {
+  assert.match(source, /\{showChat && selectedSession\?\.relation\?\.kind === "subagent" && \([\s\S]*?role="img" aria-label=\{translate\("activity.subagent"\)\}[\s\S]*?<SubagentIcon size=\{16\} \/>/);
+  assert.match(source, /<SubagentIcon size=\{16\} \/>[\s\S]*?\{isMobile && !\(activeOverview && overviewMobileList\) && \([\s\S]*?ref=\{mobileToolbarRef\}/);
+});
+
 test("only renders the Agents switcher when the active session family has subagents", () => {
   assert.match(source, /const hasSubagentSessions = Boolean\(activeSessionFamily\?\.subagents\.length\)/);
   assert.match(source, /\{hasSubagentSessions && \(\s*<button[\s\S]*?toggleTopPanel\("agents", mobile\)/);

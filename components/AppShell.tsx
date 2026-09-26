@@ -19,6 +19,7 @@ import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { SystemPromptPanel } from "./SystemPromptPanel";
 import { ToolDefinitionsPanel } from "./ToolDefinitionsPanel";
 import { AgentSessionPanel } from "./AgentSessionPanel";
+import { SubagentIcon } from "./SubagentIcon";
 import { TerminalPanel } from "./TerminalPanel";
 import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
 import { useTheme } from "@/hooks/useTheme";
@@ -2072,6 +2073,12 @@ export function AppShell() {
           >
             {activeOverview === "starred" && isMobile && !overviewMobileList ? "←" : "★"}
           </button>
+          {showChat && selectedSession?.relation?.kind === "subagent" && (
+            <span role="img" aria-label={translate("activity.subagent")} title={translate("activity.subagent")}
+              style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, borderRight: "1px solid var(--border)", color: "var(--accent)" }}>
+              <SubagentIcon size={16} />
+            </span>
+          )}
           {isMobile && !(activeOverview && overviewMobileList) && (
             <div
               ref={mobileToolbarRef}
