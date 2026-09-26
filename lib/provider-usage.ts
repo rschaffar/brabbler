@@ -38,6 +38,8 @@ export interface UsageReport {
   buckets: UsageBucket[];
   metrics: UsageMetric[];
   notes?: string[];
+  /** Banked manual resets, separate from automatic quota-window resets and usage credits. */
+  bankedResets?: number;
 }
 
 export type ProviderUsageResult =
@@ -219,7 +221,11 @@ function normalizeCodex(payload: Record<string, unknown>, capturedAt: number): U
   if (credits?.unlimited === true) metrics.push({ id: "credits", label: "Credits", value: "Unlimited" });
   else if (number(credits?.balance) !== undefined) metrics.push({ id: "credits", label: "Credits", value: number(credits?.balance)!, unit: "count" });
   if (!buckets.length && !metrics.length) throw new Error("Codex returned no usage data.");
-  return { providerId: "openai-codex", providerName: PROVIDER_NAMES["openai-codex"], capturedAt, buckets, metrics };
+  const availableCount = record(payload.rate_limit_reset_credits)?.available_count;
+  const bankedResets = typeof availableCount === "number" && Number.isSafeInteger(availableCount) && availableCount >= 0
+    ? availableCount : undefined;
+  return { providerId: "openai-codex", providerName: PROVIDER_NAMES["openai-codex"], capturedAt, buckets, metrics,
+    ...(bankedResets !== undefined ? { bankedResets } : {}) };
 }
 
 function normalizeDeepSeek(payload: Record<string, unknown>, capturedAt: number): UsageReport {
