@@ -25,24 +25,47 @@ function post(body, headers = { "Content-Type": "application/json", Host: "local
 }
 
 test("stars persist as server-owned JSON; concurrent set/import operations do not lose updates", async () => {
-  assert.deepEqual(await (await GET()).json(), { ids: [] });
+  assert.deepEqual(await (await GET()).json(), { ids: [], projectKeys: [] });
   const results = await Promise.all([
     post({ op: "set", id: "one", starred: true }),
     post({ op: "set", id: "two", starred: true }),
     post({ op: "import", ids: ["legacy", "one", "legacy"] }),
   ]);
   assert.ok(results.every((response) => response.status === 200));
-  assert.deepEqual(await (await GET()).json(), { ids: ["legacy", "one", "two"] });
-  assert.deepEqual(JSON.parse(await readFile(file, "utf8")), { version: 1, ids: ["legacy", "one", "two"] });
-  assert.deepEqual(await (await post({ op: "set", id: "one", starred: false })).json(), { ids: ["legacy", "two"] });
-  assert.deepEqual(await (await post({ op: "import", ids: ["legacy"] })).json(), { ids: ["legacy", "two"] });
+  assert.deepEqual(await (await GET()).json(), { ids: ["legacy", "one", "two"], projectKeys: [] });
+  assert.deepEqual(JSON.parse(await readFile(file, "utf8")), { version: 1, ids: ["legacy", "one", "two"], projectKeys: [] });
+  assert.deepEqual(await (await post({ op: "set", id: "one", starred: false })).json(), { ids: ["legacy", "two"], projectKeys: [] });
+  assert.deepEqual(await (await post({ op: "import", ids: ["legacy"] })).json(), { ids: ["legacy", "two"], projectKeys: [] });
+});
+
+test("reads existing session-only star files as having no project stars", async () => {
+  await writeFile(file, JSON.stringify({ version: 1, ids: ["legacy", "two"] }));
+  assert.deepEqual(await (await GET()).json(), { ids: ["legacy", "two"], projectKeys: [] });
+  assert.deepEqual(await (await post({ op: "set", id: "legacy", starred: true })).json(), {
+    ids: ["legacy", "two"], projectKeys: [],
+  });
+});
+
+test("project stars persist independently from session stars", async () => {
+  const key = "project:/workspaces/example";
+  const response = await post({ op: "set-project", key, starred: true });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ids: ["legacy", "two"], projectKeys: [key] });
+  assert.deepEqual(JSON.parse(await readFile(file, "utf8")), {
+    version: 1, ids: ["legacy", "two"], projectKeys: [key],
+  });
+  assert.deepEqual(await (await post({ op: "set-project", key, starred: false })).json(), {
+    ids: ["legacy", "two"], projectKeys: [],
+  });
 });
 
 test("rejects malformed mutations without changing the file", async () => {
   const previous = await readFile(file, "utf8");
   for (const body of [
     { op: "set", id: "", starred: true }, { op: "set", id: "one", starred: "yes" },
-    { op: "import", ids: [1] }, { op: "import", ids: ["x".repeat(257)] }, { op: "unknown" },
+    { op: "import", ids: [1] }, { op: "import", ids: ["x".repeat(257)] },
+    { op: "set-project", key: "", starred: true }, { op: "set-project", key: "project", starred: "yes" },
+    { op: "unknown" },
   ]) {
     assert.equal((await post(body)).status, 400);
   }

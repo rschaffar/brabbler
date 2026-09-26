@@ -240,6 +240,8 @@ export const zhTWLocale: LocalePlugin = {
     "sidebar.selectProject": "選擇專案…",
     "sidebar.filterProjects": "篩選專案…",
     "sidebar.noMatchingProjects": "找不到相符的專案",
+    "sidebar.starProject": "將專案加上星號",
+    "sidebar.unstarProject": "移除專案星號",
     "sidebar.useDefaultDirectory": "使用預設目錄",
     "sidebar.customPath": "自訂路徑…",
     "directoryPicker.selectDirectory": "選擇目錄",
