@@ -5,6 +5,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { useTheme } from "@/hooks/useTheme";
 import { THEME_OPTIONS } from "@/lib/theme";
 import { TITLE_LANGUAGES, type TitleLanguage } from "@/lib/title-language-options";
+import type { TitleModelSelection } from "@/lib/title-language";
 import { ThemeIcon } from "./ThemeIcon";
 import {
   CHAT_CONTENT_WIDTH_DEFAULT,
@@ -63,7 +64,7 @@ export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: {
   return <svg {...common}><path d="M9 7V2M15 7V2M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0ZM12 19v3" /></svg>;
 }
 
-function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, onQuoteSelectionChange }: Pick<Props, "sessionId" | "onSessionReloaded" | "quoteSelectionEnabled" | "onQuoteSelectionChange">) {
+function GeneralSettings({ cwd, sessionId, onSessionReloaded, quoteSelectionEnabled, onQuoteSelectionChange }: Pick<Props, "cwd" | "sessionId" | "onSessionReloaded" | "quoteSelectionEnabled" | "onQuoteSelectionChange">) {
   const { locale, setLocale, supportedLocales, t } = useI18n();
   const { preference, setThemePreference } = useTheme();
   const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
@@ -73,6 +74,10 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
   const [titleLanguage, setTitleLanguage] = useState<TitleLanguage | null>(null);
   const [titleLanguageSaving, setTitleLanguageSaving] = useState(false);
   const [titleLanguageError, setTitleLanguageError] = useState<string | null>(null);
+  const [titleModel, setTitleModel] = useState<TitleModelSelection | null | undefined>(undefined);
+  const [titleModels, setTitleModels] = useState<Array<TitleModelSelection & { name: string }>>([]);
+  const [titleModelSaving, setTitleModelSaving] = useState(false);
+  const [titleModelError, setTitleModelError] = useState<string | null>(null);
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [pushRegistering, setPushRegistering] = useState(false);
   const [pushStatus, setPushStatus] = useState<{ kind: "ok" | "error"; message: string } | null>(null);
@@ -131,6 +136,50 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
       });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.allSettled([
+      fetch("/api/sessions/title-model").then(async (response) => {
+        const data = await response.json() as { model?: TitleModelSelection | null; error?: string };
+        if (!response.ok || data.model === undefined) throw new Error(data.error ?? `HTTP ${response.status}`);
+        return data.model;
+      }),
+      cwd ? fetch(`/api/models?${new URLSearchParams({ cwd, ...(sessionId ? { sessionId } : {}) })}`)
+        .then(async (response) => {
+          const data = await response.json() as { modelList?: Array<TitleModelSelection & { id: string; name: string }>; error?: string };
+          if (!response.ok || !data.modelList) throw new Error(data.error ?? `HTTP ${response.status}`);
+          return data.modelList.map(({ provider, id, name }) => ({ provider, modelId: id, name }));
+        }) : Promise.resolve([] as Array<TitleModelSelection & { name: string }>),
+    ]).then(([setting, catalog]) => {
+      if (cancelled) return;
+      if (setting.status === "fulfilled") setTitleModel(setting.value);
+      if (catalog.status === "fulfilled") setTitleModels(catalog.value);
+      const cause = setting.status === "rejected" ? setting.reason : catalog.status === "rejected" ? catalog.reason : null;
+      setTitleModelError(cause ? cause instanceof Error ? cause.message : String(cause) : null);
+    });
+    return () => { cancelled = true; };
+  }, [cwd, sessionId]);
+
+  const updateTitleModel = async (model: TitleModelSelection | null) => {
+    if (titleModelSaving) return;
+    setTitleModelSaving(true);
+    setTitleModelError(null);
+    try {
+      const response = await fetch("/api/sessions/title-model", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model }),
+      });
+      const data = await response.json() as { model?: TitleModelSelection | null; error?: string };
+      if (!response.ok || data.model === undefined) throw new Error(data.error ?? `HTTP ${response.status}`);
+      setTitleModel(data.model);
+    } catch (cause) {
+      setTitleModelError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setTitleModelSaving(false);
+    }
+  };
 
   const updateTitleLanguage = async (language: TitleLanguage) => {
     if (titleLanguageSaving) return;
@@ -326,6 +375,34 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
           </select>
         </div>
         {titleLanguageError && <p role="alert" className="settings-general-error">{titleLanguageError}</p>}
+        <p className="settings-general-description">{t("settings.titleModelDescription")}</p>
+        {!cwd && <p className="settings-general-description">{t("settings.projectRequired")}</p>}
+        <div className="settings-shell-option">
+          <label htmlFor="settings-title-model">{t("settings.titleModel")}</label>
+          <select
+            id="settings-title-model"
+            className="settings-title-language-select"
+            value={titleModel ? JSON.stringify([titleModel.provider, titleModel.modelId]) : ""}
+            disabled={titleModel === undefined || titleModelSaving}
+            onChange={(event) => {
+              const selected = titleModels.find((entry) => JSON.stringify([entry.provider, entry.modelId]) === event.target.value);
+              void updateTitleModel(selected ? { provider: selected.provider, modelId: selected.modelId } : null);
+            }}
+          >
+            <option value="">{t("settings.titleModelSession")}</option>
+            {titleModel && !titleModels.some((entry) => entry.provider === titleModel.provider && entry.modelId === titleModel.modelId) && (
+              <option value={JSON.stringify([titleModel.provider, titleModel.modelId])} disabled>
+                {titleModel.provider}/{titleModel.modelId} ({t("settings.titleModelUnavailable")})
+              </option>
+            )}
+            {titleModels.map((entry) => (
+              <option key={JSON.stringify([entry.provider, entry.modelId])} value={JSON.stringify([entry.provider, entry.modelId])}>
+                {entry.provider} / {entry.name || entry.modelId}
+              </option>
+            ))}
+          </select>
+        </div>
+        {titleModelError && <p role="alert" className="settings-general-error">{titleModelError}</p>}
       </section>
 
       {shellSettings?.isWindows && (
@@ -506,7 +583,7 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
         </div>
 
         <main className="settings-dialog-main">
-          {sectionHost("general", <GeneralSettings sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} />)}
+          {sectionHost("general", <GeneralSettings cwd={cwd} sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} />)}
           {sectionHost("models", <ModelsConfig embedded cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("agents", <AgentsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}

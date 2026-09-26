@@ -10,7 +10,7 @@ import {
   type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import { readTitleLanguage } from "./title-language";
+import { readTitleLanguage, readTitleModel } from "./title-language";
 import { titleLanguageInstruction, type TitleLanguage } from "./title-language-options";
 
 const TITLE_TIMEOUT_MS = 90_000;
@@ -87,8 +87,7 @@ export function resolveTitleThinkingLevel(model: Model<Api>): ThinkingLevel {
  * session id, and cacheRetention "none". The request is too small and too
  * unique to reuse the live session's prefix or write a cache nobody will read.
  */
-export function buildTitleRequest(source: Agent, transcript: string, language: TitleLanguage = "auto"): TitleRequest {
-  const model = source.state.model;
+export function buildTitleRequest(source: Agent, transcript: string, language: TitleLanguage = "auto", model: Model<Api> = source.state.model): TitleRequest {
   const thinkingLevel = resolveTitleThinkingLevel(model);
   return {
     model,
@@ -292,7 +291,12 @@ export async function generateSessionTitle(source: AgentSession): Promise<Genera
     throw new Error("The session has no usable text to name");
   }
 
-  const { model, context, options } = buildTitleRequest(sourceAgent, transcript, readTitleLanguage());
+  const selection = readTitleModel();
+  const selectedModel = selection ? source.modelRuntime.getModel(selection.provider, selection.modelId) : sourceAgent.state.model;
+  if (!selectedModel) {
+    throw new Error(`Title model ${selection?.provider}/${selection?.modelId} is unavailable. Choose another model in Settings → General.`);
+  }
+  const { model, context, options } = buildTitleRequest(sourceAgent, transcript, readTitleLanguage(), selectedModel);
   const apiKey = await sourceAgent.getApiKey?.(model.provider);
   const controller = new AbortController();
   const requestOptions: SimpleStreamOptions = {

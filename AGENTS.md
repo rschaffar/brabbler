@@ -108,6 +108,7 @@ app/api/
   sessions/search/route.ts        GET session search
   sessions/[id]/state/route.ts    GET live wrapper state when the session is running
   sessions/[id]/auto-name/route.ts POST generate a session title
+  sessions/title-model/route.ts      GET/PUT server-wide title model preference
   terminal/route.ts               POST create a terminal session
   terminal/[id]/route.ts          GET stream | POST input/resize | DELETE kill
   cwd/browse/route.ts             GET browse allowed cwd directories
@@ -201,6 +202,9 @@ Tool names are passed at session creation (`POST /api/agent/new` -> `toolNames[]
 **Exact system prompts go through `before_agent_start`.** Since pi 0.86 the prompt lives in the transcript: `agent.state.systemPrompt` is a getter replayed from persisted system messages (assigning it throws), and the agent loop's request context has no `systemPrompt` field, so neither mutating the state nor patching `prepareNextTurnWithContext` reaches the model. Chat-only sessions and subagent profiles in replace mode register `lib/exact-system-prompt.ts` as an inline extension factory on the resource loader; its `before_agent_start` handler returns `{ systemPrompt }`, which the SDK projects as the provider's leading system prompt for the whole run while the transcript keeps recording Pi's structured sections. `get_state.systemPrompt` reports the exact prompt for those wrappers because the SDK state only shows the structured sections. Subagents persist their active tools plus profile-level skill and extension loading switches in `resourceSnapshot`; loaded extensions cannot expose the reserved `Agent`, `get_subagent_result`, or `steer_subagent` tools to a subagent. See `docs/adr/0002-chat-only-tool-selection.md`.
 
 The last preset explicitly selected by the user is stored in browser `localStorage` and initializes fresh-session composers only. Existing sessions never trust that preference; they use their live `get_tools` state or pi's default when no wrapper exists.
+
+### Generated session titles
+General Settings stores a server-wide optional title model beside the title language in `~/.pi/agent/pi-web/title-settings.json`. The default is the session model. A selected provider/model ID resolves through the active session's `ModelRuntime` so it uses that session's provider account, without switching the chat model; if it disappears, title generation errors rather than silently charging the chat model. The picker lists models visible for the selected session via `/api/models`.
 
 ### Model defaults for new sessions
 `GET /api/models` returns `defaultModel` read from `~/.pi/agent/settings.json`. `ChatWindow` pre-selects this on mount for new sessions. Explicit browser model/thinking selections are applied atomically during AgentSession construction, then `lib/startup-preferences.ts` persists their effective values without replaying `set_model`/`set_thinking_level`; implicit `enabledModels` fallbacks and thinking pins are not persisted.

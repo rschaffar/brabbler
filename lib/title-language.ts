@@ -8,21 +8,50 @@ export function getTitleLanguagePath(agentDir = getAgentDir()): string {
   return join(agentDir, "pi-web", "title-settings.json");
 }
 
-export function readTitleLanguage(path = getTitleLanguagePath()): TitleLanguage {
-  if (!existsSync(path)) return "auto";
+export interface TitleModelSelection {
+  provider: string;
+  modelId: string;
+}
+
+export function isTitleModelSelection(value: unknown): value is TitleModelSelection {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const { provider, modelId } = value as Partial<TitleModelSelection>;
+  return typeof provider === "string" && provider.length > 0 && provider.length <= 200 && provider.trim() === provider &&
+    typeof modelId === "string" && modelId.length > 0 && modelId.length <= 300 && modelId.trim() === modelId;
+}
+
+function readTitleSettings(path: string): { language: TitleLanguage; model: TitleModelSelection | null } {
+  if (!existsSync(path)) return { language: "auto", model: null };
   const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed) ||
-      !isTitleLanguage((parsed as { language?: unknown }).language)) {
-    throw new Error("Invalid title language settings");
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("Invalid title settings");
+  const { language, model } = parsed as { language?: unknown; model?: unknown };
+  if (!isTitleLanguage(language) || (model !== undefined && model !== null && !isTitleModelSelection(model))) {
+    throw new Error("Invalid title settings");
   }
-  return (parsed as { language: TitleLanguage }).language;
+  return { language, model: model === undefined ? null : model as TitleModelSelection | null };
+}
+
+export function readTitleLanguage(path = getTitleLanguagePath()): TitleLanguage {
+  return readTitleSettings(path).language;
+}
+
+export function readTitleModel(path = getTitleLanguagePath()): TitleModelSelection | null {
+  return readTitleSettings(path).model;
+}
+
+function writeTitleSettings(settings: { language: TitleLanguage; model: TitleModelSelection | null }, path: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writePrivateFileAtomicSync(path, JSON.stringify({ language: settings.language, ...(settings.model ? { model: settings.model } : {}) }, null, 2));
 }
 
 export function writeTitleLanguage(language: TitleLanguage, path = getTitleLanguagePath()): TitleLanguage {
   if (!isTitleLanguage(language)) throw new Error("Invalid title language");
-  // Refuse to overwrite a damaged file without surfacing the error first.
-  if (existsSync(path)) readTitleLanguage(path);
-  mkdirSync(dirname(path), { recursive: true });
-  writePrivateFileAtomicSync(path, JSON.stringify({ language }, null, 2));
+  writeTitleSettings({ ...readTitleSettings(path), language }, path);
   return language;
+}
+
+export function writeTitleModel(model: TitleModelSelection | null, path = getTitleLanguagePath()): TitleModelSelection | null {
+  if (model !== null && !isTitleModelSelection(model)) throw new Error("Invalid title model");
+  writeTitleSettings({ ...readTitleSettings(path), model }, path);
+  return model;
 }

@@ -59,6 +59,29 @@ export async function checkChatAppearance(page) {
   await page.waitForFunction(() => document.querySelector("#settings-title-language")?.value === "en");
   assert.equal(await titleLanguage.inputValue(), "en", "The title language must reload from the server");
   await titleLanguage.selectOption("auto");
+  // The server-side setting survives closing the panel; a catalog entry has a
+  // provider/id pair rather than depending on credentials in the E2E fixture.
+  await page.route("**/api/models?*", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ modelList: [{ provider: "test", id: "cheap", name: "Cheap" }] }),
+  }));
+  await closeSettings();
+  await openSettings();
+  const titleModel = page.getByRole("combobox", { name: "Generated title model" });
+  const cheapOption = JSON.stringify(["test", "cheap"]);
+  await page.waitForFunction(() => !!document.querySelector(`#settings-title-model option[value='${JSON.stringify(["test", "cheap"])}']`));
+  await titleModel.selectOption(cheapOption);
+  await page.waitForFunction(async () => {
+    const response = await fetch("/api/sessions/title-model");
+    return response.ok && (await response.json()).model?.modelId === "cheap";
+  });
+  await closeSettings();
+  await openSettings();
+  await page.waitForFunction(() => document.querySelector("#settings-title-model")?.value === JSON.stringify(["test", "cheap"]));
+  assert.equal(await titleModel.inputValue(), cheapOption, "The title model must reload from the server");
+  await titleModel.selectOption("");
+  await page.waitForFunction(async () => (await (await fetch("/api/sessions/title-model")).json()).model === null);
+  await page.unroute("**/api/models?*");
   assert.equal(await width.inputValue(), "820");
   assert.equal(await fontSize.inputValue(), "14");
   await width.press("End");
