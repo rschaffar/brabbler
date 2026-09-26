@@ -443,6 +443,29 @@ try {
       page = undefined;
       continue;
     }
+    if (process.env.E2E_SESSION_LINK_ONLY === "1") {
+      await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });
+      await page.getByText("E2E archive fixture", { exact: true }).first().waitFor();
+      if (viewport.width <= 600) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+      const row = page.locator(`[data-session-id="${ARCHIVE}"]`);
+      await row.scrollIntoViewIfNeeded();
+      if (viewport.width <= 600) await row.getByRole("button", { name: "Session actions" }).click();
+      else await row.hover();
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await row.getByRole("button", { name: "Copy session link" }).click();
+      const link = await page.evaluate(() => navigator.clipboard.readText());
+      assert.equal(link, `${base}/?session=${ARCHIVE}`);
+      assert.equal(new URL(page.url()).searchParams.get("session"), ARCHIVE);
+      await page.goto(link, { waitUntil: "domcontentloaded" });
+      await page.getByText("E2E archive fixture", { exact: true }).first().waitFor();
+      assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      console.log(`PASS: ${viewport.width}px copied session URL opens the saved chat without changing selection`);
+      await context.tracing.stop();
+      await context.close();
+      context = undefined;
+      page = undefined;
+      continue;
+    }
     if (process.env.E2E_BULK_ONLY === "1") {
       const ids = viewport.width <= 600 ? BULK.slice(2) : BULK.slice(0, 2);
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
@@ -832,6 +855,7 @@ try {
     context = undefined;
     page = undefined;
   }
+  if (process.env.E2E_SESSION_LINK_ONLY !== "1") {
   context = await browser.newContext();
   page = await context.newPage();
   await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
