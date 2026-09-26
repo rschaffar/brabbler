@@ -52,20 +52,20 @@ export function AskUserDialog({ request, onRespond }: {
         event.stopPropagation();
         cancel();
       }}
-      style={{ position: "absolute", inset: 0, zIndex: 90, display: "flex", alignItems: collapsed ? "flex-start" : "center", justifyContent: "center", padding: "min(20px, 4vw)", pointerEvents: "none" }}
+      style={{ width: "100%", minWidth: 0 }}
     >
       {collapsed ? (
         <button type="button" aria-expanded={false} onClick={() => setCollapsed(false)}
-          style={{ pointerEvents: "auto", width: "min(680px, 100%)", padding: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", boxShadow: "0 12px 32px rgba(0,0,0,.18)", cursor: "pointer", textAlign: "left", display: "flex", gap: 10, alignItems: "center" }}>
+          style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", textAlign: "left", display: "flex", gap: 10, alignItems: "center" }}>
           <span style={{ color: "var(--accent)", fontSize: 11, fontWeight: 650, whiteSpace: "nowrap" }}>{t("chat.extensionPending")}</span>
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{request.question}</span>
           {remaining !== null && <span style={{ fontSize: 11, whiteSpace: "nowrap" }}>{t("chat.extensionExpiresIn", { seconds: remaining })}</span>}
           <span style={{ fontSize: 12, whiteSpace: "nowrap" }}>{t("chat.extensionExpand")}</span>
         </button>
       ) : (
-        <form role="dialog" aria-modal="true" aria-labelledby={titleId}
+        <form role="group" aria-labelledby={titleId}
           onSubmit={(event) => { event.preventDefault(); if (answer) onRespond(request, { answer }); }}
-          style={{ pointerEvents: "auto", width: "min(680px, 100%)", maxHeight: "100%", display: "flex", flexDirection: "column", border: "1px solid var(--border)", borderRadius: 10, background: "var(--bg)", boxShadow: "0 20px 60px rgba(0,0,0,.28)", overflow: "hidden" }}>
+          style={{ width: "100%", maxHeight: "min(760px, 65vh)", display: "flex", flexDirection: "column", border: "1px solid var(--border)", borderRadius: 10, background: "var(--bg)", overflow: "hidden" }}>
           <header style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "16px 18px", borderBottom: "1px solid var(--border)" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 650, marginBottom: 5 }}>{t("chat.askUserTitle")}</div>

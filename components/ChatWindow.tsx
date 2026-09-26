@@ -474,6 +474,14 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   const [visibleCount, setVisibleCount] = useState(VISIBLE_PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const messageContentRef = useRef<HTMLDivElement | null>(null);
+  const questionCardRef = useRef<HTMLDivElement | null>(null);
+
+  // A new blocking request lives at the tail, but the reader may be looking at
+  // earlier output. Bring only the card into view (not the whole transcript).
+  const questionId = extensionDialog?.id;
+  useEffect(() => {
+    if (questionId) questionCardRef.current?.scrollIntoView({ block: "nearest" });
+  }, [questionId]);
   const prevScrollDistanceRef = useRef<number | null>(null);
   const loadingOlderRef = useRef(false);
   const restoreStartedRef = useRef(false);
@@ -1004,9 +1012,6 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         </div>
       )}
       <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        {extensionDialog?.method === "ask_user"
-          ? <AskUserDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
-          : extensionDialog && <ExtensionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />}
         {extensionCustomUi && (
           <ExtensionCustomPanel key={extensionCustomUi.id} request={extensionCustomUi} onInput={sendExtensionCustomInput} />
         )}
@@ -1248,6 +1253,13 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
               />
             )}
 
+            {extensionDialog && (
+              <div ref={questionCardRef} className="my-4 min-w-0 scroll-mt-4">
+                {extensionDialog.method === "ask_user"
+                  ? <AskUserDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
+                  : <ExtensionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />}
+              </div>
+            )}
             <div ref={promptAnchorSpacerRef} aria-hidden="true" />
             </div>
           </div>
@@ -1556,14 +1568,8 @@ function ExtensionDialog({
         onRespond(request, { cancelled: true });
       }}
       style={{
-        position: "absolute",
-        inset: 0,
-        zIndex: 90,
-        display: "flex",
-        alignItems: collapsed ? "flex-start" : "center",
-        justifyContent: "center",
-        padding: 20,
-        pointerEvents: "none",
+        width: "100%",
+        minWidth: 0,
       }}
     >
       {collapsed ? (
@@ -1572,17 +1578,14 @@ function ExtensionDialog({
           onClick={() => setCollapsed(false)}
           aria-expanded={false}
           style={{
-            pointerEvents: "auto",
             display: "flex",
             alignItems: "center",
             gap: 10,
-            maxWidth: "min(560px, 100%)",
             width: "100%",
             padding: "10px 12px",
             border: "1px solid var(--border)",
             borderRadius: 8,
-            background: "var(--bg)",
-            boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
+            background: "var(--bg-panel)",
             color: "var(--text)",
             cursor: "pointer",
             textAlign: "left",
@@ -1606,18 +1609,16 @@ function ExtensionDialog({
         </button>
       ) : (
       <div
-        role="dialog"
+        role="group"
         aria-label={request.title}
         style={{
-          pointerEvents: "auto",
-          width: "min(560px, 100%)",
-          maxHeight: "min(760px, 100%)",
+          width: "100%",
+          maxHeight: "min(760px, 65vh)",
           display: "flex",
           flexDirection: "column",
           border: "1px solid var(--border)",
           borderRadius: 8,
           background: "var(--bg)",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
           overflow: "hidden",
         }}
       >

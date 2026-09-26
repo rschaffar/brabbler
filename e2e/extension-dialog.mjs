@@ -50,9 +50,10 @@ export async function checkExtensionDialogs(page, artifacts, width) {
     const input = page.locator("textarea").last();
     await input.fill(`/e2e-dialog ${mode}`);
     await page.getByRole("button", { name: "Send", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: `E2E ${mode}`, exact: true });
-    await dialog.waitFor();
-    return dialog;
+    const card = page.getByRole("group", { name: `E2E ${mode}`, exact: true });
+    await card.waitFor();
+    assert.equal(await card.locator("xpath=ancestor::div[contains(@class, 'overflow-y-auto')]").count() > 0, true, "Question card belongs to the chat scroller");
+    return card;
   };
   const finish = async (mode, result) => {
     await page.getByText(`E2E ${mode} result: ${result}`, { exact: true }).waitFor();
@@ -78,7 +79,7 @@ export async function checkExtensionDialogs(page, artifacts, width) {
 
     for (const mode of ["select", "confirm", "input", "editor"]) {
       const dialog = await start(mode);
-      assert.ok(await page.locator(":focus").evaluate(element => element.closest('[role="dialog"]')));
+      assert.ok(await page.locator(":focus").evaluate(element => element.closest('[role="group"]')));
       if (mode === "input" || mode === "editor") {
         await dialog.getByRole("textbox").fill("Preserved draft");
         await dialog.getByRole("button", { name: "Collapse", exact: true }).click();
@@ -99,13 +100,13 @@ export async function checkExtensionDialogs(page, artifacts, width) {
     await countdown.waitFor();
     const initialCountdown = await countdown.innerText();
     await page.waitForFunction(initial => {
-      const text = document.querySelector('[role="dialog"]')?.textContent;
+      const text = document.querySelector('[role="group"][aria-label="E2E timeout"]')?.textContent;
       return text?.includes("expires in") && !text.includes(initial);
     }, initialCountdown);
     const before = commands.length;
     await timed.getByRole("button", { name: "Collapse", exact: true }).click();
     await page.getByRole("button", { name: /Awaiting response.*E2E timeout.*expires in/ }).waitFor();
-    const afterTimeout = page.getByRole("dialog", { name: "E2E after timeout", exact: true });
+    const afterTimeout = page.getByRole("group", { name: "E2E after timeout", exact: true });
     await afterTimeout.waitFor();
     assert.equal(commands.slice(before).some(command => command.type === "extension_ui_response"), false, "Only the server closes expired requests");
     assert.equal(await afterTimeout.getByText(/expires in/).count(), 0);
