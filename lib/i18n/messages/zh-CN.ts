@@ -240,6 +240,8 @@ export const zhCNLocale: LocalePlugin = {
     "sidebar.selectProject": "选择项目…",
     "sidebar.filterProjects": "筛选项目…",
     "sidebar.noMatchingProjects": "没有匹配的项目",
+    "sidebar.starProject": "为项目加星标",
+    "sidebar.unstarProject": "取消项目星标",
     "sidebar.useDefaultDirectory": "使用默认目录",
     "sidebar.customPath": "自定义路径…",
     "directoryPicker.selectDirectory": "选择目录",

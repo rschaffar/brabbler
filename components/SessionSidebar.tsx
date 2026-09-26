@@ -403,7 +403,7 @@ function PiWebTitle() {
 export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onQueuedSessionIdsChange, onActivityChange, onSessionsChange }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
-  const { starredIds, toggleStarred } = useStarredSessions();
+  const { starredIds, starredProjectKeys, toggleStarred, toggleStarredProject } = useStarredSessions();
   const allSessionsRef = useRef(allSessions);
   const selectedSessionIdRef = useRef(selectedSessionId);
   allSessionsRef.current = allSessions;
@@ -1181,7 +1181,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onNewSession?.(tempId, selectedCwd);
   }, [selectedCwd, onNewSession]);
 
-  const recentProjects = useMemo(() => getRecentProjects(allSessions), [allSessions]);
+  const recentProjects = useMemo(() => {
+    const projects = getRecentProjects(allSessions);
+    return projects.sort((a, b) => Number(starredProjectKeys.has(b.key)) - Number(starredProjectKeys.has(a.key)));
+  }, [allSessions, starredProjectKeys]);
   const showProjectFilter = recentProjects.length > 8;
   const visibleProjects = useMemo(() => {
     const query = projectFilter.trim().toLowerCase();
@@ -1451,46 +1454,51 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 </div>
               )}
               <div style={{ maxHeight: "min(50vh, 380px)", overflowY: "auto" }}>
-                {visibleProjects.map((project) => (
-                  <button
-                    key={project.key}
-                    onClick={() => {
-                      setSelectedCwd(project.root);
-                      setProjectFilter("");
-                      setCustomPathOpen(false);
-                      setCustomPathError(null);
-                      setDropdownOpen(false);
-                    }}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 7,
-                      width: "100%",
-                      padding: "8px 10px",
-                      background: "var(--bg)",
-                      border: "none",
-                      borderBottom: "1px solid var(--border)",
-                      color: project.key === selectedProject?.key ? "var(--text)" : "var(--text-muted)",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      fontSize: 11,
-                      fontFamily: "var(--font-mono)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                    title={project.root}
-                  >
-                    {project.key === selectedProject?.key && (
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                        <polyline points="1.5 5 4 7.5 8.5 2.5" />
-                      </svg>
-                    )}
-                    {project.key !== selectedProject?.key && <span style={{ width: 10, flexShrink: 0 }} />}
-                    <PathLabel text={displayCwd(project.root, homeDir)} style={{ flex: 1 }} />
-                    {showProjectActivity(projectActivity.get(project.key), t)}
-                  </button>
-                ))}
+                {visibleProjects.map((project) => {
+                  const isStarred = starredProjectKeys.has(project.key);
+                  const starLabel = t(isStarred ? "sidebar.unstarProject" : "sidebar.starProject");
+                  return (
+                    <div key={project.key} style={{ display: "flex", alignItems: "stretch", borderBottom: "1px solid var(--border)" }}>
+                      <button
+                        onClick={() => {
+                          setSelectedCwd(project.root);
+                          setProjectFilter("");
+                          setCustomPathOpen(false);
+                          setCustomPathError(null);
+                          setDropdownOpen(false);
+                        }}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 7, flex: 1, minWidth: 0,
+                          padding: "8px 6px 8px 10px", background: "var(--bg)", border: "none",
+                          color: project.key === selectedProject?.key ? "var(--text)" : "var(--text-muted)",
+                          cursor: "pointer", textAlign: "left", fontSize: 11, fontFamily: "var(--font-mono)",
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}
+                        title={project.root}
+                      >
+                        {project.key === selectedProject?.key ? (
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                            <polyline points="1.5 5 4 7.5 8.5 2.5" />
+                          </svg>
+                        ) : <span style={{ width: 10, flexShrink: 0 }} />}
+                        <PathLabel text={displayCwd(project.root, homeDir)} style={{ flex: 1 }} />
+                        {showProjectActivity(projectActivity.get(project.key), t)}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleStarredProject(project.key)}
+                        title={starLabel}
+                        aria-label={starLabel}
+                        aria-pressed={isStarred}
+                        style={{ display: "grid", placeItems: "center", width: 32, flexShrink: 0, border: "none", background: "var(--bg)", color: isStarred ? "var(--accent)" : "var(--text-dim)", cursor: "pointer" }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill={isStarred ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
+                          <path d="m8 1.7 1.9 4 4.4.6-3.2 3.1.8 4.4L8 11.7l-3.9 2.1.8-4.4L1.7 6.3l4.4-.6L8 1.7Z" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
                 {visibleProjects.length === 0 && projectFilter.trim() && (
                    <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-dim)" }}>{t("sidebar.noMatchingProjects")}</div>
                 )}

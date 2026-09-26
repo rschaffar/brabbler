@@ -3,24 +3,31 @@ import { parseStarredSessionIds, STARRED_SESSIONS_STORAGE_KEY } from "@/lib/star
 
 const URL = "/api/starred-sessions";
 let ids = new Set<string>();
+let projectKeys = new Set<string>();
 let loaded = false;
 let loading: Promise<void> | null = null;
 let revision = 0;
-const listeners = new Set<(ids: Set<string>) => void>();
+const listeners = new Set<(state: { ids: Set<string>; projectKeys: Set<string> }) => void>();
 const pendingDesired = new Map<string, boolean>();
+const pendingProjectDesired = new Map<string, boolean>();
 let writes: Promise<void> = Promise.resolve();
 
-function publish(next: string[]) {
-  ids = new Set(next);
+function publish(next: { ids: string[]; projectKeys: string[] }) {
+  ids = new Set(next.ids);
+  projectKeys = new Set(next.projectKeys);
   for (const [id, starred] of pendingDesired) {
     if (starred) ids.add(id);
     else ids.delete(id);
   }
+  for (const [key, starred] of pendingProjectDesired) {
+    if (starred) projectKeys.add(key);
+    else projectKeys.delete(key);
+  }
   revision++;
-  for (const listener of listeners) listener(new Set(ids));
+  for (const listener of listeners) listener({ ids: new Set(ids), projectKeys: new Set(projectKeys) });
 }
 
-async function requestStars(body?: object): Promise<string[]> {
+async function requestStars(body?: object): Promise<{ ids: string[]; projectKeys: string[] }> {
   const response = await fetch(URL, body ? {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   } : { cache: "no-store" });
@@ -29,7 +36,8 @@ async function requestStars(body?: object): Promise<string[]> {
   if (!result || typeof result !== "object" || !Array.isArray((result as { ids?: unknown }).ids)) {
     throw new Error("Invalid starred sessions response");
   }
-  return (result as { ids: string[] }).ids;
+  const state = result as { ids: string[]; projectKeys?: unknown };
+  return { ids: state.ids, projectKeys: Array.isArray(state.projectKeys) ? state.projectKeys as string[] : [] };
 }
 
 async function refresh() {
@@ -58,13 +66,15 @@ async function refresh() {
   return loading;
 }
 
-async function toggle(id: string) {
-  if (pendingDesired.has(id)) return;
+async function toggle(id: string, project = false) {
+  const pending = project ? pendingProjectDesired : pendingDesired;
+  if (pending.has(id)) return;
   if (!loaded) await refresh();
-  if (!loaded || pendingDesired.has(id)) return;
-  const starred = !ids.has(id);
-  pendingDesired.set(id, starred);
-  publish([...ids]);
+  if (!loaded || pending.has(id)) return;
+  const current = project ? projectKeys : ids;
+  const starred = !current.has(id);
+  pending.set(id, starred);
+  publish({ ids: [...ids], projectKeys: [...projectKeys] });
   // Server responses are full snapshots; serialize this tab's writes so an
   // older response cannot overwrite a newer operation on another ID.
   const previous = writes;
@@ -72,11 +82,13 @@ async function toggle(id: string) {
   writes = new Promise<void>((resolve) => { release = resolve; });
   await previous;
   try {
-    const result = await requestStars({ op: "set", id, starred });
-    pendingDesired.delete(id);
+    const result = await requestStars(project
+      ? { op: "set-project", key: id, starred }
+      : { op: "set", id, starred });
+    pending.delete(id);
     publish(result);
   } catch (error) {
-    pendingDesired.delete(id);
+    pending.delete(id);
     console.error("Could not update starred session", error);
     await refresh();
   } finally {
@@ -85,23 +97,24 @@ async function toggle(id: string) {
 }
 
 export function useStarredSessions() {
-  const [starredIds, setStarredIds] = useState<Set<string>>(() => new Set(ids));
+  const [starState, setStarState] = useState(() => ({ ids: new Set(ids), projectKeys: new Set(projectKeys) }));
 
   useEffect(() => {
-    listeners.add(setStarredIds);
-    setStarredIds(new Set(ids));
+    listeners.add(setStarState);
+    setStarState({ ids: new Set(ids), projectKeys: new Set(projectKeys) });
     void refresh();
     const onFocus = () => { void refresh(); };
     const onVisibility = () => { if (document.visibilityState === "visible") void refresh(); };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
-      listeners.delete(setStarredIds);
+      listeners.delete(setStarState);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 
   const toggleStarred = useCallback((id: string) => { void toggle(id); }, []);
-  return { starredIds, toggleStarred };
+  const toggleStarredProject = useCallback((key: string) => { void toggle(key, true); }, []);
+  return { starredIds: starState.ids, starredProjectKeys: starState.projectKeys, toggleStarred, toggleStarredProject };
 }
