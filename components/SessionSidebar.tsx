@@ -22,6 +22,7 @@ import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import { SessionSearch } from "./SessionSearch";
+import { SubagentIcon } from "./SubagentIcon";
 
 // Fixed row height for the session list. SessionItem renders at exactly this
 // height, so the list can be windowed (only the visible slice is mounted).
@@ -2761,12 +2762,7 @@ function SessionItem({
               style={{ flexShrink: 0, width: 16, height: 16, accentColor: "var(--accent)" }} />
           )}
           {/* Subagent indicator for child sessions */}
-          {depth > 0 && (
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <rect x="5" y="7" width="14" height="11" rx="2" />
-              <path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
-            </svg>
-          )}
+          {depth > 0 && <span style={{ display: "flex", color: "var(--accent)" }}><SubagentIcon size={11} /></span>}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{

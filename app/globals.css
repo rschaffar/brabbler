@@ -2029,6 +2029,7 @@ span.token.table {
 .activity-item.activity-selected { background: var(--bg-selected); border-left-color: var(--accent); }
 .activity-item.activity-nested { padding-left: 33px; }
 .activity-item-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.activity-subagent-icon { display: inline-flex; align-items: center; color: var(--accent); flex: none; }
 .activity-item-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 550; }
 .activity-item-action { flex: none; color: var(--accent); font-size: 11px; }
 .activity-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex: none; }
