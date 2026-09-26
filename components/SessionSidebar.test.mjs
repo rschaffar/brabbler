@@ -78,20 +78,13 @@ test("exposes the loaded session catalog to the shell", () => {
   assert.match(source, /onSessionsChange\?\.\(allSessions\)/);
 });
 
-test("subagent completion stays silent in the sidebar but is reviewable in Activity", () => {
+test("server review snapshot includes subagents in Activity without adding subagent sounds", () => {
   assert.match(source, /completionNotificationSuppressedSessionIds\?: string\[\]/);
-  assert.match(
-    source,
-    /completedWithNotifications = completedInBackground\.filter\([\s\S]*?!previousSuppressedCompletionSessionIdsRef\.current\.has\(id\)[\s\S]*?!knownSubagentIds\.has\(id\)/,
-  );
-  assert.match(source, /completedWithNotifications\.forEach\(\(id\) => next\.add\(id\)\)/);
+  assert.match(source, /reviewedRuns\?: SessionCompletion\[\]/);
+  assert.match(source, /setSubagentReviewIds\(\(prev\) => sameIdSet\(prev, reviewed\.subagentReady\) \? prev : reviewed\.subagentReady\)/);
+  assert.match(source, /setUnreadSessionIds\(\(prev\) => sameIdSet\(prev, reviewed\.rootReady\) \? prev : reviewed\.rootReady\)/);
+  assert.match(source, /completedWithNotifications = completedInBackground\.filter\([\s\S]*?!previousSuppressedCompletionSessionIdsRef\.current\.has\(id\)[\s\S]*?!knownSubagentIds\.has\(id\)/);
   assert.match(source, /if \(completedWithNotifications\.length > 0\) \{\s*onBackgroundTaskDone\?\.\(\)/);
-  assert.match(
-    source,
-    /filter\(\(session\) => session\.relation\?\.kind !== "subagent" && !session\.archived\)[\s\S]*?unreadEligibleIds\.has\(id\)/,
-  );
-  assert.match(source, /const completedSubagents = completedInBackground\.filter\(\(id\) => knownSubagentIds\.has\(id\) && unreviewedCompletion\(id\)\)/);
-  assert.match(source, /saveUnreadSessionIds\(subagentReviewIds, SUBAGENT_REVIEW_STORAGE_KEY\)/);
   assert.match(source, /onActivityChange\?\.\(attention, new Set\(\[\.\.\.unreadSessionIds, \.\.\.subagentReviewIds\]\), activityAvailable\)/);
 });
 

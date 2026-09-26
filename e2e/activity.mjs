@@ -8,11 +8,14 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await page.getByText("Active branch answer", { exact: true }).waitFor();
   assert.equal(await page.getByText("A previous run may have been interrupted", { exact: false }).count(), 0);
   seedInterruptedRun();
-  await page.waitForFunction(() => localStorage.getItem("pi-web:reviewed-run-times") !== null);
+  await page.waitForFunction(async () => {
+    const response = await fetch("/api/agent/running", { cache: "no-store" });
+    return response.ok && Array.isArray((await response.json()).reviewedRuns);
+  });
   await page.getByRole("button", { name: /^Activity/ }).click();
   const recoveryOverview = page.getByRole("region", { name: "Activity" });
   assert.equal(await recoveryOverview.locator(".activity-item-ready").count(), 0,
-    "a new browser must not inherit prior clients' completed-run backlog");
+    "idle transcript history must not become a completed-run backlog");
   const interrupted = recoveryOverview.locator(".activity-item-interrupted").filter({ hasText: "Branch root" });
   await interrupted.waitFor();
   await interrupted.click();
@@ -172,12 +175,19 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await overview.getByRole("combobox", { name: "Project" }).selectOption({ label: "other-project" });
   await otherReady.waitFor();
   await originalReady.waitFor({ state: "hidden" });
-  // Two tabs share one browser's review state. Acknowledging in this tab must
-  // clear the peer's queue without requiring a reload.
-  const peer = width === 1280 ? await page.context().newPage() : null;
+  // A separate browser context has no shared localStorage. Acknowledging on
+  // this device must still clear its queue on the server's next visible poll.
+  const peerContext = width === 1280 ? await page.context().browser().newContext({ viewport: { width, height: 900 }, locale: "en-US" }) : null;
+  const peer = peerContext ? await peerContext.newPage() : null;
   if (peer) {
-    await page.waitForFunction((id) => JSON.parse(localStorage.getItem("pi-web:unread-session-ids") ?? "[]").includes(id), otherSessionId);
+    await page.waitForFunction(async (id) => {
+      const response = await fetch("/api/agent/running", { cache: "no-store" });
+      const state = await response.json();
+      return state.completedRuns.some((entry) => entry.sessionId === id)
+        && !state.reviewedRuns.some((entry) => entry.sessionId === id);
+    }, otherSessionId);
     await peer.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
+    assert.equal(await peer.evaluate(() => localStorage.getItem("pi-web:unread-session-ids")), null);
     await peer.getByText("Active branch answer", { exact: true }).waitFor();
     await peer.getByRole("button", { name: /^Activity/ }).click();
     await peer.getByRole("region", { name: "Activity" }).locator(".activity-item-ready")
@@ -187,7 +197,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   if (peer) {
     await peer.getByRole("region", { name: "Activity" }).locator(".activity-item-ready")
       .filter({ hasText: "Other workspace task" }).waitFor({ state: "hidden", timeout: 15000 });
-    await peer.close();
+    await peerContext.close();
   }
   await page.waitForURL((url) => url.searchParams.get("session") === otherSessionId);
   if (mobile) await page.getByRole("button", { name: "Back to Activity" }).click();
@@ -200,6 +210,12 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   const reloadedOverview = page.getByRole("region", { name: "Activity" });
   await reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Render **E2E markdown**" }).waitFor();
   assert.equal(await reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Other workspace task" }).count(), 0,
-    "reviewed runs must not reappear after reloading this browser");
+    "server-reviewed runs must not reappear after reloading this browser");
+  assert.equal(await page.evaluate(() => localStorage.getItem("pi-web:reviewed-run-times")), null);
+  const finalReview = await api("/api/agent/running");
+  assert.ok(finalReview.reviewedRuns.some((entry) => entry.sessionId === otherSessionId));
+  // Each viewport is a new browser; leave a shared clean baseline for the next
+  // viewport after asserting the cross-device unread/read transitions above.
+  await post("/api/activity/review", { op: "ack", entries: finalReview.completedRuns });
   console.log(`PASS: ${width}px Activity starring, background question, review, project filter and chat navigation`);
 }

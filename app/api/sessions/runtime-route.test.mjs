@@ -23,6 +23,7 @@ const { GET: getSessionState } = await jiti.import("./[id]/state/route.ts");
 const { POST: dismissRecovery } = await jiti.import("./[id]/recovery/route.ts");
 const { GET: listInterrupted } = await jiti.import("./interrupted/route.ts");
 const { recordRunStart, readPossibleInterruptedRun } = await jiti.import("../../../lib/session-run-recovery.ts");
+const { recordActivityCompletion, activityReviewPath } = await jiti.import("../../../lib/activity-review-server.ts");
 const {
   cacheSessionPath,
   invalidateSessionPathCache,
@@ -129,11 +130,18 @@ test("session detail reports a possible interrupted run without reopening it; di
   assert.equal(readPossibleInterruptedRun(id, root, () => false), null);
 });
 
-test("running snapshot exposes only live wrapper attention without opening sessions", async () => {
+test("running snapshot exposes only live wrapper attention without opening sessions", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-web-activity-snapshot-"));
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = dir;
+  t.after(async () => {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    await rm(dir, { recursive: true, force: true });
+  });
   const previous = globalThis.__piSessions;
-  const previousCompletions = globalThis.__piSessionCompletedAt;
   const previousSubagents = globalThis.__piSubagentRuns;
-  globalThis.__piSessionCompletedAt = new Map([["finished", 42]]);
+  recordActivityCompletion("finished", activityReviewPath(dir), 42);
   globalThis.__piSubagentRuns = new Map([["queued", { run: { status: "queued" } }]]);
   const waiting = { sessionId: "waiting", isRunning: () => true, hasSuppressedCompletionNotifications: () => false,
     getPendingAttention: () => ({ sessionId: "waiting", method: "ask_user", summary: "Choose?", since: 42 }) };
@@ -144,10 +152,10 @@ test("running snapshot exposes only live wrapper attention without opening sessi
     assert.deepEqual(snapshot.queuedSessionIds, ["queued"]);
     assert.deepEqual(snapshot.attention, [{ sessionId: "waiting", method: "ask_user", summary: "Choose?", since: 42 }]);
     assert.deepEqual(snapshot.completedRuns, [{ sessionId: "finished", at: 42 }]);
+    assert.deepEqual(snapshot.reviewedRuns, []);
     assert.equal(globalThis.__piSessions.size, 1);
   } finally {
     globalThis.__piSessions = previous;
-    globalThis.__piSessionCompletedAt = previousCompletions;
     globalThis.__piSubagentRuns = previousSubagents;
   }
 });
