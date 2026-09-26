@@ -446,7 +446,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [fileSearchOpen, setFileSearchOpen] = useState(false);
   const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
   const [sessionSearchQuery, setSessionSearchQuery] = useState("");
-  const [searchIncludesArchived, setSearchIncludesArchived] = useState(false);
+  const [searchAllProjects, setSearchAllProjects] = useState(false);
+  const [searchBothStatuses, setSearchBothStatuses] = useState(false);
   const sessionSearchActive = sessionSearchOpen && Boolean(sessionSearchQuery.trim());
   const [changesCount, setChangesCount] = useState(0);
   const [changesCollapsed, setChangesCollapsed] = useState(true);
@@ -1452,6 +1453,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               type="button"
               onClick={() => {
                 setSessionSearchOpen((open) => !open);
+                setSearchAllProjects(false);
+                setSearchBothStatuses(false);
                 setWtDropdownOpen(false);
               }}
               title={t("sidebar.toggleSessionSearch")}
@@ -1696,15 +1699,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               }}
               className="block h-[29px] w-full min-w-0 rounded-[7px] border border-border bg-bg px-[10px] text-xs text-text focus:outline-2 focus:outline-accent"
             />
-            <label className="flex w-fit cursor-pointer items-center gap-1.5 text-xs text-text-muted">
-              <input
-                type="checkbox"
-                checked={searchIncludesArchived}
-                onChange={(event) => setSearchIncludesArchived(event.target.checked)}
-                className="accent-accent"
-              />
-              {t("sidebar.searchIncludeArchived")}
-            </label>
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted">
+                <input type="checkbox" checked={searchAllProjects} onChange={(event) => setSearchAllProjects(event.target.checked)} className="accent-accent" />
+                {t("sidebar.searchAllProjects")}
+              </label>
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted">
+                <input type="checkbox" checked={searchBothStatuses} onChange={(event) => setSearchBothStatuses(event.target.checked)} className="accent-accent" />
+                {t("sidebar.searchBothStatuses")}
+              </label>
+            </div>
           </div>
         )}
 
@@ -2192,7 +2196,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             {bulkError && <div role="alert" style={{ width: "100%", color: "#ef4444" }}>{bulkError}</div>}
           </div>
         )}
-      <SessionSearch open={sessionSearchOpen} query={sessionSearchQuery} includeArchived={searchIncludesArchived} selectedSessionId={selectedSessionId} onSelectSession={handleSelectSessionFromList}>
+      <SessionSearch open={sessionSearchOpen} query={sessionSearchQuery} projectKey={searchAllProjects ? null : selectedProject?.key ?? null} allProjects={searchAllProjects} status={searchBothStatuses ? "both" : showArchived ? "archived" : "active"} selectedSessionId={selectedSessionId} onSelectSession={handleSelectSessionFromList}>
         <div
           ref={listScrollRef}
           onScroll={handleListScroll}

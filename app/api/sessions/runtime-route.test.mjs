@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -191,18 +191,39 @@ test("archive and restore preserve the session file and refresh the catalogue", 
   assert.ok(archived.sessionListVersion > before.sessionListVersion);
   assert.equal(archived.sessions.find((session) => session.id === id)?.archived, true);
   assert.equal((await list(true)).sessions.find((session) => session.id === id)?.archived, true);
-  const search = async (includeArchived = false) => {
-    const params = new URLSearchParams({ q: "Archive fixture" });
-    if (includeArchived) params.set("includeArchived", "1");
+  const projectKey = archived.sessions.find((session) => session.id === id).projectKey;
+  const otherDir = join(dir, "other-project");
+  await mkdir(otherDir);
+  const other = SessionManager.create(otherDir);
+  other.appendMessage({ role: "user", content: "Archive fixture", timestamp: Date.now() });
+  other.appendMessage({ role: "assistant", content: [{ type: "text", text: "Done" }], timestamp: Date.now() });
+  const otherId = other.getSessionId();
+  cacheSessionPath(otherId, other.getSessionFile());
+  t.after(() => invalidateSessionPathCache(otherId));
+  invalidateSessionListCache();
+  const otherKey = (await list()).sessions.find((session) => session.id === otherId).projectKey;
+  assert.notEqual(projectKey, otherKey);
+  const search = async (status = "active", scope = { projectKey }) => {
+    const params = new URLSearchParams({ q: "Archive fixture", status, ...scope });
     const response = await searchSessions(new Request(`http://localhost/api/sessions/search?${params}`));
     assert.equal(response.status, 200);
     return (await response.json()).results.map((result) => result.session.id);
   };
-  assert.ok(!(await search()).includes(id), "archived sessions stay excluded by default");
-  assert.ok((await search(true)).includes(id), "opt-in search finds archived session content");
+  assert.deepEqual(await search(), [], "archived sessions stay excluded from active search");
+  assert.deepEqual(await search("archived"), [id]);
+  assert.deepEqual(await search("both"), [id]);
+  assert.deepEqual(await search("active", { projectKey: otherKey }), [otherId]);
+  assert.deepEqual(await search("active", { scope: "all" }), [otherId]);
+  assert.deepEqual(new Set(await search("both", { scope: "all" })), new Set([id, otherId]));
+  for (const invalid of [new URLSearchParams({ q: "Archive fixture", status: "active" }),
+    new URLSearchParams({ q: "Archive fixture", scope: "all", status: "unknown" }),
+    new URLSearchParams({ q: "Archive fixture", projectKey, status: "active", includeArchived: "1" })]) {
+    assert.equal((await searchSessions(new Request(`http://localhost/api/sessions/search?${invalid}`))).status, 400);
+  }
+  assert.deepEqual(await search("active", { projectKey: "unknown" }), []);
   assert.match(await readFile(path, "utf8"), /pi-web:archive/);
   assert.equal((await patch({ archived: false })).status, 200);
-  assert.ok((await search()).includes(id), "restored sessions return to ordinary search");
+  assert.deepEqual(await search(), [id], "restored sessions return to active search");
   assert.equal((await list()).sessions.find((session) => session.id === id)?.archived, undefined);
   assert.equal((await patch({ archived: "yes" })).status, 400);
   assert.equal((await patch({ name: "x", archived: true })).status, 400);
