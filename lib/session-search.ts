@@ -37,15 +37,33 @@ export async function searchSessionContents(
   const deadline = Date.now() + TIME_BUDGET_MS;
   const timeout = AbortSignal.timeout(TIME_BUDGET_MS);
   const signal = requestSignal ? AbortSignal.any([requestSignal, timeout]) : timeout;
+  if (signal.aborted) return { results: [], truncated: true };
   const candidates = sessions
     .filter((session) => !session.transient && session.path)
     .sort((a, b) => b.modified.localeCompare(a.modified));
+
+  // IDs are already in the catalogue: match them before the bounded file scan
+  // so an older session remains findable even beyond the recent-file limit.
+  const idMatches = candidates.filter((session) => matcher.test(session.id));
+  for (const session of idMatches.slice(0, MAX_RESULTS)) {
+    const match = matcher.exec(session.id)!;
+    response.results.push({
+      session,
+      blockIndex: 0,
+      before: `ID: ${session.id.slice(0, match.index)}`,
+      match: match[0],
+      after: session.id.slice(match.index + match[0].length),
+    });
+  }
+  if (idMatches.length > MAX_RESULTS) response.truncated = true;
+  const matchedIds = new Set(idMatches.map((session) => session.id));
 
   for (const [index, session] of candidates.entries()) {
     if (index >= MAX_FILES || response.results.length >= MAX_RESULTS || signal.aborted || Date.now() >= deadline) {
       response.truncated = true;
       break;
     }
+    if (matchedIds.has(session.id)) continue;
     const stream = createReadStream(session.path, { encoding: "utf8", end: MAX_FILE_BYTES - 1, signal });
     const lines = createInterface({ input: stream, crlfDelay: Infinity });
     let found = false;
