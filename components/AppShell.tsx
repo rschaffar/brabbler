@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
+import { WebVersionNotice } from "./WebVersionNotice";
 import { ActivityOverview } from "./ActivityOverview";
 import { StarredOverview } from "./StarredOverview";
 import { getActivitySections, type ActivityStatus } from "@/lib/activity";
@@ -1930,6 +1931,7 @@ export function AppShell() {
         }
       }
     `}</style>
+    <WebVersionNotice />
     <div style={{
       display: "flex",
       width: "100%",
