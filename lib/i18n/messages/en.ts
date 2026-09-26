@@ -144,6 +144,8 @@ export const enLocale: LocalePlugin = {
     "activity.subagent": "Sub-agent",
     "activity.needsCount": "{count} awaiting input",
     "appUpdate.releaseNotes": "Pi Web v{version} is available. View release notes",
+    "chat.contextFilesChanged": "Session instructions changed on disk. Reload the session to apply them.",
+    "chat.contextReloadFailed": "Reload failed. Try again.",
     "sidebar.hide": "Hide sidebar",
     "sidebar.show": "Show sidebar",
     "theme.light": "Theme: Light",

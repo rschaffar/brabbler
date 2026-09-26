@@ -308,6 +308,32 @@ try {
   browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
     ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
     : {});
+  // A live session keeps the context files it loaded until explicitly reloaded.
+  {
+    const contextFile = join(otherProject, "AGENTS.md");
+    const checkContext = await browser.newContext();
+    const checkPage = await checkContext.newPage();
+    try {
+      await post(`/api/agent/${OTHER}`, { type: "get_state" });
+      await checkPage.goto(`${base}/?session=${OTHER}`, { waitUntil: "domcontentloaded" });
+      await checkPage.getByText("Waiting for more work", { exact: true }).waitFor();
+      const reloadNotice = checkPage.getByText("Session instructions changed on disk.", { exact: false });
+      assert.equal(await reloadNotice.count(), 0);
+      writeFileSync(contextFile, "New project instructions");
+      await checkPage.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await reloadNotice.waitFor();
+      await checkPage.getByRole("button", { name: "Reload session" }).click();
+      await reloadNotice.waitFor({ state: "detached" });
+      assert.equal((await api(`/api/agent/${OTHER}`)).state.contextFilesChanged, false);
+      writeFileSync(contextFile, "Updated project instructions");
+      await checkPage.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await reloadNotice.waitFor();
+      console.log("PASS: live context changes offer a session reload and clear after applying");
+    } finally {
+      rmSync(contextFile, { force: true });
+      await checkContext.close();
+    }
+  }
   for (const viewport of [
     { width: 1280, height: 800 },
     ...(process.env.E2E_ACTIVITY_ONLY === "1" ? [{ width: 700, height: 800 }] : []),
