@@ -18,6 +18,9 @@ import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { AnsiText } from "./AnsiText";
 import { AskUserDialog } from "./AskUserDialog";
 import { ContextReloadNotice } from "./ContextReloadNotice";
+import { GitWorkflowSettings } from "./GitWorkflowSettings";
+import { GitCommitPanel } from "./GitCommitPanel";
+import { GitMergeReviewPanel } from "./GitMergeReviewPanel";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -50,6 +53,8 @@ interface Props {
   onAttentionNeeded?: (request: BlockingExtensionUiRequest) => void;
   onSessionCreated?: (session: SessionInfo, sourceDraftKey: string) => void;
   onSessionForked?: (newSessionId: string) => void;
+  onSessionMoved?: (sessionId: string, cwd: string) => Promise<void>;
+  onSessionForkedToWorktree?: (sessionId: string, cwd: string) => void;
   modelsRefreshKey?: number;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => void;
@@ -245,7 +250,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionMoved, onSessionForkedToWorktree, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
@@ -288,7 +293,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     isAutoModelSelection,
     isAutoThinkingSelection,
     agentPhase,
-    isNew,
+    isNew, setNewSessionGitWorkflow,
     showScrollToBottom,
     sessionIdRef, scrollContainerRef,
     lastUserMsgRef, promptAnchorActive,
@@ -304,6 +309,59 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     deferInitialScroll: Boolean(pendingScrollRestore),
   });
   const sessionBusy = agentRunning || bashRunning;
+  const [workspaceTransitionNotice, setWorkspaceTransitionNotice] = useState<string | null>(null);
+  const handledWorkspaceTransitionRef = useRef<string | null>(null);
+  const workspaceCallbacksRef = useRef({ onSessionMoved, onSessionForkedToWorktree });
+  workspaceCallbacksRef.current = { onSessionMoved, onSessionForkedToWorktree };
+  // The server owns the one-shot post-run transition. This poll only follows
+  // its durable result; reconnecting or reloading a tab never triggers a move.
+  useEffect(() => {
+    // Pi-created session IDs are UUIDs. Imported/fixture sessions can have
+    // different IDs and cannot own an agent-created workspace receipt.
+    if (!session?.id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session.id)
+      || session.relation?.kind === "subagent") return;
+    const id = session.id;
+    let stopped = false;
+    let polling = false;
+    setWorkspaceTransitionNotice(null);
+    handledWorkspaceTransitionRef.current = null;
+    const poll = async () => {
+      if (stopped || polling || document.hidden) return;
+      polling = true;
+      try {
+        const response = await fetch(`/api/git/workspace-transition?${new URLSearchParams({ sessionId: id })}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const body = await response.json() as { transition: {
+          nonce: string; status: "pending" | "claimed" | "succeeded" | "manual-recovery";
+          action: "continue" | "fork"; destinationPath: string; newSessionId?: string; reason?: string;
+        } | null };
+        const transition = body.transition;
+        if (stopped || !transition || handledWorkspaceTransitionRef.current === transition.nonce) return;
+        if (transition.status === "manual-recovery") {
+          handledWorkspaceTransitionRef.current = transition.nonce;
+          setWorkspaceTransitionNotice(`Workspace transition needs manual recovery. The worktree was retained at ${transition.destinationPath}${transition.newSessionId ? ` (fork ${transition.newSessionId} retained)` : ""}. Inspect the session and worktree before continuing.`);
+        } else if (transition.status === "succeeded") {
+          handledWorkspaceTransitionRef.current = transition.nonce;
+          try {
+            if (transition.action === "fork" && transition.newSessionId) {
+              workspaceCallbacksRef.current.onSessionForkedToWorktree?.(transition.newSessionId, transition.destinationPath);
+            } else if (transition.action === "continue") {
+              await workspaceCallbacksRef.current.onSessionMoved?.(id, transition.destinationPath);
+            } else throw new Error("Missing fork session ID");
+            if (!stopped) setWorkspaceTransitionNotice(null);
+          } catch {
+            if (!stopped) setWorkspaceTransitionNotice(`Workspace moved to ${transition.destinationPath}, but the view could not follow it. Refresh the session list; do not repeat the transition.`);
+          }
+        }
+      } catch { /* Status is advisory; a network failure never retries a server operation. */ }
+      finally { polling = false; }
+    };
+    void poll();
+    const interval = window.setInterval(() => void poll(), 3000);
+    const onVisibility = () => { if (!document.hidden) void poll(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { stopped = true; window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisibility); };
+  }, [session?.id, session?.relation?.kind]);
   const [quotedSelection, setQuotedSelection] = useState<{
     text: string;
     top: number;
@@ -1355,6 +1413,28 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         document.body,
       )}
 
+      {session && !session.transient && session.relation?.kind !== "subagent" && <div className="shrink-0" style={{ paddingRight: isMobile ? 0 : CHAT_MINIMAP_WIDTH }}>
+        <GitCommitPanel key={`${session.id}:${session.cwd}`} sessionId={session.id} cwd={session.cwd}
+          busy={sessionBusy || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)} />
+      </div>}
+      {session && !session.transient && session.relation?.kind !== "subagent" && <div className="shrink-0" style={{ paddingRight: isMobile ? 0 : CHAT_MINIMAP_WIDTH }}>
+        <GitMergeReviewPanel key={`${session.id}:${session.cwd}`} sessionId={session.id} cwd={session.cwd} />
+        {workspaceTransitionNotice && <p role="alert" className="mx-auto max-w-full px-4 text-xs text-amber-500">{workspaceTransitionNotice}</p>}
+      </div>}
+      {messageCwd && <div className="shrink-0" style={{ paddingRight: isMobile ? 0 : CHAT_MINIMAP_WIDTH }}>
+        <GitWorkflowSettings
+          key={session?.id ?? newSessionDraftKey ?? messageCwd}
+          cwd={messageCwd}
+          sessionId={session?.id}
+          setNewChatOverride={isNew ? setNewSessionGitWorkflow : undefined}
+          transient={session?.transient}
+          onSessionMoved={onSessionMoved}
+          onSessionForkedToWorktree={onSessionForkedToWorktree}
+          assistantLeafId={session && !session.transient && session.relation?.kind !== "subagent" && activeLeafId
+            && messages[entryIds.indexOf(activeLeafId)]?.role === "assistant" ? activeLeafId : null}
+          busy={sessionBusy || streamState.isStreaming || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)}
+        />
+      </div>}
       <div className="relative shrink-0">
         {!isEmptyNew && (
           <div

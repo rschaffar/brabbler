@@ -156,6 +156,11 @@ interface WorktreeEntry {
   isMain: boolean;
 }
 
+interface LocalBranchTip {
+  branch: string;
+  oid: string;
+}
+
 interface WorktreeState {
   /** The cwd this data was fetched for — guards against stale responses */
   forCwd: string;
@@ -169,6 +174,7 @@ interface WorktreeState {
   /** Canonical path of the checkout containing forCwd, resolved server-side. */
   currentWorktreePath: string | null;
   worktrees: WorktreeEntry[];
+  localBranches: LocalBranchTip[];
 }
 
 interface ProjectSelection {
@@ -423,9 +429,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [wtDropdownOpen, setWtDropdownOpen] = useState(false);
   const [wtNewOpen, setWtNewOpen] = useState(false);
   const [wtNewBranch, setWtNewBranch] = useState("");
+  const [wtMode, setWtMode] = useState<"create" | "attach">("create");
+  // Capture the selected OIDs rather than following a later GET response silently.
+  const [wtBase, setWtBase] = useState<(LocalBranchTip & { projectRoot: string }) | null>(null);
+  const [wtAttach, setWtAttach] = useState<(LocalBranchTip & { projectRoot: string }) | null>(null);
   const [wtError, setWtError] = useState<string | null>(null);
   const [wtBusy, setWtBusy] = useState(false);
   const [wtConfirmRemove, setWtConfirmRemove] = useState<string | null>(null);
+  const [wtPendingRemove, setWtPendingRemove] = useState<string | null>(null);
   const [worktreeLoadingCwd, setWorktreeLoadingCwd] = useState<string | null>(null);
   const wtDropdownRef = useRef<HTMLDivElement>(null);
   const wtNewInputRef = useRef<HTMLInputElement>(null);
@@ -931,7 +942,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setWorktreeLoadingCwd(selectedCwd);
     fetch(`/api/worktrees?cwd=${encodeURIComponent(selectedCwd)}`)
       .then((r) => r.json())
-      .then((d: { projectRoot?: string; projectKey?: string; isGit?: boolean; isTopLevel?: boolean; currentWorktreePath?: string | null; worktrees?: WorktreeEntry[]; error?: string }) => {
+      .then((d: { projectRoot?: string; projectKey?: string; isGit?: boolean; isTopLevel?: boolean; currentWorktreePath?: string | null; worktrees?: WorktreeEntry[]; localBranches?: LocalBranchTip[]; error?: string }) => {
         if (cancelled) return;
         setWorktreeLoadingCwd(null);
         if (d.error || !d.projectRoot) {
@@ -946,6 +957,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           isTopLevel: d.isTopLevel ?? false,
           currentWorktreePath: d.currentWorktreePath ?? null,
           worktrees: d.worktrees ?? [],
+          localBranches: d.localBranches ?? [],
         });
       })
       .catch(() => {
@@ -1051,15 +1063,20 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, []);
 
   const handleCreateWorktree = useCallback(async () => {
-    const branch = wtNewBranch.trim();
-    if (!branch || wtBusy || !worktreeState) return;
+    const branch = wtMode === "attach" ? wtAttach?.branch : wtNewBranch.trim();
+    if (!branch || wtBusy || !worktreeState || !wtBase || wtBase.projectRoot !== worktreeState.projectRoot
+      || (wtMode === "attach" && (!wtAttach || wtAttach.projectRoot !== worktreeState.projectRoot))) return;
     setWtBusy(true);
     setWtError(null);
     try {
       const res = await fetch("/api/worktrees", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: worktreeState.projectRoot, branch }),
+        body: JSON.stringify({
+          cwd: worktreeState.projectRoot, branch, mode: wtMode,
+          baseBranch: wtBase.branch, expectedBaseOid: wtBase.oid,
+          ...(wtMode === "attach" ? { expectedTipOid: wtAttach?.oid } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({})) as { path?: string; error?: string };
       if (!res.ok || data.error || !data.path) {
@@ -1068,6 +1085,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       }
       setWtNewOpen(false);
       setWtNewBranch("");
+      setWtBase(null);
+      setWtAttach(null);
       setWtDropdownOpen(false);
       // Optimistically register the new worktree so projectFor() resolves
       // it to the main repo before the refetch lands (keeps AppShell from
@@ -1085,7 +1104,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } finally {
       setWtBusy(false);
     }
-  }, [wtNewBranch, wtBusy, worktreeState]);
+  }, [wtNewBranch, wtMode, wtAttach, wtBase, wtBusy, worktreeState]);
 
   const handleRemoveWorktree = useCallback(async (path: string, force: boolean) => {
     if (!worktreeState || wtBusy) return;
@@ -1102,12 +1121,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         if (data.dirty && !force) {
           // Dirty worktree — ask the user to confirm a force removal
           setWtConfirmRemove(path);
+          setWtPendingRemove(null);
           return;
         }
         setWtError(data.error ?? `HTTP ${res.status}`);
         return;
       }
       setWtConfirmRemove(null);
+      setWtPendingRemove(null);
       if (currentWorktreePath === path) setSelectedCwd(worktreeState.projectRoot);
       setWtRefreshKey((k) => k + 1);
     } catch (e) {
@@ -1128,6 +1149,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         setWtDropdownOpen(false);
         setWtNewOpen(false);
         setWtNewBranch("");
+        setWtBase(null);
+        setWtAttach(null);
         setWtError(null);
         setWtConfirmRemove(null);
         setWtFilter("");
@@ -1791,6 +1814,19 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   <div style={{ maxHeight: "min(40vh, 300px)", overflowY: "auto" }}>
                     {visibleWorktrees.map((wt) => {
                       const isCurrent = wt.path === currentWorktreePath;
+                      if (wtPendingRemove === wt.path) {
+                        return <div key={wt.path} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderBottom: "1px solid var(--border)", background: "rgba(239,68,68,0.06)" }}>
+                          <span style={{ flex: 1, fontSize: 11, color: "var(--text)" }}>{t("sidebar.confirmRemoveCheckout")}</span>
+                          <button type="button" disabled={wtBusy} onClick={() => void handleRemoveWorktree(wt.path, false)}
+                            style={{ padding: "3px 9px", background: "#ef4444", border: "none", borderRadius: 5, color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>
+                            {t("sidebar.removeCheckout")}
+                          </button>
+                          <button type="button" onClick={() => setWtPendingRemove(null)}
+                            style={{ padding: "3px 9px", background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-muted)", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>
+                            {t("sidebar.cancel")}
+                          </button>
+                        </div>;
+                      }
                       if (wtConfirmRemove === wt.path) {
                         return (
                           <div key={wt.path} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderBottom: "1px solid var(--border)", background: "rgba(239,68,68,0.06)" }}>
@@ -1855,7 +1891,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                           </button>
                           {!wt.isMain && (
                             <button
-                              onClick={() => void handleRemoveWorktree(wt.path, false)}
+                              onClick={() => { setWtConfirmRemove(null); setWtPendingRemove(wt.path); }}
                               disabled={wtBusy}
                                title={t("sidebar.removeWorktreeTitle", { path: wt.path })}
                               style={{
@@ -1916,7 +1952,64 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     </button>
                   ) : (
                     <div style={{ padding: "6px 8px" }}>
-                      <input
+                      <button type="button" disabled={wtBusy} onClick={() => {
+                        setWtBase(null);
+                        setWtAttach(null);
+                        setWtError(null);
+                        setWtRefreshKey((key) => key + 1);
+                      }} style={{ float: "right", fontSize: 10, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer" }}>
+                        Refresh local branches
+                      </button>
+                      <label style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>
+                        Local base branch (required)
+                        <select
+                          aria-label="Local base branch"
+                          value={wtBase?.projectRoot === worktreeState?.projectRoot ? wtBase.branch : ""}
+                          onChange={(e) => {
+                            const tip = worktreeState?.localBranches.find((item) => item.branch === e.target.value);
+                            setWtBase(tip && worktreeState ? { ...tip, projectRoot: worktreeState.projectRoot } : null);
+                            setWtError(null);
+                          }}
+                          style={{ display: "block", width: "100%", marginTop: 4, fontSize: 11, fontFamily: "var(--font-mono)" }}
+                        >
+                          <option value="">Select a local base…</option>
+                          {worktreeState?.localBranches.map((tip) => <option key={tip.branch} value={tip.branch}>{tip.branch} · {tip.oid}</option>)}
+                        </select>
+                      </label>
+                      <div style={{ fontSize: 10, color: "var(--text-dim)", overflowWrap: "anywhere", margin: "5px 0" }}>
+                        Expected base HEAD: {wtBase?.projectRoot === worktreeState?.projectRoot ? wtBase.oid : "Select a local base branch"}
+                      </div>
+                      <label style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>
+                        Action
+                        <select aria-label="Worktree action" value={wtMode} onChange={(e) => {
+                          setWtMode(e.target.value as "create" | "attach");
+                          setWtError(null);
+                        }} style={{ display: "block", width: "100%", margin: "4px 0", fontSize: 11 }}>
+                          <option value="create">Create new branch</option>
+                          <option value="attach">Attach existing local branch</option>
+                        </select>
+                      </label>
+                      {wtMode === "attach" ? (
+                        <label style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>
+                          Existing local branch
+                          <select aria-label="Branch to attach" value={wtAttach?.projectRoot === worktreeState?.projectRoot ? wtAttach.branch : ""}
+                            onChange={(e) => {
+                              const tip = worktreeState?.localBranches.find((item) => item.branch === e.target.value);
+                              setWtAttach(tip && worktreeState ? { ...tip, projectRoot: worktreeState.projectRoot } : null);
+                              setWtError(null);
+                            }} style={{ display: "block", width: "100%", marginTop: 4, fontSize: 11, fontFamily: "var(--font-mono)" }}>
+                            <option value="">Select an existing branch…</option>
+                            {worktreeState?.localBranches.map((tip) => (
+                              <option key={tip.branch} value={tip.branch} disabled={worktreeState.worktrees.some((wt) => wt.branch === tip.branch)}>
+                                {tip.branch} · {tip.oid}{worktreeState.worktrees.some((wt) => wt.branch === tip.branch) ? " (already checked out)" : ""}
+                              </option>
+                            ))}
+                          </select>
+                          <span style={{ display: "block", fontSize: 10, overflowWrap: "anywhere", marginTop: 5 }}>
+                            Expected branch tip: {wtAttach?.projectRoot === worktreeState?.projectRoot ? wtAttach.oid : "Select a local branch"}
+                          </span>
+                        </label>
+                      ) : <input
                         ref={wtNewInputRef}
                         value={wtNewBranch}
                         onChange={(e) => {
@@ -1947,11 +2040,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                           color: "var(--text)",
                           boxSizing: "border-box",
                         }}
-                      />
+                      />}
                       <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
                         <button
                           onClick={() => void handleCreateWorktree()}
-                          disabled={wtBusy || !wtNewBranch.trim()}
+                          disabled={wtBusy || !wtBase || wtBase.projectRoot !== worktreeState?.projectRoot || (wtMode === "create" ? !wtNewBranch.trim() : !wtAttach || wtAttach.projectRoot !== worktreeState?.projectRoot)}
                           style={{
                             flex: 1,
                             padding: "4px 0",
@@ -1961,14 +2054,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                             color: "var(--accent-contrast)",
                             fontSize: 11,
                             fontWeight: 600,
-                            cursor: wtBusy || !wtNewBranch.trim() ? "not-allowed" : "pointer",
-                            opacity: wtBusy || !wtNewBranch.trim() ? 0.65 : 1,
+                            cursor: wtBusy || !wtBase || (wtMode === "create" ? !wtNewBranch.trim() : !wtAttach) ? "not-allowed" : "pointer",
+                            opacity: wtBusy || !wtBase || (wtMode === "create" ? !wtNewBranch.trim() : !wtAttach) ? 0.65 : 1,
                           }}
                         >
                            {wtBusy ? t("sidebar.creating") : t("sidebar.create")}
                         </button>
                         <button
-                          onClick={() => { setWtNewOpen(false); setWtNewBranch(""); setWtError(null); }}
+                          onClick={() => { setWtNewOpen(false); setWtNewBranch(""); setWtBase(null); setWtAttach(null); setWtError(null); }}
                           style={{
                             flex: 1,
                             padding: "4px 0",

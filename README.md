@@ -15,7 +15,7 @@ Local browser UI for the [pi coding agent](https://github.com/earendil-works/pi)
 - **Starred sessions**: starred chats show ★ beside their names in project lists and live in a separate ⭐ top-bar view (not in Activity). Filter by project, open a chat, or unstar it there; live **Needs you** and **Working** labels appear on starred rows. Stars are saved on the server in `~/.pi/agent/pi-web/starred-sessions.json` and shared across browsers connected to that server. Existing browser-local stars are imported on first visit.
 - **Two ways to branch**: **New session** creates an independent session file from an earlier message; **Edit from here** creates a branch inside the current session.
 - **Project file tools**: browse and upload files, inspect Git diffs, and preview source, Markdown, images, audio, PDFs, and DOCX files with automatic refresh.
-- **Git worktrees**: switch checkouts from the sidebar while keeping sessions from the same repository grouped together.
+- **Git worktrees and session workflow**: set project/new-chat or per-chat Git preferences; create and continue/fork worktrees manually or through an explicit agent action followed by an idle post-run transition; preview/confirm selected whole-file commits; verify saved checks, review whole/commit/range diffs, and separately approve an exact local non-fast-forward merge. No automatic integration or remote publication.
 - **Workspace terminal**: open it from the File Explorer toolbar. It defaults to a bundled JetBrains Mono Nerd Font (no browser font installation needed); use the terminal header to switch to the system font. The choice is saved in browser storage.
 - **Web-based configuration**: manage provider login and API keys, models, model tests, plugin packages, and skills without leaving Pi Web.
 - **Browser-native `ask_user`**: answer agent questions with described choices, multi-selection, freeform text, and optional comments without a terminal-style popup.
@@ -111,7 +111,8 @@ npx @agegr/pi-web@latest
 - **Filesystem access**: Pi Web must be able to read the agent data directory and the working directories recorded by its sessions. Run Pi Web in the same filesystem environment as pi when sharing existing sessions.
 - **Shared configuration**: the Models panel uses pi's model, settings, and Pi-default credential storage, so those changes are visible to both interfaces. Additional provider identities are Pi Web-only.
 - **File access boundary**: the file browser is limited to working directories selected in Pi Web and project or session roots it already knows about; it is not a general filesystem browser.
-- **Git worktrees**: see [Worktrees in Pi Web](./docs/worktrees.md) for switcher visibility, worktree creation, and removal behavior.
+- **Git worktrees**: see [Worktrees in Pi Web](./docs/worktrees.md) for switcher visibility, explicit local base/tip creation, and removal behavior.
+- **Session Git workflow**: see [Session Git workflow](./docs/git-workflow.md) for new-chat project defaults, next-run per-chat edits, explicit manual or agent-created post-run worktree continuation/fork (source edits stay put), guarded human/authorized-agent commits, selectable whole/commit/range diffs, and separately approved verification and exact local non-fast-forward merge. Unsupported hooks/signing/filters and dirty index states fail closed; inspect a reported partial state manually. Chat-only loads no workflow Git tools. Cleanup remains separately controlled; no remote operations are supplied. Windows portability is unverified.
 
 ### Downstream Session Context Menu
 

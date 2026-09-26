@@ -40,7 +40,7 @@ import { projectTrustReloadOptions } from "./project-trust";
 import { resolveShellTools } from "./powershell-settings";
 import { isBuiltInSubagentsEnabled, readSubagentSettings } from "./subagent-settings";
 import { SubagentQueue } from "./subagent-queue";
-import { addWorktree, removeWorktree } from "./worktree";
+import { addWorktree, currentLocalBranchTip, removeWorktree } from "./worktree";
 import { randomUUID } from "node:crypto";
 
 interface HostSession {
@@ -190,7 +190,13 @@ export function createSubagentController(
       const runInBackground = request.runInBackground ?? profile.runInBackground;
       const isolation = profile.isolation === "off" ? undefined : request.isolation ?? profile.isolation;
       if (isolation === "worktree") {
-        isolatedWorktree = await addWorktree(parent.cwd, `pi-web-agent-${randomUUID()}`);
+        const { branch: baseBranch, oid: expectedBaseOid } = await currentLocalBranchTip(parent.cwd);
+        isolatedWorktree = await addWorktree(parent.cwd, {
+          branch: `pi-web-agent-${randomUUID()}`,
+          baseBranch,
+          expectedBaseOid,
+          mode: "create",
+        });
       }
       const childCwd = isolatedWorktree?.path ?? parent.cwd;
       const inheritContext = request.inheritContext ?? profile.inheritContext;

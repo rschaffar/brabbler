@@ -11,6 +11,7 @@ npm run test:e2e
 
 For a focused browser-native `ask_user` run, set `E2E_ASK_USER_ONLY=1`.
 For the Activity overview, set `E2E_ACTIVITY_ONLY=1`.
+For the desktop Git workflow fixture (local repository, no model), set `E2E_GIT_WORKFLOW_ONLY=1`.
 If the Playwright-managed Chromium is unavailable, set
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a compatible local Chrome/Chromium
 binary; the default CI path remains the Playwright-managed browser.
@@ -45,6 +46,11 @@ Coverage:
 - The focused Activity run checks background questions, short-run completion/review,
   first-browser baselines, cross-tab acknowledgement and reload, cross-project
   filtering, and navigation at 1280px, 700px, and 390px without model credentials.
+- The focused Git workflow run checks project/session preferences without a browser reload,
+  whole-merge/single-commit/consecutive-range review, explicit manual commit preview/confirmation,
+  saved-check verification, exact proposal acknowledgement and separately confirmed local non-FF merge,
+  and same-chat continuation into an existing registered worktree. The agent-triggered post-run
+  transition is covered by focused unit tests, not a model-driven browser run.
 - The account controls test checks compact model-adjacent placement, popup-blocked OAuth
   links, device link/code/copy, progress persistence, invalid URL rejection, and
   cancellation at 1280px and 390px using mocked SSE (no provider credentials).

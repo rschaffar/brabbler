@@ -9,6 +9,16 @@ import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { accountCredentialStore, getProjectAccounts, validateAccountSelection, type AccountSelection } from "./provider-accounts";
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
+import { appendSessionGitWorkflow, inheritSessionGitWorkflow, readSessionGitWorkflow, validateGitWorkflowPolicy, type GitWorkflowPolicy } from "./git-workflow-policy";
+import { getProjectGitWorkflow } from "./git-workflow-store";
+import { createGitWorkflowExtension } from "./git-workflow-extension";
+import { createGitCommitExtension } from "./git-commit-extension";
+import { createGitWorkspaceStartExtension, appendCompletedGitWorkspaceTransition, type GitWorkspaceTransition } from "./git-workspace-start-extension";
+import { claimGitWorkspaceTransition, failGitWorkspaceTransition, finishGitWorkspaceTransition, recordGitWorkspaceForkId, recordGitWorkspaceTransition } from "./git-workspace-transition";
+import { acquireGitCheckoutGate, isGitCheckoutGated } from "./git-checkout-gate";
+import { listLocalBranchTips, listWorktrees } from "./worktree";
+import { samePath } from "./paths";
+import { readSessionHeader } from "./session-reader";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import {
@@ -181,6 +191,7 @@ const COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT = new Set([
 export interface RpcSessionStartOptions {
   toolNames?: string[];
   accounts?: AccountSelection;
+  gitWorkflow?: GitWorkflowPolicy | null;
   initialModel?: { provider: string; modelId: string };
   allowInitialModelFallback?: boolean;
   thinkingLevel?: ThinkingLevel;
@@ -225,7 +236,10 @@ function withExtensionTools(session: AgentSessionLike, toolNames: string[]): str
   const extensionToolNames = session
     .getAllTools()
     .map((t) => t.name)
-    .filter((name) => !codingToolNames.has(name));
+    .filter((name) => !codingToolNames.has(name)
+      // A session that selects only read/grep/find/ls must not gain a
+      // mutating host tool merely because extensions are enabled.
+      && (!["git_commit", "git_workspace_start"].includes(name) || selectedToolNames.some((tool) => ["bash", "powershell", "edit", "write"].includes(tool))));
 
   return [...new Set([...selectedToolNames, ...extensionToolNames])];
 }
@@ -255,6 +269,7 @@ export class AgentSessionWrapper {
   private activeMutatingCommands = 0;
   private sessionReplacement: "fork" | "clone" | null = null;
   private agentRunNeedsCompletion = false;
+  private scheduledGitWorkspace: GitWorkspaceTransition | null = null;
   private promptAdmissionTail: Promise<void> = Promise.resolve();
   private extensionsBound = false;
   private extensionBindingPromise: Promise<void> | null = null;
@@ -376,12 +391,106 @@ export class AgentSessionWrapper {
     if (!this.agentRunNeedsCompletion || this.isRunning()) return;
     this.agentRunNeedsCompletion = false;
     recordRpcSessionCompletion(this.sessionId);
+    const transition = this.scheduledGitWorkspace;
+    this.scheduledGitWorkspace = null;
+    // This in-memory handoff is intentionally never reconstructed from disk.
+    if (transition) this.beginGitWorkspaceTransition(transition);
     if (this.suppressCompletionNotifications) return;
     try {
       this.onAgentRunComplete?.(this.sessionId);
     } catch (error) {
       console.error("[pi-web] completion listener failed:", error instanceof Error ? error.message : error);
     }
+  }
+
+  /** Called by the tool, after it has created the worktree and appended the start entry. */
+  async scheduleGitWorkspaceTransition(transition: GitWorkspaceTransition): Promise<void> {
+    if (!this._alive || !this.agentRunNeedsCompletion || this.scheduledGitWorkspace
+      || !this.sessionFile || !existsSync(this.sessionFile)) throw new Error("No active persisted run");
+    recordGitWorkspaceTransition(this.sessionId, transition);
+    this.scheduledGitWorkspace = transition;
+  }
+
+  private beginGitWorkspaceTransition(transition: GitWorkspaceTransition): void {
+    // Claim and gate are synchronous: no prompt can slip between settlement and admission.
+    try {
+      if (!claimGitWorkspaceTransition(this.sessionId, transition.nonce)) return;
+    } catch { return; } // An unclaimed receipt is manual-only; never replay it at startup.
+    let release: (() => void) | undefined;
+    try {
+      release = acquireGitCheckoutGate([transition.originCwd, transition.destinationPath]);
+    } catch {
+      try { failGitWorkspaceTransition(this.sessionId, transition.nonce); } catch { /* claimed is still non-replayable */ }
+      return;
+    }
+    void this.performGitWorkspaceTransition(transition).catch(() => {
+      try { failGitWorkspaceTransition(this.sessionId, transition.nonce); } catch { /* claimed is still non-replayable */ }
+    }).finally(() => release?.());
+  }
+
+  private async performGitWorkspaceTransition(transition: GitWorkspaceTransition): Promise<void> {
+    const sourceFile = this.sessionFile;
+    const manager = this.inner.sessionManager;
+    if (!this._alive || this.isRunning() || !manager.isPersisted() || !sourceFile || !existsSync(sourceFile)
+      || !samePath(realpathSync(this.cwd), realpathSync(transition.originCwd))
+      || !samePath(realpathSync(manager.getHeader()?.cwd ?? ""), realpathSync(transition.originCwd))
+      || !samePath(realpathSync(manager.getCwd()), realpathSync(transition.originCwd))
+      || (await resolveSessionPath(this.sessionId)) !== sourceFile
+      || readSessionHeader(sourceFile)?.id !== this.sessionId
+      || !samePath(realpathSync(readSessionHeader(sourceFile)?.cwd ?? ""), realpathSync(transition.originCwd))
+      || readSessionGitWorkflow(manager.getEntries() as SessionEntry[])?.mode !== "worktree"
+      || readSessionGitWorkflow(manager.getEntries() as SessionEntry[])?.onCreate !== transition.onCreate
+      || !manager.getEntries().some((entry) => entry.type === "custom" && entry.customType === "pi-web:git-workspace-start"
+        && (entry.data as { nonce?: string } | undefined)?.nonce === transition.nonce)) throw new Error("Source changed");
+    const worktrees = await listWorktrees(transition.originCwd);
+    if (!worktrees.some((tree) => samePath(tree.path, transition.originCwd))
+      || !worktrees.some((tree) => samePath(tree.path, transition.destinationPath) && tree.branch === transition.branch)
+      || !(await listLocalBranchTips(transition.originCwd)).some((tip) => tip.branch === transition.branch && tip.oid === transition.featureTip)
+      || hasBusyRpcSessionForCwd(transition.destinationPath)
+      || hasBusyRpcSessionForCwd(transition.originCwd)) throw new Error("Checkout changed");
+    // Recheck after async git probes. The source wrapper is idle; a fresh prompt is gated.
+    if (this.isRunning() || !this._alive || hasBusyRpcSessionForCwd(transition.originCwd)
+      || hasBusyRpcSessionForCwd(transition.destinationPath)) throw new Error("Checkout is running");
+    const { moveSessionFamily } = await import("./session-move");
+    let movedId = this.sessionId;
+    if (transition.onCreate === "fork") {
+      const leafId = manager.getLeafId();
+      if (!leafId || !manager.getBranch(leafId).some((entry) => entry.type === "message" && entry.message.role === "assistant")) {
+        throw new Error("No assistant leaf");
+      }
+      const clone = SessionManager.open(sourceFile, manager.getSessionDir());
+      const clonedPath = clone.createBranchedSession(leafId);
+      if (!clonedPath || !existsSync(clonedPath)) throw new Error("Clone failed");
+      const newSessionId = readSessionHeader(clonedPath)?.id;
+      if (!newSessionId) throw new Error("Clone header missing");
+      // Retain the ID even if subsequent inheritance or the move fails.
+      recordGitWorkspaceForkId(this.sessionId, transition.nonce, newSessionId);
+      const clonedManager = SessionManager.open(clonedPath, manager.getSessionDir());
+      const entries = manager.getEntries() as SessionEntry[];
+      const accounts = readSessionAccounts(entries);
+      if (accounts) appendSessionAccounts(clonedManager, accounts);
+      inheritSessionGitWorkflow(entries, clonedManager);
+      cacheSessionPath(newSessionId, clonedPath);
+      invalidateSessionListCache();
+      movedId = newSessionId;
+    }
+    if (!(await listWorktrees(transition.originCwd)).some((tree) => samePath(tree.path, transition.destinationPath) && tree.branch === transition.branch)
+      || !(await listLocalBranchTips(transition.originCwd)).some((tip) => tip.branch === transition.branch && tip.oid === transition.featureTip)
+      || hasBusyRpcSessionForCwd(transition.originCwd) || hasBusyRpcSessionForCwd(transition.destinationPath)) {
+      throw new Error("Checkout changed before session move");
+    }
+    await moveSessionFamily(movedId, transition.destinationPath);
+    // Success is durable before optional transcript decoration. Resolve the real moved cwd.
+    const movedFile = await resolveSessionPath(movedId);
+    if (!movedFile || !samePath(realpathSync(readSessionHeader(movedFile)?.cwd ?? ""), realpathSync(transition.destinationPath))) {
+      throw new Error("Moved session needs manual recovery");
+    }
+    finishGitWorkspaceTransition(this.sessionId, transition.nonce, readSessionHeader(movedFile)!.cwd);
+    try {
+      const source = await resolveSessionPath(this.sessionId);
+      if (source) appendCompletedGitWorkspaceTransition(SessionManager.open(source, manager.getSessionDir()), transition,
+        movedId === this.sessionId ? undefined : SessionManager.open(movedFile, manager.getSessionDir()));
+    } catch { /* Receipt is authoritative even if transcript decoration fails. */ }
   }
 
   beginExtensionBinding(): void {
@@ -598,6 +707,9 @@ export class AgentSessionWrapper {
       // Status reconciliation must not postpone forced cleanup after Stop.
       if (type !== "get_state") this.resetIdleTimer();
       if (this.shouldWaitForExtensions(type)) await this.waitForExtensionsBound();
+      if (type !== "get_state" && isGitCheckoutGated(this.cwd)) {
+        throw new Error("Git checkout is busy with a local integration");
+      }
       if (this.sessionReplacement && !allowedDuringReplacement) {
         throw new Error("Session is being copied to a new session");
       }
@@ -614,6 +726,8 @@ export class AgentSessionWrapper {
         // this submission starts a run or joins its streaming queue.
         const releaseAdmission = await this.acquirePromptAdmission();
         try {
+          // Admission may have waited behind another prompt after the first gate check.
+          if (isGitCheckoutGated(this.cwd)) throw new Error("Git checkout is busy with a local integration");
           if (this.inner.isBashRunning) {
             throw new Error("Cannot send a prompt while a shell command is running");
           }
@@ -816,8 +930,11 @@ export class AgentSessionWrapper {
             writeFileSync(newSessionFile, content, { encoding: "utf8", flag: "wx" });
           }
 
-          const accountSelection = readSessionAccounts(sessionManager.getEntries() as unknown as SessionEntry[]);
-          if (accountSelection) appendSessionAccounts(SessionManager.open(newSessionFile, sessionDir), accountSelection);
+          const sourceEntries = sessionManager.getEntries() as unknown as SessionEntry[];
+          const accountSelection = readSessionAccounts(sourceEntries);
+          const destination = SessionManager.open(newSessionFile, sessionDir);
+          if (accountSelection) appendSessionAccounts(destination, accountSelection);
+          inheritSessionGitWorkflow(sourceEntries, destination);
           const newSessionId = forkedManager.getSessionId();
           cacheSessionPath(newSessionId, newSessionFile);
           invalidateSessionListCache();
@@ -843,8 +960,10 @@ export class AgentSessionWrapper {
         if (!forkedPath) throw new Error("Failed to create forked session");
 
         const forkedManager = SessionManager.open(forkedPath, sessionDir);
-        const accountSelection = readSessionAccounts(sessionManager.getEntries() as unknown as SessionEntry[]);
+        const sourceEntries = sessionManager.getEntries() as unknown as SessionEntry[];
+        const accountSelection = readSessionAccounts(sourceEntries);
         if (accountSelection) appendSessionAccounts(forkedManager, accountSelection);
+        inheritSessionGitWorkflow(sourceEntries, forkedManager);
         const newSessionId = forkedManager.getSessionId();
         cacheSessionPath(newSessionId, forkedPath);
         invalidateSessionListCache();
@@ -872,8 +991,10 @@ export class AgentSessionWrapper {
           if (!clonedPath || !existsSync(clonedPath)) throw new Error("Failed to clone current session branch");
 
           const clonedManager = SessionManager.open(clonedPath, sessionDir);
-          const accountSelection = readSessionAccounts(sessionManager.getEntries() as unknown as SessionEntry[]);
+          const sourceEntries = sessionManager.getEntries() as unknown as SessionEntry[];
+          const accountSelection = readSessionAccounts(sourceEntries);
           if (accountSelection) appendSessionAccounts(clonedManager, accountSelection);
+          inheritSessionGitWorkflow(sourceEntries, clonedManager);
           const newSessionId = clonedManager.getSessionId();
           cacheSessionPath(newSessionId, clonedPath);
           invalidateSessionListCache();
@@ -2137,6 +2258,14 @@ export async function startRpcSession(
     sessionManager = SessionManager.create(cwd, undefined);
   }
   const sessionCwd = sessionManager.getCwd();
+  // Existing sessions use only their saved entry; project defaults never retrofit them.
+  // Explicit null on a new session is a persisted opt-out, not a missing option.
+  const gitWorkflow = sessionFile
+    ? readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])
+    : options.gitWorkflow === undefined
+      ? await getProjectGitWorkflow(sessionCwd)
+      : options.gitWorkflow === null ? null : validateGitWorkflowPolicy(options.gitWorkflow);
+  if (!sessionFile && gitWorkflow !== undefined) appendSessionGitWorkflow(sessionManager, gitWorkflow);
   const subagentResources = sessionFile
     ? readSubagentSessionResources(
         sessionManager.getEntries() as unknown as SessionEntry[],
@@ -2205,6 +2334,7 @@ export async function startRpcSession(
           modelsStorePath: resolve(agentDir, "models-store.json"),
         })
       : undefined;
+    const workspaceStartOwner: { current?: AgentSessionWrapper } = {};
     const services = await createAgentSessionServices({
       cwd: sessionCwd,
       ...(accountRuntime ? { modelRuntime: accountRuntime } : {}),
@@ -2246,6 +2376,13 @@ export async function startRpcSession(
                 isBuiltInSubagentsEnabled,
               ),
               createAskUserExtension(),
+              createGitWorkflowExtension(() => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])),
+              createGitCommitExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])),
+              createGitWorkspaceStartExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[]),
+                (transition) => {
+                  if (!workspaceStartOwner.current) throw new Error("Session not ready");
+                  return workspaceStartOwner.current.scheduleGitWorkspaceTransition(transition);
+                }),
             ],
             extensionsOverride: (base) => preferUserBashExtension(preferPiWebAskUserExtension(preferPiWebSubagentExtension(base))),
           },
@@ -2334,6 +2471,7 @@ export async function startRpcSession(
       },
       suppressCompletionNotifications: Boolean(subagentResources),
     });
+    workspaceStartOwner.current = wrapper;
     const realSessionId = inner.sessionId as string;
     registerRpcWrapper(wrapper);
 

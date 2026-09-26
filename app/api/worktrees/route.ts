@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { existsSync } from "fs";
-import { addWorktree, findCurrentWorktreePath, listWorktrees, removeWorktree, resolveProject } from "@/lib/worktree";
+import { addWorktree, findCurrentWorktreePath, listLocalBranchTips, listWorktrees, removeWorktree, resolveProject } from "@/lib/worktree";
 import { allowFileRoot, getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
 import { projectIdentityKey } from "@/lib/project-identity";
+import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
 
 /** Same gate as /api/files: only session cwds / project roots / explicitly
  *  allowed dirs may be inspected or mutated through this endpoint. */
@@ -14,7 +15,7 @@ async function checkCwdAllowed(cwd: string): Promise<NextResponse | null> {
   return null;
 }
 
-// GET /api/worktrees?cwd=  →  { projectRoot, projectKey, isGit, isTopLevel, currentWorktreePath, worktrees }
+// GET /api/worktrees?cwd=  →  { projectRoot, projectKey, isGit, isTopLevel, currentWorktreePath, worktrees, localBranches }
 export async function GET(req: Request) {
   try {
     const cwd = new URL(req.url).searchParams.get("cwd");
@@ -26,12 +27,15 @@ export async function GET(req: Request) {
 
     const project = await resolveProject(cwd);
     let worktrees: Awaited<ReturnType<typeof listWorktrees>> = [];
+    let localBranches: Awaited<ReturnType<typeof listLocalBranchTips>> = [];
     let currentWorktreePath: string | null = null;
     let isGit = true;
     try {
       // For a removed-worktree cwd (session of a deleted worktree), fall back
       // to the inferred project root so the switcher still shows the project.
-      worktrees = await listWorktrees(existsSync(cwd) ? cwd : project.projectRoot);
+      const gitCwd = existsSync(cwd) ? cwd : project.projectRoot;
+      worktrees = await listWorktrees(gitCwd);
+      localBranches = await listLocalBranchTips(gitCwd);
       currentWorktreePath = findCurrentWorktreePath(worktrees, cwd);
     } catch {
       isGit = false;
@@ -47,16 +51,17 @@ export async function GET(req: Request) {
       isTopLevel: project.isTopLevel,
       currentWorktreePath,
       worktrees,
+      localBranches,
     });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
 
-// POST /api/worktrees  body: { cwd, branch }  →  { path, branch }
+// POST /api/worktrees  body: { cwd, branch, baseBranch, expectedBaseOid, mode, expectedTipOid? }
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as { cwd?: string; branch?: string };
+    const body = await req.json() as { cwd?: string; branch?: string; baseBranch?: string; expectedBaseOid?: string; mode?: string; expectedTipOid?: string };
     if (!body.cwd || typeof body.cwd !== "string") {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }
@@ -65,12 +70,27 @@ export async function POST(req: Request) {
     }
     const denied = await checkCwdAllowed(body.cwd);
     if (denied) return denied;
+    if (isGitCheckoutGated(body.cwd)) return NextResponse.json({ error: "Checkout is being integrated" }, { status: 409 });
     if (!existsSync(body.cwd)) {
       return NextResponse.json({ error: `Directory does not exist: ${body.cwd}` }, { status: 400 });
     }
 
-    const result = await addWorktree(body.cwd, body.branch);
-    return NextResponse.json(result);
+    if (typeof body.baseBranch !== "string" || typeof body.expectedBaseOid !== "string") {
+      return NextResponse.json({ error: "Explicit local base branch and full expected HEAD are required" }, { status: 400 });
+    }
+    if (body.mode !== "create" && body.mode !== "attach") {
+      return NextResponse.json({ error: "Select create or attach explicitly" }, { status: 400 });
+    }
+    if (body.mode === "attach" && typeof body.expectedTipOid !== "string") {
+      return NextResponse.json({ error: "Full expected branch tip is required for attach" }, { status: 400 });
+    }
+    const release = acquireGitCheckoutGate([body.cwd]);
+    try {
+      const result = await addWorktree(body.cwd, body.mode === "attach"
+        ? { branch: body.branch, baseBranch: body.baseBranch, expectedBaseOid: body.expectedBaseOid, mode: "attach", expectedTipOid: body.expectedTipOid! }
+        : { branch: body.branch, baseBranch: body.baseBranch, expectedBaseOid: body.expectedBaseOid, mode: "create" });
+      return NextResponse.json(result);
+    } finally { release(); }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 400 });
@@ -89,9 +109,15 @@ export async function DELETE(req: Request) {
     }
     const denied = await checkCwdAllowed(body.cwd);
     if (denied) return denied;
+    if (isGitCheckoutGated(body.cwd) || isGitCheckoutGated(body.path)) {
+      return NextResponse.json({ error: "Checkout is being integrated" }, { status: 409 });
+    }
 
-    await removeWorktree(body.cwd, body.path, body.force === true);
-    return NextResponse.json({ success: true });
+    const release = acquireGitCheckoutGate([body.cwd, body.path]);
+    try {
+      await removeWorktree(body.cwd, body.path, body.force === true);
+      return NextResponse.json({ success: true });
+    } finally { release(); }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // git refuses to remove dirty worktrees without --force; surface that so

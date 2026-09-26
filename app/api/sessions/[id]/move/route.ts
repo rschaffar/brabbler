@@ -4,8 +4,10 @@ import { isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
 import { moveSessionFamily, SessionMoveConflict } from "@/lib/session-move";
 import { resolveSessionPath, readSessionHeader } from "@/lib/session-reader";
-import { resolveProject } from "@/lib/worktree";
+import { listWorktrees, resolveProject } from "@/lib/worktree";
+import { samePath } from "@/lib/paths";
 import { projectIdentityKey } from "@/lib/project-identity";
+import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
 
 // POST /api/sessions/[id]/move  body: { cwd: string }
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -22,11 +24,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!source) return NextResponse.json({ error: "Session not found" }, { status: 404 });
     const header = readSessionHeader(source);
     if (!header?.cwd) return NextResponse.json({ error: "Session is not persisted" }, { status: 409 });
-    const [from, to] = await Promise.all([resolveProject(header.cwd), resolveProject(cwd)]);
-    if (projectIdentityKey(from.projectRoot) === projectIdentityKey(to.projectRoot)) {
-      return NextResponse.json({ error: "Choose another project" }, { status: 409 });
+    if (isGitCheckoutGated(header.cwd) || isGitCheckoutGated(cwd)) {
+      return NextResponse.json({ error: "Checkout is being integrated" }, { status: 409 });
     }
-    return NextResponse.json({ ok: true, ...(await moveSessionFamily(id, cwd)) });
+    const [from, to] = await Promise.all([resolveProject(header.cwd), resolveProject(cwd)]);
+    const sourceWorktrees = await listWorktrees(header.cwd).catch(() => []);
+    const destinationWorktrees = await listWorktrees(cwd).catch(() => []);
+    // Subdirectories are distinct Pi Web project groups, but not distinct Git
+    // repositories. Treat them as same-repository for this worktree-only action.
+    const sameGitRepo = sourceWorktrees.some((source) =>
+      destinationWorktrees.some((destination) => samePath(source.path, destination.path)));
+    if (sameGitRepo || projectIdentityKey(from.projectRoot) === projectIdentityKey(to.projectRoot)) {
+      if (!from.isTopLevel || !to.isTopLevel || samePath(header.cwd, cwd)) {
+        return NextResponse.json({ error: "Choose another worktree or project" }, { status: 409 });
+      }
+      if (!sourceWorktrees.some((item) => samePath(item.path, header.cwd))
+        || !sourceWorktrees.some((item) => samePath(item.path, cwd))) {
+        return NextResponse.json({ error: "Choose a registered worktree" }, { status: 409 });
+      }
+    }
+    const release = acquireGitCheckoutGate([header.cwd, cwd]);
+    try { return NextResponse.json({ ok: true, ...(await moveSessionFamily(id, cwd)) }); }
+    finally { release(); }
   } catch (error) {
     if (error instanceof SessionMoveConflict) return NextResponse.json({ error: error.message }, { status: 409 });
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {

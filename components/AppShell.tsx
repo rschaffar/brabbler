@@ -127,6 +127,7 @@ export function AppShell() {
   }, [playDoneSound, soundEnabledRef]);
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   const [sessionCatalog, setSessionCatalog] = useState<SessionInfo[]>([]);
+  const pendingMovedCheckoutRef = useRef<{ id: string; cwd: string } | null>(null);
   const handleSessionsChange = useCallback((sessions: SessionInfo[]) => {
     setSessionCatalog(sessions);
     // The sidebar hydrates metadata after the selected session has already
@@ -135,7 +136,12 @@ export function AppShell() {
     setSelectedSession((current) => {
       if (!current) return current;
       const refreshed = sessions.find((session) => session.id === current.id);
-      return refreshed ? mergeCatalogRow(current, refreshed) : current;
+      if (!refreshed) return current;
+      const moved = pendingMovedCheckoutRef.current;
+      if (moved?.id === current.id) {
+        if (refreshed.cwd !== moved.cwd) return current; // older in-flight sidebar scan
+      }
+      return mergeCatalogRow(current, refreshed);
     });
   }, []);
   const sessionsWithSelection = useMemo(() => {
@@ -770,6 +776,8 @@ export function AppShell() {
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false, entryId?: string, blockIndex?: number) => {
     setSearchTarget(entryId ? { sessionId: session.id, entryId, blockIndex } : null);
+    // Ignore an older sidebar row for a just-moved session, even on re-click.
+    if (pendingMovedCheckoutRef.current?.id === session.id && pendingMovedCheckoutRef.current.cwd !== session.cwd) return;
     invalidateWorkspaceRestore();
     const activeDraftKey = activeNewSessionDraftKeyRef.current;
     const activeDraftCwd = newSessionCwd ?? (selectedSession === null ? activeCwd : null);
@@ -795,7 +803,7 @@ export function AppShell() {
     if (!isRestore && selectedSession) {
       const sameProject =
         workspaceKeyOf(selectedSession) === workspaceKeyOf(session);
-      if (selectedSession.id === session.id && sameProject) {
+      if (selectedSession.id === session.id && sameProject && selectedSession.cwd === session.cwd) {
         if (isMobile) setSidebarOpen(false);
         return;
       }
@@ -862,7 +870,7 @@ export function AppShell() {
         const full = d?.sessions.find((s) => s.id === sessionId);
         if (!full) return;
         setSelectedSession((prev) => (
-          prev?.id === sessionId
+          prev?.id === sessionId && (pendingMovedCheckoutRef.current?.id !== sessionId || full.cwd === pendingMovedCheckoutRef.current.cwd)
             ? { ...prev, ...full, transient: full.transient ?? false }
             : prev
         ));
@@ -1026,6 +1034,59 @@ export function AppShell() {
   const handleExplorerRefresh = useCallback(() => {
     setExplorerRefreshKey((k) => k + 1);
   }, []);
+
+  const handleSessionMoved = useCallback(async (sessionId: string, cwd: string) => {
+    // The move has already succeeded. Refresh authoritative metadata before
+    // remounting so the same session id reloads its history from its new cwd.
+    let info: SessionInfo | null = null;
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+      if (response.ok) {
+        const body = await response.json() as { info?: SessionInfo };
+        if (body.info?.id === sessionId && body.info.cwd === cwd) info = body.info;
+      }
+    } catch { /* The sidebar refresh can still hydrate the moved row. */ }
+    const movedInfo = info;
+    pendingMovedCheckoutRef.current = { id: sessionId, cwd };
+    setSelectedSession((current) => current?.id === sessionId
+      ? { ...current, ...movedInfo, cwd, transient: false }
+      : current);
+    if (activeSessionIdRef.current === sessionId) {
+      setBranchTree([]);
+      setBranchActiveLeafId(null);
+      branchLeafChangeFnRef.current = null;
+      setSystemPrompt(null);
+      setSystemTools(null);
+      setSystemInfoLoading(false);
+      setSessionKey((key) => key + 1);
+    }
+    setRefreshKey((key) => key + 1);
+    setExplorerRefreshKey((key) => key + 1);
+  }, []);
+
+  const handleSessionForkedToWorktree = useCallback((newSessionId: string, cwd: string) => {
+    invalidateWorkspaceRestore();
+    activeNewSessionDraftKeyRef.current = null;
+    // The clone was moved before selection; never render it with the source cwd.
+    // Guard against an older sidebar scan overwriting the moved checkout.
+    pendingMovedCheckoutRef.current = { id: newSessionId, cwd };
+    setSelectedSession((source) => ({
+      ...(source ?? { created: "", modified: "", messageCount: 0, firstMessage: "" }),
+      id: newSessionId, cwd, path: "", transient: false,
+    }));
+    setNewSessionCwd(null);
+    setBranchTree([]);
+    setBranchActiveLeafId(null);
+    branchLeafChangeFnRef.current = null;
+    setSystemPrompt(null);
+    setSystemTools(null);
+    setSystemInfoLoading(false);
+    setSessionKey((key) => key + 1);
+    setRefreshKey((key) => key + 1);
+    setExplorerRefreshKey((key) => key + 1);
+    hydrateSelectedSession(newSessionId);
+    router.replace(`?session=${encodeURIComponent(newSessionId)}`, { scroll: false });
+  }, [invalidateWorkspaceRestore, hydrateSelectedSession, router]);
 
   const handleSessionForked = useCallback((newSessionId: string) => {
     invalidateWorkspaceRestore();
@@ -2466,6 +2527,8 @@ export function AppShell() {
               onAttentionNeeded={handleAttentionNeeded}
               onSessionCreated={handleSessionCreated}
               onSessionForked={handleSessionForked}
+              onSessionMoved={handleSessionMoved}
+              onSessionForkedToWorktree={handleSessionForkedToWorktree}
               modelsRefreshKey={modelsRefreshKey}
               chatInputRef={chatInputRef}
               onBranchDataChange={handleBranchDataChange}

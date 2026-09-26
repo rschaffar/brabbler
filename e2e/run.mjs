@@ -1,6 +1,6 @@
 // Adapted from @Nuctori's script-style CI/E2E fixtures in PR #617 (issue #599).
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
 import { appendFileSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -15,6 +15,7 @@ import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
+import { checkGitWorkflow } from "./git-workflow.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
@@ -40,6 +41,9 @@ const APPEND = "e2e-external-append-session";
 const ARCHIVE = "e2e-archive-session";
 const BULK = ["e2e-bulk-desktop-a", "e2e-bulk-desktop-b", "e2e-bulk-mobile-a", "e2e-bulk-mobile-b"];
 const OTHER = "e2e-other-project";
+const GIT = "e2e-git-workflow";
+const gitProject = join(agentDir, "git-project");
+const targetWorktree = join(agentDir, "git-target-worktree");
 const text = (i) => `E2E message ${String(i).padStart(4, "0")}`;
 const ids = (start, end) => Array.from({ length: end - start }, (_, i) => `e${start + i}`);
 
@@ -154,6 +158,26 @@ try {
     message("root", null, "user", "Other workspace task"),
     message("reply", "root", "assistant", "Waiting for more work"),
   ], otherProject);
+  {
+    mkdirSync(gitProject);
+    const git = (...args) => execFileSync("git", ["-C", gitProject, ...args], {
+      encoding: "utf8", env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" },
+    }).trim();
+    const commit = (subject) => git("-c", "user.name=E2E", "-c", "user.email=e2e@example.invalid", "commit", "-m", subject);
+    git("init", "-b", "target");
+    git("config", "core.autocrlf", "false");
+    writeFileSync(join(gitProject, "base.txt"), "Base fixture\n");
+    git("add", "base.txt"); commit("base fixture");
+    git("switch", "-c", "feature");
+    writeFileSync(join(gitProject, "first.txt"), "First feature patch\n");
+    git("add", "first.txt"); commit("first feature");
+    writeFileSync(join(gitProject, "second.txt"), "Second feature patch\n");
+    git("add", "second.txt"); commit("second feature");
+    writeFileSync(join(gitProject, "draft.txt"), "Manual commit fixture\n");
+    git("worktree", "add", targetWorktree, "target");
+    writeSession(GIT, [message("root", null, "user", "E2E Git workflow conversation"),
+      message("answer", "root", "assistant", "Ready to review Git workflow")], gitProject);
+  }
 
   const probe = createServer();
   probe.listen(0, "127.0.0.1");
@@ -195,13 +219,32 @@ try {
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, ...BULK].sort());
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK].sort());
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
     await delay(250);
   }
 
+  if (process.env.E2E_GIT_WORKFLOW_ONLY === "1") {
+    browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    context = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: "en-US" });
+    await context.tracing.start({ screenshots: true, snapshots: true });
+    page = await context.newPage();
+    page.setDefaultTimeout(30_000);
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (event) => { if (event.type() === "error") errors.push(event.text()); });
+    page.on("response", (response) => {
+      if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
+    });
+    await checkGitWorkflow(page, { base, api, sessionId: GIT, cwd: gitProject, targetWorktree });
+    assert.deepEqual(errors, [], "Git workflow browser errors");
+    await context.tracing.stop();
+    await context.close();
+    context = undefined;
+    page = undefined;
+  } else {
   const detail = await api(`/api/sessions/${LONG}?deferThinking=1&deferMedia=1`);
   assert.deepEqual(detail.context.entryIds, ids(4950, 5000));
   assert.equal(detail.context.messages.length, 50);
@@ -484,6 +527,9 @@ try {
       context = undefined;
       page = undefined;
       continue;
+    }
+    if (viewport.width === 1280) {
+      await checkGitWorkflow(page, { base, api, sessionId: GIT, cwd: gitProject, targetWorktree });
     }
     // Use a separate tab: a deliberate full-page reload must not alter the
     // reading-position and session-history fixtures exercised below.
@@ -816,6 +862,7 @@ try {
       context = undefined;
       page = undefined;
     }
+  }
   }
 } catch (error) {
   console.error(error);
