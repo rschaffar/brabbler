@@ -72,6 +72,7 @@ Browser                Next.js Server              AgentSession (in-process)
 app/api/
   sessions/route.ts               GET  list all sessions
   sessions/[id]/route.ts          GET/PATCH/DELETE session
+  starred-sessions/route.ts        GET list | POST set/import stars
   sessions/[id]/context/route.ts  GET ?leafId= — context for a specific leaf
   sessions/[id]/export/route.ts   GET exported HTML for a session
   agent/new/route.ts              POST { cwd, message, toolNames?, provider?, modelId? }
@@ -131,6 +132,7 @@ lib/
   pi-types.ts          local structural types for pi SDK objects
   rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession
   session-reader.ts   SessionManager wrappers + path cache + buildSessionContext adapter
+  starred-sessions-server.ts  server-owned star list + serialized atomic edits
   subagent-settings.ts  read/write ~/.pi/agent/agents/settings.json
   tool-presets.ts     PRESET_NONE/READ_ONLY/DEFAULT/FULL + getPresetFromTools()
   tool-preset-preference.ts  browser-persisted default for fresh sessions
@@ -232,6 +234,10 @@ Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `au
 - While a run is active, `useAgentSession` periodically calls `GET /api/agent/[id]` and also reconciles on `visibilitychange`/`online`. This fixes missed terminal events from background tabs or half-open connections.
 - Prompt runs use a monotonic run id; late SSE or slow reconciliation responses from an old run must be ignored so they cannot resurrect stale streaming bubbles.
 - Every SSE (re)connection in `useAgentSession` is gated on `sessionHookMountedRef`. React Strict Mode (on by default in `next dev`) re-runs effects in declaration order after a simulated unmount: the mount-only effect's cleanup sets that ref to `false`, and it is only restored when that effect re-runs, *after* the warm-session effect. The warm-session effect therefore re-asserts the ref before `maintainEventsConnected()`. Without it a dev-server tab never opened the event stream on mount or when switching back to a running session, so streamed output and new messages stayed invisible until the 15-second reconcile poll or a page refresh (`next start` was unaffected).
+
+### Starred sessions
+- Stars live in `~/.pi/agent/pi-web/starred-sessions.json`, not in session files or the browser's long-term storage. `POST /api/starred-sessions` applies idempotent per-ID set/unset changes under a file lock; legacy localStorage lists are imported as a union then removed only after success. A browser with an old, not-yet-imported list may reintroduce a previously removed star on its first visit.
+- `useStarredSessions` shares one browser-tab snapshot across the sidebar and Starred view, and reloads when the tab regains focus/visibility so other clients' changes become visible.
 
 ### Activity overview
 - The Activity button triages **Pi Web-managed** sessions/subagents only. `/api/agent/running` adds registry-only `attention` (actual pending blocking extension UI) and bounded `completedRuns` snapshots to its running IDs. Never create wrappers or subscribe to every session to populate the overview; disk-only Pi CLI/Herdr activity cannot be classified as working or blocked.
