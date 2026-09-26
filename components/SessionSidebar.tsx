@@ -11,8 +11,8 @@ import { getProjectActivity, getRecentProjects, sessionsForProject } from "@/lib
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import type { SessionAttention, SessionCompletion } from "@/lib/types";
 import {
-  hasReviewedRunBaseline, loadReviewedRunTimes, mergeReviewedRunTimes,
-  reconcileCompletedRuns, REVIEWED_RUN_TIMES_STORAGE_KEY, saveReviewedRunTimes,
+  loadReviewedRunTimes, mergeReviewedRunTimes, reconcileCompletedRuns,
+  REVIEWED_RUN_TIMES_STORAGE_KEY,
 } from "@/lib/activity-review";
 import { formatRelativeTime } from "@/lib/i18n/format";
 import { useI18n } from "@/hooks/useI18n";
@@ -206,31 +206,8 @@ function saveLastCustomCwd(cwd: string): void {
   }
 }
 
-function loadUnreadSessionIds(key = UNREAD_SESSIONS_STORAGE_KEY): Set<string> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return new Set();
-    const parsed = JSON.parse(raw) as unknown;
-    if (Array.isArray(parsed)) return new Set(parsed.filter((id): id is string => typeof id === "string"));
-    return new Set();
-  } catch {
-    return new Set();
-  }
-}
-
 function sameIdSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   return a.size === b.size && [...a].every((id) => b.has(id));
-}
-
-function saveUnreadSessionIds(ids: Set<string>, key = UNREAD_SESSIONS_STORAGE_KEY): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (ids.size === 0) window.localStorage.removeItem(key);
-    else window.localStorage.setItem(key, JSON.stringify([...ids]));
-  } catch {
-    // ignore storage quota / privacy-mode errors
-  }
 }
 
 /** Substitute the home dir prefix with ~ (no path truncation — see PathLabel) */
@@ -409,8 +386,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   allSessionsRef.current = allSessions;
   selectedSessionIdRef.current = selectedSessionId;
   const completedRunTimesRef = useRef(new Map<string, number>());
-  const reviewedRunTimesRef = useRef(loadReviewedRunTimes());
-  const reviewedBaselineRef = useRef(hasReviewedRunBaseline());
+  const reviewedRunTimesRef = useRef(new Map<string, number>());
+  const pendingReviewAcksRef = useRef(new Map<string, number>());
+  const reviewAckInFlightRef = useRef(false);
+  const reviewAckFailedRef = useRef(false);
   const [showArchived, setShowArchived] = useState(false);
   // Tracked in a ref only: the version is compared against the polled value to
   // decide whether the list needs reloading, and no render reads it.
@@ -453,8 +432,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
   const [queuedSessionIds, setQueuedSessionIds] = useState<Set<string>>(() => new Set());
-  const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
-  const [subagentReviewIds, setSubagentReviewIds] = useState<Set<string>>(() => loadUnreadSessionIds(SUBAGENT_REVIEW_STORAGE_KEY));
+  const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(new Set());
+  const [subagentReviewIds, setSubagentReviewIds] = useState<Set<string>>(new Set());
   const [storageReady, setStorageReady] = useState(false);
   const [attention, setAttention] = useState<SessionAttention[]>([]);
   const [activityAvailable, setActivityAvailable] = useState(true);
@@ -625,56 +604,69 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setExplorerOpen(loadExplorerOpen());
   }, []);
 
-  // Server rendering has no localStorage. Restore it *after* hydration, before
-  // any persistence or polling can overwrite another tab's review markers.
-  useEffect(() => {
-    setUnreadSessionIds(loadUnreadSessionIds());
-    setSubagentReviewIds(loadUnreadSessionIds(SUBAGENT_REVIEW_STORAGE_KEY));
-    reviewedRunTimesRef.current = loadReviewedRunTimes();
-    reviewedBaselineRef.current = hasReviewedRunBaseline();
-    setStorageReady(true);
+  const flushReviewAcks = useCallback(async () => {
+    if (reviewAckInFlightRef.current || pendingReviewAcksRef.current.size === 0) return;
+    reviewAckInFlightRef.current = true;
+    const entries = [...pendingReviewAcksRef.current].map(([sessionId, at]) => ({ sessionId, at }));
+    try {
+      const response = await fetch("/api/activity/review", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "ack", entries }),
+      });
+      if (!response.ok) throw new Error(`Review acknowledgement failed: HTTP ${response.status}`);
+      const data = await response.json() as { reviewedRuns: SessionCompletion[] };
+      const acknowledged = new Map(data.reviewedRuns.map(({ sessionId, at }) => [sessionId, at]));
+      for (const { sessionId, at } of entries) {
+        if ((acknowledged.get(sessionId) ?? 0) >= at && (pendingReviewAcksRef.current.get(sessionId) ?? 0) <= at) {
+          pendingReviewAcksRef.current.delete(sessionId);
+        }
+      }
+      reviewedRunTimesRef.current = mergeReviewedRunTimes(reviewedRunTimesRef.current, acknowledged);
+      reviewAckFailedRef.current = false;
+    } catch {
+      // Retain the pending receipt and retry on the next visible-tab poll.
+      reviewAckFailedRef.current = true;
+      setActivityAvailable(false);
+    } finally {
+      reviewAckInFlightRef.current = false;
+    }
   }, []);
 
-  useEffect(() => {
-    if (storageReady) saveUnreadSessionIds(unreadSessionIds);
-  }, [unreadSessionIds, storageReady]);
-  useEffect(() => {
-    if (storageReady) saveUnreadSessionIds(subagentReviewIds, SUBAGENT_REVIEW_STORAGE_KEY);
-  }, [subagentReviewIds, storageReady]);
+  const acknowledgeReview = useCallback((id: string, at: number) => {
+    if (at <= (reviewedRunTimesRef.current.get(id) ?? 0)) return;
+    reviewedRunTimesRef.current.set(id, at);
+    pendingReviewAcksRef.current.set(id, Math.max(at, pendingReviewAcksRef.current.get(id) ?? 0));
+    void flushReviewAcks();
+  }, [flushReviewAcks]);
 
+  // Import only timestamped legacy receipts. ID-only unread flags cannot prove
+  // that a run actually settled; the server is authoritative after this point.
   useEffect(() => {
-    if (!storageReady) return;
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === UNREAD_SESSIONS_STORAGE_KEY) setUnreadSessionIds((prev) => {
-        const stored = loadUnreadSessionIds();
-        return sameIdSet(prev, stored) ? prev : stored;
-      });
-      if (event.key === SUBAGENT_REVIEW_STORAGE_KEY) setSubagentReviewIds((prev) => {
-        const stored = loadUnreadSessionIds(SUBAGENT_REVIEW_STORAGE_KEY);
-        return sameIdSet(prev, stored) ? prev : stored;
-      });
-      if (event.key !== REVIEWED_RUN_TIMES_STORAGE_KEY) return;
-      const stored = loadReviewedRunTimes();
-      const merged = mergeReviewedRunTimes(reviewedRunTimesRef.current, stored);
-      reviewedRunTimesRef.current = merged;
-      reviewedBaselineRef.current = true;
-      if ([...merged].some(([id, at]) => stored.get(id) !== at)) saveReviewedRunTimes(merged);
-      const unreviewed = (id: string) => {
-        const completedAt = completedRunTimesRef.current.get(id);
-        return !completedAt || completedAt > (merged.get(id) ?? 0);
-      };
-      setUnreadSessionIds((prev) => {
-        const next = new Set([...prev].filter(unreviewed));
-        return sameIdSet(prev, next) ? prev : next;
-      });
-      setSubagentReviewIds((prev) => {
-        const next = new Set([...prev].filter(unreviewed));
-        return sameIdSet(prev, next) ? prev : next;
-      });
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [storageReady]);
+    let mounted = true;
+    void (async () => {
+      const legacy = [...loadReviewedRunTimes()]
+        .filter(([sessionId, at]) => sessionId.length > 0 && sessionId.length <= 256 && Number.isSafeInteger(at) && at > 0)
+        .map(([sessionId, at]) => ({ sessionId, at }));
+      try {
+        for (let offset = 0; offset < legacy.length || offset === 0; offset += 1000) {
+          const response = await fetch("/api/activity/review", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ op: "import", entries: legacy.slice(offset, offset + 1000) }),
+          });
+          if (!response.ok) throw new Error(`Review import failed: HTTP ${response.status}`);
+        }
+        window.localStorage.removeItem(REVIEWED_RUN_TIMES_STORAGE_KEY);
+        window.localStorage.removeItem(UNREAD_SESSIONS_STORAGE_KEY);
+        window.localStorage.removeItem(SUBAGENT_REVIEW_STORAGE_KEY);
+      } catch {
+        // Keep legacy state for another attempt on reload; no browser-only
+        // marker is presented as authoritative in the meantime.
+      } finally {
+        if (mounted) setStorageReady(true);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     if (!storageReady) return;
@@ -714,38 +706,34 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           completionNotificationSuppressedSessionIds?: string[];
           attention?: SessionAttention[];
           completedRuns?: SessionCompletion[];
+          reviewedRuns?: SessionCompletion[];
+          activityReviewPersistenceFailed?: boolean;
         };
         if (stopped || controller !== current) return;
         runningPollAuthoritativeRef.current = true;
         setAttention(data.attention ?? []);
-        setActivityAvailable(true);
+        setActivityAvailable(!data.activityReviewPersistenceFailed && !reviewAckFailedRef.current);
         const running = new Set(data.runningSessionIds ?? []);
-        for (const { sessionId, at } of data.completedRuns ?? []) {
-          completedRunTimesRef.current.set(sessionId, at);
+        completedRunTimesRef.current = new Map((data.completedRuns ?? []).map(({ sessionId, at }) => [sessionId, at]));
+        const serverReviewed = new Map((data.reviewedRuns ?? []).map(({ sessionId, at }) => [sessionId, at]));
+        for (const [id, at] of pendingReviewAcksRef.current) {
+          if ((serverReviewed.get(id) ?? 0) >= at || !completedRunTimesRef.current.has(id)) {
+            pendingReviewAcksRef.current.delete(id);
+          }
         }
-        reviewedRunTimesRef.current = mergeReviewedRunTimes(reviewedRunTimesRef.current, loadReviewedRunTimes());
-        if (!reviewedBaselineRef.current) {
-          reviewedRunTimesRef.current = saveReviewedRunTimes(mergeReviewedRunTimes(
-            reviewedRunTimesRef.current,
-            new Map((data.completedRuns ?? []).map(({ sessionId, at }) => [sessionId, at])),
-          ));
-          reviewedBaselineRef.current = true;
-        }
+        const retainedReviewed = new Map([...reviewedRunTimesRef.current]
+          .filter(([id]) => completedRunTimesRef.current.has(id)));
+        reviewedRunTimesRef.current = mergeReviewedRunTimes(
+          mergeReviewedRunTimes(retainedReviewed, serverReviewed), pendingReviewAcksRef.current,
+        );
         const reviewed = reconcileCompletedRuns(
           data.completedRuns ?? [], reviewedRunTimesRef.current, selectedSessionIdRef.current,
           running, allSessionsRef.current,
         );
-        if ([...reviewed.acknowledged].some(([id, at]) => reviewedRunTimesRef.current.get(id) !== at)) {
-          reviewedRunTimesRef.current = saveReviewedRunTimes(reviewed.acknowledged);
-        }
-        if (reviewed.rootReady.size) setUnreadSessionIds((prev) => {
-          const next = new Set([...prev, ...reviewed.rootReady]);
-          return next.size === prev.size ? prev : next;
-        });
-        if (reviewed.subagentReady.size) setSubagentReviewIds((prev) => {
-          const next = new Set([...prev, ...reviewed.subagentReady]);
-          return next.size === prev.size ? prev : next;
-        });
+        for (const [id, at] of reviewed.acknowledged) acknowledgeReview(id, at);
+        void flushReviewAcks();
+        setUnreadSessionIds((prev) => sameIdSet(prev, reviewed.rootReady) ? prev : reviewed.rootReady);
+        setSubagentReviewIds((prev) => sameIdSet(prev, reviewed.subagentReady) ? prev : reviewed.subagentReady);
         currentSuppressedCompletionSessionIdsRef.current = new Set(
           data.completionNotificationSuppressedSessionIds ?? [],
         );
@@ -782,7 +770,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       controller?.abort();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [loadSessions, storageReady]);
+  }, [acknowledgeReview, flushReviewAcks, loadSessions, storageReady]);
 
   useEffect(() => {
     onRunningSessionIdsChange?.(runningSessionIds);
@@ -810,7 +798,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     );
     const unreviewedCompletion = (id: string) => {
       const completedAt = completedRunTimesRef.current.get(id);
-      return !completedAt || completedAt > (reviewedRunTimesRef.current.get(id) ?? 0);
+      return Boolean(completedAt && completedAt > (reviewedRunTimesRef.current.get(id) ?? 0));
     };
     const completedWithNotifications = completedInBackground.filter(
       (id) => !previousSuppressedCompletionSessionIdsRef.current.has(id)
@@ -818,23 +806,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     );
     const newlyRunning = [...runningSessionIds].filter((id) => !previous.has(id));
 
-    if (completedWithNotifications.length > 0 || newlyRunning.length > 0) {
-      setUnreadSessionIds((prev) => {
-        const next = new Set(prev);
-        runningSessionIds.forEach((id) => next.delete(id));
-        completedWithNotifications.forEach((id) => next.add(id));
-        return next;
-      });
-    }
-    const completedSubagents = completedInBackground.filter((id) => knownSubagentIds.has(id) && unreviewedCompletion(id));
-    if (completedSubagents.length > 0 || newlyRunning.length > 0) {
-      setSubagentReviewIds((prev) => {
-        const next = new Set(prev);
-        runningSessionIds.forEach((id) => next.delete(id));
-        completedSubagents.forEach((id) => next.add(id));
-        return next;
-      });
-    }
     const hasUnlistedRunningSession = newlyRunning.some(
       (id) => !allSessions.some((session) => session.id === id),
     );
@@ -856,10 +827,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   useEffect(() => {
     if (!selectedSessionId || !storageReady) return;
     const completedAt = completedRunTimesRef.current.get(selectedSessionId);
-    if (completedAt && completedAt > (reviewedRunTimesRef.current.get(selectedSessionId) ?? 0)) {
-      reviewedRunTimesRef.current.set(selectedSessionId, completedAt);
-      reviewedRunTimesRef.current = saveReviewedRunTimes(reviewedRunTimesRef.current);
-    }
+    if (completedAt) acknowledgeReview(selectedSessionId, completedAt);
     setUnreadSessionIds((prev) => {
       if (!prev.has(selectedSessionId)) return prev;
       const next = new Set(prev);
@@ -872,7 +840,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       next.delete(selectedSessionId);
       return next;
     });
-  }, [selectedSessionId, storageReady]);
+  }, [acknowledgeReview, selectedSessionId, storageReady]);
 
   useEffect(() => {
     if (explorerRefreshKey !== undefined) setExplorerKey((k) => k + 1);

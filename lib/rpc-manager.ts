@@ -4,6 +4,7 @@ import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@e
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
 import { recordRunStart, recordRunSettlement } from "./session-run-recovery";
+import { readActivityReview, recordActivityCompletion } from "./activity-review-server";
 import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { accountCredentialStore, getProjectAccounts, validateAccountSelection, type AccountSelection } from "./provider-accounts";
@@ -1729,25 +1730,26 @@ declare global {
   var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
   var __piAccountSwitchLocks: Map<string, Promise<void>> | undefined;
   var __piStartingSessionCwds: Map<string, number> | undefined;
-  var __piSessionCompletedAt: Map<string, number> | undefined;
-}
-
-function getCompletionRegistry(): Map<string, number> {
-  return globalThis.__piSessionCompletedAt ??= new Map();
+  var __piActivityReviewPersistenceFailed: boolean | undefined;
 }
 
 function recordRpcSessionCompletion(sessionId: string): void {
-  const registry = getCompletionRegistry();
-  const at = Math.max(Date.now(), (registry.get(sessionId) ?? 0) + 1);
-  // A bounded recent-run ledger covers short turns that finish between polls.
-  // Browser acknowledgements persist independently; this is not transcript history.
-  registry.delete(sessionId);
-  registry.set(sessionId, at);
-  if (registry.size > 1000) registry.delete(registry.keys().next().value!);
+  try {
+    recordActivityCompletion(sessionId);
+    globalThis.__piActivityReviewPersistenceFailed = false;
+  } catch (error) {
+    // A metadata failure must never turn a finished agent run into a failed one.
+    globalThis.__piActivityReviewPersistenceFailed = true;
+    console.error("[pi-web] failed to persist activity completion:", error instanceof Error ? error.message : error);
+  }
+}
+
+export function activityReviewPersistenceFailed(): boolean {
+  return globalThis.__piActivityReviewPersistenceFailed === true;
 }
 
 export function getRecentRpcSessionCompletions(): SessionCompletion[] {
-  return [...getCompletionRegistry()].map(([sessionId, at]) => ({ sessionId, at }));
+  return readActivityReview().completedRuns;
 }
 
 function getRegistry(): Map<string, AgentSessionWrapper> {

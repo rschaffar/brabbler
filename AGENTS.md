@@ -73,6 +73,7 @@ app/api/
   sessions/route.ts               GET  list all sessions
   sessions/[id]/route.ts          GET/PATCH/DELETE session
   starred-sessions/route.ts        GET list | POST set/import stars
+  activity/review/route.ts         POST acknowledge/import settled completions
   sessions/[id]/context/route.ts  GET ?leafId= — context for a specific leaf
   sessions/[id]/export/route.ts   GET exported HTML for a session
   agent/new/route.ts              POST { cwd, message, toolNames?, provider?, modelId? }
@@ -133,6 +134,7 @@ lib/
   rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession
   session-reader.ts   SessionManager wrappers + path cache + buildSessionContext adapter
   starred-sessions-server.ts  server-owned star list + serialized atomic edits
+  activity-review-server.ts  durable bounded completion and review ledger
   subagent-settings.ts  read/write ~/.pi/agent/agents/settings.json
   tool-presets.ts     PRESET_NONE/READ_ONLY/DEFAULT/FULL + getPresetFromTools()
   tool-preset-preference.ts  browser-persisted default for fresh sessions
@@ -240,8 +242,8 @@ Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `au
 - `useStarredSessions` shares one browser-tab snapshot across the sidebar and Starred view, and reloads when the tab regains focus/visibility so other clients' changes become visible.
 
 ### Activity overview
-- The Activity button triages **Pi Web-managed** sessions/subagents only. `/api/agent/running` adds registry-only `attention` (actual pending blocking extension UI) and bounded `completedRuns` snapshots to its running IDs. Never create wrappers or subscribe to every session to populate the overview; disk-only Pi CLI/Herdr activity cannot be classified as working or blocked.
-- `SessionSidebar` owns the existing visible-tab poll and passes attention, running, and per-browser review markers to `AppShell`. Needs you overrides working; a current run overrides an older unread marker. Completed runs are recorded even when subagent push/sound notifications are suppressed, so quick runs finishing between polls still enter Ready to review. The per-browser acknowledgement map seeds a baseline on first use, merges storage updates across tabs, and prevents an already-reviewed completion from reappearing after navigation or reload; subagent review markers use their own storage key so sidebar completion sounds stay silent.
+- The Activity button triages **Pi Web-managed** sessions/subagents only. `/api/agent/running` adds registry-only `attention` (actual pending blocking extension UI) and the newest 1,000 distinct settled completions plus review receipts from `~/.pi/agent/pi-web/activity-review.json`. Never create wrappers or subscribe to every session to populate the overview; disk-only Pi CLI/Herdr activity cannot be classified as working or blocked.
+- `SessionSidebar` owns the existing visible-tab poll and passes attention, running, and server-derived review markers to `AppShell`. Needs you overrides working; a current run overrides an older unread marker. Every settled Pi Web run is recorded even when subagent push/sound notifications are suppressed, so short runs still enter Ready to review. Acknowledgement POSTs merge per-session timestamps under the same lock as completion recording; the client keeps pending receipts until the server confirms them, and a stale poll cannot resurrect an acknowledged item. Legacy browser timestamps are imported only where a retained completion corroborates them; ID-only unread flags are dropped. A newly observed historical completion must not play a sound; only an observed eligible root running-to-idle transition does.
 - `lib/activity.ts` filters archived families, uses `workspaceKeyOf` for project identity, and nests a subagent when its parent shares the same section. The optional Queued section uses only live subagent queue IDs; an on-disk `queued` status after a server restart is not proof of a live queue. `ActivityOverview` only lists/navigates: the single selected `ChatWindow` still owns SSE, question replay, and answer submission. Mobile hides the list while viewing a chat but keeps it mounted so Back preserves its filter and scroll position.
 
 ### Worktrees and project grouping
