@@ -72,6 +72,7 @@ Browser                Next.js Server              AgentSession (in-process)
 app/api/
   sessions/route.ts               GET  list all sessions
   sessions/[id]/route.ts          GET/PATCH/DELETE session
+  sessions/[id]/move/route.ts     POST relocate an idle session family to another cwd
   starred-sessions/route.ts        GET list | POST set/import stars
   activity/review/route.ts         POST acknowledge/import settled completions
   sessions/[id]/context/route.ts  GET ?leafId= — context for a specific leaf
@@ -133,6 +134,7 @@ lib/
   pi-types.ts          local structural types for pi SDK objects
   rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession
   session-reader.ts   SessionManager wrappers + path cache + buildSessionContext adapter
+  session-move.ts     staged JSONL relocation + fork/subagent path repair
   starred-sessions-server.ts  server-owned star list + serialized atomic edits
   activity-review-server.ts  durable bounded completion and review ledger
   subagent-settings.ts  read/write ~/.pi/agent/agents/settings.json
@@ -239,6 +241,10 @@ Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `au
 - While a run is active, `useAgentSession` periodically calls `GET /api/agent/[id]` and also reconciles on `visibilitychange`/`online`. This fixes missed terminal events from background tabs or half-open connections.
 - Prompt runs use a monotonic run id; late SSE or slow reconciliation responses from an old run must be ignored so they cannot resurrect stale streaming bubbles.
 - Every SSE (re)connection in `useAgentSession` is gated on `sessionHookMountedRef`. React Strict Mode (on by default in `next dev`) re-runs effects in declaration order after a simulated unmount: the mount-only effect's cleanup sets that ref to `false`, and it is only restored when that effect re-runs, *after* the warm-session effect. The warm-session effect therefore re-asserts the ref before `maintainEventsConnected()`. Without it a dev-server tab never opened the event stream on mount or when switching back to a running session, so streamed output and new messages stayed invisible until the 15-second reconcile poll or a page refresh (`next start` was unaffected).
+
+### Moving sessions between projects
+- The row's **Move to project…** action selects an existing directory; the route refuses a same-project destination or a running family. A move changes the header cwd and the SDK session-file directory for the selected session and its nested subagents; forks stay in place, but any stored parent path pointing at a moved file is repaired (including subagent metadata).
+- `lib/session-move.ts` stages all rewrites, backs up originals for rollback, installs destination files without overwriting an existing file, evicts idle wrappers, and refreshes both session-path and list caches. Never only change the header or only rename the JSONL: Pi's session discovery and parent references must stay consistent. Other Pi processes writing concurrently are not coordinated with this operation.
 
 ### Starred sessions
 - Stars live in `~/.pi/agent/pi-web/starred-sessions.json`, not in session files or the browser's long-term storage. `POST /api/starred-sessions` applies idempotent per-ID set/unset changes under a file lock; legacy localStorage lists are imported as a union then removed only after success. A browser with an old, not-yet-imported list may reintroduce a previously removed star on its first visit.

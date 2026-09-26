@@ -1149,6 +1149,36 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onNewSession?.(tempId, selectedCwd);
   }, [selectedCwd, onNewSession]);
 
+  const [movingSession, setMovingSession] = useState<SessionInfo | null>(null);
+  const [moveDestination, setMoveDestination] = useState("");
+  const [moveBrowsing, setMoveBrowsing] = useState(false);
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
+
+  const confirmMove = useCallback(async () => {
+    if (!movingSession || !moveDestination || moveBusy) return;
+    setMoveBusy(true);
+    setMoveError(null);
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(movingSession.id)}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd: moveDestination }),
+      });
+      const data = await response.json() as { error?: string; movedIds?: string[] };
+      if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
+      // An open chat's cwd and wrapper no longer match the relocated file.
+      // Close it rather than letting it send a prompt against the old project.
+      if (selectedSessionId && data.movedIds?.includes(selectedSessionId)) onSessionDeleted?.(selectedSessionId);
+      setMovingSession(null);
+      void loadSessions(false, true);
+    } catch (error) {
+      setMoveError(String(error));
+    } finally {
+      setMoveBusy(false);
+    }
+  }, [movingSession, moveDestination, moveBusy, selectedSessionId, onSessionDeleted, loadSessions]);
+
   const recentProjects = useMemo(() => {
     const projects = getRecentProjects(allSessions);
     return projects.sort((a, b) => Number(starredProjectKeys.has(b.key)) - Number(starredProjectKeys.has(a.key)));
@@ -1237,6 +1267,33 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         "--sidebar-session-pane-height": `${sessionPaneResizer.width}px`,
       } as CSSProperties}
     >
+      {moveBrowsing && (
+        <DirectoryPicker
+          initialPath={moveDestination || movingSession?.cwd}
+          onCancel={() => setMoveBrowsing(false)}
+          onSelect={(path) => { setMoveDestination(path); setMoveError(null); setMoveBrowsing(false); }}
+        />
+      )}
+      {movingSession && !moveBrowsing && (
+        <div role="presentation" onClick={() => { if (!moveBusy) setMovingSession(null); }} style={{ position: "fixed", inset: 0, zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)" }}>
+          <div role="dialog" aria-modal="true" aria-label={t("sidebar.moveSession")} onClick={(event) => event.stopPropagation()} style={{ width: 440, maxWidth: "calc(100vw - 24px)", background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10, padding: 20, display: "grid", gap: 12 }}>
+            <strong>{t("sidebar.moveSession")}</strong>
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("sidebar.moveSessionHint")}</div>
+            <label style={{ fontSize: 12 }} htmlFor="move-session-project">{t("sidebar.moveDestination")}</label>
+            <select id="move-session-project" value={recentProjects.some((project) => project.root === moveDestination) ? moveDestination : ""} onChange={(event) => { setMoveDestination(event.target.value); setMoveError(null); }} style={{ width: "100%", padding: 8, color: "var(--text)", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6 }}>
+              <option value="">{t("sidebar.chooseProject")}</option>
+              {recentProjects.filter((project) => project.key !== movingSession.projectKey).map((project) => <option key={project.key} value={project.root}>{project.root}</option>)}
+            </select>
+            <button type="button" onClick={() => setMoveBrowsing(true)} style={{ textAlign: "left", color: "var(--accent)", background: "none", border: 0, cursor: "pointer" }}>{t("sidebar.browseProject")}</button>
+            {moveDestination && <div style={{ fontSize: 11, overflowWrap: "anywhere" }}>{moveDestination}</div>}
+            {moveError && <div role="alert" style={{ color: "#ef4444", fontSize: 12 }}>{moveError}</div>}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button type="button" disabled={moveBusy} onClick={() => setMovingSession(null)}>{t("sidebar.cancel")}</button>
+              <button type="button" disabled={moveBusy || !moveDestination} onClick={() => void confirmMove()}>{t("sidebar.move")}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {customPathOpen && (
         <DirectoryPicker
           initialPath={customPathValue}
@@ -1985,12 +2042,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   <SessionItem
                     session={displaySession}
                     isSelected={familySessions.some((session) => session.id === selectedSessionId)}
-                    isRunning={familySessions.some((session) => runningSessionIds.has(session.id))}
+                    isRunning={familySessions.some((session) => runningSessionIds.has(session.id) || queuedSessionIds.has(session.id))}
                     isUnread={familySessions.some((session) => unreadSessionIds.has(session.id))}
                     isStarred={starredIds.has(family.root.id)}
                     onToggleStar={() => toggleStarred(family.root.id)}
                     onClick={() => handleSelectSessionFromList(family.root)}
                     onRenamed={loadSessions}
+                    onMove={() => { setMovingSession(family.root); setMoveDestination(""); setMoveError(null); }}
                     archivedView={showArchived}
                     onArchived={(id, archived) => {
                       // An older in-flight list response must not undo this action.
@@ -2298,6 +2356,7 @@ function SessionItem({
   onToggleStar,
   onClick,
   onRenamed,
+  onMove,
   onDeleted,
   onArchived,
   archivedView = false,
@@ -2314,6 +2373,7 @@ function SessionItem({
   onToggleStar?: () => void;
   onClick: () => void;
   onRenamed?: () => void;
+  onMove?: () => void;
   onDeleted?: (id: string) => void;
   onArchived?: (id: string, archived: boolean) => void;
   archivedView?: boolean;
@@ -2703,6 +2763,15 @@ function SessionItem({
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
                   </svg>
+                </button>
+                <button
+                  onClick={(event) => { event.stopPropagation(); setActionsOpen(false); onMove?.(); }}
+                  disabled={isRunning}
+                  title={isRunning ? t("sidebar.moveRunning") : t("sidebar.moveSession")}
+                  aria-label={t("sidebar.moveSession")}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, padding: 0, background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 7, color: "var(--text-muted)", cursor: isRunning ? "not-allowed" : "pointer", flexShrink: 0 }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 12h14m-5-5 5 5-5 5M4 4v16" /></svg>
                 </button>
                 <button
                   onClick={handleDeleteClick}
