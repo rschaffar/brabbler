@@ -302,6 +302,7 @@ export const zhTWLocale: LocalePlugin = {
     "sidebar.unstarSession": "移除工作階段星號",
     "sidebar.restore": "還原",
     "sidebar.archivedSessions": "已封存工作階段",
+    "sidebar.searchIncludeArchived": "包含已封存工作階段",
     "sidebar.activeSessions": "使用中的工作階段",
     "sidebar.archiveRunning": "請先停止工作階段再封存",
     "sidebar.rename": "重新命名",

@@ -302,6 +302,7 @@ export const enLocale: LocalePlugin = {
     "sidebar.unstarSession": "Unstar session",
     "sidebar.restore": "Restore",
     "sidebar.archivedSessions": "Archived sessions",
+    "sidebar.searchIncludeArchived": "Include archived",
     "sidebar.activeSessions": "Active sessions",
     "sidebar.archiveRunning": "Stop the session before archiving",
     "sidebar.rename": "Rename",

@@ -17,6 +17,7 @@ const jiti = createJiti(import.meta.url, {
 });
 const { DELETE: deleteSession, GET: getSessionDetail, PATCH: renameSession } = await jiti.import("./[id]/route.ts");
 const { GET: getSessionList } = await jiti.import("./route.ts");
+const { GET: searchSessions } = await jiti.import("./search/route.ts");
 const { GET: getRunningSessions } = await jiti.import("../agent/running/route.ts");
 const { GET: getSessionState } = await jiti.import("./[id]/state/route.ts");
 const { POST: dismissRecovery } = await jiti.import("./[id]/recovery/route.ts");
@@ -182,8 +183,18 @@ test("archive and restore preserve the session file and refresh the catalogue", 
   assert.ok(archived.sessionListVersion > before.sessionListVersion);
   assert.equal(archived.sessions.find((session) => session.id === id)?.archived, true);
   assert.equal((await list(true)).sessions.find((session) => session.id === id)?.archived, true);
+  const search = async (includeArchived = false) => {
+    const params = new URLSearchParams({ q: "Archive fixture" });
+    if (includeArchived) params.set("includeArchived", "1");
+    const response = await searchSessions(new Request(`http://localhost/api/sessions/search?${params}`));
+    assert.equal(response.status, 200);
+    return (await response.json()).results.map((result) => result.session.id);
+  };
+  assert.ok(!(await search()).includes(id), "archived sessions stay excluded by default");
+  assert.ok((await search(true)).includes(id), "opt-in search finds archived session content");
   assert.match(await readFile(path, "utf8"), /pi-web:archive/);
   assert.equal((await patch({ archived: false })).status, 200);
+  assert.ok((await search()).includes(id), "restored sessions return to ordinary search");
   assert.equal((await list()).sessions.find((session) => session.id === id)?.archived, undefined);
   assert.equal((await patch({ archived: "yes" })).status, 400);
   assert.equal((await patch({ name: "x", archived: true })).status, 400);
