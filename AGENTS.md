@@ -101,7 +101,12 @@ app/api/
   skills/install/route.ts         POST install skills through npx skills add
   skills/search/route.ts          GET/POST skills.sh search
   subagents/settings/route.ts     GET/PUT built-in subagent feature setting
-  worktrees/route.ts              GET/POST/DELETE git worktrees
+  worktrees/route.ts              GET/POST/DELETE git worktrees (explicit local base/tip on creation)
+  git/workflow/route.ts           GET project/session snapshot | PUT project default or idle persisted session policy
+  git/commit/route.ts             POST human preview/confirm selected local whole-file commit
+  git/review/route.ts             GET local branch review | POST read-only bounded patch
+  git/integration/route.ts        GET check receipts | POST explicit verify/plan/confirm local merge
+  git/workspace-transition/route.ts GET server-owned post-run worktree transition status
   web-auth/route.ts               GET status | POST login | DELETE logout (browser password)
   plugins/check/route.ts          POST check plugin package updates
   project-trust/route.ts          GET/POST project trust for package installs
@@ -144,11 +149,24 @@ lib/
   types.ts            shared TypeScript types
   normalize.ts        normalizeToolCalls() — field name mismatch between file format and our types
   worktree.ts         project/worktree resolution and git worktree operations
+  git-workflow-policy.ts  validated policy, session snapshot/opt-out and fork inheritance
+  git-workflow-store.ts   private canonical-project defaults for new sessions only
+  git-workflow-extension.ts  before_agent_start guidance from the latest saved session entry
+  git-commit.ts / git-commit-extension.ts  guarded preview/confirm engine and session-bound agent tool
+  git-review.ts         read-only local first-parent merge/commit/range comparisons
+  git-verification.ts   explicitly selected saved checks + short-lived state-bound receipts
+  git-integration.ts    exact-state, unsigned non-FF local merge with partial-state recovery
+  git-checkout-gate.ts  in-process agent command gate during checkout transactions
+  git-workspace-start-extension.ts  explicit agent worktree creation and durable session intent
+  git-workspace-transition.ts  private one-shot post-run transition receipts
 
 components/
   AppShell.tsx        layout + URL state + tab management
   SessionSidebar.tsx  session tree + FileExplorer
   ChatWindow.tsx      chat composition + completion sound wrapper
+  GitWorkflowSettings.tsx  per-project/new-chat/idle-session preferences and explicit worktree continuation/fork
+  GitCommitPanel.tsx  human whole-file preview/confirm; working diffs are not the candidate
+  GitMergeReviewPanel.tsx  read-only comparisons plus separately approved local verification/merge
   ChatInput.tsx       input bar + model/thinking/tools/compact controls
   MessageView.tsx     renders one message (user/assistant/toolCall/toolResult)
   BranchNavigator.tsx in-session branch switcher
@@ -262,10 +280,18 @@ Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `au
 ### Worktrees and project grouping
 - `lib/worktree.ts` resolves linked worktree top-levels back to the main repo `projectRoot`; `listAllSessions()` attaches that to each `SessionInfo` so all worktrees for one repo are grouped together in the sidebar.
 - Worktree operations are served by `/api/worktrees` and guarded by the same allowed-root rules as `/api/files`.
-- New worktrees are created under `<repoRoot>-worktrees/<sanitized-branch>`. Existing branches are reused; otherwise `git worktree add -b` creates the branch.
+- New worktrees are created under `<repoRoot>-worktrees/<sanitized-branch>` only after selecting a local base branch and its full expected tip. Explicit `create` refuses an existing branch; explicit `attach` requires an existing local branch and its full expected tip. Neither silently uses remote-tracking refs or an implicit checkout HEAD. Source and any checked-out base must be clean (including untracked files). Ref tips are rechecked, but external Git writers may still race.
 - Removing a dirty worktree returns `409` with `{ dirty: true }` so the UI can ask before retrying with `force`.
 - Sessions whose cwd points at a removed worktree are inferred back into the main project instead of becoming a phantom project row.
+- `GitWorkflowSettings` uses the persisted session cwd, not the sidebar's selected checkout. An idle persisted session at a registered checkout root may be moved to another registered root, or cloned from an assistant leaf then moved there; neither manual action is triggered by sidebar creation/policy save, and neither moves source checkout files. Separately, an explicit agent `git_workspace_start` can schedule a one-shot idle post-run continuation/fork into its own newly created worktree. A failed fork/move is retained for manual inspection, never automatically retried. See `docs/git-workflow.md`.
 - git prints POSIX-style absolute paths even on Windows, so every path read out of git goes through `toNativePath()` (`lib/paths.ts`) before it is compared or returned. Compare paths with `samePath()`, never `===` — raw equality made `isTopLevel` permanently false on Windows and hid the worktree switcher entirely. Branch names are not paths and must keep their forward slashes. Browser code cannot apply Node path rules, so `/api/worktrees` resolves `currentWorktreePath` server-side; the sidebar must use that identity for highlighting and removal fallback.
+
+### Session Git workflow boundaries
+- `lib/git-workflow-store.ts` keys defaults by canonical project root and writes private Pi Web state; `lib/rpc-manager.ts` snapshots a new session into `pi-web:git-workflow`, with explicit `null` for opt-out. Existing sessions never fall back to changed defaults. Fork/clone inherits the effective snapshot. The current UI refuses a policy override on an initialized but not persisted chat. Session edits require an idle persisted chat and reject subagents; `before_agent_start` reads the latest entry on every new run without a browser reload. Chat-only does not load the workflow or commit extension. This is guidance, not a sandbox for shell access.
+- Browser `POST /api/git/commit` derives cwd from the saved session header; the agent `git_commit` tool requires `commits: agent` in the saved session snapshot (project default alone is not consent). Both use `lib/git-commit.ts`: select whole status paths, refuse dirty index/conflicts and unsupported hook/signing/filter policy, preview exact branch/HEAD/index/paths/tree, then confirm a fresh authenticated candidate. No hooks, signing, or configured filters are run. A post-ref-update index failure reports `partial-success` with the created commit ID; inspect the checkout before retrying. This is not atomic against arbitrary external Git writers.
+- `git_workspace_start` is available only to ordinary non-Chat-only agents with a saved worktree-mode session policy. A successful explicit invocation writes a namespaced start entry and a private receipt; only that run's idle settlement claims it, gates both checkouts, then attempts a same-chat move or clone+move once. Reconnect/restart cannot replay it; an incomplete claimed or abandoned receipt needs manual inspection. One automatic start per session, no file copying. The browser only follows the server's status, it never triggers movement.
+- `lib/git-review.ts` and `/api/git/review` require a saved local integration target on the feature's **first-parent** chain. Diffs use committed trees only: target → proposed merge-result tree, one first-parent commit, or an ordered contiguous cumulative range. Recheck refs and fail stale/oversized patches.
+- `/api/git/integration` derives both registered worktrees from the persisted session/policy and requires explicit trust and one user-selected run of every saved verification check. `lib/git-verification.ts` stores bounded private logs and 15-minute, process-local successful receipts. `lib/git-integration.ts` prepares an exact plan with the whole candidate diff, target/feature OIDs, merge OID and receipts, then confirms only that approved plan by an ordinary unsigned local non-fast-forward merge. Dirty/index-flag/sparse, configured hooks/signing/filters/attributes, missing checkout, nontrivial merge, changed policy/ref/checkout, and unsupported `ff`/`squash` fail closed. Pi Web gates in-process commands during apply; external Git writers still race. A failure after checkout begins is a partial state with a private recovery record; do not auto-retry/reset. Worktree cleanup remains a separate approval, never part of integration. No remote operations. Saved target/method are preferences, not approval. Windows portability is unverified. Rationale: `docs/adr/0007-session-git-workflow.md`.
 
 ### File access allow-list
 - `/api/files` is intentionally not a general filesystem browser. Allowed roots come from session cwds, their resolved project roots, `~/pi-cwd-*`, and roots explicitly added with `allowFileRoot()`.

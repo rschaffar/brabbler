@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { allowFileRoot } from "@/lib/file-access";
 import { invalidateSessionListCache } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
+import { validateGitWorkflowPolicy } from "@/lib/git-workflow-policy";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -45,7 +46,10 @@ export async function POST(req: Request) {
     }
 
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
-    const { provider, modelId, toolNames, thinkingLevel, accounts, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; accounts?: unknown; [key: string]: unknown };
+    const { provider, modelId, toolNames, thinkingLevel, accounts, gitWorkflow, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; accounts?: unknown; gitWorkflow?: unknown; [key: string]: unknown };
+    const explicitGitWorkflow = Object.hasOwn(command, "gitWorkflow")
+      ? gitWorkflow === null ? null : validateGitWorkflowPolicy(gitWorkflow)
+      : undefined;
     if (accounts !== undefined && (accounts === null || typeof accounts !== "object" || Array.isArray(accounts)
       || Object.entries(accounts).some(([key, value]) => !key || typeof value !== "string"))) {
       throw new Error("accounts must map provider IDs to account IDs");
@@ -62,6 +66,7 @@ export async function POST(req: Request) {
     const { session, realSessionId } = await startRpcSession(tempKey, "", cwd, {
       ...(toolNames ? { toolNames } : {}),
       ...(accounts ? { accounts: accounts as Record<string, string> } : {}),
+      ...(explicitGitWorkflow !== undefined ? { gitWorkflow: explicitGitWorkflow } : {}),
       ...(provider && modelId ? { initialModel: { provider, modelId } } : {}),
       ...(explicitThinkingLevel ? { thinkingLevel: explicitThinkingLevel } : {}),
     });

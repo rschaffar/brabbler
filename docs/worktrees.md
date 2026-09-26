@@ -1,6 +1,6 @@
 # Worktrees in Pi Web
 
-Pi Web can show all Git worktrees for one project in the sidebar. Use this when you want to keep separate checkouts for different branches, while keeping the project's sessions grouped together.
+Pi Web can show all Git worktrees for one project in the sidebar. Use this when you want to keep separate checkouts for different branches, while keeping the project's sessions grouped together. For per-chat preferences, checkout continuation, commit preview and read-only integration review, see [Session Git workflow](./git-workflow.md).
 
 ## When the Worktree Control Appears
 
@@ -28,7 +28,7 @@ Existing sessions stay grouped under the same project. Opening an existing sessi
 
 ## Creating a Worktree
 
-Choose `New worktree...` from the worktree menu and enter a branch name.
+Choose `New worktree...` from the worktree menu. **Select a local base branch** and review its full expected HEAD commit ID, then choose **Create new branch** and enter a new branch name. There is no default base: existing switcher users must make a selection before creating. The base and expected commit are checked again on the server; if the branch moved, refresh the switcher and select it again. Pi Web does not fetch or select remote-tracking refs automatically. Saving a session's worktree preference does not create a checkout; creation is a separate explicit sidebar action.
 
 Pi Web creates the checkout at:
 
@@ -48,11 +48,11 @@ and you create branch `codex/worktree-help`, the worktree is created under:
 /Users/alex/Documents/Workspace/pi-web-worktrees/codex-worktree-help
 ```
 
-If the branch already exists, Pi Web adds a worktree for that branch. If it does not exist, Pi Web creates the branch from the current `HEAD`.
+To check out an **existing local branch**, explicitly choose **Attach existing local branch** and select it. Its full expected tip is captured and checked before checkout; an already checked-out branch cannot be attached twice. Creating a new branch never reuses an existing one, even when a remote-tracking branch has the same name. Creation uses exactly the selected local base commit, not the current checkout HEAD. Branch names are validated by Git. The source checkout and any checkout of the selected base must be clean, including untracked files; commit, stash, or remove those changes first. Existing destination directories and stale branch tips are rejected. Concurrent external Git writers can still race the checks; retry after inspecting the repository if Git reports a conflict.
 
 ## Removing a Worktree
 
-Use the remove button next to a non-main worktree to remove that checkout.
+Use the remove button next to a non-main worktree, then explicitly confirm its removal. Integration never removes a worktree for you. This separate confirmation applies even when the checkout is clean.
 
 Removing a worktree does not delete:
 
@@ -72,13 +72,19 @@ Each session still remembers the working directory it was created with. That mea
 - A session started in the main checkout continues to use the main checkout.
 - If a worktree has been removed, old sessions from it stay visible under the project so you can still find the history.
 
+### Continue or fork in a registered worktree
+
+For an idle, persisted ordinary chat at a registered checkout root, expand **Workspace workflow** beneath the chat. It shows the chat's actual cwd, not just the checkout selected in the sidebar. Select another registered checkout and explicitly confirm **Continue here…** to move the same chat/session family there, or **Fork chat here…** to keep the original and put a new chat there (fork requires an assistant leaf). Saving `onCreate` or using the sidebar's worktree-creation control never moves a chat. Separately, a persisted worktree-policy chat can let the agent explicitly invoke `git_workspace_start`; only **that agent-created** worktree can trigger its recorded automatic continue/fork once after the run settles. Neither manual continuation action creates a worktree. The changed-file warning is informational: **uncommitted files stay in the source checkout** and are not copied, stashed or reset. Stop a running chat first. If a fork succeeds but relocation fails, the fork remains and its ID is reported for inspection; never repeat the automatic attempt blindly. See [Session Git workflow](./git-workflow.md) for policy, commit and integration limitations.
+
+Windows portability for this workflow is currently **unverified**.
+
 ## Troubleshooting
 
 **I do not see the worktree switcher.**
 Select a Git repository root. Non-Git directories and repo subdirectories show a small hint instead of the switcher.
 
 **A branch cannot be added as a worktree.**
-Git allows a branch to be checked out in only one worktree at a time. Switch to the existing worktree for that branch, or remove it first.
+Git allows a branch to be checked out in only one worktree at a time. Switch to the existing worktree for that branch, or remove it first. If a base or attach tip changed since you selected it, refresh the worktree menu and select the branch again.
 
 **A removed worktree still shows up in Git.**
 Git can keep prunable worktree records after a checkout disappears. Pi Web filters those out of the switcher.

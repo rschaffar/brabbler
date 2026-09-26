@@ -85,6 +85,7 @@ test("New restores the draft after session navigation and workspace auto-restore
         useCallback: (callback) => callback,
         useGlobalKeyboardShortcuts() {},
         activeNewSessionDraftKeyRef: { current: `new:initial:${cwd}` },
+        pendingMovedCheckoutRef: { current: null },
         activeProjectKeyRef: { current: cwd },
         workspaceRestoreTokenRef: { current: 0 },
         suppressCwdBumpRef: { current: false },

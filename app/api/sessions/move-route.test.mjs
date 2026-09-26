@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import test from "node:test";
@@ -7,6 +9,7 @@ import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true, moduleCache: false });
 const { POST: move } = await jiti.import("./[id]/move/route.ts");
+const exec = promisify(execFile);
 const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { listAllSessions, resolveSessionPath, invalidateSessionPathCache, invalidateSessionListCache } = await jiti.import("../../../lib/session-reader.ts");
 
@@ -98,4 +101,38 @@ test("move persists a nested family, repairs an external fork and refreshes path
   assert.equal(after.find((session) => session.id === id)?.cwd, newCwd);
   assert.equal(after.find((session) => session.id === `${id}-child`)?.relation?.parentSessionId, id);
   assert.equal(after.find((session) => session.id === fork.getSessionId())?.relation?.originSessionId, id);
+});
+
+test("same-project continuation accepts only distinct registered worktree roots", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-web-worktree-move-"));
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = join(dir, "agent");
+  const root = join(dir, "repo");
+  const linked = join(dir, "linked");
+  await mkdir(root);
+  const git = (...args) => exec("git", ["-C", root, ...args]);
+  await git("init", "-q");
+  await git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "initial");
+  await git("worktree", "add", "-q", "-b", "feature", linked);
+  const subdir = join(root, "nested");
+  await mkdir(subdir);
+  const manager = SessionManager.create(root);
+  manager.appendMessage({ role: "user", content: "Continue here", timestamp: Date.now() });
+  manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "Ready" }], timestamp: Date.now() });
+  const id = manager.getSessionId();
+  t.after(async () => {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+    invalidateSessionPathCache(id);
+    invalidateSessionListCache();
+    await rm(dir, { recursive: true, force: true });
+  });
+  invalidateSessionListCache();
+  await listAllSessions({ force: true });
+  assert.equal((await request(id, root)).status, 409);
+  assert.equal((await request(id, subdir)).status, 409);
+  const response = await request(id, linked);
+  assert.equal(response.status, 200, await response.text());
+  assert.equal(JSON.parse((await readFile(await resolveSessionPath(id), "utf8")).split("\n")[0]).cwd, linked);
+  assert.equal((await request(id, root)).status, 200);
 });

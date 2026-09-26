@@ -13,6 +13,7 @@ import type {
   UserMessage,
 } from "@/lib/types";
 import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
+import type { GitWorkflowPolicy } from "@/lib/git-workflow-policy";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
 import {
@@ -387,6 +388,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const newSessionPromotedRef = useRef(false);
   const newSessionModelOverrideRef = useRef<SelectedModel | null>(null);
   const newSessionAccountsRef = useRef<Record<string, string> | null>(null);
+  // Only explicit new-chat choices are sent. Undefined lets the server snapshot
+  // the project default; null deliberately opts out of that default.
+  const newSessionGitWorkflowRef = useRef<GitWorkflowPolicy | null | undefined>(undefined);
+  const setNewSessionGitWorkflow = useCallback((policy: GitWorkflowPolicy | null | undefined): boolean => {
+    if (!isNew || sessionIdRef.current || ensuringNewSessionRef.current) return false;
+    newSessionGitWorkflowRef.current = policy;
+    return true;
+  }, [isNew]);
   const thinkingLevelOverrideRef = useRef<ConcreteThinkingLevel | null>(null);
   const thinkingLevelPinsRef = useRef<Record<string, string>>({});
   const defaultThinkingLevelRef = useRef<ConcreteThinkingLevel | null>(null);
@@ -784,6 +793,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         body: JSON.stringify({
           cwd: newSessionCwd,
           type: "ensure_session",
+          ...(newSessionGitWorkflowRef.current !== undefined ? { gitWorkflow: newSessionGitWorkflowRef.current } : {}),
           ...(newSessionAccountsRef.current ? { accounts: newSessionAccountsRef.current } : {}),
           ...(toolNames !== undefined ? { toolNames } : {}),
           ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
@@ -2491,6 +2501,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     isAutoThinkingSelection: isNew && newSessionThinkingLevel === null,
     agentPhase,
     isNew,
+    setNewSessionGitWorkflow,
     promptAnchorActive,
     showScrollToBottom,
     // Refs

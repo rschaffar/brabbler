@@ -1,8 +1,9 @@
 import { execFile } from "child_process";
-import { existsSync, mkdirSync, realpathSync } from "fs";
+import { existsSync, lstatSync, mkdirSync, realpathSync } from "fs";
 import { basename, dirname, join, resolve } from "path";
 import { promisify } from "util";
 import { allowFileRoot } from "./allowed-roots";
+import { gitExecEnv } from "./git-exec";
 import { samePath, toNativePath } from "./paths";
 
 const execFileAsync = promisify(execFile);
@@ -34,6 +35,17 @@ export interface WorktreeInfo {
   isMain: boolean;
 }
 
+export interface LocalBranchTip {
+  branch: string;
+  oid: string;
+}
+
+export type AddWorktreeOptions = {
+  branch: string;
+  baseBranch: string;
+  expectedBaseOid: string;
+} & ({ mode: "create" } | { mode: "attach"; expectedTipOid: string });
+
 declare global {
   var __piProjectCache: Map<string, { info: ProjectInfo; expiresAt: number }> | undefined;
   var __piProjectRefresh: Map<string, Promise<void>> | undefined;
@@ -59,7 +71,7 @@ async function git(cwd: string, args: string[], timeoutMs = 10_000): Promise<str
     maxBuffer: 1024 * 1024,
     // Pin the message locale so error-text matching (e.g. the dirty-worktree
     // detection in the DELETE route) works regardless of system language.
-    env: { ...process.env, LC_ALL: "C" },
+    env: gitExecEnv(),
   });
   return stdout.trim();
 }
@@ -220,6 +232,38 @@ export async function listWorktrees(cwd: string): Promise<WorktreeInfo[]> {
   return worktrees;
 }
 
+export async function listLocalBranchTips(cwd: string): Promise<LocalBranchTip[]> {
+  const out = await git(cwd, ["for-each-ref", "--format=%(refname:short)%00%(objectname)", "refs/heads"]);
+  return out.split("\n").filter(Boolean).map((line) => {
+    const [branch, oid] = line.split("\0");
+    return { branch, oid };
+  });
+}
+
+/** Capture the checked-out local branch and its full commit, without consulting remotes or the project cache. */
+export async function currentLocalBranchTip(cwd: string): Promise<LocalBranchTip> {
+  let ref: string;
+  try {
+    ref = await git(cwd, ["symbolic-ref", "--quiet", "HEAD"]);
+  } catch {
+    throw new Error("A checked-out local branch is required for worktree isolation (detached HEAD or non-git directory)");
+  }
+  if (!ref.startsWith("refs/heads/")) throw new Error("A checked-out local branch is required for worktree isolation");
+  const branch = ref.slice("refs/heads/".length);
+  const oid = await git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"]);
+  const checkout = toNativePath(await git(cwd, ["rev-parse", "--show-toplevel"]));
+  if (await git(checkout, ["status", "--porcelain", "--untracked-files=all"])) {
+    throw new Error(`Checkout is not clean: ${checkout}`);
+  }
+  // A checkout or ref update during capture must not silently change the base.
+  if (await git(cwd, ["symbolic-ref", "--quiet", "HEAD"]).catch(() => "") !== ref ||
+      await git(cwd, ["rev-parse", "--verify", `${ref}^{commit}`]).catch(() => "") !== oid ||
+      await git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"]).catch(() => "") !== oid) {
+    throw new Error(`Parent local branch moved while capturing worktree base: ${branch}`);
+  }
+  return { branch, oid };
+}
+
 function findWorktreeByPath(worktrees: readonly WorktreeInfo[], candidate: string): WorktreeInfo | undefined {
   return worktrees.find((worktree) => samePath(worktree.path, candidate));
 }
@@ -228,54 +272,97 @@ export function findCurrentWorktreePath(worktrees: readonly WorktreeInfo[], cwd:
   return findWorktreeByPath(worktrees, realPathOrSelf(cwd))?.path ?? null;
 }
 
+function pathEntryExists(path: string): boolean {
+  try {
+    lstatSync(path); // Unlike existsSync, catches dangling symlinks too.
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
 function sanitizeBranchForDir(branch: string): string {
   return branch.replace(/[\/\\:*?"<>|\s]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-export async function addWorktree(cwd: string, branch: string): Promise<{ path: string; branch: string }> {
-  const trimmed = branch.trim();
-  if (!trimmed) throw new Error("Branch name is required");
-
-  const dirName = sanitizeBranchForDir(trimmed);
-  if (!dirName) throw new Error(`Invalid branch name: ${branch}`);
-
+// Legacy string callers are accepted by the type system only so they fail
+// explicitly at runtime instead of silently creating from an implicit base.
+export async function addWorktree(cwd: string, options: AddWorktreeOptions | string): Promise<{ path: string; branch: string }> {
+  if (!options || typeof options !== "object") throw new Error("Explicit local base branch and expected HEAD are required");
+  const { branch, baseBranch, expectedBaseOid, mode } = options;
   const repoRoot = await getRepoRoot(cwd);
+  const checkBranch = async (name: unknown, label: string): Promise<string> => {
+    if (typeof name !== "string" || !name || name !== name.trim() || name.startsWith("-")) {
+      throw new Error(`${label} is required and must be a valid branch name`);
+    }
+    try {
+      if (await git(repoRoot, ["check-ref-format", "--branch", name]) !== name) {
+        throw new Error("Branch name expands to another ref");
+      }
+    } catch {
+      throw new Error(`Invalid ${label}: ${name}`);
+    }
+    return name;
+  };
+  const target = await checkBranch(branch, "branch name");
+  const base = await checkBranch(baseBranch, "local base branch");
+  if (mode !== "create" && mode !== "attach") throw new Error("Select create or attach explicitly");
+
+  const oidLength = (await git(repoRoot, ["rev-parse", "--show-object-format"])) === "sha256" ? 64 : 40;
+  const validOid = (oid: unknown) => typeof oid === "string" && new RegExp(`^[0-9a-fA-F]{${oidLength}}$`).test(oid);
+  if (!validOid(expectedBaseOid)) throw new Error("Full expected base HEAD is required");
+  if (mode === "attach" && !validOid(options.expectedTipOid)) throw new Error("Full expected branch tip is required for attach");
+
+  const branches = await listLocalBranchTips(repoRoot);
+  const baseTip = branches.find((entry) => entry.branch === base);
+  if (!baseTip) throw new Error(`Local base branch does not exist: ${base}`);
+  if (baseTip.oid !== expectedBaseOid.toLowerCase()) throw new Error(`Stale local base branch: ${base} moved; refresh and select it again`);
+  const existing = branches.find((entry) => entry.branch === target);
+  if (mode === "create" && existing) throw new Error(`Branch already exists: ${target}. Select attach explicitly`);
+  if (mode === "attach" && !existing) throw new Error(`Local branch does not exist: ${target}`);
+  if (mode === "attach" && existing?.oid !== options.expectedTipOid.toLowerCase()) {
+    throw new Error(`Stale branch tip: ${target} moved; refresh and select it again`);
+  }
+
+  // Do not create from an uncommitted checkout, nor from a dirty checked-out
+  // base. Git does not copy these changes, so proceeding would mislead users.
+  const checkClean = async (path: string) => {
+    if (await git(path, ["status", "--porcelain", "--untracked-files=all"])) {
+      throw new Error(`Checkout is not clean: ${path}`);
+    }
+  };
+  const sourceCheckout = toNativePath(await git(cwd, ["rev-parse", "--show-toplevel"]));
+  await checkClean(sourceCheckout);
+  for (const worktree of await listWorktrees(repoRoot)) {
+    if (worktree.branch === base && !samePath(worktree.path, sourceCheckout)) await checkClean(worktree.path);
+  }
+
+  const dirName = sanitizeBranchForDir(target);
   const baseDir = `${resolve(repoRoot)}-worktrees`;
   const worktreePath = join(baseDir, dirName);
-  if (existsSync(worktreePath)) {
-    throw new Error(`Directory already exists: ${worktreePath}`);
+  if (pathEntryExists(worktreePath)) throw new Error(`Directory already exists: ${worktreePath}`);
+  if (pathEntryExists(baseDir)) {
+    const parent = lstatSync(baseDir);
+    if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error(`Invalid worktree directory: ${baseDir}`);
+  } else {
+    mkdirSync(baseDir);
   }
-  mkdirSync(baseDir, { recursive: true });
-
-  // Reuse the branch if it already exists, otherwise create it (from the
-  // already-fetched remote tip when available, else local HEAD). We do not
-  // fetch here: worktree creation must stay a local, offline-safe operation.
-  let branchExists = false;
-  try {
-    await git(repoRoot, ["rev-parse", "--verify", "--quiet", `refs/heads/${trimmed}`]);
-    branchExists = true;
-  } catch {
-    branchExists = false;
+  // Recheck refs just before mutation; Git's own -b/checkout checks still
+  // protect collisions with another concurrent writer (no cross-process lock).
+  if (await git(repoRoot, ["rev-parse", "--verify", `refs/heads/${base}^{commit}`]) !== expectedBaseOid.toLowerCase()) {
+    throw new Error(`Stale local base branch: ${base} moved`);
   }
-
   try {
     // Large repos (30k+ files) can take minutes to checkout.
     const WORKTREE_TIMEOUT = 5 * 60_000;
-    if (branchExists) {
-      await git(repoRoot, ["worktree", "add", "--", worktreePath, trimmed], WORKTREE_TIMEOUT);
-    } else {
-      // New branch: prefer the remote-tracking tip (refs/remotes/origin/<branch>)
-      // over local HEAD when the user already fetched it; fall back to HEAD.
-      let startFrom: string | undefined;
-      try {
-        await git(repoRoot, ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${trimmed}`]);
-        startFrom = `refs/remotes/origin/${trimmed}`;
-      } catch {
-        startFrom = undefined;
+    if (mode === "attach") {
+      if (await git(repoRoot, ["rev-parse", "--verify", `refs/heads/${target}^{commit}`]) !== options.expectedTipOid.toLowerCase()) {
+        throw new Error(`Stale branch tip: ${target} moved`);
       }
-      const addArgs = ["worktree", "add", "-b", trimmed, "--", worktreePath];
-      if (startFrom) addArgs.push(startFrom);
-      await git(repoRoot, addArgs, WORKTREE_TIMEOUT);
+      await git(repoRoot, ["worktree", "add", "--", worktreePath, target], WORKTREE_TIMEOUT);
+    } else {
+      await git(repoRoot, ["worktree", "add", "-b", target, "--", worktreePath, expectedBaseOid], WORKTREE_TIMEOUT);
     }
   } catch (error) {
     throw new Error(extractGitError(error));
@@ -283,7 +370,7 @@ export async function addWorktree(cwd: string, branch: string): Promise<{ path: 
 
   allowFileRoot(worktreePath);
   invalidateProjectCache();
-  return { path: worktreePath, branch: trimmed };
+  return { path: worktreePath, branch: target };
 }
 
 export async function removeWorktree(cwd: string, worktreePath: string, force = false): Promise<void> {
