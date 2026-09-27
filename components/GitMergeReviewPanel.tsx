@@ -65,7 +65,6 @@ async function bodyOrError<T>(response: Response): Promise<T> {
 
 /** Session-scoped read-only comparisons and separately approved local integration. */
 export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
-  const [open, setOpen] = useState(false);
   const [revision, setRevision] = useState(0);
   const [review, setReview] = useState<GitReview | null>(null);
   const [choice, setChoice] = useState<Choice>({ kind: "merge" });
@@ -100,7 +99,6 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
   }
 
   useEffect(() => {
-    if (!open) return;
     const controller = new AbortController();
     setLoading(true);
     void fetch(`/api/git/review?${new URLSearchParams({ sessionId })}`, { cache: "no-store", signal: controller.signal })
@@ -117,10 +115,9 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
         setError(cause instanceof Error ? cause.message : "Review unavailable");
       }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [open, revision, sessionId]);
+  }, [revision, sessionId]);
 
   useEffect(() => {
-    if (!open) return;
     const controller = new AbortController();
     const version = integrationGeneration.current;
     void fetch(`/api/git/integration?${new URLSearchParams({ sessionId })}`, { cache: "no-store", signal: controller.signal })
@@ -135,7 +132,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
         setIntegrationError(cause instanceof Error ? cause.message : "Integration unavailable");
       });
     return () => controller.abort();
-  }, [open, revision, sessionId]);
+  }, [revision, sessionId]);
 
   const selection = review && reviewSelection(review, choice);
   const trees = review && expectedTrees(review, choice);
@@ -255,9 +252,8 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
     }
   }
 
-  return <section className="mx-auto w-full max-w-[820px] min-w-0 border-t border-border px-4 py-1 text-sm text-text" aria-label="Local integration review">
-    <button type="button" disabled={operation !== null} aria-expanded={open} onClick={() => { invalidateDiff(); invalidateIntegration(); setOpen((value) => !value); }} className="min-h-8 text-accent hover:underline disabled:opacity-50">Local integration review</button>
-    {open && <div className="max-h-[55vh] min-w-0 space-y-2 overflow-y-auto pb-2">
+  return <section className="git-panel-content min-w-0 text-sm text-text" aria-label="Local integration review">
+    <div className="min-w-0 space-y-2">
       <p className="text-xs text-text-muted">Session checkout: <span className="break-all font-mono">{cwd}</span>. Branches are read from this persisted session and its local integration policy, not chosen here.</p>
       <p className="text-xs text-amber-500">Patches below are read-only comparisons of committed trees, not uncommitted checkout files. Verification, proposal and integration are separate explicit actions.</p>
       <button type="button" disabled={operation !== null} onClick={refresh} className="min-h-8 text-xs text-accent hover:underline disabled:opacity-50">Refresh review</button>
@@ -362,6 +358,6 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
         <p className="break-all font-mono">Target: {result.targetBranch}; merge commit: {result.mergeOid}</p>
         {result.status === "partial-state" && <p className="break-all text-amber-500">{result.reason} Recovery record: {result.recoveryPath}. Inspect both worktrees, refs and index before any further action. Do not retry blindly.</p>}
       </div>}
-    </div>}
+    </div>
   </section>;
 }

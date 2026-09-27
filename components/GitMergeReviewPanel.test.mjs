@@ -86,7 +86,7 @@ test("renderer shows full authoritative proposal only after prepare, with a sepa
   const status = { review: snapshot, checks: [{ checkIndex: 0, label: "Tests" }], receipts: [receipt] };
   const plan = { planId: "exact-plan", sessionId: "s", expiresAt: Date.now() + 60_000, review: snapshot, receiptIds: [receipt.id],
     diff: { fromTreeOid: snapshot.targetTreeOid, toTreeOid: snapshot.featureTreeOid, patch: "candidate patch", hasBinaryChanges: true }, mergeOid: oid(30), message: "Merge branch" };
-  const base = [true, 0, snapshot, { kind: "merge" }, null, null, null, false, false, status, null, null, null, null, false];
+  const base = [0, snapshot, { kind: "merge" }, null, null, null, false, false, status, null, null, null, null, false];
   function render(states) {
     let index = 0;
     const mod = new Module(componentModule.filename);
@@ -96,27 +96,27 @@ test("renderer shows full authoritative proposal only after prepare, with a sepa
     mod._compile(compiled, mod.filename);
     return renderToStaticMarkup(React.createElement(mod.exports.GitMergeReviewPanel, { sessionId: "s", cwd: "/repo" }));
   }
-  const unavailable = render(base.map((value, index) => index === 9 ? null : index === 10 ? "Saved merge target and checks required" : value));
+  const unavailable = render(base.map((value, index) => index === 8 ? null : index === 9 ? "Saved merge target and checks required" : value));
   assert.match(unavailable, /Saved merge target and checks required/);
   assert.doesNotMatch(unavailable, /Run check 1|Prepare exact integration proposal|Confirm exact plan/);
   const before = render(base);
   assert.match(before, /Tests/);
   assert.match(before, /Prepare exact integration proposal/);
   assert.doesNotMatch(before, /Confirm exact plan|candidate patch/);
-  const pending = render(base.map((value, index) => index === 11 ? { plan, viewed: false } : value));
+  const pending = render(base.map((value, index) => index === 10 ? { plan, viewed: false } : value));
   assert.match(pending, /exact-plan/);
   assert.match(pending, /candidate patch/);
   assert.match(pending, new RegExp(oid(30)));
   assert.match(pending, /Binary changes are included/);
   assert.match(pending, /I have reviewed this exact proposal/);
   assert.doesNotMatch(pending, /Confirm exact plan/);
-  const viewed = render(base.map((value, index) => index === 11 ? { plan, viewed: true } : value));
+  const viewed = render(base.map((value, index) => index === 10 ? { plan, viewed: true } : value));
   assert.match(viewed, /Confirm exact plan exact-plan/);
   assert.doesNotMatch(viewed, /I have reviewed this exact proposal/);
-  const partial = render(base.map((value, index) => index === 12 ? { status: "partial-state", targetBranch: "main", mergeOid: oid(30), recoveryPath: "/private/record", reason: "Failed" } : value));
+  const partial = render(base.map((value, index) => index === 11 ? { status: "partial-state", targetBranch: "main", mergeOid: oid(30), recoveryPath: "/private/record", reason: "Failed" } : value));
   assert.match(partial, /Partial state — inspect manually; do not retry/);
   assert.match(partial, /\/private\/record/);
-  const blocked = render(base.map((value, index) => index === 14 ? true : value));
+  const blocked = render(base.map((value, index) => index === 13 ? true : value));
   assert.match(blocked, /Run check 1<\/button>/);
   assert.match(blocked, /disabled=""[^>]*>Run check 1/);
 });
