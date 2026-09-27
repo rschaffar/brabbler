@@ -12,6 +12,7 @@ import { readSessionGitWorkflow, validLocalBranchName, type GitWorkflowPolicy } 
 import { samePath } from "./paths";
 import type { SessionEntry } from "./types";
 import { addWorktree, resolveProject } from "./worktree";
+import { selectGitWorkspace } from "./git-workspace-selector";
 
 const execFileAsync = promisify(execFile);
 
@@ -113,8 +114,9 @@ export function createGitWorkspaceStartExtension(
       let creating = false;
       pi.registerTool({
         name: "git_workspace_start", label: "Start Git Workspace", executionMode: "sequential",
-        description: "Explicitly create a NEW local feature worktree from the saved session's local base branch. Supply a new branch name and the full current local base commit OID. Never moves or forks the chat, contacts a remote, or attaches an existing branch.",
+        description: "Explicitly create a NEW local feature worktree from the saved session's local base branch. Optionally select another registered worktree in this chat's repository as the clean creation source by workspaceBranch. Supply a new branch name and the full current local base commit OID. Any configured post-run chat transition still moves/forks this chat, not a chat in the source worktree. No remote operations or attaching an existing branch.",
         parameters: Type.Object({
+          workspaceBranch: Type.Optional(Type.String({ description: "Checked-out local branch identifying a registered source worktree; omit for this chat's checkout" })),
           branch: Type.String({ description: "New local feature branch name (must not exist)" }),
           expectedBaseOid: Type.String({ description: "Full current commit OID of the saved local base branch; refresh if it has changed" }),
         }),
@@ -151,9 +153,11 @@ export function createGitWorkspaceStartExtension(
             }
             if (readPendingGitWorkspaceTransition(entries)) return failure("A workspace transition is already pending");
             if (!validLocalBranchName(params.branch) || !oid(params.expectedBaseOid)) return failure("A new branch and full expected local base OID are required");
+            const workspace = await selectGitWorkspace(sessionCwd, params.workspaceBranch);
             let created: { path: string; branch: string };
             try {
-              created = await addWorktree(realCwd, { branch: params.branch, baseBranch: policy.baseBranch,
+              if (!samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) return failure("Source workspace changed");
+              created = await addWorktree(workspace, { branch: params.branch, baseBranch: policy.baseBranch,
                 expectedBaseOid: params.expectedBaseOid, mode: "create" });
             } catch {
               return failure("Workspace creation failed; inspect the local branch, base OID and clean checkout, then retry");

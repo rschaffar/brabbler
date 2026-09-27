@@ -135,9 +135,9 @@ export type SessionMessage = AgentMessage | SystemMessage;
 export type GitActionCandidate =
   | { kind: "preferences"; featureBranch: string; targets: string[]; checks: import("./git-workflow-policy").GitWorkflowCheck[]; current?: import("./agent-git-preferences").AgentGitPreferences }
   | { kind: "commit"; preview: import("./git-commit").GitCommitPreview; message: string; diff: import("./git-review").GitReviewDiff }
-  | { kind: "review"; review: import("./git-review").GitReview; selection: import("./git-review").GitReviewSelection; diff: import("./git-review").GitReviewDiff }
-  | { kind: "checks"; targetBranch: string; featureBranch: string; checks: import("./git-workflow-policy").GitWorkflowCheck[] }
-  | { kind: "integration"; plan: import("./git-integration").IntegrationPlan; receipts: import("./git-verification").VerificationReceipt[] };
+  | { kind: "review"; featureCwd: string; review: import("./git-review").GitReview; selection: import("./git-review").GitReviewSelection; diff: import("./git-review").GitReviewDiff }
+  | { kind: "checks"; featureCwd: string; targetCwd: string; targetBranch: string; featureBranch: string; checks: import("./git-workflow-policy").GitWorkflowCheck[] }
+  | { kind: "integration"; featureCwd: string; targetCwd: string; plan: import("./git-integration").IntegrationPlan; receipts: import("./git-verification").VerificationReceipt[] };
 
 export type ExtensionUiRequest =
   | {

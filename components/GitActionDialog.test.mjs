@@ -39,9 +39,22 @@ test("early chat preferences are not an operation approval", () => {
 });
 
 test("read-only comparison cannot be confused with a merge confirmation", () => {
-  const html = render({ kind: "review", review: { featureBranch: "feature", featureOid: oid("c"), targetBranch: "target", targetOid: oid("d"), mergeTreeOid: oid("b") }, selection: { kind: "merge" }, diff });
+  const html = render({ kind: "review", featureCwd: "/repo-worktrees/feature", review: { featureBranch: "feature", featureOid: oid("c"), targetBranch: "target", targetOid: oid("d"), mergeTreeOid: oid("b") }, selection: { kind: "merge" }, diff });
   assert.match(html, /Whole proposed merge/);
+  assert.match(html, /\/repo-worktrees\/feature/);
   assert.match(html, /does not approve or perform a merge/);
   assert.match(html, /I reviewed this comparison/);
   assert.doesNotMatch(html, /Approve exact commit|Confirm merge|Merge now/);
+});
+
+test("check and merge approval cards show both physical checkouts", () => {
+  const check = render({ kind: "checks", featureCwd: "/repo/feature", targetCwd: "/repo/target",
+    featureBranch: "feature", targetBranch: "target", checks: [{ label: "test", argv: ["npm", "test"] }] });
+  assert.match(check, /\/repo\/feature/);
+  assert.match(check, /\/repo\/target/);
+  const merge = render({ kind: "integration", featureCwd: "/repo/feature", targetCwd: "/repo/target", receipts: [],
+    plan: { review: { featureBranch: "feature", featureOid: oid("a"), targetBranch: "target", targetOid: oid("b"), mergeTreeOid: oid("c") },
+      diff, mergeOid: oid("d"), message: "Merge", planId: "plan", expiresAt: Date.now() + 1000 } });
+  assert.match(merge, /\/repo\/feature/);
+  assert.match(merge, /\/repo\/target/);
 });

@@ -53,13 +53,13 @@ export function GitActionDialog({ request, onRespond }: {
           <option value="retain">Retain worktree and branch</option><option value="offer">Offer separate cleanup review later</option>
         </select></label>
       </div> : checking ? <div className="space-y-2 text-xs">
-        <p>Feature: {candidate.featureBranch} → target: {candidate.targetBranch}</p>
+        <p>Feature: {candidate.featureBranch} ({candidate.featureCwd}) → target: {candidate.targetBranch} ({candidate.targetCwd})</p>
         <p>Checks run in this order from the feature checkout:</p>
         <ol className="list-inside list-decimal space-y-2">{candidate.checks.map((check, i) => <li key={i} className="break-all">{check.label}<pre className="ml-4 whitespace-pre-wrap break-all font-mono">{JSON.stringify(check.argv)}</pre></li>)}</ol>
       </div> : merging ? <div className="space-y-3 text-xs">
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 break-all">
-          <dt>Feature</dt><dd>{candidate.plan.review.featureBranch} · {candidate.plan.review.featureOid}</dd>
-          <dt>Target</dt><dd>{candidate.plan.review.targetBranch} · {candidate.plan.review.targetOid}</dd>
+          <dt>Feature</dt><dd>{candidate.plan.review.featureBranch} · {candidate.plan.review.featureOid} · {candidate.featureCwd}</dd>
+          <dt>Target</dt><dd>{candidate.plan.review.targetBranch} · {candidate.plan.review.targetOid} · {candidate.targetCwd}</dd>
           <dt>Result tree</dt><dd>{candidate.plan.review.mergeTreeOid}</dd>
           <dt>Merge commit</dt><dd>{candidate.plan.mergeOid}</dd>
           <dt>Message</dt><dd>{candidate.plan.message}</dd>
@@ -78,7 +78,7 @@ export function GitActionDialog({ request, onRespond }: {
         <dt>Complete paths</dt><dd className="break-all">{candidate.preview.paths.join(", ")}</dd>
         <dt>Message</dt><dd className="whitespace-pre-wrap break-words">{candidate.message}</dd>
       </dl> : <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-xs">
-        <dt>Feature</dt><dd className="break-all">{candidate.review.featureBranch} · <span className="font-mono">{candidate.review.featureOid}</span></dd>
+        <dt>Feature</dt><dd className="break-all">{candidate.review.featureBranch} · <span className="font-mono">{candidate.review.featureOid}</span> · {candidate.featureCwd}</dd>
         <dt>Target</dt><dd className="break-all">{candidate.review.targetBranch} · <span className="font-mono">{candidate.review.targetOid}</span></dd>
         <dt>Merge tree</dt><dd className="break-all font-mono">{candidate.review.mergeTreeOid}</dd>
         <dt>Comparison</dt><dd className="break-all">{candidate.selection.kind === "merge"
