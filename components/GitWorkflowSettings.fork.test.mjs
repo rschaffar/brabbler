@@ -9,7 +9,7 @@ const shell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8")
 test("fork is a separate, confirmed action for a registered checkout and assistant leaf", () => {
   assert.match(settings, /availableTargets\.some\(\(item\) => item\.path === forkTarget\)/);
   assert.match(settings, /forkDisabled = moveDisabled \|\| !assistantLeafId/);
-  assert.match(settings, /setForkTarget\(item\.path\)/);
+  assert.match(settings, /setForkTarget\(destination\)/);
   assert.match(settings, /onClick=\{\(\) => void confirmFork\(\)\}/);
   assert.match(settings, /The original chat stays in/);
   assert.match(settings, /Uncommitted source files stay there and are not copied/);

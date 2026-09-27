@@ -6,19 +6,25 @@ const settings = await readFile(new URL("./GitWorkflowSettings.tsx", import.meta
 const chat = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 const shell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 
-test("continuation lists registered worktrees for the persisted chat cwd, not sidebar cwd", () => {
+test("continuation selects a registered worktree for the persisted chat cwd, not sidebar cwd", () => {
   assert.match(settings, /const actualCwd = sessionId \? value\?\.cwd : null/);
   assert.match(settings, /\/api\/worktrees\?cwd=\$\{encodeURIComponent\(actualCwd\)\}/);
   assert.match(settings, /worktrees\.isTopLevel && worktrees\.currentWorktreePath/);
   assert.match(settings, /item\.path !== worktrees\.currentWorktreePath/);
   assert.match(settings, /actual chat checkout/);
+  assert.match(settings, /<select className=\{inputClass\} value=\{availableTargets\.some/);
+  assert.match(settings, /<option key=\{item\.path\} value=\{item\.path\} disabled=\{item\.path === worktrees\.currentWorktreePath\}/);
+  assert.doesNotMatch(settings, /worktrees\.worktrees\.map\(\(item\) => \(\s*<li/);
 });
 
 test("move requires explicit confirmation and cautions about source changes", () => {
   assert.match(settings, /\/api\/git\/status\?cwd=\$\{encodeURIComponent\(actualCwd\)\}/);
   assert.match(settings, /changedCount === null/);
   assert.match(settings, /Uncommitted files stay in the source checkout/);
-  assert.match(settings, /setMoveTarget\(item\.path\)/);
+  assert.match(settings, /setDestination\(event\.target\.value\)/);
+  assert.match(settings, /setMoveTarget\(destination\)/);
+  assert.match(settings, /setForkTarget\(destination\)/);
+  assert.match(settings, /setMoveTarget\(null\); setForkTarget\(null\)/);
   assert.match(settings, /availableTargets\.some\(\(item\) => item\.path === moveTarget\)/);
   assert.match(settings, /method: "POST"[\s\S]*?JSON\.stringify\(\{ cwd: moveTarget \}\)/);
   assert.match(settings, /onClick=\{\(\) => void confirmMove\(\)\}/);

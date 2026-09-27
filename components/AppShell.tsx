@@ -375,6 +375,7 @@ export function AppShell() {
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | "git-workspace" | "git-commit" | "git-merge" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [gitControlsHost, setGitControlsHost] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!sessionHasBranches) {
@@ -1244,6 +1245,8 @@ export function AppShell() {
     activeNewSessionDraftKeyRef.current = newSessionDraftKey;
   }, [newSessionDraftKey]);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
+  const gitControlsPanel = activeTopPanel === "git-workspace" ? "workspace" : activeTopPanel === "git-commit" ? "commit" : activeTopPanel === "git-merge" ? "merge" : null;
+  const gitControlsTitle = gitControlsPanel === "workspace" ? "Workspace workflow" : gitControlsPanel === "commit" ? "Review & commit" : "Local integration review";
   const mobileSessionTitle = selectedSession
     ? selectedSession.name || (skillExpansionToCommand(selectedSession.firstMessage) ?? selectedSession.firstMessage).slice(0, 50) || selectedSession.id.slice(0, 12)
     : translate("i18n.newSession");
@@ -2187,7 +2190,7 @@ export function AppShell() {
               style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0,
                 border: 0, borderRight: "1px solid var(--border)", cursor: "pointer",
                 background: activeTopPanel === panel ? "var(--bg-selected)" : "none",
-                color: activeTopPanel === panel ? "var(--accent)" : "var(--text-muted)" }}>
+                color: "var(--text-muted)" }}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon}</svg>
             </button>
           ))}
@@ -2548,6 +2551,15 @@ export function AppShell() {
 
         {/* Chat content */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex" }}>
+          {showChat && gitControlsPanel && (
+            <section id="chat-git-controls" role="region" aria-label={`${gitControlsPanel} controls`} className="activity-overview git-controls-overview">
+              <div className="activity-header">
+                <div><h1>{gitControlsTitle}</h1><small>Local Git · {selectedSession ? "this chat" : "new chat"}</small></div>
+                <button type="button" className="activity-close" onClick={closeGitControls} aria-label={`Close ${gitControlsTitle}`} title={`Close ${gitControlsTitle}`}>×</button>
+              </div>
+              <div className="git-controls-body" ref={setGitControlsHost} />
+            </section>
+          )}
           {activeOverview === "activity" && (
             <ActivityOverview
               sessions={sessionsWithSelection}
@@ -2575,7 +2587,7 @@ export function AppShell() {
               hidden={isMobile && !overviewMobileList}
             />
           )}
-          <div inert={Boolean(activeOverview && isMobile && overviewMobileList)} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
+          <div inert={Boolean((activeOverview && isMobile && overviewMobileList) || (gitControlsPanel && isMobile))} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
           {showChat ? (
             <ChatWindow
               key={sessionKey}
@@ -2594,7 +2606,8 @@ export function AppShell() {
               onSessionForked={handleSessionForked}
               onSessionMoved={handleSessionMoved}
               onSessionForkedToWorktree={handleSessionForkedToWorktree}
-              gitControlsPanel={activeTopPanel === "git-workspace" ? "workspace" : activeTopPanel === "git-commit" ? "commit" : activeTopPanel === "git-merge" ? "merge" : null}
+              gitControlsPanel={gitControlsPanel}
+              gitControlsHost={gitControlsHost}
               onGitControlsClose={closeGitControls}
               modelsRefreshKey={modelsRefreshKey}
               chatInputRef={chatInputRef}

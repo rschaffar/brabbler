@@ -57,6 +57,7 @@ interface Props {
   onSessionMoved?: (sessionId: string, cwd: string) => Promise<void>;
   onSessionForkedToWorktree?: (sessionId: string, cwd: string) => void;
   gitControlsPanel?: "workspace" | "commit" | "merge" | null;
+  gitControlsHost?: HTMLElement | null;
   onGitControlsClose?: () => void;
   modelsRefreshKey?: number;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
@@ -253,7 +254,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionMoved, onSessionForkedToWorktree, gitControlsPanel = null, onGitControlsClose, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionMoved, onSessionForkedToWorktree, gitControlsPanel = null, gitControlsHost, onGitControlsClose, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
@@ -1066,11 +1067,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         <NoticeShelf notices={notices} floating onPauseChange={setNoticePaused} />
       </div>
 
-      {messageCwd && gitControlsPanel && <div id="chat-git-controls" role="region" aria-label={`${gitControlsPanel} controls`}
-          className="absolute right-2 top-0 z-50 max-h-[min(75vh,760px)] w-[min(96vw,850px)] overflow-y-auto rounded-lg border border-border bg-bg shadow-xl">
-          <div className="flex justify-end border-b border-border px-3 py-2">
-            <button type="button" onClick={onGitControlsClose} className="text-xs text-text-muted hover:text-text">Close Git controls</button>
-          </div>
+      {messageCwd && gitControlsPanel && gitControlsHost && createPortal(<>
           {gitControlsPanel === "commit" && session && !session.transient && session.relation?.kind !== "subagent" &&
             <GitCommitPanel key={`commit:${session.id}:${session.cwd}`} sessionId={session.id} cwd={session.cwd}
               busy={sessionBusy || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)} />}
@@ -1088,7 +1085,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
               && messages[entryIds.indexOf(activeLeafId)]?.role === "assistant" ? activeLeafId : null}
             busy={sessionBusy || streamState.isStreaming || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)}
           />}
-        </div>}
+        </>, gitControlsHost)}
       <ContextReloadNotice sessionId={session?.id ?? null} busy={sessionBusy || isCompacting} />
       {possibleInterruptedRun && (
         <div role="status" className="mx-4 mt-3 flex items-start gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-text">

@@ -65,7 +65,6 @@ function FileDiff({ cwd, file }: { cwd: string; file: GitFileStatus }) {
 
 /** A deliberate human review surface; the read-only diff is NOT the commit candidate. */
 export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
-  const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<GitStatusResponse | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
@@ -86,7 +85,6 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
   }, [busy]);
 
   useEffect(() => {
-    if (!open) return;
     const controller = new AbortController();
     void fetch(`/api/git/status?${new URLSearchParams({ cwd })}`, { cache: "no-store", signal: controller.signal })
       .then(responseBody<GitStatusResponse>).then((value) => {
@@ -95,7 +93,7 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
         if (!controller.signal.aborted) { setStatus(null); setStatusError(cause instanceof Error ? cause.message : String(cause)); }
       });
     return () => controller.abort();
-  }, [cwd, revision, open]);
+  }, [cwd, revision]);
 
   const refresh = () => {
     invalidate();
@@ -152,9 +150,8 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
     } finally { operationRef.current = false; setOperation(null); }
   }
 
-  return <section className="mx-auto w-full max-w-[820px] min-w-0 border-t border-border px-4 py-1 text-sm text-text">
-    <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="min-h-8 text-accent hover:underline">Review &amp; commit</button>
-    {open && <div className="max-h-[55vh] space-y-2 overflow-y-auto pb-2">
+  return <section className="git-panel-content min-w-0 text-sm text-text" aria-label="Review & commit panel">
+    <div className="space-y-2">
       <p className="text-xs text-text-muted">Session checkout: <span className="break-all font-mono">{cwd}</span>. Nothing is staged or committed until you confirm.</p>
       <button type="button" disabled={operation !== null} onClick={refresh} className="text-xs text-accent hover:underline disabled:opacity-50">Refresh changed files</button>
       {statusError && <p role="alert" className="text-red-400">Status unavailable: {statusError}</p>}
@@ -208,6 +205,6 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
         {result.status === "partial-success" && <p className="text-amber-500">{result.reason}. Inspect the checkout before further changes; do not retry blindly.</p>}
         <dl className="break-all font-mono"><dt>Commit ID</dt><dd>{result.commit}</dd><dt>Tree</dt><dd>{result.tree}</dd><dt>Parent(s)</dt><dd>{result.parents.join(", ") || "none"}</dd><dt>Author email</dt><dd>{result.authorEmail}</dd></dl>
       </div>}
-    </div>}
+    </div>
   </section>;
 }

@@ -71,7 +71,6 @@ interface Props {
 }
 
 export function GitWorkflowSettings({ cwd, sessionId, setNewChatOverride, busy, transient, onSessionMoved, onSessionForkedToWorktree, assistantLeafId }: Props) {
-  const [open, setOpen] = useState(false);
   const [value, setValue] = useState<WorkflowResponse | null>(null);
   const [draft, setDraft] = useState<Draft>({ ...emptyDraft });
   const [choice, setChoice] = useState<Choice>("project");
@@ -85,6 +84,7 @@ export function GitWorkflowSettings({ cwd, sessionId, setNewChatOverride, busy, 
   const [changedCount, setChangedCount] = useState<number | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<string | null>(null);
+  const [destination, setDestination] = useState("");
   const [moving, setMoving] = useState(false);
   const [forkTarget, setForkTarget] = useState<string | null>(null);
   const [forking, setForking] = useState(false);
@@ -127,10 +127,11 @@ export function GitWorkflowSettings({ cwd, sessionId, setNewChatOverride, busy, 
     setWorktrees(null);
     setChangedCount(null);
     setMoveTarget(null);
+    setDestination("");
     setMoveError(null);
     setForkTarget(null);
     setForkError(null);
-    if (!open || !sessionId || !actualCwd || transient) return;
+    if (!sessionId || !actualCwd || transient) return;
     const controller = new AbortController();
     const get = async <T,>(url: string): Promise<T> => {
       const response = await fetch(url, { signal: controller.signal, cache: "no-store" });
@@ -149,7 +150,7 @@ export function GitWorkflowSettings({ cwd, sessionId, setNewChatOverride, busy, 
       if (!controller.signal.aborted) setMoveError(cause instanceof Error ? cause.message : String(cause));
     });
     return () => controller.abort();
-  }, [open, sessionId, actualCwd, transient, moveRevision]);
+  }, [sessionId, actualCwd, transient, moveRevision]);
 
   const disabled = loading || saving || busy || moving || forking;
   const moveDisabled = disabled || Boolean(transient) || changedCount === null;
@@ -275,11 +276,8 @@ export function GitWorkflowSettings({ cwd, sessionId, setNewChatOverride, busy, 
   const inputClass = "min-w-0 w-full rounded border border-border bg-bg px-2 py-1 text-text disabled:opacity-50";
   const labelClass = "flex min-w-0 flex-col gap-1 text-xs text-text-muted";
   return (
-    <section className="mx-auto w-full max-w-[820px] min-w-0 px-4 py-1 text-xs text-text" aria-label="Workspace workflow settings">
-      <button type="button" className="rounded px-1 py-1 text-accent hover:underline focus-visible:outline focus-visible:outline-2" aria-expanded={open} onClick={() => setOpen(!open)}>
-        Workspace workflow {open ? "▴" : "▾"}
-      </button>
-      {open && <div className="max-h-[min(60vh,560px)] overflow-y-auto rounded-md border border-border bg-bg p-3 shadow-sm">
+    <section className="git-panel-content min-w-0 text-xs text-text" aria-label="Workspace workflow settings">
+      <div className="space-y-3">
         <p className="mb-2 break-all text-text-muted">
           {sessionId ? "Actual session cwd" : "New session cwd"}: <code>{value?.cwd ?? cwd}</code>
         </p>
@@ -304,15 +302,26 @@ export function GitWorkflowSettings({ cwd, sessionId, setNewChatOverride, busy, 
                 : "No changed files detected in the source checkout. Uncommitted files stay in the source; they do not follow the session."}</p>
               {!worktrees.isTopLevel || !worktrees.currentWorktreePath ? <p className="mt-1 text-text-muted">The session must be at a registered checkout root to continue into another worktree.</p>
                 : availableTargets.length === 0 ? <p className="mt-1 text-text-muted">No other registered worktrees are available.</p>
-                : <ul className="mt-2 space-y-1">{worktrees.worktrees.map((item) => (
-                  <li key={item.path} className="flex flex-wrap items-center gap-2 break-all">
-                    <span><code>{item.path}</code> · {item.branch ?? "detached HEAD"}{item.isMain ? " · main checkout" : ""}{item.path === worktrees.currentWorktreePath ? " · actual chat checkout" : ""}</span>
-                    {item.path !== worktrees.currentWorktreePath && <>
-                      <button type="button" disabled={moveDisabled} onClick={() => { setMoveTarget(item.path); setForkTarget(null); setMoveError(null); }} className="rounded border border-border px-2 py-1 text-accent disabled:opacity-50">Continue here…</button>
-                      <button type="button" disabled={forkDisabled} onClick={() => { setForkTarget(item.path); setMoveTarget(null); setForkError(null); }} className="rounded border border-border px-2 py-1 text-accent disabled:opacity-50">Fork chat here…</button>
-                    </>}
-                  </li>
-                ))}</ul>}
+                : <div className="mt-2 space-y-2">
+                    <label className={labelClass}>Destination worktree
+                      <select className={inputClass} value={availableTargets.some((item) => item.path === destination) ? destination : ""}
+                        disabled={moving || forking} onChange={(event) => {
+                          setDestination(event.target.value);
+                          setMoveTarget(null); setForkTarget(null); setMoveError(null); setForkError(null);
+                        }}>
+                        <option value="">Choose a worktree…</option>
+                        {worktrees.worktrees.map((item) => <option key={item.path} value={item.path} disabled={item.path === worktrees.currentWorktreePath}>
+                          {item.branch ?? "detached HEAD"}{item.isMain ? " · main checkout" : ""}{item.path === worktrees.currentWorktreePath ? " · actual chat checkout" : ""} · {item.path}
+                        </option>)}
+                      </select>
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" disabled={moveDisabled || !destination || !availableTargets.some((item) => item.path === destination)}
+                        onClick={() => { setMoveTarget(destination); setForkTarget(null); setMoveError(null); }} className="rounded border border-border px-2 py-1 text-accent disabled:opacity-50">Continue here…</button>
+                      <button type="button" disabled={forkDisabled || !destination || !availableTargets.some((item) => item.path === destination)}
+                        onClick={() => { setForkTarget(destination); setMoveTarget(null); setForkError(null); }} className="rounded border border-border px-2 py-1 text-accent disabled:opacity-50">Fork chat here…</button>
+                    </div>
+                  </div>}
               {forkTarget && availableTargets.some((item) => item.path === forkTarget) && <div className="mt-2 rounded border border-amber-500/50 p-2">
                 <p>Fork this chat into <code className="break-all">{forkTarget}</code>? The original chat stays in <code className="break-all">{actualCwd}</code>. Uncommitted source files stay there and are not copied. No worktree is created or source checkout files moved.</p>
                 <div className="mt-2 flex gap-2">
@@ -343,7 +352,7 @@ export function GitWorkflowSettings({ cwd, sessionId, setNewChatOverride, busy, 
                 <label key={key} className="flex items-center gap-1"><input type="radio" name="workflow-scope" checked={choice === key} onChange={() => choose(key as Choice)} />{label}</label>
               ))}
             </fieldset>
-            {showFields && <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+            {showFields && <div className="grid min-w-0 grid-cols-1 gap-3">
               <label className={labelClass}>Checkout mode
                 <select className={inputClass} disabled={disabled} value={draft.mode} onChange={(e) => update("mode", e.target.value as Draft["mode"])}>
                   <option value="worktree">Worktree from local base branch</option><option value="current">Current branch / checkout</option>
@@ -406,7 +415,7 @@ export function GitWorkflowSettings({ cwd, sessionId, setNewChatOverride, busy, 
           {error && <p role="alert" className="mt-2 text-red-400">{error}</p>}
           {feedback && <p role="status" className="mt-2 text-text-muted">{feedback}</p>}
         </>}
-      </div>}
+      </div>
     </section>
   );
 }

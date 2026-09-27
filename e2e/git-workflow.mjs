@@ -20,8 +20,10 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   };
   await openGitControls("Workspace workflow");
   const workflow = page.getByRole("region", { name: "Workspace workflow settings" });
-  await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   await workflow.getByText(`Actual session cwd: ${cwd}`).waitFor();
+  const workspaceSidecar = page.getByRole("region", { name: "workspace controls" });
+  assert.match(await workspaceSidecar.getAttribute("class"), /activity-overview/);
+  assert.ok((await workspaceSidecar.boundingBox()).width <= 390, "Git controls should use an Activity-sized side panel on desktop");
   await workflow.getByText(/No saved session policy/).waitFor();
   await workflow.getByLabel("Require current branch (optional)").fill("feature");
   await workflow.getByLabel("Local integration target (optional)").fill("target");
@@ -34,7 +36,6 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   // New-chat composer is opened through the UI; both preference saves must work without a document reload.
   await page.getByRole("button", { name: "New", exact: true }).click();
   await openGitControls("Workspace workflow");
-  await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   await workflow.getByText(`New session cwd: ${cwd}`).waitFor();
   await workflow.getByLabel("Require current branch (optional)").fill("feature");
   await workflow.getByLabel("Local integration target (optional)").fill("target");
@@ -49,10 +50,8 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   await page.goto(`${base}/?session=${sessionId}`, { waitUntil: "domcontentloaded" });
   await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
   await openGitControls("Workspace workflow");
-  await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   await openGitControls("Local integration review");
   const review = page.getByRole("region", { name: "Local integration review" });
-  await review.getByRole("button", { name: "Local integration review" }).click();
   await review.getByText("Feature branch").waitFor();
   assert.match(await review.innerText(), /feature[\s\S]*Target branch[\s\S]*target/);
   const commits = review.getByRole("button", { name: /^Commit \d+:/ });
@@ -90,9 +89,32 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   assert.match(await patch.innerText(), /First feature patch/, "consecutive range contains both commits");
   console.log("PASS: project and session workflow preferences, whole/single/range read-only merge review");
 
+  // Inspect the same branch pair on a phone before integration advances the target.
+  const originalViewport = page.viewportSize();
+  try {
+    await page.setViewportSize({ width: 390, height: 800 });
+    for (const [name, regionName, content] of [
+      ["Workspace workflow", "workspace controls", "Actual session cwd"],
+      ["Review & commit", "commit controls", "Session checkout"],
+      ["Local integration review", "merge controls", "Session checkout"],
+    ]) {
+      const icon = page.getByRole("button", { name, exact: true }).first();
+      const rect = await icon.boundingBox();
+      assert.ok(rect && rect.x >= 0 && rect.x + rect.width <= 390 && rect.y < 80, `${name} top-bar icon should remain reachable at mobile width`);
+      await openGitControls(name);
+      const region = page.getByRole("region", { name: regionName });
+      await region.getByText(content, { exact: false }).first().waitFor();
+      const panelRect = await region.boundingBox();
+      assert.ok(panelRect && panelRect.width >= 380 && panelRect.x >= 0 && panelRect.x + panelRect.width <= 390, `${name} should fill mobile chat width`);
+      await region.getByRole("button", { name: `Close ${name}` }).click();
+      assert.equal(await icon.getAttribute("aria-expanded"), "false");
+    }
+  } finally {
+    if (originalViewport) await page.setViewportSize(originalViewport);
+  }
+
   await openGitControls("Review & commit");
   const commitPanel = page.getByRole("region", { name: "commit controls" });
-  await commitPanel.getByRole("button", { name: "Review & commit" }).click();
   await commitPanel.getByText("draft.txt", { exact: false }).waitFor();
   await commitPanel.getByRole("checkbox").check();
   await commitPanel.getByLabel("Commit message").fill("E2E manual commit");
@@ -110,7 +132,6 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
 
   // Saving a check alone neither runs it nor grants integration approval.
   await openGitControls("Workspace workflow");
-  await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   await workflow.getByRole("button", { name: /^Add check/ }).click();
   await workflow.getByLabel("Label", { exact: true }).fill("Fixture verification");
   await workflow.getByLabel("Executable (one path or name)").fill(process.execPath);
@@ -118,7 +139,6 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   await workflow.getByRole("button", { name: "Save session policy" }).click();
   await workflow.getByText(/Saved for this session/).waitFor();
   await openGitControls("Local integration review");
-  await review.getByRole("button", { name: "Local integration review" }).click();
   await review.getByRole("button", { name: "Refresh review" }).click();
   await review.getByRole("button", { name: "Run check 1" }).waitFor();
   const targetBeforeVerification = execFileSync("git", ["-C", targetWorktree, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
@@ -137,30 +157,23 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   console.log("PASS: explicit check, exact proposal, separately approved unsigned local merge");
 
   await openGitControls("Workspace workflow");
-  await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   const continuation = workflow.getByLabel("Continue session in another worktree");
-  await continuation.getByText(targetWorktree, { exact: false }).first().waitFor();
+  await continuation.getByLabel("Destination worktree").selectOption(targetWorktree);
+  assert.equal(await continuation.getByRole("button", { name: "Continue here…" }).count(), 1);
+  assert.equal(await continuation.getByRole("button", { name: "Fork chat here…" }).count(), 1);
+  await continuation.getByRole("button", { name: "Continue here…" }).click();
+  await continuation.getByRole("button", { name: "Confirm continuation" }).waitFor();
+  await continuation.getByLabel("Destination worktree").selectOption("");
+  assert.equal(await continuation.getByRole("button", { name: "Confirm continuation" }).count(), 0, "Changing destination cancels the pending approval");
+  await continuation.getByLabel("Destination worktree").selectOption(targetWorktree);
   await continuation.getByRole("button", { name: "Continue here…" }).click();
   await continuation.getByRole("button", { name: "Confirm continuation" }).click();
   await page.waitForFunction((id) => document.querySelector(`[data-session-id="${id}"]`)?.textContent?.includes("target"), sessionId);
   await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
   await openGitControls("Workspace workflow");
-  await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   await workflow.getByText(`Actual session cwd: ${targetWorktree}`).waitFor();
   const moved = await api(`/api/git/workflow?sessionId=${sessionId}`);
   assert.equal(moved.cwd, targetWorktree);
   assert.equal((await api("/api/sessions?force=1")).sessions.find((session) => session.id === sessionId)?.cwd, targetWorktree);
   console.log("PASS: same chat continues in registered target worktree");
-
-  const originalViewport = page.viewportSize();
-  try {
-    await page.setViewportSize({ width: 390, height: 800 });
-    for (const name of ["Workspace workflow", "Review & commit", "Local integration review"]) {
-      const icon = page.getByRole("button", { name, exact: true }).first();
-      const rect = await icon.boundingBox();
-      assert.ok(rect && rect.x >= 0 && rect.x + rect.width <= 390 && rect.y < 80, `${name} top-bar icon should remain reachable at mobile width`);
-    }
-  } finally {
-    if (originalViewport) await page.setViewportSize(originalViewport);
-  }
 }
