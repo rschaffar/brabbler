@@ -4,6 +4,15 @@ import test from "node:test";
 
 const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 const mobileHookSource = await readFile(new URL("../hooks/useIsMobile.ts", import.meta.url), "utf8");
+const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+test("shows the selected session title and project beneath the mobile toolbar only in chat", () => {
+  assert.match(source, /selectedSession\.name \|\| \(skillExpansionToCommand\(selectedSession\.firstMessage\) \?\? selectedSession\.firstMessage\)\.slice\(0, 50\) \|\| selectedSession\.id\.slice\(0, 12\)/);
+  assert.match(source, /: translate\("i18n\.newSession"\)/);
+  assert.match(source, /selectedSession\?\.projectRoot \?\? selectedSession\?\.cwd \?\? effectiveNewSessionCwd/);
+  assert.match(source, /\{isMobile && showChat && !\(activeOverview && overviewMobileList\) && \([\s\S]*?data-mobile-session-identity="true"[\s\S]*?mobile-session-title[\s\S]*?mobile-session-project/);
+  assert.match(styles, /@media \(max-width: 640px\) \{[\s\S]*?\.mobile-session-title,\s*\.mobile-session-project \{[\s\S]*?text-overflow: ellipsis/);
+});
 
 test("keeps action icons inline in medium mobile sidebars", () => {
   assert.match(mobileHookSource, /NARROW_MOBILE_QUERY = "\(max-width: 480px\)"/);

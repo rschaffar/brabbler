@@ -1924,6 +1924,27 @@ span.token.table {
 
 /* Mobile sidebar: slide in/out as overlay */
 @media (max-width: 640px) {
+  .mobile-session-identity {
+    min-width: 0;
+    padding: 7px 12px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .mobile-session-title,
+  .mobile-session-project {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-session-title {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .mobile-session-project {
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-size: 11px;
+  }
   .chat-stats-center {
     display: none !important;
   }

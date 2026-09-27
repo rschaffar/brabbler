@@ -31,6 +31,7 @@ import { useAudio } from "@/hooks/useAudio";
 import { copyText } from "@/lib/clipboard";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { getFileName } from "@/lib/file-paths";
+import { skillExpansionToCommand } from "@/lib/slash-display";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import {
   claimExtensionAttentionNotification,
@@ -1224,6 +1225,11 @@ export function AppShell() {
     activeNewSessionDraftKeyRef.current = newSessionDraftKey;
   }, [newSessionDraftKey]);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
+  const mobileSessionTitle = selectedSession
+    ? selectedSession.name || (skillExpansionToCommand(selectedSession.firstMessage) ?? selectedSession.firstMessage).slice(0, 50) || selectedSession.id.slice(0, 12)
+    : translate("i18n.newSession");
+  const mobileProjectPath = selectedSession?.projectRoot ?? selectedSession?.cwd ?? effectiveNewSessionCwd;
+  const mobileProjectName = mobileProjectPath ? getFileName(mobileProjectPath) || mobileProjectPath : null;
   const projectTrustCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
@@ -2478,6 +2484,14 @@ export function AppShell() {
           )}
 
         </div>
+        {isMobile && showChat && !(activeOverview && overviewMobileList) && (
+          <div className="mobile-session-identity" data-mobile-session-identity="true">
+            <div className="mobile-session-title" title={mobileSessionTitle}>{mobileSessionTitle}</div>
+            {mobileProjectName && (
+              <div className="mobile-session-project" title={mobileProjectPath ?? undefined}>{mobileProjectName}</div>
+            )}
+          </div>
+        )}
         {isMobile && !(activeOverview && overviewMobileList) && renderProjectTrustWarning(true)}
         </div>
 
