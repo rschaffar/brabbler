@@ -23,4 +23,4 @@ The agent Git review plan owns the agent tool and future cleanup transaction. Th
 
 - [x] One click on each Git icon reveals its complete Activity-style side panel with no second disclosure link; closing it restores the chat on desktop and mobile. Evidence: Git browser fixture and panel placement test.
 - [x] A single registered destination can be selected; continuation and fork remain distinct, idle-only, explicitly confirmed operations tied to the real session cwd. Evidence: move/fork tests and Git browser fixture.
-- [ ] Repeat required checks on the committed feature tip; integration into local `rst-main` still requires separate exact-state approval.
+- [x] Repeat required checks on the committed feature tip; integration into local `rst-main` still requires separate exact-state approval. Evidence: `git workflow verify` passed all four checks for `620c25c241a362a23dced55f99b04f02324abb83` (full E2E on retry after an intermittent pre-existing reading-offset timeout).
