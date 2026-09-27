@@ -12,8 +12,19 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await graph.getByText("feature", { exact: true }).waitFor();
   await graph.getByRole("button", { name: /second feature/ }).click();
   const detail = page.getByRole("region", { name: "Git commit details" });
+  await detail.getByRole("button", { name: /base\.txt/ }).click();
+  const split = detail.getByRole("region", { name: "Side-by-side diff" });
+  await split.locator(".diff-code-delete").getByText("Base fixture").waitFor();
+  await split.locator(".diff-code-insert").getByText("Revised base fixture").waitFor();
+  assert.ok((await split.locator(".diff-gutter").count()) >= 2, "Both sides have line numbers");
+  await detail.getByRole("button", { name: "Unified" }).click();
+  await detail.getByRole("region", { name: "Unified diff" }).waitFor();
+  await detail.getByRole("button", { name: "Raw patch" }).click();
+  await detail.getByText(/-Base fixture/).waitFor();
+  await detail.getByRole("button", { name: "Side by side" }).click();
+  await split.waitFor();
   await detail.getByRole("button", { name: /second\.txt/ }).click();
-  await detail.getByText(/\+Second feature patch/).waitFor();
+  await detail.getByText("Second feature patch", { exact: true }).waitFor();
 
   const delayOldHistory = async (route) => {
     const query = new URL(route.request().url()).searchParams;
@@ -44,7 +55,7 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
   await graph.getByRole("button", { name: /base fixture/ }).click();
   await detail.getByRole("button", { name: /base\.txt/ }).click();
-  await detail.getByText(/\+Base fixture/).waitFor();
+  await detail.getByRole("region", { name: "Side-by-side diff" }).getByText("Base fixture", { exact: true }).waitFor();
   await page.getByRole("button", { name: "New", exact: true }).click();
   await explorer.getByText(/target · [0-9a-f]{10}/).waitFor();
   assert.equal(await page.getByText("Ready to review Git workflow", { exact: true }).count(), 0,
@@ -52,6 +63,12 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   const viewport = page.viewportSize();
   try {
     await page.setViewportSize({ width: 390, height: 844 });
+    const mobileDiff = detail.getByRole("region", { name: "Side-by-side diff" });
+    await page.waitForFunction(() => {
+      const diff = document.querySelector('[aria-label="Side-by-side diff"]');
+      return diff && diff.clientWidth <= innerWidth && diff.scrollWidth > diff.clientWidth;
+    });
+    assert.ok(await mobileDiff.isVisible(), "Side-by-side diff remains scrollable on mobile");
     await page.locator("#file-panel").getByRole("button", { name: "Hide file panel", exact: true }).click();
     const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
     if (await showSidebar.isVisible()) await showSidebar.click();

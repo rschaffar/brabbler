@@ -16,6 +16,6 @@ export async function checkIntegratedGitGraph(page, targetWorktree) {
   const detail = page.getByRole("region", { name: "Git commit details" });
   await detail.getByText("Merge commit · changes vs first parent").waitFor();
   await detail.getByRole("button", { name: /second\.txt/ }).click();
-  await detail.getByText(/\+Second feature patch/).waitFor();
+  await detail.getByRole("region", { name: "Side-by-side diff" }).getByText("Second feature patch", { exact: true }).waitFor();
   console.log("PASS: Git Explorer inspects a merged commit's first-parent file patch");
 }

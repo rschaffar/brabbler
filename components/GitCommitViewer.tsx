@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import type { ExplorerFile } from "@/lib/git-explorer";
+
+// Keep the diff parser/renderer out of the normal chat and sidebar bundles.
+const CommittedPatchDiff = dynamic(() => import("./CommittedPatchDiff").then((module) => module.CommittedPatchDiff), {
+  ssr: false,
+  loading: () => <p role="status" className="mt-2 text-xs text-text-muted">Preparing diff…</p>,
+});
 
 type Detail = { oid: string; parents: string[]; author: string; date: string; message: string; files: ExplorerFile[] };
 type Patch = { patch: string; hasBinaryChanges: boolean };
@@ -65,8 +72,9 @@ export function GitCommitViewer({ cwd, head, oid }: { cwd: string; head: string;
         <h3 className="break-all font-medium">{selectedPath}</h3>
         {activeError && <p role="alert" className="mt-2 text-red-400">{activeError}</p>}
         {!activePatch && !activeError && <p role="status" className="mt-2 text-text-muted">Loading patch…</p>}
-        {activePatch?.hasBinaryChanges && <p className="mt-2 text-xs text-text-muted">Binary changes are summarized; file contents are not shown.</p>}
-        {activePatch && <pre className="mt-2 overflow-auto rounded border border-border bg-bg p-3 font-mono text-xs text-text">{activePatch.patch}</pre>}
+        {activePatch && <CommittedPatchDiff key={selectedPath} patch={activePatch.patch}
+          hasBinaryChanges={activePatch.hasBinaryChanges}
+          before={detail.parents[0]?.slice(0, 8) ?? "empty tree"} after={oid.slice(0, 8)} />}
       </div>}
     </>}
   </section>;

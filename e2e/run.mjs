@@ -174,7 +174,8 @@ try {
     writeFileSync(join(gitProject, "first.txt"), "First feature patch\n");
     git("add", "first.txt"); commit("first feature");
     writeFileSync(join(gitProject, "second.txt"), "Second feature patch\n");
-    git("add", "second.txt"); commit("second feature");
+    writeFileSync(join(gitProject, "base.txt"), "Revised base fixture\n");
+    git("add", "second.txt", "base.txt"); commit("second feature");
     writeFileSync(join(gitProject, "draft.txt"), "Manual commit fixture\n");
     git("worktree", "add", targetWorktree, "target");
     writeSession(GIT, [message("root", null, "user", "E2E Git workflow conversation"),
