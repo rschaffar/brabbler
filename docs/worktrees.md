@@ -21,10 +21,16 @@ Use the worktree switcher to choose which checkout Pi Web should use for new wor
 Switching worktrees affects:
 
 - New sessions started from the sidebar.
-- The file Explorer.
-- File mentions inserted from the Explorer.
+- The File Explorer and Git Explorer.
+- File mentions inserted from the File Explorer.
 
 Existing sessions stay grouped under the same project. Opening an existing session moves the effective working directory back to that session's checkout.
+
+### Browse the selected worktree's Git history
+
+In the sidebar Explorer pane, switch **Files** to **Git**. The Git Explorer follows the checkout selected by the worktree switcher, even when a chat from another checkout remains open. It needs no open chat, saved integration target, or workflow policy. Its read-only graph shows the current local branch's reachable commits in topological order, with merge lanes, local branch labels and older-history pages. Select a commit to open its author, message, and changed files in a right-panel tab; select a file there to see the bounded committed patch against the commit's first parent (or the empty tree for a root commit). **Refresh** captures a new HEAD after commits or branch changes. Binary files get a summary; oversized patches fail rather than showing partial output. Detached HEAD and non-root directories cannot be browsed. This does not read uncommitted files, run checks, change branches, merge, or contact remotes. Session-bound **Local integration review** is a separate workflow.
+
+The graph layout adapts [binaryplease/git-graph](https://github.com/binaryplease/git-graph) under the MIT license (`lib/git-graph-layout.LICENSE`); Pi Web runs its own bounded read API and does not depend on that project's server.
 
 ## Creating a Worktree
 

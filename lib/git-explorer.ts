@@ -1,0 +1,150 @@
+import { execFile } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { promisify } from "node:util";
+// @ts-expect-error Native Node tests require the .ts suffix; Next resolves it too.
+import { gitExecEnv } from "./git-exec.ts";
+// @ts-expect-error Native Node tests require the .ts suffix; Next resolves it too.
+import { samePath, toNativePath } from "./paths.ts";
+
+const exec = promisify(execFile);
+const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const PAGE_SIZE = 40;
+const MAX_SKIP = 20_000;
+const MAX_META_BYTES = 256 * 1024;
+const MAX_PATCH_BYTES = 1024 * 1024;
+
+export class GitExplorerError extends Error {
+  readonly code: "INVALID" | "STALE" | "NOT_FOUND" | "TOO_LARGE" | "UNAVAILABLE";
+  constructor(code: GitExplorerError["code"], message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+export interface ExplorerCommit {
+  oid: string;
+  parents: string[];
+  author: string;
+  date: string;
+  subject: string;
+}
+
+export interface ExplorerFile { path: string; status: string }
+
+function requireOid(oid: string): string {
+  if (!OID.test(oid)) throw new GitExplorerError("INVALID", "Invalid commit ID");
+  return oid;
+}
+
+async function git(cwd: string, args: string[], limit = MAX_META_BYTES): Promise<string> {
+  try {
+    const { stdout } = await exec("git", ["-C", cwd, "--no-pager", ...args], {
+      env: { ...gitExecEnv(), GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1", GIT_LITERAL_PATHSPECS: "1", GIT_PAGER: "cat" },
+      encoding: "utf8", maxBuffer: limit, timeout: 15_000,
+    });
+    return stdout;
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+      throw new GitExplorerError("TOO_LARGE", "Git output exceeds the size limit");
+    }
+    throw new GitExplorerError("UNAVAILABLE", "Git history is unavailable");
+  }
+}
+
+/** This is a physical checkout, never an arbitrary ancestor's repository or a bare repository. */
+export async function explorerCheckout(cwd: string): Promise<{ head: string; branch: string }> {
+  try {
+    if (!samePath(cwd, realpathSync(cwd))) throw new Error("symlink");
+    const root = toNativePath((await git(cwd, ["rev-parse", "--show-toplevel"])).trim());
+    if (!samePath(root, cwd)) throw new Error("subdirectory");
+    const head = requireOid((await git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"])).trim());
+    const branch = (await git(cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"])).trim();
+    if (!branch) throw new Error("detached");
+    return { head, branch };
+  } catch {
+    throw new GitExplorerError("UNAVAILABLE", "Select a worktree root on a local branch");
+  }
+}
+
+async function anchored(cwd: string, expectedHead: string): Promise<void> {
+  requireOid(expectedHead);
+  const { head } = await explorerCheckout(cwd);
+  if (head !== expectedHead) throw new GitExplorerError("STALE", "Worktree HEAD changed; refresh history");
+}
+
+async function reachable(cwd: string, head: string, oid: string): Promise<void> {
+  requireOid(oid);
+  try {
+    await git(cwd, ["merge-base", "--is-ancestor", oid, head]);
+  } catch {
+    throw new GitExplorerError("NOT_FOUND", "Commit is not in this worktree's history");
+  }
+}
+
+export async function explorerLog(cwd: string, skip = 0, expectedHead?: string) {
+  if (!Number.isSafeInteger(skip) || skip < 0 || skip > MAX_SKIP) throw new GitExplorerError("INVALID", "Invalid history page");
+  const { head, branch } = await explorerCheckout(cwd);
+  if (expectedHead !== undefined && head !== requireOid(expectedHead)) throw new GitExplorerError("STALE", "Worktree HEAD changed; refresh history");
+  // NUL delimits fields and records even when subjects or authors contain unusual punctuation.
+  const output = await git(cwd, ["log", "-z", "--topo-order", "--no-show-signature", `--skip=${skip}`, `--max-count=${PAGE_SIZE + 1}`,
+    "--format=%H%x00%P%x00%an%x00%aI%x00%s", head], MAX_META_BYTES);
+  await anchored(cwd, head);
+  const fields = output ? output.split("\0") : [];
+  if (fields.at(-1) === "") fields.pop();
+  if (fields.length % 5 !== 0) throw new GitExplorerError("UNAVAILABLE", "Invalid Git history output");
+  const commits: ExplorerCommit[] = [];
+  for (let i = 0; i < fields.length; i += 5) {
+    commits.push({ oid: requireOid(fields[i]), parents: fields[i + 1] ? fields[i + 1].split(" ").map(requireOid) : [],
+      author: fields[i + 2], date: fields[i + 3], subject: fields[i + 4] });
+  }
+  // Local labels only; no fetch, remote-tracking refs, or tag peeling.
+  const refs = (await git(cwd, ["for-each-ref", "--count=200", "--format=%(refname)%00%(objectname)", "refs/heads"])).trimEnd()
+    .split("\n").filter(Boolean).map((line) => {
+      const [ref, oid] = line.split("\0");
+      if (!ref?.startsWith("refs/heads/") || !oid) throw new GitExplorerError("UNAVAILABLE", "Invalid local branch list");
+      return { branch: ref.slice("refs/heads/".length), oid: requireOid(oid) };
+    });
+  await anchored(cwd, head);
+  return { head, branch, refs, commits: commits.slice(0, PAGE_SIZE), nextSkip: commits.length > PAGE_SIZE ? skip + PAGE_SIZE : null };
+}
+
+async function commitFiles(cwd: string, oid: string, parents: string[]): Promise<ExplorerFile[]> {
+  const args = parents.length
+    ? ["diff", "--name-status", "--no-renames", "-z", parents[0], oid, "--"]
+    : ["diff-tree", "--root", "--no-commit-id", "--name-status", "-r", "--no-renames", "-z", oid, "--"];
+  const output = await git(cwd, args);
+  const parts = output.split("\0");
+  if (parts.at(-1) === "") parts.pop();
+  if (parts.length % 2 !== 0) throw new GitExplorerError("UNAVAILABLE", "Invalid changed-file list");
+  const files: ExplorerFile[] = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    if (!/^[AMDTCU]$/.test(parts[i]) || !parts[i + 1]) throw new GitExplorerError("UNAVAILABLE", "Invalid changed-file list");
+    files.push({ status: parts[i], path: parts[i + 1] });
+  }
+  return files;
+}
+
+/** Inspect only a commit reachable from the captured worktree HEAD. Merge diffs use the first parent. */
+export async function explorerCommit(cwd: string, head: string, oid: string) {
+  await anchored(cwd, head);
+  await reachable(cwd, head, oid);
+  const output = await git(cwd, ["show", "-s", "--format=%H%x00%P%x00%an%x00%aI%x00%B", oid]);
+  const parts = output.split("\0");
+  if (parts.length !== 5) throw new GitExplorerError("UNAVAILABLE", "Invalid Git commit output");
+  const parents = parts[1] ? parts[1].split(" ").map(requireOid) : [];
+  const files = await commitFiles(cwd, oid, parents);
+  await anchored(cwd, head);
+  return { oid: requireOid(parts[0]), parents, author: parts[2], date: parts[3], message: parts[4].trimEnd(), files };
+}
+
+/** A single file's committed patch, selected from this commit's server-derived file list. */
+export async function explorerPatch(cwd: string, head: string, oid: string, path: string) {
+  const commit = await explorerCommit(cwd, head, oid);
+  if (!commit.files.some((file) => file.path === path)) throw new GitExplorerError("NOT_FOUND", "File was not changed by this commit");
+  const args = commit.parents.length
+    ? ["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=3", commit.parents[0], oid, "--", path]
+    : ["diff-tree", "--root", "--no-commit-id", "-p", "-r", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=3", oid, "--", path];
+  const patch = await git(cwd, args, MAX_PATCH_BYTES);
+  await anchored(cwd, head);
+  return { oid, path, patch, hasBinaryChanges: /^(?:Binary files .+ differ|GIT binary patch)$/m.test(patch) };
+}

@@ -16,7 +16,7 @@ Local browser UI for the [pi coding agent](https://github.com/earendil-works/pi)
 - **Two ways to branch**: **New session** creates an independent session file from an earlier message; **Edit from here** creates a branch inside the current session.
 - **Session references**: use **Copy session link** on a saved session row to copy a `/?session=<id>` URL. It opens that chat in this Pi Web instance; paste it in a prompt to give the agent a recent, bounded excerpt of that saved conversation (up to three links per prompt). Only user/assistant text from the active branch is included, up to 20 messages, 1,200 characters per message and 8,000 characters per session. Tools, images, thinking and other branches are excluded. The link is resolved against this server's local sessions, not a remote Pi Web; missing sessions are reported to the agent as unavailable. The context is stored as a hidden session message and may remain in later model context. Treat referenced conversations as untrusted data; do not paste links to conversations you don't want sent to your model.
 - **Project file tools**: browse and upload files, inspect Git diffs, and preview source, Markdown, images, audio, PDFs, and DOCX files with automatic refresh.
-- **Git worktrees and session workflow**: set project/new-chat or per-chat Git preferences; create and continue/fork worktrees manually or through an explicit agent action followed by an idle post-run transition; preview/confirm selected whole-file commits; verify saved checks, review whole/commit/range diffs, and separately approve an exact local non-fast-forward merge. No automatic integration or remote publication.
+- **Git worktrees and session workflow**: choose a worktree and browse its read-only visual commit graph, commit details and changed-file patches in the sidebar Git Explorer without a chat; set project/new-chat or per-chat Git preferences; create and continue/fork worktrees manually or through an explicit agent action followed by an idle post-run transition; preview/confirm selected whole-file commits; verify saved checks, review whole/commit/range diffs, and separately approve an exact local non-fast-forward merge. No automatic integration or remote publication.
 - **Workspace terminal**: open it from the File Explorer toolbar. It defaults to a bundled JetBrains Mono Nerd Font (no browser font installation needed); use the terminal header to switch to the system font. The choice is saved in browser storage.
 - **Web-based configuration**: manage provider login and API keys, models, model tests, plugin packages, and skills without leaving Pi Web.
 - **Browser-native `ask_user`**: answer agent questions with described choices, multi-selection, freeform text, and optional comments without a terminal-style popup.
@@ -113,7 +113,7 @@ npx @agegr/pi-web@latest
 - **Filesystem access**: Pi Web must be able to read the agent data directory and the working directories recorded by its sessions. Run Pi Web in the same filesystem environment as pi when sharing existing sessions.
 - **Shared configuration**: the Models panel uses pi's model, settings, and Pi-default credential storage, so those changes are visible to both interfaces. Additional provider identities are Pi Web-only.
 - **File access boundary**: the file browser is limited to working directories selected in Pi Web and project or session roots it already knows about; it is not a general filesystem browser.
-- **Git worktrees**: see [Worktrees in Pi Web](./docs/worktrees.md) for switcher visibility, explicit local base/tip creation, and removal behavior.
+- **Git worktrees and Git Explorer**: see [Worktrees in Pi Web](./docs/worktrees.md) for switcher visibility, read-only commit graph and diffs for the selected checkout, explicit local base/tip creation, and removal behavior.
 - **Session Git workflow**: Surviving manual Git controls have separate **Workspace workflow**, **Review & commit**, and **Local integration review** icons beside Activity in the top bar, not permanent footer rows. Ordinary coding sessions also have a `git_workflow` tool for early per-chat choices, policy-independent in-chat merge comparison and exact human-approved commits; explicitly authorized check execution and separately approved exact local non-fast-forward merge, without requiring a saved policy; agent-driven cleanup is still planned. See [Session Git workflow](./docs/git-workflow.md) for new-chat project defaults, next-run per-chat edits, explicit manual or agent-created post-run worktree continuation/fork (source edits stay put), guarded human/authorized-agent commits, selectable whole/commit/range diffs, and separately approved verification and exact local non-fast-forward merge. Unsupported hooks/signing/filters and dirty index states fail closed; inspect a reported partial state manually. Chat-only loads no workflow Git tools. Cleanup remains separately controlled; no remote operations are supplied. Windows portability is unverified.
 
 ### Downstream Session Context Menu
@@ -139,6 +139,10 @@ coordinates, and a `refresh()` callback for actions that change the session
 list. If no listener cancels the extension event, Pi Web preserves the
 browser's native context menu. This hook is browser-side and independent of
 Pi agent extensions.
+
+### Git Explorer graph layout
+
+The Git Explorer's small active-lane graph layout adapts [binaryplease/git-graph](https://github.com/binaryplease/git-graph) (MIT; see `lib/git-graph-layout.LICENSE`). It uses Pi Web's own local, guarded Git API; it does not install that project's separate server or expose its checkout actions.
 
 ### Browser-native `ask_user`
 

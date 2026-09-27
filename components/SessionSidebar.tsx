@@ -23,6 +23,7 @@ import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
+import { GitExplorer } from "./GitExplorer";
 import { SessionSearch } from "./SessionSearch";
 import { SubagentIcon } from "./SubagentIcon";
 
@@ -138,6 +139,7 @@ interface Props {
   ) => void;
   onOpenFile?: (filePath: string, fileName: string, options?: { sourceSessionId?: string | null; modeHint?: "diff" }) => void;
   onOpenTerminal?: (cwd: string) => void;
+  onOpenGitCommit?: (cwd: string, head: string, oid: string) => void;
   explorerRefreshKey?: number;
   onExplorerRefresh?: () => void;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
@@ -389,7 +391,7 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onQueuedSessionIdsChange, onActivityChange, onReviewReadReady, onSessionsChange }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, onOpenGitCommit, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onQueuedSessionIdsChange, onActivityChange, onReviewReadReady, onSessionsChange }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const { starredIds, starredProjectKeys, toggleStarred, toggleStarredProject } = useStarredSessions();
@@ -443,6 +445,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const wtDropdownRef = useRef<HTMLDivElement>(null);
   const wtNewInputRef = useRef<HTMLInputElement>(null);
   const [explorerOpen, setExplorerOpen] = useState(true);
+  const [explorerView, setExplorerView] = useState<"files" | "git">("files");
   const [explorerKey, setExplorerKey] = useState(0);
   const [explorerUploadBusy, setExplorerUploadBusy] = useState(false);
   const [fileSearchOpen, setFileSearchOpen] = useState(false);
@@ -2354,9 +2357,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               >
                 <polyline points="3 2 7 5 3 8" />
               </svg>
-              {t("files.explorer")}
+              {explorerView === "files" ? t("files.explorer") : "Git Explorer"}
             </button>
-            {onOpenTerminal && (
+            <div className="flex shrink-0 gap-1 text-[11px]" role="group" aria-label="Explorer view">
+              {(["files", "git"] as const).map((view) => <button key={view} type="button"
+                aria-label={view === "files" ? "File Explorer view" : "Git Explorer view"}
+                aria-pressed={explorerView === view} onClick={() => { setExplorerView(view); setExplorerOpen(true); }}
+                className="rounded px-1.5 py-1 text-text-muted hover:bg-bg-hover aria-pressed:bg-bg-selected aria-pressed:text-accent">
+                {view === "files" ? "Files" : "Git"}
+              </button>)}
+            </div>
+            {explorerView === "files" && onOpenTerminal && (
               <ToolbarIconButton
                 onClick={() => onOpenTerminal(selectedCwd ?? selectedCwdProp!)}
                 title={t("terminal.open")}
@@ -2367,7 +2378,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 </svg>
               </ToolbarIconButton>
             )}
-            {explorerOpen && changesCount > 0 && (
+            {explorerOpen && explorerView === "files" && changesCount > 0 && (
               <ToolbarIconButton
                 onClick={() => setChangesCollapsed((v) => !v)}
                 title={t("sidebar.changedFiles", { count: changesCount })}
@@ -2382,7 +2393,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 </svg>
               </ToolbarIconButton>
             )}
-            {explorerOpen && (
+            {explorerOpen && explorerView === "files" && (
               <ToolbarIconButton
                 onClick={() => {
                   setFileSearchOpen((open) => !open);
@@ -2397,7 +2408,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 </svg>
               </ToolbarIconButton>
             )}
-            {explorerOpen && (
+            {explorerOpen && explorerView === "files" && (
               <ToolbarIconButton
                 onClick={() => fileExplorerRef.current?.openUploadPicker()}
                 disabled={explorerUploadBusy}
@@ -2411,7 +2422,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 </svg>
               </ToolbarIconButton>
             )}
-            <ToolbarIconButton
+            {explorerView === "files" && <ToolbarIconButton
               onClick={() => {
                 if (onExplorerRefresh) onExplorerRefresh();
                 else setExplorerKey((k) => k + 1);
@@ -2435,11 +2446,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   <path d="M3 3v5h5" />
                 </svg>
               )}
-            </ToolbarIconButton>
+            </ToolbarIconButton>}
           </div>
           {explorerOpen && (
-            <div ref={explorerScrollRef} className="scrollbar-subtle" style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
-              <FileExplorer
+            <div ref={explorerScrollRef} className="scrollbar-subtle" style={{ flex: 1, minHeight: 0, overflowY: explorerView === "files" ? "auto" : "hidden", overflowX: "hidden", display: explorerView === "git" ? "flex" : "block", flexDirection: "column" }}>
+              {explorerView === "files" ? <FileExplorer
                 ref={fileExplorerRef}
                 cwd={selectedCwd ?? selectedCwdProp!}
                 onOpenFile={onOpenFile ?? (() => {})}
@@ -2451,7 +2462,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 onChangesCountChange={setChangesCount}
                 fileSearchOpen={fileSearchOpen}
                 onFileSearchOpenChange={setFileSearchOpen}
-              />
+              /> : <GitExplorer key={selectedCwd ?? selectedCwdProp!} cwd={selectedCwd ?? selectedCwdProp!} onOpenCommit={onOpenGitCommit ?? (() => {})} />}
             </div>
           )}
         </div>

@@ -26,6 +26,7 @@
     "public",
     "next.config.ts",
     "lib/ask-user.LICENSE",
+    "lib/git-graph-layout.LICENSE",
     "package.json"
   ],
   "scripts": {
