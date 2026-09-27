@@ -103,6 +103,7 @@ app/api/
   subagents/settings/route.ts     GET/PUT built-in subagent feature setting
   worktrees/route.ts              GET/POST/DELETE git worktrees (explicit local base/tip on creation)
   git/workflow/route.ts           GET project/session snapshot | PUT project default or idle persisted session policy
+  git/explorer/route.ts           GET worktree-scoped read-only history/commit/file patch
   git/commit/route.ts             POST human preview/confirm selected local whole-file commit
   git/review/route.ts             GET local branch review | POST read-only bounded patch
   git/integration/route.ts        GET check receipts | POST explicit verify/plan/confirm local merge
@@ -156,6 +157,8 @@ lib/
   agent-git-preferences.ts  validated session-scoped early choices (not execution approval)
   git-commit.ts / git-commit-extension.ts  guarded preview/confirm engine and session-bound agent tool
   git-review.ts         read-only local first-parent merge/commit/range comparisons
+  git-explorer.ts       session-independent bounded selected-worktree history/commit/patch reads
+  git-graph-layout.ts   adapted MIT active-lane graph layout (see git-graph-layout.LICENSE)
   git-verification.ts   explicitly selected saved checks + short-lived state-bound receipts
   git-integration.ts    exact-state, unsigned non-FF local merge with partial-state recovery
   git-checkout-gate.ts  in-process agent command gate during checkout transactions
@@ -170,6 +173,8 @@ components/
   GitCommitPanel.tsx  human whole-file preview/confirm; working diffs are not the candidate
   GitMergeReviewPanel.tsx  on-demand read-only comparisons plus separately approved local verification/merge
   GitActionDialog.tsx  transient agent-triggered comparison/commit approval card
+  GitExplorer.tsx    visual read-only history for sidebar-selected worktree
+  GitCommitViewer.tsx  committed-file patches in right-panel tab, no checkout reads
   ChatInput.tsx       input bar + model/thinking/tools/compact controls
   MessageView.tsx     renders one message (user/assistant/toolCall/toolResult)
   BranchNavigator.tsx in-session branch switcher
@@ -288,6 +293,9 @@ Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `au
 - Sessions whose cwd points at a removed worktree are inferred back into the main project instead of becoming a phantom project row.
 - `GitWorkflowSettings` uses the persisted session cwd, not the sidebar's selected checkout. An idle persisted session at a registered checkout root may be moved to another registered root, or cloned from an assistant leaf then moved there; neither manual action is triggered by sidebar creation/policy save, and neither moves source checkout files. Separately, an explicit agent `git_workspace_start` can schedule a one-shot idle post-run continuation/fork into its own newly created worktree. A failed fork/move is retained for manual inspection, never automatically retried. See `docs/git-workflow.md`.
 - git prints POSIX-style absolute paths even on Windows, so every path read out of git goes through `toNativePath()` (`lib/paths.ts`) before it is compared or returned. Compare paths with `samePath()`, never `===` — raw equality made `isTopLevel` permanently false on Windows and hid the worktree switcher entirely. Branch names are not paths and must keep their forward slashes. Browser code cannot apply Node path rules, so `/api/worktrees` resolves `currentWorktreePath` server-side; the sidebar must use that identity for highlighting and removal fallback.
+
+### Git Explorer versus session Git workflow
+- Sidebar **Files / Git** explorer tabs follow `SessionSidebar.selectedCwd` (the worktree switcher), even when an open chat keeps its own saved `cwd`. `GitExplorer` is keyed by that checkout and aborts stale requests; clicking a commit opens `GitCommitViewer` in a right-panel tab. Its GET-only `/api/git/explorer` authorizes the physical checkout root against allowed file roots, captures current local branch HEAD for bounded `--topo-order` history pages, and limits commit/file patches to that HEAD's reachable objects. It never uses session integration policy, uncommitted files, or a remote. The active-lane algorithm adapts binaryplease/git-graph with attribution in `lib/git-graph-layout.LICENSE`; do not bring over its Bun server or checkout actions. See `docs/worktrees.md`.
 
 ### Session Git workflow boundaries
 - `lib/git-workflow-store.ts` keys defaults by canonical project root and writes private Pi Web state; `lib/rpc-manager.ts` snapshots a new session into `pi-web:git-workflow`, with explicit `null` for opt-out. Existing sessions never fall back to changed defaults. Fork/clone inherits the effective snapshot. The current UI refuses a policy override on an initialized but not persisted chat. Session edits require an idle persisted chat and reject subagents; `before_agent_start` reads the latest entry on every new run without a browser reload. Chat-only does not load the workflow or commit extension. This is guidance, not a sandbox for shell access.

@@ -9,7 +9,8 @@ export interface Tab {
   id: string;
   label: string;
   filePath: string;
-  kind?: "terminal";
+  kind?: "terminal" | "git-commit";
+  gitCommit?: { cwd: string; head: string; oid: string };
   closing?: boolean;
   sourceSessionId?: string | null;
   initialDisplayMode?: FileViewerDisplayMode;
@@ -100,6 +101,11 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                 </svg>
+              ) : tab.kind === "git-commit" ? (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="6" cy="4" r="2" /><circle cx="6" cy="20" r="2" /><circle cx="18" cy="7" r="2" />
+                  <path d="M6 6v12M6 15c0-4 3-8 10-8" />
+                </svg>
               ) : getFileIcon(tab.label, 13)}
             </span>
             <span
@@ -109,7 +115,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
                 flex: 1,
                 fontWeight: isActive ? 500 : 400,
               }}
-              title={tab.filePath}
+              title={tab.gitCommit?.cwd ?? tab.filePath}
             >
               {tab.label}
             </span>

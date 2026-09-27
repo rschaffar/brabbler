@@ -11,6 +11,7 @@ import { StarredOverview } from "./StarredOverview";
 import { getActivitySections, type ActivityStatus } from "@/lib/activity";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { FileViewer } from "./FileViewer";
+import { GitCommitViewer } from "./GitCommitViewer";
 import { TabBar, type Tab } from "./TabBar";
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
@@ -770,7 +771,7 @@ export function AppShell() {
       // File tabs are keyed by absolute path, so tabs opened in the previous
       // project must not linger. Same-project worktree switches keep them.
       setFileTabs([]);
-      if (!activeFileTabId || activeFileTabId.startsWith("file:")) {
+      if (!activeFileTabId || activeFileTabId.startsWith("file:") || activeFileTabId.startsWith("git:")) {
         setActiveFileTabId(null);
         setRightPanelOpen(false);
       }
@@ -796,7 +797,7 @@ export function AppShell() {
     const projectKey = workspaceKeyOf(session);
     if (activeProjectKeyRef.current !== projectKey) {
       setFileTabs([]);
-      if (!activeFileTabId || activeFileTabId.startsWith("file:")) {
+      if (!activeFileTabId || activeFileTabId.startsWith("file:") || activeFileTabId.startsWith("git:")) {
         setActiveFileTabId(null);
         setRightPanelOpen(false);
       }
@@ -1176,6 +1177,17 @@ export function AppShell() {
     if (isMobile) setSidebarOpen(false);
   }, [isMobile]);
 
+  const handleOpenGitCommit = useCallback((cwd: string, head: string, oid: string) => {
+    const id = `git:${cwd}:${oid}`;
+    setFileTabs((tabs) => [
+      ...tabs.filter((tab) => tab.id !== id),
+      { id, label: `Commit ${oid.slice(0, 8)}`, filePath: "", kind: "git-commit", gitCommit: { cwd, head, oid } },
+    ]);
+    setActiveFileTabId(id);
+    setRightPanelOpen(true);
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile]);
+
   const handleOpenLinkedFile = useCallback((filePath: string, page?: number) => {
     handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, page });
   }, [handleOpenFile, selectedSession?.id]);
@@ -1316,6 +1328,7 @@ export function AppShell() {
         selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
         onCwdChange={handleCwdChange}
         onOpenFile={handleOpenFile}
+        onOpenGitCommit={handleOpenGitCommit}
         onOpenTerminal={handleOpenTerminal}
         explorerRefreshKey={explorerRefreshKey}
         onExplorerRefresh={handleExplorerRefresh}
@@ -2734,7 +2747,10 @@ export function AppShell() {
 
         {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
-          {activeFileTab?.filePath ? (
+          {activeFileTab?.gitCommit ? (
+            <GitCommitViewer key={`${activeFileTab.id}:${activeFileTab.gitCommit.head}`}
+              cwd={activeFileTab.gitCommit.cwd} head={activeFileTab.gitCommit.head} oid={activeFileTab.gitCommit.oid} />
+          ) : activeFileTab?.filePath ? (
             <FileViewer
               key={`${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}
               filePath={activeFileTab.filePath}

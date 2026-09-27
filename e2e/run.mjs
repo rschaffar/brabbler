@@ -16,6 +16,8 @@ import { checkActivityOverview } from "./activity.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkGitWorkflow } from "./git-workflow.mjs";
+import { checkGitExplorer } from "./git-explorer.mjs";
+import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
@@ -238,7 +240,9 @@ try {
     page.on("response", (response) => {
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
     });
+    await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
     await checkGitWorkflow(page, { base, api, sessionId: GIT, cwd: gitProject, targetWorktree });
+    await checkIntegratedGitGraph(page, targetWorktree);
     assert.deepEqual(errors, [], "Git workflow browser errors");
     await context.tracing.stop();
     await context.close();
@@ -552,7 +556,9 @@ try {
       continue;
     }
     if (viewport.width === 1280) {
+      await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
       await checkGitWorkflow(page, { base, api, sessionId: GIT, cwd: gitProject, targetWorktree });
+      await checkIntegratedGitGraph(page, targetWorktree);
     }
     // Use a separate tab: a deliberate full-page reload must not alter the
     // reading-position and session-history fixtures exercised below.
