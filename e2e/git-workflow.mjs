@@ -152,10 +152,15 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   assert.equal((await api("/api/sessions?force=1")).sessions.find((session) => session.id === sessionId)?.cwd, targetWorktree);
   console.log("PASS: same chat continues in registered target worktree");
 
-  await page.setViewportSize({ width: 390, height: 800 });
-  for (const name of ["Workspace workflow", "Review & commit", "Local integration review"]) {
-    const icon = page.getByRole("button", { name, exact: true }).first();
-    const rect = await icon.boundingBox();
-    assert.ok(rect && rect.x >= 0 && rect.x + rect.width <= 390 && rect.y < 80, `${name} top-bar icon should remain reachable at mobile width`);
+  const originalViewport = page.viewportSize();
+  try {
+    await page.setViewportSize({ width: 390, height: 800 });
+    for (const name of ["Workspace workflow", "Review & commit", "Local integration review"]) {
+      const icon = page.getByRole("button", { name, exact: true }).first();
+      const rect = await icon.boundingBox();
+      assert.ok(rect && rect.x >= 0 && rect.x + rect.width <= 390 && rect.y < 80, `${name} top-bar icon should remain reachable at mobile width`);
+    }
+  } finally {
+    if (originalViewport) await page.setViewportSize(originalViewport);
   }
 }
