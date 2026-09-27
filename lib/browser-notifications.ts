@@ -41,6 +41,7 @@ export function isBlockingExtensionUiRequest(
     case "input":
     case "editor":
     case "ask_user":
+    case "git_action":
       return true;
     case "custom":
       return request.closed !== true;

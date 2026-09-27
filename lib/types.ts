@@ -132,6 +132,10 @@ export interface SystemMessage {
 /** Any message a `message` entry can store, including transcript system messages. */
 export type SessionMessage = AgentMessage | SystemMessage;
 
+export type GitActionCandidate =
+  | { kind: "commit"; preview: import("./git-commit").GitCommitPreview; message: string; diff: import("./git-review").GitReviewDiff }
+  | { kind: "review"; review: import("./git-review").GitReview; selection: import("./git-review").GitReviewSelection; diff: import("./git-review").GitReviewDiff };
+
 export type ExtensionUiRequest =
   | {
       type: "extension_ui_request";
@@ -170,6 +174,7 @@ export type ExtensionUiRequest =
       expiresAt?: number;
     }
   | ({ type: "extension_ui_request"; id: string; method: "ask_user"; timeout?: number; expiresAt?: number } & AskUserQuestion)
+  | { type: "extension_ui_request"; id: string; method: "git_action"; candidate: GitActionCandidate; timeout?: number; expiresAt?: number }
   | {
       type: "extension_ui_request";
       id: string;
@@ -214,7 +219,7 @@ export type ExtensionUiRequest =
 
 export type BlockingExtensionUiRequest = Extract<
   ExtensionUiRequest,
-  { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "custom" }
+  { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "git_action" | "custom" }
 >;
 
 /** Lightweight, read-only attention metadata from Pi Web's live wrappers. */

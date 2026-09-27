@@ -8,6 +8,12 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   let navigations = 0;
   page.on("load", () => { navigations++; });
   await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
+  const openGitControls = async () => {
+    const trigger = page.getByRole("button", { name: "Git & workspace" });
+    if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();
+    await page.getByRole("region", { name: "Git & workspace controls" }).waitFor();
+  };
+  await openGitControls();
   const workflow = page.getByRole("region", { name: "Workspace workflow settings" });
   await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   await workflow.getByText(`Actual session cwd: ${cwd}`).waitFor();
@@ -22,6 +28,7 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   assert.equal(saved.session.integration.targetBranch, "target");
   // New-chat composer is opened through the UI; both preference saves must work without a document reload.
   await page.getByRole("button", { name: "New", exact: true }).click();
+  await openGitControls();
   await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   await workflow.getByText(`New session cwd: ${cwd}`).waitFor();
   await workflow.getByLabel("Require current branch (optional)").fill("feature");
@@ -36,6 +43,7 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   // The new-chat sidebar intentionally hides the persisted chat; reopen it for operational review.
   await page.goto(`${base}/?session=${sessionId}`, { waitUntil: "domcontentloaded" });
   await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
+  await openGitControls();
   await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   const review = page.getByRole("region", { name: "Local integration review" });
   await review.getByRole("button", { name: "Local integration review" }).click();
@@ -124,6 +132,7 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   await continuation.getByRole("button", { name: "Confirm continuation" }).click();
   await page.waitForFunction((id) => document.querySelector(`[data-session-id="${id}"]`)?.textContent?.includes("target"), sessionId);
   await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
+  await openGitControls();
   await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   await workflow.getByText(`Actual session cwd: ${targetWorktree}`).waitFor();
   const moved = await api(`/api/git/workflow?sessionId=${sessionId}`);

@@ -13,6 +13,7 @@ import { appendSessionGitWorkflow, inheritSessionGitWorkflow, readSessionGitWork
 import { getProjectGitWorkflow } from "./git-workflow-store";
 import { createGitWorkflowExtension } from "./git-workflow-extension";
 import { createGitCommitExtension } from "./git-commit-extension";
+import { createAgentGitWorkflowExtension, type AgentGitWorkflowUiContext } from "./agent-git-workflow-extension";
 import { createGitWorkspaceStartExtension, appendCompletedGitWorkspaceTransition, type GitWorkspaceTransition } from "./git-workspace-start-extension";
 import { claimGitWorkspaceTransition, failGitWorkspaceTransition, finishGitWorkspaceTransition, recordGitWorkspaceForkId, recordGitWorkspaceTransition } from "./git-workspace-transition";
 import { acquireGitCheckoutGate, isGitCheckoutGated } from "./git-checkout-gate";
@@ -38,6 +39,7 @@ import type {
   ExtensionUiRequest,
   ExtensionUiResponse,
   ExtensionWidgetItem,
+  GitActionCandidate,
   SessionAttention,
   SessionCompletion,
   SessionEntry,
@@ -87,6 +89,7 @@ type AgentRunCompleteListener = (sessionId: string) => void;
 function attentionSummary(request: BlockingExtensionUiRequest): string {
   if (request.method === "custom") return "";
   if (request.method === "ask_user") return request.question.trim().replace(/\s+/g, " ").slice(0, 160);
+  if (request.method === "git_action") return request.candidate.kind === "commit" ? "Review exact Git commit" : "Review proposed Git merge";
   return request.title.trim().replace(/\s+/g, " ").slice(0, 160);
 }
 
@@ -240,7 +243,7 @@ function withExtensionTools(session: AgentSessionLike, toolNames: string[]): str
     .filter((name) => !codingToolNames.has(name)
       // A session that selects only read/grep/find/ls must not gain a
       // mutating host tool merely because extensions are enabled.
-      && (!["git_commit", "git_workspace_start"].includes(name) || selectedToolNames.some((tool) => ["bash", "powershell", "edit", "write"].includes(tool))));
+      && (!["git_commit", "git_workspace_start", "git_workflow"].includes(name) || selectedToolNames.some((tool) => ["bash", "powershell", "edit", "write"].includes(tool))));
 
   return [...new Set([...selectedToolNames, ...extensionToolNames])];
 }
@@ -1281,6 +1284,8 @@ export class AgentSessionWrapper {
     const request = this.pendingUiRequests.get(response.id) as ExtensionUiRequest | undefined;
     if (request?.method === "ask_user" && !("cancelled" in response)
       && (!("answer" in response) || !normalizeAskUserAnswer(response.answer, request))) return;
+    if (request?.method === "git_action" && !("cancelled" in response)
+      && (!("confirmed" in response) || typeof response.confirmed !== "boolean")) return;
     pending.resolve(response);
   }
 
@@ -1683,7 +1688,7 @@ export class AgentSessionWrapper {
     });
   }
 
-  private createExtensionUiContext(): ExtensionUiContextLike & AskUserUiContext {
+  private createExtensionUiContext(): ExtensionUiContextLike & AskUserUiContext & AgentGitWorkflowUiContext {
     return {
       select: (title, options, opts) => this.requestExtensionUi(
         { method: "select", title, options, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
@@ -1718,6 +1723,13 @@ export class AgentSessionWrapper {
         null,
         (response) => "answer" in response ? normalizeAskUserAnswer(response.answer, question) : null,
         timeout,
+        signal,
+      ),
+      gitAction: (candidate: GitActionCandidate, signal?: AbortSignal) => this.requestExtensionUi(
+        { method: "git_action", candidate },
+        false,
+        (response) => "confirmed" in response && response.confirmed === true,
+        undefined,
         signal,
       ),
       notify: (message, type) => {
@@ -2380,6 +2392,7 @@ export async function startRpcSession(
               createAskUserExtension(),
               createGitWorkflowExtension(() => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])),
               createGitCommitExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])),
+              createAgentGitWorkflowExtension(sessionCwd),
               createGitWorkspaceStartExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[]),
                 (transition) => {
                   if (!workspaceStartOwner.current) throw new Error("Session not ready");
