@@ -955,7 +955,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const respondToExtensionUi = useCallback(async (
     request: ExtensionUiDialogRequest,
-    response: { value: string } | { confirmed: boolean } | { approvePlanId: string } | { cancelled: true } | { answer: import("@/lib/ask-user").AskUserAnswer },
+    response: { value: string } | { confirmed: boolean } | { approvePlanId: string } | { preferences: import("@/lib/agent-git-preferences").AgentGitPreferenceChoice } | { cancelled: true } | { answer: import("@/lib/ask-user").AskUserAnswer },
   ) => {
     const sid = sessionIdRef.current;
     setExtensionDialog((current) => current?.id === request.id ? null : current);

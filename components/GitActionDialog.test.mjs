@@ -28,6 +28,16 @@ test("commit review displays exact identities, message and patch, with opt-in ap
   assert.doesNotMatch(html, /reviewToken|token/);
 });
 
+test("early chat preferences are not an operation approval", () => {
+  const html = render({ kind: "preferences", featureBranch: "feature", targets: ["target"],
+    checks: [{ label: "test", argv: ["npm", "test"] }] });
+  assert.match(html, /Choose Git workflow preferences/);
+  assert.match(html, /Save chat preferences/);
+  assert.match(html, /No checks run and no commit, merge, cleanup or remote action is approved/);
+  assert.match(html, /Prefer a dedicated worktree/);
+  assert.doesNotMatch(html, /Approve exact local merge|Approve exact commit|Run these checks/);
+});
+
 test("read-only comparison cannot be confused with a merge confirmation", () => {
   const html = render({ kind: "review", review: { featureBranch: "feature", featureOid: oid("c"), targetBranch: "target", targetOid: oid("d"), mergeTreeOid: oid("b") }, selection: { kind: "merge" }, diff });
   assert.match(html, /Whole proposed merge/);

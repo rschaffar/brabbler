@@ -8,6 +8,8 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   let navigations = 0;
   page.on("load", () => { navigations++; });
   await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
+  const iconBounds = await page.getByRole("button", { name: "Git & workspace" }).boundingBox();
+  assert.ok(iconBounds && iconBounds.y < 80, "Git controls belong beside Activity in the top bar, not near the composer");
   const openGitControls = async () => {
     const trigger = page.getByRole("button", { name: "Git & workspace" });
     if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();

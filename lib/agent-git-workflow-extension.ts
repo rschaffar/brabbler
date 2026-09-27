@@ -3,7 +3,9 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { realpath } from "node:fs/promises";
 import { promisify } from "node:util";
 import { Type } from "@earendil-works/pi-ai";
-import type { InlineExtension } from "@earendil-works/pi-coding-agent";
+import type { InlineExtension, SessionManager } from "@earendil-works/pi-coding-agent";
+import { appendAgentGitPreferences, readAgentGitPreferences, type AgentGitPreferences } from "./agent-git-preferences";
+import type { SessionEntry } from "./types";
 import { confirmGitCommit, prepareGitCommit } from "./git-commit";
 import { getGitCommitTreeOid, getGitReviewDiff, getGitTreeDiff, reviewGitBranches, type GitReviewSelection } from "./git-review";
 import { gitExecEnv } from "./git-exec";
@@ -22,6 +24,7 @@ const exec = promisify(execFile);
 /** Pi Web's browser UI transport, deliberately not a generic confirmation dialog. */
 export interface AgentGitWorkflowUiContext {
   gitAction(candidate: GitActionCandidate, signal?: AbortSignal): Promise<boolean>;
+  gitPreferences(candidate: Extract<GitActionCandidate, { kind: "preferences" }>, signal?: AbortSignal): Promise<AgentGitPreferences | null>;
 }
 
 async function targetCheckout(cwd: string, branch: string): Promise<string> {
@@ -45,6 +48,13 @@ async function targetCheckout(cwd: string, branch: string): Promise<string> {
   return target;
 }
 
+async function registeredTargets(cwd: string, feature: string): Promise<string[]> {
+  const { stdout } = await exec("git", ["--no-optional-locks", "-C", cwd, "worktree", "list", "--porcelain", "-z"],
+    { encoding: "utf8", env: gitExecEnv(), timeout: 15000, maxBuffer: 1024 * 1024 });
+  const names = [...stdout.matchAll(/(?:^|\0)branch refs\/heads\/([^\0]+)/g)].map((match) => match[1]);
+  return [...new Set(names.filter((name) => name !== feature && validLocalBranchName(name)))];
+}
+
 async function featureBranch(cwd: string): Promise<string> {
   const { stdout: root } = await exec("git", ["--no-optional-locks", "-C", cwd, "rev-parse", "--show-toplevel"],
     { encoding: "utf8", env: gitExecEnv(), timeout: 15000, maxBuffer: 4096 });
@@ -56,7 +66,8 @@ async function featureBranch(cwd: string): Promise<string> {
 }
 
 /** A human-bound first slice of the generic Git workflow: no saved policy is needed for inspection or an approved commit. */
-export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: string = getAgentDir()): InlineExtension {
+export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: string = getAgentDir(),
+  writableManager?: Pick<SessionManager, "getEntries" | "appendCustomEntry" | "isPersisted">): InlineExtension {
   return {
     name: "pi-web-agent-git-workflow",
     hidden: true,
@@ -64,10 +75,10 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
       pi.registerTool({
         name: "git_workflow",
         label: "Git Workflow",
-        description: "Review local Git candidates. `integrate` requires an explicit local targetBranch and ordered checks (label + executable argv); asks permission to run them, then separately shows an exact merge plan for approval. No saved policy required. Checks may execute project code. Only unsigned non-FF local integration; no cleanup or remote actions.",
+        description: "Choose early per-chat Git preferences with `preferences` (registered local target, ordered checks, worktree intent, retention); no operation is approved or executed by that choice. Integrate may reuse those preferences or override target/checks explicitly, but still asks separate check and exact merge approvals. Review local Git candidates. `integrate` requires an explicit local targetBranch and ordered checks (label + executable argv); asks permission to run them, then separately shows an exact merge plan for approval. No saved policy required. Checks may execute project code. Only unsigned non-FF local integration; no cleanup or remote actions.",
         executionMode: "sequential",
         parameters: Type.Object({
-          operation: Type.Unsafe<"review" | "commit" | "integrate">({ type: "string", enum: ["review", "commit", "integrate"] }),
+          operation: Type.Unsafe<"preferences" | "review" | "commit" | "integrate">({ type: "string", enum: ["preferences", "review", "commit", "integrate"] }),
           targetBranch: Type.Optional(Type.String({ description: "Existing local target branch for review" })),
           commitOids: Type.Optional(Type.Array(Type.String(), { description: "Optional ordered consecutive commits to compare instead of the whole proposed merge" })),
           paths: Type.Optional(Type.Array(Type.String(), { description: "Complete changed file paths for commit" })),
@@ -81,6 +92,40 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
           if (!ctx.hasUI || !ui.gitAction) return failure("Git workflow review requires an interactive Pi Web session");
           if (signal?.aborted) return failure("Git workflow cancelled");
           try {
+            if (params.operation === "preferences") {
+              if (params.targetBranch || params.paths || params.message || params.commitOids || !ui.gitPreferences) return failure("Provide only proposed checks for early preferences");
+              const manager = ctx.sessionManager;
+              if (!manager?.getSessionId() || !writableManager?.isPersisted() || !samePath(manager.getCwd(), sessionCwd)
+                || !samePath(manager.getHeader()?.cwd ?? "", sessionCwd) || !samePath(sessionCwd, await realpath(sessionCwd))) return failure("Persisted session checkout required");
+              const feature = await featureBranch(ctx.cwd);
+              const targets = await registeredTargets(ctx.cwd, feature);
+              const targetTips = new Map(await Promise.all(targets.map(async (name) => [name, (await exec("git",
+                ["--no-optional-locks", "-C", ctx.cwd, "rev-parse", "--verify", `refs/heads/${name}^{commit}`],
+                { encoding: "utf8", env: gitExecEnv(), timeout: 15000, maxBuffer: 4096 })).stdout.trim()] as const)));
+              const current = readAgentGitPreferences(writableManager.getEntries() as unknown as SessionEntry[]);
+              const proposed = params.checks === undefined ? current?.checks ?? [] : params.checks;
+              const checked = validateGitWorkflowPolicy({ mode: "current", onCreate: "stay", commits: "manual", checks: proposed });
+              const choice = await ui.gitPreferences({ kind: "preferences", featureBranch: feature, targets, checks: checked.checks ?? [], current }, signal);
+              if (!choice || signal?.aborted) return { content: [{ type: "text" as const, text: "Git preference choice cancelled; nothing changed." }], details: { saved: false } };
+              if (!samePath(manager.getCwd(), sessionCwd) || !samePath(manager.getHeader()?.cwd ?? "", sessionCwd)
+                || (await featureBranch(ctx.cwd)) !== feature || !(await registeredTargets(ctx.cwd, feature)).includes(choice.targetBranch)
+                || !targetTips.has(choice.targetBranch) || (await exec("git", ["--no-optional-locks", "-C", ctx.cwd,
+                  "rev-parse", "--verify", `refs/heads/${choice.targetBranch}^{commit}`],
+                  { encoding: "utf8", env: gitExecEnv(), timeout: 15000, maxBuffer: 4096 })).stdout.trim() !== targetTips.get(choice.targetBranch)) return failure("Checkout or target changed; preferences not saved");
+              // Revalidate even if a custom UI transport is supplied by another runtime.
+              const { resolveAgentGitPreferenceChoice } = await import("./agent-git-preferences");
+              let lastIndex = -1;
+              const indexes = choice.checks.map((check) => {
+                const index = (checked.checks ?? []).findIndex((item, i) => i > lastIndex && JSON.stringify(item) === JSON.stringify(check));
+                lastIndex = index;
+                return index;
+              });
+              const validated = resolveAgentGitPreferenceChoice({ targetBranch: choice.targetBranch, method: choice.method,
+                checkIndexes: indexes, cleanup: choice.cleanup, mode: choice.mode }, targets, checked.checks ?? []);
+              if (!validated || JSON.stringify(validated) !== JSON.stringify(choice)) return failure("Invalid Git preference choice");
+              appendAgentGitPreferences(writableManager, validated);
+              return { content: [{ type: "text" as const, text: `Saved per-chat preferences: ${validated.targetBranch}, ${validated.method}, ${validated.checks.length} checks, ${validated.mode} mode, ${validated.cleanup} cleanup. No checks, Git mutation, or operation approval occurred.` }], details: { preferences: validated } };
+            }
             if (params.operation === "review") {
               if (!params.targetBranch || params.paths || params.message || params.checks) return failure("Choose a local target branch to review");
               const review = await reviewGitBranches(ctx.cwd, await featureBranch(ctx.cwd), params.targetBranch);
@@ -95,29 +140,32 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 details: { viewed, selection, targetOid: review.targetOid, featureOid: review.featureOid } };
             }
             if (params.operation === "integrate") {
-              if (!validLocalBranchName(params.targetBranch) || !Array.isArray(params.checks) || !params.checks.length || params.paths || params.message || params.commitOids) {
+              const saved = readAgentGitPreferences((writableManager?.getEntries() ?? ctx.sessionManager.getEntries?.() ?? []) as SessionEntry[]);
+              const targetBranch = params.targetBranch ?? saved?.targetBranch;
+              const requestedChecks = params.checks ?? saved?.checks;
+              if (!validLocalBranchName(targetBranch) || !Array.isArray(requestedChecks) || !requestedChecks.length || params.paths || params.message || params.commitOids) {
                 return failure("Choose a local target and at least one ordered verification check");
               }
               // Validate an ephemeral policy with the same allowlist and digest used by receipts and plans.
               const policy = validateGitWorkflowPolicy({ mode: "current", onCreate: "stay", commits: "manual",
-                integration: { targetBranch: params.targetBranch, method: "merge" }, checks: params.checks });
+                integration: { targetBranch, method: "merge" }, checks: requestedChecks });
               const checks = policy.checks as GitWorkflowCheck[];
               const manager = ctx.sessionManager;
               const sessionId = manager.getSessionId();
               if (!sessionId || !samePath(manager.getCwd(), sessionCwd) || !samePath(manager.getHeader()?.cwd ?? "", sessionCwd) ||
                   !samePath(sessionCwd, await realpath(sessionCwd))) return failure("Session checkout changed");
               const branch = await featureBranch(ctx.cwd);
-              const target = await targetCheckout(ctx.cwd, params.targetBranch);
+              const target = await targetCheckout(ctx.cwd, targetBranch);
               const trusted = () => getProjectTrustStatus(ctx.cwd, agentDir).trusted && getProjectTrustStatus(target, agentDir).trusted;
               const idle = () => !hasBusyRpcSessionForCwd(ctx.cwd, sessionId) && !hasBusyRpcSessionForCwd(target, sessionId);
               const valid = async () => !signal?.aborted && trusted() && idle() &&
-                samePath(target, await targetCheckout(ctx.cwd, params.targetBranch!)) &&
+                samePath(target, await targetCheckout(ctx.cwd, targetBranch)) &&
                 samePath(manager.getCwd(), ctx.cwd) && (await featureBranch(ctx.cwd)) === branch;
               if (!await valid()) return failure("Trust both registered checkouts and stop other sessions before integration");
-              if (!await ui.gitAction({ kind: "checks", targetBranch: params.targetBranch, featureBranch: branch, checks }, signal) || signal?.aborted) {
+              if (!await ui.gitAction({ kind: "checks", targetBranch, featureBranch: branch, checks }, signal) || signal?.aborted) {
                 return { content: [{ type: "text" as const, text: "Verification declined; no checks or integration executed." }], details: { approved: false } };
               }
-              const review = await reviewGitBranches(ctx.cwd, branch, params.targetBranch);
+              const review = await reviewGitBranches(ctx.cwd, branch, targetBranch);
               const receipts = [];
               // No gate while the browser is answering. Reserve both checkouts only during execution.
               const releaseChecks = acquireGitCheckoutGate([ctx.cwd, target]);

@@ -133,6 +133,7 @@ export interface SystemMessage {
 export type SessionMessage = AgentMessage | SystemMessage;
 
 export type GitActionCandidate =
+  | { kind: "preferences"; featureBranch: string; targets: string[]; checks: import("./git-workflow-policy").GitWorkflowCheck[]; current?: import("./agent-git-preferences").AgentGitPreferences }
   | { kind: "commit"; preview: import("./git-commit").GitCommitPreview; message: string; diff: import("./git-review").GitReviewDiff }
   | { kind: "review"; review: import("./git-review").GitReview; selection: import("./git-review").GitReviewSelection; diff: import("./git-review").GitReviewDiff }
   | { kind: "checks"; targetBranch: string; featureBranch: string; checks: import("./git-workflow-policy").GitWorkflowCheck[] }
@@ -241,6 +242,7 @@ export type ExtensionUiResponse =
   | { type: "extension_ui_response"; id: string; value: string }
   | { type: "extension_ui_response"; id: string; confirmed: boolean }
   | { type: "extension_ui_response"; id: string; approvePlanId: string }
+  | { type: "extension_ui_response"; id: string; preferences: import("./agent-git-preferences").AgentGitPreferenceChoice }
   | { type: "extension_ui_response"; id: string; cancelled: true }
   | { type: "extension_ui_response"; id: string; answer: AskUserAnswer };
 

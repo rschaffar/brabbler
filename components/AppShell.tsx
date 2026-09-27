@@ -372,7 +372,7 @@ export function AppShell() {
   }, []);
 
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | "git" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
@@ -392,13 +392,19 @@ export function AppShell() {
   }, [rightPanelFullWidth]);
 
   const toggleTopPanel = useCallback((
-    panel: "agents" | "branches" | "system" | "tools" | "session",
+    panel: "agents" | "branches" | "system" | "tools" | "session" | "git",
     keepMobileToolbarOpen = false,
   ) => {
     if (isMobile) setSidebarOpen(false);
     setActiveTopPanel((cur) => cur === panel ? null : panel);
     if (isMobile && isNarrowMobile && keepMobileToolbarOpen) setMobileToolbarMoreOpen(true);
   }, [isMobile, isNarrowMobile]);
+
+  const closeGitControls = useCallback(() => setActiveTopPanel((panel) => panel === "git" ? null : panel), []);
+
+  useEffect(() => {
+    closeGitControls();
+  }, [selectedSession?.id, newSessionDraftId, closeGitControls]);
 
   const handleSystemInfoToggle = useCallback((
     panel: "system" | "tools",
@@ -2141,6 +2147,26 @@ export function AppShell() {
           >
             {activeOverview === "starred" && isMobile && !overviewMobileList ? "←" : "★"}
           </button>
+          {showChat && (selectedSession?.cwd || effectiveNewSessionCwd) && (
+            <button type="button" aria-label="Git & workspace" title="Git & workspace"
+              aria-controls="chat-git-controls" aria-expanded={activeTopPanel === "git"}
+              aria-pressed={activeTopPanel === "git"}
+              onClick={() => {
+                setMobileToolbarMoreOpen(false);
+                if (activeOverview) closeOverview();
+                toggleTopPanel("git");
+              }}
+              className="activity-top-button"
+              style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0,
+                border: 0, borderRight: "1px solid var(--border)", cursor: "pointer",
+                background: activeTopPanel === "git" ? "var(--bg-selected)" : "none",
+                color: activeTopPanel === "git" ? "var(--accent)" : "var(--text-muted)" }}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="6" cy="4" r="2" /><circle cx="6" cy="20" r="2" /><circle cx="18" cy="7" r="2" />
+                <path d="M6 6v12M6 15c0-4 3-8 10-8" />
+              </svg>
+            </button>
+          )}
           {showChat && selectedSession?.relation?.kind === "subagent" && (
             <span role="img" aria-label={translate("activity.subagent")} title={translate("activity.subagent")}
               style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, borderRight: "1px solid var(--border)", color: "var(--accent)" }}>
@@ -2242,7 +2268,7 @@ export function AppShell() {
             />
           )}
           {/* Top panel dropdown — shared, only one active at a time */}
-          {activeTopPanel && topPanelPos && (
+          {activeTopPanel && activeTopPanel !== "git" && topPanelPos && (
             <div style={{
               position: "fixed",
               top: topPanelPos.top,
@@ -2544,6 +2570,8 @@ export function AppShell() {
               onSessionForked={handleSessionForked}
               onSessionMoved={handleSessionMoved}
               onSessionForkedToWorktree={handleSessionForkedToWorktree}
+              gitControlsOpen={activeTopPanel === "git"}
+              onGitControlsClose={closeGitControls}
               modelsRefreshKey={modelsRefreshKey}
               chatInputRef={chatInputRef}
               onBranchDataChange={handleBranchDataChange}

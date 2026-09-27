@@ -25,6 +25,7 @@ This supersedes the **interaction design**, not the protected Git operations, of
 
 - [x] Establish a first vertical slice: a policy-independent `git_workflow` tool can show whole/range comparisons and request exact commit approval using a transient Git card; a collapsed top-row Git menu replaces three permanent footer rows. Evidence: `lib/agent-git-workflow-extension.test.mjs`, `lib/rpc-manager-extension-ui.test.mjs`, and typecheck. This slice deliberately does not execute merges or cleanup.
 - [x] Add agent-triggered check authorization and a separately approved exact local merge without a saved policy; preserve state-bound receipts, target trust, registered checkout gates, cancellation and partial-state recovery. Evidence: 39 focused engine/UI tests, `tsc --noEmit`, lint; `lib/agent-git-workflow-extension.test.mjs` exercises a disposable repo.
+- [x] Add typed early per-chat preferences for registered target, ordered checks, workspace intent and retention without authorizing an operation; validate forged/cancelled/stale replies and fork inheritance. Evidence: `lib/agent-git-workflow-extension.test.mjs`, `lib/rpc-manager-extension-ui.test.mjs`, typecheck and lint.
 - [ ] Specify typed agent requests, response validation, candidate identity and operation-specific approval rules in `lib/`; test forged, cancelled, expired, and stale answers.
 - [ ] Implement a transient Git card in the chat timeline with compact summary, expandable whole-result/commit/range diffs, check evidence, and distinct approve/decline controls; test SSE replay, stop, narrow screens, and stale requests.
 - [ ] Register a session-bound Git tool available for ordinary non-Chat-only sessions; read-only status/review and early choices must not require a saved policy; test session binding and loadout.
@@ -33,6 +34,10 @@ This supersedes the **interaction design**, not the protected Git operations, of
 - [ ] Add an exact-inventory, revalidated cleanup proposal and separately approved removal of the named feature worktree and local branch, offering to relocate the idle originating chat to the target first, accounting for ignored files and other sessions bound to the checkout; test stale/dirty/locked resources and partial recovery.
 - [ ] Remove permanent `GitCommitPanel`, `GitMergeReviewPanel`, and `GitWorkflowSettings` footer rows; expose remaining settings/manual controls only on demand and update `README.md`, `docs/git-workflow.md`, `AGENTS.md`, and a new ADR.
 - [ ] Run focused tests followed by `npm test`, `node_modules/.bin/tsc --noEmit`, `npm run lint`, and `npm run test:e2e` for the browser flow (no production build).
+
+## Cleanup blocker (not implemented)
+
+The checkout gate currently blocks running-session commands but not *new* session startup or concurrent `moveSessionFamily` calls; the session-list scanner can omit malformed files. A cleanup engine cannot prove zero bound sessions or exclude a writer with those admission/inventory gaps. Close them and test adversarial startup/move and malformed-session races before enabling checkout or branch deletion. Until then, only the existing manual worktree controls remain available; no agent cleanup is claimed.
 
 ## Risks
 
