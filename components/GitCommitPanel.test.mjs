@@ -6,7 +6,7 @@ const panel = await readFile(new URL("./GitCommitPanel.tsx", import.meta.url), "
 const chat = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 
 test("commit review is only mounted for a persisted ordinary chat at the chat cwd", () => {
-  assert.match(chat, /messageCwd && gitControlsOpen && <div id="chat-git-controls"/);
+  assert.match(chat, /gitControlsPanel === "commit" && session && !session\.transient/);
   assert.match(chat, /session && !session\.transient && session\.relation\?\.kind !== "subagent"/);
   assert.match(chat, /<GitCommitPanel key=\{`commit:\$\{session\.id\}:\$\{session\.cwd\}`\} sessionId=\{session\.id\} cwd=\{session\.cwd\}/);
   assert.match(chat, /<GitCommitPanel[\s\S]*?busy=\{sessionBusy \|\| isCompacting \|\| modelSwitching \|\| Boolean\(forkingEntryId\) \|\| quoteSubmitting \|\| Boolean\(sessionRunning\)\}/);

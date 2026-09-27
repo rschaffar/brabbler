@@ -5,13 +5,15 @@ import test from "node:test";
 const shell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 const chat = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 
-test("one icon beside Activity owns the on-demand Git controls, not the composer", () => {
+test("separate workspace, commit and merge icons beside Activity own on-demand panels", () => {
   const activity = shell.indexOf('className="activity-top-button"');
-  const git = shell.indexOf('aria-label="Git & workspace"');
+  const workspace = shell.indexOf('panel: "git-workspace" as const');
   const chatMount = shell.indexOf("<ChatWindow");
-  assert.ok(activity >= 0 && activity < git && git < chatMount);
-  assert.match(shell, /aria-controls="chat-git-controls" aria-expanded=\{activeTopPanel === "git"\}/);
-  assert.match(shell, /gitControlsOpen=\{activeTopPanel === "git"\}/);
-  assert.match(chat, /messageCwd && gitControlsOpen && <div id="chat-git-controls"/);
+  assert.ok(activity >= 0 && activity < workspace && workspace < chatMount);
+  assert.match(shell, /panel: "git-commit" as const, label: "Review & commit"/);
+  assert.match(shell, /panel: "git-merge" as const, label: "Local integration review"/);
+  assert.match(shell, /gitControlsPanel=\{activeTopPanel === "git-workspace"/);
+  assert.match(chat, /messageCwd && gitControlsPanel && <div id="chat-git-controls"/);
+  assert.match(chat, /gitControlsPanel === "workspace" && <GitWorkflowSettings/);
   assert.doesNotMatch(chat, /<button[^>]*>\s*Git &amp; workspace\s*<\/button>/);
 });
