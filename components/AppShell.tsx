@@ -372,7 +372,7 @@ export function AppShell() {
   }, []);
 
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | "git-workspace" | "git-commit" | "git-merge" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
@@ -392,13 +392,19 @@ export function AppShell() {
   }, [rightPanelFullWidth]);
 
   const toggleTopPanel = useCallback((
-    panel: "agents" | "branches" | "system" | "tools" | "session",
+    panel: "agents" | "branches" | "system" | "tools" | "session" | "git-workspace" | "git-commit" | "git-merge",
     keepMobileToolbarOpen = false,
   ) => {
     if (isMobile) setSidebarOpen(false);
     setActiveTopPanel((cur) => cur === panel ? null : panel);
     if (isMobile && isNarrowMobile && keepMobileToolbarOpen) setMobileToolbarMoreOpen(true);
   }, [isMobile, isNarrowMobile]);
+
+  const closeGitControls = useCallback(() => setActiveTopPanel((panel) => panel?.startsWith("git-") ? null : panel), []);
+
+  useEffect(() => {
+    closeGitControls();
+  }, [selectedSession?.id, newSessionDraftId, closeGitControls]);
 
   const handleSystemInfoToggle = useCallback((
     panel: "system" | "tools",
@@ -991,7 +997,8 @@ export function AppShell() {
       title: translate("i18n.attentionNeeded"),
       body: request.method === "custom"
         ? translate("i18n.extensionInputNeeded")
-        : request.method === "ask_user" ? request.question : request.title,
+        : request.method === "ask_user" ? request.question
+        : request.method === "git_action" ? "Git candidate needs review" : request.title,
       tag: `pi-extension-ui:${request.id}`,
     });
   }, [deliverSessionNotification, selectedSession, translate]);
@@ -2140,6 +2147,37 @@ export function AppShell() {
           >
             {activeOverview === "starred" && isMobile && !overviewMobileList ? "←" : "★"}
           </button>
+          {showChat && (selectedSession?.cwd || effectiveNewSessionCwd) && ([
+            { panel: "git-workspace" as const, label: "Workspace workflow", icon: <>
+              <rect x="3" y="4" width="8" height="7" rx="1" /><rect x="13" y="13" width="8" height="7" rx="1" />
+              <path d="M11 7h4v6M8 11v6h5" />
+            </> },
+            ...(selectedSession && !selectedSession.transient && selectedSession.relation?.kind !== "subagent" ? [
+              { panel: "git-commit" as const, label: "Review & commit", icon: <>
+                <path d="M5 4h14v16H5zM8 9h8M8 13h4M9 17l2 2 4-4" />
+              </> },
+              { panel: "git-merge" as const, label: "Local integration review", icon: <>
+                <circle cx="6" cy="4" r="2" /><circle cx="6" cy="20" r="2" /><circle cx="18" cy="7" r="2" />
+                <path d="M6 6v12M6 15c0-4 3-8 10-8" />
+              </> },
+            ] : []),
+          ]).map(({ panel, label, icon }) => (
+            <button key={panel} type="button" aria-label={label} title={label}
+              aria-controls="chat-git-controls" aria-expanded={activeTopPanel === panel}
+              aria-pressed={activeTopPanel === panel}
+              onClick={() => {
+                setMobileToolbarMoreOpen(false);
+                if (activeOverview) closeOverview();
+                toggleTopPanel(panel);
+              }}
+              className="activity-top-button"
+              style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0,
+                border: 0, borderRight: "1px solid var(--border)", cursor: "pointer",
+                background: activeTopPanel === panel ? "var(--bg-selected)" : "none",
+                color: activeTopPanel === panel ? "var(--accent)" : "var(--text-muted)" }}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon}</svg>
+            </button>
+          ))}
           {showChat && selectedSession?.relation?.kind === "subagent" && (
             <span role="img" aria-label={translate("activity.subagent")} title={translate("activity.subagent")}
               style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, borderRight: "1px solid var(--border)", color: "var(--accent)" }}>
@@ -2241,7 +2279,7 @@ export function AppShell() {
             />
           )}
           {/* Top panel dropdown — shared, only one active at a time */}
-          {activeTopPanel && topPanelPos && (
+          {activeTopPanel && !activeTopPanel.startsWith("git-") && topPanelPos && (
             <div style={{
               position: "fixed",
               top: topPanelPos.top,
@@ -2543,6 +2581,8 @@ export function AppShell() {
               onSessionForked={handleSessionForked}
               onSessionMoved={handleSessionMoved}
               onSessionForkedToWorktree={handleSessionForkedToWorktree}
+              gitControlsPanel={activeTopPanel === "git-workspace" ? "workspace" : activeTopPanel === "git-commit" ? "commit" : activeTopPanel === "git-merge" ? "merge" : null}
+              onGitControlsClose={closeGitControls}
               modelsRefreshKey={modelsRefreshKey}
               chatInputRef={chatInputRef}
               onBranchDataChange={handleBranchDataChange}

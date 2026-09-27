@@ -9,10 +9,12 @@ import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { accountCredentialStore, getProjectAccounts, validateAccountSelection, type AccountSelection } from "./provider-accounts";
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
+import { inheritAgentGitPreferences, resolveAgentGitPreferenceChoice } from "./agent-git-preferences";
 import { appendSessionGitWorkflow, inheritSessionGitWorkflow, readSessionGitWorkflow, validateGitWorkflowPolicy, type GitWorkflowPolicy } from "./git-workflow-policy";
 import { getProjectGitWorkflow } from "./git-workflow-store";
 import { createGitWorkflowExtension } from "./git-workflow-extension";
 import { createGitCommitExtension } from "./git-commit-extension";
+import { createAgentGitWorkflowExtension, type AgentGitWorkflowUiContext } from "./agent-git-workflow-extension";
 import { createGitWorkspaceStartExtension, appendCompletedGitWorkspaceTransition, type GitWorkspaceTransition } from "./git-workspace-start-extension";
 import { claimGitWorkspaceTransition, failGitWorkspaceTransition, finishGitWorkspaceTransition, recordGitWorkspaceForkId, recordGitWorkspaceTransition } from "./git-workspace-transition";
 import { acquireGitCheckoutGate, isGitCheckoutGated } from "./git-checkout-gate";
@@ -38,6 +40,7 @@ import type {
   ExtensionUiRequest,
   ExtensionUiResponse,
   ExtensionWidgetItem,
+  GitActionCandidate,
   SessionAttention,
   SessionCompletion,
   SessionEntry,
@@ -87,6 +90,8 @@ type AgentRunCompleteListener = (sessionId: string) => void;
 function attentionSummary(request: BlockingExtensionUiRequest): string {
   if (request.method === "custom") return "";
   if (request.method === "ask_user") return request.question.trim().replace(/\s+/g, " ").slice(0, 160);
+  if (request.method === "git_action" && request.candidate.kind === "preferences") return "Choose Git workflow preferences";
+  if (request.method === "git_action") return request.candidate.kind === "commit" ? "Review exact Git commit" : request.candidate.kind === "checks" ? "Approve Git checks" : request.candidate.kind === "integration" ? "Approve exact Git merge" : "Review local Git comparison";
   return request.title.trim().replace(/\s+/g, " ").slice(0, 160);
 }
 
@@ -240,7 +245,7 @@ function withExtensionTools(session: AgentSessionLike, toolNames: string[]): str
     .filter((name) => !codingToolNames.has(name)
       // A session that selects only read/grep/find/ls must not gain a
       // mutating host tool merely because extensions are enabled.
-      && (!["git_commit", "git_workspace_start"].includes(name) || selectedToolNames.some((tool) => ["bash", "powershell", "edit", "write"].includes(tool))));
+      && (!["git_commit", "git_workspace_start", "git_workflow"].includes(name) || selectedToolNames.some((tool) => ["bash", "powershell", "edit", "write"].includes(tool))));
 
   return [...new Set([...selectedToolNames, ...extensionToolNames])];
 }
@@ -471,6 +476,7 @@ export class AgentSessionWrapper {
       const accounts = readSessionAccounts(entries);
       if (accounts) appendSessionAccounts(clonedManager, accounts);
       inheritSessionGitWorkflow(entries, clonedManager);
+      inheritAgentGitPreferences(entries, clonedManager);
       cacheSessionPath(newSessionId, clonedPath);
       invalidateSessionListCache();
       movedId = newSessionId;
@@ -708,7 +714,7 @@ export class AgentSessionWrapper {
       // Status reconciliation must not postpone forced cleanup after Stop.
       if (type !== "get_state") this.resetIdleTimer();
       if (this.shouldWaitForExtensions(type)) await this.waitForExtensionsBound();
-      if (type !== "get_state" && isGitCheckoutGated(this.cwd)) {
+      if (type !== "get_state" && type !== "abort" && isGitCheckoutGated(this.cwd)) {
         throw new Error("Git checkout is busy with a local integration");
       }
       if (this.sessionReplacement && !allowedDuringReplacement) {
@@ -936,6 +942,7 @@ export class AgentSessionWrapper {
           const destination = SessionManager.open(newSessionFile, sessionDir);
           if (accountSelection) appendSessionAccounts(destination, accountSelection);
           inheritSessionGitWorkflow(sourceEntries, destination);
+          inheritAgentGitPreferences(sourceEntries, destination);
           const newSessionId = forkedManager.getSessionId();
           cacheSessionPath(newSessionId, newSessionFile);
           invalidateSessionListCache();
@@ -965,6 +972,7 @@ export class AgentSessionWrapper {
         const accountSelection = readSessionAccounts(sourceEntries);
         if (accountSelection) appendSessionAccounts(forkedManager, accountSelection);
         inheritSessionGitWorkflow(sourceEntries, forkedManager);
+        inheritAgentGitPreferences(sourceEntries, forkedManager);
         const newSessionId = forkedManager.getSessionId();
         cacheSessionPath(newSessionId, forkedPath);
         invalidateSessionListCache();
@@ -996,6 +1004,7 @@ export class AgentSessionWrapper {
           const accountSelection = readSessionAccounts(sourceEntries);
           if (accountSelection) appendSessionAccounts(clonedManager, accountSelection);
           inheritSessionGitWorkflow(sourceEntries, clonedManager);
+          inheritAgentGitPreferences(sourceEntries, clonedManager);
           const newSessionId = clonedManager.getSessionId();
           cacheSessionPath(newSessionId, clonedPath);
           invalidateSessionListCache();
@@ -1281,6 +1290,16 @@ export class AgentSessionWrapper {
     const request = this.pendingUiRequests.get(response.id) as ExtensionUiRequest | undefined;
     if (request?.method === "ask_user" && !("cancelled" in response)
       && (!("answer" in response) || !normalizeAskUserAnswer(response.answer, request))) return;
+    if (request?.method === "git_action" && request.candidate.kind === "preferences") {
+      if ("cancelled" in response) {
+        if (response.cancelled !== true || Object.keys(response).length !== 3) return;
+      } else if (!("preferences" in response) || Object.keys(response).length !== 3
+        || !resolveAgentGitPreferenceChoice(response.preferences, request.candidate.targets, request.candidate.checks)) return;
+    } else if (request?.method === "git_action" && !("cancelled" in response)) {
+      if (request.candidate.kind === "integration") {
+        if (!("approvePlanId" in response) || response.approvePlanId !== request.candidate.plan.planId) return;
+      } else if (!("confirmed" in response) || typeof response.confirmed !== "boolean") return;
+    }
     pending.resolve(response);
   }
 
@@ -1683,7 +1702,7 @@ export class AgentSessionWrapper {
     });
   }
 
-  private createExtensionUiContext(): ExtensionUiContextLike & AskUserUiContext {
+  private createExtensionUiContext(): ExtensionUiContextLike & AskUserUiContext & AgentGitWorkflowUiContext {
     return {
       select: (title, options, opts) => this.requestExtensionUi(
         { method: "select", title, options, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
@@ -1718,6 +1737,23 @@ export class AgentSessionWrapper {
         null,
         (response) => "answer" in response ? normalizeAskUserAnswer(response.answer, question) : null,
         timeout,
+        signal,
+      ),
+      gitPreferences: (candidate: Extract<GitActionCandidate, { kind: "preferences" }>, signal?: AbortSignal) => this.requestExtensionUi(
+        { method: "git_action", candidate },
+        null,
+        (response) => "preferences" in response
+          ? resolveAgentGitPreferenceChoice(response.preferences, candidate.targets, candidate.checks) : null,
+        5 * 60_000,
+        signal,
+      ),
+      gitAction: (candidate: GitActionCandidate, signal?: AbortSignal) => this.requestExtensionUi(
+        { method: "git_action", candidate },
+        false,
+        (response) => candidate.kind === "integration"
+          ? "approvePlanId" in response && response.approvePlanId === candidate.plan.planId
+          : "confirmed" in response && response.confirmed === true,
+        5 * 60_000,
         signal,
       ),
       notify: (message, type) => {
@@ -2183,11 +2219,11 @@ export function getRpcSessionInfos(options: { includeTransient?: boolean } = {})
   return sessions;
 }
 
-export function hasBusyRpcSessionForCwd(cwd: string): boolean {
+export function hasBusyRpcSessionForCwd(cwd: string, exceptSessionId?: string): boolean {
   const targetCwd = normalizeRpcCwd(cwd);
   if (getStartingSessionCwds().has(targetCwd)) return true;
   return Array.from(getRegistry().values()).some(
-    (session) => normalizeRpcCwd(session.cwd) === targetCwd && session.isRunning(),
+    (session) => (!exceptSessionId || session.sessionId !== exceptSessionId) && normalizeRpcCwd(session.cwd) === targetCwd && session.isRunning(),
   );
 }
 
@@ -2380,6 +2416,7 @@ export async function startRpcSession(
               createAskUserExtension(),
               createGitWorkflowExtension(() => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])),
               createGitCommitExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])),
+              createAgentGitWorkflowExtension(sessionCwd, undefined, sessionManager),
               createGitWorkspaceStartExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[]),
                 (transition) => {
                   if (!workspaceStartOwner.current) throw new Error("Session not ready");

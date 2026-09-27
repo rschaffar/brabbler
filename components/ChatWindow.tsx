@@ -21,6 +21,7 @@ import { ContextReloadNotice } from "./ContextReloadNotice";
 import { GitWorkflowSettings } from "./GitWorkflowSettings";
 import { GitCommitPanel } from "./GitCommitPanel";
 import { GitMergeReviewPanel } from "./GitMergeReviewPanel";
+import { GitActionDialog } from "./GitActionDialog";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -55,6 +56,8 @@ interface Props {
   onSessionForked?: (newSessionId: string) => void;
   onSessionMoved?: (sessionId: string, cwd: string) => Promise<void>;
   onSessionForkedToWorktree?: (sessionId: string, cwd: string) => void;
+  gitControlsPanel?: "workspace" | "commit" | "merge" | null;
+  onGitControlsClose?: () => void;
   modelsRefreshKey?: number;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => void;
@@ -250,7 +253,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionMoved, onSessionForkedToWorktree, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionMoved, onSessionForkedToWorktree, gitControlsPanel = null, onGitControlsClose, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
@@ -310,6 +313,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   });
   const sessionBusy = agentRunning || bashRunning;
   const [workspaceTransitionNotice, setWorkspaceTransitionNotice] = useState<string | null>(null);
+  useEffect(() => { if (extensionDialog?.method === "git_action") onGitControlsClose?.(); }, [extensionDialog?.id, extensionDialog?.method, onGitControlsClose]);
   const handledWorkspaceTransitionRef = useRef<string | null>(null);
   const workspaceCallbacksRef = useRef({ onSessionMoved, onSessionForkedToWorktree });
   workspaceCallbacksRef.current = { onSessionMoved, onSessionForkedToWorktree };
@@ -1062,6 +1066,29 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         <NoticeShelf notices={notices} floating onPauseChange={setNoticePaused} />
       </div>
 
+      {messageCwd && gitControlsPanel && <div id="chat-git-controls" role="region" aria-label={`${gitControlsPanel} controls`}
+          className="absolute right-2 top-0 z-50 max-h-[min(75vh,760px)] w-[min(96vw,850px)] overflow-y-auto rounded-lg border border-border bg-bg shadow-xl">
+          <div className="flex justify-end border-b border-border px-3 py-2">
+            <button type="button" onClick={onGitControlsClose} className="text-xs text-text-muted hover:text-text">Close Git controls</button>
+          </div>
+          {gitControlsPanel === "commit" && session && !session.transient && session.relation?.kind !== "subagent" &&
+            <GitCommitPanel key={`commit:${session.id}:${session.cwd}`} sessionId={session.id} cwd={session.cwd}
+              busy={sessionBusy || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)} />}
+          {gitControlsPanel === "merge" && session && !session.transient && session.relation?.kind !== "subagent" &&
+            <GitMergeReviewPanel key={`merge:${session.id}:${session.cwd}`} sessionId={session.id} cwd={session.cwd} />}
+          {gitControlsPanel === "workspace" && <GitWorkflowSettings
+            key={session?.id ?? newSessionDraftKey ?? messageCwd}
+            cwd={messageCwd}
+            sessionId={session?.id}
+            setNewChatOverride={isNew ? setNewSessionGitWorkflow : undefined}
+            transient={session?.transient}
+            onSessionMoved={onSessionMoved}
+            onSessionForkedToWorktree={onSessionForkedToWorktree}
+            assistantLeafId={session && !session.transient && session.relation?.kind !== "subagent" && activeLeafId
+              && messages[entryIds.indexOf(activeLeafId)]?.role === "assistant" ? activeLeafId : null}
+            busy={sessionBusy || streamState.isStreaming || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)}
+          />}
+        </div>}
       <ContextReloadNotice sessionId={session?.id ?? null} busy={sessionBusy || isCompacting} />
       {possibleInterruptedRun && (
         <div role="status" className="mx-4 mt-3 flex items-start gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-text">
@@ -1315,7 +1342,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
               <div ref={questionCardRef} className="my-4 min-w-0 scroll-mt-4">
                 {extensionDialog.method === "ask_user"
                   ? <AskUserDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
-                  : <ExtensionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />}
+                  : extensionDialog.method === "git_action"
+                    ? <GitActionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
+                    : <ExtensionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />}
               </div>
             )}
             <div ref={promptAnchorSpacerRef} aria-hidden="true" />
@@ -1413,28 +1442,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         document.body,
       )}
 
-      {session && !session.transient && session.relation?.kind !== "subagent" && <div className="shrink-0" style={{ paddingRight: isMobile ? 0 : CHAT_MINIMAP_WIDTH }}>
-        <GitCommitPanel key={`${session.id}:${session.cwd}`} sessionId={session.id} cwd={session.cwd}
-          busy={sessionBusy || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)} />
-      </div>}
-      {session && !session.transient && session.relation?.kind !== "subagent" && <div className="shrink-0" style={{ paddingRight: isMobile ? 0 : CHAT_MINIMAP_WIDTH }}>
-        <GitMergeReviewPanel key={`${session.id}:${session.cwd}`} sessionId={session.id} cwd={session.cwd} />
-        {workspaceTransitionNotice && <p role="alert" className="mx-auto max-w-full px-4 text-xs text-amber-500">{workspaceTransitionNotice}</p>}
-      </div>}
-      {messageCwd && <div className="shrink-0" style={{ paddingRight: isMobile ? 0 : CHAT_MINIMAP_WIDTH }}>
-        <GitWorkflowSettings
-          key={session?.id ?? newSessionDraftKey ?? messageCwd}
-          cwd={messageCwd}
-          sessionId={session?.id}
-          setNewChatOverride={isNew ? setNewSessionGitWorkflow : undefined}
-          transient={session?.transient}
-          onSessionMoved={onSessionMoved}
-          onSessionForkedToWorktree={onSessionForkedToWorktree}
-          assistantLeafId={session && !session.transient && session.relation?.kind !== "subagent" && activeLeafId
-            && messages[entryIds.indexOf(activeLeafId)]?.role === "assistant" ? activeLeafId : null}
-          busy={sessionBusy || streamState.isStreaming || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)}
-        />
-      </div>}
+      {workspaceTransitionNotice && <p role="alert" className="mx-auto max-w-full px-4 text-xs text-amber-500">{workspaceTransitionNotice}</p>}
       <div className="relative shrink-0">
         {!isEmptyNew && (
           <div

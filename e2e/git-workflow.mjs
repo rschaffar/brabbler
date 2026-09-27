@@ -8,6 +8,17 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   let navigations = 0;
   page.on("load", () => { navigations++; });
   await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
+  for (const name of ["Workspace workflow", "Review & commit", "Local integration review"]) {
+    const iconBounds = await page.getByRole("button", { name, exact: true }).boundingBox();
+    assert.ok(iconBounds && iconBounds.y < 80, `${name} belongs beside Activity in the top bar, not near the composer`);
+  }
+  const openGitControls = async (name) => {
+    const trigger = page.getByRole("button", { name, exact: true }).first();
+    if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();
+    const regionName = name === "Workspace workflow" ? "workspace controls" : name === "Review & commit" ? "commit controls" : "merge controls";
+    await page.getByRole("region", { name: regionName }).waitFor();
+  };
+  await openGitControls("Workspace workflow");
   const workflow = page.getByRole("region", { name: "Workspace workflow settings" });
   await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   await workflow.getByText(`Actual session cwd: ${cwd}`).waitFor();
@@ -22,6 +33,7 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   assert.equal(saved.session.integration.targetBranch, "target");
   // New-chat composer is opened through the UI; both preference saves must work without a document reload.
   await page.getByRole("button", { name: "New", exact: true }).click();
+  await openGitControls("Workspace workflow");
   await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   await workflow.getByText(`New session cwd: ${cwd}`).waitFor();
   await workflow.getByLabel("Require current branch (optional)").fill("feature");
@@ -36,7 +48,9 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   // The new-chat sidebar intentionally hides the persisted chat; reopen it for operational review.
   await page.goto(`${base}/?session=${sessionId}`, { waitUntil: "domcontentloaded" });
   await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
+  await openGitControls("Workspace workflow");
   await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
+  await openGitControls("Local integration review");
   const review = page.getByRole("region", { name: "Local integration review" });
   await review.getByRole("button", { name: "Local integration review" }).click();
   await review.getByText("Feature branch").waitFor();
@@ -76,9 +90,9 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   assert.match(await patch.innerText(), /First feature patch/, "consecutive range contains both commits");
   console.log("PASS: project and session workflow preferences, whole/single/range read-only merge review");
 
-  const commit = page.getByRole("button", { name: "Review & commit" });
-  await commit.click();
-  const commitPanel = commit.locator("xpath=..");
+  await openGitControls("Review & commit");
+  const commitPanel = page.getByRole("region", { name: "commit controls" });
+  await commitPanel.getByRole("button", { name: "Review & commit" }).click();
   await commitPanel.getByText("draft.txt", { exact: false }).waitFor();
   await commitPanel.getByRole("checkbox").check();
   await commitPanel.getByLabel("Commit message").fill("E2E manual commit");
@@ -95,12 +109,16 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   console.log("PASS: manual whole-file commit preview and explicit confirmation");
 
   // Saving a check alone neither runs it nor grants integration approval.
+  await openGitControls("Workspace workflow");
+  await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   await workflow.getByRole("button", { name: /^Add check/ }).click();
   await workflow.getByLabel("Label", { exact: true }).fill("Fixture verification");
   await workflow.getByLabel("Executable (one path or name)").fill(process.execPath);
   await workflow.getByLabel(/Arguments \(one literal argument/).fill("-e\nprocess.exit(0)");
   await workflow.getByRole("button", { name: "Save session policy" }).click();
   await workflow.getByText(/Saved for this session/).waitFor();
+  await openGitControls("Local integration review");
+  await review.getByRole("button", { name: "Local integration review" }).click();
   await review.getByRole("button", { name: "Refresh review" }).click();
   await review.getByRole("button", { name: "Run check 1" }).waitFor();
   const targetBeforeVerification = execFileSync("git", ["-C", targetWorktree, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
@@ -118,16 +136,31 @@ export async function checkGitWorkflow(page, { base, api, sessionId, cwd, target
   assert.equal(execFileSync("git", ["-C", targetWorktree, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), expectedMerge);
   console.log("PASS: explicit check, exact proposal, separately approved unsigned local merge");
 
+  await openGitControls("Workspace workflow");
+  await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   const continuation = workflow.getByLabel("Continue session in another worktree");
   await continuation.getByText(targetWorktree, { exact: false }).first().waitFor();
   await continuation.getByRole("button", { name: "Continue here…" }).click();
   await continuation.getByRole("button", { name: "Confirm continuation" }).click();
   await page.waitForFunction((id) => document.querySelector(`[data-session-id="${id}"]`)?.textContent?.includes("target"), sessionId);
   await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
+  await openGitControls("Workspace workflow");
   await workflow.getByRole("button", { name: /Workspace workflow/ }).click();
   await workflow.getByText(`Actual session cwd: ${targetWorktree}`).waitFor();
   const moved = await api(`/api/git/workflow?sessionId=${sessionId}`);
   assert.equal(moved.cwd, targetWorktree);
   assert.equal((await api("/api/sessions?force=1")).sessions.find((session) => session.id === sessionId)?.cwd, targetWorktree);
   console.log("PASS: same chat continues in registered target worktree");
+
+  const originalViewport = page.viewportSize();
+  try {
+    await page.setViewportSize({ width: 390, height: 800 });
+    for (const name of ["Workspace workflow", "Review & commit", "Local integration review"]) {
+      const icon = page.getByRole("button", { name, exact: true }).first();
+      const rect = await icon.boundingBox();
+      assert.ok(rect && rect.x >= 0 && rect.x + rect.width <= 390 && rect.y < 80, `${name} top-bar icon should remain reachable at mobile width`);
+    }
+  } finally {
+    if (originalViewport) await page.setViewportSize(originalViewport);
+  }
 }
