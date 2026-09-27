@@ -1936,8 +1936,36 @@ span.token.table {
   outline-offset: -3px;
 }
 
+/* Keep dropdowns outside the scrolling row while preserving desktop's flex layout. */
+.top-bar-actions { display: contents; }
+
 /* Mobile sidebar: slide in/out as overlay */
 @media (max-width: 640px) {
+  .top-bar-actions {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .top-bar-actions::-webkit-scrollbar { display: none; }
+  .top-bar-actions.has-more-right {
+    --edge-mask: linear-gradient(to right, #000 calc(100% - 12px), transparent);
+  }
+  .top-bar-actions.has-more-left {
+    --edge-mask: linear-gradient(to right, transparent, #000 12px);
+  }
+  .top-bar-actions.has-more-left.has-more-right {
+    --edge-mask: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent);
+  }
+  .top-bar-actions {
+    -webkit-mask-image: var(--edge-mask, none);
+    mask-image: var(--edge-mask, none);
+  }
   .mobile-session-identity {
     min-width: 0;
     padding: 7px 12px 8px;

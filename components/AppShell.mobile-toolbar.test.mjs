@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
-const mobileHookSource = await readFile(new URL("../hooks/useIsMobile.ts", import.meta.url), "utf8");
 const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("centers top-bar overview icons, including the block-level Git SVG", () => {
@@ -24,33 +23,37 @@ test("shows the selected session title and project beneath the mobile toolbar on
   assert.match(styles, /@media \(max-width: 640px\) \{[\s\S]*?\.mobile-session-title,\s*\.mobile-session-project \{[\s\S]*?text-overflow: ellipsis/);
 });
 
-test("keeps action icons inline in medium mobile sidebars", () => {
-  assert.match(mobileHookSource, /NARROW_MOBILE_QUERY = "\(max-width: 480px\)"/);
-  assert.match(source, /const isNarrowMobile = useIsNarrowMobile\(\);/);
-  assert.match(source, /\{!isNarrowMobile && renderChatToolbarActions\(true\)\}/);
-  assert.match(source, /\{isNarrowMobile && \([\s\S]*?data-mobile-toolbar-more="true"/);
-});
-
-test("uses a compact narrow-mobile toolbar with a floating action layer", () => {
-  assert.match(source, /data-mobile-toolbar="true"[\s\S]*?flex: 1,[\s\S]*?minWidth: 0/);
-  assert.match(
-    source,
-    /data-mobile-toolbar-actions="true"[\s\S]*?position: "absolute"[\s\S]*?right: 0,[\s\S]*?left: TOP_BAR_ICON_BUTTON_SIZE/,
-  );
+test("keeps the sidebar toggle fixed and puts all mobile actions in a swipeable row", () => {
+  const sidebar = source.indexOf("onClick={handleSidebarToggle}");
+  const strip = source.indexOf('ref={topBarActionsRef}');
+  const activity = source.indexOf('className="activity-top-button"', strip);
+  const gitExplorer = source.indexOf('aria-label="Git Explorer"', strip);
+  const workflow = source.indexOf('aria-label="Workflow"', strip);
+  const toolbar = source.indexOf('data-mobile-toolbar="true"', strip);
+  const stripEnd = source.indexOf("</div>\n          {isMobile && sessionHasBranches", toolbar);
+  assert.ok(sidebar >= 0 && sidebar < strip && strip < activity && activity < gitExplorer && gitExplorer < workflow && workflow < toolbar && toolbar < stripEnd);
+  assert.match(source.slice(toolbar, stripEnd), /renderChatToolbarActions\(true\)[\s\S]*renderSessionStatsButton\(true\)[\s\S]*renderMainFileToggle\(true\)/);
+  assert.match(styles, /\.top-bar-actions \{ display: contents; \}/);
+  assert.match(styles, /@media \(max-width: 640px\) \{\s*\.top-bar-actions \{[\s\S]*?overflow-x: auto;[\s\S]*?scrollbar-width: none;/);
+  assert.match(styles, /\.top-bar-actions::-webkit-scrollbar \{ display: none; \}/);
+  assert.match(source, /onScroll=\{updateTopBarScrollEdges\}/);
+  assert.match(source, /strip\.scrollLeft \+ strip\.clientWidth < strip\.scrollWidth - 1/);
+  assert.match(styles, /\.top-bar-actions\.has-more-right \{[\s\S]*?--edge-mask: linear-gradient/);
+  assert.doesNotMatch(source, /data-mobile-toolbar-more|data-mobile-toolbar-actions/);
 
   for (const action of ["history", "name", "agents", "branches", "system", "tools"]) {
     assert.match(source, new RegExp(`data-mobile-toolbar-action=(?:\\{mobile \\? )?"${action}"`));
   }
 });
 
-test("shows a persistent subagent marker in the chat toolbar, outside the mobile overflow menu", () => {
+test("shows the subagent marker in the scrolling toolbar", () => {
   assert.match(source, /\{showChat && selectedSession\?\.relation\?\.kind === "subagent" && \([\s\S]*?role="img" aria-label=\{translate\("activity.subagent"\)\}[\s\S]*?<SubagentIcon size=\{16\} \/>/);
-  assert.match(source, /<SubagentIcon size=\{16\} \/>[\s\S]*?\{isMobile && !\(activeOverview && overviewMobileList\) && \([\s\S]*?ref=\{mobileToolbarRef\}/);
+  assert.match(source, /<SubagentIcon size=\{16\} \/>[\s\S]*?\{isMobile && !\(activeOverview && overviewMobileList\) && \(/);
 });
 
 test("only renders the Agents switcher when the active session family has subagents", () => {
   assert.match(source, /const hasSubagentSessions = Boolean\(activeSessionFamily\?\.subagents\.length\)/);
-  assert.match(source, /\{hasSubagentSessions && \(\s*<button[\s\S]*?toggleTopPanel\("agents", mobile\)/);
+  assert.match(source, /\{hasSubagentSessions && \(\s*<button[\s\S]*?toggleTopPanel\("agents"\)/);
   assert.match(source, /activeTopPanel === "agents" && activeSessionFamily && selectedSession/);
 });
 
@@ -70,35 +73,11 @@ test("only renders branch toolbar controls for sessions with branches", () => {
   assert.match(source, /panel === "branches" \? null : panel/);
 });
 
-test("keeps covered statistics and file controls out of interaction and focus", () => {
-  assert.match(source, /const covered = mobile && isNarrowMobile && mobileToolbarMoreOpen;/);
-  assert.match(source, /disabled=\{!showChat \|\| covered\}[\s\S]*?tabIndex=\{covered \? -1 : undefined\}/);
-  assert.match(source, /data-mobile-toolbar-file=\{mobile \? "true" : undefined\}[\s\S]*?visibility: covered \? "hidden" : "visible"/);
-  assert.match(source, /aria-hidden=\{covered \? true : undefined\}/);
-});
-
-test("closes the mobile action layer on outside click, Escape, layout changes, and session changes", () => {
-  assert.match(source, /event\.composedPath\(\)\.includes\(toolbar\)/);
-  assert.match(source, /document\.addEventListener\("pointerdown", handlePointerDown, true\)/);
-  assert.match(source, /event\.key !== "Escape"[\s\S]*?setMobileToolbarMoreOpen\(false\)/);
-  assert.match(source, /\}, \[isMobile, isNarrowMobile, selectedSession\?\.id, newSessionDraftId\]\);/);
-});
-
-test("keeps the mobile action layer open after using an expanded action", () => {
-  const toggleTopPanel = source.match(/const toggleTopPanel = useCallback\([\s\S]*?\n  \}, \[isMobile, isNarrowMobile\]\);/)?.[0];
-  const historyHandler = source.match(/onClick=\{\(\) => \{[\s\S]*?handleViewFullHistory\(\);[\s\S]*?\n          \}\}/)?.[0];
-  const autoNameHandler = source.match(/onClick=\{\(\) => \{[\s\S]*?void handleAutoName\(\);[\s\S]*?\n              \}\}/)?.[0];
-
-  for (const handler of [toggleTopPanel, historyHandler, autoNameHandler]) {
-    assert.ok(handler);
-    assert.doesNotMatch(handler, /setMobileToolbarMoreOpen\(false\)/);
-    assert.match(handler, /setMobileToolbarMoreOpen\(true\)/);
-  }
-
-  assert.match(source, /toggleTopPanel\("branches", true\)/);
-  assert.match(source, /handleSystemInfoToggle\("system", mobile\)/);
-  assert.match(source, /handleSystemInfoToggle\("tools", mobile\)/);
+test("keeps statistics and file controls reachable without the narrow-phone action overlay", () => {
+  assert.match(source, /data-mobile-toolbar-stats=\{mobile \? "true" : undefined\}[\s\S]*?flex: mobile \? "0 0 110px" : undefined/);
+  assert.match(source, /data-mobile-toolbar-file=\{mobile \? "true" : undefined\}/);
   assert.match(source, /onClick=\{\(\) => toggleTopPanel\("session"\)\}/);
+  assert.doesNotMatch(source, /mobileToolbarMoreOpen|setMobileToolbarMoreOpen/);
 });
 
 test("keeps theme and language in settings instead of the chat toolbar", () => {
