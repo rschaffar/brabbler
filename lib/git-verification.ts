@@ -70,6 +70,7 @@ export interface GitVerificationOptions {
   /** Application-owned authorization/trust decision. Must not default to true. */
   isTrusted: (cwd: string) => boolean | Promise<boolean>;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
@@ -141,7 +142,7 @@ async function privateLog(agentDir: string, id: string, output: Buffer): Promise
   await fs.writeFile(path.join(logs, `${id}.log`), output, { flag: "wx", mode: 0o600 });
 }
 
-async function runCheck(cwd: string, argv: readonly string[], timeout: number): Promise<{ status: number | null; log: Buffer; timedOut: boolean; overflow: boolean }> {
+async function runCheck(cwd: string, argv: readonly string[], timeout: number, signal?: AbortSignal): Promise<{ status: number | null; log: Buffer; timedOut: boolean; overflow: boolean }> {
   let command = argv[0];
   let args = [...argv.slice(1)];
   if (process.platform === "win32" && (command === "npm" || command === "npx")) {
@@ -174,9 +175,12 @@ async function runCheck(cwd: string, argv: readonly string[], timeout: number): 
     };
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);
-    const timer = setTimeout(() => { timedOut = true; kill(); }, timeout);
+    const onAbort = () => { timedOut = true; kill(); };
+    const timer = setTimeout(onAbort, timeout);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
     child.on("error", () => {}); // never return spawn errors (which may contain argv)
-    child.on("close", (code) => { clearTimeout(timer); status = code; resolve({ status, log: Buffer.concat(chunks), timedOut, overflow }); });
+    child.on("close", (code) => { clearTimeout(timer); signal?.removeEventListener("abort", onAbort); status = code; resolve({ status, log: Buffer.concat(chunks), timedOut, overflow }); });
   });
 }
 
@@ -220,7 +224,8 @@ async function runVerification(options: GitVerificationOptions): Promise<Verific
     const startedAt = Date.now();
     const timeout = options.timeoutMs === undefined ? TIMEOUT_MS : options.timeoutMs;
     if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > TIMEOUT_MS) unavailable("invalid timeout");
-    const result = await runCheck(cwd, check.argv, timeout);
+    if (options.signal?.aborted) unavailable("check cancelled");
+    const result = await runCheck(cwd, check.argv, timeout, options.signal);
     const finishedAt = Date.now();
     // Check commands are arbitrary project code. They may modify files/refs; never undo their side effects.
     let unchanged = false;
@@ -243,7 +248,7 @@ async function runVerification(options: GitVerificationOptions): Promise<Verific
         samePath(targetCwd, await registered(cwd, review.featureBranch, review.targetBranch)) &&
         policyHash(await savedPolicy(options)) === policyDigest && await options.isTrusted(cwd);
     } catch { unchanged = false; }
-    if (result.status !== 0 || result.timedOut || result.overflow || !unchanged) unavailable("check failed, timed out, or checkout/ref/policy changed; inspect the worktrees manually (test commands can modify files)");
+    if (options.signal?.aborted || result.status !== 0 || result.timedOut || result.overflow || !unchanged) unavailable("check failed, timed out, or checkout/ref/policy changed; inspect the worktrees manually (test commands can modify files)");
     const receipt: VerificationReceipt = Object.freeze({ id, sessionId: options.sessionId, cwd,
       featureBranch: review.featureBranch, featureOid: review.featureOid, featureTreeOid: review.featureTreeOid,
       targetCwd, targetBranch: review.targetBranch, targetOid: review.targetOid, targetTreeOid: review.targetTreeOid,

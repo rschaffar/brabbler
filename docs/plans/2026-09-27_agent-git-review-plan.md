@@ -24,6 +24,7 @@ This supersedes the **interaction design**, not the protected Git operations, of
 ## Plan
 
 - [x] Establish a first vertical slice: a policy-independent `git_workflow` tool can show whole/range comparisons and request exact commit approval using a transient Git card; a collapsed top-row Git menu replaces three permanent footer rows. Evidence: `lib/agent-git-workflow-extension.test.mjs`, `lib/rpc-manager-extension-ui.test.mjs`, and typecheck. This slice deliberately does not execute merges or cleanup.
+- [x] Add agent-triggered check authorization and a separately approved exact local merge without a saved policy; preserve state-bound receipts, target trust, registered checkout gates, cancellation and partial-state recovery. Evidence: 39 focused engine/UI tests, `tsc --noEmit`, lint; `lib/agent-git-workflow-extension.test.mjs` exercises a disposable repo.
 - [ ] Specify typed agent requests, response validation, candidate identity and operation-specific approval rules in `lib/`; test forged, cancelled, expired, and stale answers.
 - [ ] Implement a transient Git card in the chat timeline with compact summary, expandable whole-result/commit/range diffs, check evidence, and distinct approve/decline controls; test SSE replay, stop, narrow screens, and stale requests.
 - [ ] Register a session-bound Git tool available for ordinary non-Chat-only sessions; read-only status/review and early choices must not require a saved policy; test session binding and loadout.

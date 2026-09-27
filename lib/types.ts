@@ -134,7 +134,9 @@ export type SessionMessage = AgentMessage | SystemMessage;
 
 export type GitActionCandidate =
   | { kind: "commit"; preview: import("./git-commit").GitCommitPreview; message: string; diff: import("./git-review").GitReviewDiff }
-  | { kind: "review"; review: import("./git-review").GitReview; selection: import("./git-review").GitReviewSelection; diff: import("./git-review").GitReviewDiff };
+  | { kind: "review"; review: import("./git-review").GitReview; selection: import("./git-review").GitReviewSelection; diff: import("./git-review").GitReviewDiff }
+  | { kind: "checks"; targetBranch: string; featureBranch: string; checks: import("./git-workflow-policy").GitWorkflowCheck[] }
+  | { kind: "integration"; plan: import("./git-integration").IntegrationPlan; receipts: import("./git-verification").VerificationReceipt[] };
 
 export type ExtensionUiRequest =
   | {
@@ -238,6 +240,7 @@ export interface SessionCompletion {
 export type ExtensionUiResponse =
   | { type: "extension_ui_response"; id: string; value: string }
   | { type: "extension_ui_response"; id: string; confirmed: boolean }
+  | { type: "extension_ui_response"; id: string; approvePlanId: string }
   | { type: "extension_ui_response"; id: string; cancelled: true }
   | { type: "extension_ui_response"; id: string; answer: AskUserAnswer };
 

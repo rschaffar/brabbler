@@ -89,7 +89,7 @@ type AgentRunCompleteListener = (sessionId: string) => void;
 function attentionSummary(request: BlockingExtensionUiRequest): string {
   if (request.method === "custom") return "";
   if (request.method === "ask_user") return request.question.trim().replace(/\s+/g, " ").slice(0, 160);
-  if (request.method === "git_action") return request.candidate.kind === "commit" ? "Review exact Git commit" : "Review proposed Git merge";
+  if (request.method === "git_action") return request.candidate.kind === "commit" ? "Review exact Git commit" : request.candidate.kind === "checks" ? "Approve Git checks" : request.candidate.kind === "integration" ? "Approve exact Git merge" : "Review local Git comparison";
   return request.title.trim().replace(/\s+/g, " ").slice(0, 160);
 }
 
@@ -711,7 +711,7 @@ export class AgentSessionWrapper {
       // Status reconciliation must not postpone forced cleanup after Stop.
       if (type !== "get_state") this.resetIdleTimer();
       if (this.shouldWaitForExtensions(type)) await this.waitForExtensionsBound();
-      if (type !== "get_state" && isGitCheckoutGated(this.cwd)) {
+      if (type !== "get_state" && type !== "abort" && isGitCheckoutGated(this.cwd)) {
         throw new Error("Git checkout is busy with a local integration");
       }
       if (this.sessionReplacement && !allowedDuringReplacement) {
@@ -1284,8 +1284,11 @@ export class AgentSessionWrapper {
     const request = this.pendingUiRequests.get(response.id) as ExtensionUiRequest | undefined;
     if (request?.method === "ask_user" && !("cancelled" in response)
       && (!("answer" in response) || !normalizeAskUserAnswer(response.answer, request))) return;
-    if (request?.method === "git_action" && !("cancelled" in response)
-      && (!("confirmed" in response) || typeof response.confirmed !== "boolean")) return;
+    if (request?.method === "git_action" && !("cancelled" in response)) {
+      if (request.candidate.kind === "integration") {
+        if (!("approvePlanId" in response) || response.approvePlanId !== request.candidate.plan.planId) return;
+      } else if (!("confirmed" in response) || typeof response.confirmed !== "boolean") return;
+    }
     pending.resolve(response);
   }
 
@@ -1728,8 +1731,10 @@ export class AgentSessionWrapper {
       gitAction: (candidate: GitActionCandidate, signal?: AbortSignal) => this.requestExtensionUi(
         { method: "git_action", candidate },
         false,
-        (response) => "confirmed" in response && response.confirmed === true,
-        undefined,
+        (response) => candidate.kind === "integration"
+          ? "approvePlanId" in response && response.approvePlanId === candidate.plan.planId
+          : "confirmed" in response && response.confirmed === true,
+        5 * 60_000,
         signal,
       ),
       notify: (message, type) => {
@@ -2195,11 +2200,11 @@ export function getRpcSessionInfos(options: { includeTransient?: boolean } = {})
   return sessions;
 }
 
-export function hasBusyRpcSessionForCwd(cwd: string): boolean {
+export function hasBusyRpcSessionForCwd(cwd: string, exceptSessionId?: string): boolean {
   const targetCwd = normalizeRpcCwd(cwd);
   if (getStartingSessionCwds().has(targetCwd)) return true;
   return Array.from(getRegistry().values()).some(
-    (session) => normalizeRpcCwd(session.cwd) === targetCwd && session.isRunning(),
+    (session) => session.sessionId !== exceptSessionId && normalizeRpcCwd(session.cwd) === targetCwd && session.isRunning(),
   );
 }
 
