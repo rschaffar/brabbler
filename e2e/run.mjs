@@ -580,6 +580,16 @@ try {
     await page.goto(`${base}/?session=${LONG}`, { waitUntil: "domcontentloaded" });
     assert.equal((await stateReady).status(), 200);
     await page.getByText(text(4999), { exact: true }).waitFor();
+    const mobileIdentity = page.locator('[data-mobile-session-identity="true"]');
+    if (viewport.width <= 600) {
+      await mobileIdentity.waitFor();
+      assert.equal(await mobileIdentity.locator(".mobile-session-title").textContent(), text(0));
+      assert.equal(await mobileIdentity.locator(".mobile-session-project").textContent(), "project");
+      assert.equal(await mobileIdentity.locator(".mobile-session-project").getAttribute("title"), project);
+      assert.ok(await mobileIdentity.evaluate((element) => element.scrollWidth <= element.clientWidth), "Mobile identity must not overflow the viewport");
+    } else {
+      assert.equal(await mobileIdentity.count(), 0, "Desktop chat should not gain a mobile identity row");
+    }
     const latestUser = await page.getByText(text(4998), { exact: true }).elementHandle();
     assert.ok(latestUser, "Latest user message must be mounted before pagination");
     const sentinel = page.getByText("Scroll up to load earlier messages", { exact: true });
@@ -624,6 +634,9 @@ try {
 
     await page.goto(`${base}/?session=${BRANCH}`, { waitUntil: "domcontentloaded" });
     await page.getByText("Active branch answer", { exact: true }).waitFor();
+    if (viewport.width <= 600) {
+      await page.locator('.mobile-session-title').getByText("Branch root", { exact: true }).waitFor();
+    }
     assert.equal(await page.getByText("Inactive branch answer", { exact: true }).count(), 0);
     const interruption = page.getByText("A previous run may have been interrupted", { exact: false });
     if (viewport.width === 1280) {
@@ -841,6 +854,9 @@ try {
       const moved = (await api("/api/sessions?force=1")).sessions.find((session) => session.id === ARCHIVE);
       assert.equal(moved?.cwd, otherProject);
       assert.equal(moved?.projectRoot, otherProject);
+      await page.goto(`${base}/?session=${OTHER}`, { waitUntil: "domcontentloaded" });
+      await page.locator('.mobile-session-title').getByText("Other workspace task", { exact: true }).waitFor();
+      assert.equal(await page.locator('.mobile-session-project').textContent(), "other-project");
       console.log("PASS: mobile session move changes the saved project and refreshes the sidebar");
     }
     if (viewport.width > 600) {
