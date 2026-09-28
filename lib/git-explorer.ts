@@ -11,6 +11,7 @@ const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const PAGE_SIZE = 40;
 const MAX_SKIP = 20_000;
 const MAX_META_BYTES = 256 * 1024;
+const MAX_REF_BYTES = 2 * 1024 * 1024;
 const MAX_PATCH_BYTES = 1024 * 1024;
 
 export class GitExplorerError extends Error {
@@ -66,10 +67,33 @@ export async function explorerCheckout(cwd: string): Promise<{ head: string; bra
   }
 }
 
-async function anchored(cwd: string, expectedHead: string): Promise<void> {
+async function localRefs(cwd: string): Promise<{ branch: string; oid: string }[]> {
+  // Only literal local branch refs are eligible as history roots; never resolve a client revision expression.
+  const output = await git(cwd, ["for-each-ref", "--format=%(refname)%00%(objectname)", "refs/heads"], MAX_REF_BYTES);
+  return output.trimEnd().split("\n").filter(Boolean).map((line) => {
+    const [ref, oid] = line.split("\0");
+    if (!ref?.startsWith("refs/heads/") || !oid) throw new GitExplorerError("UNAVAILABLE", "Invalid local branch list");
+    return { branch: ref.slice("refs/heads/".length), oid: requireOid(oid) };
+  });
+}
+
+async function branchTip(cwd: string, branch: string, expectedHead?: string): Promise<string> {
+  const tip = (await localRefs(cwd)).find((ref) => ref.branch === branch)?.oid;
+  if (!tip) throw new GitExplorerError(expectedHead ? "STALE" : "NOT_FOUND", "Local branch changed; refresh history");
+  if (expectedHead !== undefined && tip !== requireOid(expectedHead)) {
+    throw new GitExplorerError("STALE", "Local branch changed; refresh history");
+  }
+  return tip;
+}
+
+async function anchored(cwd: string, expectedHead: string, branch?: string, checkoutBranch?: string): Promise<void> {
   requireOid(expectedHead);
-  const { head } = await explorerCheckout(cwd);
-  if (head !== expectedHead) throw new GitExplorerError("STALE", "Worktree HEAD changed; refresh history");
+  const checkout = await explorerCheckout(cwd);
+  if (branch) {
+    await branchTip(cwd, branch, expectedHead);
+  } else if (checkout.head !== expectedHead || (checkoutBranch !== undefined && checkout.branch !== checkoutBranch)) {
+    throw new GitExplorerError("STALE", "Worktree branch or HEAD changed; refresh history");
+  }
 }
 
 async function reachable(cwd: string, head: string, oid: string): Promise<void> {
@@ -81,14 +105,18 @@ async function reachable(cwd: string, head: string, oid: string): Promise<void> 
   }
 }
 
-export async function explorerLog(cwd: string, skip = 0, expectedHead?: string) {
+export async function explorerLog(cwd: string, skip = 0, expectedHead?: string, selectedBranch?: string) {
   if (!Number.isSafeInteger(skip) || skip < 0 || skip > MAX_SKIP) throw new GitExplorerError("INVALID", "Invalid history page");
-  const { head, branch } = await explorerCheckout(cwd);
-  if (expectedHead !== undefined && head !== requireOid(expectedHead)) throw new GitExplorerError("STALE", "Worktree HEAD changed; refresh history");
+  const checkout = await explorerCheckout(cwd);
+  const branch = selectedBranch ?? checkout.branch;
+  const head = await branchTip(cwd, branch, expectedHead);
+  if (expectedHead !== undefined && !selectedBranch && checkout.head !== requireOid(expectedHead)) {
+    throw new GitExplorerError("STALE", "Worktree HEAD changed; refresh history");
+  }
   // NUL delimits fields and records even when subjects or authors contain unusual punctuation.
   const output = await git(cwd, ["log", "-z", "--topo-order", "--no-show-signature", `--skip=${skip}`, `--max-count=${PAGE_SIZE + 1}`,
     "--format=%H%x00%P%x00%an%x00%aI%x00%s", head], MAX_META_BYTES);
-  await anchored(cwd, head);
+  await anchored(cwd, head, selectedBranch, checkout.branch);
   const fields = output ? output.split("\0") : [];
   if (fields.at(-1) === "") fields.pop();
   if (fields.length % 5 !== 0) throw new GitExplorerError("UNAVAILABLE", "Invalid Git history output");
@@ -98,13 +126,8 @@ export async function explorerLog(cwd: string, skip = 0, expectedHead?: string) 
       author: fields[i + 2], date: fields[i + 3], subject: fields[i + 4] });
   }
   // Local labels only; no fetch, remote-tracking refs, or tag peeling.
-  const refs = (await git(cwd, ["for-each-ref", "--count=200", "--format=%(refname)%00%(objectname)", "refs/heads"])).trimEnd()
-    .split("\n").filter(Boolean).map((line) => {
-      const [ref, oid] = line.split("\0");
-      if (!ref?.startsWith("refs/heads/") || !oid) throw new GitExplorerError("UNAVAILABLE", "Invalid local branch list");
-      return { branch: ref.slice("refs/heads/".length), oid: requireOid(oid) };
-    });
-  await anchored(cwd, head);
+  const refs = await localRefs(cwd);
+  await anchored(cwd, head, selectedBranch, checkout.branch);
   return { head, branch, refs, commits: commits.slice(0, PAGE_SIZE), nextSkip: commits.length > PAGE_SIZE ? skip + PAGE_SIZE : null };
 }
 
@@ -124,27 +147,27 @@ async function commitFiles(cwd: string, oid: string, parents: string[]): Promise
   return files;
 }
 
-/** Inspect only a commit reachable from the captured worktree HEAD. Merge diffs use the first parent. */
-export async function explorerCommit(cwd: string, head: string, oid: string) {
-  await anchored(cwd, head);
+/** Inspect only a commit reachable from the captured local branch tip (or legacy checkout HEAD). Merge diffs use the first parent. */
+export async function explorerCommit(cwd: string, head: string, oid: string, branch?: string) {
+  await anchored(cwd, head, branch);
   await reachable(cwd, head, oid);
   const output = await git(cwd, ["show", "-s", "--format=%H%x00%P%x00%an%x00%aI%x00%B", oid]);
   const parts = output.split("\0");
   if (parts.length !== 5) throw new GitExplorerError("UNAVAILABLE", "Invalid Git commit output");
   const parents = parts[1] ? parts[1].split(" ").map(requireOid) : [];
   const files = await commitFiles(cwd, oid, parents);
-  await anchored(cwd, head);
+  await anchored(cwd, head, branch);
   return { oid: requireOid(parts[0]), parents, author: parts[2], date: parts[3], message: parts[4].trimEnd(), files };
 }
 
 /** A single file's committed patch, selected from this commit's server-derived file list. */
-export async function explorerPatch(cwd: string, head: string, oid: string, path: string) {
-  const commit = await explorerCommit(cwd, head, oid);
+export async function explorerPatch(cwd: string, head: string, oid: string, path: string, branch?: string) {
+  const commit = await explorerCommit(cwd, head, oid, branch);
   if (!commit.files.some((file) => file.path === path)) throw new GitExplorerError("NOT_FOUND", "File was not changed by this commit");
   const args = commit.parents.length
     ? ["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=3", commit.parents[0], oid, "--", path]
     : ["diff-tree", "--root", "--no-commit-id", "-p", "-r", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=3", oid, "--", path];
   const patch = await git(cwd, args, MAX_PATCH_BYTES);
-  await anchored(cwd, head);
+  await anchored(cwd, head, branch);
   return { oid, path, patch, hasBinaryChanges: /^(?:Binary files .+ differ|GIT binary patch)$/m.test(patch) };
 }

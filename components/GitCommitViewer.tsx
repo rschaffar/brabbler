@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import type { ExplorerFile } from "@/lib/git-explorer";
+import { copyText } from "@/lib/clipboard";
 
 // Keep the diff parser/renderer out of the normal chat and sidebar bundles.
 const CommittedPatchDiff = dynamic(() => import("./CommittedPatchDiff").then((module) => module.CommittedPatchDiff), {
@@ -23,8 +24,19 @@ async function load<T>(address: string, signal: AbortSignal): Promise<T> {
 }
 function message(error: unknown) { return error instanceof Error ? error.message : "Commit unavailable"; }
 
+function CopyCommitField({ label, value }: { label: string; value: string }) {
+  const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
+  useEffect(() => { setStatus("idle"); }, [value]);
+  return <button type="button" className="git-commit-copy" aria-live="polite"
+    aria-label={status === "copied" ? `Copied ${label}` : status === "failed" ? `Copy ${label} failed; retry` : `Copy ${label}`}
+    title={`Copy ${label}`}
+    onClick={() => void copyText(value).then(() => setStatus("copied"), () => setStatus("failed"))}>
+    {status === "copied" ? "Copied" : status === "failed" ? "Retry copy" : "Copy"}
+  </button>;
+}
+
 /** Committed objects only. Never reads the working tree or authorizes a Git action. */
-export function GitCommitViewer({ cwd, head, oid }: { cwd: string; head: string; oid: string }) {
+export function GitCommitViewer({ cwd, branch, head, oid }: { cwd: string; branch: string; head: string; oid: string }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -33,31 +45,37 @@ export function GitCommitViewer({ cwd, head, oid }: { cwd: string; head: string;
   useEffect(() => {
     const controller = new AbortController();
     setDetail(null); setDetailError(null); setSelectedPath(null);
-    void load<Detail>(url(cwd, "commit", { head, oid }), controller.signal)
+    void load<Detail>(url(cwd, "commit", { branch, head, oid }), controller.signal)
       .then((result) => { if (!controller.signal.aborted) setDetail(result); })
       .catch((cause) => { if (!controller.signal.aborted) setDetailError(message(cause)); });
     return () => controller.abort();
-  }, [cwd, head, oid]);
+  }, [cwd, branch, head, oid]);
   useEffect(() => {
     const controller = new AbortController();
     setPatch(null); setPatchError(null);
     if (selectedPath) {
-      void load<Patch>(url(cwd, "patch", { head, oid, path: selectedPath }), controller.signal)
+      void load<Patch>(url(cwd, "patch", { branch, head, oid, path: selectedPath }), controller.signal)
         .then((result) => { if (!controller.signal.aborted) setPatch({ path: selectedPath, value: result }); })
         .catch((cause) => { if (!controller.signal.aborted) setPatchError({ path: selectedPath, message: message(cause) }); });
     }
     return () => controller.abort();
-  }, [cwd, head, oid, selectedPath]);
+  }, [cwd, branch, head, oid, selectedPath]);
 
   const activePatch = patch?.path === selectedPath ? patch.value : null;
   const activeError = patchError?.path === selectedPath ? patchError.message : null;
   return <section aria-label="Git commit details" className="h-full min-w-0 overflow-auto p-4 text-sm text-text">
     <p className="mb-2 text-xs text-text-muted">Read-only committed history · {cwd}</p>
-    <p className="break-all font-mono text-xs text-text-muted">{oid}</p>
+    <div className="git-commit-copy-row">
+      <p className="min-w-0 break-all font-mono text-xs text-text-muted">{oid}</p>
+      <CopyCommitField label="commit ID" value={oid} />
+    </div>
     {detailError && <p role="alert" className="mt-3 text-red-400">{detailError}</p>}
     {!detail && !detailError && <p role="status" className="mt-3 text-text-muted">Loading commit…</p>}
     {detail && <>
-      <p className="mt-3 whitespace-pre-wrap break-words text-text">{detail.message}</p>
+      <div className="git-commit-copy-row mt-3">
+        <p className="min-w-0 whitespace-pre-wrap break-words text-text">{detail.message}</p>
+        <CopyCommitField label="commit message" value={detail.message} />
+      </div>
       <p className="mt-2 text-xs text-text-muted">{detail.author} · {new Date(detail.date).toLocaleString()}</p>
       {detail.parents.length > 1 && <p className="mt-2 text-xs text-text-muted">Merge commit · changes vs first parent</p>}
       <h2 className="mt-5 font-semibold">Changed files ({detail.files.length})</h2>

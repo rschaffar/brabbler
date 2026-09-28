@@ -864,7 +864,7 @@ try {
       await page.getByText("No matching conversations in this scope").waitFor();
       await searchToggle.click();
       await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
-      await row.getByRole("button", { name: /E2E archive fixture/ }).click();
+      await row.getByText("E2E archive fixture", { exact: true }).click();
       await page.getByText("This session is archived. Restore it to show it in active sessions.").waitFor();
       await page.getByRole("button", { name: "Restore session", exact: true }).click();
       await page.getByText("This session is archived. Restore it to show it in active sessions.").waitFor({ state: "detached" });
