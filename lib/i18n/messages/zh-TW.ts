@@ -290,6 +290,7 @@ export const zhTWLocale: LocalePlugin = {
     "sidebar.noMatchingWorktrees": "找不到相符的 worktree",
     "sidebar.switchWorktree": "切換 worktree",
     "sidebar.switchWorktreeTitle": "切換 worktree：{path}",
+    "sidebar.mergedIntoMain": "已合併到 rst-main",
     "sidebar.main": "主分支",
     "sidebar.confirmRemoveCheckout": "移除此檢出目錄？分支與聊天紀錄會保留。",
     "sidebar.removeCheckout": "移除",
