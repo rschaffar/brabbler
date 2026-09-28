@@ -5,9 +5,9 @@ import type { SessionInfo } from "@/lib/types";
  *
  * Catalogue rows omit optional keys instead of setting them to undefined, so a
  * plain spread can never clear one that stopped being true: a hydrated row drops
- * `detailsPending`, a session that left a worktree drops `branch`/`isWorktree`,
- * and a fork whose parent went away drops `relation`. Reset those from the
- * refreshed row explicitly. Locally applied fields such as an auto-generated
+ * `detailsPending`, a restored session drops `archived`, a session that left a
+ * worktree drops `branch`/`isWorktree`, and a fork whose parent went away drops
+ * `relation`. Reset those from the refreshed row explicitly. Locally applied fields such as an auto-generated
  * title still survive until the next listing carries them.
  */
 export function mergeCatalogRow(current: SessionInfo, refreshed: SessionInfo): SessionInfo {
@@ -15,6 +15,7 @@ export function mergeCatalogRow(current: SessionInfo, refreshed: SessionInfo): S
     ...current,
     ...refreshed,
     detailsPending: refreshed.detailsPending,
+    archived: refreshed.archived,
     relation: refreshed.relation,
     branch: refreshed.branch,
     isWorktree: refreshed.isWorktree,

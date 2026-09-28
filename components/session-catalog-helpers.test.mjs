@@ -26,11 +26,13 @@ test("a hydrated row clears the pending marker the first paint set", () => {
 test("dropped optional keys are cleared, not inherited", () => {
   const current = row({
     relation: { kind: "fork" },
+    archived: true,
     branch: "feature/x",
     isWorktree: true,
   });
   const merged = mergeCatalogRow(current, row());
   assert.equal(merged.relation, undefined);
+  assert.equal(merged.archived, undefined);
   assert.equal(merged.branch, undefined);
   assert.equal(merged.isWorktree, undefined);
 });
