@@ -156,6 +156,7 @@ interface WorktreeEntry {
   path: string;
   branch: string | null;
   isMain: boolean;
+  isMerged?: boolean;
 }
 
 interface LocalBranchTip {
@@ -250,6 +251,19 @@ function PathLabel({ text, style }: { text: string; style?: CSSProperties }) {
       }}
     >
       <span style={{ unicodeBidi: "plaintext" }}>{text}</span>
+    </span>
+  );
+}
+
+function MergedWorktreeIcon({ label }: { label: string }) {
+  return (
+    <span role="img" aria-label={label} title={label} style={{ display: "inline-flex", flexShrink: 0, color: "var(--accent)" }}>
+      <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="6" cy="3" r="2" />
+        <circle cx="18" cy="6" r="2" />
+        <circle cx="6" cy="21" r="2" />
+        <path d="M6 5v14M18 8a7 7 0 0 1-7 7H6" />
+      </svg>
     </span>
   );
 }
@@ -1761,6 +1775,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   text={currentWorktree ? (currentWorktree.branch ?? displayCwd(currentWorktree.path, homeDir)) : "…"}
                   style={{ flex: 1, fontFamily: "var(--font-mono)", color: "var(--text)" }}
                 />
+                {currentWorktree?.isMerged && <MergedWorktreeIcon label={t("sidebar.mergedIntoMain")} />}
                 {currentWorktree?.isMain && (
                    <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: 10 }}>{t("sidebar.main")}</span>
                 )}
@@ -1893,6 +1908,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                               <span style={{ width: 10, flexShrink: 0 }} />
                             )}
                             <PathLabel text={wt.branch ?? displayCwd(wt.path, homeDir)} style={{ flex: 1 }} />
+                            {wt.isMerged && <MergedWorktreeIcon label={t("sidebar.mergedIntoMain")} />}
                             {wt.isMain && <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: 10 }}>{t("sidebar.main")}</span>}
                           </button>
                           {!wt.isMain && (

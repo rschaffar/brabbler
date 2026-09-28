@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { existsSync } from "fs";
-import { addWorktree, findCurrentWorktreePath, listLocalBranchTips, listWorktrees, removeWorktree, resolveProject } from "@/lib/worktree";
+import { addWorktree, findCurrentWorktreePath, listLocalBranchTips, listMergedWorktreeBranches, listWorktrees, removeWorktree, resolveProject } from "@/lib/worktree";
 import { allowFileRoot, getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
 import { projectIdentityKey } from "@/lib/project-identity";
 import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
@@ -35,6 +35,11 @@ export async function GET(req: Request) {
       // to the inferred project root so the switcher still shows the project.
       const gitCwd = existsSync(cwd) ? cwd : project.projectRoot;
       worktrees = await listWorktrees(gitCwd);
+      const mergedBranches = await listMergedWorktreeBranches(gitCwd);
+      worktrees = worktrees.map((worktree) => ({
+        ...worktree,
+        isMerged: !worktree.isMain && worktree.branch !== null && mergedBranches.has(worktree.branch),
+      }));
       localBranches = await listLocalBranchTips(gitCwd);
       currentWorktreePath = findCurrentWorktreePath(worktrees, cwd);
     } catch {
