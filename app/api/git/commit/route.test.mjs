@@ -52,7 +52,7 @@ test("missing session, invalid cwd input and unauthorized persisted checkout", a
 test("manual commit without policy, running rejection, checkout mismatch, stale preview and success", async (t) => {
   const { cwd, id } = await fixture(t);
   const previous = globalThis.__piSessions;
-  const live = { isRunning: () => true };
+  const live = { isAlive: () => false, isRunning: () => true };
   globalThis.__piSessions = new Map([[id, live]]);
   t.after(() => { globalThis.__piSessions = previous; });
   await writeFile(join(cwd, "a"), "second\n");

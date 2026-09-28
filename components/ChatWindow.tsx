@@ -19,7 +19,8 @@ import { AnsiText } from "./AnsiText";
 import { AskUserDialog } from "./AskUserDialog";
 import { ContextReloadNotice } from "./ContextReloadNotice";
 import { ArchivedSessionNotice } from "./ArchivedSessionNotice";
-import { GitWorkflowSettings } from "./GitWorkflowSettings";
+import { GitWorkspaceContinuation } from "./GitWorkspaceContinuation";
+import type { WorkflowChatStatus, WorkflowDetail } from "./GitWorkflowHome";
 import { GitCommitPanel } from "./GitCommitPanel";
 import { GitMergeReviewPanel } from "./GitMergeReviewPanel";
 import { GitActionDialog } from "./GitActionDialog";
@@ -60,9 +61,11 @@ interface Props {
   onSessionForked?: (newSessionId: string) => void;
   onSessionMoved?: (sessionId: string, cwd: string) => Promise<void>;
   onSessionForkedToWorktree?: (sessionId: string, cwd: string) => void;
-  gitControlsPanel?: "workspace" | "commit" | "merge" | null;
+  gitControlsPanel?: WorkflowDetail | null;
   gitControlsHost?: HTMLElement | null;
-  onGitControlsClose?: () => void;
+  workflowOpen?: boolean;
+  onOpenWorkflow?: () => void;
+  onWorkflowStatusChange?: (status: WorkflowChatStatus) => void;
   modelsRefreshKey?: number;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => void;
@@ -258,7 +261,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, archivedRootSessionId, archiveActionBusy, onSessionRestored, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionMoved, onSessionForkedToWorktree, gitControlsPanel = null, gitControlsHost, onGitControlsClose, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, archivedRootSessionId, archiveActionBusy, onSessionRestored, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionMoved, onSessionForkedToWorktree, gitControlsPanel = null, gitControlsHost, workflowOpen = false, onOpenWorkflow, onWorkflowStatusChange, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
@@ -301,7 +304,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     isAutoModelSelection,
     isAutoThinkingSelection,
     agentPhase,
-    isNew, setNewSessionGitWorkflow,
+    isNew,
     showScrollToBottom,
     sessionIdRef, scrollContainerRef,
     lastUserMsgRef, promptAnchorActive,
@@ -318,7 +321,11 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   });
   const sessionBusy = agentRunning || bashRunning;
   const [workspaceTransitionNotice, setWorkspaceTransitionNotice] = useState<string | null>(null);
-  useEffect(() => { if (extensionDialog?.method === "git_action") onGitControlsClose?.(); }, [extensionDialog?.id, extensionDialog?.method, onGitControlsClose]);
+  // Request arrival updates attention only; it never closes Workflow or changes its view.
+  const [visitedGitDetails, setVisitedGitDetails] = useState<WorkflowDetail[]>([]);
+  useEffect(() => {
+    if (gitControlsPanel) setVisitedGitDetails((current) => current.includes(gitControlsPanel) ? current : [...current, gitControlsPanel]);
+  }, [gitControlsPanel]);
   const handledWorkspaceTransitionRef = useRef<string | null>(null);
   const workspaceCallbacksRef = useRef({ onSessionMoved, onSessionForkedToWorktree });
   workspaceCallbacksRef.current = { onSessionMoved, onSessionForkedToWorktree };
@@ -380,6 +387,11 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   const [quoteInputOpen, setQuoteInputOpen] = useState(false);
   const [quoteSubmitting, setQuoteSubmitting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+  const workflowBusy = sessionBusy || streamState.isStreaming || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning);
+  const workflowAttention = Boolean(extensionDialog || extensionCustomUi);
+  useEffect(() => {
+    onWorkflowStatusChange?.({ sessionId: session?.id ?? null, busy: workflowBusy, attention: workflowAttention });
+  }, [session?.id, workflowBusy, workflowAttention, onWorkflowStatusChange]);
   const quotePopoverRef = useRef<HTMLDivElement | null>(null);
   const quoteChatInputRef = useRef<ChatInputHandle | null>(null);
   const closeQuotedSelection = useCallback(() => {
@@ -547,8 +559,8 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   // earlier output. Bring only the card into view (not the whole transcript).
   const questionId = extensionDialog?.id;
   useEffect(() => {
-    if (questionId) questionCardRef.current?.scrollIntoView({ block: "nearest" });
-  }, [questionId]);
+    if (questionId && !workflowOpen) questionCardRef.current?.scrollIntoView({ block: "nearest" });
+  }, [questionId, workflowOpen]);
   const prevScrollDistanceRef = useRef<number | null>(null);
   const loadingOlderRef = useRef(false);
   const restoreStartedRef = useRef(false);
@@ -1071,24 +1083,22 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         <NoticeShelf notices={notices} floating onPauseChange={setNoticePaused} />
       </div>
 
-      {messageCwd && gitControlsPanel && gitControlsHost && createPortal(<>
-          {gitControlsPanel === "commit" && session && !session.transient && session.relation?.kind !== "subagent" &&
+      {gitControlsHost && session && !session.transient && session.relation?.kind !== "subagent" && createPortal(<>
+          <div hidden={gitControlsPanel !== "commit"}>{visitedGitDetails.includes("commit") &&
             <GitCommitPanel key={`commit:${session.id}:${session.cwd}`} sessionId={session.id} cwd={session.cwd}
-              busy={sessionBusy || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)} />}
-          {gitControlsPanel === "merge" && session && !session.transient && session.relation?.kind !== "subagent" &&
-            <GitMergeReviewPanel key={`merge:${session.id}:${session.cwd}`} sessionId={session.id} cwd={session.cwd} />}
-          {gitControlsPanel === "workspace" && <GitWorkflowSettings
-            key={session?.id ?? newSessionDraftKey ?? messageCwd}
-            cwd={messageCwd}
-            sessionId={session?.id}
-            setNewChatOverride={isNew ? setNewSessionGitWorkflow : undefined}
+              busy={sessionBusy || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)} />}</div>
+          <div hidden={gitControlsPanel !== "merge"}>{visitedGitDetails.includes("merge") &&
+            <GitMergeReviewPanel key={`merge:${session.id}:${session.cwd}`} sessionId={session.id} cwd={session.cwd} />}</div>
+          <div hidden={gitControlsPanel !== "workspace"}>{visitedGitDetails.includes("workspace") && <GitWorkspaceContinuation
+            key={`workspace:${session.id}:${session.cwd}`}
+            cwd={session.cwd}
+            sessionId={session.id}
             transient={session?.transient}
             onSessionMoved={onSessionMoved}
             onSessionForkedToWorktree={onSessionForkedToWorktree}
-            assistantLeafId={session && !session.transient && session.relation?.kind !== "subagent" && activeLeafId
-              && messages[entryIds.indexOf(activeLeafId)]?.role === "assistant" ? activeLeafId : null}
+            assistantLeafId={activeLeafId && messages[entryIds.indexOf(activeLeafId)]?.role === "assistant" ? activeLeafId : null}
             busy={sessionBusy || streamState.isStreaming || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)}
-          />}
+          />}</div>
         </>, gitControlsHost)}
       <ArchivedSessionNotice key={archivedRootSessionId ?? "none"} rootSessionId={archivedRootSessionId}
         busy={sessionBusy || isCompacting || archiveActionBusy} onRestored={onSessionRestored} />
@@ -1101,7 +1111,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       )}
       <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
         {extensionCustomUi && (
-          <ExtensionCustomPanel key={extensionCustomUi.id} request={extensionCustomUi} onInput={sendExtensionCustomInput} />
+          <div inert={workflowOpen}><ExtensionCustomPanel key={extensionCustomUi.id} request={extensionCustomUi} onInput={sendExtensionCustomInput} /></div>
         )}
         {!isEmptyNew && <>
         <div
@@ -1342,11 +1352,19 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
             )}
 
             {extensionDialog && (
-              <div ref={questionCardRef} className="my-4 min-w-0 scroll-mt-4">
+              <div ref={questionCardRef} inert={workflowOpen} className="my-4 min-w-0 scroll-mt-4">
                 {extensionDialog.method === "ask_user"
                   ? <AskUserDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
                   : extensionDialog.method === "git_action"
-                    ? <GitActionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
+                    ? extensionDialog.candidate.kind === "preferences"
+                      ? <section role="group" aria-label="Configure workflow" className="rounded border border-border bg-bg-panel p-4 text-sm text-text">
+                          <p>All workflow settings now live in Workflow. Dismiss this legacy preference request to configure them there, then explicitly apply saved settings to this task. No operation is approved or continued by opening the panel.</p>
+                          <button type="button" className="mt-3 rounded border border-border px-3 py-2 text-accent" onClick={() => {
+                            respondToExtensionUi(extensionDialog, { cancelled: true });
+                            onOpenWorkflow?.();
+                          }}>Dismiss request &amp; open Workflow</button>
+                        </section>
+                      : <GitActionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
                     : <ExtensionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />}
               </div>
             )}

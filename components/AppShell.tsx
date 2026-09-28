@@ -12,6 +12,7 @@ import { getActivitySections, type ActivityStatus } from "@/lib/activity";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { FileViewer } from "./FileViewer";
 import { GitExplorerPanel } from "./GitExplorerPanel";
+import { GitWorkflowHome, type WorkflowChatStatus, type WorkflowDetail } from "./GitWorkflowHome";
 import { TabBar, type Tab } from "./TabBar";
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
@@ -373,9 +374,28 @@ export function AppShell() {
   }, []);
 
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | "git-workspace" | "git-commit" | "git-merge" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [workflowOpen, setWorkflowOpen] = useState(false);
+  const [workflowDetail, setWorkflowDetail] = useState<{ view: WorkflowDetail; sessionId: string; cwd: string } | null>(null);
+  const [workflowChatStatus, setWorkflowChatStatus] = useState<WorkflowChatStatus | null>(null);
   const [gitControlsHost, setGitControlsHost] = useState<HTMLDivElement | null>(null);
+  const closeWorkflow = useCallback(() => setWorkflowOpen(false), []);
+  const openWorkflow = useCallback(() => {
+    setMobileToolbarMoreOpen(false);
+    setActiveTopPanel(null);
+    closeOverview();
+    setRightPanelOpen(false);
+    if (isMobile || window.innerWidth < 1400) setSidebarOpen(false);
+    setWorkflowOpen(true);
+  }, [closeOverview, isMobile]);
+  const configureWorkflow = useCallback(() => {
+    setWorkflowDetail(null);
+    openWorkflow();
+  }, [openWorkflow]);
+  const handleWorkflowDetailChange = useCallback((view: WorkflowDetail | null) => {
+    setWorkflowDetail(view && selectedSession ? { view, sessionId: selectedSession.id, cwd: selectedSession.cwd } : null);
+  }, [selectedSession]);
 
   useEffect(() => {
     if (!sessionHasBranches) {
@@ -394,19 +414,13 @@ export function AppShell() {
   }, [rightPanelFullWidth]);
 
   const toggleTopPanel = useCallback((
-    panel: "agents" | "branches" | "system" | "tools" | "session" | "git-workspace" | "git-commit" | "git-merge",
+    panel: "agents" | "branches" | "system" | "tools" | "session",
     keepMobileToolbarOpen = false,
   ) => {
     if (isMobile) setSidebarOpen(false);
     setActiveTopPanel((cur) => cur === panel ? null : panel);
     if (isMobile && isNarrowMobile && keepMobileToolbarOpen) setMobileToolbarMoreOpen(true);
   }, [isMobile, isNarrowMobile]);
-
-  const closeGitControls = useCallback(() => setActiveTopPanel((panel) => panel?.startsWith("git-") ? null : panel), []);
-
-  useEffect(() => {
-    closeGitControls();
-  }, [selectedSession?.id, newSessionDraftId, closeGitControls]);
 
   const handleSystemInfoToggle = useCallback((
     panel: "system" | "tools",
@@ -1249,8 +1263,10 @@ export function AppShell() {
     activeNewSessionDraftKeyRef.current = newSessionDraftKey;
   }, [newSessionDraftKey]);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
-  const gitControlsPanel = activeTopPanel === "git-workspace" ? "workspace" : activeTopPanel === "git-commit" ? "commit" : activeTopPanel === "git-merge" ? "merge" : null;
-  const gitControlsTitle = gitControlsPanel === "workspace" ? "Workspace workflow" : gitControlsPanel === "commit" ? "Review & commit" : "Local integration review";
+  // A sidebar checkout selection must never retarget a chat action detail.
+  const gitControlsPanel = workflowDetail && workflowDetail.sessionId === selectedSession?.id && workflowDetail.cwd === selectedSession.cwd
+    ? workflowDetail.view : null;
+  const activeWorkflowStatus = workflowChatStatus?.sessionId === selectedSession?.id ? workflowChatStatus : null;
   const mobileSessionTitle = selectedSession
     ? selectedSession.name || (skillExpansionToCommand(selectedSession.firstMessage) ?? selectedSession.firstMessage).slice(0, 50) || selectedSession.id.slice(0, 12)
     : translate("i18n.newSession");
@@ -2187,37 +2203,14 @@ export function AppShell() {
               <path d="M6 6v12M6 15c0-4 3-8 10-8" />
             </svg>
           </button>
-          {showChat && (selectedSession?.cwd || effectiveNewSessionCwd) && ([
-            { panel: "git-workspace" as const, label: "Workspace workflow", icon: <>
-              <rect x="3" y="4" width="8" height="7" rx="1" /><rect x="13" y="13" width="8" height="7" rx="1" />
-              <path d="M11 7h4v6M8 11v6h5" />
-            </> },
-            ...(selectedSession && !selectedSession.transient && selectedSession.relation?.kind !== "subagent" ? [
-              { panel: "git-commit" as const, label: "Review & commit", icon: <>
-                <path d="M5 4h14v16H5zM8 9h8M8 13h4M9 17l2 2 4-4" />
-              </> },
-              { panel: "git-merge" as const, label: "Local integration review", icon: <>
-                <circle cx="6" cy="4" r="2" /><circle cx="6" cy="20" r="2" /><circle cx="18" cy="7" r="2" />
-                <path d="M6 6v12M6 15c0-4 3-8 10-8" />
-              </> },
-            ] : []),
-          ]).map(({ panel, label, icon }) => (
-            <button key={panel} type="button" aria-label={label} title={label}
-              aria-controls="chat-git-controls" aria-expanded={activeTopPanel === panel}
-              aria-pressed={activeTopPanel === panel}
-              onClick={() => {
-                setMobileToolbarMoreOpen(false);
-                if (activeOverview) closeOverview();
-                toggleTopPanel(panel);
-              }}
-              className="activity-top-button"
-              style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0,
-                border: 0, borderRight: "1px solid var(--border)", cursor: "pointer",
-                background: activeTopPanel === panel ? "var(--bg-selected)" : "none",
-                color: "var(--text-muted)" }}>
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon}</svg>
-            </button>
-          ))}
+          <button type="button" aria-label="Workflow" title="Workflow"
+            aria-controls="workflow-panel" aria-expanded={workflowOpen} aria-pressed={workflowOpen}
+            onClick={workflowOpen ? closeWorkflow : openWorkflow}
+            style={{ height: TOP_BAR_ICON_BUTTON_SIZE, padding: "0 12px", flexShrink: 0,
+              border: 0, borderRight: "1px solid var(--border)", cursor: "pointer", fontSize: 13,
+              background: workflowOpen ? "var(--bg-selected)" : "none", color: "var(--text)" }}>
+            Workflow
+          </button>
           {showChat && selectedSession?.relation?.kind === "subagent" && (
             <span role="img" aria-label={translate("activity.subagent")} title={translate("activity.subagent")}
               style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, borderRight: "1px solid var(--border)", color: "var(--accent)" }}>
@@ -2575,15 +2568,15 @@ export function AppShell() {
 
         {/* Chat content */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex" }}>
-          {showChat && gitControlsPanel && (
-            <section id="chat-git-controls" role="region" aria-label={`${gitControlsPanel} controls`} className="activity-overview git-controls-overview">
-              <div className="activity-header">
-                <div><h1>{gitControlsTitle}</h1><small>Local Git · {selectedSession ? "this chat" : "new chat"}</small></div>
-                <button type="button" className="activity-close" onClick={closeGitControls} aria-label={`Close ${gitControlsTitle}`} title={`Close ${gitControlsTitle}`}>×</button>
-              </div>
-              <div className="git-controls-body" ref={setGitControlsHost} />
-            </section>
-          )}
+          {/* Mounted even without a chat and while hidden: owns identity-keyed configuration drafts. */}
+          <GitWorkflowHome
+            visible={workflowOpen} onClose={closeWorkflow}
+            cwd={selectedSession?.cwd ?? effectiveNewSessionCwd ?? activeCwd}
+            session={selectedSession}
+            busy={Boolean(activeWorkflowStatus?.busy || selectedSession && runningSessionIds.has(selectedSession.id))}
+            attention={Boolean(activeWorkflowStatus?.attention)}
+            detail={gitControlsPanel} onDetailChange={handleWorkflowDetailChange} onDetailHost={setGitControlsHost}
+          />
           {activeOverview === "activity" && (
             <ActivityOverview
               sessions={sessionsWithSelection}
@@ -2614,7 +2607,7 @@ export function AppShell() {
           {activeOverview === "git" && <div id="git-explorer-panel" className="git-explorer-host">
             <GitExplorerPanel key={activeCwd ?? "no-worktree"} cwd={activeCwd} onClose={closeOverview} />
           </div>}
-          <div inert={Boolean((activeOverview && isMobile && overviewMobileList) || (gitControlsPanel && isMobile))} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
+          <div inert={Boolean((activeOverview && isMobile && overviewMobileList) || (workflowOpen && isMobile))} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
           {showChat ? (
             <ChatWindow
               key={sessionKey}
@@ -2639,7 +2632,9 @@ export function AppShell() {
               onSessionForkedToWorktree={handleSessionForkedToWorktree}
               gitControlsPanel={gitControlsPanel}
               gitControlsHost={gitControlsHost}
-              onGitControlsClose={closeGitControls}
+              workflowOpen={workflowOpen}
+              onOpenWorkflow={configureWorkflow}
+              onWorkflowStatusChange={setWorkflowChatStatus}
               modelsRefreshKey={modelsRefreshKey}
               chatInputRef={chatInputRef}
               onBranchDataChange={handleBranchDataChange}

@@ -29,7 +29,8 @@ test("only whole merge or ordered inclusive, cumulative consecutive commits can 
 });
 
 test("persisted ordinary session only at its session cwd; no checkout or target supplied", () => {
-  assert.match(chat, /gitControlsPanel === "merge" && session && !session\.transient/);
+  assert.match(chat, /session && !session\.transient && session\.relation\?\.kind !== "subagent" && createPortal/);
+  assert.match(chat, /hidden=\{gitControlsPanel !== "merge"\}.*visitedGitDetails\.includes\("merge"\)/);
   assert.match(chat, /<GitMergeReviewPanel key=\{`merge:\$\{session\.id\}:\$\{session\.cwd\}`\} sessionId=\{session\.id\} cwd=\{session\.cwd\}/);
   assert.match(panel, /URLSearchParams\(\{ sessionId \}\)/);
   assert.match(panel, /JSON\.stringify\(\{ sessionId, expectedFeatureOid: review\.featureOid, expectedTargetOid: review\.targetOid, selection \}\)/);

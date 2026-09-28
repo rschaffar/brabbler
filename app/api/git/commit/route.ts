@@ -1,5 +1,8 @@
 import { statSync } from "node:fs";
 import { NextResponse } from "next/server";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { assertManagedGitAction, assertManagedGitWorkspace, ManagedGitAccessError } from "@/lib/git-workflow-access";
+import type { SessionEntry } from "@/lib/types";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
 import { confirmGitCommit, prepareGitCommit, type GitCommitPreview } from "@/lib/git-commit";
 import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
@@ -39,6 +42,13 @@ export async function POST(req: Request) {
     if (!isExistingFilePathAllowed(cwd, roots)) return error("Access denied", 403);
     if (isGitCheckoutGated(cwd)) return error("Checkout is busy with a Git transaction", 409);
     const live = getRpcSession(id);
+    const guard = async () => {
+      const manager = live?.isAlive() && live.sessionFile === file ? live.inner.sessionManager : SessionManager.open(file, undefined);
+      if (manager.getHeader()?.id !== id || !samePath(manager.getCwd(), cwd)) throw new ManagedGitAccessError("Session checkout changed");
+      const state = await assertManagedGitAction(cwd, manager.getEntries() as SessionEntry[], "commit", "human");
+      await assertManagedGitWorkspace(state, cwd);
+    };
+    await guard();
     if (live?.isRunning()) return error("Stop the session before committing", 409);
     if (input.operation === "preview") {
       if (!Array.isArray(input.paths) || !input.paths.length || !input.paths.every((p) => typeof p === "string")) {
@@ -72,6 +82,7 @@ export async function POST(req: Request) {
       const release = acquireGitCheckoutGate([cwd]);
       try {
         if (live?.isRunning()) return error("Stop the session before committing", 409);
+        await guard();
         const result = await confirmGitCommit({ ...preview, repositoryRoot: cwd }, input.message);
         return NextResponse.json(result);
       } finally { release(); }
@@ -79,6 +90,7 @@ export async function POST(req: Request) {
     return error("Unknown commit operation", 400);
   } catch (cause) {
     if (cause instanceof SyntaxError) return error("Invalid JSON", 400);
+    if (cause instanceof ManagedGitAccessError) return error(cause.message, 409);
     // Git stderr and subprocess errors may contain remote credentials or config values.
     return error("Commit unavailable or preview stale; refresh the preview", 409);
   }

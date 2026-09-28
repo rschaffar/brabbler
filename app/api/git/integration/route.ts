@@ -11,6 +11,7 @@ import { confirmIntegration, prepareIntegration } from "@/lib/git-integration";
 import { reviewGitBranches, type GitReview } from "@/lib/git-review";
 import { inspectGitVerificationReceipts, runGitVerification } from "@/lib/git-verification";
 import { readSessionGitWorkflow } from "@/lib/git-workflow-policy";
+import { assertManagedGitAction, assertManagedGitWorkspace, ManagedGitAccessError, watchManagedGitAccess } from "@/lib/git-workflow-access";
 import { samePath, toNativePath } from "@/lib/paths";
 import { getProjectTrustStatus } from "@/lib/project-trust";
 import { hasBusyRpcSessionForCwd } from "@/lib/rpc-manager";
@@ -62,12 +63,14 @@ async function session(id: string) {
   const cwd = header.cwd;
   const roots = await getAllowedFileRoots();
   if (!await allowed(cwd, roots)) return { response: error("Checkout not allowed", 403) };
-  const policy = () => {
+  const policy = async () => {
     const manager = SessionManager.open(file, undefined);
     if (manager.getHeader()?.id !== id || manager.getHeader()?.cwd !== cwd) throw new Error("Session changed");
+    const state = await assertManagedGitAction(cwd, manager.getEntries() as SessionEntry[], "integration", "human");
+    await assertManagedGitWorkspace(state, cwd);
     return readSessionGitWorkflow(manager.getEntries() as SessionEntry[]);
   };
-  const saved = policy();
+  const saved = await policy();
   if (!saved?.integration || saved.integration.method !== "merge") {
     return { response: error("Saved merge target required", 409) };
   }
@@ -166,6 +169,7 @@ export async function POST(req: Request) {
       try {
         if (!c.trusted() || !idle(c) || !await allowed(c.cwd, await getAllowedFileRoots()) ||
             !await allowed(c.targetCwd, await getAllowedFileRoots())) return error("Checkout no longer available", 409);
+        await c.policy();
         const result = await confirmIntegration(input.planId as string, input.approvePlanId as string, id);
         return NextResponse.json(result);
       } finally { release(); }
@@ -178,10 +182,13 @@ export async function POST(req: Request) {
       const release = acquireGitCheckoutGate([c.cwd, c.targetCwd]);
       try {
         if (!idle(c) || !c.trusted()) return error("Checkout no longer available", 409);
-        const receipt = await runGitVerification({ sessionId: id, cwd: c.cwd, agentDir: c.agentDir, review,
-          checkIndex: input.checkIndex as number, getPolicy: c.policy, isTrusted: c.trusted });
-        return NextResponse.json({ receipt: { id: receipt.id, checkIndex: receipt.checkIndex, startedAt: receipt.startedAt,
-          finishedAt: receipt.finishedAt, logDigest: receipt.logDigest } });
+        const watcher = await watchManagedGitAccess(() => c.policy(), req.signal);
+        try {
+          const receipt = await runGitVerification({ sessionId: id, cwd: c.cwd, agentDir: c.agentDir, review,
+            checkIndex: input.checkIndex as number, getPolicy: c.policy, isTrusted: c.trusted, signal: watcher.signal });
+          return NextResponse.json({ receipt: { id: receipt.id, checkIndex: receipt.checkIndex, startedAt: receipt.startedAt,
+            finishedAt: receipt.finishedAt, logDigest: receipt.logDigest } });
+        } finally { watcher.dispose(); }
       } finally { release(); }
     }
     const ids = input.receiptIds as string[];
@@ -193,6 +200,7 @@ export async function POST(req: Request) {
       featureBranch: c.featureBranch, receiptIds: ids, getPolicy: c.policy });
     return NextResponse.json({ plan });
   } catch (cause) {
+    if (cause instanceof ManagedGitAccessError) return error(cause.message, 409);
     // The engine's own fixed-prefix validation messages are sanitized; never
     // return raw Git stderr, check argv, private logs, or OS filesystem errors.
     if (cause instanceof Error && /^Git integration unavailable: [^\r\n]{1,160}$/.test(cause.message)) {

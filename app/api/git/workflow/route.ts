@@ -8,6 +8,8 @@ import { getProjectGitWorkflow, setProjectGitWorkflow } from "@/lib/git-workflow
 import { getRpcSession } from "@/lib/rpc-manager";
 import { invalidateSessionListCache, invalidateSessionManagerCache, readLatestSessionEntryId, readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
 import { SUBAGENT_META_TYPE } from "@/lib/subagents";
+import { readManagedSessionGitWorkflow } from "@/lib/git-workflow-session";
+import { loadGitWorkflowSettings, readGitWorkflowSettingsDocument } from "@/lib/git-workflow-settings-store";
 import type { SessionEntry } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -98,6 +100,10 @@ export async function PUT(req: Request) {
     if (input.scope === "project" && !Object.hasOwn(input, "sessionId")) {
       const checked = await checkCwd(input.cwd);
       if (checked.response) return checked.response;
+      const current = await loadGitWorkflowSettings(checked.cwd!);
+      if (current.projectRoot && Object.hasOwn(readGitWorkflowSettingsDocument().projects, current.projectRoot)) {
+        return error("This project uses scoped Workflow settings; use the Workflow panel", 409);
+      }
       await setProjectGitWorkflow(checked.cwd!, policy);
       return NextResponse.json({ ok: true, cwd: checked.cwd, project: policy });
     }
@@ -119,6 +125,7 @@ export async function PUT(req: Request) {
     const manager = usingLive ? live!.inner.sessionManager : SessionManager.open(target.file!, undefined);
     if (manager.getHeader()?.id !== id || manager.getHeader()?.cwd !== target.cwd) return error("Session identity mismatch", 409);
     const entries = sessionEntries(manager);
+    if (readManagedSessionGitWorkflow(entries)) return error("This session uses scoped Workflow settings; use the Workflow panel", 409);
     if (entries.some((entry) => entry.type === "custom" && entry.customType === SUBAGENT_META_TYPE)) {
       return error("Cannot change a subagent workflow", 409);
     }

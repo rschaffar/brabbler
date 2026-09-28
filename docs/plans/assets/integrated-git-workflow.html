@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<title>Workflow — design prototype</title>
+<style>
+:root { color-scheme: light; --bg:#fff; --panel:#f5f5f5; --hover:#eee; --selected:#e8e8e8; --line:#dedede; --text:#242424; --muted:#656565; --accent:#245bce; --contrast:#fff; --soft:#edf3ff; --good:#23654b; --good-bg:#edf6f0; --warn:#835811; --warn-bg:#fbf4e6; }
+@media(prefers-color-scheme:dark) { :root { color-scheme:dark; --bg:#1a1a1a; --panel:#242424; --hover:#2e2e2e; --selected:#383838; --line:#3e3e3e; --text:#ededed; --muted:#b0b0b0; --accent:#a4c2f4; --contrast:#182234; --soft:#242e3e; --good:#a4d0b5; --good-bg:#27372e; --warn:#e1c083; --warn-bg:#383124; } }
+* { box-sizing:border-box; } [hidden] { display:none !important; }
+body { margin:0; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--text); background:var(--panel); }
+button,select { font:inherit; color:inherit; } button { cursor:pointer; } button,select { border:1px solid var(--line); border-radius:8px; background:var(--bg); padding:8px 12px; }
+button:hover { background:var(--hover); } button:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+button:disabled { cursor:default; opacity:.6; } a { color:var(--accent); } code { font:12px ui-monospace,SFMono-Regular,Consolas,monospace; }
+.prototype { padding:10px 24px; display:flex; align-items:center; justify-content:space-between; gap:16px; color:var(--muted); border-bottom:1px solid var(--line); background:var(--bg); font-size:12px; }
+.prototype strong { color:var(--text); font-weight:600; }
+.shell { max-width:1160px; margin:24px auto; display:grid; grid-template-columns:minmax(250px,1fr) 560px; border:1px solid var(--line); border-radius:14px; overflow:hidden; min-height:850px; background:var(--bg); }
+.chat { padding:24px 30px; display:flex; flex-direction:column; gap:32px; background:var(--bg); }
+.brand { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:13px; }
+.brand strong { font-size:18px; color:var(--text); letter-spacing:-.6px; }
+.chat-title { margin-top:12px; } h1,h2,h3,p { margin:0; } .chat-title h1 { font-size:22px; line-height:1.3; font-weight:600; letter-spacing:-.4px; }
+.muted { color:var(--muted); } .small { font-size:12px; } .chat-title p { margin-top:7px; }
+.bubble { border-radius:12px; background:var(--panel); padding:16px 18px; max-width:370px; margin-left:auto; }
+.reply { max-width:385px; padding:0 2px; } .reply p+p { margin-top:12px; }
+.receipt { border:1px solid var(--line); border-radius:10px; padding:15px 16px; display:grid; gap:8px; margin-top:16px; }
+.receipt strong { font-weight:600; } .receipt-title { display:flex; align-items:center; gap:9px; }
+.check { color:var(--good); } .spacer { flex:1; }
+.composer { color:var(--muted); padding:16px; border:1px solid var(--line); border-radius:12px; font-size:13px; }
+.workflow { border-left:1px solid var(--line); min-width:0; background:var(--bg); }
+.panel-head { padding:20px 24px 16px; display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.panel-head h2 { font-size:19px; font-weight:600; letter-spacing:-.3px; } .panel-head p { margin-top:3px; }
+.head-actions { display:flex; gap:6px; } .quiet { background:transparent; border-color:transparent; padding:7px 10px; } .icon { width:36px; height:36px; padding:4px; font-size:18px; }
+.task { margin:0 24px 20px; padding:15px 16px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }
+.overline { font-size:11px; font-weight:600; letter-spacing:.65px; text-transform:uppercase; color:var(--muted); }
+.task-title { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:6px; font-weight:600; }
+.task p { margin-top:4px; } .state { color:var(--good); font-size:12px; font-weight:500; }
+.task details { margin-top:10px; } summary { cursor:pointer; list-style:none; } summary::-webkit-details-marker { display:none; } .task summary { font-size:12px; color:var(--muted); }
+.task details p { font-size:12px; } .scope-area { padding:0 24px 18px; border-bottom:1px solid var(--line); }
+.section-label { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; } .section-label h3 { font-size:13px; font-weight:600; }
+.scopes { display:grid; grid-template-columns:1fr 1fr 1fr; background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:3px; gap:3px; }
+.scopes button { border:1px solid transparent; background:transparent; min-height:42px; padding:6px; font-weight:500; font-size:13px; }
+.scopes button[aria-pressed=true] { background:var(--bg); border-color:var(--line); color:var(--accent); }
+.scope-note { margin-top:9px; display:flex; justify-content:space-between; gap:8px; color:var(--muted); font-size:12px; }
+.body { padding:0 24px 22px; }
+.enabled { min-height:64px; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.enabled strong { font-weight:600; font-size:13px; } .enabled small { display:block; color:var(--muted); margin-top:2px; }
+.toggle { border:0; min-width:64px; background:var(--soft); color:var(--accent); font-size:12px; font-weight:600; padding:7px 10px; }
+.off-note { padding:10px 12px; margin-bottom:10px; border-radius:8px; background:var(--panel); font-size:12px; }
+.stage { border-top:1px solid var(--line); }
+.stage > summary { display:grid; grid-template-columns:minmax(0,1fr) auto 12px; align-items:center; column-gap:14px; padding:15px 0; min-height:76px; }
+.stage-name { font-size:14px; font-weight:600; } .stage-desc { font-size:12px; color:var(--muted); margin-top:3px; }
+.stage-value { text-align:right; } .mode { font-size:12px; font-weight:500; padding:4px 8px; border-radius:5px; background:var(--panel); display:inline-block; }
+.mode.automatic { background:var(--soft); color:var(--accent); } .source { display:block; margin-top:3px; font-size:11px; color:var(--muted); }
+.chevron { color:var(--muted); } details[open] > summary .chevron { transform:rotate(90deg); }
+.stage-editor { padding:0 0 16px; } .field { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin:2px 0 12px; }
+.field label { font-size:12px; font-weight:500; } .field select { font-size:12px; max-width:100%; }
+.trace { background:var(--panel); padding:12px 14px; border-radius:8px; }
+.trace-title { font-size:11px; font-weight:600; color:var(--muted); margin-bottom:7px; }
+.trace-line { display:flex; justify-content:space-between; gap:16px; font-size:12px; padding:3px 0; }
+.trace-line.active { color:var(--accent); font-weight:600; }
+.editor-note { font-size:12px; color:var(--muted); margin-top:10px; } .reset { color:var(--accent); font-size:12px; margin-top:7px; padding:6px 0; background:transparent; border-color:transparent; }
+.history { border-top:1px solid var(--line); margin-top:4px; padding-top:18px; }
+.history h3 { font-size:12px; font-weight:600; color:var(--muted); margin-bottom:9px; }
+.event { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:5px 0; font-size:12px; }
+.event span:first-child { display:flex; gap:9px; } .time { color:var(--muted); }
+.footer { position:sticky; bottom:0; background:var(--bg); border-top:1px solid var(--line); padding:12px 24px; }
+.footer p { font-size:12px; color:var(--muted); margin-bottom:10px; }
+.footer-controls { display:flex; gap:10px; align-items:center; justify-content:flex-end; }
+.primary { background:var(--accent); color:var(--contrast); border-color:transparent; font-weight:600; font-size:12px; } .primary:hover { filter:brightness(.95); background:var(--accent); }
+.notice { padding:8px 24px; font-size:12px; color:var(--muted); border-top:1px solid var(--line); }
+.mobile-only { display:none; }
+@media(max-width:900px) { .shell { margin:0 auto; border:0; border-radius:0; grid-template-columns:1fr; max-width:620px; min-height:100vh; } .chat { display:none; } .workflow { border:0; } }
+@media(max-width:560px) { .prototype { padding:9px 16px; font-size:11px; } .prototype .optional { display:none; } .panel-head { padding:18px 18px 14px; } .scope-area { padding:0 18px 16px; } .task { margin:0 18px 18px; } .body { padding:0 18px 18px; } .footer { padding:12px 18px calc(12px + env(safe-area-inset-bottom)); } .field { align-items:stretch; flex-direction:column; } .field select { font-size:16px; min-height:44px; } .stage > summary { column-gap:9px; min-height:78px; } .stage-desc { max-width:195px; } .scopes button,button { min-height:44px; } .toggle { min-height:44px; } .mobile-only { display:inline; } }
+</style>
+</head>
+<body>
+<div class="prototype"><span><strong>Design prototype</strong> · Sample data only. No Git or settings changes.</span><span class="optional">Try the scopes, expand a row, change a mode.</span></div>
+<main class="shell">
+<section class="chat" aria-label="Illustrative chat">
+  <div class="brand"><strong>pi</strong><span>/ pi-web</span><span style="margin-left:auto">Chat</span></div>
+  <div class="chat-title"><h1>Improve session search</h1><p class="muted small">Working in feat/session-search</p></div>
+  <div class="bubble">Keep search scoped to this project by default.</div>
+  <div class="reply"><p>I’ll use this project’s workflow and continue in a dedicated worktree.</p><p class="muted">Commits and checks are automatic. I’ll ask you to review the final local merge.</p>
+    <div class="receipt"><div class="receipt-title"><span class="check">✓</span><strong>Commit created</strong><code style="margin-left:auto">a31d92c</code></div><p>Keep session search scoped to the project</p><span class="muted small">3 files · Automatic · Global permission</span><span class="small" style="color:var(--accent)">Captured side-by-side diff →</span></div>
+  </div>
+  <div class="spacer"></div><div class="composer">Message the agent…</div>
+</section>
+<aside class="workflow" aria-label="Workflow prototype">
+  <header class="panel-head"><div><h2>Workflow</h2><p class="small muted">pi-web <span aria-hidden="true">/</span> Improve session search</p></div><div class="head-actions"><button class="quiet small" id="pause" type="button">Pause all</button></div></header>
+  <section class="task" aria-label="Current task, separate from defaults">
+    <div class="overline">Current task</div><div class="task-title"><span>feat/session-search <span class="muted">→</span> rst-main</span><span class="state">Working</span></div>
+    <p class="small muted">Workspace ready · 1 commit · Checks next</p>
+    <details><summary>Using captured task settings · Details ↓</summary><p>Chat and feature use the same worktree. This task asks before integration. Editing defaults below does not silently change it.</p></details>
+  </section>
+  <section class="scope-area" aria-label="Workflow configuration scope">
+    <div class="section-label"><h3>Configure workflow</h3><span class="small muted" id="override-count"></span></div>
+    <div class="scopes" role="group" aria-label="Edit scope"><button type="button" data-scope="global" aria-pressed="false">Global</button><button type="button" data-scope="project" aria-pressed="false">Project · pi-web</button><button type="button" data-scope="session" aria-pressed="true">Session</button></div>
+    <div class="scope-note"><span id="scope-description"></span><span id="scope-status">Saved</span></div>
+  </section>
+  <div class="body">
+    <div class="enabled"><div><strong>Integrated Git workflow</strong><small id="enabled-source"></small></div><button type="button" id="enabled" class="toggle" role="switch" aria-checked="true" aria-label="Integrated Git workflow at selected scope">On</button></div>
+    <p class="off-note" id="off-note" hidden>Off at this scope. Preferences remain available to edit. More specific overrides may still enable other tasks.</p>
+    <div id="stages"></div>
+    <section class="history" aria-label="Recent task activity"><h3>Recent task activity</h3><div class="event"><span><span class="check">✓</span>Commit created <code>a31d92c</code></span><span class="time">14:29</span></div><div class="event"><span><span class="check">✓</span>Feature workspace ready</span><span class="time">14:24</span></div></section>
+  </div>
+  <footer class="footer" id="footer" hidden><p id="save-summary"></p><div class="footer-controls"><button type="button" class="quiet small" id="discard">Discard</button><button type="button" class="primary" id="save"></button></div></footer>
+  <div class="notice" id="notice" role="status" aria-live="polite" hidden></div>
+</aside>
+</main>
+<script>
+// Isolated visual demonstration. No network calls, storage, Git, or product code.
+const scopes=['global','project','session'];
+const names={global:'Global',project:'Project · pi-web',session:'This session'};
+const labels={workspace:'Workspace',commits:'Commits',checks:'Checks',integration:'Integration',cleanup:'Cleanup'};
+const descriptions={workspace:'Dedicated worktree · continue this chat',commits:'Complete selected files',checks:'Unit tests · Types · Lint',integration:'rst-main · non-fast-forward merge',cleanup:'Feature worktree and local branch'};
+const saved={global:{enabled:true,workspace:'Automatic',commits:'Automatic',checks:'Ask me',integration:'Ask me',cleanup:'Retain'},project:{checks:'Automatic',integration:'Automatic'},session:{integration:'Ask me'}};
+let drafts=structuredClone(saved),scope='session',expanded=null,paused=false;
+function layer(level) { return level===scope?drafts[level]:saved[level]; }
+function value(key,level=scope) { for(let i=scopes.indexOf(level);i>=0;i--) {const s=scopes[i],values=layer(s);if(Object.hasOwn(values,key))return {value:values[key],source:s};} }
+function dirty(level) {return JSON.stringify(drafts[level])!==JSON.stringify(saved[level]);}
+function trace(key) {return scopes.slice(0,scopes.indexOf(scope)+1).map(s=>{const current=Object.hasOwn(layer(s),key);return `<div class="trace-line ${s===scope?'active':''}"><span>${names[s]}</span><span>${current?layer(s)[key]:'Inherit · '+value(key,s).value}</span></div>`;}).join('');}
+function render() {
+  document.querySelectorAll('[data-scope]').forEach(b=>{b.setAttribute('aria-pressed',String(b.dataset.scope===scope));const s=b.dataset.scope;b.textContent=({global:'Global',project:'Project · pi-web',session:'Session'})[s]+(dirty(s)?' •':'');});
+  document.getElementById('scope-description').textContent={global:'Defaults for all projects',project:'Defaults for this project',session:'Only this chat · future tasks'}[scope];
+  document.getElementById('scope-status').textContent=dirty(scope)?'Unsaved changes':'Saved';
+  const overrides=Object.keys(drafts[scope]).filter(k=>k!=='enabled').length;
+  document.getElementById('override-count').textContent=scope==='global'?'Personal defaults':`${overrides} override${overrides===1?'':'s'}`;
+  const on=value('enabled');document.getElementById('enabled').textContent=on.value?'On':'Off';document.getElementById('enabled').setAttribute('aria-checked',String(on.value));document.getElementById('enabled-source').textContent=on.source===scope?'Set at this scope':`From ${names[on.source]}`;document.getElementById('off-note').hidden=on.value;
+  document.getElementById('stages').innerHTML=Object.keys(labels).map(key=>{
+    const actual=value(key);const modes=key==='cleanup'?['Retain','Ask me','Automatic']:['Off','Manual only','Ask me','Automatic'];
+    const parent=scopes[scopes.indexOf(scope)-1];const inherited=parent?value(key,parent):null;
+    const selected=Object.hasOwn(drafts[scope],key)?drafts[scope][key]:'inherit';
+    const sessionValue=value(key,'session');
+    const downstream=scope!=='session'&&sessionValue.value!==actual.value?`<p class="editor-note">Next task in this chat: <strong>${sessionValue.value}</strong> · ${names[sessionValue.source]} overrides this value.</p>`:'';
+    return `<details class="stage" data-key="${key}" ${expanded===key?'open':''}><summary><div><div class="stage-name">${labels[key]}</div><div class="stage-desc">${scope==='global'&&['workspace','checks','integration'].includes(key)?'Use each project’s definition':descriptions[key]}</div></div><div class="stage-value"><span class="mode ${actual.value==='Automatic'?'automatic':''}">${actual.value}</span><span class="source">${actual.source===scope?'Set here':`From ${names[actual.source]}`}</span></div><span class="chevron" aria-hidden="true">›</span></summary><div class="stage-editor"><div class="field"><label for="mode-${key}">Agent behavior</label><select id="mode-${key}" data-mode="${key}">${inherited?`<option value="inherit" ${selected==='inherit'?'selected':''}>Inherit · ${inherited.value}</option>`:''}${modes.map(m=>`<option ${selected===m?'selected':''}>${m}</option>`).join('')}</select></div><div class="trace"><div class="trace-title">WHERE THIS VALUE COMES FROM</div>${trace(key)}</div>${downstream}${inherited&&selected!=='inherit'?`<button class="reset" data-reset="${key}" type="button">Use ${names[parent]} value · ${inherited.value}</button>`:''}<p class="editor-note">${key==='integration'?'The target and method come from the project definition. Required project rules still apply.':key==='checks'?'Recipes expand here in the product: command, arguments, directory, and environment.':'Only changed fields become overrides. Other values keep following their parent.'}</p></div></details>`;
+  }).join('');
+  document.querySelectorAll('.stage').forEach(el=>el.addEventListener('toggle',()=>{if(el.open){expanded=el.dataset.key;document.querySelectorAll('.stage').forEach(other=>{if(other!==el)other.open=false;});}else if(expanded===el.dataset.key)expanded=null;}));
+  document.querySelectorAll('[data-mode]').forEach(el=>el.addEventListener('change',()=>{if(el.value==='inherit')delete drafts[scope][el.dataset.mode];else drafts[scope][el.dataset.mode]=el.value;render();}));
+  document.querySelectorAll('[data-reset]').forEach(el=>el.addEventListener('click',()=>{delete drafts[scope][el.dataset.reset];render();}));
+  document.getElementById('footer').hidden=!dirty(scope);
+  const widened=Object.keys(labels).filter(k=>drafts[scope][k]==='Automatic'&&saved[scope][k]!=='Automatic');
+  document.getElementById('save-summary').textContent=widened.length?`Demo: allow automatic ${widened.map(k=>labels[k].toLowerCase()).join(', ')} at ${names[scope]} scope. Existing task authority does not silently widen.`:`Changes apply at ${names[scope]} scope. This task keeps its captured choices; restrictions and revocations are live.`;
+  document.getElementById('save').textContent={global:'Save global defaults',project:'Save project defaults',session:'Save session settings'}[scope];
+}
+document.querySelectorAll('[data-scope]').forEach(b=>b.addEventListener('click',()=>{scope=b.dataset.scope;render();}));
+document.getElementById('enabled').onclick=()=>{drafts[scope].enabled=!value('enabled').value;render();};
+document.getElementById('discard').onclick=()=>{drafts[scope]=structuredClone(saved[scope]);render();};
+document.getElementById('save').onclick=()=>{saved[scope]=structuredClone(drafts[scope]);render();const n=document.getElementById('notice');n.textContent='Prototype only: saved in page memory. No real settings or permissions changed.';n.hidden=false;};
+document.getElementById('pause').onclick=()=>{paused=!paused;document.getElementById('pause').textContent=paused?'Resume all':'Pause all';const n=document.getElementById('notice');n.textContent=paused?'Demo paused. Real controls would stop further managed actions across scopes.':'Demo resumed. No real actions run in this prototype.';n.hidden=false;};
+render();
+</script>
+</body>
+</html>

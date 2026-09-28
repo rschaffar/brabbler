@@ -26,6 +26,12 @@ assert.ok(mode !== "dev" || !existsSync(join(root, ".next/dev/lock")), "Use a ch
 const artifacts = join(root, "test-results/e2e");
 mkdirSync(artifacts, { recursive: true });
 const agentDir = mkdtempSync(join(tmpdir(), "pi-web-e2e-"));
+// Guarded commits/merges read a real Git identity, but never the operator's HOME/config.
+const home = join(agentDir, "home");
+mkdirSync(home);
+writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = E2E\n\temail = e2e@example.invalid\n[commit]\n\tgpgsign = false\n");
+const fixtureEnv = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config"),
+  GIT_CONFIG_GLOBAL: join(home, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" };
 const project = join(agentDir, "project");
 const otherProject = join(agentDir, "other-project");
 const sessionDir = join(agentDir, "sessions", "e2e");
@@ -165,7 +171,7 @@ try {
   {
     mkdirSync(gitProject);
     const git = (...args) => execFileSync("git", ["-C", gitProject, ...args], {
-      encoding: "utf8", env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" },
+      encoding: "utf8", env: fixtureEnv,
     }).trim();
     const commit = (subject) => git("-c", "user.name=E2E", "-c", "user.email=e2e@example.invalid", "commit", "-m", subject);
     git("init", "-b", "target");
@@ -192,7 +198,8 @@ try {
   const base = `http://127.0.0.1:${port}`;
   server = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), mode, "-H", "127.0.0.1", "-p", String(port)], {
     cwd: root,
-    env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
+    env: { ...fixtureEnv, NODE_ENV: mode === "dev" ? "development" : "production",
+      PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   server.once("error", (error) => { serverError = error; });
@@ -244,7 +251,7 @@ try {
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
     });
     await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
-    await checkGitWorkflow(page, { base, api, sessionId: GIT, cwd: gitProject, targetWorktree });
+    await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree });
     await checkIntegratedGitGraph(page, targetWorktree);
     assert.deepEqual(errors, [], "Git workflow browser errors");
     await context.tracing.stop();
@@ -592,7 +599,7 @@ try {
     }
     if (viewport.width === 1280) {
       await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
-      await checkGitWorkflow(page, { base, api, sessionId: GIT, cwd: gitProject, targetWorktree });
+      await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree });
       await checkIntegratedGitGraph(page, targetWorktree);
     }
     // Use a separate tab: a deliberate full-page reload must not alter the

@@ -1,5 +1,6 @@
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { SessionEntry } from "./types";
+import { appendManagedSessionGitWorkflow, readManagedSessionGitWorkflow, validateManagedSessionGitWorkflow } from "./git-workflow-session";
 
 export const GIT_WORKFLOW_TYPE = "pi-web:git-workflow";
 
@@ -122,6 +123,9 @@ export function validateGitWorkflowPolicy(input: unknown): GitWorkflowPolicy {
 }
 
 function parseSessionData(data: unknown): GitWorkflowPolicy | null | undefined {
+  if (record(data) && data.version !== 1) {
+    try { return validateManagedSessionGitWorkflow(data).policy; } catch { return null; }
+  }
   if (!record(data) || !fields(data, ["version", "policy"]) || data.version !== 1) return undefined;
   if (data.policy === null) return null;
   try { return validateGitWorkflowPolicy(data.policy); } catch { return undefined; }
@@ -149,6 +153,11 @@ export function appendSessionGitWorkflow(manager: Pick<SessionManager, "appendCu
 export function inheritSessionGitWorkflow(
   sourceEntries: readonly SessionEntry[], destination: Pick<SessionManager, "appendCustomEntry">,
 ): void {
+  const managed = readManagedSessionGitWorkflow(sourceEntries);
+  if (managed) {
+    appendManagedSessionGitWorkflow(destination, managed.overrides, managed.task);
+    return;
+  }
   const policy = readSessionGitWorkflow(sourceEntries);
   if (policy !== undefined) appendSessionGitWorkflow(destination, policy);
 }

@@ -11,7 +11,9 @@ import { accountCredentialStore, getProjectAccounts, validateAccountSelection, t
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { inheritAgentGitPreferences, resolveAgentGitPreferenceChoice } from "./agent-git-preferences";
 import { appendSessionGitWorkflow, inheritSessionGitWorkflow, readSessionGitWorkflow, validateGitWorkflowPolicy, type GitWorkflowPolicy } from "./git-workflow-policy";
-import { getProjectGitWorkflow } from "./git-workflow-store";
+import { loadGitWorkflowSettings } from "./git-workflow-settings-store";
+import { snapshotManagedSessionGitWorkflow } from "./git-workflow-session";
+import { assertManagedGitAction, hasManagedGitMutationTools } from "./git-workflow-access";
 import { createGitWorkflowExtension } from "./git-workflow-extension";
 import { createGitCommitExtension } from "./git-commit-extension";
 import { createAgentGitWorkflowExtension, type AgentGitWorkflowUiContext } from "./agent-git-workflow-extension";
@@ -234,20 +236,18 @@ class PlainTextTheme extends Theme {
 const PLAIN_TEXT_THEME = new PlainTextTheme();
 const CUSTOM_UI_KEYBINDINGS = new TuiKeybindingsManager(TUI_KEYBINDINGS);
 
-function withExtensionTools(session: AgentSessionLike, toolNames: string[]): string[] {
+export function withExtensionTools(session: AgentSessionLike, toolNames: string[]): string[] {
   if (toolNames.length === 0) return [];
 
   const codingToolNames = new Set(CODING_TOOL_NAMES);
   const selectedToolNames = resolveShellTools(toolNames, session.settingsManager.getDefaultTools());
-  const extensionToolNames = session
-    .getAllTools()
-    .map((t) => t.name)
-    .filter((name) => !codingToolNames.has(name)
-      // A session that selects only read/grep/find/ls must not gain a
-      // mutating host tool merely because extensions are enabled.
-      && (!["git_commit", "git_workspace_start", "git_workflow"].includes(name) || selectedToolNames.some((tool) => ["bash", "powershell", "edit", "write"].includes(tool))));
-
-  return [...new Set([...selectedToolNames, ...extensionToolNames])];
+  const canMutate = hasManagedGitMutationTools(selectedToolNames);
+  const allowed = (name: string) => canMutate || !["git_commit", "git_workspace_start", "git_workflow"].includes(name);
+  const extensionToolNames = session.getAllTools().map((t) => t.name)
+    .filter((name) => !codingToolNames.has(name) && allowed(name));
+  // The SDK may already have appended extension tools to its initial active
+  // selection. Filter incoming names too, including unpinned defaultTools.
+  return [...new Set([...selectedToolNames.filter(allowed), ...extensionToolNames])];
 }
 
 // ============================================================================
@@ -457,6 +457,7 @@ export class AgentSessionWrapper {
     // Recheck after async git probes. The source wrapper is idle; a fresh prompt is gated.
     if (this.isRunning() || !this._alive || hasBusyRpcSessionForCwd(transition.originCwd)
       || hasBusyRpcSessionForCwd(transition.destinationPath)) throw new Error("Checkout is running");
+    await assertManagedGitAction(transition.originCwd, manager.getEntries() as SessionEntry[], "workspace", "agent");
     const { moveSessionFamily } = await import("./session-move");
     let movedId = this.sessionId;
     if (transition.onCreate === "fork") {
@@ -486,6 +487,7 @@ export class AgentSessionWrapper {
       || hasBusyRpcSessionForCwd(transition.originCwd) || hasBusyRpcSessionForCwd(transition.destinationPath)) {
       throw new Error("Checkout changed before session move");
     }
+    await assertManagedGitAction(transition.originCwd, manager.getEntries() as SessionEntry[], "workspace", "agent");
     await moveSessionFamily(movedId, transition.destinationPath);
     // Success is durable before optional transcript decoration. Resolve the real moved cwd.
     const movedFile = await resolveSessionPath(movedId);
@@ -2297,12 +2299,16 @@ export async function startRpcSession(
   const sessionCwd = sessionManager.getCwd();
   // Existing sessions use only their saved entry; project defaults never retrofit them.
   // Explicit null on a new session is a persisted opt-out, not a missing option.
-  const gitWorkflow = sessionFile
-    ? readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])
-    : options.gitWorkflow === undefined
-      ? await getProjectGitWorkflow(sessionCwd)
-      : options.gitWorkflow === null ? null : validateGitWorkflowPolicy(options.gitWorkflow);
-  if (!sessionFile && gitWorkflow !== undefined) appendSessionGitWorkflow(sessionManager, gitWorkflow);
+  if (!sessionFile) {
+    if (options.gitWorkflow === undefined) {
+      const defaults = await loadGitWorkflowSettings(sessionCwd);
+      snapshotManagedSessionGitWorkflow(sessionManager, defaults.resolved.project.values);
+    } else {
+      // Compatibility for explicitly queued old-browser choices. Never adopt a
+      // new global default into an already initialized or persisted session.
+      appendSessionGitWorkflow(sessionManager, options.gitWorkflow === null ? null : validateGitWorkflowPolicy(options.gitWorkflow));
+    }
+  }
   const subagentResources = sessionFile
     ? readSubagentSessionResources(
         sessionManager.getEntries() as unknown as SessionEntry[],
@@ -2414,7 +2420,8 @@ export async function startRpcSession(
                 isBuiltInSubagentsEnabled,
               ),
               createAskUserExtension(),
-              createGitWorkflowExtension(() => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])),
+              createGitWorkflowExtension(() => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[]),
+                () => loadGitWorkflowSettings(sessionCwd, sessionManager.getEntries() as unknown as SessionEntry[], undefined, sessionManager.getSessionId())),
               createGitCommitExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])),
               createAgentGitWorkflowExtension(sessionCwd, undefined, sessionManager),
               createGitWorkspaceStartExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[]),
