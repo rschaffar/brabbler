@@ -11,11 +11,12 @@ export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const cwd = params.get("cwd") ?? "";
   const op = params.get("op");
-  const fields = op === "log" ? ["cwd", "op", ...(params.has("skip") ? ["skip"] : []), ...(params.has("head") ? ["head"] : [])]
-    : op === "commit" ? ["cwd", "op", "head", "oid"]
-    : op === "patch" ? ["cwd", "op", "head", "oid", "path"] : [];
+  const fields = op === "log" ? ["cwd", "op", ...(params.has("skip") ? ["skip"] : []), ...(params.has("head") ? ["head"] : []), ...(params.has("branch") ? ["branch"] : [])]
+    : op === "commit" ? ["cwd", "op", "head", "oid", ...(params.has("branch") ? ["branch"] : [])]
+    : op === "patch" ? ["cwd", "op", "head", "oid", "path", ...(params.has("branch") ? ["branch"] : [])] : [];
   if (!fields.length || params.size !== fields.length || fields.some((field) => !params.has(field)) ||
-    !cwd || (!cwd.startsWith("/") && !isWindowsAbsolutePath(cwd))) return failure("Invalid Git Explorer request", 400);
+    !cwd || (params.has("branch") && !params.get("branch")) ||
+    (!cwd.startsWith("/") && !isWindowsAbsolutePath(cwd))) return failure("Invalid Git Explorer request", 400);
   const roots = await getAllowedFileRoots();
   if (!isFilePathAllowed(cwd, roots)) return failure("Access denied", 403);
   try {
@@ -27,12 +28,12 @@ export async function GET(request: NextRequest) {
       const rawSkip = params.get("skip");
       if (rawSkip !== null && !/^(?:0|[1-9]\d*)$/.test(rawSkip)) return failure("Invalid history page", 400);
       const expectedHead = params.get("head") ?? undefined;
-      return NextResponse.json(await explorerLog(cwd, rawSkip === null ? 0 : Number(rawSkip), expectedHead));
+      return NextResponse.json(await explorerLog(cwd, rawSkip === null ? 0 : Number(rawSkip), expectedHead, params.get("branch") ?? undefined));
     }
     const head = params.get("head") ?? "";
     const oid = params.get("oid") ?? "";
-    if (op === "commit") return NextResponse.json(await explorerCommit(cwd, head, oid));
-    if (op === "patch") return NextResponse.json(await explorerPatch(cwd, head, oid, params.get("path") ?? ""));
+    if (op === "commit") return NextResponse.json(await explorerCommit(cwd, head, oid, params.get("branch") ?? undefined));
+    if (op === "patch") return NextResponse.json(await explorerPatch(cwd, head, oid, params.get("path") ?? "", params.get("branch") ?? undefined));
     return failure("Invalid Git Explorer request", 400);
   } catch (error) {
     if (error instanceof GitExplorerError) {

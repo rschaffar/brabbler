@@ -11,7 +11,7 @@ import { StarredOverview } from "./StarredOverview";
 import { getActivitySections, type ActivityStatus } from "@/lib/activity";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { FileViewer } from "./FileViewer";
-import { GitCommitViewer } from "./GitCommitViewer";
+import { GitExplorerPanel } from "./GitExplorerPanel";
 import { TabBar, type Tab } from "./TabBar";
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
@@ -218,7 +218,7 @@ export function AppShell() {
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
   const [projectTrustError, setProjectTrustError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => !initialNavigation.sidebarCollapsed);
-  const [activeOverview, setActiveOverview] = useState<"activity" | "starred" | null>(null);
+  const [activeOverview, setActiveOverview] = useState<"activity" | "starred" | "git" | null>(null);
   const [overviewMobileList, setOverviewMobileList] = useState(true);
   const closeOverview = useCallback(() => {
     setActiveOverview(null);
@@ -1184,17 +1184,6 @@ export function AppShell() {
     if (isMobile) setSidebarOpen(false);
   }, [isMobile]);
 
-  const handleOpenGitCommit = useCallback((cwd: string, head: string, oid: string) => {
-    const id = `git:${cwd}:${oid}`;
-    setFileTabs((tabs) => [
-      ...tabs.filter((tab) => tab.id !== id),
-      { id, label: `Commit ${oid.slice(0, 8)}`, filePath: "", kind: "git-commit", gitCommit: { cwd, head, oid } },
-    ]);
-    setActiveFileTabId(id);
-    setRightPanelOpen(true);
-    if (isMobile) setSidebarOpen(false);
-  }, [isMobile]);
-
   const handleOpenLinkedFile = useCallback((filePath: string, page?: number) => {
     handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, page });
   }, [handleOpenFile, selectedSession?.id]);
@@ -1337,7 +1326,6 @@ export function AppShell() {
         selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
         onCwdChange={handleCwdChange}
         onOpenFile={handleOpenFile}
-        onOpenGitCommit={handleOpenGitCommit}
         onOpenTerminal={handleOpenTerminal}
         explorerRefreshKey={explorerRefreshKey}
         onExplorerRefresh={handleExplorerRefresh}
@@ -2169,6 +2157,27 @@ export function AppShell() {
           >
             {activeOverview === "starred" && isMobile && !overviewMobileList ? "←" : "★"}
           </button>
+          <button type="button" className="activity-top-button" aria-label="Git Explorer" title="Git Explorer"
+            aria-pressed={activeOverview === "git"} aria-controls="git-explorer-panel"
+            onClick={() => {
+              setActiveTopPanel(null);
+              setMobileToolbarMoreOpen(false);
+              if (activeOverview === "git") closeOverview();
+              else {
+                setOverviewMobileList(true);
+                setActiveOverview("git");
+                setRightPanelOpen(false);
+                if (isMobile || window.innerWidth < 1000) setSidebarOpen(false);
+              }
+            }}
+            style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0,
+              border: 0, borderRight: "1px solid var(--border)", background: activeOverview === "git" ? "var(--bg-selected)" : "none",
+              color: "var(--text-muted)", cursor: "pointer" }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="6" cy="4" r="2" /><circle cx="6" cy="20" r="2" /><circle cx="18" cy="7" r="2" />
+              <path d="M6 6v12M6 15c0-4 3-8 10-8" />
+            </svg>
+          </button>
           {showChat && (selectedSession?.cwd || effectiveNewSessionCwd) && ([
             { panel: "git-workspace" as const, label: "Workspace workflow", icon: <>
               <rect x="3" y="4" width="8" height="7" rx="1" /><rect x="13" y="13" width="8" height="7" rx="1" />
@@ -2593,6 +2602,9 @@ export function AppShell() {
               hidden={isMobile && !overviewMobileList}
             />
           )}
+          {activeOverview === "git" && <div id="git-explorer-panel" className="git-explorer-host">
+            <GitExplorerPanel key={activeCwd ?? "no-worktree"} cwd={activeCwd} onClose={closeOverview} />
+          </div>}
           <div inert={Boolean((activeOverview && isMobile && overviewMobileList) || (gitControlsPanel && isMobile))} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
           {showChat ? (
             <ChatWindow
@@ -2770,10 +2782,7 @@ export function AppShell() {
 
         {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
-          {activeFileTab?.gitCommit ? (
-            <GitCommitViewer key={`${activeFileTab.id}:${activeFileTab.gitCommit.head}`}
-              cwd={activeFileTab.gitCommit.cwd} head={activeFileTab.gitCommit.head} oid={activeFileTab.gitCommit.oid} />
-          ) : activeFileTab?.filePath ? (
+          {activeFileTab?.filePath ? (
             <FileViewer
               key={`${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}
               filePath={activeFileTab.filePath}

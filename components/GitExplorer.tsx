@@ -21,26 +21,33 @@ async function load(address: string, signal: AbortSignal): Promise<Page> {
 }
 function laneColor(lane: number) { return colors[lane % colors.length]; }
 
-/** Read-only history for the sidebar's selected checkout, not the open chat. */
-export function GitExplorer({ cwd, onOpenCommit }: { cwd: string; onOpenCommit: (cwd: string, head: string, oid: string) => void }) {
+/** Read-only local-branch history for the selected checkout, not the open chat. */
+export function GitExplorer({ cwd, onOpenCommit, onBranchChange }: {
+  cwd: string;
+  onOpenCommit: (branch: string, head: string, oid: string) => void;
+  onBranchChange: () => void;
+}) {
   const [revision, setRevision] = useState(0);
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [page, setPage] = useState<Page | null>(null);
+  const [availableRefs, setAvailableRefs] = useState<Page["refs"]>([]);
+  const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [moreLoading, setMoreLoading] = useState(false);
   const [selectedOid, setSelectedOid] = useState<string | null>(null);
   const moreController = useRef<AbortController | null>(null);
 
-  useEffect(() => () => { moreController.current?.abort(); }, [cwd, revision]);
+  useEffect(() => () => { moreController.current?.abort(); }, [cwd, revision, selectedBranch]);
   useEffect(() => {
     const controller = new AbortController();
     setPage(null); setSelectedOid(null); setError(null); setLoading(true); setMoreLoading(false);
-    void load(address(cwd), controller.signal)
-      .then((result) => { if (!controller.signal.aborted) setPage(result); })
+    void load(address(cwd, selectedBranch ? { branch: selectedBranch } : {}), controller.signal)
+      .then((result) => { if (!controller.signal.aborted) { setPage(result); setAvailableRefs(result.refs); setCurrentBranch(result.branch); } })
       .catch((cause) => { if (!controller.signal.aborted) setError(errorText(cause)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [cwd, revision]);
+  }, [cwd, revision, selectedBranch]);
 
   const graph = useMemo(() => layoutGitGraph(page?.commits ?? []), [page?.commits]);
   const graphWidth = Math.max(28, graph.laneCount * GAP + 16);
@@ -56,9 +63,9 @@ export function GitExplorer({ cwd, onOpenCommit }: { cwd: string; onOpenCommit: 
     moreController.current = controller;
     setMoreLoading(true);
     try {
-      const result = await load(address(cwd, { head: page.head, skip: String(page.nextSkip) }), controller.signal);
+      const result = await load(address(cwd, { branch: page.branch, head: page.head, skip: String(page.nextSkip) }), controller.signal);
       if (!controller.signal.aborted) {
-        setPage((previous) => previous?.head === result.head && previous.nextSkip === page.nextSkip
+        setPage((previous) => previous?.head === result.head && previous.branch === result.branch && previous.nextSkip === page.nextSkip
           ? { ...previous, commits: [...previous.commits, ...result.commits], nextSkip: result.nextSkip, refs: result.refs } : previous);
         setError(null);
       }
@@ -67,10 +74,16 @@ export function GitExplorer({ cwd, onOpenCommit }: { cwd: string; onOpenCommit: 
   }, [cwd, page, moreLoading]);
 
   return <div className="flex min-h-0 flex-1 flex-col text-xs" aria-label="Git Explorer">
-    <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-1 text-text-muted">
-      <span className="min-w-0 truncate" title={cwd}>{page ? `${page.branch} · ${page.head.slice(0, 10)}` : "Selected worktree history"}</span>
-      <button type="button" className="shrink-0 text-accent" onClick={() => setRevision((n) => n + 1)}>Refresh</button>
+    <div className="flex items-center gap-2 border-b border-border px-2 py-1 text-text-muted">
+      <select aria-label="History branch" className="min-w-0 flex-1 rounded border border-border bg-bg px-1 py-1 text-text"
+        value={selectedBranch ?? page?.branch ?? currentBranch ?? ""} disabled={!availableRefs.length}
+        onChange={(event) => { onBranchChange(); setPage(null); setSelectedBranch(event.target.value); }}>
+        {!availableRefs.length && <option value="">Loading branches…</option>}
+        {availableRefs.map((ref) => <option key={ref.branch} value={ref.branch}>{ref.branch}</option>)}
+      </select>
+      <button type="button" className="shrink-0 text-accent" onClick={() => { onBranchChange(); setPage(null); setRevision((n) => n + 1); }}>Refresh</button>
     </div>
+    {page && <p className="truncate px-2 py-1 font-mono text-[10px] text-text-dim" title={cwd}>{page.head.slice(0, 10)} · {cwd}</p>}
     {loading && <p className="p-2 text-text-muted" role="status">Loading Git history…</p>}
     {error && <p className="p-2 text-red-400" role="alert">{error}</p>}
     {page && <div className="min-h-0 flex-1 overflow-auto" aria-label="Commit graph">
@@ -89,7 +102,7 @@ export function GitExplorer({ cwd, onOpenCommit }: { cwd: string; onOpenCommit: 
         </svg>
         {page.commits.map((commit) => <button key={commit.oid} type="button" aria-pressed={selectedOid === commit.oid}
           className="flex h-9 w-full min-w-0 flex-col justify-center pr-2 text-left text-text hover:bg-bg-hover aria-pressed:bg-bg-selected"
-          style={{ paddingLeft: graphWidth }} onClick={() => { setSelectedOid(commit.oid); onOpenCommit(cwd, page.head, commit.oid); }}
+          style={{ paddingLeft: graphWidth }} onClick={() => { setSelectedOid(commit.oid); onOpenCommit(page.branch, page.head, commit.oid); }}
           title={`${commit.oid}\n${commit.author} · ${commit.date}\n${commit.subject}`}>
           <span className="flex min-w-0 items-center gap-1">
             <span className="min-w-0 flex-1 truncate">{commit.subject || "(no subject)"}</span>

@@ -32,6 +32,8 @@ test("read-only Git Explorer routes bind a physical allowed checkout and capture
   assert.equal((await request({ cwd: join(cwd, ".git"), op: "log" })).status, 409);
   assert.equal((await request({ cwd, op: "log", skip: "-1" })).status, 400);
   assert.equal((await request({ cwd, op: "log", extra: "unknown" })).status, 400);
+  assert.equal((await request({ cwd, op: "log", branch: "" })).status, 400);
+  assert.equal((await request({ cwd, op: "log", branch: "refs/remotes/origin/main" })).status, 404);
   const history = await request({ cwd, op: "log" });
   assert.equal(history.status, 200);
   assert.deepEqual((await history.json()).commits.map((commit) => commit.oid), [head]);
@@ -46,4 +48,22 @@ test("read-only Git Explorer routes bind a physical allowed checkout and capture
   git(cwd, "add", "base.txt");
   git(cwd, "commit", "-qm", "next");
   assert.equal((await request({ cwd, op: "commit", oid: head, head })).status, 409);
+});
+
+test("route binds selected local-branch detail and patch to its unchanged tip", async (t) => {
+  const { cwd, head: root } = fixture(t);
+  git(cwd, "switch", "-qc", "side");
+  writeFileSync(join(cwd, "side.txt"), "side\n");
+  git(cwd, "add", "side.txt");
+  git(cwd, "commit", "-qm", "side");
+  const side = git(cwd, "rev-parse", "HEAD");
+  git(cwd, "switch", "main");
+  const history = await request({ cwd, op: "log", branch: "side" });
+  assert.equal(history.status, 200);
+  assert.deepEqual((await history.json()).commits.map(({ oid }) => oid), [side, root]);
+  assert.equal((await request({ cwd, op: "commit", branch: "side", head: side, oid: side })).status, 200);
+  assert.equal((await request({ cwd, op: "patch", branch: "side", head: side, oid: side, path: "side.txt" })).status, 200);
+  git(cwd, "update-ref", "refs/heads/side", root);
+  assert.equal((await request({ cwd, op: "commit", branch: "side", head: side, oid: side })).status, 409);
+  assert.equal((await request({ cwd, op: "patch", branch: "side", head: side, oid: side, path: "side.txt" })).status, 409);
 });
