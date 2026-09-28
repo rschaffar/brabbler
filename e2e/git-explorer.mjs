@@ -14,9 +14,10 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   const detail = page.getByRole("region", { name: "Git commit details" });
   await detail.getByRole("button", { name: /base\.txt/ }).click();
   const split = detail.getByRole("region", { name: "Side-by-side diff" });
-  await split.locator(".diff-code-delete").getByText("Base fixture").waitFor();
-  await split.locator(".diff-code-insert").getByText("Revised base fixture").waitFor();
-  assert.ok((await split.locator(".diff-gutter").count()) >= 2, "Both sides have line numbers");
+  await split.locator('[data-deletions] [data-line-type="change-deletion"]').getByText("Base fixture").waitFor();
+  await split.locator('[data-additions] [data-line-type="change-addition"]').getByText("Revised base fixture").waitFor();
+  assert.ok((await split.locator("[data-line-number-content]").count()) >= 2, "Both sides have line numbers");
+  await split.getByLabel("Patch hunk").getByText(/@@ -1 \+1 @@/).waitFor();
   await detail.getByRole("button", { name: "Unified" }).click();
   await detail.getByRole("region", { name: "Unified diff" }).waitFor();
   await detail.getByRole("button", { name: "Raw patch" }).click();

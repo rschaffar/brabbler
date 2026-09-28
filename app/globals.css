@@ -1,5 +1,4 @@
 @import "@xterm/xterm/css/xterm.css";
-@import "react-diff-view/style/index.css";
 @import "tailwindcss";
 /* demo/ is a separate project; keep its sources out of this app's class scan. */
 @source not "../demo";
@@ -22,32 +21,16 @@
   --font-mono-font: var(--font-mono);
 }
 
-/* react-diff-view is scoped to historical commits; match Pi Web's light/dark palette. */
-.git-commit-diff {
-  --diff-background-color: var(--bg);
-  --diff-text-color: var(--text);
-  --diff-font-family: var(--font-mono);
-  --diff-gutter-insert-background-color: rgba(34, 197, 94, 0.18);
-  --diff-gutter-delete-background-color: rgba(248, 113, 113, 0.18);
-  --diff-code-insert-background-color: rgba(34, 197, 94, 0.12);
-  --diff-code-delete-background-color: rgba(248, 113, 113, 0.13);
-  --diff-code-insert-edit-background-color: rgba(34, 197, 94, 0.32);
-  --diff-code-delete-edit-background-color: rgba(248, 113, 113, 0.32);
-}
-.git-commit-diff .diff {
+/* Pierre renders its own styles in a shadow root; only size its host here. */
+.git-commit-diff-file {
+  display: block;
+  font-family: var(--font-mono);
   font-size: 12px;
-}
-.git-commit-diff .diff-code {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.git-commit-diff .diff-decoration-content {
-  background: var(--bg-panel);
 }
 @media (max-width: 600px) {
   /* Keep both columns legible on phones without expanding the viewport. */
-  .git-commit-diff .diff-split,
-  .git-commit-diff .git-commit-diff-headings {
+  .git-commit-diff-file-split,
+  .git-commit-diff-headings {
     min-width: 680px;
   }
 }
