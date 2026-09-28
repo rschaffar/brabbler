@@ -67,7 +67,7 @@ test("missing session, invalid cwd input and unauthorized persisted checkout", a
 test("manual commit without policy, running rejection, checkout mismatch, stale preview and success", async (t) => {
   const { cwd, id } = await fixture(t);
   const previous = globalThis.__piSessions;
-  const live = { isAlive: () => false, isRunning: () => true };
+  const live = { cwd, sessionId: id, isAlive: () => false, isRunning: () => true };
   globalThis.__piSessions = new Map([[id, live]]);
   t.after(() => { globalThis.__piSessions = previous; });
   await writeFile(join(cwd, "a"), "second\n");
@@ -100,6 +100,71 @@ test("manual commit without policy, running rejection, checkout mismatch, stale 
   assert.deepEqual(result.parents, [fresh.head]);
   assert.equal(result.tree, fresh.tree);
   assert.equal((await git("git", ["-C", cwd, "rev-parse", "HEAD"])).stdout.trim(), result.commit);
+});
+
+test("another running chat in this checkout blocks preview and confirmation without consuming a live candidate", async (t) => {
+  const f = await fixture(t);
+  const previous = globalThis.__piSessions;
+  let running = true;
+  globalThis.__piSessions = new Map([["other-chat", { sessionId: "other-chat", cwd: f.cwd, isRunning: () => running }]]);
+  t.after(() => { globalThis.__piSessions = previous; });
+  await writeFile(join(f.cwd, "a"), "candidate\n");
+  const blocked = await post(previewRequest(f.id));
+  assert.equal(blocked.status, 409);
+  assert.match((await blocked.json()).error, /Stop sessions in this checkout/);
+  running = false;
+  const candidate = await (await post(previewRequest(f.id))).json();
+  assert.ok(candidate.actionId);
+  running = true;
+  assert.equal((await post(confirmRequest(f.id, candidate))).status, 409);
+  assert.equal((await history(candidate.actionId)).record.state, "awaiting-decision", "Admission failure must not consume approval");
+  running = false;
+  assert.equal((await (await post(confirmRequest(f.id, candidate))).json()).status, "committed");
+});
+
+test("operation preflight has a safe actionable diagnostic without leaking arbitrary Git policy keys", async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.cwd, "a"), "candidate\n");
+  const head = (await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim();
+  await writeFile(join(f.cwd, ".git", "MERGE_HEAD"), `${head}\n`);
+  const blocked = await post(previewRequest(f.id));
+  assert.equal(blocked.status, 409);
+  assert.match((await blocked.json()).error, /merge is in progress/);
+  await rm(join(f.cwd, ".git", "MERGE_HEAD"));
+  await git("git", ["-C", f.cwd, "config", "filter.PRIVATE_SENTINEL.clean", "cat"]);
+  const policy = await post(previewRequest(f.id));
+  assert.equal(policy.status, 409);
+  assert.doesNotMatch(await policy.text(), /PRIVATE_SENTINEL|filter\./i);
+  assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), head);
+});
+
+test("a late operation marker after durable intent records a definite blocked manual commit", async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.cwd, "a"), "candidate\n");
+  const candidate = await (await post(previewRequest(f.id))).json();
+  const indexPath = join(f.cwd, ".git", "index");
+  const beforeIndex = await readFile(indexPath);
+  let injected = false;
+  const off = subscribeGitActionUpdates(f.id, ({ actionId }) => {
+    if (actionId !== candidate.actionId || injected) return;
+    const record = JSON.parse(readFileSync(join(agentDir, "pi-web/git-actions/v1", actionId, "record.json"), "utf8")).record;
+    if (!record.intended?.commit) return;
+    injected = true;
+    writeFileSync(join(f.cwd, ".git", "MERGE_HEAD"), `${candidate.preview.head}\n`);
+  });
+  let response;
+  try { response = await post(confirmRequest(f.id, candidate)); }
+  finally { off(); }
+  assert.equal(injected, true);
+  assert.equal(response.status, 409);
+  assert.match((await response.json()).error, /merge is in progress/);
+  const record = (await history(candidate.actionId)).record;
+  assert.equal(record.state, "blocked");
+  assert.equal(record.decision, "approved");
+  assert.match(record.reason, /merge is in progress/);
+  assert.equal(record.outcome, undefined);
+  assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), candidate.preview.head);
+  assert.deepEqual(await readFile(indexPath), beforeIndex);
 });
 
 test("candidate patch is from server-derived trees even if caller supplies other OIDs", async (t) => {

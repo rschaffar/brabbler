@@ -103,6 +103,56 @@ test("global settings and pause work without a selected chat and never create a 
   assert.deepEqual(await sessionDirs(), beforeDirs);
 });
 
+test("settings summaries and actual route/tool gates agree for every supported commit mode and origin", async (t) => {
+  const { assertManagedGitAction } = await jiti.import("../../../../../lib/git-workflow-access.ts");
+  const { POST } = await jiti.import("../../commit/route.ts");
+  for (const scope of ["global", "project", "session"]) for (const commits of ["off", "manual", "ask"]) {
+    const f = await fixture(t);
+    f.sm.appendCustomEntry("pi-web:tool-selection", { version: 1, tools: ["read", "edit"] });
+    await save(scope, scope === "global" ? {} : f.query, { overrides: { commits } });
+    const captured = await save("task", f.query);
+    assert.equal(captured.resolved.session.origins.commits, scope);
+    const loaded = SessionManager.open(f.file).getEntries();
+    for (const actor of ["agent", "human"]) {
+      const permission = captured.permissions[actor].commit;
+      const check = () => assertManagedGitAction(f.cwd, loaded, "commit", actor, agentDir, ["read", "edit"]);
+      if (permission.kind === "blocked") await assert.rejects(check, (error) => error.message === permission.reason);
+      else await check();
+    }
+    await writeFile(join(f.cwd, "candidate"), "test-only candidate\n");
+    const response = await POST(new Request("http://localhost/api/git/commit", { method: "POST", body: JSON.stringify({
+      sessionId: f.id, operation: "preview", paths: ["candidate"], message: "Permission parity",
+    }) }));
+    const body = await response.json();
+    if (commits === "off") {
+      assert.equal(response.status, 409);
+      assert.equal(body.error, captured.permissions.human.commit.reason);
+    } else {
+      assert.equal(response.status, 200, JSON.stringify(body));
+      assert.ok(body.actionId);
+    }
+    assert.equal(captured.permissions.legacyAgentCommitConsent, false);
+  }
+});
+
+test("permission facts do not create wrappers, and effective read-only tools override a saved coding preset", async (t) => {
+  const f = await fixture(t);
+  const registry = globalThis.__piSessions;
+  t.after(() => { globalThis.__piSessions = registry; });
+  const original = await readFile(f.file, "utf8");
+  assert.equal((await state(f.query)).permissions.agent.commit.code, "unknown-tools");
+  assert.equal((await state()).permissions, undefined, "No chat is not a permission-bearing session");
+  assert.equal(globalThis.__piSessions, registry, "GET must not initialize an agent");
+  assert.equal(await readFile(f.file, "utf8"), original);
+  f.sm.appendCustomEntry("pi-web:tool-selection", { version: 1, tools: ["read", "edit"] });
+  assert.equal((await state(f.query)).permissions.agent.commit.kind, "confirmation-required");
+  globalThis.__piSessions = new Map([[f.id, { sessionFile: f.file, isAlive: () => true, isRunning: () => false,
+    inner: { sessionManager: f.sm, getActiveToolNames: () => ["read", "grep", "git_commit"] } }]]);
+  const readonly = await state(f.query);
+  assert.equal(readonly.permissions.agent.commit.code, "read-only");
+  assert.equal(readonly.permissions.human.commit.kind, "confirmation-required");
+});
+
 test("project writes use the canonical main repository for linked/aliased cwd and stay isolated", async (t) => {
   const f = await fixture(t, true), other = await fixture(t);
   const alias = join(f.dir, "alias");
@@ -338,7 +388,7 @@ test("future session authority and a v1 downgrade after adoption block reads and
 test("running chats and busy checkouts expose read-only session state and block override/apply", async (t) => {
   const f = await fixture(t);
   const previous = globalThis.__piSessions;
-  const live = { sessionFile: f.file, isAlive: () => true, isRunning: () => true, inner: { sessionManager: f.sm } };
+  const live = { sessionFile: f.file, isAlive: () => true, isRunning: () => true, inner: { sessionManager: f.sm, getActiveToolNames: () => ["read", "edit"] } };
   globalThis.__piSessions = new Map([[f.id, live]]);
   t.after(() => { globalThis.__piSessions = previous; });
   const original = await readFile(f.file, "utf8");
@@ -384,7 +434,7 @@ test("stale live editors and mismatched on-disk session identity fail without ap
   const f = await fixture(t);
   const previous = globalThis.__piSessions;
   globalThis.__piSessions = new Map([[f.id, { sessionFile: f.file, isAlive: () => true,
-    isRunning: () => false, inner: { sessionManager: f.sm } }]]);
+    isRunning: () => false, inner: { sessionManager: f.sm, getActiveToolNames: () => ["read", "edit"] } }]]);
   t.after(() => { globalThis.__piSessions = previous; });
   const before = await state(f.query);
   const external = SessionManager.open(f.file, undefined);

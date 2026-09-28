@@ -6,11 +6,11 @@ import { failGitAction, gitActionFailureResult, snapshotGitActionCandidate, GitA
 import { finishHumanGitAction, humanGitActionSink, HumanGitCandidateError, HumanGitSessionChangedError, keepHumanGitCandidate, readHumanGitSessionManager, takeHumanGitCandidate } from "@/lib/git-action-human";
 import { GIT_ACTION_ID_PATTERN, type GitActionCandidateSnapshot } from "@/lib/git-action-types";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
-import { confirmGitCommit, prepareGitCommit, type GitCommitPreview } from "@/lib/git-commit";
-import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
+import { confirmGitCommit, prepareGitCommit, GitCommitOperationError, type GitCommitPreview } from "@/lib/git-commit";
+import { acquireGitCheckoutGate, isGitCheckoutGated, GitCheckoutBusyError } from "@/lib/git-checkout-gate";
 import { getGitCommitTreeOid, getGitTreeDiff, GitReviewError, GIT_REVIEW_DIFF_MAX_BYTES } from "@/lib/git-review";
 import { samePath } from "@/lib/paths";
-import { getRpcSession } from "@/lib/rpc-manager";
+import { hasBusyRpcSessionForCwd } from "@/lib/rpc-manager";
 import { readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
       await assertManagedGitWorkspace(state, cwd);
       const latestRoots = await getAllowedFileRoots();
       if (!isFilePathAllowed(cwd, latestRoots) || !isExistingFilePathAllowed(cwd, latestRoots)) throw new ManagedGitAccessError("Checkout no longer allowed");
-      if (getRpcSession(id)?.isRunning()) throw new ManagedGitAccessError("Stop the session before committing");
+      if (hasBusyRpcSessionForCwd(cwd)) throw new ManagedGitAccessError("Stop sessions in this checkout before committing");
       req.signal.throwIfAborted();
       return manager;
     };
@@ -113,10 +113,10 @@ export async function POST(req: Request) {
           return NextResponse.json(await finishHumanGitAction(handle, result, result, result.status === "partial-success"));
         } catch (cause) {
           await failGitAction(handle, applying, req.signal, cause);
-          if (applying && !(cause instanceof GitActionRecordingError)) cause = new GitActionApplyError(handle.record.id, handle.record.intended);
+          if (applying && !(cause instanceof GitCommitOperationError) && !(cause instanceof GitActionRecordingError)) cause = new GitActionApplyError(handle.record.id, handle.record.intended);
           if (cause instanceof GitActionRecordingError) return NextResponse.json({ ...gitActionFailureResult(cause)!.details,
             recoveryWarning: cause.message }, { status: 409 });
-          return NextResponse.json({ actionId: handle.record.id, error: cause instanceof ManagedGitAccessError || cause instanceof HumanGitSessionChangedError ? cause.message
+          return NextResponse.json({ actionId: handle.record.id, error: cause instanceof ManagedGitAccessError || cause instanceof HumanGitSessionChangedError || cause instanceof GitCommitOperationError ? cause.message
             : "Commit unavailable or preview stale; refresh the preview" }, { status: 409 });
         } finally { handle.release(); }
       } finally { release(); }
@@ -124,7 +124,8 @@ export async function POST(req: Request) {
     return error("Unknown commit operation", 400);
   } catch (cause) {
     if (cause instanceof SyntaxError) return error("Invalid JSON", 400);
-    if (cause instanceof ManagedGitAccessError || cause instanceof HumanGitCandidateError || cause instanceof HumanGitSessionChangedError) return error(cause.message, 409);
+    if (cause instanceof ManagedGitAccessError || cause instanceof HumanGitCandidateError || cause instanceof HumanGitSessionChangedError
+      || cause instanceof GitCheckoutBusyError || cause instanceof GitCommitOperationError) return error(cause.message, 409);
     // Git stderr and subprocess errors may contain remote credentials or config values.
     return error("Commit unavailable or preview stale; refresh the preview", 409);
   }

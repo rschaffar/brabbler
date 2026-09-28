@@ -12,6 +12,7 @@ import {
   MAX_GIT_WORKFLOW_CHECK_EXECUTABLE, MAX_GIT_WORKFLOW_CHECK_ARG,
 } from "@/lib/git-workflow-policy";
 import type { SessionInfo } from "@/lib/types";
+import { AUTOMATIC_COMMIT_UNAVAILABLE, AUTOMATIC_WORKFLOW_UNAVAILABLE } from "@/lib/git-workflow-permissions";
 import {
   changedWorkflowFields, isUnpersistedWorkflowSession, receiveWorkflowSettings,
   resetWorkflowField, resolveWorkflowDraft, workflowDraftKey, workflowFields, workflowRequestTarget, workflowScopes,
@@ -54,7 +55,6 @@ const fieldNames: Record<GitWorkflowField, string> = {
   checks: "Ordered checks", targetBranch: "Local integration target", method: "Integration method", cleanup: "After integration",
 };
 const resetLabels = { global: "Restore built-in default", project: "Use Global value", session: "Use Project value" };
-const automaticReason = "Requires durable action/authorization support";
 function message(cause: unknown) { return cause instanceof Error ? cause.message : String(cause); }
 function shortPath(path?: string | null) { return path?.replace(/\\/g, "/").replace(/\/$/, "").split("/").pop() || path || "No project"; }
 function formatValue(value: GitWorkflowSettings[GitWorkflowField]): string {
@@ -325,7 +325,7 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
     </>;
     if (stage === "commits") return <>
       {select("commits", [{ value: "off", label: "Off" }, { value: "manual", label: "Manual · human review only" }, { value: "ask", label: "Ask · agent may request review" }, { value: "automatic", label: "Automatic · unavailable", disabled: true }])}
-      <p className="workflow-muted">Complete selected files only, with exact preview and confirmation. Automatic: {automaticReason}.</p>
+      <p className="workflow-muted">Complete selected files only, with exact preview and confirmation. {AUTOMATIC_COMMIT_UNAVAILABLE}</p>
     </>;
     if (stage === "checks") return <>
       <label className="workflow-field">Execution<select value="ask" disabled aria-label="Check execution"><option value="ask">Ask before running</option><option disabled>Automatic · unavailable</option></select></label>
@@ -343,17 +343,17 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
         <div className="workflow-actions"><button type="button" disabled={disabled || values.checks.length >= MAX_GIT_WORKFLOW_CHECKS} onClick={() => update("checks", [...values.checks, { label: "", argv: [""] }])}>Add check</button>
           <button type="button" disabled={disabled} onClick={() => update("checks", [])}>No checks at this scope</button></div>
       </div>)}
-      <p className="workflow-muted">Runs from the bound feature checkout. Per-recipe directory, environment and timeout editing is not supported yet. Automatic: {automaticReason}.</p>
+      <p className="workflow-muted">Runs from the bound feature checkout. Per-recipe directory, environment and timeout editing is not supported yet. {AUTOMATIC_WORKFLOW_UNAVAILABLE}</p>
     </>;
     if (stage === "integration") return <>
       {branchField("targetBranch")}
       {select("method", [{ value: "merge", label: "Non-fast-forward merge" }, { value: "ff", label: "Fast-forward · unsupported", disabled: true }, { value: "squash", label: "Squash · unsupported", disabled: true }])}
       <label className="workflow-field">Permission<select value="ask" disabled aria-label="Integration permission"><option value="ask">Ask · exact plan approval</option><option disabled>Automatic · unavailable</option></select></label>
-      <p className="workflow-muted">Local integration only. Checks require separate authorization, then an exact merge review. Imported fast-forward/squash values are retained but cannot execute. Automatic: {automaticReason}.</p>
+      <p className="workflow-muted">Local integration only. Checks require separate authorization, then an exact merge review. Imported fast-forward/squash values are retained but cannot execute. {AUTOMATIC_WORKFLOW_UNAVAILABLE}</p>
     </>;
     return <>
       {select("cleanup", [{ value: "retain", label: "Retain worktree and local branch" }, { value: "ask", label: "Ask to clean up · unavailable", disabled: true }, { value: "automatic", label: "Automatic · unavailable", disabled: true }])}
-      <p className="workflow-muted">No resources are removed. Automatic: {automaticReason}. Ignored files are not necessarily disposable.</p>
+      <p className="workflow-muted">No resources are removed. {AUTOMATIC_WORKFLOW_UNAVAILABLE} Ignored files are not necessarily disposable.</p>
     </>;
   }
   function stageSummary(stage: Stage) {
@@ -399,6 +399,15 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
               <button type="button" disabled={!detailsAvailable || !data?.sessionEditable || busy || !!operation || loading} onClick={() => void put("task")}>Apply saved settings to this task</button>
               {(!data?.sessionEditable || busy) && <p className="workflow-muted">{sessionReason}</p>}
             </details>
+            {data?.permissions && <details aria-label="Current task permissions"><summary>Permissions &amp; blockers</summary>
+              <p className="workflow-muted">Captured task and live restrictions, not editor drafts. These checks do not approve an action or inspect Git state; exact checkout and candidate checks still run before execution.</p>
+              <dl className="workflow-comparison">{([['workspace', 'Worktree creation'], ['commit', 'Commits'], ['checks', 'Checks'], ['integration', 'Integration']] as const).map(([stage, label]) => <div key={stage}><dt>{label}</dt><dd>{(['agent', 'human'] as const).map((actor) => {
+                const permission = data.permissions![actor][stage];
+                return <p key={actor}><strong>{actor === 'agent' ? 'Agent' : 'You'}: {permission.kind === 'blocked' ? 'Blocked' : permission.kind === 'legacy-consent' ? 'Saved policy' : 'Approval required'}</strong><br />{permission.reason}</p>;
+              })}</dd></div>)}</dl>
+              {data.permissions.legacyAgentCommitConsent && <p className="workflow-muted">Legacy preview/confirm retains this chat’s saved agent-commit consent. It does not create a new standing grant.</p>}
+              <p className="workflow-muted">{AUTOMATIC_WORKFLOW_UNAVAILABLE}</p>
+            </details>}
             <div className="workflow-actions workflow-task-actions">{([['workspace', 'Workspace details'], ['commit', 'Review & commit'], ['merge', 'Integration review']] as const).map(([view, label]) => <button key={view} ref={(element) => { taskActionRefs.current[view] = element; }} type="button" disabled={!detailsAvailable} onClick={() => onDetailChange(view)}>{label}</button>)}</div>
           </> : <p className="workflow-muted">Configure Global or Project defaults without creating a chat or starting an agent.</p>}
         </section>

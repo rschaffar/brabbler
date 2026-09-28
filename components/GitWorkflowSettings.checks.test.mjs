@@ -22,6 +22,6 @@ test("check definitions cannot imply run-on-save or unavailable execution contro
   assert.match(home, /Do not include URLs or credentials/);
   assert.match(home, /Per-recipe directory, environment and timeout editing is not supported yet/);
   assert.match(home, /value="ask" disabled aria-label="Check execution"/);
-  assert.match(home, /Requires durable action\/authorization support/);
+  assert.match(home, /AUTOMATIC_WORKFLOW_UNAVAILABLE/);
   assert.doesNotMatch(home, /exec\(|spawn\(|shell: true|\/api\/git\/integration/);
 });

@@ -12,6 +12,7 @@ const css = await readFile(new URL("./GitWorkflowHome.css", import.meta.url), "u
 const jiti = createJiti(import.meta.url);
 const settings = await jiti.import("../lib/git-workflow-settings.ts");
 const policy = await jiti.import("../lib/git-workflow-policy.ts");
+const permissions = await jiti.import("../lib/git-workflow-permissions.ts");
 const helpers = await jiti.import("./git-workflow-drafts.ts");
 const compiled = ts.transpileModule(home, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
 const session = { id: "saved-chat", cwd: "/repo-worktrees/chat", name: "A task" };
@@ -42,6 +43,7 @@ function render({ data = fixture(), scope = "session", overrides, props = {} } =
     if (id === "@/hooks/useResizablePanel") return { useResizablePanel: () => ({ panelRef: { current: null }, separatorProps: { role: "separator" } }) };
     if (id === "@/lib/git-workflow-settings") return settings;
     if (id === "@/lib/git-workflow-policy") return policy;
+    if (id === "@/lib/git-workflow-permissions") return permissions;
     if (id === "./git-workflow-drafts") return helpers;
     if (id.endsWith(".css")) return {};
     return realRequire(id);
@@ -92,9 +94,29 @@ test("unsupported modes are disabled, saved unsupported integration remains visi
   const html = render({ overrides: { method: "ff", checks: [{ label: "", argv: [""] }] } });
   assert.match(html, /value="ff" disabled="" selected=""/);
   assert.match(html, /value="automatic" disabled=""/);
-  assert.match(html, /Requires durable action\/authorization support/);
+  assert.match(html, /scoped grants, reviewed instruction profiles and task-bound workspace admission/);
+  assert.doesNotMatch(html, /Requires durable action/);
   assert.match(html, /id="workflow-error"/);
   assert.match(html, /class="workflow-primary" disabled="">Save session settings/);
+});
+
+test("current-task blockers use saved server facts rather than the selected scope's unsaved draft", () => {
+  const data = fixture({ task: { kind: "managed", settings: { ...settings.DEFAULT_GIT_WORKFLOW_SETTINGS, commits: "manual" } } });
+  data.permissions = permissions.managedGitPermissions(data, { subagent: false, tools: ["read", "edit"] });
+  const html = render({ data, scope: "global", overrides: { commits: "ask" } });
+  assert.match(html, /aria-label="Current task permissions"/);
+  assert.match(html, /Agent: Blocked/);
+  assert.match(html, /Commits are manual for this task/);
+  assert.match(html, /You: Approval required/);
+  assert.match(html, /not editor drafts/);
+  assert.match(html, /do not approve an action or inspect Git state/);
+  assert.doesNotMatch(html, /requires durable action support/i);
+  data.task = { kind: "legacy", policy: { mode: "worktree", baseBranch: "base", onCreate: "stay", commits: "agent" } };
+  data.permissions = permissions.managedGitPermissions(data, { subagent: false, tools: ["edit"] });
+  const legacy = render({ data });
+  assert.match(legacy, /Agent: Saved policy/);
+  assert.match(legacy, /without a new per-start approval/);
+  assert.match(legacy, /Legacy preview\/confirm retains/);
 });
 
 test("stable visibility, scope-specific conflicts, focus containment/restoration and responsive token styling", () => {

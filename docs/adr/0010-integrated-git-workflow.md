@@ -8,6 +8,8 @@ This revises ADR [0007](0007-session-git-workflow.md)'s eventual session-snapsho
 
 The first application slice implements the shared scoped editor/resolver, captured session task choices, explicit adoption, live enablement/pause gates, and a common human-approved commit path. The user then selected **Implement durable cards next**: the next slice journals commits, comparisons, checks and integrations, with private captured artifacts, plain custom anchors, live-only approval controls and split diffs in history. It does **not** introduce standing grants, automatic integration/cleanup, per-task workspace ownership, automatic recovery, or an instruction-policy adapter. Worktree/setup history, check-log viewing, artifact retention/export controls and broader orchestration remain future work. Existing legacy agent-commit snapshots remain supported; new managed tasks offer Off/Manual/Ask, not unsupported Automatic execution. See the plan and current guide for the implemented boundary.
 
+The subsequent authorization-prerequisite slice shares a settings/actor permission matrix across gates, tool status and the same Workflow home, and strengthens commit preflight/admission. It deliberately leaves Automatic unavailable: captured transcript settings are not private task authority, source discovery is not reviewed rule adoption, and the existing checkout gate is not comprehensive writer admission. Known pre-ref operation refusals remain blocked, while uncertain failures retain recovery handling. No standing grants or instruction exceptions are introduced.
+
 Implementation owner: [Integrated Git workflow plan](../plans/2026-09-28_integrated-git-workflow-plan.md).
 
 ## Problem and evidence

@@ -2,6 +2,7 @@ import { createGitAction, emitGitActionAnchor, releaseGitAction, transitionGitAc
 import { GIT_ACTION_ANCHOR_TYPE, isGitActionAnchor, type GitActionCandidateSnapshot, type GitActionOutcome, type GitActionRecord, type GitActionSource, type GitActionState } from "./git-action-types";
 import { invalidateSessionListCache, invalidateSessionManagerCache } from "./session-reader";
 import type { GitActionCandidate, SessionEntry } from "./types";
+import { GitCommitOperationError } from "./git-commit";
 
 export interface GitActionSink {
   sessionId: string;
@@ -103,11 +104,16 @@ export function gitActionFailureResult(cause: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(details) }], isError: true, details };
 }
 export async function failGitAction(handle: GitActionHandle, applying: boolean, signal?: AbortSignal, cause?: unknown): Promise<void> {
+  // This specific native refusal is guaranteed to precede ref CAS, including
+  // after the intent callback. Arbitrary post-callback errors remain uncertain.
+  const operationBlocked = cause instanceof GitCommitOperationError;
+  if (operationBlocked) applying = false;
   try {
     await handle.update(applying ? "recovery-required" : cause instanceof GitActionDecisionEndedError ? cause.state : signal?.aborted ? "cancelled" : "blocked", {
       reason: applying ? "Execution was interrupted or its final result could not be proven. Inspect the captured candidate and checkout; do not retry."
         : cause instanceof GitActionDecisionEndedError ? cause.message
-          : signal?.aborted ? "Cancelled before applying Git changes." : "Candidate validation or authorization failed; no ref/index/checkout update started.",
+          : operationBlocked ? cause.message
+            : signal?.aborted ? "Cancelled before applying Git changes." : "Candidate validation or authorization failed; no ref/index/checkout update started.",
     });
   } catch { /* An executing record projects as recovery-required after release. */ }
 }

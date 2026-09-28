@@ -7,12 +7,14 @@ import type { InlineExtension, SessionManager } from "@earendil-works/pi-coding-
 import { appendAgentGitPreferences, readAgentGitPreferences, type AgentGitPreferences } from "./agent-git-preferences";
 import type { SessionEntry } from "./types";
 import { getGitReviewDiff, reviewGitBranches, type GitReviewSelection } from "./git-review";
-import { assertManagedGitAction, assertManagedGitWorkspace, ManagedGitAccessError, watchManagedGitAccess, type ManagedGitStage } from "./git-workflow-access";
+import { assertManagedGitAction, assertManagedGitWorkspace, managedGitSessionFacts, ManagedGitAccessError, watchManagedGitAccess, type ManagedGitStage } from "./git-workflow-access";
+import { managedGitPermissions, AUTOMATIC_WORKFLOW_UNAVAILABLE } from "./git-workflow-permissions";
 import { loadGitWorkflowSettings } from "./git-workflow-settings-store";
 import { requestWorkflowCommit } from "./git-workflow-commit";
 import { beginGitAction, failGitAction, finishGitAction, gitActionFailureResult, gitActionSink, snapshotGitActionCandidate, GitActionApplyError, GitActionRecordingError } from "./git-action-controller";
 import { gitExecEnv } from "./git-exec";
-import { acquireGitCheckoutGate } from "./git-checkout-gate";
+import { acquireGitCheckoutGate, GitCheckoutBusyError } from "./git-checkout-gate";
+import { GitCommitOperationError } from "./git-commit";
 import { prepareIntegration, confirmIntegration } from "./git-integration";
 import { runGitVerification } from "./git-verification";
 import { validateGitWorkflowPolicy, type GitWorkflowCheck, validLocalBranchName } from "./git-workflow-policy";
@@ -101,7 +103,9 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
             if (params.operation === "status") {
               const state = await loadGitWorkflowSettings(sessionCwd, entries(), agentDir, "active-session");
               const summary = { paused: state.paused, enabled: state.resolved.session.values.enabled, task: state.task,
-                settingsHome: "Workflow", automaticIntegration: false, cleanup: "retain" };
+                saved: state.resolved.session,
+                permissions: managedGitPermissions(state, managedGitSessionFacts(entries(), pi.getActiveTools?.())),
+                settingsHome: "Workflow", automaticIntegration: false, cleanup: "retain", automaticUnavailable: AUTOMATIC_WORKFLOW_UNAVAILABLE };
               return { content: [{ type: "text" as const, text: JSON.stringify(summary) }], details: summary };
             }
             if (!ctx.hasUI || !ui.gitAction) return failure("Git workflow review requires an interactive Pi Web session");
@@ -270,12 +274,13 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
               sink: gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)),
               ask: (candidate, abort) => ui.gitAction!(candidate, abort), beforeApply: async () => {
                 await assertManagedGitWorkspace(await guard("commit"), workspace);
+                if (hasBusyRpcSessionForCwd(workspace, ctx.sessionManager.getSessionId())) throw new ManagedGitAccessError("Stop other sessions in the selected checkout before committing.");
                 if (signal?.aborted || !samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) throw new ManagedGitAccessError("Commit cancelled or workspace changed");
               } });
           } catch (cause) {
             const recorded = gitActionFailureResult(cause);
             if (recorded) return recorded;
-            if (cause instanceof ManagedGitAccessError) return failure(cause.message);
+            if (cause instanceof ManagedGitAccessError || cause instanceof GitCheckoutBusyError || cause instanceof GitCommitOperationError) return failure(cause.message);
             // Never send raw Git stderr or file contents back through a failed tool result.
             return failure("Git candidate unavailable or stale; inspect the checkout and request a fresh review");
           }

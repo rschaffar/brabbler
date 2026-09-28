@@ -260,6 +260,20 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     assert.equal(adopted.task.settings.branch, "feature");
     assert.equal(adopted.task.settings.commits, "manual");
     assert.deepEqual(adopted.task.settings.checks, globalSaved.global.checks);
+    const permissions = task.locator('details[aria-label="Current task permissions"]');
+    await permissions.locator("summary").click();
+    const commitPermissions = permissions.locator(".workflow-comparison > div").filter({ has: page.locator("dt", { hasText: /^Commits$/ }) });
+    assert.ok((await commitPermissions.innerText()).includes(adopted.permissions.agent.commit.reason));
+    assert.ok((await commitPermissions.innerText()).includes(adopted.permissions.human.commit.reason));
+    assert.equal(adopted.permissions.human.commit.kind, "confirmation-required");
+    const permissionText = await commitPermissions.innerText();
+    await expand("commits");
+    assert.equal(await control("commits").locator('option[value="automatic"]').isDisabled(), true);
+    assert.match(await workflow.locator("#workflow-stage-commits").innerText(), /scoped grants, reviewed instruction profiles and task-bound workspace admission/);
+    await control("commits").selectOption("ask");
+    assert.equal(await commitPermissions.innerText(), permissionText, "Unsaved preferences never change task permission facts");
+    await workflow.getByRole("button", { name: "Discard", exact: true }).click();
+    await permissions.locator("summary").click();
 
     // Every defaults scope can change without changing the captured task. Explicit Apply ignores unsaved drafts.
     await chooseScope("global");
@@ -291,7 +305,8 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     assert.deepEqual((await readSettings()).task, applied.task);
     console.log("PASS: Session origins/reset, task pinning across all default saves, explicit saved-only Apply");
 
-    await writeSettings("pause", workflow.getByRole("button", { name: "Pause all", exact: true }));
+    const paused = await writeSettings("pause", workflow.getByRole("button", { name: "Pause all", exact: true }));
+    assert.equal(paused.permissions.human.commit.code, "paused");
     await workflow.getByText("All managed Git actions are paused, at every scope.", { exact: true }).waitFor();
     await closeWorkflow();
     await home();
@@ -377,6 +392,13 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
       await workflow.locator(".workflow-home-scroll").evaluate((element) => { element.scrollTop = 0; });
       await contained(`${width}px overview`);
       await screenshot(`workflow-overview-${width}.png`);
+      await permissions.locator("summary").focus();
+      await page.keyboard.press("Enter");
+      assert.equal(await permissions.evaluate((element) => element.open), true);
+      await contained(`${width}px permission reasons`);
+      assert.match(await permissions.innerText(), /do not approve an action or inspect Git state/);
+      await screenshot(`workflow-permissions-${width}.png`);
+      await permissions.locator("summary").click();
       for (const stage of ["workspace", "commits", "checks", "integration", "cleanup"]) {
         await expand(stage);
         await contained(`${width}px ${stage} settings`);

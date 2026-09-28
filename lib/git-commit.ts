@@ -85,6 +85,7 @@ async function state(cwd: string, requested: string[], ownedLock?: string): Prom
   if (!path.isAbsolute(cwd) || !samePath(cwd, await fs.realpath(cwd))) fail("explicit physical checkout root required");
   const root = await git(cwd, ["rev-parse", "--show-toplevel"]).then((value) => toNativePath(value.trim()), () => fail("explicit repository-root checkout required"));
   if (!samePath(root, cwd)) fail("cwd must be the repository root");
+  await assertNoGitOperation(cwd);
   await policy(cwd);
   let branch: string;
   try { branch = (await git(cwd, ["symbolic-ref", "--quiet", "HEAD"])).trim(); }
@@ -183,6 +184,32 @@ function identity(ident: string): string {
   if (end < 0) fail("invalid Git identity");
   return ident.slice(0, end + 1);
 }
+/**
+ * Safe fixed-vocabulary refusal, thrown ONLY before ref CAS. It proves this
+ * invocation did not update a ref/index, even after the intent callback.
+ * Post-CAS failures must remain partial-success, never this error type.
+ */
+export class GitCommitOperationError extends Error {}
+const operationMarkers = [
+  ["MERGE_HEAD", "merge"], ["rebase-merge", "rebase"], ["rebase-apply", "rebase or git am"],
+  ["CHERRY_PICK_HEAD", "cherry-pick"], ["REVERT_HEAD", "revert"],
+  ["sequencer", "sequenced cherry-pick or revert"], ["BISECT_START", "bisect"],
+] as const;
+async function assertNoGitOperation(cwd: string): Promise<void> {
+  // These markers are all worktree-local. Resolve the Git directory, not .git/
+  // or the common directory. Resolving an individual --git-path with absolute
+  // formatting can follow a marker symlink before lstat gets to reject it.
+  const metadata = toNativePath((await git(cwd, ["rev-parse", "--absolute-git-dir"])).trim());
+  for (const [marker, operation] of operationMarkers) {
+    let present = false;
+    try { await fs.lstat(path.join(metadata, marker)); present = true; }
+    catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw new GitCommitOperationError("Git operation state could not be inspected; commit blocked.");
+    }
+    // A malformed marker or dangling symlink is still an unresolved operation.
+    if (present) throw new GitCommitOperationError(`Git ${operation} is in progress. Finish or abort it explicitly before requesting a commit.`);
+  }
+}
 async function prepare(cwd: string, selected: string[], ownedLock?: string): Promise<{ preview: GitCommitPreview; state: State; index: Buffer }> {
   const s = await state(cwd, selected, ownedLock);
   const result = await candidate(cwd, s);
@@ -231,7 +258,10 @@ export async function confirmGitCommit(preview: GitCommitPreview, message: strin
     await assertCheckout(cwd, preview.branch, preview.head);
     const beforeRef = await fs.lstat(lockPath);
     if (beforeRef.dev !== lockIdentity.dev || beforeRef.ino !== lockIdentity.ino) fail("index lock ownership lost");
-    // update-ref is an atomic compare-and-swap. A competing branch move leaves only an unreachable object.
+    // An approval/journal callback can outlive the earlier operation-state check.
+    // Ref CAS does not protect sequencer/merge/rebase metadata. Refuse, never continue it.
+    await assertNoGitOperation(cwd);
+    // update-ref is an atomic compare-and-swap. External writers can still race.
     await git(cwd, ["update-ref", preview.branch, commit, preview.head]);
     committed = commit;
     await assertCheckout(cwd, preview.branch, commit);

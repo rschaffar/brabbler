@@ -1,4 +1,5 @@
 import { validateGitWorkflowPolicy, validLocalBranchName, type GitWorkflowCheck, type GitWorkflowPolicy } from "./git-workflow-policy";
+import type { GitWorkflowPermissions } from "./git-workflow-permissions";
 
 export type WorkflowScope = "global" | "project" | "session";
 export interface GitWorkflowSettings {
@@ -34,10 +35,12 @@ export interface GitWorkflowSettingsResponse {
   task: GitWorkflowTask;
   sessionEditable: boolean;
   sessionReason?: string;
+  /** Current-session eligibility, never derived from editor drafts or approvals. */
+  permissions?: GitWorkflowPermissions;
 }
 
-// These are preferences, not standing execution grants. Unsupported automation
-// cannot be serialized as a setting while the journal/controller is unfinished.
+// Preferences are not standing execution grants. Automatic remains unsupported
+// until reviewed rules, scoped grants and task-bound execution admission exist.
 export const DEFAULT_GIT_WORKFLOW_SETTINGS: Readonly<GitWorkflowSettings> = Object.freeze({
   enabled: true, workspace: "current", baseBranch: null, branch: null, onCreate: "continue",
   commits: "ask", checks: [], targetBranch: null, method: "merge", cleanup: "retain",

@@ -6,42 +6,24 @@ import { readSessionToolSelection } from "./session-tool-selection";
 import { listWorktrees } from "./worktree";
 import { samePath } from "./paths";
 
-export type ManagedGitStage = "workspace" | "commit" | "checks" | "integration" | "settings";
+import { managedGitPermission, type GitWorkflowSessionFacts, type ManagedGitStage } from "./git-workflow-permissions";
+export { hasManagedGitMutationTools, type ManagedGitStage } from "./git-workflow-permissions";
+
 export class ManagedGitAccessError extends Error {}
-export function hasManagedGitMutationTools(tools: readonly string[]): boolean {
-  return tools.some((name) => ["bash", "powershell", "edit", "write"].includes(name));
+export function managedGitSessionFacts(entries: readonly SessionEntry[], effectiveTools?: readonly string[]): GitWorkflowSessionFacts {
+  return { subagent: entries.some((e) => e.type === "custom" && e.customType === "pi-web:subagent"),
+    tools: effectiveTools ?? readSessionToolSelection(entries) };
 }
 
 /** One live gate for browser actions and already-loaded tools. Not a shell sandbox. */
 export async function assertManagedGitAction(
   cwd: string, entries: readonly SessionEntry[], stage: ManagedGitStage, actor: "agent" | "human", agentDir = getAgentDir(), effectiveTools?: readonly string[],
 ): Promise<GitWorkflowSettingsResponse> {
-  if (entries.some((e) => e.type === "custom" && e.customType === "pi-web:subagent")) {
-    throw new ManagedGitAccessError("Subagents cannot execute managed Git mutations.");
-  }
-  const tools = effectiveTools ?? readSessionToolSelection(entries);
-  if (actor === "agent" && tools && !hasManagedGitMutationTools(tools)) {
-    throw new ManagedGitAccessError("Chat-only and read-only sessions cannot execute managed Git mutations.");
-  }
   let state: GitWorkflowSettingsResponse;
   try { state = await loadGitWorkflowSettings(cwd, entries, agentDir, "active-session"); }
   catch { throw new ManagedGitAccessError("Workflow settings are unavailable or unsupported; managed Git actions are blocked."); }
-  if (state.paused) throw new ManagedGitAccessError("All managed Git actions are paused. Resume them in Workflow.");
-  if (!state.resolved.session.values.enabled) throw new ManagedGitAccessError("Managed Git is disabled for this session. Configure it in Workflow.");
-  if (stage === "commit" && state.resolved.session.values.commits === "off") throw new ManagedGitAccessError("Commits are disabled for this session.");
-  if (state.task.kind === "managed") {
-    const task = state.task.settings;
-    if (!task.enabled) throw new ManagedGitAccessError("This task is disabled. Apply enabled settings explicitly in Workflow.");
-    if (stage === "commit" && (task.commits === "off" || (actor === "agent" && task.commits === "manual"))) {
-      throw new ManagedGitAccessError(task.commits === "off" ? "Commits are disabled for this task." : "Commits are manual for this task. Use the Workflow panel; do not bypass with a shell.");
-    }
-    if (stage === "workspace" && (task.workspace !== "worktree" || !task.baseBranch)) {
-      throw new ManagedGitAccessError("This task has no configured worktree base. Configure and apply it in Workflow.");
-    }
-    if ((stage === "integration" || stage === "checks") && (!task.targetBranch || task.method !== "merge" || !task.checks.length)) {
-      throw new ManagedGitAccessError("This task needs a local non-FF merge target and ordered checks. Configure and apply them in Workflow.");
-    }
-  }
+  const permission = managedGitPermission(state, managedGitSessionFacts(entries, effectiveTools), stage, actor);
+  if (permission.kind === "blocked") throw new ManagedGitAccessError(permission.reason);
   return state;
 }
 

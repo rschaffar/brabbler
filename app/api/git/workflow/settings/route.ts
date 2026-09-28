@@ -6,6 +6,8 @@ import { samePath } from "@/lib/paths";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { isGitCheckoutGated } from "@/lib/git-checkout-gate";
 import { validateGitWorkflowOverrides } from "@/lib/git-workflow-settings";
+import { managedGitPermissions } from "@/lib/git-workflow-permissions";
+import { managedGitSessionFacts } from "@/lib/git-workflow-access";
 import { appendManagedSessionGitWorkflow, workflowTaskFromEntries } from "@/lib/git-workflow-session";
 import { loadGitWorkflowSettings, readGitWorkflowSettingsDocument, withGitWorkflowSettingsLock, writeGitWorkflowSettingsDocument } from "@/lib/git-workflow-settings-store";
 import { invalidateSessionListCache, invalidateSessionManagerCache, readLatestSessionEntryId, readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
@@ -56,7 +58,11 @@ function sessionReason(t: Target): string | undefined {
 async function responseFor(t: Target) {
   const result = await loadGitWorkflowSettings(t.cwd, entriesOf(t), getAgentDir(), t.id);
   const reason = sessionReason(t);
-  return { ...result, sessionEditable: !reason, ...(reason ? { sessionReason: reason } : {}) };
+  // Never start a wrapper to report permission facts. A disk-only session with
+  // no pinned tools remains unknown until its effective SDK selection is loaded.
+  const tools = t.live?.isAlive() && t.live.sessionFile === t.file ? t.live.inner.getActiveToolNames() : undefined;
+  const permissions = t.id ? managedGitPermissions(result, managedGitSessionFacts(entriesOf(t), tools)) : undefined;
+  return { ...result, permissions, sessionEditable: !reason, ...(reason ? { sessionReason: reason } : {}) };
 }
 function failure(cause: unknown) {
   return NextResponse.json({ error: cause instanceof SettingsError ? cause.message : "Workflow settings unavailable; inspect configuration before retrying." },

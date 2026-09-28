@@ -462,7 +462,7 @@ export class AgentSessionWrapper {
     // Recheck after async git probes. The source wrapper is idle; a fresh prompt is gated.
     if (this.isRunning() || !this._alive || hasBusyRpcSessionForCwd(transition.originCwd)
       || hasBusyRpcSessionForCwd(transition.destinationPath)) throw new Error("Checkout is running");
-    await assertManagedGitAction(transition.originCwd, manager.getEntries() as SessionEntry[], "workspace", "agent");
+    await assertManagedGitAction(transition.originCwd, manager.getEntries() as SessionEntry[], "workspace", "agent", undefined, this.inner.getActiveToolNames());
     const { moveSessionFamily } = await import("./session-move");
     let movedId = this.sessionId;
     if (transition.onCreate === "fork") {
@@ -492,7 +492,7 @@ export class AgentSessionWrapper {
       || hasBusyRpcSessionForCwd(transition.originCwd) || hasBusyRpcSessionForCwd(transition.destinationPath)) {
       throw new Error("Checkout changed before session move");
     }
-    await assertManagedGitAction(transition.originCwd, manager.getEntries() as SessionEntry[], "workspace", "agent");
+    await assertManagedGitAction(transition.originCwd, manager.getEntries() as SessionEntry[], "workspace", "agent", undefined, this.inner.getActiveToolNames());
     await moveSessionFamily(movedId, transition.destinationPath);
     // Success is durable before optional transcript decoration. Resolve the real moved cwd.
     const movedFile = await resolveSessionPath(movedId);
