@@ -5,6 +5,8 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { NextResponse } from "next/server";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
 import { gitExecEnv } from "@/lib/git-exec";
+import { beginGitAction, failGitAction, gitActionSink, snapshotGitActionCandidate } from "@/lib/git-action-controller";
+import { getRpcSession } from "@/lib/rpc-manager";
 import { GitReviewError, getGitReviewDiff, reviewGitBranches, type GitReviewSelection } from "@/lib/git-review";
 import { readSessionGitWorkflow } from "@/lib/git-workflow-policy";
 import { samePath, toNativePath } from "@/lib/paths";
@@ -59,8 +61,9 @@ async function sessionReview(sessionId: string) {
     if (!statSync(cwd).isDirectory()) return { response: error("Not a directory", 400) };
   } catch { return { response: error("Directory not found", 404) }; }
   if (!isExistingFilePathAllowed(cwd, roots)) return { response: error("Access denied", 403) };
-  const manager = SessionManager.open(file, undefined);
-  if (manager.getHeader()?.id !== sessionId || manager.getHeader()?.cwd !== cwd) {
+  const live = getRpcSession(sessionId);
+  const manager = live?.isAlive() && live.sessionFile === file ? live.inner.sessionManager : SessionManager.open(file, undefined);
+  if (manager.getHeader()?.id !== sessionId || !samePath(manager.getHeader()?.cwd ?? "", cwd)) {
     return { response: error("Session identity mismatch", 409) };
   }
   const policy = readSessionGitWorkflow(manager.getEntries() as SessionEntry[]);
@@ -71,7 +74,7 @@ async function sessionReview(sessionId: string) {
   }
   const review = await reviewGitBranches(cwd, feature, policy.integration.targetBranch);
   if (await checkout(cwd) !== feature) return { response: error("Checkout branch changed", 409) };
-  return { cwd, feature, review };
+  return { cwd, feature, review, file };
 }
 
 function failure(cause: unknown) {
@@ -136,6 +139,25 @@ export async function POST(req: Request) {
     }
     const diff = await getGitReviewDiff(result.cwd!, result.review!, selection as GitReviewSelection);
     if (await checkout(result.cwd!) !== result.feature) return error("Checkout branch changed", 409);
-    return NextResponse.json({ diff });
+    // GET remains side-effect-free. An explicit Show patch POST captures this
+    // comparison as history, not as approval of any commit/integration.
+    const id = body.sessionId, cwd = result.cwd!, file = result.file!;
+    const action = await beginGitAction({ sessionId: id, append(record) {
+      // Re-open at the synchronous append boundary, never retain an idle stale
+      // manager across asynchronous Git/artifact work or recreate a moved file.
+      const current = readSessionHeader(file);
+      if (current?.id !== id || !samePath(current.cwd, cwd)) throw new Error("Session moved before comparison capture");
+      const live = getRpcSession(id);
+      if (live?.isAlive() && live.sessionFile !== file) throw new Error("Session file changed");
+      const manager = live?.isAlive() ? live.inner.sessionManager : SessionManager.open(file, undefined);
+      return gitActionSink(manager, (type, data) => manager.appendCustomEntry(type, data)).append(record);
+    } }, "human", snapshotGitActionCandidate({ kind: "review", featureCwd: cwd,
+      review: result.review!, selection: selection as GitReviewSelection, diff }));
+    try {
+      await action.update("awaiting-decision");
+      await action.update("succeeded", { outcome: { status: "comparison-captured" } });
+      return NextResponse.json({ diff, actionId: action.record.id });
+    } catch (cause) { await failGitAction(action, false, req.signal, cause); throw cause; }
+    finally { action.release(); }
   } catch (cause) { return failure(cause); }
 }

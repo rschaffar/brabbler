@@ -7,6 +7,8 @@ import { readdir } from "fs/promises";
 import { isAbsolute, join, normalize as normalizePath, relative, resolve as resolvePath, sep } from "path";
 import type { AgentMessage, ImageContent, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
 import { normalizeToolCalls } from "./normalize";
+import { GIT_ACTION_ANCHOR_TYPE, isGitActionAnchor } from "./git-action-types";
+import { gitActionMessage } from "./git-action-ui";
 import { getThinkingPreview } from "./message-display";
 import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
@@ -701,7 +703,7 @@ export function buildSessionContext(
 
 /**
  * Entry that renders as a standalone visible message in the chat window:
- * user / assistant messages plus the compaction divider. toolResult entries,
+ * user / assistant messages, Git action anchors and the compaction divider. toolResult entries,
  * hidden custom messages and session meta render as attachments or nothing,
  * so they must not consume the `tail` budget — counting raw entries starves
  * user messages out of the window in agent-heavy sessions (a 50-entry window
@@ -709,6 +711,7 @@ export function buildSessionContext(
  */
 function countsTowardTail(entry: SessionEntry): boolean {
   if (entry.type === "compaction") return true;
+  if (entry.type === "custom" && entry.customType === GIT_ACTION_ANCHOR_TYPE && isGitActionAnchor(entry.data)) return true;
   if (entry.type !== "message") return false;
   const role = (entry as { message?: { role?: string } }).message?.role;
   return role === "user" || role === "assistant";
@@ -884,6 +887,12 @@ function entryToUiMessage(
         content: `*The conversation briefly explored another branch and returned with this summary:*\n\n${entry.summary}`,
         timestamp: parseEntryTimestamp(entry.timestamp),
       };
+    case "custom":
+      // Plain SDK metadata is projected for the browser only. Never persist this
+      // synthetic message or pass it to the SDK's model-context builder.
+      return entry.customType === GIT_ACTION_ANCHOR_TYPE && isGitActionAnchor(entry.data)
+        ? gitActionMessage(entry.data.actionId, parseEntryTimestamp(entry.timestamp))
+        : null;
     case "custom_message":
       return {
         role: "custom",

@@ -5,6 +5,8 @@ import ReactMarkdown from "react-markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
 import { ThinkingIcon } from "./ThinkingIcon";
+import { GitActionCard } from "./GitActionCard";
+import { gitActionId } from "@/lib/git-action-ui";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
@@ -284,6 +286,8 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     return null;
   }
   if (message.role === "custom") {
+    const actionId = gitActionId(message);
+    if (actionId) return <GitActionCard actionId={actionId} timestamp={message.timestamp} sessionId={sessionId} />;
     if ((message as CustomMessage).customType === "compaction") {
       return <CompactionMessageView message={message as CustomMessage} />;
     }

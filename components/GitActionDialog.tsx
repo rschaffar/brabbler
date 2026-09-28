@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import type { AgentGitPreferenceChoice } from "@/lib/agent-git-preferences";
 import type { ExtensionUiRequest } from "@/lib/types";
+import { MultiFileGitDiff } from "./MultiFileGitDiff";
 
 type Request = Extract<ExtensionUiRequest, { method: "git_action" }>;
 
@@ -90,7 +91,7 @@ export function GitActionDialog({ request, onRespond }: {
       </div>}
       {!checking && !choosing && <details className="min-w-0 rounded border border-border bg-bg-panel p-2">
         <summary className="cursor-pointer font-medium">Candidate diff ({(merging ? candidate.plan.diff : candidate.diff).patch.length} characters)</summary>
-        <pre className="mt-2 max-h-[44vh] min-w-0 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">{(merging ? candidate.plan.diff : candidate.diff).patch || "No tree changes"}</pre>
+        <MultiFileGitDiff {...(merging ? candidate.plan.diff : candidate.diff)} before={(merging ? candidate.plan.diff : candidate.diff).fromTreeOid} after={(merging ? candidate.plan.diff : candidate.diff).toTreeOid} />
       </details>}
       {(committing || checking || merging) && <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={inspected} onChange={(event) => setInspected(event.target.checked)} />I reviewed {committing ? "this exact commit candidate and message" : checking ? "each ordered command and its arguments" : "this exact plan, diff, refs and check receipts"}.</label>}
     </div>

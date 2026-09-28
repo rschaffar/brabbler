@@ -69,6 +69,8 @@ import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createAskUserExtension, preferPiWebAskUserExtension, type AskUserUiContext } from "./ask-user-extension";
 import { createSessionReferenceExtension } from "./session-reference-extension";
 import { normalizeAskUserAnswer } from "./ask-user";
+import { subscribeGitActionUpdates } from "./git-action-journal";
+import { GitActionDecisionEndedError } from "./git-action-controller";
 import { isBlockingExtensionUiRequest } from "./browser-notifications";
 import {
   appendClearedSessionToolSelection,
@@ -286,6 +288,7 @@ export class AgentSessionWrapper {
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
   private unsubscribe: (() => void) | null = null;
+  private unsubscribeGitActions: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
   private shutdownPromise: Promise<void> | null = null;
@@ -373,6 +376,8 @@ export class AgentSessionWrapper {
   }
 
   start(): void {
+    this.unsubscribeGitActions?.();
+    this.unsubscribeGitActions = subscribeGitActionUpdates(this.sessionId, (event) => this.emit({ ...event }));
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       if (event.type === "agent_start") this.agentRunNeedsCompletion = true;
       if (event.type === "agent_end") {
@@ -1217,6 +1222,7 @@ export class AgentSessionWrapper {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     if (this.inner.isBashRunning) this.inner.abortBash();
     this.unsubscribe?.();
+    this.unsubscribeGitActions?.();
     for (const pending of this.pendingUiResponses.values()) pending.cancel();
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
     this.pendingUiResponses.clear();
@@ -1682,23 +1688,26 @@ export class AgentSessionWrapper {
         this.pendingUiResponses.delete(id);
         this.emit({ type: "extension_ui_closed", id });
       };
-      const settle = (value: T) => {
+      const settle = (value: T, ended?: "cancelled" | "expired") => {
         if (settled) return;
         settled = true;
         cleanup();
-        if (stopSignal.aborted) reject(stopSignal.reason);
+        // Dialog closure is never transaction success. Preserve the distinction
+        // between an explicit decline, timeout, and Stop/teardown in history.
+        if (ended && request.method === "git_action" && (request.candidate as GitActionCandidate | undefined)?.actionId) reject(new GitActionDecisionEndedError(ended));
+        else if (stopSignal.aborted) reject(stopSignal.reason);
         else resolve(value);
       };
-      const onAbort = () => settle(defaultValue);
+      const onAbort = () => settle(defaultValue, "cancelled");
 
-      if (timeout) timeoutId = setTimeout(() => settle(defaultValue), timeout);
+      if (timeout) timeoutId = setTimeout(() => settle(defaultValue, "expired"), timeout);
       abortSignal.addEventListener("abort", onAbort, { once: true });
 
       this.pendingUiStartedAt.set(id, Date.now());
       this.pendingUiRequests.set(id, fullRequest as AgentEvent);
       this.pendingUiResponses.set(id, {
         resolve: (response) => settle(parseResponse(response)),
-        cancel: () => settle(defaultValue),
+        cancel: () => settle(defaultValue, "cancelled"),
       });
       this.emit(fullRequest as AgentEvent);
     });

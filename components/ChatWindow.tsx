@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, SessionInfo, SessionTreeNode, ToolResultMessage, UserMessage } from "@/lib/types";
 import { normalizeCustomPanelLines } from "@/lib/ansi";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
-import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, isAssistantTruncated, isMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
+import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, isAssistantTruncated, isMessageGroupAnchor as isOrdinaryMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { MessageView } from "./MessageView";
@@ -24,6 +24,8 @@ import type { WorkflowChatStatus, WorkflowDetail } from "./GitWorkflowHome";
 import { GitCommitPanel } from "./GitCommitPanel";
 import { GitMergeReviewPanel } from "./GitMergeReviewPanel";
 import { GitActionDialog } from "./GitActionDialog";
+import { GitActionLiveFallback, GitActionProvider } from "./GitActionContext";
+import { gitActionId } from "@/lib/git-action-ui";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -179,6 +181,11 @@ function hasFinalAssistantAnswer(message: AgentMessage): boolean {
   return splitFinalAssistantBlocks(message as AssistantMessage).answerBlocks.some((block) => (
     block.type === "image" || (block.type === "text" && block.text.trim().length > 0)
   ));
+}
+
+// Durable cards are standalone anchors, never hidden in collapsed process details.
+function isMessageGroupAnchor(message: AgentMessage): boolean {
+  return isOrdinaryMessageGroupAnchor(message) || gitActionId(message) !== null;
 }
 
 function findFinalAssistantIndex(messages: AgentMessage[], userIdx: number, endIdx: number): number {
@@ -811,7 +818,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
 
   const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
 
-  const visibleMessages = messages.filter((m) => isMessageGroupAnchor(m) || m.role === "assistant");
+  // Match ChatMinimap's reference budget; UI-only cards are standalone below,
+  // but must not shift the minimap's ordinary conversation message indexes.
+  const visibleMessages = messages.filter((m) => isOrdinaryMessageGroupAnchor(m) || m.role === "assistant");
   // Stable Map identity: `messages` doesn't change during streaming updates
   // (the streaming message lives in streamState), so memoized MessageViews
   // skip re-rendering on every message_update event. An inline `new Map()`
@@ -1124,6 +1133,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           style={{ visibility: pendingScrollRestore ? "hidden" : undefined }}
         >
           <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
+            <GitActionProvider key={session?.id ?? sessionIdRef.current ?? "new"} sessionId={session?.id ?? sessionIdRef.current}
+              liveRequest={extensionDialog?.method === "git_action" ? extensionDialog : null} onRespond={respondToExtensionUi}
+              interactionBlocked={workflowOpen} questionCardRef={questionCardRef}>
             <div ref={messageContentRef} onPointerUp={captureQuotedSelection} style={{ width: "100%", minWidth: 0, maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
             {(() => {
               let lastUserIdx = -1;
@@ -1141,7 +1153,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
               const visibleRefIndexByMessage = new Map<number, number>();
               let refIdx = 0;
               messages.forEach((msg, idx) => {
-                if (isMessageGroupAnchor(msg) || msg.role === "assistant") {
+                if (isOrdinaryMessageGroupAnchor(msg) || msg.role === "assistant") {
                   visibleRefIndexByMessage.set(idx, refIdx++);
                 }
               });
@@ -1156,7 +1168,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                 const isVisible = isMessageGroupAnchor(msg) || msg.role === "assistant";
                 const currentRefIdx = visibleRefIndexByMessage.get(idx);
                 const keyPrefix = options.keyPrefix ?? "message";
-                const messageKey = entryIds[idx] ?? idx;
+                const messageKey = entryIds[idx] || idx;
                 let showTimestamp = false;
                 if (msg.role === "assistant") {
                   showTimestamp = true;
@@ -1192,9 +1204,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                     writtenFiles={options.writtenFiles}
                   />
                 );
-                if (!isVisible || currentRefIdx === undefined) return view;
+                if (!isVisible) return view;
                 return (
-                  <div key={`${keyPrefix}-${messageKey}`} data-entry-id={entryIds[idx]} ref={options.attachRef === false ? undefined : attachVisibleRef(idx, currentRefIdx)}>
+                  <div key={`${keyPrefix}-${messageKey}`} data-entry-id={entryIds[idx]} ref={options.attachRef === false || currentRefIdx === undefined ? undefined : attachVisibleRef(idx, currentRefIdx)}>
                     {view}
                   </div>
                 );
@@ -1276,7 +1288,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                 if (processViews.length > 0) {
                   rendered.push(
                     <div
-                      key={`process-group-${entryIds[userIdx] ?? userIdx}`}
+                      key={`process-group-${entryIds[userIdx] || userIdx}`}
                       ref={processRefIdx === undefined ? undefined : (el) => { messageRefs.current[processRefIdx] = el; }}
                     >
                       <ProcessDetailsGroup messageCount={processViews.length} toolCallCount={processToolCount} defaultExpanded={!finalAnswerMessage} reveal={revealProcess} t={t}>
@@ -1352,6 +1364,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
             )}
 
             {extensionDialog && (
+              <GitActionLiveFallback>
               <div ref={questionCardRef} inert={workflowOpen} className="my-4 min-w-0 scroll-mt-4">
                 {extensionDialog.method === "ask_user"
                   ? <AskUserDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
@@ -1367,9 +1380,11 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                       : <GitActionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
                     : <ExtensionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />}
               </div>
+              </GitActionLiveFallback>
             )}
             <div ref={promptAnchorSpacerRef} aria-hidden="true" />
             </div>
+            </GitActionProvider>
           </div>
         </div>
         {isMobile || pendingScrollRestore ? null : (

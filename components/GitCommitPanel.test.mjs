@@ -25,8 +25,11 @@ test("review keeps diff read-only and requires explicit paths, message, preview,
   assert.match(panel, /candidateDiffUnavailable/);
   assert.match(panel, /preview\.reviewToken/);
   assert.match(panel, /unsupported diffs do not exclude a file/);
-  assert.match(panel, /JSON\.stringify\(\{ operation: "preview", sessionId, paths: selected \}\)/);
-  assert.match(panel, /JSON\.stringify\(\{ operation: "confirm", sessionId, preview, message \}\)/);
+  assert.match(panel, /JSON\.stringify\(\{ operation: "preview", sessionId, paths: selected, message \}\)/);
+  assert.match(panel, /JSON\.stringify\(\{ operation: "confirm", sessionId, preview, message, actionId: candidate\.actionId \}\)/);
+  assert.match(panel, /new CustomEvent\("pi-web:git-actions-changed", \{ detail: \{ sessionId \} \}\)/);
+  assert.match(panel, /body\.recoveryRequired/);
+  assert.match(panel, /result\.recoveryWarning/);
   assert.match(panel, /onClick=\{\(\) => void confirm\(\)\}/);
   assert.doesNotMatch(panel, /location\.reload|window\.location/);
 });

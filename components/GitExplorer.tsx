@@ -103,13 +103,18 @@ export function GitExplorer({ cwd, onOpenCommit, onBranchChange }: {
         {page.commits.map((commit) => <button key={commit.oid} type="button" aria-pressed={selectedOid === commit.oid}
           className="flex h-9 w-full min-w-0 flex-col justify-center pr-2 text-left text-text hover:bg-bg-hover aria-pressed:bg-bg-selected"
           style={{ paddingLeft: graphWidth }} onClick={() => { setSelectedOid(commit.oid); onOpenCommit(page.branch, page.head, commit.oid); }}
-          title={`${commit.oid}\n${commit.author} · ${commit.date}\n${commit.subject}`}>
+          title={[commit.oid, `${commit.author} · ${commit.date}`, commit.subject,
+            ...(refs.get(commit.oid) ?? []).map((branch) => `Local branch: ${branch}`),
+            ...(commit.tags ?? []).map((tag) => `Local tag: ${tag}`)].join("\n")}>
           <span className="flex min-w-0 items-center gap-1">
             <span className="min-w-0 flex-1 truncate">{commit.subject || "(no subject)"}</span>
             <span className="shrink-0 font-mono text-text-dim">{commit.oid.slice(0, 7)}</span>
           </span>
-          {refs.get(commit.oid)?.length ? <span className="truncate text-[10px] text-accent" title={refs.get(commit.oid)?.join(", ")}>
-            {refs.get(commit.oid)?.join(" · ")}
+          {(refs.get(commit.oid)?.length || commit.tags?.length) ? <span className="flex w-full min-w-0 items-center gap-1 overflow-hidden text-[10px]">
+            {refs.get(commit.oid)?.map((branch) => <span key={`branch:${branch}`} className="min-w-0 max-w-40 truncate text-accent"
+              title={`Local branch: ${branch}`} aria-label={`Local branch: ${branch}`}>{branch}</span>)}
+            {(commit.tags ?? []).map((tag) => <span key={`tag:${tag}`} className="min-w-0 max-w-40 truncate rounded bg-amber-400/10 px-1 text-amber-300"
+              title={`Local tag: ${tag}`} aria-label={`Local tag: ${tag}`}>tag: {tag}</span>)}
           </span> : null}
         </button>)}
       </div>

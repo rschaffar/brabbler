@@ -18,6 +18,7 @@ import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkGitWorkflow } from "./git-workflow.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
+import { seedGitActionHistory, checkSavedGitActionHistory } from "./git-action-history.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
@@ -52,6 +53,8 @@ const ARCHIVE = "e2e-archive-session";
 const BULK = ["e2e-bulk-desktop-a", "e2e-bulk-desktop-b", "e2e-bulk-mobile-a", "e2e-bulk-mobile-b"];
 const OTHER = "e2e-other-project";
 const GIT = "e2e-git-workflow";
+const GIT_HISTORY = "e2e-git-action-history";
+let gitHistory;
 const gitProject = join(agentDir, "git-project");
 const targetWorktree = join(agentDir, "git-target-worktree");
 const text = (i) => `E2E message ${String(i).padStart(4, "0")}`;
@@ -184,10 +187,19 @@ try {
     writeFileSync(join(gitProject, "second.txt"), "Second feature patch\n");
     writeFileSync(join(gitProject, "base.txt"), "Revised base fixture\n");
     git("add", "second.txt", "base.txt"); commit("second feature");
+    git("tag", "e2e-light");
+    git("tag", "--no-sign", "-a", "e2e-annotated", "-m", "E2E annotated release");
+    git("tag", "same-name", "target");
     writeFileSync(join(gitProject, "draft.txt"), "Manual commit fixture\n");
+    writeFileSync(join(gitProject, "second-draft.txt"), "Second captured commit file\n");
     git("worktree", "add", targetWorktree, "target");
     writeSession(GIT, [message("root", null, "user", "E2E Git workflow conversation"),
       message("answer", "root", "assistant", "Ready to review Git workflow")], gitProject);
+    gitHistory = await seedGitActionHistory(agentDir, GIT_HISTORY);
+    writeSession(GIT_HISTORY, [message("root", null, "user", "Earlier Git decisions"), ...gitHistory.entries,
+      { type: "compaction", id: "saved-compaction", parentId: gitHistory.entries.at(-1).id, timestamp,
+        summary: "Keep the short task context, not private patches.", firstKeptEntryId: "saved-compaction", tokensBefore: 100 },
+      message("answer", "saved-compaction", "assistant", "Saved Git action history fixture")], gitProject);
   }
 
   const probe = createServer();
@@ -231,7 +243,7 @@ try {
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK].sort());
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, GIT_HISTORY, ...BULK].sort());
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
@@ -253,6 +265,7 @@ try {
     await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
     await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree });
     await checkIntegratedGitGraph(page, targetWorktree);
+    await checkSavedGitActionHistory(page, { base, api, sessionId: GIT_HISTORY, records: gitHistory.records, artifacts });
     assert.deepEqual(errors, [], "Git workflow browser errors");
     await context.tracing.stop();
     await context.close();
@@ -601,6 +614,7 @@ try {
       await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
       await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree });
       await checkIntegratedGitGraph(page, targetWorktree);
+      await checkSavedGitActionHistory(page, { base, api, sessionId: GIT_HISTORY, records: gitHistory.records, artifacts });
     }
     // Use a separate tab: a deliberate full-page reload must not alter the
     // reading-position and session-history fixtures exercised below.

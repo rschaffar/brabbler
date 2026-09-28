@@ -28,6 +28,8 @@ export interface ExplorerCommit {
   author: string;
   date: string;
   subject: string;
+  /** Local tag names at this commit, for display only; never history roots. */
+  tags: string[];
 }
 
 export interface ExplorerFile { path: string; status: string }
@@ -40,13 +42,21 @@ function requireOid(oid: string): string {
 async function git(cwd: string, args: string[], limit = MAX_META_BYTES): Promise<string> {
   try {
     const { stdout } = await exec("git", ["-C", cwd, "--no-pager", ...args], {
-      env: { ...gitExecEnv(), GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1", GIT_LITERAL_PATHSPECS: "1", GIT_PAGER: "cat" },
+      env: { ...gitExecEnv(), GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1", GIT_LITERAL_PATHSPECS: "1", GIT_PAGER: "cat",
+        // Missing partial-clone objects must fail locally, never trigger a fetch.
+        GIT_NO_LAZY_FETCH: "1", GIT_ALLOW_PROTOCOL: "" },
       encoding: "utf8", maxBuffer: limit, timeout: 15_000,
     });
     return stdout;
   } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
-      throw new GitExplorerError("TOO_LARGE", "Git output exceeds the size limit");
+    if (error && typeof error === "object" && "code" in error) {
+      if (error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+        throw new GitExplorerError("TOO_LARGE", "Git output exceeds the size limit");
+      }
+      // show-ref reports an empty tag namespace with exit 1, not success. Do not
+      // swallow other failures (including exit 1 with diagnostics or partial output).
+      if (args.length === 3 && args[0] === "show-ref" && args[1] === "--tags" && args[2] === "--dereference" &&
+        error.code === 1 && "stdout" in error && error.stdout === "" && "stderr" in error && error.stderr === "") return "";
     }
     throw new GitExplorerError("UNAVAILABLE", "Git history is unavailable");
   }
@@ -59,9 +69,10 @@ export async function explorerCheckout(cwd: string): Promise<{ head: string; bra
     const root = toNativePath((await git(cwd, ["rev-parse", "--show-toplevel"])).trim());
     if (!samePath(root, cwd)) throw new Error("subdirectory");
     const head = requireOid((await git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"])).trim());
-    const branch = (await git(cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"])).trim();
-    if (!branch) throw new Error("detached");
-    return { head, branch };
+    // --short can return "heads/main" when a tag is also named "main".
+    const ref = (await git(cwd, ["symbolic-ref", "--quiet", "HEAD"])).trim();
+    if (!ref.startsWith("refs/heads/")) throw new Error("detached");
+    return { head, branch: ref.slice("refs/heads/".length) };
   } catch {
     throw new GitExplorerError("UNAVAILABLE", "Select a worktree root on a local branch");
   }
@@ -75,6 +86,27 @@ async function localRefs(cwd: string): Promise<{ branch: string; oid: string }[]
     if (!ref?.startsWith("refs/heads/") || !oid) throw new GitExplorerError("UNAVAILABLE", "Invalid local branch list");
     return { branch: ref.slice("refs/heads/".length), oid: requireOid(oid) };
   });
+}
+
+/** One bounded local read fully peels even nested annotated tags, without signature checks. */
+async function decorateTags(cwd: string, commits: ExplorerCommit[]): Promise<void> {
+  const output = await git(cwd, ["show-ref", "--tags", "--dereference"], MAX_REF_BYTES);
+  const tags = new Map<string, string>();
+  for (const line of output.split("\n").filter(Boolean)) {
+    // Ref names cannot contain ASCII spaces/newlines, but may contain commas,
+    // slashes or Unicode whitespace. Do not trim names or parse decorations.
+    const match = /^([0-9a-f]{40}|[0-9a-f]{64}) refs\/tags\/([^\n]+)$/.exec(line);
+    if (!match) throw new GitExplorerError("UNAVAILABLE", "Invalid local tag list");
+    // show-ref emits an annotated tag's fully peeled row immediately after its base row.
+    const name = match[2].endsWith("^{}") ? match[2].slice(0, -3) : match[2];
+    tags.set(name, match[1]);
+  }
+  const byOid = new Map(commits.map((commit) => [commit.oid, commit]));
+  for (const [tag, oid] of tags) {
+    // Only decorate known page commits. Tree/blob targets and unreachable tags
+    // cannot add objects to the history or authorize detail/patch reads.
+    byOid.get(oid)?.tags.push(tag);
+  }
 }
 
 async function branchTip(cwd: string, branch: string, expectedHead?: string): Promise<string> {
@@ -123,12 +155,14 @@ export async function explorerLog(cwd: string, skip = 0, expectedHead?: string, 
   const commits: ExplorerCommit[] = [];
   for (let i = 0; i < fields.length; i += 5) {
     commits.push({ oid: requireOid(fields[i]), parents: fields[i + 1] ? fields[i + 1].split(" ").map(requireOid) : [],
-      author: fields[i + 2], date: fields[i + 3], subject: fields[i + 4] });
+      author: fields[i + 2], date: fields[i + 3], subject: fields[i + 4], tags: [] });
   }
-  // Local labels only; no fetch, remote-tracking refs, or tag peeling.
+  // Keep branch-picker authority separate from display-only local tag metadata.
   const refs = await localRefs(cwd);
+  const page = commits.slice(0, PAGE_SIZE);
+  await decorateTags(cwd, page);
   await anchored(cwd, head, selectedBranch, checkout.branch);
-  return { head, branch, refs, commits: commits.slice(0, PAGE_SIZE), nextSkip: commits.length > PAGE_SIZE ? skip + PAGE_SIZE : null };
+  return { head, branch, refs, commits: page, nextSkip: commits.length > PAGE_SIZE ? skip + PAGE_SIZE : null };
 }
 
 async function commitFiles(cwd: string, oid: string, parents: string[]): Promise<ExplorerFile[]> {

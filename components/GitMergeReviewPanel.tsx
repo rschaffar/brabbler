@@ -10,7 +10,8 @@ type IntegrationStatus = {
   checks: { checkIndex: number; label: string }[];
   receipts: ReceiptMetadata[];
 };
-type Proposal = { plan: IntegrationPlan; viewed: boolean };
+type Proposal = { actionId: string; plan: IntegrationPlan; viewed: boolean };
+type IntegrationResponse = IntegrationResult & { actionId: string; recoveryWarning?: string };
 
 export function proposalMatches(plan: IntegrationPlan, review: GitReview, sessionId: string, receipts: ReceiptMetadata[]): boolean {
   return !!plan && !!plan.planId && plan.sessionId === sessionId && plan.expiresAt > Date.now() &&
@@ -57,9 +58,11 @@ function expectedTrees(review: GitReview, choice: Choice): { from: string; to: s
   };
 }
 
-async function bodyOrError<T>(response: Response): Promise<T> {
-  const body = await response.json() as T & { error?: string };
-  if (!response.ok) throw Object.assign(new Error(body.error ?? `HTTP ${response.status}`), { status: response.status });
+async function bodyOrError<T>(response: Response, sessionId?: string): Promise<T> {
+  const body = await response.json() as T & { error?: string; recoveryRequired?: boolean; recoveryWarning?: string };
+  if (sessionId) window.dispatchEvent(new CustomEvent("pi-web:git-actions-changed", { detail: { sessionId } }));
+  if (!response.ok) throw Object.assign(new Error(body.recoveryWarning ?? body.error ?? `HTTP ${response.status}`),
+    { status: response.status, recoveryRequired: body.recoveryRequired });
   return body;
 }
 
@@ -76,7 +79,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
   const [integration, setIntegration] = useState<IntegrationStatus | null>(null);
   const [integrationError, setIntegrationError] = useState<string | null>(null);
   const [proposal, setProposal] = useState<Proposal | null>(null);
-  const [result, setResult] = useState<IntegrationResult | null>(null);
+  const [result, setResult] = useState<IntegrationResponse | null>(null);
   const [operation, setOperation] = useState<"verify" | "plan" | "confirm" | null>(null);
   const [blocked, setBlocked] = useState(false);
   const operationRef = useRef(false);
@@ -161,7 +164,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
     if (operationRef.current || blocked || result || !review || !integration || !sameReview(integration.review, review)) return;
     const receipts = matchingReceipts(integration, review);
     if (action === "plan" && !receipts) return;
-    if (action === "confirm" && (!proposal?.viewed || !receipts || !proposalMatches(proposal.plan, review, sessionId, receipts))) return;
+    if (action === "confirm" && (!proposal?.viewed || !proposal.actionId || !receipts || !proposalMatches(proposal.plan, review, sessionId, receipts))) return;
     if (action === "verify" && (checkIndex === undefined || !integration.checks[checkIndex])) return;
     operationRef.current = true;
     const version = ++integrationGeneration.current;
@@ -171,28 +174,29 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
     try {
       const payload = action === "verify" ? { sessionId, operation: "verify", checkIndex }
         : action === "plan" ? { sessionId, operation: "plan", receiptIds: receipts!.map((receipt) => receipt.id) }
-          : { sessionId, operation: "confirm", planId: proposal!.plan.planId, approvePlanId: proposal!.plan.planId };
+          : { sessionId, operation: "confirm", planId: proposal!.plan.planId, approvePlanId: proposal!.plan.planId, actionId: proposal!.actionId };
       const response = await fetch("/api/git/integration", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
       if (action === "verify") {
-        const body = await bodyOrError<{ receipt: ReceiptMetadata }>(response);
+        const body = await bodyOrError<{ receipt: ReceiptMetadata; recoveryWarning?: string }>(response, sessionId);
         if (version !== integrationGeneration.current) return;
+        if (body.recoveryWarning) { setIntegrationError(body.recoveryWarning); setBlocked(true); return; }
         // Reload the server's matching receipts rather than trusting a locally cached result.
         const latest = await bodyOrError<IntegrationStatus>(await fetch(`/api/git/integration?${new URLSearchParams({ sessionId })}`, { cache: "no-store" }));
         if (version !== integrationGeneration.current) return;
         if (sameReview(latest.review, review) && body.receipt.id && latest.receipts.some((receipt) => receipt.id === body.receipt.id)) setIntegration(latest);
         else throw new Error("Verification receipt no longer matches this checkout. Refresh before continuing.");
       } else if (action === "plan") {
-        const body = await bodyOrError<{ plan: IntegrationPlan }>(response);
+        const body = await bodyOrError<{ plan: IntegrationPlan; actionId: string }>(response, sessionId);
         if (version !== integrationGeneration.current) return;
         const plan = body.plan;
         if (!proposalMatches(plan, review, sessionId, receipts!)) {
           throw new Error("Proposal identities or candidate patch do not match the review. Refresh before continuing.");
         }
-        setProposal({ plan, viewed: false });
+        setProposal({ plan, actionId: body.actionId, viewed: false });
       } else {
-        const body = await bodyOrError<IntegrationResult>(response);
+        const body = await bodyOrError<IntegrationResponse>(response, sessionId);
         // Never hide a reported partial-state, even if the panel was closed while applying.
         if (body.status !== "integrated" && body.status !== "partial-state") throw new Error("Unexpected integration result; inspect both worktrees");
         setResult(body);
@@ -204,9 +208,11 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
       if (version === integrationGeneration.current) {
         setProposal(null);
         setBlocked(true);
-        setIntegrationError(`${cause instanceof Error ? cause.message : "Integration unavailable"}. ${action === "confirm"
+        const failure = cause as Error & { status?: number; recoveryRequired?: boolean };
+        setIntegrationError(`${cause instanceof Error ? cause.message : "Integration unavailable"}. ${failure.recoveryRequired || action === "confirm" && failure.status === undefined
           ? "Inspect both worktrees and refs before any further action; do not retry blindly."
-          : "Checks can modify the checkout; inspect both worktrees, then refresh and verify again."}`);
+          : action === "confirm" ? "Refresh review and prepare a new proposal."
+            : "Checks can modify the checkout; inspect both worktrees, then refresh and verify again."}`);
       }
     } finally {
       operationRef.current = false;
@@ -227,7 +233,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
         body: JSON.stringify({ sessionId, expectedFeatureOid: review.featureOid, expectedTargetOid: review.targetOid, selection }),
       });
-      const body = await bodyOrError<{ diff: GitReviewDiff }>(response);
+      const body = await bodyOrError<{ diff: GitReviewDiff }>(response, sessionId);
       if (generation.current === version && !controller.signal.aborted) {
         if (body.diff.fromTreeOid !== trees.from || body.diff.toTreeOid !== trees.to) {
           setReview(null);
@@ -355,8 +361,9 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
       </div>}
       {result && <div role="status" className="space-y-1 rounded border border-amber-500 p-2 text-xs">
         <strong>{result.status === "integrated" ? "Local integration completed" : "Partial state — inspect manually; do not retry"}</strong>
-        <p className="break-all font-mono">Target: {result.targetBranch}; merge commit: {result.mergeOid}</p>
+        <p className="break-all font-mono">Target: {result.targetBranch}; {result.status === "integrated" ? "merge commit" : "intended merge commit (ref update unproven)"}: {result.mergeOid}</p>
         {result.status === "partial-state" && <p className="break-all text-amber-500">{result.reason} Recovery record: {result.recoveryPath}. Inspect both worktrees, refs and index before any further action. Do not retry blindly.</p>}
+        {result.recoveryWarning && <p role="alert" className="text-amber-500">{result.recoveryWarning}</p>}
       </div>}
     </div>
   </section>;

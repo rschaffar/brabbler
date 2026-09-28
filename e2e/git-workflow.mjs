@@ -411,11 +411,18 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     console.log("PASS: ~500px desktop and 390px Workflow settings, dirty footer and task-detail containment");
 
     const commitPanel = await openDetail("Review & commit", "Review & commit panel");
-    await commitPanel.getByText("draft.txt", { exact: false }).waitFor();
-    await commitPanel.getByRole("checkbox").check();
+    await commitPanel.getByText(/^draft\.txt\s+\(/).waitFor();
+    for (const checkbox of await commitPanel.getByRole("checkbox").all()) await checkbox.check();
     await commitPanel.getByLabel("Commit message").fill("E2E manual commit");
     const before = git("rev-parse", "HEAD");
+    const previewResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/commit"
+      && response.request().postDataJSON()?.operation === "preview");
     await commitPanel.getByRole("button", { name: "Preview", exact: true }).click();
+    const savedPreview = await (await previewResponse).json();
+    assert.equal(typeof savedPreview.actionId, "string");
+    const pendingHistory = await api(`/api/git/actions/${savedPreview.actionId}?sessionId=${sessionId}`);
+    assert.equal(pendingHistory.record.state, "awaiting-decision", "Live journal ownership is shared across Next route modules");
+    assert.equal(pendingHistory.candidate, undefined, "Collapsed history does not transfer patch bytes");
     const candidate = commitPanel.locator('[aria-label="Commit preview"]');
     await candidate.getByText("Review exact commit candidate").waitFor();
     assert.equal(git("rev-parse", "HEAD"), before, "Preview must not commit");
@@ -423,9 +430,28 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await candidate.getByRole("button", { name: "Confirm commit" }).click();
     await commitPanel.getByText("Last commit created").waitFor();
     assert.notEqual(git("rev-parse", "HEAD"), before);
-    assert.equal(git("show", "--format=", "--name-only", "HEAD"), "draft.txt");
+    assert.equal(git("show", "--format=", "--name-only", "HEAD"), "draft.txt\nsecond-draft.txt");
     assert.equal(git("show", "-s", "--format=%ae", "HEAD"), "e2e@example.invalid", "Commit uses the throwaway HOME identity");
-    console.log("PASS: manual whole-file commit preview and explicit confirmation through Current task");
+    const manualCommit = git("rev-parse", "HEAD");
+    await closeWorkflow();
+    const commitCard = page.locator(`[data-git-action-id="${savedPreview.actionId}"]`);
+    await commitCard.getByRole("heading", { name: /Commit.*Succeeded/ }).waitFor();
+    assert.equal(await commitCard.count(), 1, "Manual metadata append appears without SSE or duplicate cards");
+    assert.match(await commitCard.innerText(), new RegExp(manualCommit));
+    assert.match(await commitCard.innerText(), /e2e@example\.invalid/);
+    const sessionHistory = await api(`/api/sessions/${sessionId}?tail=100`);
+    assert.doesNotMatch(JSON.stringify(sessionHistory.context), /Manual commit fixture|Second captured commit file/);
+    const anchorIndex = sessionHistory.context.messages.findIndex((message) => message.customType === "pi-web:git-action" && message.details?.actionId === savedPreview.actionId);
+    assert.ok(anchorIndex >= 0 && sessionHistory.context.entryIds[anchorIndex]);
+    await commitCard.getByRole("button", { name: /^Captured candidate/ }).click();
+    await commitCard.getByRole("region", { name: "Side-by-side diff" }).getByText("Manual commit fixture", { exact: true }).waitFor();
+    await commitCard.locator("summary").filter({ hasText: /^second-draft\.txt$/ }).click();
+    await commitCard.getByRole("region", { name: "Side-by-side diff" }).getByText("Second captured commit file", { exact: true }).waitFor();
+    await page.reload({ waitUntil: "load" });
+    await commitCard.getByRole("heading", { name: /Commit.*Succeeded/ }).waitFor();
+    assert.equal(await commitCard.count(), 1);
+    assert.equal(await commitCard.getByRole("button", { name: /^Confirm/ }).count(), 0, "History cannot approve an old commit");
+    console.log("PASS: real manual commit coalesces into one durable card with actual identity, lazy multi-file diff and reload persistence");
 
     // Saving a check neither runs it nor grants approval; the captured task must be explicitly updated first.
     await home();
@@ -483,7 +509,11 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     assert.equal((await api("/api/sessions?force=1")).sessions.find((session) => session.id === sessionId)?.cwd, targetWorktree);
     assert.deepEqual(creations, [], "The complete Workflow flow must not create an agent/chat");
     await closeWorkflow();
-    console.log("PASS: same chat continues in a registered target worktree via Current task");
+    await commitCard.getByRole("heading", { name: /Commit.*Succeeded/ }).waitFor();
+    await commitCard.getByRole("button", { name: /^Captured candidate/ }).click();
+    await commitCard.getByRole("region", { name: "Side-by-side diff" }).getByText("Manual commit fixture", { exact: true }).waitFor();
+    assert.match(await commitCard.innerText(), new RegExp(manualCommit));
+    console.log("PASS: same chat continues in a registered target worktree and retains its original captured Git history");
   } finally {
     page.off("load", observeLoad);
     page.off("request", observeRequest);

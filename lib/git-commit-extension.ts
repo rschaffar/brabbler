@@ -6,6 +6,8 @@ import { samePath } from "./paths";
 import { selectGitWorkspace } from "./git-workspace-selector";
 import { assertManagedGitAction, assertManagedGitWorkspace, ManagedGitAccessError } from "./git-workflow-access";
 import { requestWorkflowCommit } from "./git-workflow-commit";
+import { beginGitAction, failGitAction, finishGitAction, gitActionFailureResult, gitActionSink, snapshotGitActionCandidate, GitActionApplyError, GitActionRecordingError } from "./git-action-controller";
+import { getGitCommitTreeOid, getGitTreeDiff } from "./git-review";
 import type { AgentGitWorkflowUiContext } from "./agent-git-workflow-extension";
 import type { SessionEntry } from "./types";
 
@@ -45,6 +47,7 @@ export function createGitCommitExtension(
               const ui = ctx.ui as typeof ctx.ui & Partial<AgentGitWorkflowUiContext>;
               if (!ctx.hasUI || !ui.gitAction) return failure("Commit approval requires an interactive Pi Web session");
               return await requestWorkflowCommit({ cwd: workspace, paths: params.paths, message: params.message, signal: _signal,
+                sink: gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)),
                 ask: (candidate, signal) => ui.gitAction!(candidate, signal), beforeApply: async () => {
                   await assertManagedGitWorkspace(await guard(), workspace);
                   if (_signal?.aborted || !samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) throw new ManagedGitAccessError("Commit cancelled or workspace changed");
@@ -60,9 +63,31 @@ export function createGitCommitExtension(
               !samePath(params.preview.repositoryRoot, workspace)) return failure("Invalid or mismatched preview");
             await guard();
             if (_signal?.aborted) return failure("Commit cancelled; no commit was made");
-            const result = await confirmGitCommit(params.preview as GitCommitPreview, params.message);
-            return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
+            const preview = params.preview as GitCommitPreview;
+            const diff = await getGitTreeDiff(workspace, await getGitCommitTreeOid(workspace, preview.head), preview.tree);
+            const action = await beginGitAction(gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)),
+              "legacy-agent", snapshotGitActionCandidate({ kind: "commit", preview, message: params.message, diff }));
+            let applying = false;
+            try {
+              await action.update("executing");
+              const result = await confirmGitCommit(preview, params.message, async (intended) => {
+                await action.update("executing", { intended });
+                await guard();
+                if (_signal?.aborted || !samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) throw new ManagedGitAccessError("Commit cancelled or workspace changed");
+                _signal?.throwIfAborted();
+                applying = true;
+              });
+              await finishGitAction(action, result, result.status === "partial-success");
+              return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: { ...result, actionId: action.record.id } };
+            } catch (cause) {
+              await failGitAction(action, applying, _signal, cause);
+              if (applying && !(cause instanceof GitActionRecordingError)) throw new GitActionApplyError(action.record.id, action.record.intended);
+              throw cause;
+            }
+            finally { action.release(); }
           } catch (cause) {
+            const recorded = gitActionFailureResult(cause);
+            if (recorded) return recorded;
             if (cause instanceof ManagedGitAccessError) return failure(cause.message);
             // Never return raw Git stderr, which can contain credentials in config or URLs.
             return failure("Commit unavailable or preview stale; refresh the preview");

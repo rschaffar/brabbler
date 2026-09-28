@@ -10,6 +10,7 @@ import { getGitReviewDiff, reviewGitBranches, type GitReviewSelection } from "./
 import { assertManagedGitAction, assertManagedGitWorkspace, ManagedGitAccessError, watchManagedGitAccess, type ManagedGitStage } from "./git-workflow-access";
 import { loadGitWorkflowSettings } from "./git-workflow-settings-store";
 import { requestWorkflowCommit } from "./git-workflow-commit";
+import { beginGitAction, failGitAction, finishGitAction, gitActionFailureResult, gitActionSink, snapshotGitActionCandidate, GitActionApplyError, GitActionRecordingError } from "./git-action-controller";
 import { gitExecEnv } from "./git-exec";
 import { acquireGitCheckoutGate } from "./git-checkout-gate";
 import { prepareIntegration, confirmIntegration } from "./git-integration";
@@ -150,11 +151,18 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 ? { kind: "commits", commitOids: params.commitOids }
                 : { kind: "merge" };
               const diff = await getGitReviewDiff(workspace, review, selection);
-              const viewed = await ui.gitAction({ kind: "review", featureCwd: workspace, review, selection, diff }, signal);
-              return { content: [{ type: "text" as const, text: viewed
-                ? `User reviewed ${selection.kind === "merge" ? "the whole proposed merge" : "the selected contiguous commits"}. No integration was approved or executed. Target ${review.targetBranch} ${review.targetOid}; feature ${review.featureBranch} ${review.featureOid}.`
-                : "Git comparison dismissed. No operation was approved or executed." }],
-                details: { viewed, selection, targetOid: review.targetOid, featureOid: review.featureOid } };
+              const candidate = { kind: "review" as const, featureCwd: workspace, review, selection, diff };
+              const action = await beginGitAction(gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)), "agent", snapshotGitActionCandidate(candidate));
+              try {
+                await action.update("awaiting-decision");
+                const viewed = await ui.gitAction({ ...candidate, actionId: action.record.id }, signal);
+                await action.update(signal?.aborted ? "cancelled" : viewed ? "succeeded" : "declined", { decision: signal?.aborted ? "cancelled" : viewed ? "reviewed" : "dismissed" });
+                return { content: [{ type: "text" as const, text: viewed
+                  ? `User reviewed ${selection.kind === "merge" ? "the whole proposed merge" : "the selected contiguous commits"}. No integration was approved or executed. Target ${review.targetBranch} ${review.targetOid}; feature ${review.featureBranch} ${review.featureOid}.`
+                  : "Git comparison dismissed. No operation was approved or executed." }],
+                  details: { viewed, selection, targetOid: review.targetOid, featureOid: review.featureOid, actionId: action.record.id } };
+              } catch (cause) { await failGitAction(action, false, signal, cause); throw cause; }
+              finally { action.release(); }
             }
             if (params.operation === "integrate") {
               const saved = readAgentGitPreferences((writableManager?.getEntries() ?? ctx.sessionManager.getEntries?.() ?? []) as SessionEntry[]);
@@ -190,46 +198,83 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                   (await featureBranch(workspace)) === branch && !signal?.aborted;
               };
               if (!await valid()) return failure("Trust both registered checkouts and stop other sessions before integration");
-              if (!await ui.gitAction({ kind: "checks", featureCwd: workspace, targetCwd: target, targetBranch, featureBranch: branch, checks }, signal) || signal?.aborted) {
-                return { content: [{ type: "text" as const, text: "Verification declined; no checks or integration executed." }], details: { approved: false } };
-              }
-              const review = await reviewGitBranches(workspace, branch, targetBranch);
+              const sink = gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data));
+              const checkCandidate = { kind: "checks" as const, featureCwd: workspace, targetCwd: target, targetBranch, featureBranch: branch, checks };
+              const checkAction = await beginGitAction(sink, "agent", snapshotGitActionCandidate(checkCandidate));
               const receipts = [];
-              // No gate while the browser is answering. Reserve both checkouts only during execution.
-              const releaseChecks = acquireGitCheckoutGate([workspace, target]);
+              let checksStarted = false;
               try {
-                if (!await valid()) return failure("Checkout became busy or untrusted before verification");
-                for (let i = 0; i < checks.length; i++) {
-                  if (!await valid()) return failure("Verification cancelled or checkout changed");
-                  const watcher = await watchManagedGitAccess(() => guard("checks"), signal);
-                  try {
-                    receipts.push(await runGitVerification({ sessionId, cwd: workspace, agentDir, review, checkIndex: i,
-                      getPolicy: guardedPolicy, isTrusted: trusted, signal: watcher.signal }));
-                  } finally { watcher.dispose(); }
+                await checkAction.update("awaiting-decision");
+                if (!await ui.gitAction({ ...checkCandidate, actionId: checkAction.record.id }, signal) || signal?.aborted) {
+                  await checkAction.update(signal?.aborted ? "cancelled" : "declined", { decision: signal?.aborted ? "cancelled" : "declined" });
+                  return { content: [{ type: "text" as const, text: "Verification declined; no checks or integration executed." }], details: { approved: false, actionId: checkAction.record.id } };
                 }
-              } finally { releaseChecks(); }
+                const review = await reviewGitBranches(workspace, branch, targetBranch);
+                // No gate while the browser is answering. Reserve both checkouts only during execution.
+                const releaseChecks = acquireGitCheckoutGate([workspace, target]);
+                try {
+                  if (!await valid()) throw new ManagedGitAccessError("Checkout became busy or untrusted before verification");
+                  await checkAction.update("executing", { decision: "approved" });
+                  for (let i = 0; i < checks.length; i++) {
+                    if (!await valid()) throw new ManagedGitAccessError("Verification cancelled or checkout changed");
+                    const watcher = await watchManagedGitAccess(() => guard("checks"), signal);
+                    try {
+                      checksStarted = true;
+                      receipts.push(await runGitVerification({ sessionId, cwd: workspace, agentDir, review, checkIndex: i,
+                        getPolicy: guardedPolicy, isTrusted: trusted, signal: watcher.signal }));
+                    } finally { watcher.dispose(); }
+                  }
+                  await finishGitAction(checkAction, { status: "verified" });
+                } finally { releaseChecks(); }
+              } catch (cause) {
+                if (checksStarted) {
+                  try { await checkAction.update(signal?.aborted ? "cancelled" : "failed", { reason: "Verification stopped or failed. Commands may have run; no integration was authorized by this decision." }); } catch { /* uncertain state stays visible */ }
+                } else await failGitAction(checkAction, false, signal, cause);
+                throw cause;
+              } finally { checkAction.release(); }
               if (!await valid()) return failure("Checkout became busy or untrusted after verification");
               const plan = await prepareIntegration({ sessionId, cwd: workspace, agentDir, featureBranch: branch,
                 receiptIds: receipts.map((r) => r.id), getPolicy: guardedPolicy });
-              if (!await ui.gitAction({ kind: "integration", featureCwd: workspace, targetCwd: target, plan, receipts }, signal) || signal?.aborted) {
-                return { content: [{ type: "text" as const, text: "Exact merge declined; no integration executed." }], details: { approved: false } };
-              }
-              const releaseMerge = acquireGitCheckoutGate([workspace, target]);
+              const mergeCandidate = { kind: "integration" as const, featureCwd: workspace, targetCwd: target, plan, receipts };
+              const mergeAction = await beginGitAction(sink, "agent", snapshotGitActionCandidate(mergeCandidate));
+              let applying = false;
               try {
-                if (!await valid()) return failure("Checkout became busy or untrusted before merge");
-                const result = await confirmIntegration(plan.planId, plan.planId, sessionId);
-                return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
-              } finally { releaseMerge(); }
+                await mergeAction.update("awaiting-decision");
+                if (!await ui.gitAction({ ...mergeCandidate, actionId: mergeAction.record.id }, signal) || signal?.aborted) {
+                  await mergeAction.update(signal?.aborted ? "cancelled" : "declined", { decision: signal?.aborted ? "cancelled" : "declined" });
+                  return { content: [{ type: "text" as const, text: "Exact merge declined; no integration executed." }], details: { approved: false, actionId: mergeAction.record.id } };
+                }
+                const releaseMerge = acquireGitCheckoutGate([workspace, target]);
+                try {
+                  if (!await valid()) throw new ManagedGitAccessError("Checkout became busy or untrusted before merge");
+                  await mergeAction.update("executing", { decision: "approved" });
+                  const result = await confirmIntegration(plan.planId, plan.planId, sessionId, async () => {
+                    await mergeAction.update("executing", { intended: { mergeOid: plan.mergeOid, targetBranch } });
+                    if (!await valid()) throw new ManagedGitAccessError("Integration cancelled or checkout changed before apply");
+                    applying = true;
+                  });
+                  await finishGitAction(mergeAction, result, result.status === "partial-state");
+                  return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: { ...result, actionId: mergeAction.record.id } };
+                } finally { releaseMerge(); }
+              } catch (cause) {
+                await failGitAction(mergeAction, applying, signal, cause);
+                if (applying && !(cause instanceof GitActionRecordingError)) throw new GitActionApplyError(mergeAction.record.id, mergeAction.record.intended);
+                throw cause;
+              }
+              finally { mergeAction.release(); }
             }
             if (params.operation !== "commit" || params.checks || !params.paths?.length || typeof params.message !== "string" || !params.message.trim() || params.targetBranch || params.commitOids) {
               return failure("Select complete changed paths and provide an exact commit message");
             }
             return await requestWorkflowCommit({ cwd: workspace, paths: params.paths, message: params.message, signal,
+              sink: gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)),
               ask: (candidate, abort) => ui.gitAction!(candidate, abort), beforeApply: async () => {
                 await assertManagedGitWorkspace(await guard("commit"), workspace);
                 if (signal?.aborted || !samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) throw new ManagedGitAccessError("Commit cancelled or workspace changed");
               } });
           } catch (cause) {
+            const recorded = gitActionFailureResult(cause);
+            if (recorded) return recorded;
             if (cause instanceof ManagedGitAccessError) return failure(cause.message);
             // Never send raw Git stderr or file contents back through a failed tool result.
             return failure("Git candidate unavailable or stale; inspect the checkout and request a fresh review");

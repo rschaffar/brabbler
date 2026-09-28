@@ -1,18 +1,11 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import Module, { createRequire } from "node:module";
+import { createJiti } from "jiti";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import ts from "typescript";
 
-const source = await readFile(new URL("./GitActionDialog.tsx", import.meta.url), "utf8");
-const filename = new URL("./GitActionDialog.tsx", import.meta.url).pathname;
-const mod = new Module(filename);
-mod.filename = filename;
-mod.require = createRequire(import.meta.url);
-mod._compile(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
-const { GitActionDialog } = mod.exports;
+const jiti = createJiti(import.meta.url, { jsx: { runtime: "automatic" }, tsconfigPaths: true });
+const { GitActionDialog } = await jiti.import("./GitActionDialog.tsx");
 const oid = (x) => x.repeat(40);
 const diff = { fromTreeOid: oid("a"), toTreeOid: oid("b"), patch: "diff --git a/a b/a\n+new\n", hasBinaryChanges: false };
 const render = (candidate) => renderToStaticMarkup(React.createElement(GitActionDialog, { request: { type: "extension_ui_request", id: "one", method: "git_action", candidate }, onRespond: () => {} }));

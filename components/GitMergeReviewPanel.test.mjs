@@ -46,6 +46,7 @@ test("read-only diff displays exact tree identities and binary summaries, discar
   assert.match(panel, /Whole merge result tree OID/);
   assert.match(panel, /Expected comparison trees/);
   assert.match(panel, /Actual comparison trees/);
+  assert.match(panel, /bodyOrError<\{ diff: GitReviewDiff \}>\(response, sessionId\)/);
   assert.match(panel, /body\.diff\.fromTreeOid !== trees\.from \|\| body\.diff\.toTreeOid !== trees\.to/);
   assert.match(panel, /aria-pressed=\{choice\.kind === "commits" && index >= choice\.start && index <= choice\.end\}/);
   assert.match(panel, /event\.shiftKey && anchor !== null/);
@@ -116,6 +117,7 @@ test("renderer shows full authoritative proposal only after prepare, with a sepa
   assert.doesNotMatch(viewed, /I have reviewed this exact proposal/);
   const partial = render(base.map((value, index) => index === 11 ? { status: "partial-state", targetBranch: "main", mergeOid: oid(30), recoveryPath: "/private/record", reason: "Failed" } : value));
   assert.match(partial, /Partial state — inspect manually; do not retry/);
+  assert.match(partial, /intended merge commit \(ref update unproven\)/);
   assert.match(partial, /\/private\/record/);
   const blocked = render(base.map((value, index) => index === 13 ? true : value));
   assert.match(blocked, /Run check 1<\/button>/);
@@ -126,7 +128,10 @@ test("integration contract renders a separate deliberate review and exact-state 
   assert.match(panel, /fetch\(`\/api\/git\/integration\?\$\{new URLSearchParams\(\{ sessionId \}\)\}`/);
   assert.match(panel, /operation: "verify", checkIndex/);
   assert.match(panel, /operation: "plan", receiptIds: receipts!\.map\(\(receipt\) => receipt\.id\)/);
-  assert.match(panel, /operation: "confirm", planId: proposal!\.plan\.planId, approvePlanId: proposal!\.plan\.planId/);
+  assert.match(panel, /operation: "confirm", planId: proposal!\.plan\.planId, approvePlanId: proposal!\.plan\.planId, actionId: proposal!\.actionId/);
+  assert.match(panel, /new CustomEvent\("pi-web:git-actions-changed", \{ detail: \{ sessionId \} \}\)/);
+  assert.match(panel, /body\.recoveryWarning/);
+  assert.match(panel, /result\.recoveryWarning/);
   assert.match(panel, /onClick=\{\(\) => void integrationAction\("verify", index\)\}/);
   assert.match(panel, /disabled=\{!matchingReceipts\(integration, review\) \|\| blocked \|\| !!result \|\| operation !== null\}/);
   assert.match(panel, /I have reviewed this exact proposal/);

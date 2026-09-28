@@ -7,13 +7,25 @@ import { useTheme } from "@/hooks/useTheme";
 
 type View = "split" | "unified" | "raw";
 const MAX_RENDERED_LINES = 2500;
+// Pierre's overflow:"scroll" synchronizes the columns. Keep its wrap layout
+// (no ScrollSyncManager) and give each code grid its own bounded scroll area.
+const INDEPENDENT_SCROLL_CSS = `
+:host { min-width: 0; max-width: 100%; }
+[data-diff-type=split][data-overflow=wrap] { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-block: 0; align-items: start; }
+[data-diff] [data-code] { display: grid; min-width: 0; max-height: 44vh; overflow: auto; overscroll-behavior: contain; grid-template-columns: max-content minmax(max-content, 1fr); }
+[data-diff-type=split][data-overflow=wrap] [data-code] [data-gutter] { grid-column: 1; }
+[data-diff-type=split][data-overflow=wrap] [data-code] [data-content] { grid-column: 2; }
+[data-overflow=wrap] [data-line] { white-space: pre; word-break: normal; }
+[data-code]::-webkit-scrollbar { width: 6px; height: 6px; }
+`;
 
 /** A presentation-only adapter over the existing bounded, first-parent Git patch. */
-export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after }: {
+export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, independentScroll = false }: {
   patch: string;
   hasBinaryChanges: boolean;
   before: string;
   after: string;
+  independentScroll?: boolean;
 }) {
   const [view, setView] = useState<View>("split");
   const { isDark } = useTheme();
@@ -67,15 +79,15 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after }: {
     {hasBinaryChanges && <p className="px-3 pt-2 text-xs text-text-muted">Binary changes are summarized; file contents are not shown.</p>}
     {(fallback || highlighterFailed) && <p className="px-3 pt-2 text-xs text-text-muted">{fallback || "The diff could not be highlighted; showing the raw patch."}</p>}
     {!file && !hasBinaryChanges && !fallback && <p className="px-3 pt-2 text-xs text-text-muted">No text hunks in this patch (metadata-only change).</p>}
-    {visibleView === "raw" ? <pre className="overflow-auto p-3 font-mono text-xs text-text">{patch}</pre> :
+    {visibleView === "raw" ? <pre role="region" aria-label="Raw patch" className={`${independentScroll ? "max-h-[44vh] " : ""}overflow-auto p-3 font-mono text-xs text-text`}>{patch}</pre> :
       <div role="region" aria-label={visibleView === "split" ? "Side-by-side diff" : "Unified diff"} className="overflow-x-auto">
-        {visibleView === "split" && <div className="git-commit-diff-headings flex border-b border-border bg-bg-panel text-xs text-text-muted">
+        {visibleView === "split" && <div className={`${independentScroll ? "min-w-0 break-all" : "git-commit-diff-headings"} flex border-b border-border bg-bg-panel text-xs text-text-muted`}>
           <span className="w-1/2 border-r border-border px-3 py-1">Before · {before}</span>
           <span className="w-1/2 px-3 py-1">After · {after}</span>
         </div>}
         {file?.hunks[0]?.hunkSpecs && <div aria-label="Patch hunk" className="border-b border-border bg-bg-panel px-2 py-1 font-mono text-xs text-text-muted">{file.hunks[0].hunkSpecs.trim()}</div>}
-        <FileDiff fileDiff={file!} className={visibleView === "split" ? "git-commit-diff-file git-commit-diff-file-split" : "git-commit-diff-file"}
-          options={{ diffStyle: visibleView, themeType: isDark ? "dark" : "light", disableFileHeader: true, hunkSeparators: "metadata", overflow: "wrap" }} />
+        <FileDiff fileDiff={file!} className={visibleView === "split" && !independentScroll ? "git-commit-diff-file git-commit-diff-file-split" : "git-commit-diff-file"}
+          options={{ diffStyle: visibleView, themeType: isDark ? "dark" : "light", disableFileHeader: true, hunkSeparators: "metadata", overflow: "wrap", unsafeCSS: independentScroll ? INDEPENDENT_SCROLL_CSS : undefined }} />
       </div>}
   </div>;
 }

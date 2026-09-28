@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 
 /** Visual history tracks the selected checkout and branch, never the open chat's integration target. */
 export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorktree }) {
+  const checkoutHead = execFileSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   await page.goto(`${base}/?session=${sessionId}`, { waitUntil: "domcontentloaded" });
   await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Git Explorer", exact: true }).click();
@@ -12,12 +13,28 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await branch.waitFor({ state: "visible" });
   await page.waitForFunction(() => document.querySelector('[aria-label="History branch"]')?.value === "feature");
   assert.equal(await graph.locator("svg circle").count(), 3, "Graph should show feature commits and root");
+  const featureRow = graph.getByRole("button", { name: /second feature/ });
+  await featureRow.getByLabel("Local branch: feature", { exact: true }).waitFor();
+  for (const tag of ["e2e-light", "e2e-annotated"]) {
+    const badge = featureRow.getByLabel(`Local tag: ${tag}`, { exact: true });
+    await badge.waitFor({ state: "visible" });
+    assert.equal(await badge.getAttribute("title"), `Local tag: ${tag}`, "Tag tooltip preserves the complete name");
+    assert.equal(await badge.innerText(), `tag: ${tag}`, "Tags are distinguishable from branch labels");
+  }
+  const branchOptions = await branch.locator("option").evaluateAll((options) => options.map((option) => option.value));
+  for (const tag of ["e2e-light", "e2e-annotated", "same-name"]) {
+    assert.ok(!branchOptions.includes(tag), `Tag ${tag} must not become a history branch`);
+  }
   await branch.selectOption("target");
   await page.waitForFunction(() => document.querySelector('[aria-label="History branch"]')?.value === "target");
   await graph.getByRole("button", { name: /base fixture/ }).waitFor();
   assert.equal(await graph.locator("svg circle").count(), 1, "Other local branch shows only its reachable commits");
+  await graph.getByRole("button", { name: /base fixture/ }).getByLabel("Local tag: same-name", { exact: true }).waitFor();
+  assert.equal(await graph.getByLabel("Local tag: e2e-light", { exact: true }).count(), 0, "Tags cannot add unreachable commits to the graph");
   assert.equal(execFileSync("git", ["-C", cwd, "branch", "--show-current"], { encoding: "utf8" }).trim(), "feature",
     "Browsing another local branch must not check it out");
+  assert.equal(execFileSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), checkoutHead,
+    "Tag labels must not change the checkout HEAD");
   await branch.selectOption("feature");
   await graph.getByRole("button", { name: /second feature/ }).waitFor();
   const delayOtherBranch = async (route) => {
@@ -125,5 +142,5 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   } finally {
     if (viewport) await page.setViewportSize(viewport);
   }
-  console.log("PASS: Git sidecar shows local branch history, adjacent commit detail and copy actions");
+  console.log("PASS: Git sidecar shows local branch history and tag labels, adjacent commit detail and copy actions");
 }

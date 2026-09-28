@@ -198,7 +198,9 @@ export async function prepareGitCommit(cwd: string, selectedPaths: string[]): Pr
 }
 
 /** Never commits a preview that has become stale. No hooks, signing, or remote operations. */
-export async function confirmGitCommit(preview: GitCommitPreview, message: string): Promise<GitCommitResult> {
+export async function confirmGitCommit(preview: GitCommitPreview, message: string,
+  beforeRefUpdate?: (intended: { commit: string; tree: string; parents: string[]; authorEmail: string }) => Promise<void>,
+): Promise<GitCommitResult> {
   if (!message.trim() || message.includes("\0")) fail("invalid commit message");
   const cwd = preview.repositoryRoot;
   const first = await prepare(cwd, preview.paths);
@@ -223,6 +225,9 @@ export async function confirmGitCommit(preview: GitCommitPreview, message: strin
     const committer = identity((await git(cwd, ["var", "GIT_COMMITTER_IDENT"])).trim());
     const commit = (await git(cwd, ["commit-tree", latest.preview.tree, "-p", preview.head, "-m", message])).trim();
     await verifyCommit(cwd, commit, latest.preview.tree, preview.head, message, author, committer);
+    // Persist prepared identity BEFORE the ref mutation. A failed journal write
+    // leaves only an unreachable object, never a silently unrecorded commit.
+    await beforeRefUpdate?.({ commit, tree: latest.preview.tree, parents: [preview.head], authorEmail });
     await assertCheckout(cwd, preview.branch, preview.head);
     const beforeRef = await fs.lstat(lockPath);
     if (beforeRef.dev !== lockIdentity.dev || beforeRef.ino !== lockIdentity.ino) fail("index lock ownership lost");
