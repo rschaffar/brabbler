@@ -10,7 +10,7 @@ type IntegrationStatus = {
   checks: { checkIndex: number; label: string }[];
   receipts: ReceiptMetadata[];
 };
-type Proposal = { actionId: string; plan: IntegrationPlan; viewed: boolean };
+type Proposal = { actionId: string; plan: IntegrationPlan };
 type IntegrationResponse = IntegrationResult & { actionId: string; recoveryWarning?: string };
 
 export function proposalMatches(plan: IntegrationPlan, review: GitReview, sessionId: string, receipts: ReceiptMetadata[]): boolean {
@@ -164,7 +164,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
     if (operationRef.current || blocked || result || !review || !integration || !sameReview(integration.review, review)) return;
     const receipts = matchingReceipts(integration, review);
     if (action === "plan" && !receipts) return;
-    if (action === "confirm" && (!proposal?.viewed || !proposal.actionId || !receipts || !proposalMatches(proposal.plan, review, sessionId, receipts))) return;
+    if (action === "confirm" && (!proposal?.actionId || !receipts || !proposalMatches(proposal.plan, review, sessionId, receipts))) return;
     if (action === "verify" && (checkIndex === undefined || !integration.checks[checkIndex])) return;
     operationRef.current = true;
     const version = ++integrationGeneration.current;
@@ -194,7 +194,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
         if (!proposalMatches(plan, review, sessionId, receipts!)) {
           throw new Error("Proposal identities or candidate patch do not match the review. Refresh before continuing.");
         }
-        setProposal({ plan, actionId: body.actionId, viewed: false });
+        setProposal({ plan, actionId: body.actionId });
       } else {
         const body = await bodyOrError<IntegrationResponse>(response, sessionId);
         // Never hide a reported partial-state, even if the panel was closed while applying.
@@ -355,9 +355,8 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
           {proposal.plan.diff.hasBinaryChanges && <p className="text-amber-500">Binary changes are included but contents are not displayed.</p>}
           {proposal.plan.diff.patch ? <pre className="max-h-80 min-w-0 overflow-auto whitespace-pre-wrap break-all rounded border border-border bg-bg p-2 font-mono text-text">{proposal.plan.diff.patch}</pre> : <p>No text changes in the candidate.</p>}
         </div>
-        {!proposal.viewed ? <button type="button" disabled={operation !== null} onClick={() => setProposal((current) => current ? { ...current, viewed: true } : null)} className="min-h-8 rounded border border-border px-3 text-accent disabled:opacity-50">I have reviewed this exact proposal</button>
-          : <button type="button" disabled={operation !== null || blocked || !review || !integration || !matchingReceipts(integration, review) || Date.now() >= proposal.plan.expiresAt} onClick={() => void integrationAction("confirm")}
-            className="min-h-8 rounded border border-amber-500 px-3 font-medium text-text disabled:opacity-50">{operation === "confirm" ? "Integrating…" : `Confirm exact plan ${proposal.plan.planId}`}</button>}
+        <button type="button" disabled={operation !== null || blocked || !proposal.actionId || !review || !integration || !matchingReceipts(integration, review) || Date.now() >= proposal.plan.expiresAt} onClick={() => void integrationAction("confirm")}
+          className="min-h-8 rounded border border-amber-500 px-3 font-medium text-text disabled:opacity-50">{operation === "confirm" ? "Integrating…" : `Confirm exact plan ${proposal.plan.planId}`}</button>
       </div>}
       {result && <div role="status" className="space-y-1 rounded border border-amber-500 p-2 text-xs">
         <strong>{result.status === "integrated" ? "Local integration completed" : "Partial state — inspect manually; do not retry"}</strong>

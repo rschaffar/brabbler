@@ -479,8 +479,8 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     const expectedMerge = await proposal.locator("dt", { hasText: "Exact merge commit OID" }).locator("xpath=following-sibling::dd[1]").innerText();
     await proposal.getByText(/draft\.txt/).waitFor();
     assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), targetBeforeVerification, "Proposal must not integrate");
-    await proposal.getByRole("button", { name: "I have reviewed this exact proposal" }).click();
-    assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), targetBeforeVerification, "Review acknowledgement is not confirmation");
+    assert.equal(await proposal.getByRole("checkbox").count(), 0);
+    assert.equal(await proposal.getByRole("button", { name: /I have reviewed/ }).count(), 0, "One exact confirmation button, no extra acknowledgement gate");
     await proposal.getByRole("button", { name: /^Confirm exact plan/ }).click();
     await review.getByText("Local integration completed").waitFor();
     assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), expectedMerge);

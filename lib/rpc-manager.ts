@@ -1750,12 +1750,14 @@ export class AgentSessionWrapper {
         timeout,
         signal,
       ),
+      // Human Git decisions have no response deadline. Stop/teardown still
+      // settle them; approval still goes through the native freshness checks.
       gitPreferences: (candidate: Extract<GitActionCandidate, { kind: "preferences" }>, signal?: AbortSignal) => this.requestExtensionUi(
         { method: "git_action", candidate },
         null,
         (response) => "preferences" in response
           ? resolveAgentGitPreferenceChoice(response.preferences, candidate.targets, candidate.checks) : null,
-        5 * 60_000,
+        undefined,
         signal,
       ),
       gitAction: (candidate: GitActionCandidate, signal?: AbortSignal) => this.requestExtensionUi(
@@ -1764,7 +1766,7 @@ export class AgentSessionWrapper {
         (response) => candidate.kind === "integration"
           ? "approvePlanId" in response && response.approvePlanId === candidate.plan.planId
           : "confirmed" in response && response.confirmed === true,
-        5 * 60_000,
+        undefined,
         signal,
       ),
       notify: (message, type) => {

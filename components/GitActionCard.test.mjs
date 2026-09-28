@@ -76,7 +76,7 @@ test("only the matching CURRENT request and real responder render actionable con
   assert.equal((html.match(/Approve exact commit/g) ?? []).length, 1);
   assert.match(html, /Exact LIVE message/);
   assert.match(html, /inert=""/);
-  assert.match(html, /disabled=""/);
+  assert.doesNotMatch(html, /type="checkbox"/);
   assert.doesNotMatch(html, /Captured candidate/);
 });
 

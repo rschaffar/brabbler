@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { checkFilePanel, checkEditableFile, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
+import { checkGitDecisionWaiting } from "./git-action-wait.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
@@ -266,6 +267,8 @@ try {
     await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree });
     await checkIntegratedGitGraph(page, targetWorktree);
     await checkSavedGitActionHistory(page, { base, api, sessionId: GIT_HISTORY, records: gitHistory.records, artifacts });
+    await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+    await checkGitDecisionWaiting(page, { base, width: page.viewportSize().width });
     assert.deepEqual(errors, [], "Git workflow browser errors");
     await context.tracing.stop();
     await context.close();
@@ -846,6 +849,7 @@ try {
     await checkFilePanel(page, previewFile);
     await checkEditableFile(page, editableFile);
     await checkExtensionDialogs(page, artifacts, viewport.width);
+    await checkGitDecisionWaiting(page, { base, width: viewport.width });
     await checkAskUserDialog(page, viewport.width);
     if (viewport.width <= 600) {
       await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });
