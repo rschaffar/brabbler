@@ -1131,6 +1131,12 @@ export function AppShell() {
     setInitialSessionRestored(true);
   }, []);
 
+  const handleSessionRestored = useCallback((rootId: string) => {
+    setSessionCatalog((current) => current.map((session) => session.id === rootId ? { ...session, archived: false } : session));
+    setSelectedSession((current) => current?.id === rootId ? { ...current, archived: false } : current);
+    setRefreshKey((key) => key + 1);
+  }, []);
+
   const handleSessionDeleted = useCallback((sessionId: string) => {
     invalidateWorkspaceRestore();
     setRefreshKey((k) => k + 1);
@@ -2597,6 +2603,10 @@ export function AppShell() {
               initialScrollPosition={selectedSession ? sessionScrollPositionsRef.current.get(selectedSession.id) ?? null : null}
               onScrollPositionChange={handleSessionScrollPositionChange}
               sessionRunning={Boolean(selectedSession && runningSessionIds.has(selectedSession.id))}
+              archivedRootSessionId={activeSessionFamily?.root.archived ? activeSessionFamily.root.id : null}
+              archiveActionBusy={Boolean(activeSessionFamily && [activeSessionFamily.root, ...activeSessionFamily.subagents]
+                .some((item) => runningSessionIds.has(item.id) || queuedSessionIds.has(item.id)))}
+              onSessionRestored={handleSessionRestored}
               newSessionCwd={effectiveNewSessionCwd}
               newSessionDraftKey={newSessionDraftKey}
               onAgentEnd={handleAgentEnd}

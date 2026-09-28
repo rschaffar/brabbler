@@ -18,6 +18,7 @@ import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { AnsiText } from "./AnsiText";
 import { AskUserDialog } from "./AskUserDialog";
 import { ContextReloadNotice } from "./ContextReloadNotice";
+import { ArchivedSessionNotice } from "./ArchivedSessionNotice";
 import { GitWorkflowSettings } from "./GitWorkflowSettings";
 import { GitCommitPanel } from "./GitCommitPanel";
 import { GitMergeReviewPanel } from "./GitMergeReviewPanel";
@@ -47,6 +48,9 @@ interface Props {
   initialScrollPosition?: ChatScrollPosition | null;
   onScrollPositionChange?: (sessionId: string, position: ChatScrollPosition) => void;
   sessionRunning?: boolean;
+  archivedRootSessionId: string | null;
+  archiveActionBusy: boolean;
+  onSessionRestored: (id: string) => void;
   newSessionCwd: string | null;
   newSessionDraftKey: string | null;
   onAgentEnd?: () => void;
@@ -254,7 +258,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionMoved, onSessionForkedToWorktree, gitControlsPanel = null, gitControlsHost, onGitControlsClose, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, archivedRootSessionId, archiveActionBusy, onSessionRestored, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionMoved, onSessionForkedToWorktree, gitControlsPanel = null, gitControlsHost, onGitControlsClose, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
@@ -1086,6 +1090,8 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
             busy={sessionBusy || streamState.isStreaming || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)}
           />}
         </>, gitControlsHost)}
+      <ArchivedSessionNotice key={archivedRootSessionId ?? "none"} rootSessionId={archivedRootSessionId}
+        busy={sessionBusy || isCompacting || archiveActionBusy} onRestored={onSessionRestored} />
       <ContextReloadNotice sessionId={session?.id ?? null} busy={sessionBusy || isCompacting} />
       {possibleInterruptedRun && (
         <div role="status" className="mx-4 mt-3 flex items-start gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-text">
