@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { getFileIcon } from "./FileIcons";
 import { useI18n } from "@/hooks/useI18n";
-import type { FileViewerDisplayMode, FileViewerState } from "@/lib/file-viewer-state";
+import type { FileEditDraft, FileViewerDisplayMode, FileViewerState } from "@/lib/file-viewer-state";
 
 export interface Tab {
   id: string;
@@ -17,6 +17,8 @@ export interface Tab {
   page?: number;
   viewerState?: FileViewerState;
   viewerRevision?: number;
+  draft?: FileEditDraft;
+  saving?: boolean;
 }
 
 interface Props {
@@ -48,7 +50,8 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
           <div
             key={tab.id}
             role="tab"
-            aria-label={tab.kind === "terminal" ? t("terminal.tabLabel", { name: tab.label }) : tab.label}
+            aria-label={tab.kind === "terminal" ? t("terminal.tabLabel", { name: tab.label }) :
+              tab.draft && tab.draft.content !== tab.draft.baseline ? `${tab.label} — ${t("files.unsaved")}` : tab.label}
             aria-selected={isActive}
             tabIndex={isActive || (!activeTabId && tabs[0].id === tab.id) ? 0 : -1}
             onKeyDown={(event) => {
@@ -73,7 +76,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
               if (e.button !== 1) return;
               e.preventDefault();
               e.stopPropagation();
-              if (!tab.closing) onCloseTab(tab.id);
+              if (!tab.closing && !tab.saving) onCloseTab(tab.id);
             }}
             style={{
               display: "flex",
@@ -111,10 +114,10 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
               }}
               title={tab.filePath}
             >
-              {tab.label}
+              {tab.label}{tab.draft && tab.draft.content !== tab.draft.baseline ? " ●" : ""}
             </span>
             <button
-              disabled={tab.closing}
+              disabled={tab.closing || tab.saving}
               onClick={(e) => { e.stopPropagation(); onCloseTab(tab.id); }}
               onMouseEnter={() => setHoveredClose(tab.id)}
               onMouseLeave={() => setHoveredClose(null)}

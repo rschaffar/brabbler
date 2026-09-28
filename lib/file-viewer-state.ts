@@ -1,5 +1,11 @@
 export type FileViewerDisplayMode = "source" | "preview" | "diff";
 
+export interface FileEditDraft {
+  content: string;
+  baseline: string;
+  revision: string;
+}
+
 export interface FileViewerState {
   displayMode: FileViewerDisplayMode;
   wrapLines: boolean;

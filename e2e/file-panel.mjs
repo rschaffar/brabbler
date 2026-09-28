@@ -1,10 +1,46 @@
 import assert from "node:assert/strict";
+import { readFileSync, writeFileSync } from "node:fs";
 
 export const filePanelFixture = `<!doctype html><html><body style="margin:20px;min-height:2400px">
 <label>Notes <input id="notes"></label>
 <label>Filter <select id="filter"><option>All</option><option>Pending</option></select></label>
 <p>HTML preview state must survive layout changes.</p>
 <script>window.previewInstance = Math.random();</script></body></html>`;
+
+export async function checkEditableFile(page, filePath) {
+  writeFileSync(filePath, "Initial text\n");
+  const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
+  if (await showSidebar.isVisible()) await showSidebar.click();
+  await page.getByTitle(filePath.replace(/\\/g, "/"), { exact: true }).click();
+  const panel = page.locator("#file-panel");
+  await panel.getByRole("button", { name: "Edit", exact: true }).click();
+  const editor = panel.getByRole("textbox", { name: "Edit", exact: true });
+  await editor.fill("A draft\n");
+  await panel.getByRole("tab", { name: /preview\.html/ }).click();
+  await panel.getByRole("tab", { name: /editable\.txt/ }).click();
+  assert.equal(await editor.inputValue(), "A draft\n", "tab switching retains the draft");
+  await editor.press("ControlOrMeta+s");
+  await panel.getByText("Unsaved changes", { exact: true }).waitFor({ state: "hidden" });
+  assert.equal(readFileSync(filePath, "utf8"), "A draft\n");
+
+  await editor.fill("Keep this draft");
+  writeFileSync(filePath, "External change\n");
+  await panel.getByText(/File changed on disk/).waitFor();
+  assert.equal(await editor.inputValue(), "Keep this draft", "external writes must not erase drafts");
+  assert.equal(await panel.getByRole("button", { name: "Save", exact: true }).isDisabled(), true);
+  page.once("dialog", (dialog) => dialog.accept());
+  await panel.getByRole("button", { name: "Discard draft and reload" }).click();
+  await editor.waitFor();
+  assert.equal(await editor.inputValue(), "External change\n");
+  await editor.fill("Do not close yet");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await panel.getByRole("button", { name: "Close editable.txt" }).click();
+  assert.equal(await editor.inputValue(), "Do not close yet", "cancel keeps the dirty tab");
+  page.once("dialog", (dialog) => dialog.accept());
+  await panel.getByRole("button", { name: "Close editable.txt" }).click();
+  await panel.getByRole("button", { name: "Hide file panel" }).click();
+  console.log("PASS: file edit, save, tab draft retention and external-change conflict");
+}
 
 export async function checkFilePanel(page, filePath) {
   const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });

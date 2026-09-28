@@ -512,6 +512,12 @@ export function AppShell() {
 
   // Files unmount when inactive; workspace terminals stay mounted until closed.
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
+  useEffect(() => {
+    if (!fileTabs.some((tab) => tab.draft && tab.draft.content !== tab.draft.baseline)) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [fileTabs]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
   const [terminalsRestored, setTerminalsRestored] = useState(false);
@@ -1206,6 +1212,9 @@ export function AppShell() {
   };
 
   const handleCloseFileTab = useCallback((tabId: string) => {
+    if (fileTabs.some((tab) => tab.id === tabId && tab.saving)) return;
+    const draft = fileTabs.find((tab) => tab.id === tabId)?.draft;
+    if (draft && draft.content !== draft.baseline && !window.confirm(translate("files.discardConfirm"))) return;
     if (terminalTabs.some((tab) => tab.id === tabId)) {
       setTerminalTabs((tabs) => tabs.map((tab) => tab.id === tabId && !tab.closing ? { ...tab, closing: "close" } : tab));
       return;
@@ -1220,7 +1229,7 @@ export function AppShell() {
       const remaining = fileTabs.filter((t) => t.id !== tabId);
       return remaining.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? null;
     });
-  }, [fileTabs, terminalTabs]);
+  }, [fileTabs, terminalTabs, translate]);
 
   const handleViewFullHistory = useCallback(() => {
     if (!selectedSession) return;
@@ -2792,6 +2801,13 @@ export function AppShell() {
               initialDisplayMode={activeFileTab.initialDisplayMode}
               initialPage={activeFileTab.page}
               initialState={activeFileTab.viewerState}
+              initialDraft={activeFileTab.draft}
+              onDraftChange={(draft) => setFileTabs((tabs) => tabs.map((tab) =>
+                tab.id === activeFileTab.id ? { ...tab, draft } : tab
+              ))}
+              onSavingChange={(saving) => setFileTabs((tabs) => tabs.map((tab) =>
+                tab.id === activeFileTab.id ? { ...tab, saving } : tab
+              ))}
               watchEnabled={rightPanelOpen}
               onStateChange={(viewerState) => handleFileViewerStateChange(
                 activeFileTab.id,
