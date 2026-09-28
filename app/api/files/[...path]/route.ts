@@ -18,13 +18,14 @@ import {
 } from "@/lib/file-types";
 import { resolveDirentIsDirectory } from "@/lib/file-dirent";
 import { isFilePathReferencedBySession } from "@/lib/session-file-references";
-import { isApiRequestAllowed } from "@/lib/request-security";
+import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
+import { FileEditError, loadEditableFile, saveEditableFile, MAX_EDIT_REQUEST_BYTES } from "@/lib/file-edit";
 import {
   inspectUploadTargets,
   parseUploadConflictStrategy,
   validateUploadFileNames,
 } from "@/lib/file-upload";
-import { parseFormDataWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
+import { parseFormDataWithinLimit, parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import { filePathFromApiSegments, samePath } from "@/lib/paths";
 import { readTextPreviewChunk } from "@/lib/text-preview";
 
@@ -36,7 +37,7 @@ const IGNORED_NAMES = new Set([
 
 const IGNORED_SUFFIXES = [".pyc"];
 
-const FILE_REQUEST_TYPES = ["list", "read", "download", "meta", "preview", "watch"] as const;
+const FILE_REQUEST_TYPES = ["list", "read", "download", "meta", "preview", "watch", "edit"] as const;
 type FileRequestType = typeof FILE_REQUEST_TYPES[number];
 const FILE_REQUEST_TYPE_SET = new Set<string>(FILE_REQUEST_TYPES);
 const MAX_UPLOAD_FILE_BYTES = 25 * 1024 * 1024;
@@ -415,6 +416,35 @@ ${bodyHtml}
 </html>`;
 }
 
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  if (!isApiRequestAllowed(request)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  if (request.nextUrl.searchParams.get("type") !== "save" || !hasJsonContentType(request)) {
+    return NextResponse.json({ error: "Invalid save request" }, { status: 400 });
+  }
+  let body: unknown;
+  try { body = await parseJsonWithinLimit(request, MAX_EDIT_REQUEST_BYTES); }
+  catch (error) {
+    if (error instanceof RequestBodyTooLargeError) return NextResponse.json({ error: "Save request too large" }, { status: 413 });
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  if (!body || typeof body !== "object" || typeof (body as { content?: unknown }).content !== "string"
+      || typeof (body as { expectedRevision?: unknown }).expectedRevision !== "string") {
+    return NextResponse.json({ error: "Invalid save content or revision" }, { status: 400 });
+  }
+  try {
+    const filePath = filePathFromApiSegments((await params).path);
+    const roots = await getAllowedFileRoots();
+    const { content, expectedRevision } = body as { content: string; expectedRevision: string };
+    return NextResponse.json(saveEditableFile(filePath, roots, content, expectedRevision));
+  } catch (error) {
+    if (error instanceof FileEditError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  }
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
@@ -433,7 +463,7 @@ export async function GET(
     const allowedByRoot = isFilePathAllowed(filePath, allowedRoots);
     const allowedBySessionReference =
       !allowedByRoot &&
-      type !== "list" &&
+      type !== "list" && type !== "edit" &&
       await isFilePathReferencedBySession(filePath, sessionId);
     if (!allowedByRoot && !allowedBySessionReference) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
@@ -454,6 +484,15 @@ export async function GET(
       && !isExistingFilePathAllowed(existingAuthorizationPath, allowedRoots)
     ) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    if (type === "edit") {
+      try {
+        return NextResponse.json(loadEditableFile(filePath, allowedRoots));
+      } catch (error) {
+        if (error instanceof FileEditError) return NextResponse.json({ error: error.message }, { status: error.status });
+        throw error;
+      }
     }
 
     if (type === "read") {

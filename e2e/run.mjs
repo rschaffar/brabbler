@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { checkFilePanel, filePanelFixture } from "./file-panel.mjs";
+import { checkFilePanel, checkEditableFile, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
@@ -32,7 +32,9 @@ const sessionDir = join(agentDir, "sessions", "e2e");
 mkdirSync(project);
 mkdirSync(otherProject);
 const previewFile = join(project, "preview.html");
+const editableFile = join(project, "editable.txt");
 writeFileSync(previewFile, filePanelFixture);
+writeFileSync(editableFile, "Initial text\n");
 mkdirSync(sessionDir, { recursive: true });
 const timestamp = "2026-08-23T00:00:00.000Z";
 const LONG = "e2e-long-session";
@@ -402,6 +404,17 @@ try {
       const url = new URL(response.url());
       if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
     });
+    if (process.env.E2E_FILE_EDIT_ONLY === "1") {
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await page.locator(".markdown-code-block pre").waitFor();
+      await checkFilePanel(page, previewFile);
+      await checkEditableFile(page, editableFile);
+      assert.deepEqual(errors, [], "Browser errors during file editing");
+      await context.tracing.stop();
+      await context.close();
+      context = undefined;
+      continue;
+    }
     if (process.env.E2E_ARCHIVE_ONLY === "1") {
       const archiveResponse = await fetch(`${base}/api/sessions/${ARCHIVE}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -810,6 +823,7 @@ try {
     await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
     await page.locator(".markdown-code-block pre").waitFor();
     await checkFilePanel(page, previewFile);
+    await checkEditableFile(page, editableFile);
     await checkExtensionDialogs(page, artifacts, viewport.width);
     await checkAskUserDialog(page, viewport.width);
     if (viewport.width <= 600) {

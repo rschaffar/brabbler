@@ -31,6 +31,7 @@ import {
   resolveInitialFileDisplayMode,
   type FileViewerDisplayMode as DisplayMode,
   type FileViewerState,
+  type FileEditDraft,
 } from "@/lib/file-viewer-state";
 
 export type { FileViewerState } from "@/lib/file-viewer-state";
@@ -49,6 +50,9 @@ interface Props {
   initialPage?: number;
   initialState?: FileViewerState;
   onStateChange?: (state: FileViewerState) => void;
+  initialDraft?: FileEditDraft;
+  onDraftChange?: (draft: FileEditDraft | undefined) => void;
+  onSavingChange?: (saving: boolean) => void;
   watchEnabled?: boolean;
 }
 
@@ -212,7 +216,7 @@ function SourceCodeRenderer({ rows, stylesheet, useInlineStyles, wrapLines }: So
 
 function getFileApiUrl(
   filePath: string,
-  type: "read" | "download" | "meta" | "preview" | "watch",
+  type: "read" | "download" | "meta" | "preview" | "watch" | "edit" | "save",
   sourceSessionId?: string | null,
   params: Record<string, string | number | undefined> = {},
 ): string {
@@ -1093,6 +1097,9 @@ export function FileViewer({
   initialState,
   initialPage,
   onStateChange,
+  initialDraft,
+  onDraftChange,
+  onSavingChange,
   watchEnabled = true,
 }: Props) {
   if (isImagePath(filePath)) {
@@ -1119,6 +1126,9 @@ export function FileViewer({
       initialDisplayMode={initialDisplayMode}
       initialState={initialState}
       onStateChange={onStateChange}
+      initialDraft={initialDraft}
+      onDraftChange={onDraftChange}
+      onSavingChange={onSavingChange}
       watchEnabled={watchEnabled}
     />
   );
@@ -1135,6 +1145,9 @@ function TextFileViewer({
   initialDisplayMode,
   initialState,
   onStateChange,
+  initialDraft,
+  onDraftChange,
+  onSavingChange,
   watchEnabled = true,
 }: Props) {
   const { isDark } = useTheme();
@@ -1170,6 +1183,28 @@ function TextFileViewer({
   });
   const onStateChangeRef = useRef(onStateChange);
   const [selectedLineRange, setSelectedLineRange] = useState<SelectedLineRange | null>(null);
+  const [editSnapshot, setEditSnapshot] = useState<{ content: string; revision: string; writable: boolean } | null>(
+    initialDraft ? { content: initialDraft.baseline, revision: initialDraft.revision, writable: true } : null,
+  );
+  const [draft, setDraft] = useState<FileEditDraft | undefined>(initialDraft);
+  const draftRef = useRef(draft);
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+  const onSavingChangeRef = useRef(onSavingChange);
+  onSavingChangeRef.current = onSavingChange;
+  const [editing, setEditing] = useState(Boolean(initialDraft && initialDraft.content !== initialDraft.baseline));
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [externalChange, setExternalChange] = useState(false);
+  const editRequestRef = useRef(0);
+  const dirty = Boolean(draft && draft.content !== draft.baseline);
+  draftRef.current = draft;
+
+  const setFileDraft = useCallback((next: FileEditDraft | undefined) => {
+    draftRef.current = next;
+    setDraft(next);
+    onDraftChangeRef.current?.(next);
+  }, []);
 
   onStateChangeRef.current = onStateChange;
 
@@ -1235,6 +1270,33 @@ function TextFileViewer({
       });
   }, [sourceSessionId]);
 
+  const fetchEditable = useCallback(async (targetPath: string) => {
+    const requestId = ++editRequestRef.current;
+    try {
+      const response = await fetch(getFileApiUrl(targetPath, "edit", sourceSessionId));
+      const next = await response.json() as { content?: string; revision?: string; writable?: boolean };
+      if (requestId !== editRequestRef.current) return;
+      if (!response.ok || typeof next.content !== "string" || typeof next.revision !== "string") {
+        if (draftRef.current && draftRef.current.content !== draftRef.current.baseline) setExternalChange(true);
+        else setEditSnapshot(null);
+        return;
+      }
+      const currentDraft = draftRef.current;
+      setEditSnapshot({ content: next.content, revision: next.revision, writable: next.writable === true });
+      if (currentDraft && currentDraft.content !== currentDraft.baseline) {
+        setExternalChange(next.revision !== currentDraft.revision);
+      } else {
+        if (currentDraft) setFileDraft(undefined);
+        setExternalChange(false);
+      }
+    } catch {
+      if (requestId === editRequestRef.current) {
+        if (draftRef.current && draftRef.current.content !== draftRef.current.baseline) setExternalChange(true);
+        else setEditSnapshot(null);
+      }
+    }
+  }, [sourceSessionId, setFileDraft]);
+
   const fetchGitDiff = useCallback(async (targetPath: string) => {
     const requestId = ++gitDiffRequestRef.current;
     setGitDiffLoading(true);
@@ -1261,6 +1323,41 @@ function TextFileViewer({
     }
   }, [cwd]);
 
+  const saveDraft = useCallback(async () => {
+    const current = draftRef.current;
+    if (!current || current.content === current.baseline || saving) return;
+    setSaving(true);
+    onSavingChangeRef.current?.(true);
+    setSaveError(null);
+    try {
+      const response = await fetch(getFileApiUrl(filePath, "save", sourceSessionId), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: current.content, expectedRevision: current.revision }),
+      });
+      const result = await response.json() as { revision?: string; error?: string };
+      if (!response.ok || !result.revision) {
+        if (response.status === 409) setExternalChange(true);
+        setSaveError(result.error ?? "Could not save file");
+        return;
+      }
+      setEditSnapshot({ content: current.content, revision: result.revision, writable: true });
+      // Keep keystrokes typed during the request as a new draft.
+      const latest = draftRef.current;
+      setFileDraft(latest && latest.content !== current.content
+        ? { content: latest.content, baseline: current.content, revision: result.revision }
+        : undefined);
+      setExternalChange(false);
+      void fetchContent(filePath);
+      void fetchGitDiff(filePath);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
+      onSavingChangeRef.current?.(false);
+    }
+  }, [filePath, sourceSessionId, saving, setFileDraft, fetchContent, fetchGitDiff]);
+
   // Reset and load the file itself when its identity changes. Live watching is
   // managed separately so pausing it never clears the displayed content.
   useEffect(() => {
@@ -1271,6 +1368,7 @@ function TextFileViewer({
     setGitDiff(null);
     setGitDiffResolved(false);
     setWatching(false);
+    void fetchEditable(filePath);
 
     fetchContent(filePath).finally(() => {
       if (active) setLoading(false);
@@ -1279,7 +1377,7 @@ function TextFileViewer({
     return () => {
       active = false;
     };
-  }, [filePath, fetchContent, sourceSessionId]);
+  }, [filePath, fetchContent, fetchEditable, sourceSessionId]);
 
   useEffect(() => {
     setWatching(false);
@@ -1292,7 +1390,8 @@ function TextFileViewer({
     if (!watchEnabled) return;
 
     const synchronize = () => {
-      void fetchContent(filePath);
+      if (!draftRef.current || draftRef.current.content === draftRef.current.baseline) void fetchContent(filePath);
+      void fetchEditable(filePath);
       void fetchGitDiff(filePath);
     };
 
@@ -1318,7 +1417,7 @@ function TextFileViewer({
       es.close();
       if (esRef.current === es) esRef.current = null;
     };
-  }, [filePath, fetchContent, fetchGitDiff, sourceSessionId, watchEnabled]);
+  }, [filePath, fetchContent, fetchEditable, fetchGitDiff, sourceSessionId, watchEnabled]);
 
   useEffect(() => {
     void fetchGitDiff(filePath);
@@ -1355,17 +1454,17 @@ function TextFileViewer({
     }
   }, [requestedInitialDisplayMode, hasGitDiff, updateDisplayMode]);
 
+  const viewerContent = dirty ? draft!.content : data?.content ?? "";
   const markdownPreview = useMemo(
-    () => (data?.language === "markdown" ? normalizeDisplayMath(data.content) : ""),
-    [data],
+    () => (data?.language === "markdown" ? normalizeDisplayMath(viewerContent) : ""),
+    [data?.language, viewerContent],
   );
 
   const frontmatter = useMemo(
-    () => (data?.language === "markdown" ? parseFrontmatter(data.content) : null),
-    [data],
+    () => (data?.language === "markdown" ? parseFrontmatter(viewerContent) : null),
+    [data?.language, viewerContent],
   );
 
-  const viewerContent = data?.content ?? "";
   const sourceLines = useMemo(() => viewerContent.split("\n"), [viewerContent]);
   const language = data?.language ?? "text";
   const isHtml = language === "html";
@@ -1525,7 +1624,7 @@ function TextFileViewer({
     );
   }
 
-  if (error && !isDeletedDiff) {
+  if (error && !isDeletedDiff && !dirty) {
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 13 }}>
         {error}
@@ -1533,7 +1632,7 @@ function TextFileViewer({
     );
   }
 
-  if (!data && !isDeletedDiff) return null;
+  if (!data && !isDeletedDiff && !dirty) return null;
 
   const content = viewerContent;
   const markdownDirectory = getFileDirectory(filePath);
@@ -1547,7 +1646,7 @@ function TextFileViewer({
       ];
   const metadata = isDeletedDiff
     ? t("files.deleted")
-    : `${language} · ${lines.length} lines · ${formatSize(data!.size)}`;
+    : `${language} · ${lines.length} lines · ${formatSize(data?.size ?? 0)}`;
 
   return (
     <div className="file-viewer-shell" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", position: "relative" }}>
@@ -1608,6 +1707,14 @@ function TextFileViewer({
           )}
 
           <div className="file-viewer-actions">
+            {(editSnapshot?.writable || dirty) && !isDeletedDiff && (
+              <>
+                <button type="button" className="file-viewer-mode-button" aria-pressed={editing}
+                  onClick={() => setEditing((value) => !value)}>{t("files.edit")}</button>
+                {dirty && <button type="button" className="file-viewer-mode-button"
+                  disabled={saving || externalChange || !editSnapshot?.writable} onClick={() => void saveDraft()}>{saving ? t("files.saving") : t("i18n.save")}</button>}
+              </>
+            )}
             {(onAtMention || onMentionLines) && (
               <button
                 type="button"
@@ -1663,6 +1770,19 @@ function TextFileViewer({
         </div>
       </div>
 
+      {(dirty || externalChange || saveError) && (
+        <div role="status" style={{ padding: "6px 12px", fontSize: 12, color: externalChange || saveError ? "#f87171" : "var(--text-muted)" }}>
+          {externalChange ? t("files.editConflict") : saveError ?? t("files.unsaved")}
+          {externalChange && <button type="button" className="file-viewer-mode-button" onClick={() => {
+            if (!window.confirm(t("files.discardConfirm"))) return;
+            setFileDraft(undefined);
+            setSaveError(null);
+            setExternalChange(false);
+            void fetchContent(filePath);
+            void fetchEditable(filePath);
+          }}>{t("files.discard")}</button>}
+        </div>
+      )}
       {data?.truncated && (
         <div
           className="file-viewer-load-more"
@@ -1703,8 +1823,34 @@ function TextFileViewer({
         }}
         style={{ flex: 1, overflow: "auto", background: "var(--bg)", paddingBottom: data?.truncated ? 48 : undefined }}
       >
-        {effectiveDisplayMode === "diff" && hasGitDiff ? (
-          <DiffView patch={gitDiff.patch!} />
+        {editing && editSnapshot && !isDeletedDiff ? (
+          <textarea
+            aria-label={t("files.edit")}
+            value={draft?.content ?? editSnapshot.content}
+            onChange={(event) => {
+              const baseline = draft?.baseline ?? editSnapshot.content;
+              const revision = draft?.revision ?? editSnapshot.revision;
+              setFileDraft({ content: event.target.value, baseline, revision });
+              setSaveError(null);
+            }}
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+                event.preventDefault();
+                if (!externalChange && editSnapshot.writable) void saveDraft();
+              }
+              if (event.key === "Tab") {
+                event.preventDefault();
+                const field = event.currentTarget;
+                const start = field.selectionStart;
+                const next = field.value.slice(0, start) + "\t" + field.value.slice(field.selectionEnd);
+                setFileDraft({ content: next, baseline: draft?.baseline ?? editSnapshot.content, revision: draft?.revision ?? editSnapshot.revision });
+                requestAnimationFrame(() => { field.selectionStart = field.selectionEnd = start + 1; });
+              }
+            }}
+            spellCheck={false}
+            style={{ boxSizing: "border-box", width: "100%", minHeight: "100%", padding: "12px 16px", resize: "none", border: "none", outline: "none", background: "var(--bg)", color: "var(--text)", ...FILE_CODE_STYLE, tabSize: 2 }}
+          />
+        ) : effectiveDisplayMode === "diff" && hasGitDiff ? (          <DiffView patch={gitDiff.patch!} />
         ) : isHtml && effectiveDisplayMode === "preview" ? (
           <iframe
             srcDoc={content}

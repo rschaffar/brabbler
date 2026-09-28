@@ -26,6 +26,14 @@ test("the active viewer restores tab state and saves it with a revision", () => 
   assert.match(block, /handleFileViewerStateChange\(\s*activeFileTab\.id,\s*activeFileTab\.viewerRevision \?\? 0,/);
 });
 
+test("dirty drafts persist per tab and a pending save blocks tab closure", () => {
+  const block = fileContentBlock();
+  assert.match(block, /initialDraft=\{activeFileTab\.draft\}/);
+  assert.match(block, /onDraftChange=\{\(draft\) => setFileTabs/);
+  assert.match(block, /onSavingChange=\{\(saving\) => setFileTabs/);
+  assert.match(source, /if \(fileTabs\.some\(\(tab\) => tab\.id === tabId && tab\.saving\)\) return/);
+});
+
 test("closing the file panel pauses the active viewer watcher", () => {
   assert.match(fileContentBlock(), /watchEnabled=\{rightPanelOpen\}/);
 });
