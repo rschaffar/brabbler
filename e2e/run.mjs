@@ -385,7 +385,7 @@ try {
     }
   }
   for (const viewport of [
-    { width: 1280, height: 800 },
+    ...(process.env.E2E_ARCHIVE_ONLY === "1" ? [] : [{ width: 1280, height: 800 }]),
     ...(process.env.E2E_ACTIVITY_ONLY === "1" ? [{ width: 700, height: 800 }] : []),
     { width: 390, height: 844 },
   ]) {
@@ -402,6 +402,27 @@ try {
       const url = new URL(response.url());
       if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
     });
+    if (process.env.E2E_ARCHIVE_ONLY === "1") {
+      const archiveResponse = await fetch(`${base}/api/sessions/${ARCHIVE}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: true }),
+      });
+      assert.equal(archiveResponse.status, 200);
+      await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });
+      const archivedNotice = page.getByText("This session is archived. Restore it to show it in active sessions.");
+      await archivedNotice.waitFor();
+      await page.getByRole("button", { name: "Restore session", exact: true }).click();
+      await archivedNotice.waitFor({ state: "detached" });
+      assert.equal(new URL(page.url()).searchParams.get("session"), ARCHIVE);
+      assert.equal((await api("/api/sessions?force=1")).sessions.find((session) => session.id === ARCHIVE)?.archived, undefined);
+      assert.deepEqual(errors, [], "Browser errors during inline restoration");
+      console.log("PASS: archived chat restores inline and remains open");
+      await context.tracing.stop();
+      await context.close();
+      context = undefined;
+      page = undefined;
+      continue;
+    }
     if (process.env.E2E_ACTIVITY_ONLY === "1") {
       // Seed only after the selected chat has loaded, so clicking its newly
       // discovered Activity row must refresh the warning in that same chat.
