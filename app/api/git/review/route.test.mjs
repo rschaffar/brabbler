@@ -16,6 +16,7 @@ const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
 const { cacheSessionPath, invalidateSessionPathCache, invalidateSessionListCache } = await jiti.import("../../../../lib/session-reader.ts");
 const { appendSessionGitWorkflow } = await jiti.import("../../../../lib/git-workflow-policy.ts");
+const { readGitAction } = await jiti.import("../../../../lib/git-action-journal.ts");
 const exec = promisify(execFile);
 async function git(cwd, ...args) {
   return (await exec("git", ["-C", cwd, ...args], { encoding: "utf8" })).stdout.trim();
@@ -73,7 +74,14 @@ test("GET derives the checkout branch and persisted target; POST serves whole, s
   assert.deepEqual(review.commits.map((c) => c.oid), [first, second, third]);
   response = await post(request(id, review, { kind: "merge" }));
   assert.equal(response.status, 200);
-  const whole = (await response.json()).diff;
+  const captured = await response.json();
+  const whole = captured.diff;
+  const history = await readGitAction(captured.actionId, { includeArtifact: true });
+  assert.equal(history.record.source, "human");
+  assert.equal(history.record.state, "succeeded");
+  assert.equal(history.record.decision, undefined, "Capturing a comparison is not an execution approval or a claim it was read");
+  assert.equal(history.record.outcome.status, "comparison-captured");
+  assert.deepEqual(history.candidate.diff, whole);
   assert.equal(whole.fromTreeOid, review.targetTreeOid);
   assert.equal(whole.toTreeOid, review.mergeTreeOid);
   assert.match(whole.patch, /\+third/);

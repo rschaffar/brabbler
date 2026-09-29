@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer, type SetStateAction } from "react";
 import type {
   AgentMessage,
   BlockingExtensionUiRequest,
@@ -15,6 +15,8 @@ import type {
 import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
 import type { GitWorkflowPolicy } from "@/lib/git-workflow-policy";
 import { normalizeToolCalls } from "@/lib/normalize";
+import { alignEntryIds, GIT_ACTION_UPDATE_EVENT, isGitActionUpdate, mergeGitActionTail, projectGitActionUpdate, type GitActionInvalidation, type UiTranscript } from "@/lib/git-action-ui";
+import { watchGitActionsChanged } from "./git-action-history";
 import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
 import {
   deleteSessionViewSnapshot,
@@ -312,9 +314,25 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [error, setError] = useState<string | null>(null);
   const [possibleInterruptedRun, setPossibleInterruptedRun] = useState<{ runId: string; startedAt: string } | null>(null);
   const [activeLeafId, setActiveLeafId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<AgentMessage[]>([]);
+  // One state update keeps synthetic anchors and their IDs atomic, including
+  // events batched with live messages that do not have persisted IDs yet.
+  const transcriptRevisionRef = useRef(0);
+  const pendingHistoryReadsRef = useRef(0);
+  const [{ messages, entryIds }, updateTranscript] = useState<UiTranscript>({ messages: [], entryIds: [] });
+  const setTranscript = useCallback((update: SetStateAction<UiTranscript>) => {
+    transcriptRevisionRef.current += 1;
+    updateTranscript(update);
+  }, []);
+  const setMessages = useCallback((update: SetStateAction<AgentMessage[]>) => {
+    setTranscript((current) => {
+      const next = typeof update === "function" ? update(current.messages) : update;
+      return { messages: next, entryIds: alignEntryIds(next, current.entryIds) };
+    });
+  }, [setTranscript]);
+  const setEntryIds = useCallback((update: SetStateAction<string[]>) => {
+    setTranscript((current) => ({ ...current, entryIds: alignEntryIds(current.messages, typeof update === "function" ? update(current.entryIds) : update) }));
+  }, [setTranscript]);
   const [activeToolResults, setActiveToolResults] = useState<Map<string, ToolResultMessage>>(new Map());
-  const [entryIds, setEntryIds] = useState<string[]>([]);
   const [historyCursor, setHistoryCursor] = useState<string | null>(null);
   const [hasEarlierMessages, setHasEarlierMessages] = useState(false);
   const [streamState, dispatch] = useReducer(streamReducer, INITIAL_STREAMING_STATE);
@@ -541,19 +559,21 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } satisfies SessionStatsInfo;
   }, [messages, sessionStatsOverride, contextUsage, data?.context.messages, data?.filePath, data?.totalActiveMs, data?.stats, session?.id, session?.name]);
 
-  const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false, options?: { force?: boolean }) => {
+  const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false, options?: { force?: boolean }, shouldApply?: () => boolean) => {
     // Single-flight: concurrent reads for the same session (mount + SSE settle +
     // reconcile) share one request unless the caller forces a fresh read.
     const flightKey = options?.force ? `force:${sid}` : sid;
-    const inflight = options?.force ? undefined : loadFlightsRef.current.get(flightKey);
+    const inflight = options?.force || shouldApply ? undefined : loadFlightsRef.current.get(flightKey);
     if (inflight) return await inflight;
   const flight = (async (): Promise<unknown> => {
+    if (!shouldApply) pendingHistoryReadsRef.current += 1;
     let messagesLoaded = false;
     try {
       if (showLoading) setLoading(true);
       const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1", tree: "summary" });
       if (options?.force) params.set("force", "1");
       const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}?${params}`);
+      if (shouldApply && !shouldApply()) return "superseded";
       if (res.status === 404) {
         if (showLoading) {
           setData(null);
@@ -570,6 +590,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d = await res.json() as SessionData;
+      if (shouldApply && !shouldApply()) return "superseded";
       if (sessionIdRef.current !== sid) return null;
       // Freshness check: when the disk snapshot is unchanged (same opaque
       // revision), keep any history the user already paged in instead of
@@ -581,6 +602,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         && cached?.revision === d.snapshotRevision
         && cached.entryIds.length >= (d.context.entryIds ?? []).length,
       );
+      if (shouldApply && !revisionUnchanged) {
+        const merged = mergeGitActionTail({ messages: messagesRef.current, entryIds: entryIdsRef.current }, d.context);
+        if (merged) d.context = { ...d.context, ...merged, oldestEntryId: historyCursorRef.current, hasMore: hasEarlierMessagesRef.current };
+      }
       const persistedMessages = revisionUnchanged ? messagesRef.current : d.context.messages;
       setData(revisionUnchanged
         ? {
@@ -626,7 +651,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setCurrentModelOverride((current) => modelSwitchPendingRef.current ? current : null);
       setCurrentThinkingOverride(null);
       setError(null);
-      if (d.treeFormat === "summary" && d.snapshotRevision) {
+      if (!revisionUnchanged && d.treeFormat === "summary" && d.snapshotRevision) {
         setSessionViewSnapshot({
           sessionId: sid,
           revision: d.snapshotRevision,
@@ -680,20 +705,30 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         return null;
       }
     } catch (e) {
+      if (shouldApply && !shouldApply()) return "superseded";
       setError(String(e));
       return "error";
     } finally {
+      if (!shouldApply) pendingHistoryReadsRef.current -= 1;
       if (showLoading && !messagesLoaded) setLoading(false);
     }
     })();
-    if (!options?.force) loadFlightsRef.current.set(flightKey, flight);
+    if (!options?.force && !shouldApply) loadFlightsRef.current.set(flightKey, flight);
     flight.finally(() => {
       if (loadFlightsRef.current.get(flightKey) === flight) loadFlightsRef.current.delete(flightKey);
     });
     return await flight;
-  }, [setToolPresetState, syncLiveModel]);
+  }, [setToolPresetState, syncLiveModel, setMessages, setEntryIds]);
+
+  useEffect(() => watchGitActionsChanged(() => ({
+    sessionId: sessionHookMountedRef.current ? sessionIdRef.current : null,
+    busy: agentRunningRef.current || bashRunningRef.current || rpcPromptPendingRef.current || sdkAgentActiveRef.current || loadFlightsRef.current.size > 0 || pendingHistoryReadsRef.current > 0,
+    revision: transcriptRevisionRef.current,
+  }), (sid, shouldApply) => loadSession(sid, false, false, undefined, shouldApply)), [loadSession]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null, before?: string | null, options?: { tail?: number; signal?: AbortSignal }) => {
+    transcriptRevisionRef.current += 1;
+    pendingHistoryReadsRef.current += 1;
     try {
       const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1" });
       if (leafId) params.set("leafId", leafId);
@@ -721,8 +756,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       });
       if (before) {
         // Older page: prepend so scroll position stays anchored.
-        setMessages((prev) => [...d.context.messages, ...prev]);
-        setEntryIds((prev) => [...d.context.entryIds, ...prev]);
+        setTranscript((current) => ({
+          messages: [...d.context.messages, ...current.messages],
+          entryIds: [...d.context.entryIds, ...current.entryIds],
+        }));
       } else {
         setMessages(d.context.messages);
         setEntryIds(d.context.entryIds ?? []);
@@ -730,8 +767,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return d.context;
     } catch (e) {
       if (!options?.signal?.aborted) console.error("Failed to load context:", e);
+    } finally {
+      pendingHistoryReadsRef.current -= 1;
     }
-  }, []);
+  }, [setMessages, setEntryIds, setTranscript]);
 
   const loadTools = useCallback(async (sid: string) => {
     try {
@@ -1280,6 +1319,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const handleAgentEvent = useCallback((event: AgentEvent) => {
     switch (event.type) {
+      case "git_action_update": {
+        if (!sessionHookMountedRef.current || !sessionIdRef.current || !isGitActionUpdate(event)) break;
+        // A journal update is not agent activity: never start/end a stream or
+        // resurrect a settled run. Revisions only invalidate mounted cards.
+        if (event.entryId) setTranscript((current) => projectGitActionUpdate(current, event));
+        window.dispatchEvent(new CustomEvent<GitActionInvalidation>(GIT_ACTION_UPDATE_EVENT, {
+          detail: { sessionId: sessionIdRef.current, actionId: event.actionId, revision: event.revision },
+        }));
+        break;
+      }
       case "connected": {
         dispatch({ type: "end" });
         if (event.isStreaming === true) {
@@ -1536,7 +1585,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setExtensionDialog((current) => current?.id === event.id ? null : current);
         break;
     }
-  }, [addNotice, cancelEventStreamGrace, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel]);
+  }, [addNotice, cancelEventStreamGrace, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel, setMessages, setTranscript]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -1656,7 +1705,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentPhase(null);
       dispatch({ type: "end" });
     }
-  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, cancelEventStreamGrace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission]);
+  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, cancelEventStreamGrace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission, setMessages]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (agentRunningRef.current || bashRunningRef.current) return;
@@ -1729,6 +1778,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (bashRunningRef.current) return false;
     const sid = sessionIdRef.current;
     if (!sid) return false;
+    transcriptRevisionRef.current += 1;
+    pendingHistoryReadsRef.current += 1;
     try {
       const result = await sendAgentCommand<{ cancelled?: boolean }>(sid, {
         type: "navigate_tree",
@@ -1740,6 +1791,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch (e) {
       console.error("Failed to navigate:", e);
       return false;
+    } finally {
+      pendingHistoryReadsRef.current -= 1;
     }
   }, [loadSession]);
 
@@ -1748,9 +1801,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setActiveLeafId(leafId);
     const sid = sessionIdRef.current;
     if (!sid) return;
-    await loadContext(sid, leafId);
-    if (leafId) {
-      sendAgentCommand(sid, { type: "navigate_tree", targetId: leafId }).catch(() => {});
+    pendingHistoryReadsRef.current += 1;
+    try {
+      await loadContext(sid, leafId);
+      if (leafId && sessionIdRef.current === sid) {
+        await sendAgentCommand(sid, { type: "navigate_tree", targetId: leafId }).catch(() => {});
+      }
+    } finally {
+      pendingHistoryReadsRef.current -= 1;
     }
   }, [loadContext]);
 

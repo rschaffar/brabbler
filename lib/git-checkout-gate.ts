@@ -20,11 +20,15 @@ export function isGitCheckoutGated(cwd: string): boolean {
   return [...state().paths].some((path) => samePath(path, cwd) || samePath(physical(path), physical(cwd)));
 }
 
+export class GitCheckoutBusyError extends Error {
+  constructor() { super("Git checkout is busy with another local transaction"); }
+}
+
 /** Atomically reserve both source and target before checking for already-running sessions. */
 export function acquireGitCheckoutGate(cwds: readonly string[]): () => void {
   const paths = state().paths;
   if (cwds.some((cwd) => isGitCheckoutGated(cwd))) {
-    throw new Error("Git checkout is busy with another local integration");
+    throw new GitCheckoutBusyError();
   }
   const reserved = [...cwds];
   for (const cwd of reserved) paths.add(cwd);
@@ -34,4 +38,11 @@ export function acquireGitCheckoutGate(cwds: readonly string[]): () => void {
     released = true;
     for (const cwd of reserved) paths.delete(cwd);
   };
+}
+
+/** Never use around a human wait. Recheck existing writers inside the reservation. */
+export async function withGitCheckoutGate<T>(cwds: readonly string[], action: () => Promise<T>): Promise<T> {
+  const release = acquireGitCheckoutGate(cwds);
+  try { return await action(); }
+  finally { release(); }
 }

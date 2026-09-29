@@ -1,30 +1,24 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import Module, { createRequire } from "node:module";
+import { createJiti } from "jiti";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import ts from "typescript";
 
-const source = await readFile(new URL("./GitActionDialog.tsx", import.meta.url), "utf8");
-const filename = new URL("./GitActionDialog.tsx", import.meta.url).pathname;
-const mod = new Module(filename);
-mod.filename = filename;
-mod.require = createRequire(import.meta.url);
-mod._compile(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
-const { GitActionDialog } = mod.exports;
+const jiti = createJiti(import.meta.url, { jsx: { runtime: "automatic" }, tsconfigPaths: true });
+const { GitActionDialog } = await jiti.import("./GitActionDialog.tsx");
 const oid = (x) => x.repeat(40);
 const diff = { fromTreeOid: oid("a"), toTreeOid: oid("b"), patch: "diff --git a/a b/a\n+new\n", hasBinaryChanges: false };
-const render = (candidate) => renderToStaticMarkup(React.createElement(GitActionDialog, { request: { type: "extension_ui_request", id: "one", method: "git_action", candidate }, onRespond: () => {} }));
+const render = (candidate, request = {}) => renderToStaticMarkup(React.createElement(GitActionDialog, { request: { type: "extension_ui_request", id: "one", method: "git_action", candidate, ...request }, onRespond: () => {} }));
 
-test("commit review displays exact identities, message and patch, with opt-in approval", () => {
+test("commit review displays exact identities, message and patch, with one explicit approval button", () => {
   const html = render({ kind: "commit", preview: { repositoryRoot: "/repo", branch: "refs/heads/feature", head: oid("c"), paths: ["a"], tree: oid("b"), reviewToken: "token" }, message: "Exact message", diff });
   assert.match(html, /Review exact commit/);
+  assert.match(html, /Waits for your response or Stop; no automatic response timeout/);
   assert.match(html, /Exact message/);
   assert.match(html, /refs\/heads\/feature/);
   assert.match(html, /diff --git a\/a b\/a/);
   assert.match(html, /Approve exact commit/);
-  assert.match(html, /disabled=""/);
+  assert.doesNotMatch(html, /type="checkbox"|disabled=""/);
   assert.doesNotMatch(html, /reviewToken|token/);
 });
 
@@ -36,6 +30,7 @@ test("early chat preferences are not an operation approval", () => {
   assert.match(html, /No checks run and no commit, merge, cleanup or remote action is approved/);
   assert.match(html, /Prefer a dedicated worktree/);
   assert.doesNotMatch(html, /Approve exact local merge|Approve exact commit|Run these checks/);
+  assert.match(html, /type="checkbox"/, "Check selection still needs its ordinary selector");
 });
 
 test("read-only comparison cannot be confused with a merge confirmation", () => {
@@ -52,9 +47,21 @@ test("check and merge approval cards show both physical checkouts", () => {
     featureBranch: "feature", targetBranch: "target", checks: [{ label: "test", argv: ["npm", "test"] }] });
   assert.match(check, /\/repo\/feature/);
   assert.match(check, /\/repo\/target/);
+  assert.doesNotMatch(check, /type="checkbox"|disabled=""/);
   const merge = render({ kind: "integration", featureCwd: "/repo/feature", targetCwd: "/repo/target", receipts: [],
     plan: { review: { featureBranch: "feature", featureOid: oid("a"), targetBranch: "target", targetOid: oid("b"), mergeTreeOid: oid("c") },
       diff, mergeOid: oid("d"), message: "Merge", planId: "plan", expiresAt: Date.now() + 1000 } });
   assert.match(merge, /\/repo\/feature/);
   assert.match(merge, /\/repo\/target/);
+  assert.doesNotMatch(merge, /type="checkbox"|disabled=""/);
+  assert.match(merge, /no automatic response timeout/);
+  assert.match(merge, /Verification plan expires/);
+  assert.match(merge, /Waiting does not renew verification/);
+});
+
+test("an older live request with a deadline does not falsely claim unlimited waiting", () => {
+  const html = render({ kind: "checks", featureCwd: "/repo/feature", targetCwd: "/repo/target",
+    featureBranch: "feature", targetBranch: "target", checks: [] }, { expiresAt: Date.now() + 1000 });
+  assert.match(html, /Respond by/);
+  assert.doesNotMatch(html, /no automatic response timeout/);
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const settings = await readFile(new URL("./GitWorkflowSettings.tsx", import.meta.url), "utf8");
+const settings = await readFile(new URL("./GitWorkspaceContinuation.tsx", import.meta.url), "utf8");
 const chat = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 const shell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 
@@ -13,13 +13,14 @@ test("fork is a separate, confirmed action for a registered checkout and assista
   assert.match(settings, /onClick=\{\(\) => void confirmFork\(\)\}/);
   assert.match(settings, /The original chat stays in/);
   assert.match(settings, /Uncommitted source files stay there and are not copied/);
-  assert.match(chat, /session && !session\.transient && session\.relation\?\.kind !== "subagent" && activeLeafId/);
+  assert.match(chat, /session && !session\.transient && session\.relation\?\.kind !== "subagent" && createPortal/);
+  assert.match(chat, /assistantLeafId=\{activeLeafId &&/);
   assert.match(chat, /messages\[entryIds\.indexOf\(activeLeafId\)\]\?\.role === "assistant"/);
   assert.match(chat, /busy=\{sessionBusy \|\| streamState\.isStreaming \|\| isCompacting/);
 });
 
 test("clone uses the existing agent command before moving only the new ID", () => {
-  const fork = settings.slice(settings.indexOf("async function confirmFork()"), settings.indexOf("const update ="));
+  const fork = settings.slice(settings.indexOf("async function confirmFork()"), settings.indexOf("const inputClass ="));
   assert.match(fork, /sendAgentCommand<\{ cancelled\?: boolean; newSessionId\?: string \}>\(sessionId, \{ type: "clone", leafId: assistantLeafId \}\)/);
   assert.match(fork, /newSessionId = result\.newSessionId;[\s\S]*?fetch\(`\/api\/sessions\/\$\{encodeURIComponent\(newSessionId\)\}\/move`/);
   assert.match(fork, /method: "POST"[\s\S]*?JSON\.stringify\(\{ cwd: forkTarget \}\)/);

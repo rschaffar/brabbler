@@ -6,10 +6,16 @@ import { Type } from "@earendil-works/pi-ai";
 import type { InlineExtension, SessionManager } from "@earendil-works/pi-coding-agent";
 import { appendAgentGitPreferences, readAgentGitPreferences, type AgentGitPreferences } from "./agent-git-preferences";
 import type { SessionEntry } from "./types";
-import { confirmGitCommit, prepareGitCommit } from "./git-commit";
-import { getGitCommitTreeOid, getGitReviewDiff, getGitTreeDiff, reviewGitBranches, type GitReviewSelection } from "./git-review";
+import { getGitReviewDiff, reviewGitBranches, type GitReviewSelection } from "./git-review";
+import { assertManagedGitAction, assertManagedGitWorkspace, managedGitSessionFacts, ManagedGitAccessError, watchManagedGitAccess, type ManagedGitStage } from "./git-workflow-access";
+import { managedGitPermissions, AUTOMATIC_WORKFLOW_UNAVAILABLE } from "./git-workflow-permissions";
+import { loadGitWorkflowSettings } from "./git-workflow-settings-store";
+import { getGitTaskBindingStatus } from "./git-workflow-binding";
+import { requestWorkflowCommit } from "./git-workflow-commit";
+import { beginGitAction, failGitAction, finishGitAction, gitActionFailureResult, gitActionSink, snapshotGitActionCandidate, GitActionApplyError, GitActionRecordingError } from "./git-action-controller";
 import { gitExecEnv } from "./git-exec";
-import { acquireGitCheckoutGate } from "./git-checkout-gate";
+import { acquireGitCheckoutGate, GitCheckoutBusyError } from "./git-checkout-gate";
+import { GitCommitOperationError } from "./git-commit";
 import { prepareIntegration, confirmIntegration } from "./git-integration";
 import { runGitVerification } from "./git-verification";
 import { validateGitWorkflowPolicy, type GitWorkflowCheck, validLocalBranchName } from "./git-workflow-policy";
@@ -76,10 +82,10 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
       pi.registerTool({
         name: "git_workflow",
         label: "Git Workflow",
-        description: "Optionally select another registered local-branch worktree in this chat's repository with workspaceBranch. Choose early per-chat Git preferences with `preferences` (registered local target, ordered checks, worktree intent, retention); no operation is approved or executed by that choice. Integrate may reuse those preferences or override target/checks explicitly, but still asks separate check and exact merge approvals. Review local Git candidates. `integrate` requires an explicit local targetBranch and ordered checks (label + executable argv); asks permission to run them, then separately shows an exact merge plan for approval. No saved policy required. Checks may execute project code. Only unsigned non-FF local integration; no cleanup or remote actions.",
+        description: "Inspect captured settings with status; configure all scopes in the Workflow panel. Review local candidates, request an exact commit (alias of git_commit operation commit), or integrate using the captured local target/checks. Integration asks for check execution and then exact-state non-FF merge approval. Existing legacy sessions may still supply target/checks and use preferences; managed tasks cannot be retargeted through that legacy form. workspaceBranch selects a registered local worktree in this chat's repository. Live disable/pause applies to mutations. No automatic integration, cleanup, or remote actions.",
         executionMode: "sequential",
         parameters: Type.Object({
-          operation: Type.Unsafe<"preferences" | "review" | "commit" | "integrate">({ type: "string", enum: ["preferences", "review", "commit", "integrate"] }),
+          operation: Type.Unsafe<"status" | "preferences" | "review" | "commit" | "integrate">({ type: "string", enum: ["status", "preferences", "review", "commit", "integrate"] }),
           workspaceBranch: Type.Optional(Type.String({ description: "Checked-out local branch identifying the feature/source worktree; omit for this chat's checkout" })),
           targetBranch: Type.Optional(Type.String({ description: "Existing local target branch for review" })),
           commitOids: Type.Optional(Type.Array(Type.String(), { description: "Optional ordered consecutive commits to compare instead of the whole proposed merge" })),
@@ -91,11 +97,29 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
           const failure = (message: string) => ({ content: [{ type: "text" as const, text: message }], isError: true, details: { error: message } });
           if (!samePath(ctx.cwd, sessionCwd)) return failure("Session checkout changed; Git workflow refused");
           const ui = ctx.ui as typeof ctx.ui & Partial<AgentGitWorkflowUiContext>;
-          if (!ctx.hasUI || !ui.gitAction) return failure("Git workflow review requires an interactive Pi Web session");
           if (signal?.aborted) return failure("Git workflow cancelled");
           try {
+            const entries = () => (writableManager?.getEntries() ?? ctx.sessionManager?.getEntries?.() ?? []) as SessionEntry[];
+            const guard = (stage: ManagedGitStage) => assertManagedGitAction(sessionCwd, entries(), stage, "agent", agentDir, pi.getActiveTools?.());
+            if (params.operation === "status") {
+              const state = await loadGitWorkflowSettings(sessionCwd, entries(), agentDir, "active-session");
+              const sessionId = writableManager?.isPersisted?.() ? ctx.sessionManager?.getSessionId?.() : undefined;
+              const binding = sessionId ? await getGitTaskBindingStatus(sessionId, agentDir) : undefined;
+              const taskBinding = binding ? { status: binding.status, reason: binding.reason, executionAuthority: false,
+                ...(binding.binding ? { id: binding.binding.id, generation: binding.binding.generation, goal: binding.binding.goal,
+                  workspace: binding.binding.workspace, branch: binding.binding.branch, sourceCount: binding.binding.sources.length } : {}) }
+                : { status: "unavailable", reason: "Persisted ordinary session required for private task review metadata.", executionAuthority: false };
+              const summary = { paused: state.paused, enabled: state.resolved.session.values.enabled, task: state.task,
+                saved: state.resolved.session, taskBinding,
+                permissions: managedGitPermissions(state, managedGitSessionFacts(entries(), pi.getActiveTools?.())),
+                settingsHome: "Workflow", automaticIntegration: false, cleanup: "retain", automaticUnavailable: AUTOMATIC_WORKFLOW_UNAVAILABLE };
+              return { content: [{ type: "text" as const, text: JSON.stringify(summary) }], details: summary };
+            }
+            if (!ctx.hasUI || !ui.gitAction) return failure("Git workflow review requires an interactive Pi Web session");
+            const state = params.operation === "review" ? null : await guard(params.operation === "commit" ? "commit" : params.operation === "integrate" ? "integration" : "settings");
             const workspace = await selectGitWorkspace(sessionCwd, params.workspaceBranch);
             if (params.operation === "preferences") {
+              if (state?.task.kind === "managed") return failure("Configure all scopes in the Workflow panel. Legacy preferences cannot override this managed task.");
               if (params.targetBranch || params.paths || params.message || params.commitOids || !ui.gitPreferences) return failure("Provide only proposed checks for early preferences");
               const manager = ctx.sessionManager;
               if (!manager?.getSessionId() || !writableManager?.isPersisted() || !samePath(manager.getCwd(), sessionCwd)
@@ -127,6 +151,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
               const validated = resolveAgentGitPreferenceChoice({ targetBranch: choice.targetBranch, method: choice.method,
                 checkIndexes: indexes, cleanup: choice.cleanup, mode: choice.mode }, targets, checked.checks ?? []);
               if (!validated || JSON.stringify(validated) !== JSON.stringify(choice)) return failure("Invalid Git preference choice");
+              await guard("settings");
               appendAgentGitPreferences(writableManager, validated);
               return { content: [{ type: "text" as const, text: `Saved per-chat preferences: ${validated.targetBranch}, ${validated.method}, ${validated.checks.length} checks, ${validated.mode} mode, ${validated.cleanup} cleanup. No checks, Git mutation, or operation approval occurred.` }], details: { preferences: validated } };
             }
@@ -137,16 +162,28 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 ? { kind: "commits", commitOids: params.commitOids }
                 : { kind: "merge" };
               const diff = await getGitReviewDiff(workspace, review, selection);
-              const viewed = await ui.gitAction({ kind: "review", featureCwd: workspace, review, selection, diff }, signal);
-              return { content: [{ type: "text" as const, text: viewed
-                ? `User reviewed ${selection.kind === "merge" ? "the whole proposed merge" : "the selected contiguous commits"}. No integration was approved or executed. Target ${review.targetBranch} ${review.targetOid}; feature ${review.featureBranch} ${review.featureOid}.`
-                : "Git comparison dismissed. No operation was approved or executed." }],
-                details: { viewed, selection, targetOid: review.targetOid, featureOid: review.featureOid } };
+              const candidate = { kind: "review" as const, featureCwd: workspace, review, selection, diff };
+              const action = await beginGitAction(gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)), "agent", snapshotGitActionCandidate(candidate));
+              try {
+                await action.update("awaiting-decision");
+                const viewed = await ui.gitAction({ ...candidate, actionId: action.record.id }, signal);
+                await action.update(signal?.aborted ? "cancelled" : viewed ? "succeeded" : "declined", { decision: signal?.aborted ? "cancelled" : viewed ? "reviewed" : "dismissed" });
+                return { content: [{ type: "text" as const, text: viewed
+                  ? `User reviewed ${selection.kind === "merge" ? "the whole proposed merge" : "the selected contiguous commits"}. No integration was approved or executed. Target ${review.targetBranch} ${review.targetOid}; feature ${review.featureBranch} ${review.featureOid}.`
+                  : "Git comparison dismissed. No operation was approved or executed." }],
+                  details: { viewed, selection, targetOid: review.targetOid, featureOid: review.featureOid, actionId: action.record.id } };
+              } catch (cause) { await failGitAction(action, false, signal, cause); throw cause; }
+              finally { action.release(); }
             }
             if (params.operation === "integrate") {
               const saved = readAgentGitPreferences((writableManager?.getEntries() ?? ctx.sessionManager.getEntries?.() ?? []) as SessionEntry[]);
-              const targetBranch = params.targetBranch ?? saved?.targetBranch;
-              const requestedChecks = params.checks ?? saved?.checks;
+              const task = state?.task.kind === "managed" ? state.task.settings : undefined;
+              if (task && ((params.targetBranch !== undefined && params.targetBranch !== task.targetBranch)
+                || (params.checks !== undefined && JSON.stringify(params.checks) !== JSON.stringify(task.checks)))) {
+                return failure("Requested target/checks differ from the captured task. Compare and apply settings in Workflow first.");
+              }
+              const targetBranch = task ? task.targetBranch : params.targetBranch ?? saved?.targetBranch;
+              const requestedChecks = task ? task.checks : params.checks ?? saved?.checks;
               if (!validLocalBranchName(targetBranch) || !Array.isArray(requestedChecks) || !requestedChecks.length || params.paths || params.message || params.commitOids) {
                 return failure("Choose a local target and at least one ordered verification check");
               }
@@ -162,53 +199,95 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
               const target = await targetCheckout(workspace, targetBranch);
               const trusted = () => getProjectTrustStatus(workspace, agentDir).trusted && getProjectTrustStatus(target, agentDir).trusted;
               const idle = () => !hasBusyRpcSessionForCwd(workspace, sessionId) && !hasBusyRpcSessionForCwd(target, sessionId);
-              const valid = async () => !signal?.aborted && trusted() && idle() &&
-                samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch)) &&
-                samePath(target, await targetCheckout(workspace, targetBranch)) &&
-                samePath(manager.getCwd(), sessionCwd) && samePath(manager.getHeader()?.cwd ?? "", sessionCwd) &&
-                (await featureBranch(workspace)) === branch;
+              const guardedPolicy = async () => { await assertManagedGitWorkspace(await guard("integration"), workspace); return policy; };
+              const valid = async () => {
+                await guardedPolicy();
+                return !signal?.aborted && trusted() && idle() &&
+                  samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch)) &&
+                  samePath(target, await targetCheckout(workspace, targetBranch)) &&
+                  samePath(manager.getCwd(), sessionCwd) && samePath(manager.getHeader()?.cwd ?? "", sessionCwd) &&
+                  (await featureBranch(workspace)) === branch && !signal?.aborted;
+              };
               if (!await valid()) return failure("Trust both registered checkouts and stop other sessions before integration");
-              if (!await ui.gitAction({ kind: "checks", featureCwd: workspace, targetCwd: target, targetBranch, featureBranch: branch, checks }, signal) || signal?.aborted) {
-                return { content: [{ type: "text" as const, text: "Verification declined; no checks or integration executed." }], details: { approved: false } };
-              }
-              const review = await reviewGitBranches(workspace, branch, targetBranch);
+              const sink = gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data));
+              const checkCandidate = { kind: "checks" as const, featureCwd: workspace, targetCwd: target, targetBranch, featureBranch: branch, checks };
+              const checkAction = await beginGitAction(sink, "agent", snapshotGitActionCandidate(checkCandidate));
               const receipts = [];
-              // No gate while the browser is answering. Reserve both checkouts only during execution.
-              const releaseChecks = acquireGitCheckoutGate([workspace, target]);
+              let checksStarted = false;
               try {
-                if (!await valid()) return failure("Checkout became busy or untrusted before verification");
-                for (let i = 0; i < checks.length; i++) {
-                  if (!await valid()) return failure("Verification cancelled or checkout changed");
-                  receipts.push(await runGitVerification({ sessionId, cwd: workspace, agentDir, review, checkIndex: i,
-                    getPolicy: () => policy, isTrusted: trusted, signal }));
+                await checkAction.update("awaiting-decision");
+                if (!await ui.gitAction({ ...checkCandidate, actionId: checkAction.record.id }, signal) || signal?.aborted) {
+                  await checkAction.update(signal?.aborted ? "cancelled" : "declined", { decision: signal?.aborted ? "cancelled" : "declined" });
+                  return { content: [{ type: "text" as const, text: "Verification declined; no checks or integration executed." }], details: { approved: false, actionId: checkAction.record.id } };
                 }
-              } finally { releaseChecks(); }
+                const review = await reviewGitBranches(workspace, branch, targetBranch);
+                // No gate while the browser is answering. Reserve both checkouts only during execution.
+                const releaseChecks = acquireGitCheckoutGate([workspace, target]);
+                try {
+                  if (!await valid()) throw new ManagedGitAccessError("Checkout became busy or untrusted before verification");
+                  await checkAction.update("executing", { decision: "approved" });
+                  for (let i = 0; i < checks.length; i++) {
+                    if (!await valid()) throw new ManagedGitAccessError("Verification cancelled or checkout changed");
+                    const watcher = await watchManagedGitAccess(() => guard("checks"), signal);
+                    try {
+                      checksStarted = true;
+                      receipts.push(await runGitVerification({ sessionId, cwd: workspace, agentDir, review, checkIndex: i,
+                        getPolicy: guardedPolicy, isTrusted: trusted, signal: watcher.signal }));
+                    } finally { watcher.dispose(); }
+                  }
+                  await finishGitAction(checkAction, { status: "verified" });
+                } finally { releaseChecks(); }
+              } catch (cause) {
+                if (checksStarted) {
+                  try { await checkAction.update(signal?.aborted ? "cancelled" : "failed", { reason: "Verification stopped or failed. Commands may have run; no integration was authorized by this decision." }); } catch { /* uncertain state stays visible */ }
+                } else await failGitAction(checkAction, false, signal, cause);
+                throw cause;
+              } finally { checkAction.release(); }
               if (!await valid()) return failure("Checkout became busy or untrusted after verification");
               const plan = await prepareIntegration({ sessionId, cwd: workspace, agentDir, featureBranch: branch,
-                receiptIds: receipts.map((r) => r.id), getPolicy: () => policy });
-              if (!await ui.gitAction({ kind: "integration", featureCwd: workspace, targetCwd: target, plan, receipts }, signal) || signal?.aborted) {
-                return { content: [{ type: "text" as const, text: "Exact merge declined; no integration executed." }], details: { approved: false } };
-              }
-              const releaseMerge = acquireGitCheckoutGate([workspace, target]);
+                receiptIds: receipts.map((r) => r.id), getPolicy: guardedPolicy });
+              const mergeCandidate = { kind: "integration" as const, featureCwd: workspace, targetCwd: target, plan, receipts };
+              const mergeAction = await beginGitAction(sink, "agent", snapshotGitActionCandidate(mergeCandidate));
+              let applying = false;
               try {
-                if (!await valid()) return failure("Checkout became busy or untrusted before merge");
-                const result = await confirmIntegration(plan.planId, plan.planId, sessionId);
-                return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
-              } finally { releaseMerge(); }
+                await mergeAction.update("awaiting-decision");
+                if (!await ui.gitAction({ ...mergeCandidate, actionId: mergeAction.record.id }, signal) || signal?.aborted) {
+                  await mergeAction.update(signal?.aborted ? "cancelled" : "declined", { decision: signal?.aborted ? "cancelled" : "declined" });
+                  return { content: [{ type: "text" as const, text: "Exact merge declined; no integration executed." }], details: { approved: false, actionId: mergeAction.record.id } };
+                }
+                const releaseMerge = acquireGitCheckoutGate([workspace, target]);
+                try {
+                  if (!await valid()) throw new ManagedGitAccessError("Checkout became busy or untrusted before merge");
+                  await mergeAction.update("executing", { decision: "approved" });
+                  const result = await confirmIntegration(plan.planId, plan.planId, sessionId, async () => {
+                    await mergeAction.update("executing", { intended: { mergeOid: plan.mergeOid, targetBranch } });
+                    if (!await valid()) throw new ManagedGitAccessError("Integration cancelled or checkout changed before apply");
+                    applying = true;
+                  });
+                  await finishGitAction(mergeAction, result, result.status === "partial-state");
+                  return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: { ...result, actionId: mergeAction.record.id } };
+                } finally { releaseMerge(); }
+              } catch (cause) {
+                await failGitAction(mergeAction, applying, signal, cause);
+                if (applying && !(cause instanceof GitActionRecordingError)) throw new GitActionApplyError(mergeAction.record.id, mergeAction.record.intended);
+                throw cause;
+              }
+              finally { mergeAction.release(); }
             }
             if (params.operation !== "commit" || params.checks || !params.paths?.length || typeof params.message !== "string" || !params.message.trim() || params.targetBranch || params.commitOids) {
               return failure("Select complete changed paths and provide an exact commit message");
             }
-            const preview = await prepareGitCommit(workspace, params.paths);
-            const parentTree = await getGitCommitTreeOid(workspace, preview.head);
-            const diff = await getGitTreeDiff(workspace, parentTree, preview.tree);
-            if (!await ui.gitAction({ kind: "commit", preview, message: params.message, diff }, signal) || signal?.aborted) {
-              return { content: [{ type: "text" as const, text: "Commit declined or cancelled; no commit was made." }], details: { approved: false } };
-            }
-            if (!samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) return failure("Workspace changed before commit");
-            const result = await confirmGitCommit(preview, params.message);
-            return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
-          } catch {
+            return await requestWorkflowCommit({ cwd: workspace, paths: params.paths, message: params.message, signal,
+              sink: gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)),
+              ask: (candidate, abort) => ui.gitAction!(candidate, abort), beforeApply: async () => {
+                await assertManagedGitWorkspace(await guard("commit"), workspace);
+                if (hasBusyRpcSessionForCwd(workspace, ctx.sessionManager.getSessionId())) throw new ManagedGitAccessError("Stop other sessions in the selected checkout before committing.");
+                if (signal?.aborted || !samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) throw new ManagedGitAccessError("Commit cancelled or workspace changed");
+              } });
+          } catch (cause) {
+            const recorded = gitActionFailureResult(cause);
+            if (recorded) return recorded;
+            if (cause instanceof ManagedGitAccessError || cause instanceof GitCheckoutBusyError || cause instanceof GitCommitOperationError) return failure(cause.message);
             // Never send raw Git stderr or file contents back through a failed tool result.
             return failure("Git candidate unavailable or stale; inspect the checkout and request a fresh review");
           }

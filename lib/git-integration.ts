@@ -264,7 +264,9 @@ export async function prepareIntegration(options: IntegrationOptions): Promise<I
 }
 
 /** Explicit exact plan ID approval only. A failed post-checkout transaction is never retried automatically. */
-export async function confirmIntegration(planId: string, approvePlanId: string, sessionId: string): Promise<IntegrationResult> {
+export async function confirmIntegration(planId: string, approvePlanId: string, sessionId: string,
+  beforeApply?: () => Promise<void>,
+): Promise<IntegrationResult> {
   if (!planId || planId !== approvePlanId) fail("exact plan approval required");
   const saved = plans().pending.get(planId);
   if (!saved || Date.now() > saved.plan.expiresAt) fail("unknown or expired plan");
@@ -300,6 +302,9 @@ export async function confirmIntegration(planId: string, approvePlanId: string, 
         await recovery.writeFile(record(plan, latest.targetCwd, latest.target.indexPath, tempIndex, "prepared"));
         await recovery.sync();
       } finally { await recovery.close(); }
+      // Recording/revocation failures here remain pre-apply failures. Historical
+      // records are never used to reconstruct this live plan or callback.
+      await beforeApply?.();
       // The real index lock is held throughout. read-tree -u can modify the worktree even when it fails.
       partial = true;
       await git(latest.targetCwd, ["read-tree", "-u", "-m", plan.review.targetOid, plan.review.featureOid], tempIndex);

@@ -2,15 +2,19 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { realpathSync, statSync } from "node:fs";
 import { promisify } from "node:util";
-import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { NextResponse } from "next/server";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
 import { gitExecEnv } from "@/lib/git-exec";
+import { beginGitAction, failGitAction, gitActionFailureResult, snapshotGitActionCandidate, GitActionApplyError, GitActionRecordingError } from "@/lib/git-action-controller";
+import { finishHumanGitAction, humanGitActionSink, HUMAN_GIT_RECOVERY_WARNING, HumanGitCandidateError, HumanGitSessionChangedError, keepHumanGitCandidate, readHumanGitSessionManager, takeHumanGitCandidate } from "@/lib/git-action-human";
+import { GIT_ACTION_ID_PATTERN } from "@/lib/git-action-types";
 import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
 import { confirmIntegration, prepareIntegration } from "@/lib/git-integration";
 import { reviewGitBranches, type GitReview } from "@/lib/git-review";
 import { inspectGitVerificationReceipts, runGitVerification } from "@/lib/git-verification";
 import { readSessionGitWorkflow } from "@/lib/git-workflow-policy";
+import { assertManagedGitAction, assertManagedGitWorkspace, ManagedGitAccessError, watchManagedGitAccess } from "@/lib/git-workflow-access";
 import { samePath, toNativePath } from "@/lib/paths";
 import { getProjectTrustStatus } from "@/lib/project-trust";
 import { hasBusyRpcSessionForCwd } from "@/lib/rpc-manager";
@@ -62,12 +66,14 @@ async function session(id: string) {
   const cwd = header.cwd;
   const roots = await getAllowedFileRoots();
   if (!await allowed(cwd, roots)) return { response: error("Checkout not allowed", 403) };
-  const policy = () => {
-    const manager = SessionManager.open(file, undefined);
-    if (manager.getHeader()?.id !== id || manager.getHeader()?.cwd !== cwd) throw new Error("Session changed");
-    return readSessionGitWorkflow(manager.getEntries() as SessionEntry[]);
+  const scope = { sessionId: id, sessionFile: file, cwd };
+  const policy = async () => {
+    const value = readHumanGitSessionManager(scope);
+    const state = await assertManagedGitAction(cwd, value.getEntries() as SessionEntry[], "integration", "human");
+    await assertManagedGitWorkspace(state, cwd);
+    return readSessionGitWorkflow(value.getEntries() as SessionEntry[]);
   };
-  const saved = policy();
+  const saved = await policy();
   if (!saved?.integration || saved.integration.method !== "merge") {
     return { response: error("Saved merge target required", 409) };
   }
@@ -89,7 +95,7 @@ async function session(id: string) {
   const agentDir = getAgentDir();
   const trusted = () => getProjectTrustStatus(cwd, agentDir).trusted && getProjectTrustStatus(targetCwd, agentDir).trusted;
   if (!trusted()) return { response: error("Trust both projects before running checks or integration", 403) };
-  return { cwd, targetCwd, featureBranch, agentDir, policy, saved, trusted };
+  return { cwd, targetCwd, featureBranch, agentDir, policy, saved, trusted, scope };
 }
 
 type Context = Extract<Awaited<ReturnType<typeof session>>, { cwd: string }>;
@@ -146,7 +152,8 @@ export async function POST(req: Request) {
   const op = input.operation;
   if (!(op === "verify" && exact(input, ["sessionId", "operation", "checkIndex"]) && Number.isInteger(input.checkIndex) && (input.checkIndex as number) >= 0 && (input.checkIndex as number) < 12) &&
       !(op === "plan" && exact(input, ["sessionId", "operation", "receiptIds"]) && Array.isArray(input.receiptIds) && input.receiptIds.length > 0 && input.receiptIds.length <= 12 && input.receiptIds.every(validId) && new Set(input.receiptIds).size === input.receiptIds.length) &&
-      !(op === "confirm" && exact(input, ["sessionId", "operation", "planId", "approvePlanId"]) && validId(input.planId) && validId(input.approvePlanId))) {
+      !(op === "confirm" && exact(input, ["sessionId", "operation", "planId", "approvePlanId", "actionId"]) && validId(input.planId) && validId(input.approvePlanId)
+        && typeof input.actionId === "string" && GIT_ACTION_ID_PATTERN.test(input.actionId))) {
     return error("Invalid integration request", 400);
   }
   try {
@@ -157,42 +164,105 @@ export async function POST(req: Request) {
     if (!idle(c) || isGitCheckoutGated(c.cwd) || isGitCheckoutGated(c.targetCwd)) {
       return error("Stop sessions in both checkouts before integration", 409);
     }
-    if (op === "confirm") {
-      if (input.planId !== input.approvePlanId) return error("Exact plan approval required", 400);
-      // Reserve both checkouts before the final busy check. Newly submitted Pi Web
-      // commands are rejected until the transaction has settled; external Git
-      // writers remain subject to the engine's exact-state checks and recovery.
-      const release = acquireGitCheckoutGate([c.cwd, c.targetCwd]);
-      try {
-        if (!c.trusted() || !idle(c) || !await allowed(c.cwd, await getAllowedFileRoots()) ||
-            !await allowed(c.targetCwd, await getAllowedFileRoots())) return error("Checkout no longer available", 409);
-        const result = await confirmIntegration(input.planId as string, input.approvePlanId as string, id);
-        return NextResponse.json(result);
-      } finally { release(); }
-    }
-    const review = await reviewGitBranches(c.cwd, c.featureBranch, c.saved.integration!.targetBranch);
-    if (op === "verify") {
-      // Saved checks are arbitrary project programs. Reserve both checkouts
-      // throughout execution so a previously approved merge cannot apply
-      // while another check is still reading or writing their files.
-      const release = acquireGitCheckoutGate([c.cwd, c.targetCwd]);
-      try {
-        if (!idle(c) || !c.trusted()) return error("Checkout no longer available", 409);
-        const receipt = await runGitVerification({ sessionId: id, cwd: c.cwd, agentDir: c.agentDir, review,
-          checkIndex: input.checkIndex as number, getPolicy: c.policy, isTrusted: c.trusted });
-        return NextResponse.json({ receipt: { id: receipt.id, checkIndex: receipt.checkIndex, startedAt: receipt.startedAt,
-          finishedAt: receipt.finishedAt, logDigest: receipt.logDigest } });
-      } finally { release(); }
-    }
-    const ids = input.receiptIds as string[];
-    if (ids.length !== c.saved.checks!.length || ids.some((rid, index) => {
-      const r = inspectGitVerificationReceipts(id).find((receipt) => receipt.id === rid);
-      return !r || r.checkIndex !== index || !matches(review, r, c, id);
-    })) return error("Current successful receipts required for every saved check", 409);
-    const plan = await prepareIntegration({ sessionId: id, cwd: c.cwd, agentDir: c.agentDir,
-      featureBranch: c.featureBranch, receiptIds: ids, getPolicy: c.policy });
-    return NextResponse.json({ plan });
+    const guard = async () => {
+      req.signal.throwIfAborted();
+      if (JSON.stringify(await c.policy()) !== JSON.stringify(c.saved)) throw new ManagedGitAccessError("Workflow policy changed; refresh review");
+      const roots = await getAllowedFileRoots();
+      if (!await allowed(c.cwd, roots) || !await allowed(c.targetCwd, roots) || !c.trusted() || !idle(c)) {
+        throw new ManagedGitAccessError("Checkout no longer available");
+      }
+      req.signal.throwIfAborted();
+    };
+    const sink = () => humanGitActionSink(c.scope);
+    // Checks are arbitrary programs; reserve both checkouts throughout execution.
+    // The same gate also serializes preview anchors with session moves/prompts.
+    const release = acquireGitCheckoutGate([c.cwd, c.targetCwd]);
+    try {
+      await guard();
+      if (op === "confirm") {
+        if (input.planId !== input.approvePlanId) return error("Exact plan approval required", 400);
+        const { handle, native } = takeHumanGitCandidate(c.scope, input.actionId as string,
+          { kind: "integration", planId: input.planId as string, targetCwd: c.targetCwd });
+        let applying = false;
+        try {
+          await handle.update("executing", { decision: "approved" });
+          await guard();
+          const result = await confirmIntegration(native.plan.planId, input.approvePlanId as string, id, async () => {
+            await handle.update("executing", { intended: native.intended });
+            await guard(); // after journal I/O, immediately before native checkout apply
+            applying = true;
+          });
+          // A partial result names the intended merge object, not a proven target ref update.
+          const outcome = result.status === "integrated" ? { ...native.intended, ...result } : result;
+          return NextResponse.json(await finishHumanGitAction(handle, result, outcome, result.status === "partial-state"));
+        } catch (cause) {
+          await failGitAction(handle, applying, req.signal, cause);
+          if (applying && !(cause instanceof GitActionRecordingError)) cause = new GitActionApplyError(handle.record.id, handle.record.intended);
+          if (cause instanceof GitActionRecordingError) return NextResponse.json({ ...gitActionFailureResult(cause)!.details,
+            recoveryWarning: cause.message }, { status: 409 });
+          return NextResponse.json({ actionId: handle.record.id, error: cause instanceof ManagedGitAccessError || cause instanceof HumanGitSessionChangedError ? cause.message
+            : "Integration unavailable or plan stale; refresh review and prepare a new proposal" }, { status: 409 });
+        } finally { handle.release(); }
+      }
+      const review = await reviewGitBranches(c.cwd, c.featureBranch, c.saved.integration!.targetBranch);
+      if (op === "verify") {
+        const checkIndex = input.checkIndex as number;
+        const check = c.saved.checks[checkIndex];
+        if (!check) return error("Saved check index required", 409);
+        const watcher = await watchManagedGitAccess(guard, req.signal);
+        try {
+          const handle = await beginGitAction(sink(), "human", {
+            ...snapshotGitActionCandidate({ kind: "checks", featureCwd: c.cwd, targetCwd: c.targetCwd,
+              featureBranch: review.featureBranch, targetBranch: review.targetBranch, checks: [check] }),
+            featureOid: review.featureOid, targetOid: review.targetOid, candidateTreeOid: review.mergeTreeOid,
+          });
+          let started = false;
+          try {
+            await handle.update("executing", { decision: "approved" });
+            await guard();
+            watcher.signal.throwIfAborted();
+            started = true;
+            const receipt = await runGitVerification({ sessionId: id, cwd: c.cwd, agentDir: c.agentDir, review, checkIndex,
+              getPolicy: async () => { await guard(); return c.saved; }, isTrusted: c.trusted, signal: watcher.signal });
+            return NextResponse.json(await finishHumanGitAction(handle,
+              { receipt: { id: receipt.id, checkIndex: receipt.checkIndex, startedAt: receipt.startedAt,
+                finishedAt: receipt.finishedAt, logDigest: receipt.logDigest } },
+              { status: "passed", featureOid: receipt.featureOid, targetOid: receipt.targetOid }));
+          } catch {
+            const cancelled = watcher.signal.aborted;
+            const reason = started ? "Verification did not produce a successful receipt. Check commands can change files; inspect both checkouts."
+              : "Verification was blocked before command execution.";
+            let recoveryWarning;
+            try { await handle.update(cancelled ? "cancelled" : started ? "failed" : "blocked",
+              { reason, outcome: { status: cancelled ? "cancelled" : "failed" } }); }
+            catch { recoveryWarning = HUMAN_GIT_RECOVERY_WARNING; }
+            return NextResponse.json({ actionId: handle.record.id, error: cancelled ? `Verification cancelled. ${reason}` : reason,
+              ...(recoveryWarning ? { recoveryRequired: true, recoveryWarning } : {}) }, { status: 409 });
+          } finally { handle.release(); }
+        } finally { watcher.dispose(); }
+      }
+      const ids = input.receiptIds as string[];
+      const receipts = inspectGitVerificationReceipts(id);
+      if (ids.length !== c.saved.checks.length || ids.some((rid, index) => {
+        const r = receipts.find((receipt) => receipt.id === rid);
+        return !r || r.checkIndex !== index || !matches(review, r, c, id);
+      })) return error("Current successful receipts required for every saved check", 409);
+      const plan = await prepareIntegration({ sessionId: id, cwd: c.cwd, agentDir: c.agentDir,
+        featureBranch: c.featureBranch, receiptIds: ids, getPolicy: c.policy });
+      // Capture identity from the already verified immutable merge object, not ambient author config.
+      const { stdout } = await exec("git", ["--no-optional-locks", "-C", c.cwd, "show", "-s", "--format=%ae", plan.mergeOid, "--"], {
+        encoding: "utf8", env: { ...gitExecEnv(), GIT_NO_REPLACE_OBJECTS: "1" }, timeout: 15000, maxBuffer: 4096,
+      });
+      const intended = { mergeOid: plan.mergeOid, tree: plan.review.mergeTreeOid, parents: [plan.review.targetOid, plan.review.featureOid],
+        authorEmail: stdout.trim(), featureOid: plan.review.featureOid, targetOid: plan.review.targetOid, targetBranch: plan.review.targetBranch };
+      const snapshot = { ...snapshotGitActionCandidate({ kind: "integration", featureCwd: c.cwd, targetCwd: c.targetCwd,
+        plan, receipts: ids.map((rid) => receipts.find((r) => r.id === rid)!) }), checks: c.saved.checks, candidateTreeOid: plan.review.mergeTreeOid };
+      await guard();
+      const action = await keepHumanGitCandidate(sink(), c.scope, { kind: "integration", plan, targetCwd: c.targetCwd, intended }, snapshot);
+      return NextResponse.json({ ...action, plan });
+    } finally { release(); }
   } catch (cause) {
+    if (cause instanceof ManagedGitAccessError || cause instanceof HumanGitCandidateError || cause instanceof HumanGitSessionChangedError) return error(cause.message, 409);
     // The engine's own fixed-prefix validation messages are sanitized; never
     // return raw Git stderr, check argv, private logs, or OS filesystem errors.
     if (cause instanceof Error && /^Git integration unavailable: [^\r\n]{1,160}$/.test(cause.message)) {

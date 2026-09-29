@@ -1,0 +1,51 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import test, { after } from "node:test";
+import { createJiti } from "jiti";
+
+const agentDir = await mkdtemp(join(tmpdir(), "workflow-worktrees-agent-"));
+const previous = process.env.PI_CODING_AGENT_DIR;
+process.env.PI_CODING_AGENT_DIR = agentDir;
+after(async () => {
+  if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous;
+  await rm(agentDir, { recursive: true, force: true });
+});
+const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() } });
+const { GET, POST, DELETE } = await jiti.import("./route.ts");
+const { allowFileRoot } = await jiti.import("../../../lib/file-access.ts");
+const { writeGitWorkflowSettingsDocument } = await jiti.import("../../../lib/git-workflow-settings-store.ts");
+const exec = promisify(execFile);
+const git = async (cwd, ...args) => (await exec("git", ["-C", cwd, ...args])).stdout.trim();
+const request = (method, body) => new Request("http://localhost/api/worktrees", { method, body: JSON.stringify(body) });
+
+test("nested cwd cannot bypass disabled repository worktree mutations; read-only listing remains usable", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "workflow-worktrees-route-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const repo = join(dir, "repo"), nested = join(repo, "subdir"), linked = join(dir, "linked");
+  await mkdir(nested, { recursive: true });
+  await git(repo, "init", "-q", "-b", "main");
+  await git(repo, "config", "user.name", "Fixture");
+  await git(repo, "config", "user.email", "fixture@example.invalid");
+  await writeFile(join(nested, "file"), "base\n");
+  await git(repo, "add", "."); await git(repo, "commit", "-qm", "base");
+  await git(repo, "worktree", "add", "-qb", "existing", linked);
+  allowFileRoot(dir);
+  await mkdir(join(agentDir, "pi-web"), { recursive: true });
+  writeGitWorkflowSettingsDocument({ version: 1, paused: false, global: {}, projects: { [repo]: { enabled: false } } });
+  const params = { branch: "new-feature", baseBranch: "main", expectedBaseOid: await git(repo, "rev-parse", "HEAD"), mode: "create" };
+  const subCreate = await POST(request("POST", { cwd: nested, ...params }));
+  assert.equal(subCreate.status, 409);
+  assert.match((await subCreate.json()).error, /checkout root/);
+  const subDelete = await DELETE(request("DELETE", { cwd: nested, path: linked }));
+  assert.equal(subDelete.status, 409);
+  assert.equal(existsSync(linked), true);
+  const rootCreate = await POST(request("POST", { cwd: repo, ...params }));
+  assert.match((await rootCreate.json()).error, /disabled/);
+  assert.equal((await git(repo, "worktree", "list", "--porcelain")).match(/^worktree /gm).length, 2);
+  assert.equal((await GET(new Request(`http://localhost/api/worktrees?cwd=${encodeURIComponent(repo)}`))).status, 200);
+});

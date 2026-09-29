@@ -6,6 +6,8 @@ Replace Pi Web's permanent Git footer panels with an agent-callable, repository-
 
 ## Plan Relationship
 
+**Follow-up ownership (2026-09-28):** [The integrated Git workflow plan](2026-09-28_integrated-git-workflow-plan.md) now owns future settings/tool orchestration, durable cards, consent redesign, and cleanup work, including the remaining obligations below. This checklist is retained as historical implementation evidence, not a parallel work queue. [ADR 0010](../adr/0010-integrated-git-workflow.md) is proposed; accepted ADRs and current approval rules remain in force until its changes are explicitly accepted and implemented. No unchecked task is claimed complete by this handoff.
+
 This supersedes the **interaction design**, not the protected Git operations, of `2026-09-26_session-git-workflow-plan.md` and ADR 0007. That plan's saved policy, actual checkout binding, commit, review, verification, and integration mechanics remain reusable. This plan owns the new agent surface, generic arguments, cleanup transaction, and removal of the fixed panels. A new ADR must explicitly revise the earlier UI decision.
 
 ## Architecture

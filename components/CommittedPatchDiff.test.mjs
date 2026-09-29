@@ -38,6 +38,7 @@ index 4824a54..d914290 100644
 test("committed text patches keep the three view controls while highlighting loads", () => {
   const html = render(modified);
   assert.match(html, /aria-label="Patch view"/);
+  assert.match(html, /role="region" aria-label="Raw patch"/);
   assert.match(html, />Side by side<|>Unified<|>Raw patch</);
   assert.match(html, /aria-pressed="true"[^>]*>Raw patch/);
   assert.match(html, /-Old text/);

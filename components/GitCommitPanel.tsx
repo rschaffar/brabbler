@@ -5,11 +5,12 @@ import type { GitFileDiffResponse, GitFileStatus, GitStatusResponse } from "@/li
 import type { GitCommitPreview, GitCommitResult } from "@/lib/git-commit";
 import type { GitReviewDiff } from "@/lib/git-review";
 
-type CommitCandidate = { preview: GitCommitPreview } & (
+type CommitCandidate = { actionId: string; preview: GitCommitPreview } & (
   | { candidateDiff: GitReviewDiff; candidateDiffUnavailable?: never }
   | { candidateDiff?: never; candidateDiffUnavailable: string }
 );
 
+type CommitResponse = GitCommitResult & { actionId: string; recoveryWarning?: string };
 type Props = { sessionId: string; cwd: string; busy: boolean };
 
 function sameCheckoutPath(left: string, right: string): boolean {
@@ -25,8 +26,11 @@ function relativePath(root: string, file: string): string {
   return target.slice(base.length + 1);
 }
 
-async function responseBody<T>(response: Response): Promise<T> {
-  const body = await response.json() as T & { error?: string };
+async function responseBody<T>(response: Response, sessionId?: string): Promise<T> {
+  const body = await response.json() as T & { error?: string; recoveryRequired?: boolean; recoveryWarning?: string };
+  // Idle sessions may have no SSE connection. Reconcile anchors even on an anchored refusal.
+  if (sessionId) window.dispatchEvent(new CustomEvent("pi-web:git-actions-changed", { detail: { sessionId } }));
+  if (!response.ok && body.recoveryRequired) throw new Error(body.recoveryWarning ?? body.error ?? "Manual recovery required; do not retry.");
   if (!response.ok) throw new Error(response.status === 409
     ? `${body.error ?? "Checkout changed"}. Preview is stale; refresh status and preview again.`
     : body.error ?? `HTTP ${response.status}`);
@@ -72,7 +76,7 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
   const [message, setMessage] = useState("");
   const [candidate, setCandidate] = useState<CommitCandidate | null>(null);
   const preview = candidate?.preview ?? null;
-  const [result, setResult] = useState<GitCommitResult | null>(null);
+  const [result, setResult] = useState<CommitResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [operation, setOperation] = useState<"preview" | "confirm" | null>(null);
   const operationRef = useRef(false);
@@ -116,9 +120,9 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
     try {
       const response = await fetch("/api/git/commit", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ operation: "preview", sessionId, paths: selected }),
+        body: JSON.stringify({ operation: "preview", sessionId, paths: selected, message }),
       });
-      const body = await responseBody<CommitCandidate>(response);
+      const body = await responseBody<CommitCandidate>(response, sessionId);
       if (generation.current === version) setCandidate(body);
     } catch (cause) {
       if (generation.current === version) setError(cause instanceof Error ? cause.message : String(cause));
@@ -126,16 +130,16 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
   }
 
   async function confirm() {
-    if (disabled || !preview || !message.trim() || operationRef.current) return;
+    if (disabled || !preview || !candidate?.actionId || !message.trim() || operationRef.current) return;
     operationRef.current = true;
     const version = ++generation.current;
     setOperation("confirm"); setError(null);
     try {
       const response = await fetch("/api/git/commit", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ operation: "confirm", sessionId, preview, message }),
+        body: JSON.stringify({ operation: "confirm", sessionId, preview, message, actionId: candidate.actionId }),
       });
-      const body = await responseBody<GitCommitResult>(response);
+      const body = await responseBody<CommitResponse>(response, sessionId);
       // Even if another UI action happened during the request, never hide a created commit.
       setResult(body);
       setCandidate(null);
@@ -203,6 +207,7 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
       {result && <div role="status" className="space-y-1 rounded border border-border p-2 text-xs">
         <strong>{result.status === "partial-success" ? "Last commit: partial success — commit created; checkout finalization failed" : "Last commit created"}</strong>
         {result.status === "partial-success" && <p className="text-amber-500">{result.reason}. Inspect the checkout before further changes; do not retry blindly.</p>}
+        {result.recoveryWarning && <p role="alert" className="text-amber-500">{result.recoveryWarning}</p>}
         <dl className="break-all font-mono"><dt>Commit ID</dt><dd>{result.commit}</dd><dt>Tree</dt><dd>{result.tree}</dd><dt>Parent(s)</dt><dd>{result.parents.join(", ") || "none"}</dd><dt>Author email</dt><dd>{result.authorEmail}</dd></dl>
       </div>}
     </div>

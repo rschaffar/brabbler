@@ -29,7 +29,8 @@ test("only whole merge or ordered inclusive, cumulative consecutive commits can 
 });
 
 test("persisted ordinary session only at its session cwd; no checkout or target supplied", () => {
-  assert.match(chat, /gitControlsPanel === "merge" && session && !session\.transient/);
+  assert.match(chat, /session && !session\.transient && session\.relation\?\.kind !== "subagent" && createPortal/);
+  assert.match(chat, /hidden=\{gitControlsPanel !== "merge"\}.*visitedGitDetails\.includes\("merge"\)/);
   assert.match(chat, /<GitMergeReviewPanel key=\{`merge:\$\{session\.id\}:\$\{session\.cwd\}`\} sessionId=\{session\.id\} cwd=\{session\.cwd\}/);
   assert.match(panel, /URLSearchParams\(\{ sessionId \}\)/);
   assert.match(panel, /JSON\.stringify\(\{ sessionId, expectedFeatureOid: review\.featureOid, expectedTargetOid: review\.targetOid, selection \}\)/);
@@ -45,6 +46,7 @@ test("read-only diff displays exact tree identities and binary summaries, discar
   assert.match(panel, /Whole merge result tree OID/);
   assert.match(panel, /Expected comparison trees/);
   assert.match(panel, /Actual comparison trees/);
+  assert.match(panel, /bodyOrError<\{ diff: GitReviewDiff \}>\(response, sessionId\)/);
   assert.match(panel, /body\.diff\.fromTreeOid !== trees\.from \|\| body\.diff\.toTreeOid !== trees\.to/);
   assert.match(panel, /aria-pressed=\{choice\.kind === "commits" && index >= choice\.start && index <= choice\.end\}/);
   assert.match(panel, /event\.shiftKey && anchor !== null/);
@@ -80,7 +82,7 @@ test("server-matched receipts require every saved check in order, current snapsh
   assert.equal(proposalMatches({ ...plan, diff: { ...plan.diff, patch: "x".repeat(1024 * 1024 + 1) } }, snapshot, "s", receipts), false);
 });
 
-test("renderer shows full authoritative proposal only after prepare, with a separate acknowledgement and confirmation", () => {
+test("renderer shows the prepared authoritative proposal with one exact confirmation and no acknowledgement gate", () => {
   const snapshot = { ...review, featureBranch: "feature", targetBranch: "main", featureOid: oid(9), targetOid: oid(2), featureTreeOid: oid(20), targetTreeOid: oid(21), mergeTreeOid: oid(20) };
   const receipt = { id: "receipt-1", checkIndex: 0, startedAt: Date.now() - 10, finishedAt: Date.now(), logDigest: "digest" };
   const status = { review: snapshot, checks: [{ checkIndex: 0, label: "Tests" }], receipts: [receipt] };
@@ -103,18 +105,24 @@ test("renderer shows full authoritative proposal only after prepare, with a sepa
   assert.match(before, /Tests/);
   assert.match(before, /Prepare exact integration proposal/);
   assert.doesNotMatch(before, /Confirm exact plan|candidate patch/);
-  const pending = render(base.map((value, index) => index === 10 ? { plan, viewed: false } : value));
+  const ready = base.map((value, index) => index === 10 ? { plan, actionId: "action" } : value);
+  const pending = render(ready);
   assert.match(pending, /exact-plan/);
   assert.match(pending, /candidate patch/);
   assert.match(pending, new RegExp(oid(30)));
   assert.match(pending, /Binary changes are included/);
-  assert.match(pending, /I have reviewed this exact proposal/);
-  assert.doesNotMatch(pending, /Confirm exact plan/);
-  const viewed = render(base.map((value, index) => index === 10 ? { plan, viewed: true } : value));
-  assert.match(viewed, /Confirm exact plan exact-plan/);
-  assert.doesNotMatch(viewed, /I have reviewed this exact proposal/);
+  assert.match(pending, /Confirm exact plan exact-plan/);
+  assert.doesNotMatch(pending, /I have reviewed|type="checkbox"|disabled=""[^>]*>Confirm exact plan/);
+  for (const changed of [
+    ready.map((value, index) => index === 10 ? { plan, actionId: "" } : value),
+    ready.map((value, index) => index === 10 ? { plan: { ...plan, expiresAt: Date.now() - 1 }, actionId: "action" } : value),
+    ready.map((value, index) => index === 8 ? { ...status, receipts: [] } : value),
+    ready.map((value, index) => index === 12 ? "verify" : value),
+    ready.map((value, index) => index === 13 ? true : value),
+  ]) assert.match(render(changed), /disabled=""[^>]*>Confirm exact plan/, "Missing authority, stale plans/receipts and busy/blocked state still disable confirmation");
   const partial = render(base.map((value, index) => index === 11 ? { status: "partial-state", targetBranch: "main", mergeOid: oid(30), recoveryPath: "/private/record", reason: "Failed" } : value));
   assert.match(partial, /Partial state — inspect manually; do not retry/);
+  assert.match(partial, /intended merge commit \(ref update unproven\)/);
   assert.match(partial, /\/private\/record/);
   const blocked = render(base.map((value, index) => index === 13 ? true : value));
   assert.match(blocked, /Run check 1<\/button>/);
@@ -125,15 +133,17 @@ test("integration contract renders a separate deliberate review and exact-state 
   assert.match(panel, /fetch\(`\/api\/git\/integration\?\$\{new URLSearchParams\(\{ sessionId \}\)\}`/);
   assert.match(panel, /operation: "verify", checkIndex/);
   assert.match(panel, /operation: "plan", receiptIds: receipts!\.map\(\(receipt\) => receipt\.id\)/);
-  assert.match(panel, /operation: "confirm", planId: proposal!\.plan\.planId, approvePlanId: proposal!\.plan\.planId/);
+  assert.match(panel, /operation: "confirm", planId: proposal!\.plan\.planId, approvePlanId: proposal!\.plan\.planId, actionId: proposal!\.actionId/);
+  assert.match(panel, /new CustomEvent\("pi-web:git-actions-changed", \{ detail: \{ sessionId \} \}\)/);
+  assert.match(panel, /body\.recoveryWarning/);
+  assert.match(panel, /result\.recoveryWarning/);
   assert.match(panel, /onClick=\{\(\) => void integrationAction\("verify", index\)\}/);
   assert.match(panel, /disabled=\{!matchingReceipts\(integration, review\) \|\| blocked \|\| !!result \|\| operation !== null\}/);
-  assert.match(panel, /I have reviewed this exact proposal/);
-  assert.match(panel, /proposal\.viewed/);
+  assert.doesNotMatch(panel, /I have reviewed this exact proposal|proposal\.viewed/);
   assert.match(panel, /aria-label="Authoritative integration candidate diff"/);
   assert.match(panel, /\{proposal\.plan\.diff\.patch\}<\/pre>/);
   assert.match(panel, /Exact plan ID|Exact merge commit OID|Verification receipt IDs/);
   assert.match(panel, /Partial state — inspect manually; do not retry/);
-  assert.match(panel, /if \(action === "confirm" && \(!proposal\?\.viewed/);
+  assert.match(panel, /if \(action === "confirm" && \(!proposal\?\.actionId \|\| !receipts \|\| !proposalMatches\(proposal\.plan, review, sessionId, receipts\)\)\) return/);
   assert.match(panel, /onClick=\{\(\) => void integrationAction\("confirm"\)\}/);
 });

@@ -12,9 +12,16 @@ npm run test:e2e
 For a focused browser-native `ask_user` run, set `E2E_ASK_USER_ONLY=1`.
 For the Activity overview, set `E2E_ACTIVITY_ONLY=1`.
 For the desktop Git workflow fixture (local repository, no model), set `E2E_GIT_WORKFLOW_ONLY=1`.
-If the Playwright-managed Chromium is unavailable, set
-`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a compatible local Chrome/Chromium
-binary; the default CI path remains the Playwright-managed browser.
+On Linux with Nix, run `nix develop` from a committed checkout, then `npm ci`
+and `npm run test:e2e` inside that shell (or `nix develop -c npm run test:e2e`
+if dependencies are already installed). The locked shell supplies Node.js, Git
+and Nix-wrapped Chromium, and sets `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`
+without changing the host's browser configuration. It avoids Playwright's
+binary missing shared libraries on NixOS. Update the nixpkgs Chromium pin
+alongside Playwright version changes; even matching major versions need browser
+regression tests. If the Playwright-managed Chromium is unavailable outside the
+Nix shell, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a compatible local
+Chrome/Chromium binary. Ubuntu CI keeps the Playwright-managed browser.
 
 The script starts and stops its own Turbopack dev server on an available
 loopback port. Run it in a checkout without an active dev server; Next.js

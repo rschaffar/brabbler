@@ -132,12 +132,13 @@ export interface SystemMessage {
 /** Any message a `message` entry can store, including transcript system messages. */
 export type SessionMessage = AgentMessage | SystemMessage;
 
-export type GitActionCandidate =
+export type GitActionCandidate = (
   | { kind: "preferences"; featureBranch: string; targets: string[]; checks: import("./git-workflow-policy").GitWorkflowCheck[]; current?: import("./agent-git-preferences").AgentGitPreferences }
   | { kind: "commit"; preview: import("./git-commit").GitCommitPreview; message: string; diff: import("./git-review").GitReviewDiff }
   | { kind: "review"; featureCwd: string; review: import("./git-review").GitReview; selection: import("./git-review").GitReviewSelection; diff: import("./git-review").GitReviewDiff }
   | { kind: "checks"; featureCwd: string; targetCwd: string; targetBranch: string; featureBranch: string; checks: import("./git-workflow-policy").GitWorkflowCheck[] }
-  | { kind: "integration"; featureCwd: string; targetCwd: string; plan: import("./git-integration").IntegrationPlan; receipts: import("./git-verification").VerificationReceipt[] };
+  | { kind: "integration"; featureCwd: string; targetCwd: string; plan: import("./git-integration").IntegrationPlan; receipts: import("./git-verification").VerificationReceipt[] }
+) & { /** Read-only history identity, not an approval capability. */ actionId?: string };
 
 export type ExtensionUiRequest =
   | {

@@ -4,6 +4,7 @@ import { addWorktree, findCurrentWorktreePath, listLocalBranchTips, listMergedWo
 import { allowFileRoot, getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
 import { projectIdentityKey } from "@/lib/project-identity";
 import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
+import { assertManagedGitAction } from "@/lib/git-workflow-access";
 
 /** Same gate as /api/files: only session cwds / project roots / explicitly
  *  allowed dirs may be inspected or mutated through this endpoint. */
@@ -91,6 +92,10 @@ export async function POST(req: Request) {
     }
     const release = acquireGitCheckoutGate([body.cwd]);
     try {
+      // Git accepts a subdirectory here, but workflow project identity does
+      // not. Never authorize /repo/subdir and then mutate /repo instead.
+      if (!(await resolveProject(body.cwd)).isTopLevel) return NextResponse.json({ error: "Git checkout root required" }, { status: 409 });
+      await assertManagedGitAction(body.cwd, [], "workspace", "human");
       const result = await addWorktree(body.cwd, body.mode === "attach"
         ? { branch: body.branch, baseBranch: body.baseBranch, expectedBaseOid: body.expectedBaseOid, mode: "attach", expectedTipOid: body.expectedTipOid! }
         : { branch: body.branch, baseBranch: body.baseBranch, expectedBaseOid: body.expectedBaseOid, mode: "create" });
@@ -120,6 +125,8 @@ export async function DELETE(req: Request) {
 
     const release = acquireGitCheckoutGate([body.cwd, body.path]);
     try {
+      if (!(await resolveProject(body.cwd)).isTopLevel) return NextResponse.json({ error: "Git checkout root required" }, { status: 409 });
+      await assertManagedGitAction(body.cwd, [], "settings", "human");
       await removeWorktree(body.cwd, body.path, body.force === true);
       return NextResponse.json({ success: true });
     } finally { release(); }

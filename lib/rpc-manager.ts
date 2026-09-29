@@ -11,7 +11,9 @@ import { accountCredentialStore, getProjectAccounts, validateAccountSelection, t
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { inheritAgentGitPreferences, resolveAgentGitPreferenceChoice } from "./agent-git-preferences";
 import { appendSessionGitWorkflow, inheritSessionGitWorkflow, readSessionGitWorkflow, validateGitWorkflowPolicy, type GitWorkflowPolicy } from "./git-workflow-policy";
-import { getProjectGitWorkflow } from "./git-workflow-store";
+import { loadGitWorkflowSettings } from "./git-workflow-settings-store";
+import { snapshotManagedSessionGitWorkflow } from "./git-workflow-session";
+import { assertManagedGitAction, hasManagedGitMutationTools } from "./git-workflow-access";
 import { createGitWorkflowExtension } from "./git-workflow-extension";
 import { createGitCommitExtension } from "./git-commit-extension";
 import { createAgentGitWorkflowExtension, type AgentGitWorkflowUiContext } from "./agent-git-workflow-extension";
@@ -67,6 +69,8 @@ import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createAskUserExtension, preferPiWebAskUserExtension, type AskUserUiContext } from "./ask-user-extension";
 import { createSessionReferenceExtension } from "./session-reference-extension";
 import { normalizeAskUserAnswer } from "./ask-user";
+import { subscribeGitActionUpdates } from "./git-action-journal";
+import { GitActionDecisionEndedError } from "./git-action-controller";
 import { isBlockingExtensionUiRequest } from "./browser-notifications";
 import {
   appendClearedSessionToolSelection,
@@ -234,20 +238,18 @@ class PlainTextTheme extends Theme {
 const PLAIN_TEXT_THEME = new PlainTextTheme();
 const CUSTOM_UI_KEYBINDINGS = new TuiKeybindingsManager(TUI_KEYBINDINGS);
 
-function withExtensionTools(session: AgentSessionLike, toolNames: string[]): string[] {
+export function withExtensionTools(session: AgentSessionLike, toolNames: string[]): string[] {
   if (toolNames.length === 0) return [];
 
   const codingToolNames = new Set(CODING_TOOL_NAMES);
   const selectedToolNames = resolveShellTools(toolNames, session.settingsManager.getDefaultTools());
-  const extensionToolNames = session
-    .getAllTools()
-    .map((t) => t.name)
-    .filter((name) => !codingToolNames.has(name)
-      // A session that selects only read/grep/find/ls must not gain a
-      // mutating host tool merely because extensions are enabled.
-      && (!["git_commit", "git_workspace_start", "git_workflow"].includes(name) || selectedToolNames.some((tool) => ["bash", "powershell", "edit", "write"].includes(tool))));
-
-  return [...new Set([...selectedToolNames, ...extensionToolNames])];
+  const canMutate = hasManagedGitMutationTools(selectedToolNames);
+  const allowed = (name: string) => canMutate || !["git_commit", "git_workspace_start", "git_workflow"].includes(name);
+  const extensionToolNames = session.getAllTools().map((t) => t.name)
+    .filter((name) => !codingToolNames.has(name) && allowed(name));
+  // The SDK may already have appended extension tools to its initial active
+  // selection. Filter incoming names too, including unpinned defaultTools.
+  return [...new Set([...selectedToolNames.filter(allowed), ...extensionToolNames])];
 }
 
 // ============================================================================
@@ -286,6 +288,7 @@ export class AgentSessionWrapper {
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
   private unsubscribe: (() => void) | null = null;
+  private unsubscribeGitActions: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
   private shutdownPromise: Promise<void> | null = null;
@@ -373,6 +376,8 @@ export class AgentSessionWrapper {
   }
 
   start(): void {
+    this.unsubscribeGitActions?.();
+    this.unsubscribeGitActions = subscribeGitActionUpdates(this.sessionId, (event) => this.emit({ ...event }));
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       if (event.type === "agent_start") this.agentRunNeedsCompletion = true;
       if (event.type === "agent_end") {
@@ -457,6 +462,7 @@ export class AgentSessionWrapper {
     // Recheck after async git probes. The source wrapper is idle; a fresh prompt is gated.
     if (this.isRunning() || !this._alive || hasBusyRpcSessionForCwd(transition.originCwd)
       || hasBusyRpcSessionForCwd(transition.destinationPath)) throw new Error("Checkout is running");
+    await assertManagedGitAction(transition.originCwd, manager.getEntries() as SessionEntry[], "workspace", "agent", undefined, this.inner.getActiveToolNames());
     const { moveSessionFamily } = await import("./session-move");
     let movedId = this.sessionId;
     if (transition.onCreate === "fork") {
@@ -486,6 +492,7 @@ export class AgentSessionWrapper {
       || hasBusyRpcSessionForCwd(transition.originCwd) || hasBusyRpcSessionForCwd(transition.destinationPath)) {
       throw new Error("Checkout changed before session move");
     }
+    await assertManagedGitAction(transition.originCwd, manager.getEntries() as SessionEntry[], "workspace", "agent", undefined, this.inner.getActiveToolNames());
     await moveSessionFamily(movedId, transition.destinationPath);
     // Success is durable before optional transcript decoration. Resolve the real moved cwd.
     const movedFile = await resolveSessionPath(movedId);
@@ -1215,6 +1222,7 @@ export class AgentSessionWrapper {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     if (this.inner.isBashRunning) this.inner.abortBash();
     this.unsubscribe?.();
+    this.unsubscribeGitActions?.();
     for (const pending of this.pendingUiResponses.values()) pending.cancel();
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
     this.pendingUiResponses.clear();
@@ -1680,23 +1688,26 @@ export class AgentSessionWrapper {
         this.pendingUiResponses.delete(id);
         this.emit({ type: "extension_ui_closed", id });
       };
-      const settle = (value: T) => {
+      const settle = (value: T, ended?: "cancelled" | "expired") => {
         if (settled) return;
         settled = true;
         cleanup();
-        if (stopSignal.aborted) reject(stopSignal.reason);
+        // Dialog closure is never transaction success. Preserve the distinction
+        // between an explicit decline, timeout, and Stop/teardown in history.
+        if (ended && request.method === "git_action" && (request.candidate as GitActionCandidate | undefined)?.actionId) reject(new GitActionDecisionEndedError(ended));
+        else if (stopSignal.aborted) reject(stopSignal.reason);
         else resolve(value);
       };
-      const onAbort = () => settle(defaultValue);
+      const onAbort = () => settle(defaultValue, "cancelled");
 
-      if (timeout) timeoutId = setTimeout(() => settle(defaultValue), timeout);
+      if (timeout) timeoutId = setTimeout(() => settle(defaultValue, "expired"), timeout);
       abortSignal.addEventListener("abort", onAbort, { once: true });
 
       this.pendingUiStartedAt.set(id, Date.now());
       this.pendingUiRequests.set(id, fullRequest as AgentEvent);
       this.pendingUiResponses.set(id, {
         resolve: (response) => settle(parseResponse(response)),
-        cancel: () => settle(defaultValue),
+        cancel: () => settle(defaultValue, "cancelled"),
       });
       this.emit(fullRequest as AgentEvent);
     });
@@ -1739,12 +1750,14 @@ export class AgentSessionWrapper {
         timeout,
         signal,
       ),
+      // Human Git decisions have no response deadline. Stop/teardown still
+      // settle them; approval still goes through the native freshness checks.
       gitPreferences: (candidate: Extract<GitActionCandidate, { kind: "preferences" }>, signal?: AbortSignal) => this.requestExtensionUi(
         { method: "git_action", candidate },
         null,
         (response) => "preferences" in response
           ? resolveAgentGitPreferenceChoice(response.preferences, candidate.targets, candidate.checks) : null,
-        5 * 60_000,
+        undefined,
         signal,
       ),
       gitAction: (candidate: GitActionCandidate, signal?: AbortSignal) => this.requestExtensionUi(
@@ -1753,7 +1766,7 @@ export class AgentSessionWrapper {
         (response) => candidate.kind === "integration"
           ? "approvePlanId" in response && response.approvePlanId === candidate.plan.planId
           : "confirmed" in response && response.confirmed === true,
-        5 * 60_000,
+        undefined,
         signal,
       ),
       notify: (message, type) => {
@@ -2297,12 +2310,16 @@ export async function startRpcSession(
   const sessionCwd = sessionManager.getCwd();
   // Existing sessions use only their saved entry; project defaults never retrofit them.
   // Explicit null on a new session is a persisted opt-out, not a missing option.
-  const gitWorkflow = sessionFile
-    ? readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])
-    : options.gitWorkflow === undefined
-      ? await getProjectGitWorkflow(sessionCwd)
-      : options.gitWorkflow === null ? null : validateGitWorkflowPolicy(options.gitWorkflow);
-  if (!sessionFile && gitWorkflow !== undefined) appendSessionGitWorkflow(sessionManager, gitWorkflow);
+  if (!sessionFile) {
+    if (options.gitWorkflow === undefined) {
+      const defaults = await loadGitWorkflowSettings(sessionCwd);
+      snapshotManagedSessionGitWorkflow(sessionManager, defaults.resolved.project.values);
+    } else {
+      // Compatibility for explicitly queued old-browser choices. Never adopt a
+      // new global default into an already initialized or persisted session.
+      appendSessionGitWorkflow(sessionManager, options.gitWorkflow === null ? null : validateGitWorkflowPolicy(options.gitWorkflow));
+    }
+  }
   const subagentResources = sessionFile
     ? readSubagentSessionResources(
         sessionManager.getEntries() as unknown as SessionEntry[],
@@ -2414,7 +2431,8 @@ export async function startRpcSession(
                 isBuiltInSubagentsEnabled,
               ),
               createAskUserExtension(),
-              createGitWorkflowExtension(() => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])),
+              createGitWorkflowExtension(() => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[]),
+                () => loadGitWorkflowSettings(sessionCwd, sessionManager.getEntries() as unknown as SessionEntry[], undefined, sessionManager.getSessionId())),
               createGitCommitExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])),
               createAgentGitWorkflowExtension(sessionCwd, undefined, sessionManager),
               createGitWorkspaceStartExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[]),

@@ -11,13 +11,16 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { checkFilePanel, checkEditableFile, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
+import { checkGitDecisionWaiting } from "./git-action-wait.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkGitWorkflow } from "./git-workflow.mjs";
+import { consumeExpectedTaskConflict } from "./git-task-binding.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
+import { seedGitActionHistory, checkSavedGitActionHistory } from "./git-action-history.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
@@ -26,6 +29,12 @@ assert.ok(mode !== "dev" || !existsSync(join(root, ".next/dev/lock")), "Use a ch
 const artifacts = join(root, "test-results/e2e");
 mkdirSync(artifacts, { recursive: true });
 const agentDir = mkdtempSync(join(tmpdir(), "pi-web-e2e-"));
+// Guarded commits/merges read a real Git identity, but never the operator's HOME/config.
+const home = join(agentDir, "home");
+mkdirSync(home);
+writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = E2E\n\temail = e2e@example.invalid\n[commit]\n\tgpgsign = false\n");
+const fixtureEnv = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config"),
+  GIT_CONFIG_GLOBAL: join(home, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" };
 const project = join(agentDir, "project");
 const otherProject = join(agentDir, "other-project");
 const sessionDir = join(agentDir, "sessions", "e2e");
@@ -46,6 +55,8 @@ const ARCHIVE = "e2e-archive-session";
 const BULK = ["e2e-bulk-desktop-a", "e2e-bulk-desktop-b", "e2e-bulk-mobile-a", "e2e-bulk-mobile-b"];
 const OTHER = "e2e-other-project";
 const GIT = "e2e-git-workflow";
+const GIT_HISTORY = "e2e-git-action-history";
+let gitHistory;
 const gitProject = join(agentDir, "git-project");
 const targetWorktree = join(agentDir, "git-target-worktree");
 const text = (i) => `E2E message ${String(i).padStart(4, "0")}`;
@@ -165,7 +176,7 @@ try {
   {
     mkdirSync(gitProject);
     const git = (...args) => execFileSync("git", ["-C", gitProject, ...args], {
-      encoding: "utf8", env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" },
+      encoding: "utf8", env: fixtureEnv,
     }).trim();
     const commit = (subject) => git("-c", "user.name=E2E", "-c", "user.email=e2e@example.invalid", "commit", "-m", subject);
     git("init", "-b", "target");
@@ -178,10 +189,19 @@ try {
     writeFileSync(join(gitProject, "second.txt"), "Second feature patch\n");
     writeFileSync(join(gitProject, "base.txt"), "Revised base fixture\n");
     git("add", "second.txt", "base.txt"); commit("second feature");
+    git("tag", "e2e-light");
+    git("tag", "--no-sign", "-a", "e2e-annotated", "-m", "E2E annotated release");
+    git("tag", "same-name", "target");
     writeFileSync(join(gitProject, "draft.txt"), "Manual commit fixture\n");
+    writeFileSync(join(gitProject, "second-draft.txt"), "Second captured commit file\n");
     git("worktree", "add", targetWorktree, "target");
     writeSession(GIT, [message("root", null, "user", "E2E Git workflow conversation"),
       message("answer", "root", "assistant", "Ready to review Git workflow")], gitProject);
+    gitHistory = await seedGitActionHistory(agentDir, GIT_HISTORY);
+    writeSession(GIT_HISTORY, [message("root", null, "user", "Earlier Git decisions"), ...gitHistory.entries,
+      { type: "compaction", id: "saved-compaction", parentId: gitHistory.entries.at(-1).id, timestamp,
+        summary: "Keep the short task context, not private patches.", firstKeptEntryId: "saved-compaction", tokensBefore: 100 },
+      message("answer", "saved-compaction", "assistant", "Saved Git action history fixture")], gitProject);
   }
 
   const probe = createServer();
@@ -192,7 +212,8 @@ try {
   const base = `http://127.0.0.1:${port}`;
   server = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), mode, "-H", "127.0.0.1", "-p", String(port)], {
     cwd: root,
-    env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
+    env: { ...fixtureEnv, NODE_ENV: mode === "dev" ? "development" : "production",
+      PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   server.once("error", (error) => { serverError = error; });
@@ -224,7 +245,7 @@ try {
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK].sort());
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, GIT_HISTORY, ...BULK].sort());
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
@@ -239,13 +260,16 @@ try {
     page.setDefaultTimeout(30_000);
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (event) => { if (event.type() === "error") errors.push(event.text()); });
+    page.on("console", (event) => { if (event.type() === "error" && !consumeExpectedTaskConflict(page, event)) errors.push(event.text()); });
     page.on("response", (response) => {
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
     });
     await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
-    await checkGitWorkflow(page, { base, api, sessionId: GIT, cwd: gitProject, targetWorktree });
+    await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree });
     await checkIntegratedGitGraph(page, targetWorktree);
+    await checkSavedGitActionHistory(page, { base, api, sessionId: GIT_HISTORY, records: gitHistory.records, artifacts });
+    await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+    await checkGitDecisionWaiting(page, { base, width: page.viewportSize().width });
     assert.deepEqual(errors, [], "Git workflow browser errors");
     await context.tracing.stop();
     await context.close();
@@ -398,7 +422,7 @@ try {
     const errors = [];
     const olderResponses = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (event) => { if (event.type() === "error") errors.push(event.text()); });
+    page.on("console", (event) => { if (event.type() === "error" && !consumeExpectedTaskConflict(page, event)) errors.push(event.text()); });
     page.on("response", (response) => {
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
       const url = new URL(response.url());
@@ -592,8 +616,9 @@ try {
     }
     if (viewport.width === 1280) {
       await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
-      await checkGitWorkflow(page, { base, api, sessionId: GIT, cwd: gitProject, targetWorktree });
+      await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree });
       await checkIntegratedGitGraph(page, targetWorktree);
+      await checkSavedGitActionHistory(page, { base, api, sessionId: GIT_HISTORY, records: gitHistory.records, artifacts });
     }
     // Use a separate tab: a deliberate full-page reload must not alter the
     // reading-position and session-history fixtures exercised below.
@@ -825,6 +850,7 @@ try {
     await checkFilePanel(page, previewFile);
     await checkEditableFile(page, editableFile);
     await checkExtensionDialogs(page, artifacts, viewport.width);
+    await checkGitDecisionWaiting(page, { base, width: viewport.width });
     await checkAskUserDialog(page, viewport.width);
     if (viewport.width <= 600) {
       await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });

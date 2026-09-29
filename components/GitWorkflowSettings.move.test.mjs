@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const settings = await readFile(new URL("./GitWorkflowSettings.tsx", import.meta.url), "utf8");
+const settings = await readFile(new URL("./GitWorkspaceContinuation.tsx", import.meta.url), "utf8");
 const chat = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 const shell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 
 test("continuation selects a registered worktree for the persisted chat cwd, not sidebar cwd", () => {
-  assert.match(settings, /const actualCwd = sessionId \? value\?\.cwd : null/);
+  assert.match(settings, /get<\{ info: \{ cwd: string \} \}>\(`\/api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}`\)/);
+  assert.match(settings, /const actualCwd = info\.cwd/);
+  assert.match(settings, /if \(info\.cwd !== cwd\) throw new Error/);
   assert.match(settings, /\/api\/worktrees\?cwd=\$\{encodeURIComponent\(actualCwd\)\}/);
   assert.match(settings, /worktrees\.isTopLevel && worktrees\.currentWorktreePath/);
   assert.match(settings, /item\.path !== worktrees\.currentWorktreePath/);
