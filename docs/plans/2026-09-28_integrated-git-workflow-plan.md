@@ -1,6 +1,12 @@
-# Integrated Git workflow: design and staged implementation
+# Integrated Git workflow: historical design and implementation evidence
 
-## Goal
+## Status — retired as a future-work queue
+
+On 2026-09-29 the user clarified that Git tooling should apply reusable project policies to explicit operations across multiple worktrees and repositories, without binding or moving conversations. [ADR 0011](../adr/0011-policy-driven-git-tools.md) supersedes the conflicting direction in ADR 0010. The [policy-driven Git tools plan](2026-09-29_policy-driven-git-tools-plan.md) is the sole active successor and maps every outstanding workstream below to a new owner or explicit retirement.
+
+This plan is **not fully completed** and is not archived as completed work. Original checkboxes, authorizations, source checkpoints and verification below are historical evidence, not an instruction to implement the superseded start/finish, task-ownership, handoff or mandatory source-adoption model. Delivered settings, history and Git safety mechanisms remain reusable. The six-commit feature, including Nix packaging, was subsequently integrated into local `rst-main` as `1d70af2044051fad527c534d6385afe83988c061`; that integration did not complete the original roadmap. Nix package consumption/activation is separate from the unimplemented instruction-alignment work.
+
+## Original goal (historical)
 
 Make Pi Web Git a coherent, optionally automated task workflow: layered defaults, one consolidated setup when needed, common consent across tools/UI, durable side-by-side action cards outside model context, and safe start-to-finish execution across different project definitions.
 
@@ -8,9 +14,9 @@ Make Pi Web Git a coherent, optionally automated task workflow: layered defaults
 
 [ADR 0010](../adr/0010-integrated-git-workflow.md) records the accepted target and the narrower first implementation slice. A plan is not an authorization record for runtime actions. Current repository/global approval rules remain unchanged.
 
-## Plan Relationship
+## Original plan relationship (superseded)
 
-- This is the single follow-up owner for unified workflow settings, tool orchestration, persistent cards, standing authorization, and agent cleanup. The remaining workflow obligations in [the agent Git review plan](2026-09-27_agent-git-review-plan.md) transfer here; its checkboxes remain historical evidence, not a competing implementation queue.
+- At the time of this plan, it was the single follow-up owner for unified workflow settings, tool orchestration, persistent cards, standing authorization, and agent cleanup. That ownership now transfers to the successor linked above. The remaining workflow obligations in [the agent Git review plan](2026-09-27_agent-git-review-plan.md) transfer here; its checkboxes remain historical evidence, not a competing implementation queue.
 - [The original session workflow plan](2026-09-26_session-git-workflow-plan.md) supplies reusable policy/commit/review/verification/integration mechanics. Its old snapshots and explicit approval paths must remain compatible during migration.
 - [Git panel UX](2026-09-27_git-panel-ux-plan.md) and the Git Explorer plans document existing presentation. This proposal replaces the three mutation/settings sidecars, not the independent Explorer's read-only identity/bounds. It reuses the split-diff work without making browsing a mutation authority.
 - The future Nix instruction patch is a separately authorized workstream in `~/nix/my_nix_os`, coordinated here. Do not create a second independent behavioral design there; link its bounded implementation/activation work back to this concept.
@@ -55,7 +61,7 @@ See ADR 0010 for detailed semantics. Proposed boundaries:
 
 The frequent primitive is a policy-aware `git_commit`; `git_workflow` coordinates status/setup/start/verify/review/finish/cleanup. Legacy entry points become aliases, not independent consent systems. Final argument shapes should be proved with the first vertical slice.
 
-## Plan
+## Original plan (superseded; historical checkboxes)
 
 ### A. Accept the contract and close risky unknowns
 
@@ -106,7 +112,7 @@ The frequent primitive is a policy-aware `git_commit`; `git_workflow` coordinate
 - [ ] Verify Nix packaging/instruction checks with the affected `git-worktrees-skill` and any changed `git-workflow`/`git-helpers` checks, plus applicable repository checks; stage activation separately and inspect effective loaded context after activation. Do not reseed mutable workflow grants/settings from Home Manager on every activation.
 - [ ] Run Pi Web focused suites, then `npm test`, `node_modules/.bin/tsc --noEmit`, `npm run lint`, and affected `npm run test:e2e`; run terminal checks only if terminal integration changes. Never run a production build for this development task.
 
-## Acceptance scenarios
+## Original acceptance scenarios (superseded)
 
 | Scenario | Required experience/evidence |
 | --- | --- |
@@ -143,7 +149,7 @@ An interrupted mutation is not safely retryable merely because a dialog or proce
 
 Instruction edits land after a compatible runtime is available; conditional fallback must support older/other harnesses. Nix activation is separate from a local source merge. Existing project rules are not relaxed by saving this plan.
 
-## Completion Checklist
+## Original completion checklist (not the active queue)
 
 - [ ] ADR 0010's final behavior is explicitly accepted, with unresolved decisions closed or clearly deferred.
 - [ ] One resolver and authorization controller governs all enabled tools and manual mutation surfaces; old configurations migrate without widening consent.
