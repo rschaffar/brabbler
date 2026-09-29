@@ -43,6 +43,10 @@ pi-web
 
 To update, stop the running process with `Ctrl+C` and run the same install command again. Tabs left open across a server update show **Reload Pi Web** when the server's running version differs from the page's version. This refreshes the page, not the agent session; confirm only after copying any unsent drafts or attachments, which are not saved across page reloads. A newer npm release alone does not trigger the prompt until it is installed and running. To uninstall, run `npm uninstall -g @agegr/pi-web`.
 
+### Nix installation
+
+The repository's `flake.nix` exposes `packages.<system>.pi-web` (and `default`) for x86_64/aarch64 Linux and aarch64 macOS. Once you have a committed checkout, `nix profile install /path/to/pi-web#pi-web` installs the `pi-web` command; in another flake use `inputs.pi-web.packages.${pkgs.system}.default` in `home.packages` or `environment.systemPackages`. Pin the Pi Web input to the revision you intend to deploy. The package builds the production Next.js app offline using a local Noto font; it does not configure a service, authentication, or reverse proxy. If you share a separately packaged Pi CLI, you can add an optional SDK-version check with `inputs.pi-web.packages.${pkgs.system}.default.override { piCli = yourPiPackage; }`. No NixOS configuration is changed by this flake. Package builds are for installation/release, **not** normal development.
+
 ## Configuration
 
 For port and hostname, command-line options override the corresponding environment variables. Either `--no-open` or `PI_WEB_NO_OPEN=1` disables automatic browser opening. Run `pi-web --help` (or `-h`) to print startup options and exit without starting the server. Unknown options exit with an error.
@@ -187,7 +191,7 @@ npm install
 npm run dev
 ```
 
-The development server runs at [http://127.0.0.1:30141](http://127.0.0.1:30141). Run the common checks with:
+On Linux with Nix, `nix develop` supplies Node.js, Git and a wrapped Chromium for browser tests (no global Chromium or downloaded Playwright browser required). Then run `npm ci` and `npm run test:e2e` inside that shell; see [the browser test guide](./e2e/README.md). The development server runs at [http://127.0.0.1:30141](http://127.0.0.1:30141). Run the common checks with:
 
 ```bash
 npm test
