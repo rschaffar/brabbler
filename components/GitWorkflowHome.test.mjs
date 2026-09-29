@@ -45,6 +45,7 @@ function render({ data = fixture(), scope = "session", overrides, props = {} } =
     if (id === "@/lib/git-workflow-policy") return policy;
     if (id === "@/lib/git-workflow-permissions") return permissions;
     if (id === "./git-workflow-drafts") return helpers;
+    if (id === "./GitWorkflowTaskBinding") return { GitWorkflowTaskBinding: () => React.createElement("div", { "data-task-binding": true }) };
     if (id.endsWith(".css")) return {};
     return realRequire(id);
   };

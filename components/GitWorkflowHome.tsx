@@ -18,6 +18,7 @@ import {
   resetWorkflowField, resolveWorkflowDraft, workflowDraftKey, workflowFields, workflowRequestTarget, workflowScopes,
   type WorkflowDrafts,
 } from "./git-workflow-drafts";
+import { GitWorkflowTaskBinding } from "./GitWorkflowTaskBinding";
 import "./GitWorkflowHome.css";
 
 export type WorkflowDetail = "workspace" | "commit" | "merge";
@@ -408,6 +409,7 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
               {data.permissions.legacyAgentCommitConsent && <p className="workflow-muted">Legacy preview/confirm retains this chat’s saved agent-commit consent. It does not create a new standing grant.</p>}
               <p className="workflow-muted">{AUTOMATIC_WORKFLOW_UNAVAILABLE}</p>
             </details>}
+            {detailsAvailable && data && sessionId && <GitWorkflowTaskBinding key={context} sessionId={sessionId} cwd={data.cwd ?? session.cwd} settingsRevision={data.revision} visible={visible && !detail} busy={busy} />}
             <div className="workflow-actions workflow-task-actions">{([['workspace', 'Workspace details'], ['commit', 'Review & commit'], ['merge', 'Integration review']] as const).map(([view, label]) => <button key={view} ref={(element) => { taskActionRefs.current[view] = element; }} type="button" disabled={!detailsAvailable} onClick={() => onDetailChange(view)}>{label}</button>)}</div>
           </> : <p className="workflow-muted">Configure Global or Project defaults without creating a chat or starting an agent.</p>}
         </section>

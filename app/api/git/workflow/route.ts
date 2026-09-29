@@ -1,6 +1,6 @@
 import { realpathSync, statSync } from "node:fs";
 import { NextResponse } from "next/server";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
 import { appendSessionGitWorkflow, readSessionGitWorkflow, validateGitWorkflowPolicy } from "@/lib/git-workflow-policy";
 import { isGitCheckoutGated } from "@/lib/git-checkout-gate";
@@ -9,7 +9,8 @@ import { getRpcSession } from "@/lib/rpc-manager";
 import { invalidateSessionListCache, invalidateSessionManagerCache, readLatestSessionEntryId, readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
 import { SUBAGENT_META_TYPE } from "@/lib/subagents";
 import { readManagedSessionGitWorkflow } from "@/lib/git-workflow-session";
-import { loadGitWorkflowSettings, readGitWorkflowSettingsDocument } from "@/lib/git-workflow-settings-store";
+import { loadGitWorkflowSettings, readGitWorkflowSettingsDocument, withGitWorkflowSettingsLock } from "@/lib/git-workflow-settings-store";
+import { advanceGitWorkflowWriteEpoch } from "@/lib/git-workflow-write-epoch";
 import type { SessionEntry } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -91,6 +92,16 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   try {
     const body: unknown = await req.json();
+    return await withGitWorkflowSettingsLock(getAgentDir(), () => writeLegacySettings(body));
+  } catch (cause) {
+    if (cause instanceof SyntaxError) return error("Invalid JSON", 400);
+    return error(cause instanceof Error ? cause.message : String(cause), 500);
+  }
+}
+
+/** Compatibility writes share the same durable preview fence as scoped writes. */
+async function writeLegacySettings(body: unknown) {
+  try {
     if (!body || typeof body !== "object" || Array.isArray(body)) return error("Invalid request", 400);
     const input = body as Record<string, unknown>;
     if (!Object.hasOwn(input, "policy")) return error("policy required", 400);
@@ -104,6 +115,7 @@ export async function PUT(req: Request) {
       if (current.projectRoot && Object.hasOwn(readGitWorkflowSettingsDocument().projects, current.projectRoot)) {
         return error("This project uses scoped Workflow settings; use the Workflow panel", 409);
       }
+      advanceGitWorkflowWriteEpoch(getAgentDir());
       await setProjectGitWorkflow(checked.cwd!, policy);
       return NextResponse.json({ ok: true, cwd: checked.cwd, project: policy });
     }
@@ -140,6 +152,7 @@ export async function PUT(req: Request) {
       return error("Session was changed by another editor", 409);
     }
     if (live?.isRunning() || isGitCheckoutGated(target.cwd!)) return error("Stop the session before changing its workflow or checkout", 409);
+    advanceGitWorkflowWriteEpoch(getAgentDir());
     appendSessionGitWorkflow(manager, policy);
     invalidateSessionManagerCache(target.file);
     invalidateSessionListCache();

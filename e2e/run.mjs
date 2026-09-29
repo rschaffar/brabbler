@@ -17,6 +17,7 @@ import { checkActivityOverview } from "./activity.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkGitWorkflow } from "./git-workflow.mjs";
+import { consumeExpectedTaskConflict } from "./git-task-binding.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
 import { seedGitActionHistory, checkSavedGitActionHistory } from "./git-action-history.mjs";
@@ -259,7 +260,7 @@ try {
     page.setDefaultTimeout(30_000);
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (event) => { if (event.type() === "error") errors.push(event.text()); });
+    page.on("console", (event) => { if (event.type() === "error" && !consumeExpectedTaskConflict(page, event)) errors.push(event.text()); });
     page.on("response", (response) => {
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
     });
@@ -421,7 +422,7 @@ try {
     const errors = [];
     const olderResponses = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (event) => { if (event.type() === "error") errors.push(event.text()); });
+    page.on("console", (event) => { if (event.type() === "error" && !consumeExpectedTaskConflict(page, event)) errors.push(event.text()); });
     page.on("response", (response) => {
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
       const url = new URL(response.url());

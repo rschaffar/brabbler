@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import lockfile from "proper-lockfile";
 import { writePrivateFileAtomicSync } from "./atomic-file";
+import { advanceGitWorkflowWriteEpoch, gitWorkflowPrivateParent, readGitWorkflowWriteEpoch } from "./git-workflow-write-epoch";
 import { resolveProject } from "./worktree";
 import { getProjectGitWorkflow, gitWorkflowDefaultsPath } from "./git-workflow-store";
 import { readManagedSessionGitWorkflow, workflowTaskFromEntries } from "./git-workflow-session";
@@ -41,13 +42,14 @@ export function readGitWorkflowSettingsDocument(agentDir = getAgentDir()): GitWo
   return { version: 1, paused: data.paused, global: validateGitWorkflowOverrides(data.global), projects };
 }
 export function writeGitWorkflowSettingsDocument(document: GitWorkflowSettingsDocument, agentDir = getAgentDir()): void {
+  advanceGitWorkflowWriteEpoch(agentDir);
   writePrivateFileAtomicSync(gitWorkflowSettingsPath(agentDir), JSON.stringify(document, null, 2));
 }
 
 /** All writes, including session adoption, serialize against defaults/pause changes. */
 export async function withGitWorkflowSettingsLock<T>(agentDir: string, action: () => Promise<T>): Promise<T> {
   const path = gitWorkflowSettingsPath(agentDir);
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  gitWorkflowPrivateParent(agentDir, true);
   const release = await lockfile.lock(path, { realpath: false, stale: 30_000,
     retries: { retries: 10, minTimeout: 50, maxTimeout: 500 } });
   try { return await action(); } finally { await release(); }
@@ -77,7 +79,7 @@ export async function loadGitWorkflowSettings(
   // Bind choices and identity, not unrelated transcript activity: streaming
   // must not make Global/Project saves or the safety pause perpetually stale.
   // Session append safety is separately checked against the live manager/stat.
-  const revision = createHash("sha256").update(JSON.stringify({ document, projectRoot, project, cwd, sessionIdentity, session, task })).digest("hex");
+  const revision = createHash("sha256").update(JSON.stringify({ document, projectRoot, project, cwd, sessionIdentity, session, task, writeEpoch: readGitWorkflowWriteEpoch(agentDir) })).digest("hex");
   return {
     revision, paused: document.paused, ...(cwd ? { cwd } : {}), ...(projectRoot ? { projectRoot } : {}),
     global: document.global, project, session,

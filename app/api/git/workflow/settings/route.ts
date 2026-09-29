@@ -5,6 +5,9 @@ import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWi
 import { samePath } from "@/lib/paths";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { isGitCheckoutGated } from "@/lib/git-checkout-gate";
+import { retireGitTaskBinding } from "@/lib/git-workflow-binding-store";
+import { gitTaskBindingRuntime } from "@/lib/git-workflow-binding-runtime";
+import { advanceGitWorkflowWriteEpoch } from "@/lib/git-workflow-write-epoch";
 import { validateGitWorkflowOverrides } from "@/lib/git-workflow-settings";
 import { managedGitPermissions } from "@/lib/git-workflow-permissions";
 import { managedGitSessionFacts } from "@/lib/git-workflow-access";
@@ -115,11 +118,16 @@ export async function PUT(req: Request) {
       const t = await target(input);
       const before = await responseFor(t);
       if (input.revision !== before.revision) throw new SettingsError("Settings changed elsewhere. Reload saved values before saving your draft.");
+      // Even an Off/Pause -> On round trip cannot revive an old metadata review.
+      // This affects only task-adoption previews, never existing Git approvals.
+      gitTaskBindingRuntime().previews.clear();
       if (scope === "session" || scope === "task") {
         const reason = sessionReason(t);
         if (reason) throw new SettingsError(reason);
         const now = statSync(t.file!);
         if (now.size !== t.stat!.size || now.mtimeMs !== t.stat!.mtimeMs || now.ino !== t.stat!.ino) throw new SettingsError("Session was changed by another editor");
+        advanceGitWorkflowWriteEpoch(getAgentDir());
+        if (scope === "task") retireGitTaskBinding(t.id!, undefined, "settings-capture", getAgentDir());
         appendManagedSessionGitWorkflow(t.manager!, scope === "session" ? overrides! : before.session ?? {},
           scope === "task" ? { kind: "managed", settings: before.resolved.session.values } : workflowTaskFromEntries(entriesOf(t)));
         invalidateSessionManagerCache(t.file!);

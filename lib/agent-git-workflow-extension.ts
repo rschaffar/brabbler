@@ -10,6 +10,7 @@ import { getGitReviewDiff, reviewGitBranches, type GitReviewSelection } from "./
 import { assertManagedGitAction, assertManagedGitWorkspace, managedGitSessionFacts, ManagedGitAccessError, watchManagedGitAccess, type ManagedGitStage } from "./git-workflow-access";
 import { managedGitPermissions, AUTOMATIC_WORKFLOW_UNAVAILABLE } from "./git-workflow-permissions";
 import { loadGitWorkflowSettings } from "./git-workflow-settings-store";
+import { getGitTaskBindingStatus } from "./git-workflow-binding";
 import { requestWorkflowCommit } from "./git-workflow-commit";
 import { beginGitAction, failGitAction, finishGitAction, gitActionFailureResult, gitActionSink, snapshotGitActionCandidate, GitActionApplyError, GitActionRecordingError } from "./git-action-controller";
 import { gitExecEnv } from "./git-exec";
@@ -102,8 +103,14 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
             const guard = (stage: ManagedGitStage) => assertManagedGitAction(sessionCwd, entries(), stage, "agent", agentDir, pi.getActiveTools?.());
             if (params.operation === "status") {
               const state = await loadGitWorkflowSettings(sessionCwd, entries(), agentDir, "active-session");
+              const sessionId = writableManager?.isPersisted?.() ? ctx.sessionManager?.getSessionId?.() : undefined;
+              const binding = sessionId ? await getGitTaskBindingStatus(sessionId, agentDir) : undefined;
+              const taskBinding = binding ? { status: binding.status, reason: binding.reason, executionAuthority: false,
+                ...(binding.binding ? { id: binding.binding.id, generation: binding.binding.generation, goal: binding.binding.goal,
+                  workspace: binding.binding.workspace, branch: binding.binding.branch, sourceCount: binding.binding.sources.length } : {}) }
+                : { status: "unavailable", reason: "Persisted ordinary session required for private task review metadata.", executionAuthority: false };
               const summary = { paused: state.paused, enabled: state.resolved.session.values.enabled, task: state.task,
-                saved: state.resolved.session,
+                saved: state.resolved.session, taskBinding,
                 permissions: managedGitPermissions(state, managedGitSessionFacts(entries(), pi.getActiveTools?.())),
                 settingsHome: "Workflow", automaticIntegration: false, cleanup: "retain", automaticUnavailable: AUTOMATIC_WORKFLOW_UNAVAILABLE };
               return { content: [{ type: "text" as const, text: JSON.stringify(summary) }], details: summary };

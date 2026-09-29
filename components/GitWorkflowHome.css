@@ -26,6 +26,12 @@
 .workflow-task summary { color: var(--text-muted); }
 .workflow-task-actions { margin-top: 12px; }
 .workflow-task-actions button, .workflow-task details button { font-size: 12px; }
+.workflow-binding > label { display: flex; flex-direction: column; gap: 5px; margin: 12px 0; }
+.workflow-binding select, .workflow-binding textarea { width: 100%; }
+.workflow-binding pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); padding: 10px; border: 1px solid var(--border); border-radius: 6px; }
+.workflow-binding-preview, .workflow-binding-targets, .workflow-binding-record { min-width: 0; margin-block: 12px; }
+.workflow-binding-source { min-width: 0; }
+.workflow-binding > button { margin-top: 10px; }
 .workflow-muted, .workflow-home small { font-size: 12px; color: var(--text-muted); }
 .workflow-project-picker { margin: 0 24px 18px; }
 .workflow-project-picker > label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 500; }

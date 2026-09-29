@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
+import { checkGitTaskBinding } from "./git-task-binding.mjs";
 
 /** Real scoped settings, local Git objects and a persisted chat; no model or mocked settings endpoint. */
 export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, cwd, targetWorktree }) {
@@ -337,6 +338,13 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), targetBeforeSettings);
     assert.equal(navigations, 0, "Session settings update without a browser reload");
     console.log("PASS: paused and disabled workflows retain accessible, editable settings without starting Git actions");
+
+    const checkoutBeforeTaskReview = git("status", "--porcelain");
+    await checkGitTaskBinding(page, { cwd, task, home, contained, screenshot });
+    assert.equal(git("status", "--porcelain"), checkoutBeforeTaskReview);
+    assert.equal(git("rev-parse", "HEAD"), featureBeforeSettings);
+    assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), targetBeforeSettings);
+    assert.deepEqual(mutations, [], "Task/source metadata must not execute Git actions");
 
     const review = await openDetail("Integration review", "Local integration review");
     await review.getByText("Feature branch", { exact: true }).waitFor();
