@@ -58,15 +58,22 @@ export interface GitReviewDiff {
   hasBinaryChanges: boolean;
 }
 
+/** Server-owned bound context, never accepted from a request or persisted as authority. */
+export type GitReviewRepository = string | { cwd: string; gitDir: string; commonDir: string };
+
 // No shell, remote, pager, user diff program, or textconv. Do not read files in
 // the checkout: even an ignored secret or log file must not enter this review.
-async function git(cwd: string, args: string[], maxBuffer = METADATA_MAX_BYTES): Promise<string> {
-  const { stdout } = await execFileAsync("git", ["-C", cwd, "--no-pager", ...args], {
+async function git(cwd: GitReviewRepository, args: string[], maxBuffer = METADATA_MAX_BYTES): Promise<string> {
+  const bound = typeof cwd === "string" ? undefined : cwd;
+  const directory = typeof cwd === "string" ? cwd : cwd.cwd;
+  const context = bound ? [`--git-dir=${bound.gitDir}`, `--work-tree=${bound.cwd}`] : [];
+  const { stdout } = await execFileAsync("git", ["-C", directory, "--no-pager", ...context, ...args], {
     timeout: GIT_TIMEOUT_MS,
     maxBuffer,
     encoding: "utf8",
     env: {
       ...gitExecEnv(),
+      ...(bound ? { GIT_COMMON_DIR: bound.commonDir } : {}),
       GIT_OPTIONAL_LOCKS: "0",
       GIT_NO_REPLACE_OBJECTS: "1",
       GIT_PAGER: "cat",
@@ -85,7 +92,7 @@ function requireOid(value: string): string {
   return value;
 }
 
-async function branchOid(cwd: string, branch: string): Promise<string> {
+async function branchOid(cwd: GitReviewRepository, branch: string): Promise<string> {
   if (!branch || branch.startsWith("-")) throw new GitReviewError("INVALID_REF", "Invalid local branch");
   try {
     await git(cwd, ["check-ref-format", "--branch", branch]);
@@ -96,12 +103,12 @@ async function branchOid(cwd: string, branch: string): Promise<string> {
   }
 }
 
-export async function getGitCommitTreeOid(cwd: string, commitOid: string): Promise<string> {
+export async function getGitCommitTreeOid(cwd: GitReviewRepository, commitOid: string): Promise<string> {
   return requireOid((await git(cwd, ["rev-parse", "--verify", `${requireOid(commitOid)}^{tree}`])).trim());
 }
 
 /** Capture a review only for a local feature that descends along its first-parent chain from target. */
-export async function reviewGitBranches(cwd: string, featureBranch: string, targetBranch: string): Promise<GitReview> {
+export async function reviewGitBranches(cwd: GitReviewRepository, featureBranch: string, targetBranch: string): Promise<GitReview> {
   const targetOid = await branchOid(cwd, targetBranch);
   const featureOid = await branchOid(cwd, featureBranch);
   if (targetBranch === featureBranch) throw new GitReviewError("INVALID_REF", "Feature and target must be different branches");
@@ -160,7 +167,7 @@ export async function reviewGitBranches(cwd: string, featureBranch: string, targ
 }
 
 /** Recheck both exact refs before *and after* each diff. Never silently update a review. */
-export async function getGitReviewDiff(cwd: string, review: GitReview, selection: GitReviewSelection): Promise<GitReviewDiff> {
+export async function getGitReviewDiff(cwd: GitReviewRepository, review: GitReview, selection: GitReviewSelection): Promise<GitReviewDiff> {
   const assertFresh = async () => {
     let target: string;
     let feature: string;
@@ -198,7 +205,7 @@ export async function getGitReviewDiff(cwd: string, review: GitReview, selection
 }
 
 /** Bounded patch between exact trees; callers own any ref/checkout freshness checks. */
-export async function getGitTreeDiff(cwd: string, fromTreeOid: string, toTreeOid: string): Promise<GitReviewDiff> {
+export async function getGitTreeDiff(cwd: GitReviewRepository, fromTreeOid: string, toTreeOid: string): Promise<GitReviewDiff> {
   requireOid(fromTreeOid);
   requireOid(toTreeOid);
 

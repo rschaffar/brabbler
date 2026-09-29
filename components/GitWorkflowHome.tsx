@@ -95,8 +95,11 @@ function Field({ field, scope, data, draft, disabled, onReset, children }: {
 
 export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attention, detail, onDetailChange, onDetailHost }: Props) {
   const [projectChoice, setProjectChoice] = useState<{ source: string | null; cwd: string } | null>(null);
-  const configCwd = session?.cwd ?? (projectChoice?.source === cwd ? projectChoice.cwd : cwd) ?? undefined;
-  const context = JSON.stringify([session?.id ?? null, configCwd ?? null, Boolean(session?.transient)]);
+  const defaultCwd = session?.cwd ?? cwd;
+  const choiceSource = JSON.stringify([session?.id ?? null, defaultCwd]);
+  const projectPath = projectChoice?.source === choiceSource ? projectChoice.cwd : undefined;
+  const configCwd = projectPath ?? defaultCwd ?? undefined;
+  const context = JSON.stringify([session?.id ?? null, configCwd ?? null, Boolean(session?.transient), projectPath ?? null]);
   const contextRef = useRef(context);
   contextRef.current = context;
   const [projectInput, setProjectInput] = useState(configCwd ?? "");
@@ -119,12 +122,14 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
   const taskActionRefs = useRef<Partial<Record<WorkflowDetail, HTMLButtonElement | null>>>({});
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const [covering, setCovering] = useState(false);
+  const [legacyOpen, setLegacyOpen] = useState(false);
+  const [sourceEvidenceOpen, setSourceEvidenceOpen] = useState(false);
   const widthRef = useRef(500);
   const getMaxWidth = useCallback(() => Math.min(800, (panelRef.current?.parentElement?.parentElement?.clientWidth ?? 1160) - 360), []);
   const resizer = useResizablePanel({ ariaLabel: "Resize Workflow", cssVariable: "--workflow-width", defaultWidth: 500,
     getMaxWidth, growthDirection: "right", minWidth: 480, maxWidth: 800, storageKey: "pi-workflow-width", widthRef });
   const data = snapshot?.context === context ? snapshot.data : null;
-  const draftKey = workflowDraftKey(scope, data?.projectRoot, session?.id);
+  const draftKey = workflowDraftKey(scope, data?.projectRoot, session?.id, data?.sessionScope);
   const entry = draftKey ? drafts[draftKey] : undefined;
   const draft = entry?.overrides ?? {};
   const resolution = data ? resolveWorkflowDraft(data, scope, draft) : null;
@@ -143,6 +148,7 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
   useEffect(() => {
     setScope(session?.id ? "session" : configCwd ? "project" : "global");
     setProjectInput(configCwd ?? "");
+    setSourceEvidenceOpen(false);
   }, [session?.id, configCwd]);
   useEffect(() => {
     const query = window.matchMedia("(max-width: 1100px)");
@@ -209,29 +215,31 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
     let sessionBound = !!sessionId;
     let persistenceReason: string | undefined;
     let projectReason: string | undefined;
-    const get = async (target: { sessionId?: string; cwd?: string }) => {
+    const get = async (target: { sessionId?: string; cwd?: string; projectPath?: string }) => {
       const params = new URLSearchParams(target);
       const response = await fetch(`/api/git/workflow/settings?${params}`, { signal: controller.signal, cache: "no-store" });
-      const body = await response.json() as GitWorkflowSettingsResponse & { error?: string };
-      if (!response.ok) throw Object.assign(new Error(body.error ?? `HTTP ${response.status}`), { status: response.status });
+      const body = await response.json() as GitWorkflowSettingsResponse & { error?: string; code?: string };
+      if (!response.ok) throw Object.assign(new Error(body.error ?? `HTTP ${response.status}`), { status: response.status, code: body.code });
       return body;
     };
     try {
       let body: GitWorkflowSettingsResponse;
-      try { body = await get(workflowRequestTarget(sessionId, configCwd)); }
+      try { body = await get(workflowRequestTarget(sessionId, configCwd, projectPath)); }
       catch (cause) {
         const status = (cause as { status?: number }).status ?? 0;
         if (controller.signal.aborted) return;
         if (sessionId && isUnpersistedWorkflowSession(status, message(cause))) {
           sessionBound = false;
           persistenceReason = "This chat is not persisted yet. Global and Project settings are available; no session settings are queued.";
-          try { body = await get(workflowRequestTarget(undefined, configCwd)); }
+          try { body = await get(workflowRequestTarget(undefined, configCwd, projectPath)); }
           catch (fallbackCause) {
             if (![400, 403, 404].includes((fallbackCause as { status?: number }).status ?? 0)) throw fallbackCause;
             projectReason = message(fallbackCause);
             body = await get({});
           }
-        } else if (!sessionId && configCwd && [400, 403, 404].includes(status)) {
+        } else if (configCwd && ((!sessionId && [400, 403, 404].includes(status))
+          || projectPath !== undefined && ["access-denied", "invalid-selection", "unavailable", "selection-changed"].includes((cause as { code?: string }).code ?? ""))) {
+          sessionBound = false;
           projectReason = message(cause);
           body = await get({}); // A non-repository must not make Global inaccessible.
         } else throw cause;
@@ -246,7 +254,7 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
     } finally {
       if (!controller.signal.aborted && contextRef.current === context) setLoading(false);
     }
-  }, [context, configCwd, sessionId]);
+  }, [context, configCwd, sessionId, projectPath]);
   // Refresh editability when the chat settles, not on attention or metadata polls.
   useEffect(() => {
     if (visible) void load();
@@ -271,7 +279,8 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scope: destination, revision: key ? entry!.revision : data.revision,
-          ...workflowRequestTarget(snapshot?.sessionBound ? sessionId : undefined, snapshot?.projectReason ? undefined : configCwd),
+          ...workflowRequestTarget(snapshot?.sessionBound ? sessionId : undefined, snapshot?.projectReason ? undefined : configCwd,
+            snapshot?.projectReason ? undefined : projectPath),
           ...(key ? { overrides: draft } : destination === "pause" ? { paused: !data.paused } : {}),
         }),
       });
@@ -289,8 +298,9 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
       }
       setNotice({ context, text: destination === "pause" ? body.paused ? "All managed Git actions paused. Shells and other applications are not sandboxed." : "Managed Git actions resumed, subject to saved settings and existing guards."
         : destination === "task" ? "Saved Session settings applied to this task. No Git operation was approved or started."
-          : destination === "session" ? "Session settings saved for later tasks. Enablement and Commit Off are live restrictions; this task otherwise keeps its captured settings."
-            : `${scopeNames[destination]} defaults saved for future chats and tasks. The current task is unchanged.` });
+          : destination === "session" && body.sessionScope === "project" ? "Chat overrides saved for this project only. Legacy actions keep captured choices; disabling or restricting commits also limits their existing entry points. No operation started."
+            : destination === "session" ? "Session settings saved for later tasks. Enablement and Commit Off are live restrictions; this task otherwise keeps its captured settings."
+              : `${scopeNames[destination]} defaults saved. No operation started and no captured action was retargeted.` });
     } catch (cause) {
       if (key) setDrafts((current) => ({ ...current, [key]: { ...current[key], error: message(cause) } }));
       else setActionError({ context, text: message(cause) });
@@ -387,11 +397,15 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
       {data?.paused && <p className="workflow-banner" role="status">All managed Git actions are paused, at every scope.</p>}
       {attention && <p className="workflow-banner" role="status">A request needs your attention in chat. Your workflow draft is unchanged. <button type="button" onClick={onClose}>Go to chat to answer</button></p>}
       <div className="workflow-home-scroll" hidden={!!detail}>
+        <details className="workflow-legacy" onToggle={(event) => { if (event.target === event.currentTarget) setLegacyOpen(event.currentTarget.open); }}>
+          <summary>Existing chat actions · legacy compatibility</summary>
         <section className="workflow-task" aria-label="Current task">
-          <div className="workflow-overline">Current task</div>
-          <div className="workflow-task-title"><strong>{!session ? "No active task" : !data ? "Loading task settings…" : task?.kind === "managed" ? "Using captured task settings" : task?.kind === "legacy" ? "Legacy task · pinned policy" : "No managed task yet"}</strong><span>{session ? attention ? "Needs you" : busy ? "Working" : "Idle" : ""}</span></div>
+          <div className="workflow-overline">Chat checkout actions</div>
+          <div className="workflow-task-title"><strong>{!session ? "No active task" : !data ? "Loading task settings…" : data.sessionScope === "project" ? "Actions still use the chat checkout" : task?.kind === "managed" ? "Using captured task settings" : task?.kind === "legacy" ? "Legacy task · pinned policy" : "No managed task yet"}</strong><span>{session ? attention ? "Needs you" : busy ? "Working" : "Idle" : ""}</span></div>
           {session ? <>
-            <p className="workflow-muted">Actions stay bound to this chat’s checkout, never the sidebar selection.</p>
+            <p className="workflow-path">Action source: <code>{session.cwd}</code></p>
+            <p className="workflow-muted">These existing mutation panels keep their captured chat settings. Selecting a configuration project does not retarget them.</p>
+            {data?.sessionScope !== "project" && <>
             <details><summary>Task details{taskDifferent ? " · Defaults differ — compare" : ""}</summary>
               <p className="workflow-path">Chat checkout: <code>{data?.cwd ?? session.cwd}</code></p>
               {task?.kind === "legacy" && <p>Existing policy stays pinned until explicit adoption. {task.policy ? `${formatValue(task.policy.mode)} · ${task.policy.commits === "agent" ? "Legacy agent commit consent" : "Manual commits"}${task.policy.integration ? ` · target ${task.policy.integration.targetBranch}` : ""}` : "No saved policy (or explicit opt-out)."}</p>}
@@ -409,25 +423,33 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
               {data.permissions.legacyAgentCommitConsent && <p className="workflow-muted">Legacy preview/confirm retains this chat’s saved agent-commit consent. It does not create a new standing grant.</p>}
               <p className="workflow-muted">{AUTOMATIC_WORKFLOW_UNAVAILABLE}</p>
             </details>}
-            {detailsAvailable && data && sessionId && <GitWorkflowTaskBinding key={context} sessionId={sessionId} cwd={data.cwd ?? session.cwd} settingsRevision={data.revision} visible={visible && !detail} busy={busy} />}
+            {detailsAvailable && data && sessionId && <details open={sourceEvidenceOpen} onToggle={(event) => { if (event.target === event.currentTarget) setSourceEvidenceOpen(event.currentTarget.open); }}>
+              <summary>Source evidence · optional legacy metadata</summary>
+              <p className="workflow-muted">Not a prerequisite for Git actions. Adoption does not grant execution or move this chat.</p>
+              <GitWorkflowTaskBinding key={context} sessionId={sessionId} cwd={data.cwd ?? session.cwd} settingsRevision={data.revision} visible={visible && !detail && legacyOpen && sourceEvidenceOpen} busy={busy} />
+            </details>}
+            </>}
             <div className="workflow-actions workflow-task-actions">{([['workspace', 'Workspace details'], ['commit', 'Review & commit'], ['merge', 'Integration review']] as const).map(([view, label]) => <button key={view} ref={(element) => { taskActionRefs.current[view] = element; }} type="button" disabled={!detailsAvailable} onClick={() => onDetailChange(view)}>{label}</button>)}</div>
           </> : <p className="workflow-muted">Configure Global or Project defaults without creating a chat or starting an agent.</p>}
         </section>
-        {!session && <form className="workflow-project-picker" onSubmit={(event) => { event.preventDefault(); setProjectChoice({ source: cwd, cwd: projectInput.trim() }); }}>
-          <label htmlFor="workflow-project-cwd">Configuration project</label><div className="workflow-actions"><input id="workflow-project-cwd" value={projectInput} onChange={(event) => setProjectInput(event.target.value)} placeholder="Repository directory (optional)" /><button type="submit">Use project</button></div>
-          <small>Changes only the settings destination. No chat or checkout is moved.</small>
-        </form>}
+        </details>
+        <form className="workflow-project-picker" onSubmit={(event) => { event.preventDefault(); if (projectInput.trim()) setProjectChoice({ source: choiceSource, cwd: projectInput.trim() }); }}>
+          <label htmlFor="workflow-project-cwd">Configuration project</label><div className="workflow-actions"><input id="workflow-project-cwd" value={projectInput} onChange={(event) => setProjectInput(event.target.value)} placeholder="Repository directory (optional)" /><button type="submit" disabled={!projectInput.trim()}>Use project</button></div>
+          <small>Changes only the settings destination. No chat, checkout, pending action or shell directory is moved.</small>
+          {projectPath !== undefined && <button type="button" className="workflow-link" onClick={() => setProjectChoice(null)}>Back to chat defaults</button>}
+        </form>
+        {data?.sessionScope === "project" && <p className="workflow-banner">Project: <code>{data.projectRoot}</code> · Chat overrides apply only to this project. Explicit-project Git tools currently support status and read-only review, not mutations.{data.legacySessionSettings && " Legacy unqualified chat settings remain on their compatibility path; they are not copied to this project."}</p>}
         {(snapshot?.context === context && snapshot.projectReason) && <p className="workflow-banner">Project unavailable: {snapshot.projectReason} Global defaults are still available.</p>}
         {loadError && <p className="workflow-banner" role="alert">{loadError} <button type="button" disabled={!!operation} onClick={() => setReload((value) => value + 1)}>Retry loading</button></p>}
         {!data ? <p className="workflow-banner" role="status">{loading ? "Loading workflow…" : "Workflow settings are unavailable."}</p> : <>
           <section className="workflow-scope-area" aria-label="Workflow configuration scope"><div className="workflow-section-label"><h3>Configure workflow</h3><span>{Object.keys(draft).length} override{Object.keys(draft).length === 1 ? "" : "s"}</span></div>
             <div className="workflow-scopes" role="group" aria-label="Edit scope">{workflowScopes.map((level) => {
-              const key = workflowDraftKey(level, data.projectRoot, session?.id);
+              const key = workflowDraftKey(level, data.projectRoot, session?.id, data.sessionScope);
               const item = key ? drafts[key] : undefined;
               const dirtyCount = item ? changedWorkflowFields(item.baseline, item.overrides).length : 0;
               return <button key={level} type="button" aria-pressed={level === scope} disabled={level === "project" ? !data.projectRoot : level === "session" ? !session || session.transient || !data.sessionEditable || busy : false}
-                onClick={() => setScope(level)}>{scopeNames[level]}{level === "project" && data.projectRoot && <small>{shortPath(data.projectRoot)}</small>}{dirtyCount > 0 && <small>{dirtyCount} unsaved</small>}</button>;
-            })}</div><p className="workflow-scope-note">{scopeDescriptions[scope]}<span>{changes ? `${changes} unsaved` : "Saved"}</span></p>
+                onClick={() => setScope(level)}>{scopeNames[level]}{level === "session" && data.sessionScope === "project" && <small>This project only</small>}{level === "project" && data.projectRoot && <small>{shortPath(data.projectRoot)}</small>}{dirtyCount > 0 && <small>{dirtyCount} unsaved</small>}</button>;
+            })}</div><p className="workflow-scope-note">{scope === "session" && data.sessionScope === "project" ? "This chat × selected project · no task adoption" : scopeDescriptions[scope]}<span>{changes ? `${changes} unsaved` : "Saved"}</span></p>
             {!data.projectRoot && <p className="workflow-muted">Choose an available Git repository for Project settings.</p>}
             {(!session || session.transient || !data.sessionEditable || busy) && <p className="workflow-muted">Session unavailable: {sessionReason}</p>}
           </section>

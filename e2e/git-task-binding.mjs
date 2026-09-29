@@ -13,8 +13,13 @@ export function consumeExpectedTaskConflict(page, event) {
 
 /** Disposable repository/documents only. Never targets the operator's agent dir. */
 export async function checkGitTaskBinding(page, { cwd, task, home, contained, screenshot }) {
-  if (process.platform !== "linux") {
+  const openEvidence = async () => {
     await home();
+    const summary = task.getByText("Source evidence · optional legacy metadata", { exact: true });
+    if (!await summary.locator("..").evaluate((element) => element.open)) await summary.click();
+  };
+  if (process.platform !== "linux") {
+    await openEvidence();
     const unavailable = task.locator('details[aria-label="Task binding and source review"]');
     await unavailable.locator(":scope > summary").click();
     await unavailable.getByText(/available only with Linux/).waitFor();
@@ -40,7 +45,7 @@ export async function checkGitTaskBinding(page, { cwd, task, home, contained, sc
     const http = await response, body = await http.json(); assert.equal(http.status(), status, JSON.stringify(body)); return { http, body };
   };
   try {
-    await home(); await binding.locator(":scope > summary").focus(); await page.keyboard.press("Enter");
+    await openEvidence(); await binding.locator(":scope > summary").focus(); await page.keyboard.press("Enter");
     await binding.getByLabel("Task goal").fill("E2E explicitly reviewed task — not a grant");
     await binding.getByLabel("Originating user request").selectOption("root");
     await binding.getByLabel("Existing task checkout").selectOption("feature");
@@ -82,7 +87,7 @@ export async function checkGitTaskBinding(page, { cwd, task, home, contained, sc
     assert.notEqual(readopted.status.binding.id, adopted.status.binding.id, "Each explicit adoption has a fresh private binding ID"); assert.equal(readopted.status.binding.generation, 2);
     const released = (await click("release", "Release task binding")).body;
     assert.equal(released.status.status, "released"); assert.equal(released.status.binding.generation, 3);
-    await page.reload({ waitUntil: "load" }); await home();
+    await page.reload({ waitUntil: "load" }); await openEvidence();
     await binding.locator(":scope > summary").click();
     await binding.locator(":scope > summary").filter({ hasText: / · Released$/ }).waitFor();
     assert.match(await binding.innerText(), /generation 3/);

@@ -16,6 +16,7 @@
 .workflow-header .workflow-actions { flex-wrap: nowrap; }
 .workflow-mobile-close { display: none; }
 .workflow-home-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+.workflow-legacy > summary { margin: 0 24px 18px; font-size: 12px; color: var(--text-muted); }
 .workflow-task { margin: 0 24px 20px; padding: 15px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-panel); }
 .workflow-overline { font-size: 11px; font-weight: 600; letter-spacing: .65px; text-transform: uppercase; color: var(--text-muted); }
 .workflow-task-title { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 6px 0 4px; }
@@ -101,6 +102,7 @@
 .workflow-container[data-covering=true] .workflow-desktop-close { display: none; }
 @media (max-width: 640px) {
   .workflow-header { padding: max(18px, env(safe-area-inset-top)) 18px 14px; }
+  .workflow-legacy > summary { margin-inline: 18px; }
   .workflow-task { margin: 0 18px 18px; }
   .workflow-project-picker { margin: 0 18px 18px; }
   .workflow-scope-area { padding: 0 18px 16px; }

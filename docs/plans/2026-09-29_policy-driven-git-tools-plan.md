@@ -4,7 +4,7 @@
 
 Make routine Git work cheaper for the agent and less repetitive for the user: reusable project policies, explicit operation scope across repositories/worktrees, optional human confirmations, deliberate staging, and agent-driven preparation against a moving local integration target. A conversation need not move or belong to any worktree.
 
-**Status: design revision; implementation not authorized by this request.** The user asked to rethink and adapt the concept before continuing implementation. [ADR 0011](../adr/0011-policy-driven-git-tools.md) records the clarified direction. Current runtime permissions and repository/global approval rules remain unchanged; this plan grants no execution, merge, cleanup, publication or deployment authority.
+**Status: implementation started.** After the documentation revision, the user said “alright. start the implementation,” authorizing application work in the retained linked worktree. [ADR 0011](../adr/0011-policy-driven-git-tools.md) records the clarified direction. This is source-implementation authority, not consent to alter live permissions, repository/global rules, Nix instructions or deployment. Integration, cleanup and publication still require their existing separate approvals.
 
 ## Plan Relationship and supersession
 
@@ -25,9 +25,9 @@ Every outstanding obligation is either reassigned or explicitly retired:
 
 No separate Nix behavioral design is introduced. The Nix package-consumption change already integrated is not instruction alignment and did not remove the conservative always-ask rules.
 
-## Current evidence and reuse
+## Starting evidence and reuse
 
-The earlier six-commit feature was integrated into local `rst-main` as `1d70af2044051fad527c534d6385afe83988c061`; this documentation work reuses the retained linked `docs/integrated-git-workflow` checkout advanced to that local tip. The code is unchanged by this revision.
+The earlier six-commit feature was integrated into local `rst-main` as `1d70af2044051fad527c534d6385afe83988c061`; the documentation revision reused the retained linked `docs/integrated-git-workflow` checkout advanced to that local tip and changed no runtime code. Implementation now continues there. The table records the starting assessment; bounded implementation evidence is tracked under phase 1.
 
 | Source | Reuse / limitation confirmed during this revision |
 | --- | --- |
@@ -62,6 +62,16 @@ Non-goals: autonomous finish/merge queues; automatic semantic conflict resolutio
 Documentation evidence, 2026-09-29: two independent read-only reviews checked the clarified product model and compatibility/safety boundaries. Their two material findings—result-dependent agent reentry and crash-surviving check-process quarantine—were incorporated and re-reviewed as resolved. A Python standard-library check validated fenced blocks and 45 relative file-link targets across the six changed Markdown files; whitespace checks passed. Runtime tests, TypeScript, ESLint and browser tests were not rerun for this documentation-only change. The presentation states that implementation, live permission changes, Nix instructions and activation remain out of scope; other-action confirmation defaults stay conservative pending explicit configuration.
 
 ### 1. Explicit resources, reusable policy and simpler settings
+
+**First bounded slice:** canonical resource identity, project-keyed chat overrides, independent project selection in Workflow, and explicitly targeted agent status/read-only review. Existing exact-approval mutation paths stay compatible. Cross-project mutations and confirmation-free modes remain blocked until selected-policy authorization and recovery admission are connected; a new repository argument must not reuse the caller project's captured policy or grants. This slice does not complete all of phase 1.
+
+First-slice implementation is verified in the retained worktree. It adds `git-project-resources.ts`, `git-project-session.ts` and `git-project-settings.ts`, an independent Workflow configuration-project picker, separate Chat×Project draft keys, and status/review-only `repositoryPath`. Legacy action/source panels are optional disclosures. Review findings led to descriptor-pinned Linux comparison reads, use of the captured branch rather than rediscovery, and canonical restriction lookup for nested caller cwds. Broader settings/action authorization and every new mutation path remain unchecked below.
+
+- [x] First slice: capture explicit physical repository/worktree identity for status/read-only review; regression tests cover matching branch names, duplicate registrations, denied/replaced roots, transient Git-directory/branch substitution, descriptor cleanup, and a pending A comparison while B is inspected.
+- [x] First slice: isolate project-qualified preferences from unqualified legacy state; tests cover project alternation, resets, copied preferences without grants, malformed/newer records, restrictive legacy clamps in root/nested/linked callers, and canonical-resolution failure.
+- [x] First slice: expose project selection and Chat×Project drafts without moving the chat or requiring task/source adoption; browser-test independent A/B saves/resets and preserved drafts alongside existing supervised actions.
+
+Verification evidence: `npm test` passed **1,825 tests**; `node_modules/.bin/tsc --noEmit`, `npm run lint` and `git diff --check` passed. `nix develop --offline path:. -c env E2E_GIT_WORKFLOW_ONLY=1 npm run test:e2e` passed the affected Git browser flows, including the new cross-project settings case, legacy source evidence, exact commit/non-FF merge, history/reload, and desktop/mobile containment. Two read-only adversarial reviews rechecked the material fixes without remaining runtime findings. The full-suite run also corrected an older inheritance test that passed a SessionManager where an entries array was required. No terminal behavior changed, so terminal tests were not applicable. No production build, live consent migration, Nix/global instruction change, deployment or remote action occurred. Integration approval remains separate.
 
 - [ ] Extend the resource-selection layer and tool/route schema for explicit canonical repository plus registered checkout or validated handle; tests alternate two worktrees in A and a checkout in B from one unchanged chat, including duplicate branch names, replaced roots and denied access.
 - [ ] Evolve settings, store, resolver and permission tests for named project main/base/target, direct/worktree strategy, local/PR/leave delivery, FF/non-FF method and independent action confirmation; prove no project-specific branch, recipe or authority leaks through Global or Chat×Project overrides.
@@ -103,7 +113,7 @@ This gate applies as each supported slice ships, not only after cleanup is imple
 
 - [ ] Propose a separately authorized change to Pi Web guidance, applicable project rules and Nix-managed global Git skills/templates: supported saved decisions replace redundant questions, selected-repository instructions still govern, missing/denied capabilities cannot be bypassed through shell. Test supported/absent/legacy tools and stricter projects before advertising prompt-free behavior.
 - [ ] For each implemented slice, run its focused and adversarial suites, common Pi Web checks and affected browser flows on the exact candidate; test terminal flows only when changed. Respect the no-production-build-during-development rule.
-- [ ] Record actual release/activation and loaded-instruction evidence separately from source merge; do not activate Nix policy, update other projects or migrate live consent during this documentation task.
+- [ ] Record actual release/activation and loaded-instruction evidence separately from source merge; do not activate Nix policy, update other projects or migrate live consent as part of source implementation.
 
 ### Deferred backlog, not prerequisites for the next slice
 
@@ -129,7 +139,7 @@ Rollback disables new action entry points/permissions while retaining action art
 - [x] The previous plan's unmet work has a current owner or explicit retirement; there is no second active implementation queue.
 - [x] Clarified defaults, per-operation/project identity, staging, PR delivery and repeated rebase/agent-assessment semantics pass review and documentation checks.
 
-### Implementation (not completed or authorized by this revision)
+### Implementation (authorized after the documentation revision; in progress)
 
 - [ ] One unchanged chat can use correctly scoped tools across repositories/worktrees without task adoption or session moves.
 - [ ] Saved policy suppresses routine questions where permitted, with clear optional confirmations and separate verification obligations.

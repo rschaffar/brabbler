@@ -28,6 +28,12 @@ export interface GitWorkflowSettingsResponse {
   paused: boolean;
   cwd?: string;
   projectRoot?: string;
+  /** Explicit operation/configuration scope, independent of the chat cwd. */
+  selection?: { projectRoot: string; cwd: string; branch: string };
+  sessionScope?: "project";
+  legacySessionSettings?: boolean;
+  /** New project-keyed restrictions also clamp old mutation entry points. */
+  projectSessionRestrictions?: { enabled?: false; commits?: "off" | "manual" };
   global: GitWorkflowOverrides;
   project: GitWorkflowOverrides;
   session: GitWorkflowOverrides | null;
@@ -40,7 +46,7 @@ export interface GitWorkflowSettingsResponse {
 }
 
 // Preferences are not standing execution grants. Automatic remains unsupported
-// until reviewed rules, scoped grants and task-bound execution admission exist.
+// until scoped authorization and operation-level recovery admission exist.
 export const DEFAULT_GIT_WORKFLOW_SETTINGS: Readonly<GitWorkflowSettings> = Object.freeze({
   enabled: true, workspace: "current", baseBranch: null, branch: null, onCreate: "continue",
   commits: "ask", checks: [], targetBranch: null, method: "merge", cleanup: "retain",

@@ -1,6 +1,7 @@
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { SessionEntry } from "./types";
 import { appendManagedSessionGitWorkflow, readManagedSessionGitWorkflow, validateManagedSessionGitWorkflow } from "./git-workflow-session";
+import { inheritGitProjectSessionSettings } from "./git-project-session";
 
 export const GIT_WORKFLOW_TYPE = "pi-web:git-workflow";
 
@@ -154,6 +155,7 @@ export function inheritSessionGitWorkflow(
   sourceEntries: readonly SessionEntry[], destination: Pick<SessionManager, "appendCustomEntry">,
 ): void {
   const managed = readManagedSessionGitWorkflow(sourceEntries);
+  inheritGitProjectSessionSettings(sourceEntries, destination);
   if (managed) {
     appendManagedSessionGitWorkflow(destination, managed.overrides, managed.task);
     return;

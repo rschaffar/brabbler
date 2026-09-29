@@ -23,10 +23,10 @@ function fixture(options = {}) {
 }
 function render({ data = fixture(), scope = "session", overrides, props = {} } = {}) {
   const actualProps = { visible: true, session, cwd: "/sidebar", busy: false, attention: false, detail: null, onClose() {}, onDetailChange() {}, onDetailHost() {}, ...props };
-  const context = JSON.stringify([actualProps.session?.id ?? null, actualProps.session?.cwd ?? actualProps.cwd ?? null, Boolean(actualProps.session?.transient)]);
+  const context = JSON.stringify([actualProps.session?.id ?? null, actualProps.session?.cwd ?? actualProps.cwd ?? null, Boolean(actualProps.session?.transient), null]);
   let drafts = helpers.receiveWorkflowSettings({}, data, actualProps.session?.id);
   if (overrides) {
-    const key = helpers.workflowDraftKey(scope, data.projectRoot, actualProps.session?.id);
+    const key = helpers.workflowDraftKey(scope, data.projectRoot, actualProps.session?.id, data.sessionScope);
     drafts = { ...drafts, [key]: { ...drafts[key], overrides } };
   }
   // Seed only server-loaded state; event/fetch behavior is exercised by browser tests.
@@ -95,7 +95,7 @@ test("unsupported modes are disabled, saved unsupported integration remains visi
   const html = render({ overrides: { method: "ff", checks: [{ label: "", argv: [""] }] } });
   assert.match(html, /value="ff" disabled="" selected=""/);
   assert.match(html, /value="automatic" disabled=""/);
-  assert.match(html, /scoped grants, reviewed instruction profiles and task-bound workspace admission/);
+  assert.match(html, /scoped authorization and operation-level recovery admission/);
   assert.doesNotMatch(html, /Requires durable action/);
   assert.match(html, /id="workflow-error"/);
   assert.match(html, /class="workflow-primary" disabled="">Save session settings/);
@@ -133,4 +133,19 @@ test("stable visibility, scope-specific conflicts, focus containment/restoration
   assert.match(css, /data-covering=true.*position: fixed/);
   assert.match(css, /env\(safe-area-inset-bottom\)/);
   assert.match(css, /color: var\(--accent-contrast\)/);
+});
+
+test("a saved chat can select another configuration project without task or source adoption", () => {
+  const html = render({ data: fixture({ sessionScope: "project", projectRoot: "/other", legacySessionSettings: true }) });
+  assert.match(html, /Configuration project/);
+  assert.match(html, /This project only/);
+  assert.match(html, /This chat × selected project/);
+  assert.match(html, /not copied to this project/);
+  assert.match(html, /Actions still use the chat checkout/);
+  assert.match(html, /Action source: <code>\/repo-worktrees\/chat/);
+  assert.doesNotMatch(html, /Apply saved settings to this task|data-task-binding/);
+  assert.match(html, /<details class="workflow-legacy"><summary>Existing chat actions/);
+  assert.match(home, /sourceEvidenceOpen/);
+  assert.match(home, /Source evidence · optional legacy metadata/);
+  assert.doesNotMatch(home, /!session && <form className="workflow-project-picker"/);
 });

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { checkGitTaskBinding } from "./git-task-binding.mjs";
 
 /** Real scoped settings, local Git objects and a persisted chat; no model or mocked settings endpoint. */
-export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, cwd, targetWorktree }) {
+export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, cwd, targetWorktree, otherProject }) {
   const gitAt = (path, ...args) => execFileSync("git", ["-C", path, ...args], { encoding: "utf8" }).trim();
   const git = (...args) => gitAt(cwd, ...args);
   const settingsPath = "/api/git/workflow/settings";
@@ -63,6 +63,8 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     const back = workflow.getByRole("button", { name: "← Back to workflow", exact: true });
     if (await back.isVisible()) await back.click();
     await scopes.waitFor({ state: "visible" });
+    const legacy = workflow.locator("details.workflow-legacy");
+    if (!await legacy.evaluate((element) => element.open)) await legacy.locator(":scope > summary").click();
   }
   async function writeSettings(scope, button) {
     const saved = page.waitForResponse((response) => new URL(response.url()).pathname === settingsPath
@@ -128,6 +130,63 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     for (const name of ["Workspace workflow", "Review & commit", "Local integration review"]) {
       assert.equal(await page.getByRole("button", { name, exact: true }).count(), 0, `${name} is no longer a toolbar button`);
     }
+    // Explicit project settings work from the same chat, without opening legacy
+    // task/source controls, moving it, or creating another agent/session.
+    await openWorkflow();
+    assert.equal(await workflow.locator("details.workflow-legacy").evaluate((element) => element.open), false);
+    const beforeScopes = [git("rev-parse", "HEAD"), gitAt(otherProject, "rev-parse", "HEAD")];
+    const selectProject = async (projectPath) => {
+      await workflow.getByLabel("Configuration project", { exact: true }).fill(projectPath);
+      const loaded = page.waitForResponse((response) => new URL(response.url()).pathname === settingsPath
+        && response.request().method() === "GET" && new URL(response.url()).searchParams.get("projectPath") === projectPath);
+      await workflow.getByRole("button", { name: "Use project", exact: true }).click();
+      const response = await loaded;
+      assert.equal(response.status(), 200, await response.text());
+      return response.json();
+    };
+    await selectProject(otherProject);
+    await chooseScope("project"); await expand("integration");
+    await control("targetBranch").fill("other-main");
+    assert.equal((await save("project")).projectRoot, otherProject);
+    await chooseScope("session");
+    await control("targetBranch").fill("b-chat");
+    const bSaved = await save("session");
+    assert.equal(bSaved.sessionScope, "project");
+    assert.deepEqual(bSaved.session, { targetBranch: "b-chat" });
+    assert.equal(await workflow.getByRole("button", { name: "Apply saved settings to this task", exact: true }).count(), 0);
+    await selectProject(cwd); await expand("integration");
+    assert.equal(await control("targetBranch").inputValue(), "");
+    await control("targetBranch").fill("a-unsaved");
+    await selectProject(otherProject); await expand("integration");
+    assert.equal(await control("targetBranch").inputValue(), "b-chat");
+    await control("targetBranch").fill("b-unsaved");
+    await selectProject(cwd); await expand("integration");
+    assert.equal(await control("targetBranch").inputValue(), "a-unsaved");
+    await save("session");
+    await closeWorkflow(); await openWorkflow();
+    await selectProject(otherProject); await expand("integration");
+    assert.equal(await control("targetBranch").inputValue(), "b-unsaved", "A save/close must not erase B's draft");
+    await workflow.getByRole("button", { name: "Discard", exact: true }).click();
+    assert.equal(await control("targetBranch").inputValue(), "b-chat");
+    await field("targetBranch").getByRole("button", { name: "Use Project value", exact: true }).click();
+    assert.equal((await save("session")).resolved.session.values.targetBranch, "other-main");
+    await selectProject(cwd); await expand("integration");
+    assert.equal(await control("targetBranch").inputValue(), "a-unsaved");
+    await field("targetBranch").getByRole("button", { name: "Use Project value", exact: true }).click();
+    await save("session");
+    const legacyLoaded = page.waitForResponse((response) => new URL(response.url()).pathname === settingsPath
+      && response.request().method() === "GET" && new URL(response.url()).searchParams.get("sessionId") === sessionId
+      && !new URL(response.url()).searchParams.has("projectPath"));
+    await workflow.getByRole("button", { name: "Back to chat defaults", exact: true }).click();
+    assert.equal((await legacyLoaded).status(), 200);
+    assert.equal((await readSettings()).cwd, cwd);
+    assert.deepEqual([git("rev-parse", "HEAD"), gitAt(otherProject, "rev-parse", "HEAD")], beforeScopes);
+    assert.deepEqual(creations, []);
+    assert.deepEqual(mutations, []);
+    assert.equal(await workflow.locator("details.workflow-legacy").evaluate((element) => element.open), false);
+    await closeWorkflow();
+    console.log("PASS: one unchanged chat edits project B and A, preserves Chat×Project drafts, saves/resets independently, and starts no Git action or adoption");
+
     const initial = await readSettings();
     const sessionIds = (await api("/api/sessions?force=1")).sessions.map((session) => session.id).sort();
     const featureBeforeSettings = git("rev-parse", "HEAD");
@@ -144,7 +203,7 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     if (await projectPicker.inputValue() !== cwd) {
       await projectPicker.fill(cwd);
       const loaded = page.waitForResponse((response) => new URL(response.url()).pathname === settingsPath
-        && new URL(response.url()).searchParams.get("cwd") === cwd);
+        && [new URL(response.url()).searchParams.get("cwd"), new URL(response.url()).searchParams.get("projectPath")].includes(cwd));
       await workflow.getByRole("button", { name: "Use project", exact: true }).click();
       assert.equal((await loaded).status(), 200);
     }
@@ -270,7 +329,7 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     const permissionText = await commitPermissions.innerText();
     await expand("commits");
     assert.equal(await control("commits").locator('option[value="automatic"]').isDisabled(), true);
-    assert.match(await workflow.locator("#workflow-stage-commits").innerText(), /scoped grants, reviewed instruction profiles and task-bound workspace admission/);
+    assert.match(await workflow.locator("#workflow-stage-commits").innerText(), /scoped authorization and operation-level recovery admission/);
     await control("commits").selectOption("ask");
     assert.equal(await commitPermissions.innerText(), permissionText, "Unsaved preferences never change task permission facts");
     await workflow.getByRole("button", { name: "Discard", exact: true }).click();
