@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { NextResponse } from "next/server";
-import { assertManagedGitAction, assertManagedGitWorkspace, ManagedGitAccessError } from "@/lib/git-workflow-access";
+import { assertManagedGitAction, assertManagedGitProjectDenial, assertManagedGitWorkspace, ManagedGitAccessError } from "@/lib/git-workflow-access";
 import type { SessionEntry } from "@/lib/types";
 import { failGitAction, gitActionFailureResult, snapshotGitActionCandidate, GitActionApplyError, GitActionRecordingError } from "@/lib/git-action-controller";
 import { finishHumanGitAction, humanGitActionSink, HumanGitCandidateError, HumanGitSessionChangedError, keepHumanGitCandidate, readHumanGitSessionManager, takeHumanGitCandidate } from "@/lib/git-action-human";
@@ -10,8 +10,9 @@ import { confirmGitCommit, prepareGitCommit, GitCommitOperationError, type GitCo
 import { acquireGitCheckoutGate, isGitCheckoutGated, GitCheckoutBusyError } from "@/lib/git-checkout-gate";
 import { getGitCommitTreeOid, getGitTreeDiff, GitReviewError, GIT_REVIEW_DIFF_MAX_BYTES } from "@/lib/git-review";
 import { samePath } from "@/lib/paths";
-import { hasBusyRpcSessionForCwd } from "@/lib/rpc-manager";
+import { hasConflictingRpcCheckoutOperation } from "@/lib/rpc-manager";
 import { readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
+import { beginSupervisedGitCommitIntent, revalidateGitCommitAdmission, selectGitCommitAdmission, GitOperationRecoveryError, type GitOperationReservation } from "@/lib/git-operation-admission";
 
 export const dynamic = "force-dynamic";
 
@@ -48,10 +49,11 @@ export async function POST(req: Request) {
       req.signal.throwIfAborted();
       const manager = readHumanGitSessionManager(scope);
       const state = await assertManagedGitAction(cwd, manager.getEntries() as SessionEntry[], "commit", "human");
+      await assertManagedGitProjectDenial(cwd, { sessionId: id, sessionFile: file, sessionCwd: cwd }, "commit");
       await assertManagedGitWorkspace(state, cwd);
       const latestRoots = await getAllowedFileRoots();
       if (!isFilePathAllowed(cwd, latestRoots) || !isExistingFilePathAllowed(cwd, latestRoots)) throw new ManagedGitAccessError("Checkout no longer allowed");
-      if (hasBusyRpcSessionForCwd(cwd)) throw new ManagedGitAccessError("Stop sessions in this checkout before committing");
+      if (hasConflictingRpcCheckoutOperation(cwd)) throw new ManagedGitAccessError("Stop checkout operations in this checkout before committing");
       req.signal.throwIfAborted();
       return manager;
     };
@@ -99,20 +101,33 @@ export async function POST(req: Request) {
       const release = acquireGitCheckoutGate([cwd]);
       try {
         await guard();
+        const selection = await selectGitCommitAdmission(cwd);
         const { handle, native } = takeHumanGitCandidate(scope, input.actionId, { kind: "commit", preview, message: input.message });
         let applying = false;
+        let reservation: GitOperationReservation | undefined;
         try {
           await handle.update("executing", { decision: "approved" });
           await guard();
+          reservation = await beginSupervisedGitCommitIntent(selection, handle.record.id);
           const result = await confirmGitCommit(native.preview, native.message, async (intended) => {
             // Approval alone is not success. Persist the actual object identity before the ref CAS.
             await handle.update("executing", { intended });
             await guard(); // revocation/cancellation after journal I/O, immediately before mutation
+            await revalidateGitCommitAdmission(selection);
             applying = true;
           });
-          return NextResponse.json(await finishHumanGitAction(handle, result, result, result.status === "partial-success"));
+          const response = await finishHumanGitAction(handle, result, result, result.status === "partial-success");
+          if (result.status === "committed" && !("recoveryRequired" in response && response.recoveryRequired)) {
+            try { reservation.resolve(); } catch { throw new GitOperationRecoveryError(handle.record.id); }
+          }
+          return NextResponse.json({ ...response, ...(result.status === "partial-success" ? { recoveryRequired: true } : {}) });
         } catch (cause) {
           await failGitAction(handle, applying, req.signal, cause);
+          if (reservation && handle.record.state === "blocked" && (!applying || cause instanceof GitCommitOperationError)) {
+            try { reservation.resolve(); } catch { cause = new GitOperationRecoveryError(handle.record.id); }
+          }
+          if (cause instanceof GitOperationRecoveryError) return NextResponse.json({ actionId: handle.record.id,
+            error: cause.message, recoveryRequired: true }, { status: 409 });
           if (applying && !(cause instanceof GitCommitOperationError) && !(cause instanceof GitActionRecordingError)) cause = new GitActionApplyError(handle.record.id, handle.record.intended);
           if (cause instanceof GitActionRecordingError) return NextResponse.json({ ...gitActionFailureResult(cause)!.details,
             recoveryWarning: cause.message }, { status: 409 });
@@ -124,6 +139,8 @@ export async function POST(req: Request) {
     return error("Unknown commit operation", 400);
   } catch (cause) {
     if (cause instanceof SyntaxError) return error("Invalid JSON", 400);
+    if (cause instanceof GitOperationRecoveryError) return NextResponse.json({ error: cause.message, recoveryRequired: true,
+      actionId: cause.actionId }, { status: 409 });
     if (cause instanceof ManagedGitAccessError || cause instanceof HumanGitCandidateError || cause instanceof HumanGitSessionChangedError
       || cause instanceof GitCheckoutBusyError || cause instanceof GitCommitOperationError) return error(cause.message, 409);
     // Git stderr and subprocess errors may contain remote credentials or config values.

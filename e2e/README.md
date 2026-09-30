@@ -55,8 +55,10 @@ Coverage:
   filtering, and navigation at 1280px, 700px, and 390px without model credentials.
 - The focused Git workflow run checks an in-chat agent settings proposal card with a mocked read/apply endpoint (the real locked save/identity path is tested by API tests), project/session preferences without a browser reload,
   whole-merge/single-commit/consecutive-range review, explicit manual commit preview/confirmation,
-  saved-check verification, exact proposal acknowledgement and separately confirmed local non-FF merge,
-  and same-chat continuation into an existing registered worktree. The agent-triggered post-run
+  saved-check verification, exact proposal acknowledgement and separately confirmed local non-FF merge
+  **when the Linux user-service check containment backend is available**. On unsupported hosts it
+  checks that verification fails closed; process containment is not a sandbox. The run also checks
+  same-chat continuation into an existing registered worktree. The agent-triggered post-run
   transition is covered by focused unit tests, not a model-driven browser run.
 - The account controls test checks compact model-adjacent placement, popup-blocked OAuth
   links, device link/code/copy, progress persistence, invalid URL rejection, and

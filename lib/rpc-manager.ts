@@ -20,7 +20,7 @@ import { createGitCommitExtension } from "./git-commit-extension";
 import { createAgentGitWorkflowExtension, type AgentGitWorkflowUiContext } from "./agent-git-workflow-extension";
 import { createGitWorkspaceStartExtension, appendCompletedGitWorkspaceTransition, type GitWorkspaceTransition } from "./git-workspace-start-extension";
 import { claimGitWorkspaceTransition, failGitWorkspaceTransition, finishGitWorkspaceTransition, recordGitWorkspaceForkId, recordGitWorkspaceTransition } from "./git-workspace-transition";
-import { acquireGitCheckoutGate, isGitCheckoutGated } from "./git-checkout-gate";
+import { acquireGitCheckoutGate, createGitCheckoutOperationGuard, isGitCheckoutGated, isReadOnlyCheckoutTool } from "./git-checkout-gate";
 import { listLocalBranchTips, listWorktrees } from "./worktree";
 import { samePath } from "./paths";
 import { readSessionHeader } from "./session-reader";
@@ -156,6 +156,7 @@ type AgentSessionWrapperOptions = {
   monitorContextFiles?: boolean;
   onAgentRunComplete?: AgentRunCompleteListener;
   suppressCompletionNotifications?: boolean;
+  checkoutGuardInstalled?: boolean;
 };
 
 const IDLE_RESET_EVENT_TYPES = new Set([
@@ -210,6 +211,13 @@ export interface RpcSessionStartOptions {
 
 const CODING_TOOL_NAMES = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
 const THINKING_LEVEL_NAMES = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+// Unrecognized loaded extensions can write from hooks without a tool event.
+const HOST_CHECKOUT_EXTENSIONS = new Set([
+  "pi-web-checkout-operation-guard", "pi-web-exact-system-prompt", "pi-web-session-references",
+  "pi-web-git-workflow-context-filter", "pi-web-project-command-environment",
+  "pi-web-subagents", "pi-web-ask-user", "pi-web-git-workflow", "pi-web-git-commit",
+  "pi-web-agent-git-workflow", "pi-web-git-workspace-start",
+]);
 
 // Extensions require a complete Theme, while the web UI applies its own styling.
 class PlainTextTheme extends Theme {
@@ -278,6 +286,13 @@ export class AgentSessionWrapper {
   private activeMutatingCommands = 0;
   private sessionReplacement: "fork" | "clone" | null = null;
   private agentRunNeedsCompletion = false;
+  private readonly pendingCheckoutTools = new Map<string, unknown>();
+  private readonly seenCheckoutToolIds = new Set<string>();
+  private checkoutToolTrackingUncertain = false;
+  private partialCheckoutToolRisk = false;
+  private userBashUncertain = false;
+  private pendingCheckoutAdmissions = 0;
+  private readonly checkoutGuardInstalled: boolean;
   private scheduledGitWorkspace: GitWorkspaceTransition | null = null;
   private promptAdmissionTail: Promise<void> = Promise.resolve();
   private extensionsBound = false;
@@ -306,6 +321,7 @@ export class AgentSessionWrapper {
     this.monitorContextFiles = options.monitorContextFiles ?? false;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
+    this.checkoutGuardInstalled = options.checkoutGuardInstalled ?? false;
   }
 
   get sessionId(): string {
@@ -334,6 +350,73 @@ export class AgentSessionWrapper {
 
   isRunning(): boolean {
     return this._alive && (this.pendingPromptCount > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning);
+  }
+
+  /** Names alone are not safe: extensions can override the SDK read tools. */
+  isBuiltinReadOnlyCheckoutTool(name: unknown): boolean {
+    if (!isReadOnlyCheckoutTool(name)) return false;
+    try {
+      const matches = this.inner.getAllTools().filter((tool) => tool.name === name);
+      const origin = matches[0]?.sourceInfo as { source?: unknown; path?: unknown } | undefined;
+      return matches.length === 1 && origin?.source === "builtin" && origin.path === `<builtin:${name}>`;
+    } catch { return false; }
+  }
+
+  /** Unrecognized extensions may mutate via hooks or extension commands. */
+  private hasUnknownCheckoutExtensions(): boolean {
+    try {
+      const loader = this.inner.resourceLoader as unknown as { getExtensions?: () => {
+        extensions?: Array<{ path?: unknown }>; errors?: unknown[];
+      } };
+      const loaded = loader.getExtensions?.();
+      const extensions = loaded?.extensions;
+      return !Array.isArray(extensions) || !extensions.some((extension) => extension.path === "<inline:pi-web-checkout-operation-guard>")
+        || !Array.isArray(loaded?.errors) || loaded.errors.length > 0
+        || extensions.some((extension) =>
+          typeof extension.path !== "string" || !/^<inline:pi-web-[a-z-]+>$/.test(extension.path)
+          || !HOST_CHECKOUT_EXTENSIONS.has(extension.path.slice(8, -1)));
+    } catch { return true; }
+  }
+
+  /** There is no SDK user_bash completion event; uncertainty lasts until teardown. */
+  noteUserBashAdmission(): void { this.userBashUncertain = true; }
+
+  /** Direct subagent prompts bypass send(); reserve their async preflight too. */
+  beginCheckoutPromptAdmission(): () => void {
+    if (isGitCheckoutGated(this.cwd)) throw new Error("Git checkout is busy with a local transaction");
+    this.pendingCheckoutAdmissions += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.pendingCheckoutAdmissions = Math.max(0, this.pendingCheckoutAdmissions - 1);
+    };
+  }
+
+  /** Tool starts precede SDK tool_call; parallel and queued calls stay tracked.
+   * A tool ID only exempts that *executing* Git action, not its siblings, RPC
+   * commands, ambiguous events, or an uninstrumented/stale wrapper.
+   */
+  hasConflictingCheckoutOperation(exceptToolCallId?: string): boolean {
+    if (this.inner.isBashRunning || this.sessionReplacement || this.activeMutatingCommands > 0 || this.pendingCheckoutAdmissions > 0
+      || this.userBashUncertain || this.partialCheckoutToolRisk || this.checkoutToolTrackingUncertain) return true;
+    if (exceptToolCallId !== undefined) {
+      if (!exceptToolCallId.trim() || !this.isRunning() || !this.unsubscribe || !this.checkoutGuardInstalled
+        || this.hasUnknownCheckoutExtensions()) return true;
+      const activeName = this.activeToolEvents.get(exceptToolCallId)?.toolName;
+      const pendingName = this.pendingCheckoutTools.get(exceptToolCallId);
+      // The current action must have passed message_end AND tool_execution_start.
+      // A missing/mismatched ID, or a read/bash masquerading as the caller, is not proof.
+      if ((activeName !== "git_workflow" && activeName !== "git_commit") || pendingName !== activeName) return true;
+    }
+    for (const [id, name] of this.pendingCheckoutTools) {
+      if (id !== exceptToolCallId && !this.isBuiltinReadOnlyCheckoutTool(name)) return true;
+    }
+    for (const [id, event] of this.activeToolEvents) {
+      if (id !== exceptToolCallId && !this.isBuiltinReadOnlyCheckoutTool(event.toolName)) return true;
+    }
+    if (!this.isRunning()) return false;
+    return !this.unsubscribe || !this.checkoutGuardInstalled || this.hasUnknownCheckoutExtensions();
   }
 
   getPendingAttention(): SessionAttention | null {
@@ -384,13 +467,50 @@ export class AgentSessionWrapper {
       if (event.type === "agent_end") {
         invalidateSessionListCache();
       }
-      const toolCallId = event.toolCallId;
-      if (typeof toolCallId === "string") {
-        if (event.type === "tool_execution_start" || event.type === "tool_execution_update") {
-          this.activeToolEvents.set(toolCallId, event);
-        } else if (event.type === "tool_execution_end") {
-          this.activeToolEvents.delete(toolCallId);
+      if (event.type === "message_start" && (event.message as { role?: string } | undefined)?.role === "assistant") {
+        this.partialCheckoutToolRisk = false;
+      }
+      if (event.type === "message_update" && (event.message as { role?: string; content?: unknown[] } | undefined)?.role === "assistant") {
+        const content = (event.message as { content?: unknown[] }).content;
+        this.partialCheckoutToolRisk = !Array.isArray(content) || content.some((item) =>
+          !!item && typeof item === "object" && (item as { type?: string }).type === "toolCall"
+          && !isReadOnlyCheckoutTool((item as { name?: unknown }).name));
+      }
+      if (event.type === "message_end" && (event.message as { role?: string } | undefined)?.role === "assistant") {
+        this.partialCheckoutToolRisk = false;
+        const content = (event.message as { content?: unknown[] }).content;
+        if (!Array.isArray(content)) this.partialCheckoutToolRisk = true;
+        else for (const item of content) {
+          if (item && typeof item === "object" && (item as { type?: string }).type === "toolCall") {
+            const call = item as { id?: unknown; name?: unknown };
+            if (typeof call.id !== "string" || !call.id.trim() || this.seenCheckoutToolIds.has(call.id)) {
+              this.checkoutToolTrackingUncertain = true; // Duplicate/malformed IDs cannot identify one sibling.
+            } else {
+              this.seenCheckoutToolIds.add(call.id);
+              this.pendingCheckoutTools.set(call.id, call.name);
+            }
+          }
         }
+      }
+      const toolCallId = event.toolCallId;
+      if (event.type === "tool_execution_start" || event.type === "tool_execution_update" || event.type === "tool_execution_end") {
+        if (typeof toolCallId !== "string" || !toolCallId.trim()) this.checkoutToolTrackingUncertain = true;
+        else if (event.type === "tool_execution_end") {
+          if (!this.activeToolEvents.has(toolCallId)) this.checkoutToolTrackingUncertain = true;
+          this.activeToolEvents.delete(toolCallId);
+          this.pendingCheckoutTools.delete(toolCallId);
+        } else {
+          if (event.type === "tool_execution_start" ? this.activeToolEvents.has(toolCallId) : !this.activeToolEvents.has(toolCallId)) this.checkoutToolTrackingUncertain = true;
+          if (event.type === "tool_execution_update" && this.activeToolEvents.get(toolCallId)?.toolName !== event.toolName) this.checkoutToolTrackingUncertain = true;
+          if (this.pendingCheckoutTools.has(toolCallId) && this.pendingCheckoutTools.get(toolCallId) !== event.toolName) this.checkoutToolTrackingUncertain = true;
+          this.activeToolEvents.set(toolCallId, event);
+        }
+      }
+      if (event.type === "agent_settled") {
+        this.pendingCheckoutTools.clear();
+        this.seenCheckoutToolIds.clear();
+        this.checkoutToolTrackingUncertain = false;
+        this.partialCheckoutToolRisk = false;
       }
       if (IDLE_RESET_EVENT_TYPES.has(event.type)) this.resetIdleTimer();
       this.emit(event);
@@ -1230,6 +1350,12 @@ export class AgentSessionWrapper {
     this.pendingUiRequests.clear();
     this.pendingUiStartedAt.clear();
     this.activeToolEvents.clear();
+    this.pendingCheckoutTools.clear();
+    this.seenCheckoutToolIds.clear();
+    this.checkoutToolTrackingUncertain = false;
+    this.partialCheckoutToolRisk = false;
+    this.userBashUncertain = false;
+    this.pendingCheckoutAdmissions = 0;
     this.clearExtensionWidgets(false);
 
     const finishDispose = () => {
@@ -1967,6 +2093,7 @@ const SUBAGENT_CONTROLLER = createSubagentController({
         : {}),
       chatOnly: options?.chatOnly,
       suppressCompletionNotifications: true,
+      checkoutGuardInstalled: true,
     });
     registerRpcWrapper(wrapper);
   },
@@ -2241,6 +2368,28 @@ export function hasBusyRpcSessionForCwd(cwd: string, exceptSessionId?: string): 
   );
 }
 
+export function hasConflictingRpcCheckoutOperation(cwd: string, exceptSessionId?: string, exceptToolCallId?: string): boolean {
+  const targetCwd = normalizeRpcCwd(cwd);
+  // Startup has not installed the SDK hooks or event subscriber yet.
+  if (getStartingSessionCwds().has(targetCwd)) return true;
+  const sessions = [...getRegistry().values()];
+  if (exceptSessionId !== undefined || exceptToolCallId !== undefined) {
+    // Never fall back to excluding a whole session if the caller has no proven
+    // in-flight tool identity. A forged/legacy wrapper or duplicate ID is uncertain.
+    if (!exceptSessionId || !exceptToolCallId || !exceptToolCallId.trim()) return true;
+    const owners = [...new Set(sessions.filter((session) => session.sessionId === exceptSessionId))];
+    if (owners.length !== 1 || !(owners[0] instanceof AgentSessionWrapper)
+      || owners[0].hasConflictingCheckoutOperation(exceptToolCallId)) return true;
+  }
+  return sessions.some((session) => {
+    if (normalizeRpcCwd(session.cwd) !== targetCwd) return false;
+    if (exceptSessionId && session.sessionId === exceptSessionId) return false; // Validated exact tool above.
+    // Unknown/older wrappers cannot prove their running tools are read-only.
+    if (typeof session.hasConflictingCheckoutOperation !== "function") return session.isRunning();
+    return session.hasConflictingCheckoutOperation();
+  });
+}
+
 export async function destroyRpcSessionsForCwd(cwd: string): Promise<number> {
   const targetCwd = normalizeRpcCwd(cwd);
   const sessions = Array.from(getRegistry().values()).filter(
@@ -2390,6 +2539,14 @@ export async function startRpcSession(
         })
       : undefined;
     const workspaceStartOwner: { current?: AgentSessionWrapper } = {};
+    const checkoutOwner: { current?: AgentSessionWrapper } = {};
+    const checkoutGuard = createGitCheckoutOperationGuard({
+      isBuiltinReadOnlyTool: (name) => checkoutOwner.current?.isBuiltinReadOnlyCheckoutTool(name) ?? false,
+      onUserBash: () => {
+        if (!checkoutOwner.current) throw new Error("Checkout guard unavailable");
+        checkoutOwner.current.noteUserBashAdmission();
+      },
+    });
     const services = await createAgentSessionServices({
       cwd: sessionCwd,
       ...(accountRuntime ? { modelRuntime: accountRuntime } : {}),
@@ -2409,18 +2566,18 @@ export async function startRpcSession(
                 }
               : {}),
             appendSystemPrompt: subagentResources.appendSystemPrompt,
-            ...(usesExactSystemPrompt || subagentResources.loadExtensions
-              ? { extensionFactories: [
-                  ...(usesExactSystemPrompt ? [exactSystemPromptExtension] : []),
-                  ...(subagentResources.loadExtensions ? [createAskUserExtension()] : []),
-                ] }
-              : {}),
+            extensionFactories: [
+              checkoutGuard,
+              ...(usesExactSystemPrompt ? [exactSystemPromptExtension] : []),
+              ...(subagentResources.loadExtensions ? [createAskUserExtension()] : []),
+            ],
             ...(subagentResources.loadExtensions ? { extensionsOverride: preferPiWebAskUserExtension } : {}),
           }
         : chatOnly
-          ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension, createSessionReferenceExtension(), createGitWorkflowContextFilterExtension()] }
+          ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [checkoutGuard, exactSystemPromptExtension, createSessionReferenceExtension(), createGitWorkflowContextFilterExtension()] }
         : {
             extensionFactories: [
+              checkoutGuard,
               createSessionReferenceExtension(),
               createProjectCommandBashExtension({
                 cwd: sessionCwd,
@@ -2528,8 +2685,10 @@ export async function startRpcSession(
         });
       },
       suppressCompletionNotifications: Boolean(subagentResources),
+      checkoutGuardInstalled: true,
     });
     workspaceStartOwner.current = wrapper;
+    checkoutOwner.current = wrapper;
     const realSessionId = inner.sessionId as string;
     registerRpcWrapper(wrapper);
 

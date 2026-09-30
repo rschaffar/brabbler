@@ -5,7 +5,9 @@ import {
 
 export const workflowScopes: WorkflowScope[] = ["global", "project", "session"];
 export const workflowFields: GitWorkflowField[] = [
-  "enabled", "workspace", "baseBranch", "branch", "onCreate", "commits", "checks", "targetBranch", "method", "cleanup",
+  "enabled", "managedGitToolsOnly", "workspace", "mainBranch", "baseBranch", "branch", "onCreate", "workspaceConfirmation",
+  "commits", "commitConfirmation", "checks", "checkConfirmation", "targetBranch", "delivery", "method",
+  "prepareConfirmation", "integrateConfirmation", "cleanup", "cleanupConfirmation",
 ];
 export type WorkflowDraft = {
   baseline: GitWorkflowOverrides;

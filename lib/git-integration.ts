@@ -5,6 +5,8 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { gitExecEnv } from "./git-exec";
+import { assertGitOperationAdmission, inspectGitOperationAdmission, type GitOperationReservation } from "./git-operation-admission";
+import { selectGitProjectResources, revalidateGitProjectResources, type GitProjectResources } from "./git-project-resources";
 import { getGitTreeDiff, reviewGitBranches, type GitReview, type GitReviewDiff } from "./git-review";
 import { lookupGitVerificationReceipt } from "./git-verification";
 import { validateGitWorkflowPolicy, type GitWorkflowPolicy } from "./git-workflow-policy";
@@ -21,11 +23,17 @@ async function disabledHooks(): Promise<string> {
   // including update-ref, must use it: a hook may appear after the safety snapshot.
   return global[hooksKey] ??= fs.mkdtemp(path.join(tmpdir(), "pi-web-integration-hooks-"));
 }
-type Saved = { options: IntegrationOptions; plan: IntegrationPlan; policyDigest: string; featureIndex: string; targetIndex: string; targetIndexPath: string; repo: string };
+type Saved = { options: IntegrationOptions; plan: IntegrationPlan; policyDigest: string; featureIndex: string; targetIndex: string; targetIndexPath: string; repo: string; selection: GitProjectResources; admissionEpoch: string };
 type Plans = { pending: Map<string, Saved>; busy: Set<string> };
 function plans(): Plans {
   const global = globalThis as unknown as Record<symbol, Plans | undefined>;
   return (global[key] ??= { pending: new Map(), busy: new Set() });
+}
+/** Release of a failed check cannot leave an earlier process-local merge plan
+ * executable. An active preparation/apply must finish before recovery starts. */
+export function invalidateGitIntegrationPlansForResource(commonDir: string): void {
+  if (plans().busy.has(commonDir)) throw new Error("Git integration is active; recovery unavailable");
+  for (const [id, saved] of plans().pending) if (saved.repo === commonDir) plans().pending.delete(id);
 }
 function fail(reason: string): never { throw new Error(`Git integration unavailable: ${reason}`); }
 function hash(data: string | Buffer): string { return createHash("sha256").update(data).digest("hex"); }
@@ -99,8 +107,22 @@ async function policySafety(cwd: string): Promise<void> {
   if (await fs.stat(info).then(() => true, () => false)) fail("attributes unsupported");
 }
 interface Checkout { indexPath: string; digest: string }
+const operationMarkers = ["MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer", "BISECT_START"] as const;
+async function assertNoGitOperation(cwd: string): Promise<void> {
+  // Worktree-local markers must be lstat'd relative to the Git directory: an
+  // absolute --git-path for an individual marker can dereference a symlink.
+  const metadata = toNativePath((await git(cwd, ["rev-parse", "--absolute-git-dir"])).trim());
+  if (!samePath(metadata, await fs.realpath(metadata))) fail("physical Git directory required");
+  for (const marker of operationMarkers) {
+    try { await fs.lstat(path.join(metadata, marker)); fail("unfinished Git operation state"); }
+    catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
+    }
+  }
+}
 async function checkout(cwd: string, branch: string, oid: string, ownedIndex?: string): Promise<Checkout> {
   await root(cwd);
+  await assertNoGitOperation(cwd);
   await policySafety(cwd);
   if ((await git(cwd, ["symbolic-ref", "--quiet", "HEAD"])).trim() !== `refs/heads/${branch}` ||
       (await git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"])).trim() !== oid ||
@@ -163,7 +185,9 @@ function receipts(options: IntegrationOptions, review: GitReview, digest: string
         Date.now() - r.finishedAt > TTL) fail("missing, failed, expired or stale verification receipt");
   }
 }
-async function snapshot(options: IntegrationOptions, approved?: Saved, ownedIndex?: string): Promise<{ review: GitReview; policyDigest: string; feature: Checkout; target: Checkout; targetCwd: string; repo: string }> {
+async function snapshot(options: IntegrationOptions, approved?: Saved, ownedIndex?: string): Promise<{ review: GitReview; policyDigest: string; feature: Checkout; target: Checkout; targetCwd: string; repo: string; selection: GitProjectResources }> {
+  const selection = approved?.selection ?? await selectGitProjectResources(options.cwd);
+  await revalidateGitProjectResources(selection);
   const { policy, digest } = await policyOf(options);
   if (!policy.checks?.length || policy.checks.length !== options.receiptIds.length) fail("every configured check must have a receipt");
   const review = await reviewGitBranches(options.cwd, options.featureBranch, policy.integration!.targetBranch);
@@ -177,7 +201,8 @@ async function snapshot(options: IntegrationOptions, approved?: Saved, ownedInde
   if (approved && (approved.policyDigest !== digest || !equalReview(approved.plan.review, review) ||
       approved.featureIndex !== feature.digest || approved.targetIndex !== target.digest ||
       !samePath(approved.targetIndexPath, target.indexPath) || !samePath(approved.repo, repo))) fail("approved plan became stale");
-  return { review, policyDigest: digest, feature, target, targetCwd, repo };
+  if (!samePath(selection.commonDir, repo) || !samePath(selection.cwd, options.cwd) || selection.branch !== review.featureBranch) fail("repository selection changed");
+  return { review, policyDigest: digest, feature, target, targetCwd, repo, selection };
 }
 function identity(value: string): string {
   const match = /^(.* <[^\n<>]+>) \d+ [+-]\d{4}$/.exec(value.trim());
@@ -230,6 +255,26 @@ async function privateDir(agentDir: string): Promise<string> {
   await verify(dir);
   return dir;
 }
+async function admissionEpoch(agentDir: string, repo: string): Promise<string> {
+  // A resolved operation can leave refs/index exactly unchanged. Its new durable
+  // ledger entry still invalidates plans prepared before that operation. Read
+  // only after the ledger's validating admission scan; never create or clear it.
+  const dir = path.join(agentDir, "pi-web", "git-operation-admission", "v1", hash(repo));
+  const files = await fs.readdir(dir).catch((cause: NodeJS.ErrnoException) => {
+    if (cause.code === "ENOENT") return [];
+    throw cause;
+  });
+  // The validating admission scan checks each immutable check snapshot/proof.
+  // Their publication also changes the epoch, even when refs stayed identical.
+  if (files.some((name) => !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\.(?:json|pre|post)$/.test(name))) fail("admission history changed");
+  return hash(files.sort().join("\n"));
+}
+function assertIntegrationIntent(admission: GitOperationReservation, agentDir: string, repo: string): void {
+  if (!admission || typeof admission.assertOwned !== "function" || typeof admission.resolve !== "function") fail("durable integration intent required");
+  const state = inspectGitOperationAdmission(agentDir, repo);
+  if (state.reason !== "unresolved" || state.actionIds.length !== 1 || state.actionIds[0] !== admission.actionId) fail("integration intent not held for this repository");
+  admission.assertOwned();
+}
 function record(plan: IntegrationPlan, targetCwd: string, index: string, tempIndex: string, phase: string): string {
   return JSON.stringify({ phase, targetCwd, index, tempIndex, targetRef: `refs/heads/${plan.review.targetBranch}`,
     oldTargetOid: plan.review.targetOid, featureOid: plan.review.featureOid, mergeOid: plan.mergeOid, treeOid: plan.review.featureTreeOid }) + "\n";
@@ -243,6 +288,8 @@ export async function prepareIntegration(options: IntegrationOptions): Promise<I
   plans().busy.add(repo);
   try {
   const s = await snapshot(options);
+  await assertGitOperationAdmission(s.selection, options.agentDir);
+  const epoch = await admissionEpoch(options.agentDir, repo);
   await collisions(s.targetCwd, s.review);
   const diff = await getGitTreeDiff(options.cwd, s.review.targetTreeOid, s.review.featureTreeOid);
   const message = `Merge branch '${s.review.featureBranch}' into ${s.review.targetBranch}`;
@@ -254,10 +301,12 @@ export async function prepareIntegration(options: IntegrationOptions): Promise<I
   const plan: IntegrationPlan = { planId: randomUUID(), sessionId: options.sessionId, review: s.review, diff,
     receiptIds: [...options.receiptIds], mergeOid, message, expiresAt: Date.now() + TTL };
   await snapshot(options, { options, plan, policyDigest: s.policyDigest, featureIndex: s.feature.digest,
-    targetIndex: s.target.digest, targetIndexPath: s.target.indexPath, repo: s.repo });
+    targetIndex: s.target.digest, targetIndexPath: s.target.indexPath, repo: s.repo, selection: s.selection, admissionEpoch: epoch });
+  await assertGitOperationAdmission(s.selection, options.agentDir);
+  if (await admissionEpoch(options.agentDir, repo) !== epoch) fail("admission changed while preparing plan");
   plans().pending.set(plan.planId, { options: { ...options, receiptIds: [...options.receiptIds] }, plan,
     policyDigest: s.policyDigest, featureIndex: s.feature.digest, targetIndex: s.target.digest,
-    targetIndexPath: s.target.indexPath, repo: s.repo });
+    targetIndexPath: s.target.indexPath, repo: s.repo, selection: s.selection, admissionEpoch: epoch });
   // Never expose the mutable object kept as the server-side approval snapshot.
   return structuredClone(plan);
   } finally { plans().busy.delete(repo); }
@@ -265,9 +314,9 @@ export async function prepareIntegration(options: IntegrationOptions): Promise<I
 
 /** Explicit exact plan ID approval only. A failed post-checkout transaction is never retried automatically. */
 export async function confirmIntegration(planId: string, approvePlanId: string, sessionId: string,
-  beforeApply?: () => Promise<void>,
+  beforeApply: () => Promise<GitOperationReservation>,
 ): Promise<IntegrationResult> {
-  if (!planId || planId !== approvePlanId) fail("exact plan approval required");
+  if (!planId || planId !== approvePlanId || typeof beforeApply !== "function") fail("exact plan approval and durable intent required");
   const saved = plans().pending.get(planId);
   if (!saved || Date.now() > saved.plan.expiresAt) fail("unknown or expired plan");
   if (!sessionId || saved.plan.sessionId !== sessionId) fail("plan belongs to another session");
@@ -277,6 +326,8 @@ export async function confirmIntegration(planId: string, approvePlanId: string, 
   plans().pending.delete(planId); // single use, even on error
   try {
     const before = await snapshot(options, saved);
+    await assertGitOperationAdmission(saved.selection, options.agentDir);
+    if (await admissionEpoch(options.agentDir, repo) !== saved.admissionEpoch) fail("approved plan predates another Git operation");
     await collisions(before.targetCwd, before.review);
     await verifyObject(options.cwd, plan.mergeOid, plan.review, plan.message,
       identity(await git(options.cwd, ["var", "GIT_AUTHOR_IDENT"])),
@@ -290,6 +341,8 @@ export async function confirmIntegration(planId: string, approvePlanId: string, 
     let tempIndex = "";
     try {
       const latest = await snapshot(options, saved, before.target.indexPath);
+      await assertGitOperationAdmission(saved.selection, options.agentDir);
+      if (await admissionEpoch(options.agentDir, repo) !== saved.admissionEpoch) fail("approved plan predates another Git operation");
       await collisions(latest.targetCwd, latest.review);
       if (Date.now() > plan.expiresAt) fail("plan expired");
       if (hash(await fs.readFile(latest.target.indexPath)) !== saved.targetIndex) fail("target index changed");
@@ -304,7 +357,8 @@ export async function confirmIntegration(planId: string, approvePlanId: string, 
       } finally { await recovery.close(); }
       // Recording/revocation failures here remain pre-apply failures. Historical
       // records are never used to reconstruct this live plan or callback.
-      await beforeApply?.();
+      const admission = await beforeApply();
+      assertIntegrationIntent(admission, options.agentDir, repo);
       // The real index lock is held throughout. read-tree -u can modify the worktree even when it fails.
       partial = true;
       await git(latest.targetCwd, ["read-tree", "-u", "-m", plan.review.targetOid, plan.review.featureOid], tempIndex);
@@ -325,6 +379,20 @@ export async function confirmIntegration(planId: string, approvePlanId: string, 
           await git(latest.targetCwd, ["ls-files", "--others", "--exclude-standard", "-z"], tempIndex) !== "") {
         fail("target worktree changed after apply");
       }
+      // Last checkpoint immediately before CAS, after all asynchronous work and
+      // after the journal/intent callback. Neither a saved plan nor temp index
+      // proves the operation markers, checkout identity or reservation still hold.
+      await revalidateGitProjectResources(saved.selection);
+      if (!samePath(await repository(latest.targetCwd), repo) ||
+          (await git(latest.targetCwd, ["symbolic-ref", "--quiet", "HEAD"])).trim() !== `refs/heads/${plan.review.targetBranch}` ||
+          (await git(latest.targetCwd, ["show-ref", "--verify", "--hash", `refs/heads/${plan.review.targetBranch}`])).trim() !== plan.review.targetOid ||
+          (await git(options.cwd, ["show-ref", "--verify", "--hash", `refs/heads/${plan.review.featureBranch}`])).trim() !== plan.review.featureOid ||
+          hash(await fs.readFile(latest.target.indexPath)) !== saved.targetIndex) fail("checkout changed before ref update");
+      await assertNoGitOperation(options.cwd);
+      await assertNoGitOperation(latest.targetCwd);
+      const finalLock = await fs.lstat(lockPath);
+      if (finalLock.dev !== lockStat.dev || finalLock.ino !== lockStat.ino) fail("index lock ownership lost");
+      assertIntegrationIntent(admission, options.agentDir, repo);
       await git(latest.targetCwd, ["update-ref", `refs/heads/${plan.review.targetBranch}`, plan.mergeOid, plan.review.targetOid]);
       const nextRecord = `${recoveryPath}.next`;
       const update = await fs.open(nextRecord, "wx", 0o600);

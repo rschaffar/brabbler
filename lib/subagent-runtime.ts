@@ -34,6 +34,7 @@ import type { SessionEntry } from "./types";
 import { buildSubagentPromptPlan } from "./subagent-prompt";
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
+import { createGitCheckoutOperationGuard } from "./git-checkout-gate";
 import { filterGitWorkflowContext } from "./git-workflow-context";
 import { createAskUserExtension, preferPiWebAskUserExtension } from "./ask-user-extension";
 import { appendSubagentInputFiles, loadSubagentInputFiles } from "./subagent-input";
@@ -51,6 +52,9 @@ interface HostSession {
   isAlive(): boolean;
   isRunning(): boolean;
   waitUntilReady(): Promise<void>;
+  isBuiltinReadOnlyCheckoutTool(name: unknown): boolean;
+  noteUserBashAdmission(): void;
+  beginCheckoutPromptAdmission(): () => void;
 }
 
 export interface SubagentRuntimeDependencies {
@@ -230,6 +234,14 @@ export function createSubagentController(
       });
       const { chatOnly, appendSystemPrompt, delegatedTask } = promptPlan;
       if (!chatOnly) initTheme();
+      const guardOwner: { current?: HostSession } = {};
+      const checkoutGuard = createGitCheckoutOperationGuard({
+        isBuiltinReadOnlyTool: (name) => guardOwner.current?.isBuiltinReadOnlyCheckoutTool(name) ?? false,
+        onUserBash: () => {
+          if (!guardOwner.current) throw new Error("Checkout guard unavailable");
+          guardOwner.current.noteUserBashAdmission();
+        },
+      });
       const services = await createAgentSessionServices({
         cwd: childCwd,
         agentDir,
@@ -248,14 +260,13 @@ export function createSubagentController(
               }
             : {}),
           appendSystemPrompt,
-          // The exact prompt is sent through before_agent_start; see lib/exact-system-prompt.ts.
-          ...(promptPlan.exactSystemPrompt !== undefined || profile.loadExtensions
-            ? { extensionFactories: [
-                ...(promptPlan.exactSystemPrompt !== undefined
-                  ? [createExactSystemPromptExtension(() => promptPlan.exactSystemPrompt)] : []),
-                ...(profile.loadExtensions ? [createAskUserExtension()] : []),
-              ] }
-            : {}),
+          // The checkout guard is mandatory even when user extensions are disabled.
+          extensionFactories: [
+            checkoutGuard,
+            ...(promptPlan.exactSystemPrompt !== undefined
+              ? [createExactSystemPromptExtension(() => promptPlan.exactSystemPrompt)] : []),
+            ...(profile.loadExtensions ? [createAskUserExtension()] : []),
+          ],
           ...(profile.loadExtensions ? { extensionsOverride: preferPiWebAskUserExtension } : {}),
         },
         ...((profile.loadExtensions || profile.loadSkills)
@@ -318,6 +329,8 @@ export function createSubagentController(
           : {}),
         chatOnly,
       });
+      guardOwner.current = dependencies.getSession(inner.sessionId);
+      if (!guardOwner.current) throw new Error("Subagent checkout guard unavailable");
 
       const initialRun: SubagentRunInfo = {
         sessionId: inner.sessionId,
@@ -384,7 +397,10 @@ export function createSubagentController(
         dependencies.invalidateSessionList();
         let result: SubagentRunInfo;
         try {
-          await inner.prompt(delegatedTask, { source: "rpc" });
+          const releaseAdmission = guardOwner.current!.beginCheckoutPromptAdmission();
+          try {
+            await inner.prompt(delegatedTask, { source: "rpc", preflightResult: () => releaseAdmission() });
+          } finally { releaseAdmission(); }
           const text = inner.getLastAssistantText()?.trim();
           const aborted = stored.abortRequested && !maxTurnsReached;
           const providerError = aborted ? undefined : lastAssistantError(sessionManager);
@@ -527,7 +543,10 @@ export function createSubagentController(
       request.onUpdate?.(stored.run);
       let result: SubagentRunInfo;
       try {
-        await wrapper!.inner.prompt(request.task, { source: "rpc" });
+        const releaseAdmission = wrapper!.beginCheckoutPromptAdmission();
+        try {
+          await wrapper!.inner.prompt(request.task, { source: "rpc", preflightResult: () => releaseAdmission() });
+        } finally { releaseAdmission(); }
         const text = wrapper!.inner.getLastAssistantText()?.trim();
         const providerError = stored.abortRequested ? undefined : lastAssistantError(manager);
         result = {
@@ -604,7 +623,9 @@ export function createSubagentController(
     const wrapper = dependencies.getSession(sessionId);
     if (!wrapper?.isAlive() || !wrapper.isRunning()) throw new Error("Subagent is not running");
     if (!message.trim()) throw new Error("Steering message is required");
-    await wrapper.inner.steer(message.trim());
+    const releaseAdmission = wrapper.beginCheckoutPromptAdmission();
+    try { await wrapper.inner.steer(message.trim()); }
+    finally { releaseAdmission(); }
   }
 
   async function notifyParent(run: SubagentRunInfo): Promise<void> {

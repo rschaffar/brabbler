@@ -9,7 +9,7 @@ import { getAllowedFileRoots, isExistingFilePathAllowed } from "./file-access";
 import { canRecordGitWorkspaceTransition } from "./git-workspace-transition";
 import { gitExecEnv } from "./git-exec";
 import { readSessionGitWorkflow, validLocalBranchName, type GitWorkflowPolicy } from "./git-workflow-policy";
-import { assertManagedGitWorkspaceStart, ManagedGitAccessError } from "./git-workflow-access";
+import { assertManagedGitProjectDenial, assertManagedGitWorkspaceStart, ManagedGitAccessError } from "./git-workflow-access";
 import { samePath } from "./paths";
 import type { SessionEntry } from "./types";
 import { addWorktree, proposedWorktreePath, resolveProject } from "./worktree";
@@ -157,6 +157,8 @@ export function createGitWorkspaceStartExtension(
             if (!samePath(realCwd, realpathSync(sessionCwd)) || !samePath(realCwd, realpathSync(manager.getCwd()))
               || !samePath(realCwd, realpathSync(manager.getHeader()?.cwd ?? ""))) return failure("Session checkout changed");
             if (!isExistingFilePathAllowed(realCwd, await getAllowedFileRoots())) return failure("Session checkout is outside allowed roots");
+            const owner = { sessionId: manager.getSessionId(), sessionFile: file, sessionCwd: sessionCwd };
+            await assertManagedGitProjectDenial(sessionCwd, owner, "workspace");
             const project = await resolveProject(realCwd);
             if (!samePath(project.projectRoot, (await resolveProject(sessionCwd)).projectRoot)) {
               return failure("Session project changed");
@@ -164,6 +166,7 @@ export function createGitWorkspaceStartExtension(
             if (readPendingGitWorkspaceTransition(entries)) return failure("A workspace transition is already pending");
             if (!validLocalBranchName(params.branch) || !oid(params.expectedBaseOid)) return failure("A new branch and full expected local base OID are required");
             const workspace = await selectGitWorkspace(sessionCwd, params.workspaceBranch);
+            await assertManagedGitProjectDenial(workspace, owner, "workspace");
             if (selected.state.task.kind === "managed") {
               if (!ctx.hasUI) return failure("Workspace creation requires interactive approval");
               const destination = proposedWorktreePath(project.projectRoot, params.branch);
@@ -177,6 +180,7 @@ export function createGitWorkspaceStartExtension(
                 throw new ManagedGitAccessError("Source workspace changed or creation cancelled; nothing created");
               }
               const current = await guard();
+              await assertManagedGitProjectDenial(currentSource, owner, "workspace");
               if (JSON.stringify(current.state.task) !== JSON.stringify(selected.state.task)
                 || current.baseBranch !== selected.baseBranch || current.onCreate !== selected.onCreate || current.oneOff !== selected.oneOff
                 || JSON.stringify(getSavedPolicy()) !== JSON.stringify(policy)) {

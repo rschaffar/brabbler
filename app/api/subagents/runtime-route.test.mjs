@@ -49,6 +49,7 @@ function installRunningSubagent(t) {
     isAlive: () => true,
     isRunning: () => running,
     sessionFile: `/tmp/${id}.jsonl`,
+    beginCheckoutPromptAdmission: () => () => {},
     inner: {
       sessionManager: { getEntries: () => entries },
       steer: async (message) => { steered.push(message); },

@@ -19,6 +19,7 @@ import {
   type WorkflowDrafts,
 } from "./git-workflow-drafts";
 import { GitWorkflowTaskBinding } from "./GitWorkflowTaskBinding";
+import { GitProjectAuthorizations } from "./GitProjectAuthorizations";
 import "./GitWorkflowHome.css";
 
 export type WorkflowDetail = "workspace" | "commit" | "merge";
@@ -44,16 +45,18 @@ const scopeDescriptions = {
   session: "Only this chat · later tasks",
 };
 const stages: { id: Stage; label: string; fields: GitWorkflowField[] }[] = [
-  { id: "workspace", label: "Workspace", fields: ["workspace", "baseBranch", "branch", "onCreate"] },
-  { id: "commits", label: "Commits", fields: ["commits"] },
-  { id: "checks", label: "Checks", fields: ["checks"] },
-  { id: "integration", label: "Integration", fields: ["targetBranch", "method"] },
-  { id: "cleanup", label: "Cleanup", fields: ["cleanup"] },
+  { id: "workspace", label: "Workspace", fields: ["workspace", "mainBranch", "baseBranch", "branch", "onCreate", "workspaceConfirmation"] },
+  { id: "commits", label: "Commits", fields: ["commits", "commitConfirmation"] },
+  { id: "checks", label: "Checks", fields: ["checks", "checkConfirmation"] },
+  { id: "integration", label: "Delivery & preparation", fields: ["delivery", "targetBranch", "method", "prepareConfirmation", "integrateConfirmation"] },
+  { id: "cleanup", label: "Cleanup", fields: ["cleanup", "cleanupConfirmation"] },
 ];
 const fieldNames: Record<GitWorkflowField, string> = {
-  enabled: "Integrated Git workflow", workspace: "Workspace strategy", baseBranch: "Local base branch",
-  branch: "Require current branch", onCreate: "When a worktree is created", commits: "Commit behavior",
-  checks: "Ordered checks", targetBranch: "Local integration target", method: "Integration method", cleanup: "After integration",
+  enabled: "Integrated Git workflow", managedGitToolsOnly: "Managed Git tools only · guidance", workspace: "Workspace strategy", mainBranch: "Project main branch", baseBranch: "Local creation base",
+  branch: "Require current branch", onCreate: "Legacy chat continuation", workspaceConfirmation: "Workspace confirmation",
+  commits: "Commit availability", commitConfirmation: "Commit confirmation", checks: "Ordered checks", checkConfirmation: "Check confirmation",
+  delivery: "Delivery", targetBranch: "Local integration target", method: "Integration method", prepareConfirmation: "Preparation confirmation",
+  integrateConfirmation: "Integration confirmation", cleanup: "After integration", cleanupConfirmation: "Cleanup confirmation",
 };
 const resetLabels = { global: "Restore built-in default", project: "Use Global value", session: "Use Project value" };
 function message(cause: unknown) { return cause instanceof Error ? cause.message : String(cause); }
@@ -62,7 +65,7 @@ function formatValue(value: GitWorkflowSettings[GitWorkflowField]): string {
   if (Array.isArray(value)) return value.length ? value.map((check) => check.label || "Unnamed check").join(" · ") : "No checks";
   if (value === null) return "Not set";
   if (typeof value === "boolean") return value ? "On" : "Off";
-  return ({ current: "Current checkout", worktree: "Dedicated worktree", continue: "Continue this chat", fork: "Fork chat", stay: "Stay here", off: "Off", manual: "Manual", ask: "Ask", merge: "Non-fast-forward merge", ff: "Fast-forward (unsupported)", squash: "Squash (unsupported)", retain: "Retain" } as Record<string, string>)[value] ?? value;
+  return ({ current: "Direct · selected checkout", worktree: "Feature worktree", ":project-main": "Project main", local: "Local integration", pr: "PR handoff · no local merge", leave: "Leave branch · no local merge", disabled: "Unavailable", none: "No confirmation preference (not authorized)", continue: "Continue this chat", fork: "Fork chat", stay: "Stay here", off: "Off", manual: "Manual", ask: "Ask", merge: "Non-fast-forward merge", ff: "Fast-forward (unsupported)", squash: "Squash (legacy, unsupported)", retain: "Retain" } as Record<string, string>)[value] ?? value;
 }
 
 function Field({ field, scope, data, draft, disabled, onReset, children }: {
@@ -300,7 +303,7 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
         : destination === "task" ? "Saved Session settings applied to this task. No Git operation was approved or started."
           : destination === "session" && body.sessionScope === "project" ? "Chat overrides saved for this project only. Legacy actions keep captured choices; disabling or restricting commits also limits their existing entry points. No operation started."
             : destination === "session" ? "Session settings saved for later tasks. Enablement and Commit Off are live restrictions; this task otherwise keeps its captured settings."
-              : `${scopeNames[destination]} defaults saved. No operation started and no captured action was retargeted.` });
+              : `${scopeNames[destination]} defaults saved. No operation started and no captured action was retargeted. Confirmation preferences are not execution authorization.` });
     } catch (cause) {
       if (key) setDrafts((current) => ({ ...current, [key]: { ...current[key], error: message(cause) } }));
       else setActionError({ context, text: message(cause) });
@@ -310,7 +313,7 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
   function field(field: GitWorkflowField, control: ReactNode) {
     return data && <Field field={field} scope={scope} data={data} draft={draft} disabled={disabled} onReset={() => reset(field)}>{control}</Field>;
   }
-  function select(fieldName: "workspace" | "onCreate" | "commits" | "method" | "cleanup", options: { value: string; label: string; disabled?: boolean }[]) {
+  function select(fieldName: "workspace" | "onCreate" | "commits" | "method" | "cleanup" | "delivery" | "workspaceConfirmation" | "commitConfirmation" | "prepareConfirmation" | "checkConfirmation" | "integrateConfirmation" | "cleanupConfirmation", options: { value: string; label: string; disabled?: boolean }[]) {
     const parentValue = data ? resolveWorkflowDraft(data, scope, resetWorkflowField(draft, fieldName)).values[fieldName] : values[fieldName];
     return field(fieldName, <select id={`workflow-${fieldName}`} disabled={disabled} value={Object.hasOwn(draft, fieldName) ? String(values[fieldName]) : "inherit"}
       onChange={(event) => event.target.value === "inherit" ? reset(fieldName) : update(fieldName, event.target.value as GitWorkflowSettings[typeof fieldName])}>
@@ -318,10 +321,21 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
       {options.map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}
     </select>);
   }
-  function branchField(fieldName: "baseBranch" | "branch" | "targetBranch") {
-    return field(fieldName, <input id={`workflow-${fieldName}`} disabled={disabled} maxLength={255} value={values[fieldName] ?? ""}
-      placeholder={scope === "global" ? "Use project definition" : fieldName === "targetBranch" ? "No integration target" : "Not set"}
-      onChange={(event) => update(fieldName, event.target.value || null)} />);
+  function branchField(fieldName: "mainBranch" | "baseBranch" | "branch" | "targetBranch") {
+    const specific = scope !== "project";
+    const symbolic = fieldName === "baseBranch" || fieldName === "targetBranch";
+    return field(fieldName, <><input id={`workflow-${fieldName}`} disabled={disabled || specific} maxLength={255} value={values[fieldName] === ":project-main" ? "" : values[fieldName] ?? ""}
+      placeholder={specific ? "Define branch in Project" : values[fieldName] === ":project-main" ? "Uses project main" : "No branch selected"}
+      onChange={(event) => update(fieldName, event.target.value || null)} />
+      {symbolic && <button type="button" disabled={disabled} onClick={() => update(fieldName, ":project-main")}>Use project main</button>}
+      {symbolic && values[fieldName] === ":project-main" && <small>Resolves only when this project’s main branch is named.</small>}
+    </>);
+  }
+  function confirmation(name: "workspaceConfirmation" | "commitConfirmation" | "prepareConfirmation" | "checkConfirmation" | "integrateConfirmation" | "cleanupConfirmation") {
+    return select(name, [
+      ...(name === "commitConfirmation" ? [] : [{ value: "disabled", label: "Not enabled for future operation (legacy gates unchanged)" }]),
+      { value: "ask", label: "Ask for exact action" }, { value: "none", label: "No confirmation preference · execution not yet available" },
+    ]);
   }
   function changeCheck(index: number, part: "label" | "executable" | "arguments", value: string) {
     update("checks", values.checks.map((check, i) => i !== index ? check : part === "label" ? { ...check, label: value }
@@ -329,56 +343,63 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
   }
   function stageEditor(stage: Stage) {
     if (stage === "workspace") return <>
-      {select("workspace", [{ value: "current", label: "Current checkout" }, { value: "worktree", label: "Dedicated worktree" }])}
+      {branchField("mainBranch")}
+      {select("workspace", [{ value: "current", label: "Direct · selected checkout (reuse current when compatible)" }, { value: "worktree", label: "Create or use a feature worktree" }])}
       {values.workspace === "worktree" ? branchField("baseBranch") : branchField("branch")}
-      {select("onCreate", [{ value: "continue", label: "Continue this chat" }, { value: "fork", label: "Fork conversation" }, { value: "stay", label: "Stay in current checkout" }])}
-      <p className="workflow-muted">A preference, not a start command. Worktree creation needs an explicit request and exact local base checks. Move or fork an existing chat from Current task.</p>
+      {confirmation("workspaceConfirmation")}
+      <details><summary>Legacy chat continuation</summary>{select("onCreate", [{ value: "continue", label: "Continue this chat" }, { value: "fork", label: "Fork conversation" }, { value: "stay", label: "Stay in current checkout" }])}</details>
+      <p className="workflow-muted">Selecting an existing compatible checkout creates nothing and does not move the chat. Worktree creation still needs an explicit request and exact local base checks. Move/fork is optional.</p>
     </>;
     if (stage === "commits") return <>
       {select("commits", [{ value: "off", label: "Off" }, { value: "manual", label: "Manual · human review only" }, { value: "ask", label: "Ask · agent may request review" }, { value: "automatic", label: "Automatic · unavailable", disabled: true }])}
-      <p className="workflow-muted">Complete selected files only, with exact preview and confirmation. {AUTOMATIC_COMMIT_UNAVAILABLE}</p>
+      {confirmation("commitConfirmation")}
+      <p className="workflow-muted">For newly configured commits, choose Ask agent commits and No confirmation preference separately. Existing Off/Manual/Ask and legacy consent stay unchanged. Complete selected files only. {AUTOMATIC_COMMIT_UNAVAILABLE}</p>
     </>;
     if (stage === "checks") return <>
-      <label className="workflow-field">Execution<select value="ask" disabled aria-label="Check execution"><option value="ask">Ask before running</option><option disabled>Automatic · unavailable</option></select></label>
+      {confirmation("checkConfirmation")}
       {field("checks", <div id="workflow-checks" role="group" aria-labelledby="workflow-label-checks">
         <p className="workflow-muted">Ordered recipes replace the inherited list. Saving does not run them. Each argument is literal; no shell parsing. Checks can execute project code, change files, and access networks. Do not include URLs or credentials.</p>
         {values.checks.map((check, index) => <details className="workflow-recipe" key={index}>
           <summary>{index + 1}. {check.label || "New check"}</summary>
-          <label>Label<input disabled={disabled} maxLength={MAX_GIT_WORKFLOW_CHECK_LABEL} value={check.label} onChange={(event) => changeCheck(index, "label", event.target.value)} /></label>
-          <label>Executable<input disabled={disabled} maxLength={MAX_GIT_WORKFLOW_CHECK_EXECUTABLE} value={check.argv[0] ?? ""} onChange={(event) => changeCheck(index, "executable", event.target.value)} /></label>
-          <label>Arguments · one literal argument per line<textarea disabled={disabled} rows={3} maxLength={MAX_GIT_WORKFLOW_CHECK_ARGS * (MAX_GIT_WORKFLOW_CHECK_ARG + 1)} value={check.argv.slice(1).join("\n")} onChange={(event) => changeCheck(index, "arguments", event.target.value)} /></label>
-          <div className="workflow-actions"><button type="button" disabled={disabled || index === 0} onClick={() => { const checks = [...values.checks]; [checks[index - 1], checks[index]] = [checks[index], checks[index - 1]]; update("checks", checks); }}>Move up</button>
-            <button type="button" disabled={disabled || index === values.checks.length - 1} onClick={() => { const checks = [...values.checks]; [checks[index], checks[index + 1]] = [checks[index + 1], checks[index]]; update("checks", checks); }}>Move down</button>
-            <button type="button" disabled={disabled} onClick={() => update("checks", values.checks.filter((_, i) => i !== index))}>Remove</button></div>
+          <label>Label<input disabled={disabled || scope !== "project"} maxLength={MAX_GIT_WORKFLOW_CHECK_LABEL} value={check.label} onChange={(event) => changeCheck(index, "label", event.target.value)} /></label>
+          <label>Executable<input disabled={disabled || scope !== "project"} maxLength={MAX_GIT_WORKFLOW_CHECK_EXECUTABLE} value={check.argv[0] ?? ""} onChange={(event) => changeCheck(index, "executable", event.target.value)} /></label>
+          <label>Arguments · one literal argument per line<textarea disabled={disabled || scope !== "project"} rows={3} maxLength={MAX_GIT_WORKFLOW_CHECK_ARGS * (MAX_GIT_WORKFLOW_CHECK_ARG + 1)} value={check.argv.slice(1).join("\n")} onChange={(event) => changeCheck(index, "arguments", event.target.value)} /></label>
+          <div className="workflow-actions"><button type="button" disabled={disabled || scope !== "project" || index === 0} onClick={() => { const checks = [...values.checks]; [checks[index - 1], checks[index]] = [checks[index], checks[index - 1]]; update("checks", checks); }}>Move up</button>
+            <button type="button" disabled={disabled || scope !== "project" || index === values.checks.length - 1} onClick={() => { const checks = [...values.checks]; [checks[index], checks[index + 1]] = [checks[index + 1], checks[index]]; update("checks", checks); }}>Move down</button>
+            <button type="button" disabled={disabled || scope !== "project"} onClick={() => update("checks", values.checks.filter((_, i) => i !== index))}>Remove</button></div>
         </details>)}
-        <div className="workflow-actions"><button type="button" disabled={disabled || values.checks.length >= MAX_GIT_WORKFLOW_CHECKS} onClick={() => update("checks", [...values.checks, { label: "", argv: [""] }])}>Add check</button>
-          <button type="button" disabled={disabled} onClick={() => update("checks", [])}>No checks at this scope</button></div>
+        <div className="workflow-actions"><button type="button" disabled={disabled || scope !== "project" || values.checks.length >= MAX_GIT_WORKFLOW_CHECKS} onClick={() => update("checks", [...values.checks, { label: "", argv: [""] }])}>Add check</button>
+          <button type="button" disabled={disabled || scope !== "project"} onClick={() => update("checks", [])}>No checks at this scope</button></div>
       </div>)}
-      <p className="workflow-muted">Runs from the bound feature checkout. Per-recipe directory, environment and timeout editing is not supported yet. {AUTOMATIC_WORKFLOW_UNAVAILABLE}</p>
+      <p className="workflow-muted">Recipes belong to Project, not Global or Chat. An empty list does not waive project-required verification. Per-recipe directory, environment and timeout editing is not supported yet. {AUTOMATIC_WORKFLOW_UNAVAILABLE}</p>
     </>;
     if (stage === "integration") return <>
+      {select("delivery", [{ value: "local", label: "Local integration" }, { value: "pr", label: "PR handoff · no local merge or remote operation" }, { value: "leave", label: "Leave branch · no local merge" }])}
       {branchField("targetBranch")}
-      {select("method", [{ value: "merge", label: "Non-fast-forward merge" }, { value: "ff", label: "Fast-forward · unsupported", disabled: true }, { value: "squash", label: "Squash · unsupported", disabled: true }])}
-      <label className="workflow-field">Permission<select value="ask" disabled aria-label="Integration permission"><option value="ask">Ask · exact plan approval</option><option disabled>Automatic · unavailable</option></select></label>
-      <p className="workflow-muted">Local integration only. Checks require separate authorization, then an exact merge review. Imported fast-forward/squash values are retained but cannot execute. {AUTOMATIC_WORKFLOW_UNAVAILABLE}</p>
+      {select("method", [{ value: "merge", label: "Non-fast-forward merge" }, { value: "ff", label: "Fast-forward only · future engine" }, { value: "squash", label: "Squash · legacy read-only", disabled: true }])}
+      {confirmation("prepareConfirmation")}{confirmation("integrateConfirmation")}
+      <p className="workflow-muted">PR and leave prohibit local integration; neither authorizes fetch, push or PR creation. Direct work on the destination needs no merge-to-self. FF and squash cannot execute yet. {AUTOMATIC_WORKFLOW_UNAVAILABLE}</p>
     </>;
     return <>
       {select("cleanup", [{ value: "retain", label: "Retain worktree and local branch" }, { value: "ask", label: "Ask to clean up · unavailable", disabled: true }, { value: "automatic", label: "Automatic · unavailable", disabled: true }])}
+      {confirmation("cleanupConfirmation")}
       <p className="workflow-muted">No resources are removed. {AUTOMATIC_WORKFLOW_UNAVAILABLE} Ignored files are not necessarily disposable.</p>
     </>;
   }
   function stageSummary(stage: Stage) {
-    if (stage === "workspace") return { mode: "On request", description: `${formatValue(values.workspace)} · ${values.workspace === "worktree" ? formatValue(values.onCreate) : values.branch || "Any current branch"}` };
-    if (stage === "commits") return { mode: formatValue(values.commits), description: "Complete selected files · exact confirmation" };
-    if (stage === "checks") return { mode: "Ask to run", description: formatValue(values.checks) };
-    if (stage === "integration") return { mode: values.targetBranch ? "Ask" : "No target", description: values.targetBranch ? `${values.targetBranch} · ${formatValue(values.method)}` : scope === "global" ? "Use project definition" : "No local integration configured" };
-    return { mode: "Retain", description: "Feature worktree and local branch" };
+    if (stage === "workspace") return { mode: "On request", description: `${formatValue(values.workspace)} · ${formatValue(values.workspaceConfirmation)}` };
+    if (stage === "commits") return { mode: formatValue(values.commits), description: `Selected files · ${formatValue(values.commitConfirmation)}` };
+    if (stage === "checks") return { mode: formatValue(values.checkConfirmation), description: formatValue(values.checks) };
+    if (stage === "integration") return { mode: formatValue(values.delivery), description: values.delivery === "local" ? `${values.targetBranch ? formatValue(values.targetBranch) : "No target"} · ${formatValue(values.method)} · ${formatValue(values.integrateConfirmation)}` : "Local merge disabled" };
+    return { mode: formatValue(values.cleanupConfirmation), description: "Retain resources · deletion unavailable" };
   }
   const task = data?.task;
   const taskValues = task?.kind === "managed" ? task.settings : null;
   const taskDifferent = !!data && (task?.kind === "legacy" || !!taskValues && changedWorkflowFields(taskValues, data.resolved.session.values).length > 0);
   const legacy = task?.kind === "legacy" ? task.policy : null;
   const legacySummary: Record<GitWorkflowField, string> | null = legacy ? {
+    managedGitToolsOnly: "Current guidance only", mainBranch: "Not captured", delivery: "Legacy local", workspaceConfirmation: "Legacy gate", commitConfirmation: "Legacy gate",
+    prepareConfirmation: "Unavailable", checkConfirmation: "Legacy gate", integrateConfirmation: "Legacy gate", cleanupConfirmation: "Separate approval",
     enabled: "Legacy tool-specific gates", workspace: formatValue(legacy.mode),
     baseBranch: legacy.mode === "worktree" ? legacy.baseBranch : "Not captured",
     branch: legacy.mode === "current" ? legacy.branch ?? "Any current branch" : "Not captured",
@@ -440,7 +461,7 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
           <small>Changes only the settings destination. No chat, checkout, pending action or shell directory is moved.</small>
           {projectPath !== undefined && <button type="button" className="workflow-link" onClick={() => setProjectChoice(null)}>Back to chat defaults</button>}
         </form>
-        {data?.sessionScope === "project" && <p className="workflow-banner">Project: <code>{data.projectRoot}</code> · Chat overrides apply only to this project. Explicit-project Git tools currently support status and read-only review, not mutations.{data.legacySessionSettings && " Legacy unqualified chat settings remain on their compatibility path; they are not copied to this project."}</p>}
+        {data?.sessionScope === "project" && <p className="workflow-banner">Project: <code>{data.projectRoot}</code> · Chat overrides apply only to this project. Explicit-project Git tools support status, read-only review and bounded whole-file commits; other selected mutations are unavailable.{data.legacySessionSettings && " Legacy unqualified chat settings remain on their compatibility path; they are not copied to this project."}</p>}
         {(snapshot?.context === context && snapshot.projectReason) && <p className="workflow-banner">Project unavailable: {snapshot.projectReason} Global defaults are still available.</p>}
         {loadError && <p className="workflow-banner" role="alert">{loadError} <button type="button" disabled={!!operation} onClick={() => setReload((value) => value + 1)}>Retry loading</button></p>}
         {!data ? <p className="workflow-banner" role="status">{loading ? "Loading workflow…" : "Workflow settings are unavailable."}</p> : <>
@@ -449,16 +470,18 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
               const key = workflowDraftKey(level, data.projectRoot, session?.id, data.sessionScope);
               const item = key ? drafts[key] : undefined;
               const dirtyCount = item ? changedWorkflowFields(item.baseline, item.overrides).length : 0;
-              return <button key={level} type="button" aria-pressed={level === scope} disabled={level === "project" ? !data.projectRoot : level === "session" ? !session || session.transient || !data.sessionEditable || busy : false}
+              return <button key={level} type="button" aria-pressed={level === scope} disabled={level === "project" ? !data.projectRoot : level === "session" ? !detailsAvailable : false}
                 onClick={() => setScope(level)}>{scopeNames[level]}{level === "session" && data.sessionScope === "project" && <small>This project only</small>}{level === "project" && data.projectRoot && <small>{shortPath(data.projectRoot)}</small>}{dirtyCount > 0 && <small>{dirtyCount} unsaved</small>}</button>;
             })}</div><p className="workflow-scope-note">{scope === "session" && data.sessionScope === "project" ? "This chat × selected project · no task adoption" : scopeDescriptions[scope]}<span>{changes ? `${changes} unsaved` : "Saved"}</span></p>
             {!data.projectRoot && <p className="workflow-muted">Choose an available Git repository for Project settings.</p>}
-            {(!session || session.transient || !data.sessionEditable || busy) && <p className="workflow-muted">Session unavailable: {sessionReason}</p>}
+            {(!session || session.transient || !data.sessionEditable || busy) && <p className="workflow-muted">Session settings unavailable: {sessionReason}{detailsAvailable && " Saved action decisions can still be reviewed or revoked while this chat runs."}</p>}
           </section>
           <form id="workflow-config-form" className="workflow-editor" aria-describedby={currentError ? "workflow-error" : undefined} onSubmit={(event) => { event.preventDefault(); void put(scope); }}>
             {field("enabled", <button id="workflow-enabled" type="button" className="workflow-toggle" role="switch" aria-checked={values.enabled} aria-label={`Integrated Git workflow · ${scopeNames[scope]}`} disabled={disabled} onClick={() => update("enabled", !values.enabled)}>{values.enabled ? "On" : "Off"}</button>)}
+            {field("managedGitToolsOnly", <button id="workflow-managedGitToolsOnly" type="button" className="workflow-toggle" role="switch" aria-checked={values.managedGitToolsOnly} aria-label={`Managed Git tools only · ${scopeNames[scope]}`} disabled={disabled} onClick={() => update("managedGitToolsOnly", !values.managedGitToolsOnly)}>{values.managedGitToolsOnly ? "On" : "Off"}</button>)}
+            <p className="workflow-muted">On (the default) instructs the agent to use managed tools for Git work. Off lets it choose other tools when permitted. Guidance only: neither setting bypasses a denied action, repository rules or Git safety checks, and neither blocks shell commands.</p>
             {!values.enabled && <p className="workflow-muted">Off at this scope disables managed actions where inherited. Explicit Project or Session overrides may still enable them. Use Pause all to stop all managed actions.</p>}
-            <p className="workflow-muted">Managed Git controls are not a sandbox for shell commands or other applications.</p>
+            <p className="workflow-muted">Policy confirmation choices are preferences for future scoped tools, not standing authorization or a change to legacy exact approvals. Managed Git controls are not a sandbox for shell commands or other applications.</p>
             {stages.map((stage) => {
               const summary = stageSummary(stage.id);
               const origins = new Set(stage.fields.map((field) => resolution?.origins[field]));
@@ -471,13 +494,15 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
               </section>;
             })}
           </form>
+          <GitProjectAuthorizations visible={visible && !detail} scope={scope} projectRoot={data.selection?.projectRoot}
+            sessionId={scope === "session" && detailsAvailable ? sessionId : undefined} settingsRevision={data.revision} />
         </>}
       </div>
       <div className="workflow-detail-heading" hidden={!detail}><button ref={detailBackRef} type="button" onClick={() => onDetailChange(null)}>← Back to workflow</button><h3>{detail === "workspace" ? "Workspace continuation" : detail === "commit" ? "Review & commit" : "Local integration review"}</h3><p className="workflow-muted">This chat · <code>{session?.cwd}</code></p></div>
       {/* Stable portal host: visibility and home/detail navigation never reparent the chat's action views. */}
       <div ref={onDetailHost} className="workflow-detail-host" hidden={!detail} />
       {currentError && <div id="workflow-error" className="workflow-banner" role="alert">{currentError}{entry?.conflict && <button type="button" disabled={loading || !!operation} onClick={() => void load(draftKey ?? undefined)}>Reload saved &amp; discard this draft</button>}{actionError?.context === context && !entry?.conflict && <button type="button" disabled={loading || !!operation} onClick={() => void load()}>Reload saved settings</button>}</div>}
-      {!!changes && <footer className="workflow-footer"><p>{changes} {scopeNames[scope].toLowerCase()} change{changes === 1 ? "" : "s"} · {scope === "project" ? data?.projectRoot : scope === "session" ? session?.name || session?.id : "Personal global defaults"}</p><small>Only this scope is saved. No Git operation starts.</small>
+      {!!changes && <footer className="workflow-footer"><p>{changes} {scopeNames[scope].toLowerCase()} change{changes === 1 ? "" : "s"} · {scope === "project" ? data?.projectRoot : scope === "session" ? `${session?.name || session?.id} × ${data?.projectRoot ?? "legacy chat"}` : "Personal global defaults"}</p><small>Only this scope is saved. No Git operation starts. {changedWorkflowFields(entry!.baseline, draft).filter((name) => name.endsWith("Confirmation")).map((name) => `${fieldNames[name]}: ${formatValue(values[name])}`).join(" · ") || "No confirmation changes"}. No confirmation-free permission is granted.</small>
         <div className="workflow-actions"><button type="button" disabled={loading || !!operation} onClick={() => entry?.conflict ? void load(draftKey ?? undefined) : draftKey && setDrafts((current) => ({ ...current, [draftKey]: { ...current[draftKey], overrides: current[draftKey].baseline, error: undefined } }))}>{entry?.conflict ? "Reload & discard" : "Discard"}</button><button type="submit" form="workflow-config-form" className="workflow-primary" disabled={disabled || !!entry?.conflict || !!resolution?.validationError}>{operation === scope ? "Saving…" : saveLabels[scope]}</button></div>
       </footer>}
       {notice?.context === context && <p className="workflow-notice" role="status">{notice.text}</p>}

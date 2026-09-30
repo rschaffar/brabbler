@@ -6,6 +6,8 @@ import type { SessionEntry } from "./types";
 import { readSessionToolSelection } from "./session-tool-selection";
 import { listWorktrees } from "./worktree";
 import { samePath } from "./paths";
+import { readProjectAuthorization, type ProjectAuthorizationAction, type ProjectAuthorizationOwner } from "./git-project-authorization";
+import { selectGitProjectResources } from "./git-project-resources";
 
 import { managedGitPermission, type GitWorkflowSessionFacts, type ManagedGitStage } from "./git-workflow-permissions";
 export { hasManagedGitMutationTools, type ManagedGitStage } from "./git-workflow-permissions";
@@ -14,6 +16,32 @@ export class ManagedGitAccessError extends Error {}
 export function managedGitSessionFacts(entries: readonly SessionEntry[], effectiveTools?: readonly string[]): GitWorkflowSessionFacts {
   return { subagent: entries.some((e) => e.type === "custom" && e.customType === "pi-web:subagent"),
     tools: effectiveTools ?? readSessionToolSelection(entries) };
+}
+
+/** A negative-only overlay: a saved Allow never replaces the legacy task gate,
+ * exact candidate approval, checkout admission, or native Git checks. Require a
+ * persisted ordinary chat identity; omitting it would skip Chat×Project Deny.
+ * This covers the calling chat's repository (including registered source
+ * worktrees), never an unrelated explicit-project mutation.
+ */
+export async function assertManagedGitProjectDenial(
+  cwd: string, owner: ProjectAuthorizationOwner, action: ProjectAuthorizationAction, agentDir = getAgentDir(),
+): Promise<void> {
+  try {
+    if (!owner) throw new Error("Missing chat identity");
+    const selection = await selectGitProjectResources(cwd);
+    const chat = await selectGitProjectResources(owner.sessionCwd);
+    if (!samePath(selection.cwd, cwd) || !samePath(chat.cwd, owner.sessionCwd)
+      || !samePath(selection.projectRoot, chat.projectRoot)
+      || JSON.stringify(selection.identities.project) !== JSON.stringify(chat.identities.project)
+      || JSON.stringify(selection.identities.common) !== JSON.stringify(chat.identities.common)) {
+      throw new Error("Selected workspace is not in the chat repository");
+    }
+    const status = await readProjectAuthorization(selection, owner, agentDir);
+    if (status.actions[action].effective === "deny") throw new Error("Project authorization denies this action");
+  } catch {
+    throw new ManagedGitAccessError("Project authorization denies or cannot verify this action; managed Git action blocked.");
+  }
 }
 
 /** One live gate for browser actions and already-loaded tools. Not a shell sandbox. */

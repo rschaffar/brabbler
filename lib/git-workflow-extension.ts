@@ -7,15 +7,20 @@ import { filterGitWorkflowContext } from "./git-workflow-context";
 export const GIT_WORKFLOW_PROMPT_SECTION = "pi_web_git_workflow";
 
 const CONDITIONAL_GUIDANCE = "Conditional Git guidance, not a request to do work. Answer an ordinary question, rendered example, or explanation directly, without Git setup, status checks, or approval questions. Apply these preferences only when the current user request calls for repository work or Git actions.";
-const TOOL_GUIDANCE = "For requested Git actions, prefer available guarded Git tools, subject to stricter repository/user instructions. git_workflow status is optional, only when genuinely useful for the current Git request. Identify the repository/worktree; selecting it does not move this chat or its files. Let tools collect exact approval; do not duplicate it in prose. Preferences and historical approvals are not live grants; operation gates still apply. Never bypass blockers through shell commands. No remote operation or cleanup is authorized.";
+const TOOL_GUIDANCE = "For requested Git actions, subject to stricter repository/user instructions: git_workflow status is optional, only when genuinely useful for the current Git request. Identify the repository/worktree; selecting it does not move this chat or its files. Let tools collect exact approval; do not duplicate it in prose. Preferences and historical approvals are not live grants; operation gates still apply. Never bypass a denied managed operation through shell commands. No remote operation or cleanup is authorized.";
+function toolChoiceGuidance(managedOnly: boolean): string {
+  return `${managedOnly
+    ? "Managed Git tools only (guidance): use the available guarded Git tools for Git actions. If an action is unsupported, report the limitation rather than silently switching to another Git mutation tool."
+    : "Managed Git tools only is Off (guidance): choose suitable Git tools freely where instructions and authorization permit; other tools never override a managed-tool denial."} ${TOOL_GUIDANCE} This preference does not block shell or external processes.`;
+}
 
 function blockedGuidance(reason: string): string {
   return `${CONDITIONAL_GUIDANCE}\n${reason} Do not invoke managed Git mutation tools or bypass the restriction through another tool or shell command. Workflow settings and read-only Git inspection remain available. This guidance is not a shell sandbox.`;
 }
 
 /** Session preferences, not a task or fresh execution authority. */
-export function gitWorkflowInstructions(policy: GitWorkflowPolicy | null | undefined): string {
-  if (!policy) return `${CONDITIONAL_GUIDANCE}\nNo session Git workflow preferences are saved.\n${TOOL_GUIDANCE}`;
+export function gitWorkflowInstructions(policy: GitWorkflowPolicy | null | undefined, managedOnly = true): string {
+  if (!policy) return `${CONDITIONAL_GUIDANCE}\nNo session Git workflow preferences are saved.\n${toolChoiceGuidance(managedOnly)}`;
   const checkout = policy.mode === "worktree"
     ? `Saved workspace preference: a dedicated linked worktree from local branch ${JSON.stringify(policy.baseBranch)}; after creation, ${policy.onCreate === "continue" ? "continue this chat in it" : policy.onCreate === "fork" ? "fork this chat into it" : "keep this chat in its current checkout"}. This preference does not request creation.`
     : `Saved workspace preference: the current checkout${policy.branch ? ` on branch ${JSON.stringify(policy.branch)}; a branch mismatch blocks the operation` : ""}.`;
@@ -25,7 +30,7 @@ export function gitWorkflowInstructions(policy: GitWorkflowPolicy | null | undef
   const destination = policy.integration
     ? `Saved LOCAL integration target: ${JSON.stringify(policy.integration.targetBranch)} (${policy.integration.method}); an actual integration requires exact-state human approval.`
     : "No local integration target is saved; this does not require a setup question.";
-  return `${CONDITIONAL_GUIDANCE}\n${checkout}\n${commits}\n${destination}\n${TOOL_GUIDANCE}`;
+  return `${CONDITIONAL_GUIDANCE}\n${checkout}\n${commits}\n${destination}\n${toolChoiceGuidance(managedOnly)}`;
 }
 
 function liveCommitRestriction(state: GitWorkflowSettingsResponse): string {
@@ -47,10 +52,10 @@ export function managedGitWorkflowInstructions(state: GitWorkflowSettingsRespons
   if (state.task.kind === "managed" && !state.task.settings.enabled) {
     return blockedGuidance("The captured managed Git task is disabled.");
   }
-  if (state.sessionScope === "project") return blockedGuidance("Explicit-project scope is read-only; managed Git mutations are unavailable.");
+  if (state.sessionScope === "project") return blockedGuidance("This captured chat task cannot authorize project-scoped mutations. A separate bounded selected-project commit path may be available under its own live gates.");
   const commitRestriction = liveCommitRestriction(state);
   if (state.task.kind !== "managed") {
-    return [gitWorkflowInstructions(state.task.kind === "legacy" ? state.task.policy : undefined), commitRestriction].filter(Boolean).join("\n");
+    return [gitWorkflowInstructions(state.task.kind === "legacy" ? state.task.policy : undefined, state.resolved.session.values.managedGitToolsOnly), commitRestriction].filter(Boolean).join("\n");
   }
   const task = state.task.settings;
   const checkout = task.workspace === "worktree"
@@ -66,7 +71,8 @@ export function managedGitWorkflowInstructions(state: GitWorkflowSettingsRespons
     : `Captured commit preference: ${task.commits}. Agent commits are blocked; do not bypass through shell commands.`;
   const destination = `Captured LOCAL integration target: ${task.targetBranch ? JSON.stringify(task.targetBranch) : "none"}; method: ${task.method}; configured checks: ${task.checks.length}. Checks need their own approval; integration needs exact-state human approval. Missing or mismatched requirements block those operations.`;
   return [CONDITIONAL_GUIDANCE, checkout, creation, commits, commitRestriction, destination,
-    "Changed defaults do not retarget a captured task; explicit application in Workflow is separate from execution approval. Automatic integration and cleanup are unsupported.", TOOL_GUIDANCE].filter(Boolean).join("\n");
+    "Changed defaults do not retarget a captured task; explicit application in Workflow is separate from execution approval. Automatic integration and cleanup are unsupported.",
+    toolChoiceGuidance(state.resolved.session.values.managedGitToolsOnly)].filter(Boolean).join("\n");
 }
 
 /** Re-evaluate the session snapshot and live gates before every new agent run. */

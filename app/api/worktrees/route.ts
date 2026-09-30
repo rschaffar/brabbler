@@ -4,7 +4,9 @@ import { addWorktree, findCurrentWorktreePath, listLocalBranchTips, listMergedWo
 import { allowFileRoot, getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
 import { projectIdentityKey } from "@/lib/project-identity";
 import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
-import { assertManagedGitAction } from "@/lib/git-workflow-access";
+import { assertManagedGitAction, ManagedGitAccessError } from "@/lib/git-workflow-access";
+import { selectGitProjectResources } from "@/lib/git-project-resources";
+import { readProjectAuthorization } from "@/lib/git-project-authorization";
 
 /** Same gate as /api/files: only session cwds / project roots / explicitly
  *  allowed dirs may be inspected or mutated through this endpoint. */
@@ -95,15 +97,21 @@ export async function POST(req: Request) {
       // Git accepts a subdirectory here, but workflow project identity does
       // not. Never authorize /repo/subdir and then mutate /repo instead.
       if (!(await resolveProject(body.cwd)).isTopLevel) return NextResponse.json({ error: "Git checkout root required" }, { status: 409 });
-      await assertManagedGitAction(body.cwd, [], "workspace", "human");
+      const authorize = async () => {
+        await assertManagedGitAction(body.cwd!, [], "workspace", "human");
+        const selection = await selectGitProjectResources(body.cwd!);
+        const authorization = await readProjectAuthorization(selection);
+        if (authorization.actions.workspace.effective === "deny") throw new ManagedGitAccessError("Project authorization denies worktree creation");
+      };
+      await authorize();
       const result = await addWorktree(body.cwd, body.mode === "attach"
-        ? { branch: body.branch, baseBranch: body.baseBranch, expectedBaseOid: body.expectedBaseOid, mode: "attach", expectedTipOid: body.expectedTipOid! }
-        : { branch: body.branch, baseBranch: body.baseBranch, expectedBaseOid: body.expectedBaseOid, mode: "create" });
+        ? { branch: body.branch, baseBranch: body.baseBranch, expectedBaseOid: body.expectedBaseOid, mode: "attach", expectedTipOid: body.expectedTipOid!, beforeCreate: authorize }
+        : { branch: body.branch, baseBranch: body.baseBranch, expectedBaseOid: body.expectedBaseOid, mode: "create", beforeCreate: authorize });
       return NextResponse.json(result);
     } finally { release(); }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: message }, { status: error instanceof ManagedGitAccessError ? 409 : 400 });
   }
 }
 

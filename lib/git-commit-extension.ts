@@ -2,14 +2,15 @@ import { Type } from "@earendil-works/pi-ai";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { confirmGitCommit, prepareGitCommit, GitCommitOperationError, type GitCommitPreview } from "./git-commit";
 import { GitCheckoutBusyError, withGitCheckoutGate } from "./git-checkout-gate";
-import { hasBusyRpcSessionForCwd } from "./rpc-manager";
+import { hasConflictingRpcCheckoutOperation } from "./rpc-manager";
 import type { GitWorkflowPolicy } from "./git-workflow-policy";
 import { samePath } from "./paths";
 import { selectGitWorkspace } from "./git-workspace-selector";
-import { assertManagedGitAction, assertManagedGitWorkspace, ManagedGitAccessError } from "./git-workflow-access";
+import { assertManagedGitAction, assertManagedGitProjectDenial, assertManagedGitWorkspace, ManagedGitAccessError } from "./git-workflow-access";
 import { requestWorkflowCommit } from "./git-workflow-commit";
 import { beginGitAction, failGitAction, finishGitAction, gitActionFailureResult, gitActionSink, snapshotGitActionCandidate, GitActionApplyError, GitActionRecordingError } from "./git-action-controller";
 import { getGitCommitTreeOid, getGitTreeDiff } from "./git-review";
+import { beginSupervisedGitCommitIntent, revalidateGitCommitAdmission, selectGitCommitAdmission, GitOperationRecoveryError, type GitOperationReservation } from "./git-operation-admission";
 import type { AgentGitWorkflowUiContext } from "./agent-git-workflow-extension";
 import type { SessionEntry } from "./types";
 
@@ -44,8 +45,16 @@ export function createGitCommitExtension(
             const guard = () => assertManagedGitAction(sessionCwd, (ctx.sessionManager?.getEntries?.() ?? []) as SessionEntry[], "commit", "agent", undefined, pi.getActiveTools?.());
             const state = await guard();
             const workspace = await selectGitWorkspace(sessionCwd, params.workspaceBranch);
+            const liveGuard = async () => {
+              const current = await guard();
+              await assertManagedGitProjectDenial(workspace, {
+                sessionId: ctx.sessionManager.getSessionId(), sessionFile: ctx.sessionManager.getSessionFile()!, sessionCwd,
+              }, "commit");
+              return current;
+            };
+            await liveGuard(); // Includes legacy preview/confirm invocation, not just the final write.
             const assertIdle = () => {
-              if (hasBusyRpcSessionForCwd(workspace, ctx.sessionManager?.getSessionId())) throw new ManagedGitAccessError("Stop other sessions in the selected checkout before committing.");
+              if (hasConflictingRpcCheckoutOperation(workspace, ctx.sessionManager?.getSessionId(), _id)) throw new ManagedGitAccessError("A checkout operation is active; wait before committing.");
             };
             if (params.operation === "commit") {
               if (!params.paths?.length || !params.message?.trim() || params.preview) return failure("Select paths and an exact commit message");
@@ -54,7 +63,7 @@ export function createGitCommitExtension(
               return await requestWorkflowCommit({ cwd: workspace, paths: params.paths, message: params.message, signal: _signal,
                 sink: gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)),
                 ask: (candidate, signal) => ui.gitAction!(candidate, signal), beforeApply: async () => {
-                  await assertManagedGitWorkspace(await guard(), workspace);
+                  await assertManagedGitWorkspace(await liveGuard(), workspace);
                   assertIdle();
                   if (_signal?.aborted || !samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) throw new ManagedGitAccessError("Commit cancelled or workspace changed");
                 } });
@@ -64,7 +73,7 @@ export function createGitCommitExtension(
               if (!Array.isArray(params.paths) || !params.paths.length) return failure("Select paths to preview");
               const paths = params.paths;
               const preview = await withGitCheckoutGate([workspace], async () => {
-                await guard(); assertIdle();
+                await liveGuard(); assertIdle();
                 return prepareGitCommit(workspace, paths);
               });
               return { content: [{ type: "text" as const, text: JSON.stringify(preview) }], details: { preview } };
@@ -74,25 +83,38 @@ export function createGitCommitExtension(
             const preview = params.preview as GitCommitPreview;
             const message = params.message;
             return await withGitCheckoutGate([workspace], async () => {
-              await guard(); assertIdle();
+              await liveGuard(); assertIdle();
               if (_signal?.aborted) return failure("Commit cancelled; no commit was made");
               const diff = await getGitTreeDiff(workspace, await getGitCommitTreeOid(workspace, preview.head), preview.tree);
+              const selection = await selectGitCommitAdmission(workspace);
               const action = await beginGitAction(gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)),
                 "legacy-agent", snapshotGitActionCandidate({ kind: "commit", preview, message, diff }));
               let applying = false;
+              let reservation: GitOperationReservation | undefined;
               try {
                 await action.update("executing");
+                await liveGuard(); assertIdle();
+                reservation = await beginSupervisedGitCommitIntent(selection, action.record.id);
                 const result = await confirmGitCommit(preview, message, async (intended) => {
                   await action.update("executing", { intended });
-                  await guard(); assertIdle();
+                  await liveGuard(); assertIdle();
                   if (_signal?.aborted || !samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) throw new ManagedGitAccessError("Commit cancelled or workspace changed");
                   _signal?.throwIfAborted();
+                  await revalidateGitCommitAdmission(selection);
                   applying = true;
                 });
                 await finishGitAction(action, result, result.status === "partial-success");
-                return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: { ...result, actionId: action.record.id } };
+                if (result.status === "committed") {
+                  try { reservation.resolve(); } catch { throw new GitOperationRecoveryError(action.record.id); }
+                }
+                return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: { ...result, actionId: action.record.id,
+                  ...(result.status === "partial-success" ? { recoveryRequired: true } : {}) } };
               } catch (cause) {
                 await failGitAction(action, applying, _signal, cause);
+                if (reservation && action.record.state === "blocked" && (!applying || cause instanceof GitCommitOperationError)) {
+                  try { reservation.resolve(); } catch { throw new GitOperationRecoveryError(action.record.id); }
+                }
+                if (cause instanceof GitOperationRecoveryError) throw cause;
                 if (applying && !(cause instanceof GitCommitOperationError) && !(cause instanceof GitActionRecordingError)) throw new GitActionApplyError(action.record.id, action.record.intended);
                 throw cause;
               } finally { action.release(); }
@@ -100,6 +122,8 @@ export function createGitCommitExtension(
           } catch (cause) {
             const recorded = gitActionFailureResult(cause);
             if (recorded) return recorded;
+            if (cause instanceof GitOperationRecoveryError) return { content: [{ type: "text" as const, text: cause.message }], isError: true,
+              details: { error: cause.message, actionId: cause.actionId, recoveryRequired: true } };
             if (cause instanceof ManagedGitAccessError || cause instanceof GitCheckoutBusyError || cause instanceof GitCommitOperationError) return failure(cause.message);
             // Never return raw Git stderr, which can contain credentials in config or URLs.
             return failure("Commit unavailable or preview stale; refresh the preview");

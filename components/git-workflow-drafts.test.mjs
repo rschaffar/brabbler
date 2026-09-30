@@ -23,9 +23,9 @@ test("keys use canonical projects and session IDs, never the sidebar/worktree or
 });
 
 test("Off, null targets and empty checks differ from inherit; resetting touches only one field", () => {
-  const explicit = { enabled: false, checks: [], targetBranch: null, commits: "off" };
-  assert.deepEqual(changedWorkflowFields({}, explicit), ["enabled", "commits", "checks", "targetBranch"]);
-  assert.deepEqual(resetWorkflowField(explicit, "enabled"), { checks: [], targetBranch: null, commits: "off" });
+  const explicit = { enabled: false, managedGitToolsOnly: false, checks: [], targetBranch: null, commits: "off" };
+  assert.deepEqual(changedWorkflowFields({}, explicit), ["enabled", "managedGitToolsOnly", "commits", "checks", "targetBranch"]);
+  assert.deepEqual(resetWorkflowField(explicit, "enabled"), { managedGitToolsOnly: false, checks: [], targetBranch: null, commits: "off" });
   assert.equal(explicit.enabled, false);
   assert.deepEqual(changedWorkflowFields({ enabled: false, commits: "off" }, { commits: "off", enabled: false }), []);
 });

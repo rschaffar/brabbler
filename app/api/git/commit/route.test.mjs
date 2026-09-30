@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,7 +10,7 @@ import test, { after } from "node:test";
 import { createJiti } from "jiti";
 
 const home = await mkdtemp(join(tmpdir(), "pi-web-commit-route-home-"));
-const agentDir = join(home, "agent");
+let agentDir = join(home, "agent");
 await mkdir(agentDir);
 const original = Object.fromEntries(["HOME", "XDG_CONFIG_HOME", "PI_CODING_AGENT_DIR"].map((key) => [key, process.env[key]]));
 Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: join(home, ".config"), PI_CODING_AGENT_DIR: agentDir });
@@ -18,8 +19,12 @@ const { POST } = await jiti.import("./route.ts");
 const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
 const { cacheSessionPath, invalidateSessionPathCache, invalidateSessionListCache } = await jiti.import("../../../../lib/session-reader.ts");
-const { readGitAction, subscribeGitActionUpdates } = await jiti.import("../../../../lib/git-action-journal.ts");
+const { readGitAction, subscribeGitActionUpdates, transitionGitAction, releaseGitAction } = await jiti.import("../../../../lib/git-action-journal.ts");
+const { beginGitOperationIntent, inspectGitOperationAdmission } = await jiti.import("../../../../lib/git-operation-admission.ts");
 const { beginGitAction, gitActionSink } = await jiti.import("../../../../lib/git-action-controller.ts");
+const { AgentSessionWrapper } = await jiti.import("../../../../lib/rpc-manager.ts");
+const { selectGitProjectResources } = await jiti.import("../../../../lib/git-project-resources.ts");
+const { readProjectAuthorization, saveProjectAuthorization } = await jiti.import("../../../../lib/git-project-authorization.ts");
 const git = promisify(execFile);
 after(async () => {
   const pending = globalThis[Symbol.for("pi-web:git-action-human:v1")]?.pending;
@@ -34,7 +39,11 @@ const confirmRequest = (id, candidate, message = "approved") => ({ sessionId: id
 const history = (id) => readGitAction(id, { includeArtifact: true });
 const entries = (sm) => SessionManager.open(sm.getSessionFile()).getEntries();
 const anchors = (sm) => entries(sm).filter((e) => e.type === "custom" && e.customType === "pi-web:git-action");
-async function fixture(t) {
+async function fixture(t, sharedAgent = false) {
+  // Each disposable repository also owns its journal/ledger. A corrupt old
+  // journal is deliberately a global blocker when its resource cannot be read.
+  if (!sharedAgent) agentDir = await mkdtemp(join(home, "agent-fixture-"));
+  process.env.PI_CODING_AGENT_DIR = agentDir;
   const dir = await mkdtemp(join(tmpdir(), "pi-web-commit-route-"));
   const cwd = join(dir, "repo");
   await git("git", ["init", "-q", cwd]);
@@ -102,24 +111,93 @@ test("manual commit without policy, running rejection, checkout mismatch, stale 
   assert.equal((await git("git", ["-C", cwd, "rev-parse", "HEAD"])).stdout.trim(), result.commit);
 });
 
-test("another running chat in this checkout blocks preview and confirmation without consuming a live candidate", async (t) => {
+test("saved Project/Chat Deny blocks browser preview and live revocation blocks confirmation; Allow does not skip preview", async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.cwd, "a"), "candidate\n");
+  const selection = await selectGitProjectResources(f.cwd);
+  const owner = { sessionId: f.id, sessionFile: f.sm.getSessionFile(), sessionCwd: f.cwd };
+  const status = () => readProjectAuthorization(selection, owner, agentDir);
+  const set = async (scope, decision) => saveProjectAuthorization(selection, scope === "session" ? owner : undefined,
+    scope, "commit", decision, scope === "session" ? await status() : await readProjectAuthorization(selection, undefined, agentDir), agentDir);
+  await set("project", "deny");
+  assert.equal((await post(previewRequest(f.id))).status, 409);
+  await set("session", "allow");
+  const candidate = await (await post(previewRequest(f.id))).json();
+  assert.ok(candidate.preview, "a narrower allow does not commit without the legacy preview/confirmation");
+  await set("session", "deny");
+  const blocked = await post(confirmRequest(f.id, candidate));
+  assert.equal(blocked.status, 409);
+  assert.equal((await history(candidate.actionId)).record.state, "awaiting-decision");
+  await set("session", "inherit");
+  assert.equal((await post(previewRequest(f.id))).status, 409, "project Deny resumes after removing the chat override");
+  await set("project", "inherit");
+  assert.equal((await (await post(confirmRequest(f.id, candidate))).json()).status, "committed");
+});
+
+test("another thinking/read-only chat permits browser commit; a parallel writer blocks confirmation without consuming approval", async (t) => {
   const f = await fixture(t);
   const previous = globalThis.__piSessions;
-  let running = true;
-  globalThis.__piSessions = new Map([["other-chat", { sessionId: "other-chat", cwd: f.cwd, isRunning: () => running }]]);
-  t.after(() => { globalThis.__piSessions = previous; });
+  let emit;
+  const inner = { sessionId: "other-chat", isStreaming: true, isCompacting: false, isBashRunning: false,
+    sessionManager: { getCwd: () => f.cwd }, agent: { state: {} }, dispose: () => {},
+    getAllTools: () => ["read", "grep", "find", "ls"].map((name) => ({ name, sourceInfo: { source: "builtin", path: `<builtin:${name}>` } })),
+    resourceLoader: { getExtensions: () => ({ extensions: [{ path: "<inline:pi-web-checkout-operation-guard>" }], errors: [] }) },
+    subscribe: (listener) => { emit = listener; return () => {}; } };
+  const wrapper = new AgentSessionWrapper(inner, { checkoutGuardInstalled: true });
+  wrapper.start();
+  globalThis.__piSessions = new Map([[wrapper.sessionId, wrapper]]);
+  t.after(() => { wrapper.destroy(); globalThis.__piSessions = previous; });
   await writeFile(join(f.cwd, "a"), "candidate\n");
-  const blocked = await post(previewRequest(f.id));
-  assert.equal(blocked.status, 409);
-  assert.match((await blocked.json()).error, /Stop sessions in this checkout/);
-  running = false;
-  const candidate = await (await post(previewRequest(f.id))).json();
-  assert.ok(candidate.actionId);
-  running = true;
+  emit({ type: "tool_execution_start", toolCallId: "safe", toolName: "read" });
+  const candidateResponse = await post(previewRequest(f.id));
+  assert.equal(candidateResponse.status, 200, await candidateResponse.clone().text());
+  const candidate = await candidateResponse.json();
+  emit({ type: "tool_execution_start", toolCallId: "unsafe", toolName: "edit" });
   assert.equal((await post(confirmRequest(f.id, candidate))).status, 409);
   assert.equal((await history(candidate.actionId)).record.state, "awaiting-decision", "Admission failure must not consume approval");
-  running = false;
+  emit({ type: "tool_execution_end", toolCallId: "unsafe" });
   assert.equal((await (await post(confirmRequest(f.id, candidate))).json()).status, "committed");
+});
+
+test("an unresolved check child quarantines the physical resource across browser sessions without touching HEAD", async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.cwd, "a"), "uncommitted\n");
+  const second = SessionManager.create(f.cwd);
+  second.appendMessage({ role: "user", content: "second", timestamp: Date.now() });
+  second.appendMessage({ role: "assistant", content: [{ type: "text", text: "done" }], timestamp: Date.now() });
+  cacheSessionPath(second.getSessionId(), second.getSessionFile());
+  t.after(() => invalidateSessionPathCache(second.getSessionId()));
+  const a = await (await post(previewRequest(f.id))).json();
+  const b = await (await post(previewRequest(second.getSessionId()))).json();
+  const resource = realpathSync(join(f.cwd, ".git"));
+  const orphan = beginGitOperationIntent(agentDir, resource, randomUUID(), "checks",
+    `pi-web-git-check-${randomUUID()}.service`);
+  const before = (await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim();
+  for (const [id, candidate] of [[f.id, a], [second.getSessionId(), b]]) {
+    const response = await post(confirmRequest(id, candidate));
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).recoveryRequired, true);
+    assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), before);
+  }
+  assert.deepEqual(inspectGitOperationAdmission(agentDir, resource).actionIds, [orphan.actionId]);
+  assert.equal(inspectGitOperationAdmission(agentDir, resource).reason, "unresolved");
+  // A check intent without a real invocation/proof must not be cleared just to
+  // continue a fixture. Its private test directory is removed by test teardown.
+
+});
+
+test("old journal-only executing history is not cleared by a fresh candidate", async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.cwd, "a"), "uncommitted\n");
+  const old = await (await post(previewRequest(f.id))).json();
+  const record = (await history(old.actionId)).record;
+  await transitionGitAction(old.actionId, record.revision, { state: "executing", decision: "approved" });
+  releaseGitAction(old.actionId); // simulate a prior process exiting without a ledger
+  const next = await (await post(previewRequest(f.id))).json();
+  const response = await post(confirmRequest(f.id, next));
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).recoveryRequired, true);
+  assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), next.preview.head);
 });
 
 test("operation preflight has a safe actionable diagnostic without leaking arbitrary Git policy keys", async (t) => {
@@ -262,7 +340,7 @@ test("only the same live session, exact message and native candidate can be conf
   assert.equal((await post({ sessionId: f.id, operation: "preview", paths: ["a"] })).status, 400);
   assert.equal(anchors(f.sm).length, 0);
   const candidate = await (await post(previewRequest(f.id, "exact message"))).json();
-  const other = await fixture(t);
+  const other = await fixture(t, true);
   const sm = SessionManager.create(f.cwd);
   sm.appendMessage({ role: "user", content: "fork", timestamp: Date.now() });
   sm.appendMessage({ role: "assistant", content: [{ type: "text", text: "done" }], timestamp: Date.now() });
@@ -318,16 +396,23 @@ test("missing durable candidate prevents mutation, and post-apply recording fail
   const unavailable = await (await post(previewRequest(f.id))).json();
   await rm(join(agentDir, "pi-web/git-actions/v1", unavailable.actionId, "candidate.json"));
   assert.equal((await post(confirmRequest(f.id, unavailable))).status, 409);
+  assert.equal((await history(unavailable.actionId)).record.state, "expired", "an unapproved preview cannot move a ref");
   assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), unavailable.preview.head);
-  const candidate = await (await post(previewRequest(f.id))).json();
-  const off = subscribeGitActionUpdates(f.id, ({ actionId }) => {
+  // A fresh independently captured approval may proceed: the expired old
+  // preview was never an executing operation and cannot be replayed.
+  const reviewed = await (await post(previewRequest(f.id))).json();
+  assert.equal((await post(confirmRequest(f.id, reviewed))).status, 200);
+  const clean = await fixture(t);
+  await writeFile(join(clean.cwd, "a"), "journal failure\n");
+  const candidate = await (await post(previewRequest(clean.id))).json();
+  const off = subscribeGitActionUpdates(clean.id, ({ actionId }) => {
     if (actionId !== candidate.actionId) return;
     const file = join(agentDir, "pi-web/git-actions/v1", actionId, "record.json");
     const record = JSON.parse(readFileSync(file, "utf8")).record;
     if (record.state === "executing" && record.intended) writeFileSync(file, "injected journal failure");
   });
   let response;
-  try { response = await post(confirmRequest(f.id, candidate)); }
+  try { response = await post(confirmRequest(clean.id, candidate)); }
   finally { off(); }
   assert.equal(response.status, 200);
   const result = await response.json();
@@ -336,8 +421,8 @@ test("missing durable candidate prevents mutation, and post-apply recording fail
   assert.equal(result.recoveryRequired, true);
   assert.match(result.recoveryWarning, /do not repeat/i);
   assert.doesNotMatch(JSON.stringify(result), /refresh|no mutation|injected journal failure/i);
-  assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), result.commit);
-  assert.equal((await post(confirmRequest(f.id, candidate))).status, 409);
+  assert.equal((await git("git", ["-C", clean.cwd, "rev-parse", "HEAD"])).stdout.trim(), result.commit);
+  assert.equal((await post(confirmRequest(clean.id, candidate))).status, 409);
 });
 
 test("native post-ref partial success is recovery-required with actual OIDs, never an ordinary failed commit", async (t) => {

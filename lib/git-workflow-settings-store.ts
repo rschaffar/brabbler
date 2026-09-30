@@ -78,11 +78,17 @@ export async function loadGitWorkflowSettings(
   const keyed = readGitProjectSessionSettings(entries);
   // Display grouping deliberately treats repo subdirectories as projects. Live
   // restrictions must instead follow the caller's actual canonical repository.
-  const restrictionRoot = keyed.size && cwd ? await gitProjectRootForCaller(cwd) : undefined;
+  const needsCanonicalRestriction = keyed.size || Object.values(document.projects).some((item) => item.delivery === "pr" || item.delivery === "leave" ||
+    item.enabled === false || item.commits === "off" || item.commits === "manual");
+  const restrictionRoot = needsCanonicalRestriction && cwd ? await gitProjectRootForCaller(cwd) : undefined;
   const scoped = restrictionRoot ? keyed.get(restrictionRoot)?.overrides : undefined;
+  const canonicalProject = restrictionRoot && Object.hasOwn(document.projects, restrictionRoot) ? document.projects[restrictionRoot] : undefined;
   const projectSessionRestrictions: NonNullable<GitWorkflowSettingsResponse["projectSessionRestrictions"]> = {
-    ...(scoped?.enabled === false ? { enabled: false as const } : {}),
-    ...(scoped?.commits === "off" || scoped?.commits === "manual" ? { commits: scoped.commits } : {}),
+    ...(canonicalProject?.enabled === false || scoped?.enabled === false ? { enabled: false as const } : {}),
+    ...(canonicalProject?.commits === "off" || scoped?.commits === "off" ? { commits: "off" as const } :
+      canonicalProject?.commits === "manual" || scoped?.commits === "manual" ? { commits: "manual" as const } : {}),
+    ...(canonicalProject?.delivery === "pr" || canonicalProject?.delivery === "leave" ? { delivery: canonicalProject.delivery } : {}),
+    ...(scoped?.delivery === "pr" || scoped?.delivery === "leave" ? { delivery: scoped.delivery } : {}),
   };
   const saved = readManagedSessionGitWorkflow(entries);
   const session = sessionIdentity ? saved?.overrides ?? {} : null;
