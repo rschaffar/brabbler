@@ -30,7 +30,7 @@ export interface GitRuleSource {
 }
 export interface GitRuleSourceSet {
   version: 1;
-  discovery: "pi-0.87.1-context-v1";
+  discovery: "pi-0.99.1-context-v1";
   coverage: "primary-and-explicit-dependencies";
   cwd: string;
   agentDir: string;

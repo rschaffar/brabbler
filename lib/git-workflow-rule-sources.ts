@@ -5,7 +5,7 @@ import { samePath } from "./paths";
 import { bindingDigest, bindingFields, bindingFileFingerprint, bindingHash, bindingIdentity, bindingPath, bindingText, GitTaskBindingError, readBindingFile, statInstructionFile, validateBindingIdentity } from "./git-workflow-binding-io";
 import { GIT_BINDING_LIMITS as LIMITS, type GitBindingWorkspace, type GitRuleSource, type GitRuleSourceSet, type GitRuleSourceTarget } from "./git-workflow-binding-types";
 
-export const GIT_RULE_DISCOVERY = "pi-0.87.1-context-v1" as const;
+export const GIT_RULE_DISCOVERY = "pi-0.99.1-context-v1" as const;
 const NAMES = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
 const unavailable = () => new GitTaskBindingError("Instruction sources cannot be captured completely and safely. Check missing, unreadable, non-text or oversized files.");
 export class GitRuleSourceTargetsRequired extends GitTaskBindingError {

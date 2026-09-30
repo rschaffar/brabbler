@@ -3,6 +3,7 @@ import type {
   BashOperations,
   SessionManager,
   SettingsManager,
+  PromptOptions,
   SlashCommandInfo,
   Theme,
 } from "@earendil-works/pi-coding-agent";
@@ -153,12 +154,7 @@ export interface AgentSessionLike {
   dispose(): void;
   reload(options?: { beforeSessionStart?: () => void | Promise<void> }): Promise<void>;
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
-  prompt(text: string, options?: {
-    images?: Array<{ type: "image"; data: string; mimeType: string }>;
-    streamingBehavior?: "steer" | "followUp";
-    source?: "interactive" | "rpc";
-    preflightResult?: (success: boolean) => void;
-  }): Promise<void>;
+  prompt(text: string, options?: PromptOptions): Promise<void>;
   sendCustomMessage<T = unknown>(message: {
     customType: string;
     content: string | (TextContent | ImageContent)[];
@@ -184,8 +180,8 @@ export interface AgentSessionLike {
   getLastAssistantText(): string | undefined;
   setAutoCompactionEnabled(enabled: boolean): void;
   setAutoRetryEnabled(enabled: boolean): void;
-  steer(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void>;
-  followUp(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void>;
+  steer(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void | "handled" | "queued">;
+  followUp(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void | "handled" | "queued">;
   readonly pendingMessageCount: number;
   getSteeringMessages(): readonly string[];
   getFollowUpMessages(): readonly string[];
