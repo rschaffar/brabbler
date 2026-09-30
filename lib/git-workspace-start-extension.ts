@@ -9,10 +9,10 @@ import { getAllowedFileRoots, isExistingFilePathAllowed } from "./file-access";
 import { canRecordGitWorkspaceTransition } from "./git-workspace-transition";
 import { gitExecEnv } from "./git-exec";
 import { readSessionGitWorkflow, validLocalBranchName, type GitWorkflowPolicy } from "./git-workflow-policy";
-import { assertManagedGitAction, ManagedGitAccessError } from "./git-workflow-access";
+import { assertManagedGitWorkspaceStart, ManagedGitAccessError } from "./git-workflow-access";
 import { samePath } from "./paths";
 import type { SessionEntry } from "./types";
-import { addWorktree, resolveProject } from "./worktree";
+import { addWorktree, proposedWorktreePath, resolveProject } from "./worktree";
 import { selectGitWorkspace } from "./git-workspace-selector";
 
 const execFileAsync = promisify(execFile);
@@ -83,22 +83,26 @@ export function readPendingGitWorkspaceTransition(entries: readonly Pick<Session
 }
 
 /** Append to the source and, for a fork, to the target too. Idempotent on retry. */
+export function gitWorkspaceCompletion(transition: GitWorkspaceTransition): CompletedGitWorkspaceTransition {
+  const checked = parseStart(transition);
+  if (!checked) throw new Error("Invalid Git workspace transition");
+  return {
+    version: 1, originCwd: checked.originCwd, destinationPath: checked.destinationPath,
+    nonce: checked.nonce, completedAt: new Date().toISOString(),
+  };
+}
+
 export function appendCompletedGitWorkspaceTransition(
   source: Pick<SessionManager, "appendCustomEntry" | "getEntries">,
   transition: GitWorkspaceTransition,
   target?: Pick<SessionManager, "appendCustomEntry" | "getEntries">,
 ): void {
-  const checked = parseStart(transition);
-  if (!checked) throw new Error("Invalid Git workspace transition");
-  const completion: CompletedGitWorkspaceTransition = {
-    version: 1, originCwd: checked.originCwd, destinationPath: checked.destinationPath,
-    nonce: checked.nonce, completedAt: new Date().toISOString(),
-  };
+  const completion = gitWorkspaceCompletion(transition);
   for (const manager of new Set([source, ...(target ? [target] : [])])) {
     const entries = manager.getEntries() as SessionEntry[];
     const alreadyCompleted = entries.some((entry) => entry.type === "custom" && entry.customType === GIT_WORKSPACE_COMPLETED_TYPE
-      && (() => { const data = parseCompletion(entry.data); return data?.nonce === checked.nonce
-        && data.originCwd === checked.originCwd && data.destinationPath === checked.destinationPath; })());
+      && (() => { const data = parseCompletion(entry.data); return data?.nonce === completion.nonce
+        && data?.originCwd === completion.originCwd && data?.destinationPath === completion.destinationPath; })());
     if (!alreadyCompleted) manager.appendCustomEntry(GIT_WORKSPACE_COMPLETED_TYPE, completion);
   }
 }
@@ -115,11 +119,12 @@ export function createGitWorkspaceStartExtension(
       let creating = false;
       pi.registerTool({
         name: "git_workspace_start", label: "Start Git Workspace", executionMode: "sequential",
-        description: "Explicitly create a NEW local feature worktree from the saved session's local base branch. Optionally select another registered worktree in this chat's repository as the clean creation source by workspaceBranch. Supply a new branch name and the full current local base commit OID. Any configured post-run chat transition still moves/forks this chat, not a chat in the source worktree. No remote operations or attaching an existing branch.",
+        description: "Create a NEW local feature worktree from this chat's saved base, or propose an explicit local baseBranch when a managed worktree task has none. A missing-base proposal requires exact approval, creates only, and does not save settings or move the chat. A configured base cannot be overridden. Optionally select another registered source worktree in the same repository with workspaceBranch. Supply a new branch and the full current base commit OID. No remote operations or attaching an existing branch.",
         parameters: Type.Object({
-          workspaceBranch: Type.Optional(Type.String({ description: "Checked-out local branch identifying a registered source worktree; omit for this chat's checkout" })),
+          workspaceBranch: Type.Optional(Type.String({ description: "Registered source checkout branch in this chat's repository; omit for the chat checkout" })),
+          baseBranch: Type.Optional(Type.String({ description: "Explicit local base only when the captured managed worktree task has no base; must match a configured base if provided" })),
           branch: Type.String({ description: "New local feature branch name (must not exist)" }),
-          expectedBaseOid: Type.String({ description: "Full current commit OID of the saved local base branch; refresh if it has changed" }),
+          expectedBaseOid: Type.String({ description: "Full current commit OID of the selected local base branch; refresh if it has changed" }),
         }),
         async execute(_id, params, _signal, _update, ctx) {
           const failure = (message: string) => ({ content: [{ type: "text" as const, text: message }], isError: true, details: { error: message } });
@@ -128,12 +133,14 @@ export function createGitWorkspaceStartExtension(
           try {
             const manager = ctx.sessionManager;
             const entries = manager.getEntries() as SessionEntry[];
-            const guard = () => assertManagedGitAction(sessionCwd, manager.getEntries() as SessionEntry[], "workspace", "agent", undefined, pi.getActiveTools?.());
-            const state = await guard();
+            const guard = () => assertManagedGitWorkspaceStart(sessionCwd, manager.getEntries() as SessionEntry[], params.baseBranch, pi.getActiveTools?.());
+            const selected = await guard();
             const policy = getSavedPolicy();
-            // The callback must read session entries, not project defaults. Verify it still matches the persisted snapshot.
-            if (policy?.mode !== "worktree" || JSON.stringify(policy) !== JSON.stringify(readSessionGitWorkflow(entries))) {
-              return failure("A saved session worktree policy is required");
+            // The callback must read session entries, not changed project defaults. A missing-base
+            // managed task has a null legacy projection; the explicit base is NOT saved as one.
+            if (JSON.stringify(policy) !== JSON.stringify(readSessionGitWorkflow(entries))
+              || (selected.oneOff ? policy !== null : policy?.mode !== "worktree" || policy.baseBranch !== selected.baseBranch)) {
+              return failure("Saved worktree settings changed; inspect the chat before creating a workspace");
             }
             if (manager.getHeader()?.parentSession || entries.some((e) => e.type === "custom" && e.customType === "pi-web:subagent")) {
               return failure("Subagents cannot start a workspace");
@@ -142,7 +149,7 @@ export function createGitWorkspaceStartExtension(
             // Extension contexts expose ReadonlySessionManager, not isPersisted().
             if (!file || !existsSync(file)) return failure("Persist the session before creating a workspace");
             // One automatic transition per chat for now. Refuse BEFORE creating an orphan worktree.
-            if (onStarted && !canRecordGitWorkspaceTransition(manager.getSessionId())) {
+            if (onStarted && selected.onCreate !== "stay" && !canRecordGitWorkspaceTransition(manager.getSessionId())) {
               return failure("This chat already has a workspace transition; use manual continuation for another worktree");
             }
             let realCwd: string;
@@ -157,21 +164,33 @@ export function createGitWorkspaceStartExtension(
             if (readPendingGitWorkspaceTransition(entries)) return failure("A workspace transition is already pending");
             if (!validLocalBranchName(params.branch) || !oid(params.expectedBaseOid)) return failure("A new branch and full expected local base OID are required");
             const workspace = await selectGitWorkspace(sessionCwd, params.workspaceBranch);
-            if (state.task.kind === "managed") {
+            if (selected.state.task.kind === "managed") {
               if (!ctx.hasUI) return failure("Workspace creation requires interactive approval");
+              const destination = proposedWorktreePath(project.projectRoot, params.branch);
               const approved = await ctx.ui.confirm("Create feature workspace?",
-                `Create ${params.branch} from local ${policy.baseBranch} at ${params.expectedBaseOid}, using ${workspace}. Chat disposition: ${policy.onCreate}. No commit, integration, or cleanup is approved.`, { signal: _signal });
+                `Create branch ${params.branch} in ${destination} from local ${selected.baseBranch} at ${params.expectedBaseOid}, using source ${workspace}. Chat disposition: ${selected.oneOff ? "stay (one-off base; no settings change or automatic chat movement)" : selected.onCreate}. No commit, integration, or cleanup is approved.`, { signal: _signal });
               if (!approved || _signal?.aborted) return failure("Workspace creation cancelled; nothing created");
             }
-            await guard();
-            if (_signal?.aborted) return failure("Workspace creation cancelled");
+            const verifySelection = async () => {
+              const currentSource = await selectGitWorkspace(sessionCwd, params.workspaceBranch);
+              if (_signal?.aborted || !samePath(workspace, currentSource)) {
+                throw new ManagedGitAccessError("Source workspace changed or creation cancelled; nothing created");
+              }
+              const current = await guard();
+              if (JSON.stringify(current.state.task) !== JSON.stringify(selected.state.task)
+                || current.baseBranch !== selected.baseBranch || current.onCreate !== selected.onCreate || current.oneOff !== selected.oneOff
+                || JSON.stringify(getSavedPolicy()) !== JSON.stringify(policy)) {
+                throw new ManagedGitAccessError("Saved worktree settings changed during approval; nothing created");
+              }
+              if (_signal?.aborted) throw new ManagedGitAccessError("Workspace creation cancelled; nothing created");
+            };
             let created: { path: string; branch: string };
             try {
-              const currentSource = await selectGitWorkspace(sessionCwd, params.workspaceBranch);
-              if (_signal?.aborted || !samePath(workspace, currentSource)) return failure("Source workspace changed or creation cancelled");
-              created = await addWorktree(workspace, { branch: params.branch, baseBranch: policy.baseBranch,
-                expectedBaseOid: params.expectedBaseOid, mode: "create" });
-            } catch {
+              await verifySelection();
+              created = await addWorktree(workspace, { branch: params.branch, baseBranch: selected.baseBranch,
+                expectedBaseOid: params.expectedBaseOid, mode: "create", beforeCreate: verifySelection });
+            } catch (cause) {
+              if (cause instanceof ManagedGitAccessError) return failure(cause.message);
               return failure("Workspace creation failed; inspect the local branch, base OID and clean checkout, then retry");
             }
             // Resolve the actual new branch tip; never assume another checkout's HEAD is the feature tip.
@@ -184,13 +203,14 @@ export function createGitWorkspaceStartExtension(
               featureTip = stdout.trim();
               const transition: GitWorkspaceTransition = {
                 version: 1, originCwd: realCwd, destinationPath: created.path, branch: created.branch,
-                baseOid: params.expectedBaseOid.toLowerCase(), onCreate: policy.onCreate,
+                baseOid: params.expectedBaseOid.toLowerCase(), onCreate: selected.onCreate,
                 featureTip, createdAt: new Date().toISOString(), nonce: randomUUID(),
               };
               pi.appendEntry(GIT_WORKSPACE_START_TYPE, transition);
-              // The server must durably accept the transition before the tool says it is scheduled.
-              // Stay creates only the worktree: it never schedules a move.
-              if (transition.onCreate !== "stay") await onStarted?.(transition);
+              // A create-only proposal has no pending move to replay. Close its durable
+              // start explicitly; other dispositions still require server acceptance.
+              if (transition.onCreate === "stay") pi.appendEntry(GIT_WORKSPACE_COMPLETED_TYPE, gitWorkspaceCompletion(transition));
+              else await onStarted?.(transition);
               return { content: [{ type: "text" as const, text: `Created ${created.path}. ${transition.onCreate === "stay" ? "No session movement was requested." : "Session transition scheduled after this run."}` }], details: transition };
             } catch {
               return failure(`Worktree created at ${created.path}, but the session transition could not be saved. Recover manually; do not retry creation.`);

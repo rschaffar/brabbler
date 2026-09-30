@@ -396,6 +396,8 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
       </header>
       {data?.paused && <p className="workflow-banner" role="status">All managed Git actions are paused, at every scope.</p>}
       {attention && <p className="workflow-banner" role="status">A request needs your attention in chat. Your workflow draft is unchanged. <button type="button" onClick={onClose}>Go to chat to answer</button></p>}
+      {busy && data?.sessionScope !== "project" && task?.kind === "managed" && task.settings.workspace === "worktree" && !task.settings.baseBranch &&
+        <p className="workflow-banner" role="status">This chat is running, so Session Save and Apply are unavailable. To keep its captured worktree settings and automatic chat continuation, Stop the chat, save and apply the base, then resume. For one new worktree only, the agent can instead propose an explicit local base with exact approval; that does not save settings or move this chat.</p>}
       <div className="workflow-home-scroll" hidden={!!detail}>
         <details className="workflow-legacy" onToggle={(event) => { if (event.target === event.currentTarget) setLegacyOpen(event.currentTarget.open); }}>
           <summary>Existing chat actions · legacy compatibility</summary>

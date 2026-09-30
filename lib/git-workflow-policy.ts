@@ -13,6 +13,10 @@ export const MAX_GIT_WORKFLOW_CHECK_LABEL = 80;
 export const MAX_GIT_WORKFLOW_CHECK_EXECUTABLE = 256;
 export const MAX_GIT_WORKFLOW_CHECK_ARG = 512;
 
+// Check bounds also apply to UTF-8 bytes in durable Git action history.
+// TextEncoder keeps this shared policy compatible with browsers and Node.
+const checkTextEncoder = new TextEncoder();
+
 export type GitWorkflowPolicy = {
   mode: "worktree";
   /** Name of a local branch; existence and expected tip must be checked by the caller. */
@@ -60,12 +64,12 @@ export function validLocalBranchName(value: unknown): value is string {
 
 function validCheckText(value: unknown, max: number): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= max
-    && value.trim() === value && !/[\x00-\x1f\x7f\u0085\u2028\u2029]/.test(value);
+    && checkTextEncoder.encode(value).length <= max && value.trim() === value && !/[\x00-\x1f\x7f\u0085\u2028\u2029]/.test(value);
 }
 
 function validCheckArg(value: unknown, max: number): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= max
-    && value.trim().length > 0 && !/[\x00-\x1f\x7f\u0085\u2028\u2029]/.test(value)
+    && checkTextEncoder.encode(value).length <= max && value.trim().length > 0 && !/[\x00-\x1f\x7f\u0085\u2028\u2029]/.test(value)
     // These are screening rules, not a guarantee that arbitrary project code is safe.
     && !/(?:[a-z][a-z\d+.-]*:\/\/|\b(?:https?|ssh|git|ftp|file|mailto):|www\.|\b[^\s@]+@[^\s@:]+\.[^\s@:]+(?::|\/))/i.test(value)
     && !/(?:^|[^a-z\d])(?:(?:--?)?(?:api[-_]?key|token|password|passwd|secret|credential|authorization|auth)(?:[=:_-]|$)|bearer\s+|(?:sk-[a-z\d]{12,}|gh[pousr]_[a-z\d]{12,}|github_pat_[a-z\d_]{12,}|AKIA[A-Z0-9]{16}))/i.test(value);

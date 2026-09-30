@@ -120,6 +120,19 @@ test("current-task blockers use saved server facts rather than the selected scop
   assert.match(legacy, /Legacy preview\/confirm retains/);
 });
 
+test("a waiting chat explains idle-only Save/Apply and the create-only missing-base proposal", () => {
+  const data = fixture({ task: { kind: "managed", settings: { ...settings.DEFAULT_GIT_WORKFLOW_SETTINGS,
+    workspace: "worktree", baseBranch: null, onCreate: "continue" } }, sessionEditable: false,
+    sessionReason: "Stop the chat before changing its session settings." });
+  const html = render({ data, props: { busy: true, attention: true } });
+  assert.match(html, /Session Save and Apply are unavailable/);
+  assert.match(html, /Stop the chat, save and apply the base, then resume/);
+  assert.match(html, /one new worktree only/);
+  assert.match(html, /does not save settings or move this chat/);
+  assert.match(html, /disabled=""[^>]*>Apply saved settings to this task/);
+  assert.doesNotMatch(render({ data, props: { busy: false } }), /one new worktree only/);
+});
+
 test("stable visibility, scope-specific conflicts, focus containment/restoration and responsive token styling", () => {
   assert.match(home, /response\.status === 409/);
   assert.match(home, /Reload saved &amp; discard this draft/);

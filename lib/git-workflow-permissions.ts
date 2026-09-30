@@ -66,8 +66,11 @@ export function managedGitPermission(
     const task = state.task.settings;
     if (!task.enabled) return blocked("task-disabled", "This task is disabled. Apply enabled settings explicitly in Workflow.");
     if (stage === "commit") return gitCommitModePermission(task.commits, actor);
-    if (stage === "workspace" && (task.workspace !== "worktree" || !task.baseBranch)) {
-      return blocked("missing-worktree-base", "This task has no configured worktree base. Configure and apply it in Workflow.");
+    if (stage === "workspace" && task.workspace !== "worktree") {
+      return blocked("not-worktree-task", "This task uses the current checkout; creating a feature worktree requires explicitly applied worktree settings.");
+    }
+    if (stage === "workspace" && !task.baseBranch) {
+      return blocked("missing-worktree-base", "This task has no captured worktree base. For one create-only worktree the agent can propose an exact-approved local base; to use automatic chat continuation, Stop the run and Save/Apply the base in Workflow.");
     }
     if ((stage === "integration" || stage === "checks") && (!task.targetBranch || task.method !== "merge" || !task.checks.length)) {
       return blocked("missing-integration-setup", "This task needs a local non-FF merge target and ordered checks. Configure and apply them in Workflow.");

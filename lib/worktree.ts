@@ -44,6 +44,8 @@ export type AddWorktreeOptions = {
   branch: string;
   baseBranch: string;
   expectedBaseOid: string;
+  /** Optional caller-owned live admission recheck after asynchronous Git preflight, immediately before creation. */
+  beforeCreate?: () => Promise<void>;
 } & ({ mode: "create" } | { mode: "attach"; expectedTipOid: string });
 
 declare global {
@@ -298,6 +300,11 @@ function sanitizeBranchForDir(branch: string): string {
   return branch.replace(/[\/\\:*?"<>|\s]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
+/** The destination that addWorktree will use; never an approval to create it. */
+export function proposedWorktreePath(repoRoot: string, branch: string): string {
+  return join(`${resolve(repoRoot)}-worktrees`, sanitizeBranchForDir(branch));
+}
+
 // Legacy string callers are accepted by the type system only so they fail
 // explicitly at runtime instead of silently creating from an implicit base.
 export async function addWorktree(cwd: string, options: AddWorktreeOptions | string): Promise<{ path: string; branch: string }> {
@@ -350,21 +357,25 @@ export async function addWorktree(cwd: string, options: AddWorktreeOptions | str
     if (worktree.branch === base && !samePath(worktree.path, sourceCheckout)) await checkClean(worktree.path);
   }
 
-  const dirName = sanitizeBranchForDir(target);
   const baseDir = `${resolve(repoRoot)}-worktrees`;
-  const worktreePath = join(baseDir, dirName);
+  const worktreePath = proposedWorktreePath(repoRoot, target);
   if (pathEntryExists(worktreePath)) throw new Error(`Directory already exists: ${worktreePath}`);
   if (pathEntryExists(baseDir)) {
     const parent = lstatSync(baseDir);
     if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error(`Invalid worktree directory: ${baseDir}`);
-  } else {
-    mkdirSync(baseDir);
   }
-  // Recheck refs just before mutation; Git's own -b/checkout checks still
-  // protect collisions with another concurrent writer (no cross-process lock).
+  // Recheck refs and caller-owned admission after asynchronous preflight.
+  // Git's own -b/checkout checks still protect collisions with another
+  // concurrent writer; settings changed by an external process can still race.
   if (await git(repoRoot, ["rev-parse", "--verify", `refs/heads/${base}^{commit}`]) !== expectedBaseOid.toLowerCase()) {
     throw new Error(`Stale local base branch: ${base} moved`);
   }
+  await options.beforeCreate?.();
+  if (pathEntryExists(worktreePath)) throw new Error(`Directory already exists: ${worktreePath}`);
+  if (pathEntryExists(baseDir)) {
+    const parent = lstatSync(baseDir);
+    if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error(`Invalid worktree directory: ${baseDir}`);
+  } else mkdirSync(baseDir);
   try {
     // Large repos (30k+ files) can take minutes to checkout.
     const WORKTREE_TIMEOUT = 5 * 60_000;

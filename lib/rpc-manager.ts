@@ -15,6 +15,7 @@ import { loadGitWorkflowSettings } from "./git-workflow-settings-store";
 import { snapshotManagedSessionGitWorkflow } from "./git-workflow-session";
 import { assertManagedGitAction, hasManagedGitMutationTools } from "./git-workflow-access";
 import { createGitWorkflowExtension } from "./git-workflow-extension";
+import { createGitWorkflowContextFilterExtension } from "./git-workflow-context";
 import { createGitCommitExtension } from "./git-commit-extension";
 import { createAgentGitWorkflowExtension, type AgentGitWorkflowUiContext } from "./agent-git-workflow-extension";
 import { createGitWorkspaceStartExtension, appendCompletedGitWorkspaceTransition, type GitWorkspaceTransition } from "./git-workspace-start-extension";
@@ -2417,7 +2418,7 @@ export async function startRpcSession(
             ...(subagentResources.loadExtensions ? { extensionsOverride: preferPiWebAskUserExtension } : {}),
           }
         : chatOnly
-          ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension, createSessionReferenceExtension()] }
+          ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension, createSessionReferenceExtension(), createGitWorkflowContextFilterExtension()] }
         : {
             extensionFactories: [
               createSessionReferenceExtension(),

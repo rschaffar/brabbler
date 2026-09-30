@@ -30,6 +30,19 @@ import type { GitActionCandidate } from "./types";
 
 const exec = promisify(execFile);
 
+// Unexpected failures identify only the stage, never a guessed cause or raw error.
+const INTEGRATION_PREAPPROVAL_DIAGNOSTICS = {
+  caller: "Integration caller validation could not complete. Inspect the persisted session and its checkout.",
+  permission: "Integration permission validation could not complete. Inspect Workflow permissions and captured task settings.",
+  workspace: "Integration source workspace validation could not complete. Inspect the selected registered feature checkout.",
+  checks: "Integration check validation could not complete. Inspect the ordered check labels and executable/argument bounds (including UTF-8 bytes).",
+  target: "Integration target checkout validation could not complete. Inspect the local target branch, its distinct registered physical checkout, and allowed roots.",
+  trust: "Integration trust validation could not complete. Inspect project trust for both registered checkouts.",
+  busy: "Integration session-busy validation could not complete. Inspect running or starting sessions in both registered checkouts.",
+  journal: "Integration check-candidate journaling could not complete. Inspect durable Git action history availability and candidate bounds.",
+} as const;
+type IntegrationPreApprovalPhase = keyof typeof INTEGRATION_PREAPPROVAL_DIAGNOSTICS;
+
 /** Pi Web's browser UI transport, deliberately not a generic confirmation dialog. */
 export interface AgentGitWorkflowUiContext {
   gitAction(candidate: GitActionCandidate, signal?: AbortSignal): Promise<boolean>;
@@ -98,10 +111,12 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
         }),
         async execute(_id, params, signal, _update, ctx) {
           const failure = (message: string) => ({ content: [{ type: "text" as const, text: message }], isError: true, details: { error: message } });
-          if (!samePath(ctx.cwd, sessionCwd)) return failure("Session checkout changed; Git workflow refused");
-          const ui = ctx.ui as typeof ctx.ui & Partial<AgentGitWorkflowUiContext>;
-          if (signal?.aborted) return failure("Git workflow cancelled");
+          let preApprovalPhase: IntegrationPreApprovalPhase | undefined = params.operation === "integrate" ? "caller" : undefined;
+          const preApprovalStage = (phase: IntegrationPreApprovalPhase) => { if (preApprovalPhase) preApprovalPhase = phase; };
           try {
+            if (!samePath(ctx.cwd, sessionCwd)) return failure("Session checkout changed; Git workflow refused");
+            const ui = ctx.ui as typeof ctx.ui & Partial<AgentGitWorkflowUiContext>;
+            if (signal?.aborted) return failure("Git workflow cancelled");
             const entries = () => (writableManager?.getEntries() ?? ctx.sessionManager?.getEntries?.() ?? []) as SessionEntry[];
             const guard = (stage: ManagedGitStage) => assertManagedGitAction(sessionCwd, entries(), stage, "agent", agentDir, pi.getActiveTools?.());
             if (params.repositoryPath !== undefined && params.operation !== "status" && params.operation !== "review") return failure(PROJECT_GIT_WRITES_UNAVAILABLE);
@@ -131,7 +146,9 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
               return { content: [{ type: "text" as const, text: JSON.stringify(summary) }], details: summary };
             }
             if (!ctx.hasUI || !ui.gitAction) return failure("Git workflow review requires an interactive Pi Web session");
+            preApprovalStage("permission");
             const state = params.operation === "review" ? null : await guard(params.operation === "commit" ? "commit" : params.operation === "integrate" ? "integration" : "settings");
+            preApprovalStage("workspace");
             const workspace = selected?.cwd ?? await selectGitWorkspace(sessionCwd, params.workspaceBranch);
             if (params.operation === "preferences") {
               if (state?.task.kind === "managed") return failure("Configure all scopes in the Workflow panel. Legacy preferences cannot override this managed task.");
@@ -205,8 +222,10 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
               finally { action.release(); }
             }
             if (params.operation === "integrate") {
+              preApprovalStage("checks");
               const saved = readAgentGitPreferences((writableManager?.getEntries() ?? ctx.sessionManager.getEntries?.() ?? []) as SessionEntry[]);
               const task = state?.task.kind === "managed" ? state.task.settings : undefined;
+              const capturedTask = JSON.stringify(state?.task);
               if (task && ((params.targetBranch !== undefined && params.targetBranch !== task.targetBranch)
                 || (params.checks !== undefined && JSON.stringify(params.checks) !== JSON.stringify(task.checks)))) {
                 return failure("Requested target/checks differ from the captured task. Compare and apply settings in Workflow first.");
@@ -220,24 +239,46 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
               const policy = validateGitWorkflowPolicy({ mode: "current", onCreate: "stay", commits: "manual",
                 integration: { targetBranch, method: "merge" }, checks: requestedChecks });
               const checks = policy.checks as GitWorkflowCheck[];
+              preApprovalStage("caller");
               const manager = ctx.sessionManager;
               const sessionId = manager.getSessionId();
               if (!sessionId || !samePath(manager.getCwd(), sessionCwd) || !samePath(manager.getHeader()?.cwd ?? "", sessionCwd) ||
                   !samePath(sessionCwd, await realpath(sessionCwd))) return failure("Session checkout changed");
+              preApprovalStage("workspace");
               const branch = await featureBranch(workspace);
+              preApprovalStage("target");
               const target = await targetCheckout(workspace, targetBranch);
-              const trusted = () => getProjectTrustStatus(workspace, agentDir).trusted && getProjectTrustStatus(target, agentDir).trusted;
-              const idle = () => !hasBusyRpcSessionForCwd(workspace, sessionId) && !hasBusyRpcSessionForCwd(target, sessionId);
-              const guardedPolicy = async () => { await assertManagedGitWorkspace(await guard("integration"), workspace); return policy; };
+              const trusted = () => {
+                preApprovalStage("trust");
+                return getProjectTrustStatus(workspace, agentDir).trusted && getProjectTrustStatus(target, agentDir).trusted;
+              };
+              const idle = () => {
+                preApprovalStage("busy");
+                return !hasBusyRpcSessionForCwd(workspace, sessionId) && !hasBusyRpcSessionForCwd(target, sessionId);
+              };
+              const guardedPolicy = async () => {
+                preApprovalStage("permission");
+                const current = await guard("integration");
+                await assertManagedGitWorkspace(current, workspace);
+                if (JSON.stringify(current.task) !== capturedTask) {
+                  throw new ManagedGitAccessError("Captured integration settings changed; request fresh verification and approval before integration.");
+                }
+                return policy;
+              };
               const valid = async () => {
                 await guardedPolicy();
-                return !signal?.aborted && trusted() && idle() &&
-                  samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch)) &&
-                  samePath(target, await targetCheckout(workspace, targetBranch)) &&
-                  samePath(manager.getCwd(), sessionCwd) && samePath(manager.getHeader()?.cwd ?? "", sessionCwd) &&
-                  (await featureBranch(workspace)) === branch && !signal?.aborted;
+                if (signal?.aborted || !trusted() || !idle()) return false;
+                preApprovalStage("workspace");
+                if (!samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) return false;
+                preApprovalStage("target");
+                if (!samePath(target, await targetCheckout(workspace, targetBranch))) return false;
+                preApprovalStage("caller");
+                if (!samePath(manager.getCwd(), sessionCwd) || !samePath(manager.getHeader()?.cwd ?? "", sessionCwd)) return false;
+                preApprovalStage("workspace");
+                return (await featureBranch(workspace)) === branch && !signal?.aborted;
               };
               if (!await valid()) return failure("Trust both registered checkouts and stop other sessions before integration");
+              preApprovalStage("journal");
               const sink = gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data));
               const checkCandidate = { kind: "checks" as const, featureCwd: workspace, targetCwd: target, targetBranch, featureBranch: branch, checks };
               const checkAction = await beginGitAction(sink, "agent", snapshotGitActionCandidate(checkCandidate));
@@ -245,6 +286,9 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
               let checksStarted = false;
               try {
                 await checkAction.update("awaiting-decision");
+                // Clear before invoking the transport: even a synchronous throw may
+                // follow a displayed request. Later revalidation must not re-arm it.
+                preApprovalPhase = undefined;
                 if (!await ui.gitAction({ ...checkCandidate, actionId: checkAction.record.id }, signal) || signal?.aborted) {
                   await checkAction.update(signal?.aborted ? "cancelled" : "declined", { decision: signal?.aborted ? "cancelled" : "declined" });
                   return { content: [{ type: "text" as const, text: "Verification declined; no checks or integration executed." }], details: { approved: false, actionId: checkAction.record.id } };
@@ -318,7 +362,12 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
             if (recorded) return recorded;
             if (cause instanceof GitProjectResourceError) return { ...failure(cause.message), details: { error: cause.message, code: cause.code } };
             if (cause instanceof ManagedGitAccessError || cause instanceof GitCheckoutBusyError || cause instanceof GitCommitOperationError) return failure(cause.message);
-            // Never send raw Git stderr or file contents back through a failed tool result.
+            // Never send raw Git stderr, argv, trust contents or arbitrary errors.
+            if (preApprovalPhase) {
+              const message = `${INTEGRATION_PREAPPROVAL_DIAGNOSTICS[preApprovalPhase]} Check approval was not requested; no checks or merge were executed.`;
+              return { ...failure(message), details: { error: message, code: "integration-preapproval-failed", phase: preApprovalPhase,
+                checkApprovalRequested: false, checksStarted: false, integrationStarted: false } };
+            }
             return failure("Git candidate unavailable or stale; inspect the checkout and request a fresh review");
           }
         },

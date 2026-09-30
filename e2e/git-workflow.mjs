@@ -603,6 +603,38 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await commitCard.getByRole("region", { name: "Side-by-side diff" }).getByText("Manual commit fixture", { exact: true }).waitFor();
     assert.match(await commitCard.innerText(), new RegExp(manualCommit));
     console.log("PASS: same chat continues in a registered target worktree and retains its original captured Git history");
+
+    // Reproduce a live blocking ask_user with no captured worktree base. The
+    // editor must not promise an impossible Save/Apply while the run is held.
+    await home();
+    await chooseScope("session");
+    await expand("workspace");
+    await control("workspace").selectOption("worktree");
+    await control("baseBranch").fill("");
+    await control("onCreate").selectOption("continue");
+    await save("session");
+    const pendingBase = await apply();
+    assert.equal(pendingBase.task.settings.workspace, "worktree");
+    assert.equal(pendingBase.task.settings.baseBranch, null);
+    await closeWorkflow();
+    await page.locator("[data-minimap-preview-box]").waitFor({ state: "hidden" });
+    await page.locator("textarea").last().fill("/e2e-ask-user single");
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    const question = page.getByRole("group", { name: "E2E browser question" });
+    await question.waitFor();
+    await openWorkflow();
+    await workflow.getByText(/Session Save and Apply are unavailable/).waitFor();
+    assert.match(await workflow.innerText(), /one new worktree only/);
+    const sessionSave = workflow.getByRole("button", { name: "Save session settings", exact: true });
+    if (await sessionSave.count()) assert.equal(await sessionSave.isDisabled(), true);
+    else assert.equal(await scopes.getByRole("button", { name: /^Session/ }).isDisabled(), true);
+    assert.equal(await task.getByRole("button", { name: "Apply saved settings to this task", exact: true }).isDisabled(), true);
+    assert.equal(git("rev-parse", "HEAD"), manualCommit, "waiting question must not create/commit a worktree");
+    await closeWorkflow();
+    await question.getByRole("button", { name: "Cancel" }).click();
+    await question.waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "Stop agent", exact: true }).waitFor({ state: "hidden" });
+    console.log("PASS: pending question explains idle-only settings and one-off base without creating a workspace");
   } finally {
     page.off("load", observeLoad);
     page.off("request", observeRequest);
