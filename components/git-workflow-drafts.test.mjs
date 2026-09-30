@@ -96,3 +96,25 @@ test("unsent session fallback does not create a queued settings slice; chat requ
   const drafts = receiveWorkflowSettings({}, response({ session: null, sessionEditable: false }));
   assert.deepEqual(Object.keys(drafts).sort(), ["global", "project:/repo"]);
 });
+
+test("explicit project requests and chat×project draft keys never inherit another project's draft", () => {
+  assert.deepEqual(workflowRequestTarget("chat", "/sidebar", "/selected"), { sessionId: "chat", projectPath: "/selected" });
+  assert.deepEqual(workflowRequestTarget(undefined, "/sidebar", "/selected"), { projectPath: "/selected" });
+  const key = (project) => workflowDraftKey("session", project, "chat", "project");
+  assert.notEqual(key("/a"), key("/b"));
+  assert.notEqual(key("/a"), workflowDraftKey("session", "/a", "chat"));
+  assert.equal(workflowDraftKey("session", undefined, "chat", "project"), null);
+  const a = response({ sessionScope: "project", projectRoot: "/a", session: { targetBranch: "a-main" } });
+  const b = response({ sessionScope: "project", projectRoot: "/b", session: { targetBranch: "b-main" } });
+  let drafts = receiveWorkflowSettings({}, a, "chat");
+  drafts = edit(drafts, key("/a"), { targetBranch: "a-unsaved" });
+  drafts = receiveWorkflowSettings(drafts, b, "chat");
+  drafts = edit(drafts, key("/b"), { targetBranch: "b-unsaved" });
+  drafts = receiveWorkflowSettings(drafts, a, "chat");
+  assert.equal(drafts[key("/a")].overrides.targetBranch, "a-unsaved");
+  assert.equal(drafts[key("/b")].overrides.targetBranch, "b-unsaved");
+  const savedB = response({ sessionScope: "project", projectRoot: "/b", revision: "r2", session: { targetBranch: "b-unsaved" } });
+  drafts = receiveWorkflowSettings(drafts, savedB, "chat", key("/b"));
+  assert.equal(drafts[key("/a")].overrides.targetBranch, "a-unsaved");
+  assert.deepEqual(changedWorkflowFields(drafts[key("/b")].overrides, drafts[key("/b")].baseline), []);
+});

@@ -22,8 +22,9 @@ export interface GitWorkflowPermissions {
 
 // Keep unsupported modes visible without pretending that durable cards alone
 // make automation safe. This is capability information, never a grant.
-export const AUTOMATIC_COMMIT_UNAVAILABLE = "Automatic commits require scoped grants, reviewed instruction profiles and task-bound workspace admission; these are not implemented yet.";
-export const AUTOMATIC_WORKFLOW_UNAVAILABLE = "Automatic execution is unavailable: scoped grants, reviewed instructions, workspace ownership and recovery are still required.";
+export const AUTOMATIC_COMMIT_UNAVAILABLE = "Confirmation-free commits are not implemented yet: scoped authorization and operation-level recovery admission are still required.";
+export const AUTOMATIC_WORKFLOW_UNAVAILABLE = "Confirmation-free execution is not implemented yet. Project selection and saved preferences are not execution permission.";
+export const PROJECT_GIT_WRITES_UNAVAILABLE = "Explicit-project scope currently supports settings, status and read-only review only. Project-scoped Git mutations are not implemented; no checkout is changed.";
 
 export function hasManagedGitMutationTools(tools: readonly string[]): boolean {
   return tools.some((name) => ["bash", "powershell", "edit", "write"].includes(name));
@@ -56,14 +57,20 @@ export function managedGitPermission(
     if (!hasManagedGitMutationTools(facts.tools)) return blocked("read-only", "Chat-only and read-only sessions cannot execute managed Git mutations.");
   }
   if (state.paused) return blocked("paused", "All managed Git actions are paused. Resume them in Workflow.");
-  if (!state.resolved.session.values.enabled) return blocked("disabled", "Managed Git is disabled for this session. Configure it in Workflow.");
-  if (stage === "commit" && state.resolved.session.values.commits === "off") return blocked("session-commits-off", "Commits are disabled for this session.");
+  if (!state.resolved.session.values.enabled || state.projectSessionRestrictions?.enabled === false) return blocked("disabled", "Managed Git is disabled for this project/chat. Configure it in Workflow.");
+  if (stage === "commit" && (state.resolved.session.values.commits === "off" || state.projectSessionRestrictions?.commits === "off")) return blocked("session-commits-off", "Commits are disabled for this project/chat.");
+  if (stage === "commit" && actor === "agent" && (state.projectSessionRestrictions?.commits === "manual"
+    || state.sessionScope === "project" && state.resolved.session.values.commits === "manual")) return gitCommitModePermission("manual", actor);
+  if (state.sessionScope === "project" && stage !== "settings") return blocked("project-scope-read-only", PROJECT_GIT_WRITES_UNAVAILABLE);
   if (state.task.kind === "managed") {
     const task = state.task.settings;
     if (!task.enabled) return blocked("task-disabled", "This task is disabled. Apply enabled settings explicitly in Workflow.");
     if (stage === "commit") return gitCommitModePermission(task.commits, actor);
-    if (stage === "workspace" && (task.workspace !== "worktree" || !task.baseBranch)) {
-      return blocked("missing-worktree-base", "This task has no configured worktree base. Configure and apply it in Workflow.");
+    if (stage === "workspace" && task.workspace !== "worktree") {
+      return blocked("not-worktree-task", "This task uses the current checkout; creating a feature worktree requires explicitly applied worktree settings.");
+    }
+    if (stage === "workspace" && !task.baseBranch) {
+      return blocked("missing-worktree-base", "This task has no captured worktree base. For one create-only worktree the agent can propose an exact-approved local base; to use automatic chat continuation, Stop the run and Save/Apply the base in Workflow.");
     }
     if ((stage === "integration" || stage === "checks") && (!task.targetBranch || task.method !== "merge" || !task.checks.length)) {
       return blocked("missing-integration-setup", "This task needs a local non-FF merge target and ordered checks. Configure and apply them in Workflow.");

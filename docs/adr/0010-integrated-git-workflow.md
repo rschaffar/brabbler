@@ -2,6 +2,12 @@
 
 ## Status
 
+**Partially superseded on 2026-09-29 by [ADR 0011 — Project policies and agent-driven Git operations](0011-policy-driven-git-tools.md).** Read that record for the current intended experience. The user rejected mandatory session/task-workspace binding and relocation in favor of reusable project policies and explicitly scoped operations from any chat, including multi-project work. The agent—not a host start/finish coordinator—handles repeated preparation, semantic assessment and verification against a moving integration target.
+
+Retain this record's delivered settings, action-history and exact-state safety rationale. Its proposed mandatory task/source adoption, exclusive workflow ownership, managed handoffs, autonomous finish, comprehensive prose normalization prerequisite and always-Ask default for new commits are no longer the target. Its prototype is historical, not the replacement UX. The [successor plan](../plans/2026-09-29_policy-driven-git-tools-plan.md) owns remaining work and explicit retirements. No active permission or repository instruction changes merely because the design is revised.
+
+### Original status and staged implementation notes (historical)
+
 **Accepted direction — staged implementation in progress.** After reviewing the single-Workflow-home design and prototype, the user said “alright. give it a shot,” authorizing Pi Web application implementation in the existing linked worktree. The target remains operation-first behavior, configurable end-to-end automation, and Global/Project/Session configuration in **one place**. This is source-implementation authority, not a runtime grant or approval for integration, publication, cleanup, Nix source changes, or activation.
 
 This revises ADR [0007](0007-session-git-workflow.md)'s eventual session-snapshot and integration-consent model, ADR [0008](0008-agent-triggered-git-review.md)'s split settings/transient presentation, and the tool surface described in ADR [0009](0009-cross-worktree-agent-git-tools.md). Exact-state validation, explicit checkout identity, scoped authority, recovery, and the remote boundary remain. Unimplemented parts are a target contract, not advertised capabilities. Existing repository/global approval rules remain operative until compatible instruction changes are separately accepted.
@@ -12,7 +18,7 @@ The subsequent authorization-prerequisite slice shares a settings/actor permissi
 
 The next prerequisite adds explicit private **task binding/source evidence**, separate from transcript-backed settings capture and from future execution authority. The Workflow home reviews a selected user request/goal, physical registered checkout, captured settings and exact bounded source/dependency texts. Human-facing adoption creates a fresh private binding ID and advances the session slot's generation; copies/forks cannot inherit it, moves/settings recapture invalidate it, and restart requires renewed review. A durable settings-write epoch fences pending reviews across compatible processes, including legacy writes and equal-value round trips. Source selection follows a pinned SDK contract but fails closed rather than skipping unreadable candidates; linked destinations require explicit file selection before reading. Linux descriptor-relative/no-follow reads prevent parent retargeting from exposing unselected bytes. Unsupported platforms do not use a weaker fallback. This is deliberately **not** a normalized instruction-policy adapter, proof of human origin against same-user API access, loaded-prompt synchronization, workspace ownership, task `start`, or a grant. No source text enters model context through this mechanism, and existing Git action scope/approvals remain unchanged. See the guide for limits and remaining prerequisites.
 
-Implementation owner: [Integrated Git workflow plan](../plans/2026-09-28_integrated-git-workflow-plan.md).
+Original implementation evidence: [Integrated Git workflow plan](../plans/2026-09-28_integrated-git-workflow-plan.md). Active implementation owner: [Policy-driven Git tools plan](../plans/2026-09-29_policy-driven-git-tools-plan.md). The sections below preserve the original decision, subject to the supersession above.
 
 ## Problem and evidence
 

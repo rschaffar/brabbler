@@ -8,6 +8,8 @@ import { advanceGitWorkflowWriteEpoch, gitWorkflowPrivateParent, readGitWorkflow
 import { resolveProject } from "./worktree";
 import { getProjectGitWorkflow, gitWorkflowDefaultsPath } from "./git-workflow-store";
 import { readManagedSessionGitWorkflow, workflowTaskFromEntries } from "./git-workflow-session";
+import { readGitProjectSessionSettings } from "./git-project-session";
+import { gitProjectRootForCaller } from "./git-project-resources";
 import { resolveGitWorkflowSettings, settingsFromLegacyPolicy, validateGitWorkflowOverrides,
   type GitWorkflowOverrides, type GitWorkflowSettingsResponse } from "./git-workflow-settings";
 import type { SessionEntry } from "./types";
@@ -55,34 +57,44 @@ export async function withGitWorkflowSettingsLock<T>(agentDir: string, action: (
   try { return await action(); } finally { await release(); }
 }
 
+export async function projectWorkflowOverrides(
+  document: GitWorkflowSettingsDocument, projectRoot: string, cwd: string, agentDir: string,
+): Promise<GitWorkflowOverrides> {
+  if (Object.hasOwn(document.projects, projectRoot)) return document.projects[projectRoot];
+  const legacy = await getProjectGitWorkflow(cwd, gitWorkflowDefaultsPath(agentDir));
+  if (!legacy) return {};
+  const project: GitWorkflowOverrides = settingsFromLegacyPolicy(legacy);
+  // v1 had no enablement field; importing it must not defeat Global Off.
+  delete project.enabled;
+  return project;
+}
+
 export async function loadGitWorkflowSettings(
   cwd?: string, entries: readonly SessionEntry[] = [], agentDir = getAgentDir(), sessionIdentity = "",
 ): Promise<GitWorkflowSettingsResponse> {
   const document = readGitWorkflowSettingsDocument(agentDir);
   const projectRoot = cwd ? (await resolveProject(cwd)).projectRoot : undefined;
-  let project: GitWorkflowOverrides = {};
-  if (projectRoot) {
-    if (Object.hasOwn(document.projects, projectRoot)) project = document.projects[projectRoot];
-    else {
-      const legacy = await getProjectGitWorkflow(cwd!, gitWorkflowDefaultsPath(agentDir));
-      if (legacy) {
-        project = settingsFromLegacyPolicy(legacy);
-        // v1 had no enablement field. Importing it must not invent an override
-        // that defeats a newly disabled global default.
-        delete project.enabled;
-      }
-    }
-  }
+  const project = projectRoot ? await projectWorkflowOverrides(document, projectRoot, cwd!, agentDir) : {};
+  const keyed = readGitProjectSessionSettings(entries);
+  // Display grouping deliberately treats repo subdirectories as projects. Live
+  // restrictions must instead follow the caller's actual canonical repository.
+  const restrictionRoot = keyed.size && cwd ? await gitProjectRootForCaller(cwd) : undefined;
+  const scoped = restrictionRoot ? keyed.get(restrictionRoot)?.overrides : undefined;
+  const projectSessionRestrictions: NonNullable<GitWorkflowSettingsResponse["projectSessionRestrictions"]> = {
+    ...(scoped?.enabled === false ? { enabled: false as const } : {}),
+    ...(scoped?.commits === "off" || scoped?.commits === "manual" ? { commits: scoped.commits } : {}),
+  };
   const saved = readManagedSessionGitWorkflow(entries);
   const session = sessionIdentity ? saved?.overrides ?? {} : null;
   const task = workflowTaskFromEntries(entries);
   // Bind choices and identity, not unrelated transcript activity: streaming
   // must not make Global/Project saves or the safety pause perpetually stale.
   // Session append safety is separately checked against the live manager/stat.
-  const revision = createHash("sha256").update(JSON.stringify({ document, projectRoot, project, cwd, sessionIdentity, session, task, writeEpoch: readGitWorkflowWriteEpoch(agentDir) })).digest("hex");
+  const revision = createHash("sha256").update(JSON.stringify({ document, projectRoot, project, cwd, sessionIdentity, session, task, projectSessionRestrictions, writeEpoch: readGitWorkflowWriteEpoch(agentDir) })).digest("hex");
   return {
     revision, paused: document.paused, ...(cwd ? { cwd } : {}), ...(projectRoot ? { projectRoot } : {}),
     global: document.global, project, session,
+    ...(Object.keys(projectSessionRestrictions).length ? { projectSessionRestrictions } : {}),
     resolved: { global: resolveGitWorkflowSettings(document.global), project: resolveGitWorkflowSettings(document.global, project),
       session: resolveGitWorkflowSettings(document.global, project, session ?? {}) },
     task, sessionEditable: false,

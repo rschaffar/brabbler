@@ -62,7 +62,8 @@ Coverage:
   links, device link/code/copy, progress persistence, invalid URL rejection, and
   cancellation at 1280px and 390px using mocked SSE (no provider credentials).
 
-Model prompts, live model streaming, and agent execution are outside this suite.
+Model prompts, live model streaming, and agent execution are outside this browser suite. An **opt-in**, provider-backed Git-guidance regression uses an in-memory SDK chat and disposable Git checkout, with an inert `git_workflow status` probe; it does not edit a live chat or repository. It checks that a real model renders ordinary LaTeX without tools, then requests one read-only Git status for an explicitly Git-related question. Select `PI_PROVIDER` and `PI_MODEL` for an available account and run `PI_GUIDANCE_MODEL_EVAL=1 node e2e/git-guidance-model.mjs` only with authorization for the provider usage charge. The SDK accesses configured authentication; the test does not inspect/copy credential values, record generated text, grant mutations, or run automatically in CI. Real-model behavior can vary with provider and time; this smoke check is not a guarantee about every user prompt.
+
 Failures save a screenshot, Playwright trace, and server log under
 `test-results/e2e/`; CI uploads that directory. Open a trace with
 `npx playwright show-trace test-results/e2e/trace.zip`.

@@ -17,9 +17,10 @@ export type WorkflowDraft = {
 export type WorkflowDrafts = Record<string, WorkflowDraft>;
 
 /** Canonical project identity comes from the server, never from a sidebar label. */
-export function workflowDraftKey(scope: WorkflowScope, projectRoot?: string, sessionId?: string): string | null {
+export function workflowDraftKey(scope: WorkflowScope, projectRoot?: string, sessionId?: string, sessionScope?: "project"): string | null {
   if (scope === "global") return "global";
   if (scope === "project") return projectRoot ? `project:${projectRoot}` : null;
+  if (sessionScope === "project") return sessionId && projectRoot ? `session:${sessionId}:project:${projectRoot}` : null;
   return sessionId ? `session:${sessionId}` : null;
 }
 
@@ -46,7 +47,7 @@ export function receiveWorkflowSettings(
 ): WorkflowDrafts {
   const next = { ...drafts };
   for (const scope of workflowScopes) {
-    const key = workflowDraftKey(scope, response.projectRoot, sessionId);
+    const key = workflowDraftKey(scope, response.projectRoot, sessionId, response.sessionScope);
     const saved = response[scope];
     if (!key || saved === null) continue;
     const existing = drafts[key];
@@ -61,7 +62,8 @@ export function receiveWorkflowSettings(
   return next;
 }
 
-export function workflowRequestTarget(sessionId?: string, cwd?: string) {
+export function workflowRequestTarget(sessionId?: string, cwd?: string, projectPath?: string) {
+  if (projectPath !== undefined) return { ...(sessionId ? { sessionId } : {}), projectPath };
   return sessionId ? { sessionId } : cwd ? { cwd } : {};
 }
 

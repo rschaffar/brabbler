@@ -174,6 +174,11 @@ try {
     message("reply", "root", "assistant", "Waiting for more work"),
   ], otherProject);
   {
+    const otherGit = (...args) => execFileSync("git", ["-C", otherProject, ...args], { encoding: "utf8", env: fixtureEnv }).trim();
+    otherGit("init", "-qb", "other-main");
+    otherGit("commit", "--allow-empty", "-qm", "Other project fixture");
+  }
+  {
     mkdirSync(gitProject);
     const git = (...args) => execFileSync("git", ["-C", gitProject, ...args], {
       encoding: "utf8", env: fixtureEnv,
@@ -265,7 +270,7 @@ try {
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
     });
     await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
-    await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree });
+    await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree, otherProject });
     await checkIntegratedGitGraph(page, targetWorktree);
     await checkSavedGitActionHistory(page, { base, api, sessionId: GIT_HISTORY, records: gitHistory.records, artifacts });
     await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
@@ -616,7 +621,7 @@ try {
     }
     if (viewport.width === 1280) {
       await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
-      await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree });
+      await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree, otherProject });
       await checkIntegratedGitGraph(page, targetWorktree);
       await checkSavedGitActionHistory(page, { base, api, sessionId: GIT_HISTORY, records: gitHistory.records, artifacts });
     }

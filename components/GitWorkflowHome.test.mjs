@@ -23,10 +23,10 @@ function fixture(options = {}) {
 }
 function render({ data = fixture(), scope = "session", overrides, props = {} } = {}) {
   const actualProps = { visible: true, session, cwd: "/sidebar", busy: false, attention: false, detail: null, onClose() {}, onDetailChange() {}, onDetailHost() {}, ...props };
-  const context = JSON.stringify([actualProps.session?.id ?? null, actualProps.session?.cwd ?? actualProps.cwd ?? null, Boolean(actualProps.session?.transient)]);
+  const context = JSON.stringify([actualProps.session?.id ?? null, actualProps.session?.cwd ?? actualProps.cwd ?? null, Boolean(actualProps.session?.transient), null]);
   let drafts = helpers.receiveWorkflowSettings({}, data, actualProps.session?.id);
   if (overrides) {
-    const key = helpers.workflowDraftKey(scope, data.projectRoot, actualProps.session?.id);
+    const key = helpers.workflowDraftKey(scope, data.projectRoot, actualProps.session?.id, data.sessionScope);
     drafts = { ...drafts, [key]: { ...drafts[key], overrides } };
   }
   // Seed only server-loaded state; event/fetch behavior is exercised by browser tests.
@@ -95,7 +95,7 @@ test("unsupported modes are disabled, saved unsupported integration remains visi
   const html = render({ overrides: { method: "ff", checks: [{ label: "", argv: [""] }] } });
   assert.match(html, /value="ff" disabled="" selected=""/);
   assert.match(html, /value="automatic" disabled=""/);
-  assert.match(html, /scoped grants, reviewed instruction profiles and task-bound workspace admission/);
+  assert.match(html, /scoped authorization and operation-level recovery admission/);
   assert.doesNotMatch(html, /Requires durable action/);
   assert.match(html, /id="workflow-error"/);
   assert.match(html, /class="workflow-primary" disabled="">Save session settings/);
@@ -120,6 +120,19 @@ test("current-task blockers use saved server facts rather than the selected scop
   assert.match(legacy, /Legacy preview\/confirm retains/);
 });
 
+test("a waiting chat explains idle-only Save/Apply and the create-only missing-base proposal", () => {
+  const data = fixture({ task: { kind: "managed", settings: { ...settings.DEFAULT_GIT_WORKFLOW_SETTINGS,
+    workspace: "worktree", baseBranch: null, onCreate: "continue" } }, sessionEditable: false,
+    sessionReason: "Stop the chat before changing its session settings." });
+  const html = render({ data, props: { busy: true, attention: true } });
+  assert.match(html, /Session Save and Apply are unavailable/);
+  assert.match(html, /Stop the chat, save and apply the base, then resume/);
+  assert.match(html, /one new worktree only/);
+  assert.match(html, /does not save settings or move this chat/);
+  assert.match(html, /disabled=""[^>]*>Apply saved settings to this task/);
+  assert.doesNotMatch(render({ data, props: { busy: false } }), /one new worktree only/);
+});
+
 test("stable visibility, scope-specific conflicts, focus containment/restoration and responsive token styling", () => {
   assert.match(home, /response\.status === 409/);
   assert.match(home, /Reload saved &amp; discard this draft/);
@@ -133,4 +146,19 @@ test("stable visibility, scope-specific conflicts, focus containment/restoration
   assert.match(css, /data-covering=true.*position: fixed/);
   assert.match(css, /env\(safe-area-inset-bottom\)/);
   assert.match(css, /color: var\(--accent-contrast\)/);
+});
+
+test("a saved chat can select another configuration project without task or source adoption", () => {
+  const html = render({ data: fixture({ sessionScope: "project", projectRoot: "/other", legacySessionSettings: true }) });
+  assert.match(html, /Configuration project/);
+  assert.match(html, /This project only/);
+  assert.match(html, /This chat × selected project/);
+  assert.match(html, /not copied to this project/);
+  assert.match(html, /Actions still use the chat checkout/);
+  assert.match(html, /Action source: <code>\/repo-worktrees\/chat/);
+  assert.doesNotMatch(html, /Apply saved settings to this task|data-task-binding/);
+  assert.match(html, /<details class="workflow-legacy"><summary>Existing chat actions/);
+  assert.match(home, /sourceEvidenceOpen/);
+  assert.match(home, /Source evidence · optional legacy metadata/);
+  assert.doesNotMatch(home, /!session && <form className="workflow-project-picker"/);
 });

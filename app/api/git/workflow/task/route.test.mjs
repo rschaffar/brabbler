@@ -218,7 +218,7 @@ test("forks/copies and file replacement cannot inherit a private binding; restar
   const child = SessionManager.create(f.cwd);
   child.appendMessage({ role: "user", content: "copied context", timestamp: Date.now() });
   child.appendMessage({ role: "assistant", content: [{ type: "text", text: "ready" }], timestamp: Date.now() });
-  inheritSessionGitWorkflow(f.sm, child);
+  inheritSessionGitWorkflow(f.sm.getEntries(), child);
   cacheSessionPath(child.getSessionId(), child.getSessionFile());
   assert.equal((await status(child.getSessionId())).status.status, "none");
   const copied = join(f.dir, "copy.jsonl"); await copyFile(f.file, copied); cacheSessionPath(f.id, copied);

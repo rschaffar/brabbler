@@ -476,3 +476,86 @@ test("all cwd and persisted-session access uses the physical allowlist, includin
   } finally { globalThis.__piAllowedRootsCache = previousRoots; }
   assert.equal(await readFile(f.file, "utf8"), original);
 });
+
+test("one unchanged chat saves independent overrides for explicitly selected projects and linked worktrees", async (t) => {
+  const a = await fixture(t, true), b = await fixture(t);
+  a.sm.appendCustomEntry("pi-web:tool-selection", { version: 1, tools: ["read", "edit"] });
+  await save("project", { cwd: a.repo }, { overrides: { targetBranch: "a-target", commits: "ask" } });
+  await save("project", { cwd: b.repo }, { overrides: { targetBranch: "b-target", commits: "manual" } });
+  await save("session", a.query, { overrides: { targetBranch: "unqualified-old-target", checks: [] } });
+  const legacy = await state(a.query);
+  const queryA = { sessionId: a.id, projectPath: a.cwd };
+  const queryB = { sessionId: a.id, projectPath: b.cwd };
+  const beforeB = await state(queryB);
+  assert.equal(beforeB.cwd, b.cwd);
+  assert.equal(beforeB.projectRoot, b.repo);
+  assert.equal(beforeB.sessionScope, "project");
+  assert.equal(beforeB.legacySessionSettings, true);
+  assert.equal(beforeB.resolved.session.values.targetBranch, "b-target");
+  assert.deepEqual(beforeB.session, {});
+  assert.equal(beforeB.permissions.agent.commit.code, "manual-commits");
+  await save("session", queryA, { overrides: { targetBranch: "a-chat", checks: [] } });
+  await save("session", queryB, { overrides: { targetBranch: null, commits: "off" } });
+  assert.equal((await state(queryA)).resolved.session.values.targetBranch, "a-chat");
+  assert.deepEqual((await state({ sessionId: a.id, projectPath: a.repo })).session, { targetBranch: "a-chat", checks: [] });
+  assert.deepEqual((await state(queryB)).session, { commits: "off", targetBranch: null });
+  assert.equal((await state(queryB)).permissions.human.commit.kind, "blocked");
+  await save("session", queryB, { overrides: {} });
+  assert.equal((await state(queryB)).resolved.session.values.targetBranch, "b-target");
+  assert.equal((await state(queryA)).resolved.session.values.targetBranch, "a-chat");
+  assert.deepEqual((await state(a.query)).session, legacy.session, "unqualified compatibility records remain untouched");
+  assert.deepEqual((await state(a.query)).task, legacy.task);
+  assert.equal(SessionManager.open(a.file).getCwd(), a.cwd, "configuration must not relocate the chat");
+  assert.equal((await state(queryA)).permissions.agent.commit.code, "project-scope-read-only");
+  assert.equal(await git(a.cwd, "status", "--porcelain"), "");
+  assert.equal(await git(b.cwd, "status", "--porcelain"), "");
+});
+
+test("project-scoped revisions cannot save to a different project and cannot capture a task", async (t) => {
+  const a = await fixture(t), b = await fixture(t);
+  const query = { sessionId: a.id, projectPath: a.cwd };
+  const before = await state(query), original = await readFile(a.file, "utf8");
+  await json(await put({ scope: "session", sessionId: a.id, projectPath: b.cwd, revision: before.revision, overrides: { commits: "off" } }), 409);
+  await json(await put({ scope: "task", ...query, revision: before.revision }), 400);
+  await json(await get({ ...query, cwd: a.cwd }), 400);
+  assert.equal(await readFile(a.file, "utf8"), original);
+  const noChat = await state({ projectPath: b.cwd });
+  assert.equal(noChat.session, null);
+  assert.equal(noChat.sessionEditable, false);
+  assert.equal(noChat.projectRoot, b.repo);
+});
+
+test("explicit project access never borrows the caller root, and caller/selected checkout gates still apply", async (t) => {
+  const a = await fixture(t), b = await fixture(t);
+  const outside = await mkdtemp(join(tmpdir(), "pi-project-denied-"));
+  t.after(() => rm(outside, { recursive: true, force: true }));
+  await json(await get({ sessionId: a.id, projectPath: outside }), 403);
+  const query = { sessionId: a.id, projectPath: b.cwd };
+  for (const cwd of [a.cwd, b.cwd]) {
+    const release = acquireGitCheckoutGate([cwd]);
+    try {
+      const busy = await state(query);
+      assert.equal(busy.sessionEditable, false);
+      await json(await put({ scope: "session", ...query, revision: busy.revision, overrides: {} }), 409);
+    } finally { release(); }
+  }
+  assert.equal((await state(query)).sessionEditable, true);
+});
+
+test("project-keyed restrictive settings cannot be bypassed by existing caller mutation entry points", async (t) => {
+  const f = await fixture(t), other = await fixture(t);
+  f.sm.appendCustomEntry("pi-web:tool-selection", { version: 1, tools: ["read", "edit"] });
+  await save("task", f.query);
+  await save("session", { sessionId: f.id, projectPath: other.cwd }, { overrides: { enabled: false } });
+  assert.equal((await state(f.query)).permissions.agent.commit.kind, "confirmation-required");
+  await save("session", { sessionId: f.id, projectPath: f.cwd }, { overrides: { commits: "manual" } });
+  assert.equal((await state(f.query)).permissions.agent.commit.code, "manual-commits");
+  assert.equal((await state(f.query)).permissions.human.commit.kind, "confirmation-required");
+  await save("session", { sessionId: f.id, projectPath: f.cwd }, { overrides: { commits: "off" } });
+  const { POST } = await jiti.import("../../commit/route.ts");
+  await writeFile(join(f.cwd, "candidate"), "scoped-off fixture\n");
+  const refused = await POST(new Request("http://localhost/api/git/commit", { method: "POST", body: JSON.stringify({
+    sessionId: f.id, operation: "preview", paths: ["candidate"], message: "Must not bypass scoped Off",
+  }) }));
+  await json(refused, 409);
+});
