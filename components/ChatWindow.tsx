@@ -26,6 +26,7 @@ import { GitMergeReviewPanel } from "./GitMergeReviewPanel";
 import { GitActionDialog } from "./GitActionDialog";
 import { GitActionLiveFallback, GitActionProvider } from "./GitActionContext";
 import { gitActionId } from "@/lib/git-action-ui";
+import { gitSettingsProposalId } from "@/lib/git-settings-proposal-ui";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -185,7 +186,7 @@ function hasFinalAssistantAnswer(message: AgentMessage): boolean {
 
 // Durable cards are standalone anchors, never hidden in collapsed process details.
 function isMessageGroupAnchor(message: AgentMessage): boolean {
-  return isOrdinaryMessageGroupAnchor(message) || gitActionId(message) !== null;
+  return isOrdinaryMessageGroupAnchor(message) || gitActionId(message) !== null || gitSettingsProposalId(message) !== null;
 }
 
 function findFinalAssistantIndex(messages: AgentMessage[], userIdx: number, endIdx: number): number {
@@ -820,7 +821,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
 
   // Match ChatMinimap's reference budget; UI-only cards are standalone below,
   // but must not shift the minimap's ordinary conversation message indexes.
-  const visibleMessages = messages.filter((m) => isOrdinaryMessageGroupAnchor(m) || m.role === "assistant");
+  const visibleMessages = messages.filter((m) => isMessageGroupAnchor(m) || m.role === "assistant");
   // Stable Map identity: `messages` doesn't change during streaming updates
   // (the streaming message lives in streamState), so memoized MessageViews
   // skip re-rendering on every message_update event. An inline `new Map()`
@@ -1153,7 +1154,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
               const visibleRefIndexByMessage = new Map<number, number>();
               let refIdx = 0;
               messages.forEach((msg, idx) => {
-                if (isOrdinaryMessageGroupAnchor(msg) || msg.role === "assistant") {
+                if (isMessageGroupAnchor(msg) || msg.role === "assistant") {
                   visibleRefIndexByMessage.set(idx, refIdx++);
                 }
               });

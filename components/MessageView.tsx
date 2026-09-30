@@ -6,6 +6,8 @@ import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
 import { ThinkingIcon } from "./ThinkingIcon";
 import { GitActionCard } from "./GitActionCard";
+import { GitSettingsProposalCard } from "./GitSettingsProposalCard";
+import { gitSettingsProposalId } from "@/lib/git-settings-proposal-ui";
 import { gitActionId } from "@/lib/git-action-ui";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
@@ -282,7 +284,9 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} />;
   }
   if (message.role === "toolResult") {
-    // Rendered inline under its toolCall — skip standalone rendering if paired
+    const proposalId = gitSettingsProposalId(message);
+    if (proposalId) return <GitSettingsProposalCard proposalId={proposalId} sessionId={sessionId} />;
+    // Ordinary results are rendered inline under their toolCall.
     return null;
   }
   if (message.role === "custom") {

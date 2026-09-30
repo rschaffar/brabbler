@@ -53,7 +53,7 @@ Coverage:
 - The focused Activity run checks background questions, short-run completion/review,
   first-browser baselines, cross-tab acknowledgement and reload, cross-project
   filtering, and navigation at 1280px, 700px, and 390px without model credentials.
-- The focused Git workflow run checks project/session preferences without a browser reload,
+- The focused Git workflow run checks an in-chat agent settings proposal card with a mocked read/apply endpoint (the real locked save/identity path is tested by API tests), project/session preferences without a browser reload,
   whole-merge/single-commit/consecutive-range review, explicit manual commit preview/confirmation,
   saved-check verification, exact proposal acknowledgement and separately confirmed local non-FF merge,
   and same-chat continuation into an existing registered worktree. The agent-triggered post-run

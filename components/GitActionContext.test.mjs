@@ -40,9 +40,13 @@ test("legacy preferences and unrelated dialogs always retain their existing fall
 test("ChatWindow keeps cards outside process folding, uses mounted registration and preserves Workflow redirect", async () => {
   const chat = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
   assert.match(chat, /isOrdinaryMessageGroupAnchor\(message\) \|\| gitActionId\(message\) !== null/);
-  assert.match(chat, /visibleMessages = messages.filter\(\(m\) => isOrdinaryMessageGroupAnchor\(m\) \|\| m.role === "assistant"\)/);
-  assert.match(chat, /if \(isOrdinaryMessageGroupAnchor\(msg\) \|\| msg.role === "assistant"\) \{\s*visibleRefIndexByMessage.set/);
+  assert.match(chat, /gitSettingsProposalId\(message\) !== null/);
+  assert.match(chat, /visibleMessages = messages.filter\(\(m\) => isMessageGroupAnchor\(m\) \|\| m.role === "assistant"\)/);
+  assert.match(chat, /if \(isMessageGroupAnchor\(msg\) \|\| msg.role === "assistant"\) \{\s*visibleRefIndexByMessage.set/);
   assert.match(chat, /data-entry-id=\{entryIds\[idx\]\} ref=\{options.attachRef === false \|\| currentRefIdx === undefined/);
+  const minimap = await readFile(new URL("./ChatMinimap.tsx", import.meta.url), "utf8");
+  assert.match(minimap, /const isProposalCard = gitSettingsProposalId\(message\) !== null/);
+  assert.match(minimap, /refIndex\+\+;\s*\/\/ The card has its own visible chat ref, but is not a new user turn\.\s*if \(isProposalCard\) continue/);
   assert.match(chat, /<GitActionProvider[\s\S]*liveRequest=\{extensionDialog\?\.method === "git_action" \? extensionDialog : null\}/);
   assert.match(chat, /<GitActionLiveFallback>[\s\S]*<AskUserDialog[\s\S]*Dismiss request &amp; open Workflow[\s\S]*<ExtensionDialog[\s\S]*<\/GitActionLiveFallback>/);
   assert.match(source, /return \(\) => setMountedActions/);

@@ -17,6 +17,7 @@ import { checkActivityOverview } from "./activity.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkGitWorkflow } from "./git-workflow.mjs";
+import { checkSettingsProposalCard } from "./git-settings-proposals.mjs";
 import { consumeExpectedTaskConflict } from "./git-task-binding.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
@@ -56,6 +57,8 @@ const BULK = ["e2e-bulk-desktop-a", "e2e-bulk-desktop-b", "e2e-bulk-mobile-a", "
 const OTHER = "e2e-other-project";
 const GIT = "e2e-git-workflow";
 const GIT_HISTORY = "e2e-git-action-history";
+const PROPOSAL = "e2e-git-settings-proposal";
+const PROPOSAL_ID = "12345678-1234-4234-8234-123456789abc";
 let gitHistory;
 const gitProject = join(agentDir, "git-project");
 const targetWorktree = join(agentDir, "git-target-worktree");
@@ -168,6 +171,16 @@ try {
     message("reply", "root", "assistant", "E2E wrapper reply"),
   ]);
   writeSession(ARCHIVE, [message("root", null, "user", "E2E archive fixture")]);
+  const proposalResult = message("proposal-result", "proposal-call", "toolResult", [{ type: "text", text: "Proposal ready for review." }]);
+  Object.assign(proposalResult.message, { toolCallId: "proposal-tool", toolName: "git_workflow_propose_settings", isError: false,
+    details: { proposalId: PROPOSAL_ID } });
+  writeSession(PROPOSAL, [
+    message("proposal-user", null, "user", "Please propose a settings change"),
+    message("proposal-call", "proposal-user", "assistant", [{ type: "toolCall", id: "proposal-tool", name: "git_workflow_propose_settings",
+      arguments: { scope: "project", repositoryPath: gitProject, changes: [{ field: "enabled", value: false }] } }]),
+    proposalResult,
+    message("proposal-answer", "proposal-result", "assistant", "Review and apply the proposal in chat."),
+  ], gitProject);
   for (const id of BULK) writeSession(id, [message("root", null, "user", `E2E bulk ${id}`)]);
   writeSession(OTHER, [
     message("root", null, "user", "Other workspace task"),
@@ -250,7 +263,7 @@ try {
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, GIT_HISTORY, ...BULK].sort());
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, GIT_HISTORY, PROPOSAL, ...BULK].sort());
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
@@ -272,6 +285,7 @@ try {
     await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
     await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree, otherProject });
     await checkIntegratedGitGraph(page, targetWorktree);
+    await checkSettingsProposalCard(page, { base, sessionId: PROPOSAL, proposalId: PROPOSAL_ID, projectRoot: gitProject });
     await checkSavedGitActionHistory(page, { base, api, sessionId: GIT_HISTORY, records: gitHistory.records, artifacts });
     await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
     await checkGitDecisionWaiting(page, { base, width: page.viewportSize().width });
