@@ -95,6 +95,28 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
     hidden: true,
     factory: (pi) => {
       pi.registerTool({
+        name: "git_workflow_propose_settings",
+        label: "Propose Workflow settings",
+        description: "Propose field-by-field Global, Project or Session Workflow settings for human review in chat. This NEVER saves settings, applies a task, or starts Git work. For Project and Chat×Project give repositoryPath: an allowed physical registered checkout root. Omit it for unqualified Session or Global. changes is 1–10 distinct fields; omit value to reset a field to inherit (null, false and [] are explicit values). The human alone can click Apply or Dismiss; Session Apply waits until this chat is idle. Do not call another tool to apply a proposal.",
+        executionMode: "sequential",
+        parameters: Type.Object({
+          scope: Type.Unsafe<"global" | "project" | "session">({ type: "string", enum: ["global", "project", "session"] }),
+          repositoryPath: Type.Optional(Type.String({ maxLength: 4096 })),
+          changes: Type.Array(Type.Object({ field: Type.String(), value: Type.Optional(Type.Unknown()) }), { minItems: 1, maxItems: 10 }),
+        }),
+        async execute(_id, params, signal, _update, ctx) {
+          try {
+            if (signal?.aborted || !samePath(ctx.cwd, sessionCwd)) throw new Error("Session changed or proposal cancelled");
+            const { proposeGitSettings } = await import("./git-settings-proposals");
+            const proposalId = await proposeGitSettings(ctx.sessionManager.getSessionId(), params);
+            return { content: [{ type: "text" as const, text: `Workflow settings proposal ${proposalId} is available in this chat for human Apply or Dismiss. Nothing was saved or applied to the task.` }],
+              details: { proposalId } };
+          } catch {
+            return { content: [{ type: "text" as const, text: "Workflow settings proposal unavailable. Check scope, fields, persisted chat and physical project selection; no settings were saved." }], isError: true, details: { proposal: false } };
+          }
+        },
+      });
+      pi.registerTool({
         name: "git_workflow",
         label: "Git Workflow",
         description: "Inspect captured settings with status; configure all scopes in the Workflow panel. Review local candidates, request an exact commit (alias of git_commit operation commit), or integrate using the captured local target/checks. Integration asks for check execution and then exact-state non-FF merge approval. Existing legacy sessions may still supply target/checks and use preferences; managed tasks cannot be retargeted through that legacy form. For status/review only, repositoryPath explicitly selects another allowed repository, with workspaceBranch scoped to it. Without repositoryPath, workspaceBranch stays in this chat's repository. Selection never moves the chat or retargets shell/file tools. Explicit-project mutations are not yet supported. Live disable/pause applies to mutations. No automatic integration, cleanup, or remote actions.",

@@ -8,6 +8,7 @@ import {
   normalizeDisplayMath,
 } from "@/lib/markdown";
 import { isMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
+import { gitSettingsProposalId } from "@/lib/git-settings-proposal-ui";
 import type { AgentMessage, AssistantMessage, CustomMessage, TextContent, UserMessage } from "@/lib/types";
 import { useI18n } from "@/hooks/useI18n";
 import styles from "./ChatMinimap.module.css";
@@ -343,9 +344,12 @@ export function ChatMinimap({
 
       for (const message of allMessagesRef.current) {
         const isAnchor = isMessageGroupAnchor(message);
-        if (!isAnchor && message.role !== "assistant") continue;
+        const isProposalCard = gitSettingsProposalId(message) !== null;
+        if (!isAnchor && !isProposalCard && message.role !== "assistant") continue;
         const element = refs?.[refIndex];
         refIndex++;
+        // The card has its own visible chat ref, but is not a new user turn.
+        if (isProposalCard) continue;
 
         if (isAnchor) {
           currentTurn = null;
