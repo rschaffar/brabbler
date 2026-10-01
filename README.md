@@ -54,9 +54,7 @@ On Linux, Home Manager users can import `inputs.pi-web.homeManagerModules.defaul
   imports = [ inputs.pi-web.homeManagerModules.default ];
   services.pi-web = {
     enable = true;
-    package = inputs.pi-web.packages.${pkgs.system}.default.override {
-      piCli = inputs.llm-agents.packages.${pkgs.system}.pi;
-    };
+    package = inputs.pi-web.packages.${pkgs.system}.default;
     allowedHosts = [ "pi.example.internal" ];
     environmentFile = osConfig.sops.secrets.pi-web-env.path;
     environment.SSH_AUTH_SOCK = "%t/ssh-agent/selected.sock";
@@ -64,7 +62,7 @@ On Linux, Home Manager users can import `inputs.pi-web.homeManagerModules.defaul
 }
 ```
 
-Only the installation-specific host, secret-file path, optional package/SDK match, and non-secret extras such as an SSH-agent socket need to live in the consuming Home Manager configuration. When migrating an existing service, remove its old `systemd.user.services.pi-web` definition and any duplicate `home.packages` entry for Pi Web; the module owns both. Keep password values in a runtime `environmentFile`, not a Nix option; configure TLS termination separately. Mutable sessions and accounts stay outside the Nix store. The module is opt-in and does not alter NixOS configuration by itself.
+Only the installation-specific host, secret-file path, and non-secret extras such as an SSH-agent socket need to live in the consuming Home Manager configuration. When migrating an existing service, remove its old `systemd.user.services.pi-web` definition and any duplicate `home.packages` entry for Pi Web; the module owns both. Keep password values in a runtime `environmentFile`, not a Nix option; configure TLS termination separately. Mutable sessions and accounts stay outside the Nix store. The module is opt-in and does not alter NixOS configuration by itself.
 
 ## Configuration
 
