@@ -19,7 +19,6 @@ import { readSessionGitWorkflow } from "@/lib/git-workflow-policy";
 import { assertManagedGitAction, assertManagedGitProjectDenial, assertManagedGitWorkspace, ManagedGitAccessError, watchManagedGitAccess } from "@/lib/git-workflow-access";
 import { samePath, toNativePath } from "@/lib/paths";
 import { getProjectTrustStatus } from "@/lib/project-trust";
-import { hasConflictingRpcCheckoutOperation } from "@/lib/rpc-manager";
 import { readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
 import type { SessionEntry } from "@/lib/types";
 
@@ -103,9 +102,6 @@ async function session(id: string, action?: "checks" | "integration") {
 }
 
 type Context = Extract<Awaited<ReturnType<typeof session>>, { cwd: string }>;
-function idle(context: Context): boolean {
-  return !hasConflictingRpcCheckoutOperation(context.cwd) && !hasConflictingRpcCheckoutOperation(context.targetCwd);
-}
 async function admissionSelection(context: Context) {
   const selection = await selectGitProjectResources(context.cwd);
   if (!samePath(selection.cwd, context.cwd) || selection.branch !== context.featureBranch ||
@@ -174,14 +170,14 @@ export async function POST(req: Request) {
     if (context.response) return context.response;
     const c = context as Context;
     if (!c.saved.checks?.length) return error("Saved verification checks required", 409);
-    if (!idle(c) || isGitCheckoutGated(c.cwd) || isGitCheckoutGated(c.targetCwd)) {
-      return error("Stop checkout operations in both checkouts before integration", 409);
+    if (isGitCheckoutGated(c.cwd) || isGitCheckoutGated(c.targetCwd)) {
+      return error("Checkout is busy with a Git transaction", 409);
     }
     const guard = async () => {
       req.signal.throwIfAborted();
       if (JSON.stringify(await c.policy()) !== JSON.stringify(c.saved)) throw new ManagedGitAccessError("Workflow policy changed; refresh review");
       const roots = await getAllowedFileRoots();
-      if (!await allowed(c.cwd, roots) || !await allowed(c.targetCwd, roots) || !c.trusted() || !idle(c)) {
+      if (!await allowed(c.cwd, roots) || !await allowed(c.targetCwd, roots) || !c.trusted()) {
         throw new ManagedGitAccessError("Checkout no longer available");
       }
       req.signal.throwIfAborted();

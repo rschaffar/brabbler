@@ -2,7 +2,6 @@ import { Type } from "@earendil-works/pi-ai";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { confirmGitCommit, prepareGitCommit, GitCommitOperationError, type GitCommitPreview } from "./git-commit";
 import { GitCheckoutBusyError, withGitCheckoutGate } from "./git-checkout-gate";
-import { hasConflictingRpcCheckoutOperation } from "./rpc-manager";
 import type { GitWorkflowPolicy } from "./git-workflow-policy";
 import { samePath } from "./paths";
 import { selectGitWorkspace } from "./git-workspace-selector";
@@ -53,9 +52,6 @@ export function createGitCommitExtension(
               return current;
             };
             await liveGuard(); // Includes legacy preview/confirm invocation, not just the final write.
-            const assertIdle = () => {
-              if (hasConflictingRpcCheckoutOperation(workspace, ctx.sessionManager?.getSessionId(), _id)) throw new ManagedGitAccessError("A checkout operation is active; wait before committing.");
-            };
             if (params.operation === "commit") {
               if (!params.paths?.length || !params.message?.trim() || params.preview) return failure("Select paths and an exact commit message");
               const ui = ctx.ui as typeof ctx.ui & Partial<AgentGitWorkflowUiContext>;
@@ -64,7 +60,6 @@ export function createGitCommitExtension(
                 sink: gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)),
                 ask: (candidate, signal) => ui.gitAction!(candidate, signal), beforeApply: async () => {
                   await assertManagedGitWorkspace(await liveGuard(), workspace);
-                  assertIdle();
                   if (_signal?.aborted || !samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) throw new ManagedGitAccessError("Commit cancelled or workspace changed");
                 } });
             }
@@ -73,7 +68,7 @@ export function createGitCommitExtension(
               if (!Array.isArray(params.paths) || !params.paths.length) return failure("Select paths to preview");
               const paths = params.paths;
               const preview = await withGitCheckoutGate([workspace], async () => {
-                await liveGuard(); assertIdle();
+                await liveGuard();
                 return prepareGitCommit(workspace, paths);
               });
               return { content: [{ type: "text" as const, text: JSON.stringify(preview) }], details: { preview } };
@@ -83,7 +78,7 @@ export function createGitCommitExtension(
             const preview = params.preview as GitCommitPreview;
             const message = params.message;
             return await withGitCheckoutGate([workspace], async () => {
-              await liveGuard(); assertIdle();
+              await liveGuard();
               if (_signal?.aborted) return failure("Commit cancelled; no commit was made");
               const diff = await getGitTreeDiff(workspace, await getGitCommitTreeOid(workspace, preview.head), preview.tree);
               const selection = await selectGitCommitAdmission(workspace);
@@ -93,11 +88,11 @@ export function createGitCommitExtension(
               let reservation: GitOperationReservation | undefined;
               try {
                 await action.update("executing");
-                await liveGuard(); assertIdle();
+                await liveGuard();
                 reservation = await beginSupervisedGitCommitIntent(selection, action.record.id);
                 const result = await confirmGitCommit(preview, message, async (intended) => {
                   await action.update("executing", { intended });
-                  await liveGuard(); assertIdle();
+                  await liveGuard();
                   if (_signal?.aborted || !samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) throw new ManagedGitAccessError("Commit cancelled or workspace changed");
                   _signal?.throwIfAborted();
                   await revalidateGitCommitAdmission(selection);
