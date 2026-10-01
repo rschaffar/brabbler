@@ -272,7 +272,7 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
     if (disabled || !draftKey) return;
     setDrafts((current) => ({ ...current, [draftKey]: { ...current[draftKey], overrides: resetWorkflowField(current[draftKey].overrides, field), error: current[draftKey].conflict ? current[draftKey].error : undefined } }));
   }
-  async function put(destination: WorkflowScope | "pause" | "task") {
+  async function put(destination: WorkflowScope | "pause" | "task" | "optout") {
     if (!data || operationRef.current || (destination === scope && (disabled || entry?.conflict || resolution?.validationError))) return;
     const key = destination === scope ? draftKey : null;
     operationRef.current = true; setOperation(destination); setActionError(null); setNotice(null);
@@ -284,7 +284,8 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
           scope: destination, revision: key ? entry!.revision : data.revision,
           ...workflowRequestTarget(snapshot?.sessionBound ? sessionId : undefined, snapshot?.projectReason ? undefined : configCwd,
             snapshot?.projectReason ? undefined : projectPath),
-          ...(key ? { overrides: draft } : destination === "pause" ? { paused: !data.paused } : {}),
+          ...(key ? { overrides: draft } : destination === "pause" ? { paused: !data.paused }
+            : destination === "optout" ? { optedOut: !data.optedOut } : {}),
         }),
       });
       const body = await response.json() as GitWorkflowSettingsResponse & { error?: string };
@@ -300,6 +301,7 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
         setSnapshot({ context, data: body, sessionBound: snapshot!.sessionBound, projectReason: snapshot?.projectReason });
       }
       setNotice({ context, text: destination === "pause" ? body.paused ? "All managed Git actions paused. Shells and other applications are not sandboxed." : "Managed Git actions resumed, subject to saved settings and existing guards."
+        : destination === "optout" ? body.optedOut ? "Pi Web Git workflow switched off for this chat. Existing check quarantine is unchanged." : "Pi Web Git workflow restored for this chat. Existing check quarantine still applies."
         : destination === "task" ? "Saved Session settings applied to this task. No Git operation was approved or started."
           : destination === "session" && body.sessionScope === "project" ? "Chat overrides saved for this project only. Legacy actions keep captured choices; disabling or restricting commits also limits their existing entry points. No operation started."
             : destination === "session" ? "Session settings saved for later tasks. Enablement and Commit Off are live restrictions; this task otherwise keeps its captured settings."
@@ -412,9 +414,10 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
   return <div ref={resizer.panelRef} className="workflow-container" data-covering={covering} hidden={!visible}>
     <div ref={panelRef} id="workflow-panel" className="workflow-home" role={covering ? "dialog" : "region"} aria-modal={covering || undefined} aria-labelledby="workflow-title">
       <header className="workflow-header"><div><h2 ref={titleRef} tabIndex={-1} id="workflow-title">Workflow</h2><p>{shortPath(data?.projectRoot ?? configCwd)}{session ? ` / ${session.name || "This chat"}` : " / Configuration"}</p></div>
-        <div className="workflow-actions"><button type="button" disabled={!data || !!operation || loading} aria-pressed={data?.paused ?? false} onClick={() => void put("pause")}>{data?.paused ? "Resume all" : "Pause all"}</button>
+        <div className="workflow-actions">{detailsAvailable && data?.sessionScope !== "project" && <button type="button" disabled={!data?.sessionEditable || busy || !!operation || loading} aria-pressed={data?.optedOut ?? false} onClick={() => void put("optout")}>{data?.optedOut ? "Turn on for this chat" : "Turn off for this chat"}</button>}<button type="button" disabled={!data || !!operation || loading} aria-pressed={data?.paused ?? false} onClick={() => void put("pause")}>{data?.paused ? "Resume all" : "Pause all"}</button>
           <button type="button" onClick={onClose} aria-label="Close Workflow"><span className="workflow-desktop-close" aria-hidden="true">×</span><span className="workflow-mobile-close">Back to chat</span></button></div>
       </header>
+      {data?.optedOut && <p className="workflow-banner" role="status">Pi Web Git workflow is off for this chat. Managed Git actions and Pi Web Git guidance are disabled; recorded check quarantine is retained. This does not override repository instructions or authorize a Git operation.</p>}
       {data?.paused && <p className="workflow-banner" role="status">All managed Git actions are paused, at every scope.</p>}
       {attention && <p className="workflow-banner" role="status">A request needs your attention in chat. Your workflow draft is unchanged. <button type="button" onClick={onClose}>Go to chat to answer</button></p>}
       {busy && data?.sessionScope !== "project" && task?.kind === "managed" && task.settings.workspace === "worktree" && !task.settings.baseBranch &&

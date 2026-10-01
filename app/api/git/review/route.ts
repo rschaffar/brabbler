@@ -8,7 +8,7 @@ import { gitExecEnv } from "@/lib/git-exec";
 import { beginGitAction, failGitAction, gitActionSink, snapshotGitActionCandidate } from "@/lib/git-action-controller";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { GitReviewError, getGitReviewDiff, reviewGitBranches, type GitReviewSelection } from "@/lib/git-review";
-import { readSessionGitWorkflow } from "@/lib/git-workflow-policy";
+import { readCapturedSessionGitWorkflow } from "@/lib/git-workflow-policy";
 import { samePath, toNativePath } from "@/lib/paths";
 import { readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
 import type { SessionEntry } from "@/lib/types";
@@ -66,7 +66,7 @@ async function sessionReview(sessionId: string) {
   if (manager.getHeader()?.id !== sessionId || !samePath(manager.getHeader()?.cwd ?? "", cwd)) {
     return { response: error("Session identity mismatch", 409) };
   }
-  const policy = readSessionGitWorkflow(manager.getEntries() as SessionEntry[]);
+  const policy = readCapturedSessionGitWorkflow(manager.getEntries() as SessionEntry[]);
   if (!policy?.integration) return { response: error("Session has no integration target", 409) };
   const feature = await checkout(cwd);
   if (policy.mode === "current" && policy.branch && policy.branch !== feature) {

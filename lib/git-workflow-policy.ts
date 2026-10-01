@@ -127,9 +127,12 @@ export function validateGitWorkflowPolicy(input: unknown): GitWorkflowPolicy {
     : { mode: "current", ...(Object.hasOwn(input, "branch") ? { branch: input.branch as string } : {}), ...common };
 }
 
-function parseSessionData(data: unknown): GitWorkflowPolicy | null | undefined {
+function parseSessionData(data: unknown, includeOptedOut = false): GitWorkflowPolicy | null | undefined {
   if (record(data) && data.version !== 1) {
-    try { return validateManagedSessionGitWorkflow(data).policy; } catch { return null; }
+    try {
+      const managed = validateManagedSessionGitWorkflow(data);
+      return managed.optedOut && !includeOptedOut ? null : managed.policy;
+    } catch { return null; }
   }
   if (!record(data) || !fields(data, ["version", "policy"]) || data.version !== 1) return undefined;
   if (data.policy === null) return null;
@@ -138,10 +141,17 @@ function parseSessionData(data: unknown): GitWorkflowPolicy | null | undefined {
 
 /** Latest valid entry wins; null is a deliberate override, not an absent snapshot. */
 export function readSessionGitWorkflow(entries: readonly SessionEntry[]): GitWorkflowPolicy | null | undefined {
+  return readSessionGitWorkflowPolicy(entries, false);
+}
+/** Recovery-only historical projection: opt-out never destroys the captured policy. */
+export function readCapturedSessionGitWorkflow(entries: readonly SessionEntry[]): GitWorkflowPolicy | null | undefined {
+  return readSessionGitWorkflowPolicy(entries, true);
+}
+function readSessionGitWorkflowPolicy(entries: readonly SessionEntry[], includeOptedOut: boolean): GitWorkflowPolicy | null | undefined {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
     if (entry.type !== "custom" || entry.customType !== GIT_WORKFLOW_TYPE) continue;
-    const policy = parseSessionData(entry.data);
+    const policy = parseSessionData(entry.data, includeOptedOut);
     if (policy !== undefined) return policy;
   }
   return undefined;
@@ -161,7 +171,7 @@ export function inheritSessionGitWorkflow(
   const managed = readManagedSessionGitWorkflow(sourceEntries);
   inheritGitProjectSessionSettings(sourceEntries, destination);
   if (managed) {
-    appendManagedSessionGitWorkflow(destination, managed.overrides, managed.task);
+    appendManagedSessionGitWorkflow(destination, managed.overrides, managed.task, managed.optedOut);
     return;
   }
   const policy = readSessionGitWorkflow(sourceEntries);

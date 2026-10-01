@@ -45,6 +45,7 @@ function liveCommitRestriction(state: GitWorkflowSettingsResponse): string {
 }
 
 export function managedGitWorkflowInstructions(state: GitWorkflowSettingsResponse): string {
+  if (state.optedOut) return "";
   if (state.paused) return blockedGuidance("Managed Git actions are paused.");
   if (!state.resolved.session.values.enabled || state.projectSessionRestrictions?.enabled === false) {
     return blockedGuidance("Managed Git is disabled for this project/chat.");
@@ -91,14 +92,17 @@ export function createGitWorkflowExtension(getPolicy: () => GitWorkflowPolicy | 
         let instructions: string;
         try {
           const activeTools = pi.getActiveTools();
-          instructions = !hasManagedGitMutationTools(activeTools)
+          // Load state first: opt-out removes this section even in read-only sessions.
+          const state = getState ? await getState() : undefined;
+          instructions = state?.optedOut ? "" : !hasManagedGitMutationTools(activeTools)
             ? blockedGuidance("This session has no coding mutation tools. Managed Git mutations are unavailable under the read-only tool selection.")
-            : getState ? managedGitWorkflowInstructions(await getState()) : gitWorkflowInstructions(getPolicy());
+            : state ? managedGitWorkflowInstructions(state) : gitWorkflowInstructions(getPolicy());
         } catch {
           // Also catches synchronous policy/state loader and active-tool lookup failures.
           instructions = blockedGuidance("Workflow settings or active tools are unavailable or unsupported. Managed Git actions are blocked.");
         }
-        options.sections[GIT_WORKFLOW_PROMPT_SECTION] = instructions;
+        if (instructions) options.sections[GIT_WORKFLOW_PROMPT_SECTION] = instructions;
+        else delete options.sections[GIT_WORKFLOW_PROMPT_SECTION];
       });
     },
   };

@@ -93,12 +93,13 @@ export async function loadGitWorkflowSettings(
   const saved = readManagedSessionGitWorkflow(entries);
   const session = sessionIdentity ? saved?.overrides ?? {} : null;
   const task = workflowTaskFromEntries(entries);
+  const optedOut = !!sessionIdentity && saved?.optedOut === true;
   // Bind choices and identity, not unrelated transcript activity: streaming
   // must not make Global/Project saves or the safety pause perpetually stale.
   // Session append safety is separately checked against the live manager/stat.
-  const revision = createHash("sha256").update(JSON.stringify({ document, projectRoot, project, cwd, sessionIdentity, session, task, projectSessionRestrictions, writeEpoch: readGitWorkflowWriteEpoch(agentDir) })).digest("hex");
+  const revision = createHash("sha256").update(JSON.stringify({ document, projectRoot, project, cwd, sessionIdentity, session, task, optedOut, projectSessionRestrictions, writeEpoch: readGitWorkflowWriteEpoch(agentDir) })).digest("hex");
   return {
-    revision, paused: document.paused, ...(cwd ? { cwd } : {}), ...(projectRoot ? { projectRoot } : {}),
+    revision, paused: document.paused, optedOut, ...(cwd ? { cwd } : {}), ...(projectRoot ? { projectRoot } : {}),
     global: document.global, project, session,
     ...(Object.keys(projectSessionRestrictions).length ? { projectSessionRestrictions } : {}),
     resolved: { global: resolveGitWorkflowSettings(document.global), project: resolveGitWorkflowSettings(document.global, project),

@@ -15,6 +15,7 @@ import { loadGitWorkflowSettings } from "./git-workflow-settings-store";
 import { snapshotManagedSessionGitWorkflow } from "./git-workflow-session";
 import { assertManagedGitAction, hasManagedGitMutationTools } from "./git-workflow-access";
 import { createGitWorkflowExtension } from "./git-workflow-extension";
+import { readManagedSessionGitWorkflow } from "./git-workflow-session";
 import { createGitWorkflowContextFilterExtension } from "./git-workflow-context";
 import { createGitCommitExtension } from "./git-commit-extension";
 import { createAgentGitWorkflowExtension, type AgentGitWorkflowUiContext } from "./agent-git-workflow-extension";
@@ -2538,6 +2539,9 @@ export async function startRpcSession(
           modelsStorePath: resolve(agentDir, "models-store.json"),
         })
       : undefined;
+    // A persisted chat opt-out is applied when the wrapper starts; changing it
+    // evicts an idle wrapper so the model no longer sees these tool schemas.
+    const gitWorkflowActive = readManagedSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])?.optedOut !== true;
     const workspaceStartOwner: { current?: AgentSessionWrapper } = {};
     const checkoutOwner: { current?: AgentSessionWrapper } = {};
     const checkoutGuard = createGitCheckoutOperationGuard({
@@ -2589,7 +2593,7 @@ export async function startRpcSession(
                 isBuiltInSubagentsEnabled,
               ),
               createAskUserExtension(),
-              createGitWorkflowExtension(() => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[]),
+              ...(gitWorkflowActive ? [createGitWorkflowExtension(() => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[]),
                 () => loadGitWorkflowSettings(sessionCwd, sessionManager.getEntries() as unknown as SessionEntry[], undefined, sessionManager.getSessionId())),
               createGitCommitExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])),
               createAgentGitWorkflowExtension(sessionCwd, undefined, sessionManager),
@@ -2597,7 +2601,7 @@ export async function startRpcSession(
                 (transition) => {
                   if (!workspaceStartOwner.current) throw new Error("Session not ready");
                   return workspaceStartOwner.current.scheduleGitWorkspaceTransition(transition);
-                }),
+                })] : []),
             ],
             extensionsOverride: (base) => preferUserBashExtension(preferPiWebAskUserExtension(preferPiWebSubagentExtension(base))),
           },

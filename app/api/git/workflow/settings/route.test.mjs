@@ -78,6 +78,26 @@ async function fixture(t, linked = false) {
   return { dir, repo, cwd, sm, id, file, query: { sessionId: id } };
 }
 
+test("chat opt-out is revision-bound, idle-only and preserves the captured policy", async (t) => {
+  const f = await fixture(t);
+  appendSessionGitWorkflow(f.sm, oldPolicy());
+  const initial = await state(f.query);
+  assert.equal(initial.optedOut, false);
+  const off = await save("optout", f.query, { optedOut: true });
+  assert.equal(off.optedOut, true);
+  assert.equal(readSessionGitWorkflow(SessionManager.open(f.file, undefined).getEntries()), null);
+  assert.deepEqual(readManagedSessionGitWorkflow(SessionManager.open(f.file, undefined).getEntries()).task.policy, oldPolicy());
+  await json(await put({ scope: "optout", ...f.query, revision: initial.revision, optedOut: false }), 409);
+  await json(await put({ scope: "optout", ...f.query, revision: off.revision, optedOut: "false" }), 400);
+  await json(await put({ scope: "optout", revision: (await state()).revision, optedOut: true }), 409);
+  const selected = await state({ ...f.query, projectPath: f.cwd });
+  assert.equal(selected.optedOut, true);
+  await json(await put({ scope: "optout", ...f.query, projectPath: f.cwd, revision: selected.revision, optedOut: false }), 400);
+  const on = await save("optout", f.query, { optedOut: false });
+  assert.equal(on.optedOut, false);
+  assert.deepEqual(readSessionGitWorkflow(SessionManager.open(f.file, undefined).getEntries()), oldPolicy());
+});
+
 test("global settings and pause work without a selected chat and never create a session", async () => {
   const sessionDirs = () => readdir(join(agentDir, "sessions")).catch((error) => {
     if (error.code === "ENOENT") return [];
