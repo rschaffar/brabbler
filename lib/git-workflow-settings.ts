@@ -38,6 +38,8 @@ export type GitWorkflowTask = { kind: "none" } | { kind: "legacy"; policy: GitWo
 export interface GitWorkflowSettingsResponse {
   revision: string;
   paused: boolean;
+  /** This chat's Pi Web workflow is switched off independently of inherited settings. */
+  optedOut: boolean;
   cwd?: string;
   projectRoot?: string;
   /** Explicit operation/configuration scope, independent of the chat cwd. */

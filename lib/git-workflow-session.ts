@@ -8,6 +8,8 @@ export interface ManagedSessionGitWorkflow {
   version: 2;
   overrides: GitWorkflowOverrides;
   task: GitWorkflowTask;
+  /** Chat-wide opt-out; absence in older v2 entries means active. */
+  optedOut?: boolean;
   /** Compatibility projection for the existing guarded engines, never a new grant. */
   policy: GitWorkflowPolicy | null;
 }
@@ -17,7 +19,9 @@ export function policyForWorkflowTask(task: GitWorkflowTask): GitWorkflowPolicy 
 export function validateManagedSessionGitWorkflow(input: unknown): ManagedSessionGitWorkflow {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid session workflow");
   const data = input as Record<string, unknown>;
-  if (data.version !== 2 || Object.keys(data).sort().join(",") !== "overrides,policy,task,version"
+  if (data.version !== 2 || Object.keys(data).some((key) => !["version", "overrides", "task", "policy", "optedOut"].includes(key))
+    || !["version", "overrides", "task", "policy"].every((key) => Object.hasOwn(data, key))
+    || (Object.hasOwn(data, "optedOut") && typeof data.optedOut !== "boolean")
     || !data.task || typeof data.task !== "object" || Array.isArray(data.task)) throw new Error("Unsupported session workflow version");
   const raw = data.task as Record<string, unknown>;
   let task: GitWorkflowTask;
@@ -30,7 +34,8 @@ export function validateManagedSessionGitWorkflow(input: unknown): ManagedSessio
   const policy = policyForWorkflowTask(task);
   const supplied = data.policy === null ? null : validateGitWorkflowPolicy(data.policy);
   if (JSON.stringify(supplied) !== JSON.stringify(policy)) throw new Error("Session workflow projection mismatch");
-  return { version: 2, overrides: validateGitWorkflowOverrides(data.overrides), task, policy };
+  return { version: 2, overrides: validateGitWorkflowOverrides(data.overrides), task, policy,
+    ...(Object.hasOwn(data, "optedOut") ? { optedOut: data.optedOut as boolean } : {}) };
 }
 
 /** A malformed/newer record is a blocker, not permission to resurrect old consent. */
@@ -55,9 +60,9 @@ export function workflowTaskFromEntries(entries: readonly SessionEntry[]): GitWo
   return policy === undefined ? { kind: "none" } : { kind: "legacy", policy };
 }
 export function appendManagedSessionGitWorkflow(
-  manager: Pick<SessionManager, "appendCustomEntry">, overrides: GitWorkflowOverrides, task: GitWorkflowTask,
+  manager: Pick<SessionManager, "appendCustomEntry">, overrides: GitWorkflowOverrides, task: GitWorkflowTask, optedOut = false,
 ): void {
-  const checked = validateManagedSessionGitWorkflow({ version: 2, overrides, task, policy: policyForWorkflowTask(task) });
+  const checked = validateManagedSessionGitWorkflow({ version: 2, overrides, task, policy: policyForWorkflowTask(task), optedOut });
   // An older runtime skips v2. A preceding v1 tombstone stops it falling back
   // to a historical agent-commit grant. Old runtimes must not execute this task.
   manager.appendCustomEntry(GIT_WORKFLOW_TYPE, { version: 1, policy: null });

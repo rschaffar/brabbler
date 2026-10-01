@@ -51,6 +51,7 @@ export function managedGitPermission(
   stage: ManagedGitStage, actor: ManagedGitActor,
 ): GitWorkflowPermission {
   if (!MANAGED_GIT_STAGES.includes(stage)) return blocked("unsupported-stage", "Unsupported managed Git action.");
+  if (state.optedOut) return blocked("chat-opted-out", "Pi Web Git workflow is off for this chat. Managed Git actions are unavailable.");
   if (facts.subagent) return blocked("subagent", "Subagents cannot execute managed Git mutations.");
   if (actor === "agent") {
     if (!facts.tools) return blocked("unknown-tools", "Active agent tools are unknown. Load the session before checking managed Git mutation availability.");
@@ -96,6 +97,7 @@ export function managedGitPermission(
 export function selectedProjectCommitEligibility(
   state: GitWorkflowSettingsResponse, facts: GitWorkflowSessionFacts, actor: ManagedGitActor,
 ): GitWorkflowPermission {
+  if (state.optedOut) return blocked("chat-opted-out", "Pi Web Git workflow is off for this chat. Managed Git actions are unavailable.");
   if (facts.subagent) return blocked("subagent", "Subagents cannot execute managed Git mutations.");
   if (actor === "agent" && (!facts.tools || !hasManagedGitMutationTools(facts.tools))) {
     return blocked(!facts.tools ? "unknown-tools" : "read-only", "Active coding mutation tools are required for agent commits.");

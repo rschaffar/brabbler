@@ -14,7 +14,7 @@ import { loadGitProjectSettings } from "@/lib/git-project-settings";
 import { appendGitProjectSessionSettings, readGitProjectSessionSettings } from "@/lib/git-project-session";
 import { managedGitPermissions } from "@/lib/git-workflow-permissions";
 import { managedGitSessionFacts } from "@/lib/git-workflow-access";
-import { appendManagedSessionGitWorkflow, workflowTaskFromEntries } from "@/lib/git-workflow-session";
+import { appendManagedSessionGitWorkflow, readManagedSessionGitWorkflow, workflowTaskFromEntries } from "@/lib/git-workflow-session";
 import { loadGitWorkflowSettings, readGitWorkflowSettingsDocument, withGitWorkflowSettingsLock, writeGitWorkflowSettingsDocument } from "@/lib/git-workflow-settings-store";
 import { invalidateSessionListCache, invalidateSessionManagerCache, readLatestSessionEntryId, readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
 import type { SessionEntry } from "@/lib/types";
@@ -110,16 +110,17 @@ export async function applyWorkflowSettings(input: Record<string, unknown>,
   prepare?: (t: Target, before: Awaited<ReturnType<typeof responseFor>>) => Promise<Record<string, unknown>>,
   onWritten?: () => void): Promise<NextResponse> {
     const scope = input.scope;
-    if (typeof scope !== "string" || !["global", "project", "session", "pause", "task"].includes(scope) || typeof input.revision !== "string") {
+    if (typeof scope !== "string" || !["global", "project", "session", "pause", "task", "optout"].includes(scope) || typeof input.revision !== "string") {
       throw new SettingsError("Scope and revision required", 400);
     }
-    const allowed = ["scope", "revision", "cwd", "sessionId", "projectPath", ...(scope === "pause" ? ["paused"] : scope === "task" ? [] : ["overrides"])];
+    const allowed = ["scope", "revision", "cwd", "sessionId", "projectPath", ...(scope === "pause" ? ["paused"] : scope === "optout" ? ["optedOut"] : scope === "task" ? [] : ["overrides"])];
     if (Object.keys(input).some((key) => !allowed.includes(key))) throw new SettingsError("Unknown settings field", 400);
-    if (!prepare && scope !== "pause" && scope !== "task") {
+    if (!prepare && scope !== "pause" && scope !== "task" && scope !== "optout") {
       try { validateGitWorkflowOverrides(input.overrides); }
       catch (cause) { throw new SettingsError(cause instanceof Error ? cause.message : "Invalid overrides", 400); }
     }
     if (!prepare && scope === "pause" && typeof input.paused !== "boolean") throw new SettingsError("paused must be boolean", 400);
+    if (!prepare && scope === "optout" && typeof input.optedOut !== "boolean") throw new SettingsError("optedOut must be boolean", 400);
     return await withGitWorkflowSettingsLock(getAgentDir(), async () => {
       const t = await target(input);
       const before = await responseFor(t);
@@ -127,21 +128,22 @@ export async function applyWorkflowSettings(input: Record<string, unknown>,
       const prepared = prepare ? await prepare(t, before) : input;
       if (prepared.scope !== scope || prepared.revision !== input.revision) throw new SettingsError("Settings proposal changed its destination");
       let overrides;
-      if (scope !== "pause" && scope !== "task") {
+      if (scope !== "pause" && scope !== "task" && scope !== "optout") {
         try { overrides = validateGitWorkflowOverrides(prepared.overrides); }
         catch (cause) { throw new SettingsError(cause instanceof Error ? cause.message : "Invalid overrides", 400); }
       }
-      if (scope !== "pause" && scope !== "task") {
+      if (scope !== "pause" && scope !== "task" && scope !== "optout") {
         try { overrides = validateGitWorkflowScopeOverrides(overrides, scope as "global" | "project" | "session", before[scope as "global" | "project" | "session"] ?? {}); }
         catch (cause) { throw new SettingsError(cause instanceof Error ? cause.message : "Invalid scoped overrides", 400); }
       }
       if (scope === "pause" && typeof prepared.paused !== "boolean") throw new SettingsError("paused must be boolean", 400);
-      if (scope === "task" && t.selection) throw new SettingsError("Explicit-project settings do not capture or adopt a task", 400);
+      if (scope === "optout" && typeof prepared.optedOut !== "boolean") throw new SettingsError("optedOut must be boolean", 400);
+      if ((scope === "task" || scope === "optout") && t.selection) throw new SettingsError("Explicit-project settings do not change this chat's task or opt-out", 400);
       if (t.selection) await revalidateGitProjectResources(t.selection);
       // Even an Off/Pause -> On round trip cannot revive an old metadata review.
       // This affects only task-adoption previews, never existing Git approvals.
       gitTaskBindingRuntime().previews.clear();
-      if (scope === "session" || scope === "task") {
+      if (scope === "session" || scope === "task" || scope === "optout") {
         const reason = sessionReason(t);
         if (reason) throw new SettingsError(reason);
         const now = statSync(t.file!);
@@ -155,7 +157,8 @@ export async function applyWorkflowSettings(input: Record<string, unknown>,
         else {
           if (scope === "task") retireGitTaskBinding(t.id!, undefined, "settings-capture", getAgentDir());
           appendManagedSessionGitWorkflow(t.manager!, scope === "session" ? overrides! : before.session ?? {},
-            scope === "task" ? { kind: "managed", settings: before.resolved.session.values } : workflowTaskFromEntries(entriesOf(t)));
+            scope === "task" ? { kind: "managed", settings: before.resolved.session.values } : workflowTaskFromEntries(entriesOf(t)),
+            scope === "optout" ? prepared.optedOut as boolean : readManagedSessionGitWorkflow(entriesOf(t))?.optedOut);
         }
         invalidateSessionManagerCache(t.file!);
         invalidateSessionListCache();
@@ -173,7 +176,12 @@ export async function applyWorkflowSettings(input: Record<string, unknown>,
       // A post-write status read can fail. Do not report an applied proposal as
       // an untouched stale candidate after the write has already completed.
       onWritten?.();
-      return NextResponse.json(await responseFor(t));
+      try { return NextResponse.json(await responseFor(t)); }
+      finally {
+        // Reload the idle wrapper on its next request so opting out also
+        // removes the managed tool schemas, not merely their execution grants.
+        if (scope === "optout" && t.live?.sessionFile === t.file) t.live.destroy();
+      }
     });
 }
 export async function PUT(req: Request) {

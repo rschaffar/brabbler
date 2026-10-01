@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { GIT_WORKFLOW_TYPE } from "./git-workflow-policy";
+import { readManagedSessionGitWorkflow } from "./git-workflow-session";
 import { readGitProjectSessionSettings } from "./git-project-session";
 import { gitProjectResourceSummary, revalidateGitProjectResources, type GitProjectResources } from "./git-project-resources";
 import { readGitWorkflowSettingsDocument, projectWorkflowOverrides } from "./git-workflow-settings-store";
@@ -21,11 +22,12 @@ export async function loadGitProjectSettings(
   const scoped = readGitProjectSessionSettings(entries);
   const session = sessionIdentity ? scoped.get(selection.projectRoot)?.overrides ?? {} : null;
   const legacySessionSettings = !!sessionIdentity && entries.some((entry) => entry.type === "custom" && entry.customType === GIT_WORKFLOW_TYPE);
+  const optedOut = !!sessionIdentity && readManagedSessionGitWorkflow(entries)?.optedOut === true;
   const writeEpoch = readGitWorkflowWriteEpoch(agentDir);
   await revalidateGitProjectResources(selection);
-  const revision = createHash("sha256").update(JSON.stringify({ document, selection, project, sessionIdentity, session, writeEpoch })).digest("hex");
+  const revision = createHash("sha256").update(JSON.stringify({ document, selection, project, sessionIdentity, session, optedOut, writeEpoch })).digest("hex");
   return {
-    revision, paused: document.paused, cwd: selection.cwd, projectRoot: selection.projectRoot,
+    revision, paused: document.paused, optedOut, cwd: selection.cwd, projectRoot: selection.projectRoot,
     selection: gitProjectResourceSummary(selection), sessionScope: "project", legacySessionSettings,
     global: document.global, project, session,
     resolved: { global: resolveGitWorkflowSettings(document.global), project: resolveGitWorkflowSettings(document.global, project),

@@ -16,7 +16,7 @@ import { reviewGitBranches } from "@/lib/git-review";
 import { captureGitCheckRecoverySnapshot, gitCheckRecoveryDigest, invalidateGitVerificationReceiptsForCheckout, isGitVerificationRunning } from "@/lib/git-verification";
 import { assertManagedGitWorkspace, managedGitSessionFacts } from "@/lib/git-workflow-access";
 import { loadGitWorkflowSettings } from "@/lib/git-workflow-settings-store";
-import { readSessionGitWorkflow } from "@/lib/git-workflow-policy";
+import { readCapturedSessionGitWorkflow } from "@/lib/git-workflow-policy";
 import { readHumanGitSessionManager } from "@/lib/git-action-human";
 import { samePath } from "@/lib/paths";
 import { getProjectTrustStatus } from "@/lib/project-trust";
@@ -66,7 +66,7 @@ async function scope(sessionId: string) {
   // Recovery is inspection and disposition, NOT another check or Git mutation.
   // In particular, paused/Off/Deny must not prevent inspection of an orphan.
   const settings = await loadGitWorkflowSettings(cwd, entries, agentDir, "active-session");
-  const policy = readSessionGitWorkflow(entries);
+  const policy = readCapturedSessionGitWorkflow(entries);
   if (!policy?.checks?.length || policy.integration?.method !== "merge") throw new Error("no saved check");
   const chat = await selectGitProjectResources(cwd);
   const pending = readUnresolvedGitCheckRecovery(agentDir, chat.commonDir);

@@ -11,6 +11,7 @@ import { assertManagedGitAction, assertManagedGitProjectDenial, assertManagedGit
 import { managedGitPermissions, selectedProjectCommitEligibility, AUTOMATIC_WORKFLOW_UNAVAILABLE, PROJECT_GIT_WRITES_UNAVAILABLE } from "./git-workflow-permissions";
 import { readProjectAuthorization, type ProjectAuthorizationOwner } from "./git-project-authorization";
 import { loadGitProjectSettings } from "./git-project-settings";
+import { readManagedSessionGitWorkflow } from "./git-workflow-session";
 import { selectGitProjectResources, revalidateGitProjectResources, withGitProjectReview, gitProjectResourceSummary, GitProjectResourceError } from "./git-project-resources";
 import { loadGitWorkflowSettings } from "./git-workflow-settings-store";
 import { getGitTaskBindingStatus } from "./git-workflow-binding";
@@ -108,6 +109,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
         async execute(_id, params, signal, _update, ctx) {
           try {
             if (signal?.aborted || !samePath(ctx.cwd, sessionCwd)) throw new Error("Session changed or proposal cancelled");
+            if (readManagedSessionGitWorkflow(ctx.sessionManager.getEntries() as SessionEntry[])?.optedOut) throw new Error("Git workflow off for this chat");
             const { proposeGitSettings } = await import("./git-settings-proposals");
             const proposalId = await proposeGitSettings(ctx.sessionManager.getSessionId(), params);
             return { content: [{ type: "text" as const, text: `Workflow settings proposal ${proposalId} is available in this chat for human Apply or Dismiss. Nothing was saved or applied to the task.` }],
@@ -147,6 +149,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
             // durable action anchor and authorization owner, not a second
             // injected manager that might represent another chat.
             const selectedEntries = () => (ctx.sessionManager?.getEntries?.() ?? []) as SessionEntry[];
+            if (readManagedSessionGitWorkflow(selectedEntries())?.optedOut) return failure("Pi Web Git workflow is off for this chat. Turn it on in Workflow to use managed Git tools.");
             const guard = (stage: ManagedGitStage) => assertManagedGitAction(sessionCwd, entries(), stage, "agent", agentDir, pi.getActiveTools?.());
             if (params.checkoutPath !== undefined && params.repositoryPath === undefined) return failure("checkoutPath requires canonical repositoryPath");
             if (params.repositoryPath !== undefined && !["status", "review", "commit"].includes(params.operation)) return failure(PROJECT_GIT_WRITES_UNAVAILABLE);
