@@ -20,7 +20,7 @@ import { beginGitAction, failGitAction, finishGitAction, gitActionFailureResult,
 import { gitExecEnv } from "./git-exec";
 import { acquireGitCheckoutGate, GitCheckoutBusyError } from "./git-checkout-gate";
 import { GitCommitOperationError } from "./git-commit";
-import { prepareIntegration, confirmIntegration, prepareFastForwardIntegration, confirmFastForwardIntegration } from "./git-integration";
+import { prepareIntegration, confirmIntegration, prepareFastForwardIntegration, confirmFastForwardIntegration, GitIntegrationTargetMovedError } from "./git-integration";
 import { assertGitOperationAdmission, beginSupervisedGitOperationIntent, type GitOperationReservation } from "./git-operation-admission";
 import { runGitVerification } from "./git-verification";
 import { validateGitWorkflowPolicy, type GitWorkflowCheck, validLocalBranchName } from "./git-workflow-policy";
@@ -482,6 +482,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
             const recorded = gitActionFailureResult(cause);
             if (recorded) return recorded;
             if (cause instanceof GitProjectResourceError) return { ...failure(cause.message), details: { error: cause.message, code: cause.code } };
+            if (cause instanceof GitIntegrationTargetMovedError) return { ...failure(cause.message), details: { error: cause.message, code: cause.code } };
             if (cause instanceof ManagedGitAccessError || cause instanceof GitCheckoutBusyError || cause instanceof GitCommitOperationError) return failure(cause.message);
             // Never send raw Git stderr, argv, trust contents or arbitrary errors.
             if (preApprovalPhase) {

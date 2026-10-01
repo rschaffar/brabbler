@@ -23,7 +23,7 @@ async function disabledHooks(): Promise<string> {
   // including update-ref, must use it: a hook may appear after the safety snapshot.
   return global[hooksKey] ??= fs.mkdtemp(path.join(tmpdir(), "pi-web-integration-hooks-"));
 }
-type Saved = { options: IntegrationOptions; plan: IntegrationPlan; policyDigest: string; featureIndex: string; targetIndex: string; targetIndexPath: string; repo: string; selection: GitProjectResources; admissionEpoch: string };
+type Saved = { options: IntegrationOptions; plan: IntegrationPlan; policyDigest: string; featureIndex: string; targetIndex: string; targetIndexPath: string; repo: string; selection: GitProjectResources; targetSelection: GitProjectResources; admissionEpoch: string };
 type FFSaved = Omit<Saved, "plan"> & { plan: FastForwardIntegrationPlan };
 type Plans = { pending: Map<string, Saved>; ffPending: Map<string, FFSaved>; busy: Set<string> };
 function plans(): Plans {
@@ -187,6 +187,11 @@ export type FastForwardIntegrationResult =
   | { status: "partial-state"; method: "ff"; featureOid: string; treeOid: string; parents: string[]; targetBranch: string; recoveryPath: string; reason: string };
 export type LocalIntegrationPlan = IntegrationPlan | FastForwardIntegrationPlan;
 export type LocalIntegrationResult = IntegrationResult | FastForwardIntegrationResult;
+/** Only a proven pre-apply change to the exact approved target ref has this code. */
+export class GitIntegrationTargetMovedError extends Error {
+  readonly code = "target_moved" as const;
+  constructor() { super("Approved target ref moved before apply; refresh review and obtain a new approval"); }
+}
 async function policyOf(options: IntegrationOptions, method: "merge" | "ff" = "merge"): Promise<{ policy: GitWorkflowPolicy; digest: string }> {
   const input = await options.getPolicy();
   if (!input) fail("saved policy required");
@@ -211,7 +216,7 @@ function receipts(options: IntegrationOptions, review: GitReview, digest: string
         Date.now() - r.finishedAt > TTL) fail("missing, failed, expired or stale verification receipt");
   }
 }
-async function snapshot(options: IntegrationOptions, approved?: Saved | FFSaved, ownedIndex?: string, method: "merge" | "ff" = "merge"): Promise<{ review: GitReview; policyDigest: string; feature: Checkout; target: Checkout; targetCwd: string; repo: string; selection: GitProjectResources }> {
+async function snapshot(options: IntegrationOptions, approved?: Saved | FFSaved, ownedIndex?: string, method: "merge" | "ff" = "merge"): Promise<{ review: GitReview; policyDigest: string; feature: Checkout; target: Checkout; targetCwd: string; repo: string; selection: GitProjectResources; targetSelection: GitProjectResources }> {
   const selection = approved?.selection ?? await selectGitProjectResources(options.cwd);
   await revalidateGitProjectResources(selection);
   const { policy, digest } = await policyOf(options, method);
@@ -219,6 +224,9 @@ async function snapshot(options: IntegrationOptions, approved?: Saved | FFSaved,
   const review = await reviewGitBranches(options.cwd, options.featureBranch, policy.integration!.targetBranch);
   if (!review.commits.length || review.mergeTreeOid !== review.featureTreeOid) fail("unsupported nontrivial merge tree");
   const targetCwd = await registered(options.cwd, options.featureBranch, review.targetBranch);
+  const targetSelection = approved?.targetSelection ?? await selectGitProjectResources(targetCwd);
+  await revalidateGitProjectResources(targetSelection);
+  if (!samePath(targetSelection.cwd, targetCwd) || targetSelection.branch !== review.targetBranch) fail("target selection changed");
   const feature = await checkout(options.cwd, review.featureBranch, review.featureOid);
   const target = await checkout(targetCwd, review.targetBranch, review.targetOid, ownedIndex);
   const repo = await repository(options.cwd);
@@ -228,7 +236,51 @@ async function snapshot(options: IntegrationOptions, approved?: Saved | FFSaved,
       approved.featureIndex !== feature.digest || approved.targetIndex !== target.digest ||
       !samePath(approved.targetIndexPath, target.indexPath) || !samePath(approved.repo, repo))) fail("approved plan became stale");
   if (!samePath(selection.commonDir, repo) || !samePath(selection.cwd, options.cwd) || selection.branch !== review.featureBranch) fail("repository selection changed");
-  return { review, policyDigest: digest, feature, target, targetCwd, repo, selection };
+  return { review, policyDigest: digest, feature, target, targetCwd, repo, selection, targetSelection };
+}
+// A failed snapshot can mean much more than a moved ref. Do not turn policy,
+// feature, selection, merge identity or admission changes into a safe refusal.
+// This diagnostic is read-only and is used only before intent and read-tree.
+async function classifyPreApplyTargetMove(saved: Saved | FFSaved, ownedIndex?: string): Promise<boolean> {
+  const { options, plan, repo } = saved;
+  await revalidateGitProjectResources(saved.selection);
+  const { policy, digest } = await policyOf(options, "method" in plan ? "ff" : "merge");
+  if (digest !== saved.policyDigest || !policy.checks?.length || policy.checks.length !== options.receiptIds.length ||
+      !samePath(saved.selection.cwd, options.cwd) || saved.selection.branch !== plan.review.featureBranch ||
+      !samePath(saved.selection.commonDir, repo)) return false;
+  const targetCwd = await registered(options.cwd, plan.review.featureBranch, plan.review.targetBranch);
+  await revalidateGitProjectResources(saved.targetSelection);
+  if (!samePath(saved.targetSelection.cwd, targetCwd) || saved.targetSelection.branch !== plan.review.targetBranch) return false;
+  const feature = await checkout(options.cwd, plan.review.featureBranch, plan.review.featureOid);
+  if (feature.digest !== saved.featureIndex || !samePath(await repository(options.cwd), repo) ||
+      !samePath(await repository(targetCwd), repo)) return false;
+  // Validate the captured physical target against its *current* ref. A normal
+  // target commit may rewrite clean index bytes, so old-byte equality cannot
+  // be required here. A clean index only describes the *new* HEAD, not the
+  // approved index/tree. This refusal grants no apply authority: fresh review
+  // and verification are mandatory.
+  const current = (await git(targetCwd, ["show-ref", "--verify", "--hash", `refs/heads/${plan.review.targetBranch}`])).trim();
+  if (!OID.test(current) || current === plan.review.targetOid) return false;
+  const target = await checkout(targetCwd, plan.review.targetBranch, current, ownedIndex);
+  if (!samePath(target.indexPath, saved.targetIndexPath)) return false;
+  receipts(options, plan.review, digest, targetCwd);
+  if (!("method" in plan)) await verifyObject(options.cwd, plan.mergeOid, plan.review, plan.message,
+    identity(await git(options.cwd, ["var", "GIT_AUTHOR_IDENT"])),
+    identity(await git(options.cwd, ["var", "GIT_COMMITTER_IDENT"])));
+  await collisions(targetCwd, plan.review);
+  await assertGitOperationAdmission(saved.selection, options.agentDir);
+  if (await admissionEpoch(options.agentDir, repo) !== saved.admissionEpoch) return false;
+  await revalidateGitProjectResources(saved.targetSelection);
+  return (await git(targetCwd, ["show-ref", "--verify", "--hash", `refs/heads/${plan.review.targetBranch}`])).trim() === current &&
+    (await git(options.cwd, ["show-ref", "--verify", "--hash", `refs/heads/${plan.review.featureBranch}`])).trim() === plan.review.featureOid;
+}
+async function preApplySnapshot(saved: Saved | FFSaved, ownedIndex?: string): ReturnType<typeof snapshot> {
+  try { return await snapshot(saved.options, saved, ownedIndex, "method" in saved.plan ? "ff" : "merge"); }
+  catch (cause) {
+    // A second failed diagnostic must not mask the original refusal.
+    if (await classifyPreApplyTargetMove(saved, ownedIndex).catch(() => false)) throw new GitIntegrationTargetMovedError();
+    throw cause;
+  }
 }
 function identity(value: string): string {
   const match = /^(.* <[^\n<>]+>) \d+ [+-]\d{4}$/.exec(value.trim());
@@ -351,12 +403,13 @@ export async function prepareIntegration(options: IntegrationOptions): Promise<I
   const plan: IntegrationPlan = { planId: randomUUID(), sessionId: options.sessionId, review: s.review, diff,
     receiptIds: [...options.receiptIds], mergeOid, message, expiresAt: Date.now() + TTL };
   await snapshot(options, { options, plan, policyDigest: s.policyDigest, featureIndex: s.feature.digest,
-    targetIndex: s.target.digest, targetIndexPath: s.target.indexPath, repo: s.repo, selection: s.selection, admissionEpoch: epoch });
+    targetIndex: s.target.digest, targetIndexPath: s.target.indexPath, repo: s.repo, selection: s.selection,
+    targetSelection: s.targetSelection, admissionEpoch: epoch });
   await assertGitOperationAdmission(s.selection, options.agentDir);
   if (await admissionEpoch(options.agentDir, repo) !== epoch) fail("admission changed while preparing plan");
   plans().pending.set(plan.planId, { options: { ...options, receiptIds: [...options.receiptIds] }, plan,
     policyDigest: s.policyDigest, featureIndex: s.feature.digest, targetIndex: s.target.digest,
-    targetIndexPath: s.target.indexPath, repo: s.repo, selection: s.selection, admissionEpoch: epoch });
+    targetIndexPath: s.target.indexPath, repo: s.repo, selection: s.selection, targetSelection: s.targetSelection, admissionEpoch: epoch });
   // Never expose the mutable object kept as the server-side approval snapshot.
   return structuredClone(plan);
   } finally { plans().busy.delete(repo); }
@@ -381,7 +434,7 @@ export async function prepareFastForwardIntegration(options: IntegrationOptions)
       treeOid: s.review.featureTreeOid, parents, expiresAt: Date.now() + TTL };
     const saved: FFSaved = { options: { ...options, receiptIds: [...options.receiptIds] }, plan,
       policyDigest: s.policyDigest, featureIndex: s.feature.digest, targetIndex: s.target.digest,
-      targetIndexPath: s.target.indexPath, repo: s.repo, selection: s.selection, admissionEpoch: epoch };
+      targetIndexPath: s.target.indexPath, repo: s.repo, selection: s.selection, targetSelection: s.targetSelection, admissionEpoch: epoch };
     await snapshot(options, saved, undefined, "ff");
     if (JSON.stringify(await ffParents(options.cwd, s.review)) !== JSON.stringify(parents)) fail("feature history changed");
     await assertGitOperationAdmission(s.selection, options.agentDir);
@@ -404,7 +457,7 @@ export async function confirmIntegration(planId: string, approvePlanId: string, 
   plans().busy.add(repo);
   plans().pending.delete(planId); // single use, even on error
   try {
-    const before = await snapshot(options, saved);
+    const before = await preApplySnapshot(saved);
     await assertGitOperationAdmission(saved.selection, options.agentDir);
     if (await admissionEpoch(options.agentDir, repo) !== saved.admissionEpoch) fail("approved plan predates another Git operation");
     await collisions(before.targetCwd, before.review);
@@ -419,7 +472,7 @@ export async function confirmIntegration(planId: string, approvePlanId: string, 
     let recoveryPath = "";
     let tempIndex = "";
     try {
-      const latest = await snapshot(options, saved, before.target.indexPath);
+      const latest = await preApplySnapshot(saved, before.target.indexPath);
       await assertGitOperationAdmission(saved.selection, options.agentDir);
       if (await admissionEpoch(options.agentDir, repo) !== saved.admissionEpoch) fail("approved plan predates another Git operation");
       await collisions(latest.targetCwd, latest.review);
@@ -462,6 +515,7 @@ export async function confirmIntegration(planId: string, approvePlanId: string, 
       // after the journal/intent callback. Neither a saved plan nor temp index
       // proves the operation markers, checkout identity or reservation still hold.
       await revalidateGitProjectResources(saved.selection);
+      await revalidateGitProjectResources(saved.targetSelection);
       if (!samePath(await repository(latest.targetCwd), repo) ||
           (await git(latest.targetCwd, ["symbolic-ref", "--quiet", "HEAD"])).trim() !== `refs/heads/${plan.review.targetBranch}` ||
           (await git(latest.targetCwd, ["show-ref", "--verify", "--hash", `refs/heads/${plan.review.targetBranch}`])).trim() !== plan.review.targetOid ||
@@ -490,9 +544,10 @@ export async function confirmIntegration(planId: string, approvePlanId: string, 
       await fs.unlink(tempIndex);
       await fs.unlink(recoveryPath);
       return { status: "integrated", mergeOid: plan.mergeOid, targetBranch: plan.review.targetBranch };
-    } catch {
+    } catch (cause) {
       if (partial) return { status: "partial-state", mergeOid: plan.mergeOid, targetBranch: plan.review.targetBranch,
         recoveryPath, reason: "Checkout or ref finalization failed; inspect recovery record and target worktree manually; do not retry" };
+      if (cause instanceof GitIntegrationTargetMovedError) throw cause;
       throw new Error("Git integration unavailable: pre-apply validation failed; checkout unchanged");
     } finally {
       await lock.close().catch(() => {});
@@ -521,7 +576,7 @@ export async function confirmFastForwardIntegration(planId: string, approvePlanI
   plans().busy.add(repo);
   plans().ffPending.delete(planId);
   try {
-    const before = await snapshot(options, saved, undefined, "ff");
+    const before = await preApplySnapshot(saved);
     await assertGitOperationAdmission(saved.selection, options.agentDir);
     if (await admissionEpoch(options.agentDir, repo) !== saved.admissionEpoch) fail("approved plan predates another Git operation");
     await collisions(before.targetCwd, before.review);
@@ -534,7 +589,7 @@ export async function confirmFastForwardIntegration(planId: string, approvePlanI
     let recoveryPath = "";
     let tempIndex = "";
     try {
-      const latest = await snapshot(options, saved, before.target.indexPath, "ff");
+      const latest = await preApplySnapshot(saved, before.target.indexPath);
       await assertGitOperationAdmission(saved.selection, options.agentDir);
       if (await admissionEpoch(options.agentDir, repo) !== saved.admissionEpoch) fail("approved plan predates another Git operation");
       await collisions(latest.targetCwd, latest.review);
@@ -568,6 +623,7 @@ export async function confirmFastForwardIntegration(planId: string, approvePlanI
         fail("target worktree changed after apply");
       }
       await revalidateGitProjectResources(saved.selection);
+      await revalidateGitProjectResources(saved.targetSelection);
       if (!samePath(await repository(latest.targetCwd), repo) ||
           (await git(latest.targetCwd, ["symbolic-ref", "--quiet", "HEAD"])).trim() !== `refs/heads/${plan.review.targetBranch}` ||
           (await git(latest.targetCwd, ["show-ref", "--verify", "--hash", `refs/heads/${plan.review.targetBranch}`])).trim() !== plan.review.targetOid ||
@@ -597,10 +653,11 @@ export async function confirmFastForwardIntegration(planId: string, approvePlanI
       await fs.unlink(recoveryPath);
       return { status: "integrated", method: "ff", featureOid: plan.featureOid, treeOid: plan.treeOid,
         parents: [...plan.parents], targetBranch: plan.review.targetBranch };
-    } catch {
+    } catch (cause) {
       if (partial) return { status: "partial-state", method: "ff", featureOid: plan.featureOid, treeOid: plan.treeOid,
         parents: [...plan.parents], targetBranch: plan.review.targetBranch, recoveryPath,
         reason: "Checkout or ref finalization failed; inspect recovery record and target worktree manually; do not retry" };
+      if (cause instanceof GitIntegrationTargetMovedError) throw cause;
       throw new Error("Git integration unavailable: pre-apply validation failed; checkout unchanged");
     } finally {
       await lock.close().catch(() => {});

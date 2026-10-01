@@ -199,6 +199,29 @@ test("browser FF plan confirms only the existing feature tip and records no merg
   assert.equal((await post(confirm(f.id, p))).status, 409);
 });
 
+test("browser confirms report a typed pre-apply target move without creating an intent", async (t) => {
+  for (const method of ["merge", "ff"]) {
+    const f = await fixture(t);
+    f.policy.integration.method = method;
+    appendSessionGitWorkflow(f.sm, f.policy);
+    const p = await proposal(f);
+    await writeFile(join(f.target, "other"), "concurrent\n");
+    await git(f.target, "add", "other"); await git(f.target, "commit", "-qm", "concurrent target");
+    const moved = await git(f.target, "rev-parse", "HEAD");
+    const response = await post(confirm(f.id, p));
+    assert.equal(response.status, 409);
+    const result = await response.json();
+    assert.equal(result.code, "target_moved");
+    assert.match(result.error, /refresh review/);
+    assert.equal(result.recoveryRequired, undefined);
+    assert.equal((await history(p.actionId)).record.state, "blocked");
+    const commonDir = await git(f.feature, "rev-parse", "--path-format=absolute", "--git-common-dir");
+    assert.equal(inspectGitOperationAdmission(agentDir, commonDir).reason, "clear");
+    assert.equal(await git(f.target, "rev-parse", "HEAD"), moved);
+    assert.equal(await readFile(join(f.target, "note"), "utf8"), "base\n");
+  }
+});
+
 test("refuses browser authority, missing policy, stale receipts and disallowed scope without journal writes", async (t) => {
   const f = await fixture(t);
   for (const extra of [{ cwd: f.feature }, { argv: ["true"] }, { featureBranch: "feature" }, { targetBranch: "target" }]) {

@@ -10,7 +10,7 @@ import { beginGitAction, failGitAction, gitActionFailureResult, snapshotGitActio
 import { finishHumanGitAction, humanGitActionSink, HUMAN_GIT_RECOVERY_WARNING, HumanGitCandidateError, HumanGitSessionChangedError, keepHumanGitCandidate, readHumanGitSessionManager, takeHumanGitCandidate } from "@/lib/git-action-human";
 import { GIT_ACTION_ID_PATTERN } from "@/lib/git-action-types";
 import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
-import { confirmIntegration, prepareIntegration, confirmFastForwardIntegration, prepareFastForwardIntegration } from "@/lib/git-integration";
+import { confirmIntegration, prepareIntegration, confirmFastForwardIntegration, prepareFastForwardIntegration, GitIntegrationTargetMovedError } from "@/lib/git-integration";
 import { assertGitOperationAdmission, beginSupervisedGitOperationIntent, GitOperationRecoveryError, type GitOperationReservation } from "@/lib/git-operation-admission";
 import { selectGitProjectResources } from "@/lib/git-project-resources";
 import { reviewGitBranches, type GitReview } from "@/lib/git-review";
@@ -220,6 +220,8 @@ export async function POST(req: Request) {
             recoveryWarning: cause.message }, { status: 409 });
           if (cause instanceof GitOperationRecoveryError) return NextResponse.json({ actionId: handle.record.id,
             error: cause.message, recoveryRequired: true }, { status: 409 });
+          if (cause instanceof GitIntegrationTargetMovedError) return NextResponse.json({ actionId: handle.record.id,
+            code: cause.code, error: cause.message }, { status: 409 });
           return NextResponse.json({ actionId: handle.record.id, error: cause instanceof ManagedGitAccessError || cause instanceof HumanGitSessionChangedError ? cause.message
             : "Integration unavailable or plan stale; refresh review and prepare a new proposal" }, { status: 409 });
         } finally { handle.release(); }
