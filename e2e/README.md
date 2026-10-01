@@ -12,10 +12,12 @@ npm run test:e2e
 For a focused browser-native `ask_user` run, set `E2E_ASK_USER_ONLY=1`.
 For the Activity overview, set `E2E_ACTIVITY_ONLY=1`.
 For the desktop Git workflow fixture (local repository, no model), set `E2E_GIT_WORKFLOW_ONLY=1`.
-On Linux with Nix, run `nix develop` from a committed checkout, then `npm ci`
-and `npm run test:e2e` inside that shell (or `nix develop -c npm run test:e2e`
-if dependencies are already installed). The locked shell supplies Node.js, Git
-and Nix-wrapped Chromium, and sets `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`
+On Linux with Nix, run `nix develop` from a committed checkout and then
+`npm run test:e2e` inside that shell (or `nix develop -c npm run test:e2e`).
+The locked shell builds modules from the lockfile and copies them locally once:
+Turbopack cannot resolve store-linked packages outside the workspace root.
+Do not run `npm ci` in the Nix-managed tree. The shell also supplies Node.js,
+Git and Nix-wrapped Chromium, and sets `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`
 without changing the host's browser configuration. It avoids Playwright's
 binary missing shared libraries on NixOS. Update the nixpkgs Chromium pin
 alongside Playwright version changes; even matching major versions need browser

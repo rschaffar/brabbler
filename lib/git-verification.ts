@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { gitExecEnv } from "./git-exec";
+import { sanitizeProjectCommandEnvironment } from "./project-command-env";
 import { reviewGitBranches, type GitReview } from "./git-review";
 import { validateGitWorkflowPolicy, type GitWorkflowPolicy } from "./git-workflow-policy";
 import { newGitCheckUnit, runContainedGitCheck, linuxSystemdBackend,
@@ -199,7 +200,11 @@ export async function captureGitCheckRecoverySnapshot(feature: string, target: s
 
 async function runCheck(cwd: string, argv: readonly string[], timeout: number, unit: string,
   backend: ContainmentBackend, signal?: AbortSignal): Promise<ContainedCheckResult> {
-  return runContainedGitCheck({ cwd, argv, timeoutMs: timeout, unit, signal, env: gitExecEnv() }, backend);
+  // Saved checks run project commands, not Pi Web's server. Do not forward the
+  // browser password or Next's internal runtime variables into their cgroup.
+  // This is environment hygiene, not isolation from the same user's files.
+  return runContainedGitCheck({ cwd, argv, timeoutMs: timeout, unit, signal,
+    env: sanitizeProjectCommandEnvironment(gitExecEnv()) }, backend);
 }
 
 /** Runs precisely one explicitly selected saved argv. A passing exit is not an integration approval. */

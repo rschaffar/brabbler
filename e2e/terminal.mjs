@@ -42,7 +42,7 @@ const base = `http://127.0.0.1:${port}`;
 const log = createWriteStream(join(artifacts, "server.log"));
 const server = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "dev", "-H", "127.0.0.1", "-p", String(port)], {
   cwd: root,
-  env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1", HISTFILE: process.platform === "win32" ? "NUL" : "/dev/null", BASH_SILENCE_DEPRECATION_WARNING: "1", SHELL: process.platform === "win32" ? process.env.SHELL : (process.env.PI_WEB_TEST_SHELL || "/bin/bash") },
+  env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1", HISTFILE: process.platform === "win32" ? "NUL" : "/dev/null", BASH_SILENCE_DEPRECATION_WARNING: "1", SHELL: process.platform === "win32" ? process.env.SHELL : (process.env.PI_WEB_TEST_SHELL || process.env.SHELL || "/bin/bash") },
   stdio: ["ignore", "pipe", "pipe"],
 });
 server.stdout.pipe(log, { end: false });
@@ -56,9 +56,8 @@ try {
     assert.ok(i < 120 && server.exitCode === null, "Server did not become ready");
     await delay(500);
   }
-  browser = await chromium.launch(process.env.PI_WEB_TEST_CHROMIUM
-    ? { executablePath: process.env.PI_WEB_TEST_CHROMIUM }
-    : undefined);
+  const chromiumPath = process.env.PI_WEB_TEST_CHROMIUM || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+  browser = await chromium.launch(chromiumPath ? { executablePath: chromiumPath } : undefined);
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
     const context = await browser.newContext({ viewport, locale: "en-US" });
     const page = await context.newPage();
@@ -125,6 +124,9 @@ try {
 
       await fontSelect.selectOption("system");
       await page.reload();
+      const panelToggle = page.getByRole("button", { name: "Show file panel", exact: true });
+      if (await panelToggle.getAttribute("aria-expanded") === "false") await panelToggle.click();
+      await page.getByRole("tab", { name: "Terminal: workspace-a", exact: true }).click();
       await ready();
       assert.equal(await fontSelect.inputValue(), "system", "font choice survives page reload");
       await fontSelect.selectOption("nerd");

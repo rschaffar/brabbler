@@ -11,7 +11,7 @@ import { createJiti } from "jiti";
 
 const home = await mkdtemp(join(tmpdir(), "pi-web-check-recovery-route-"));
 const agentDir = join(home, "agent");
-await mkdir(agentDir);
+await mkdir(agentDir, { mode: 0o700 });
 const keys = ["HOME", "XDG_CONFIG_HOME", "PI_CODING_AGENT_DIR"];
 const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
 Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: join(home, ".config"), PI_CODING_AGENT_DIR: agentDir });
@@ -136,14 +136,14 @@ test("missing, corrupted or stale evidence remains quarantined; no rollback or G
   const original = readFileSync(postFile);
   await rm(postFile);
   assert.equal((await (await get(f.id)).json()).eligible, false);
-  assert.equal((await admission(f)).reason, "unresolved");
+  assert.equal((await admission(f)).reason, "unresolved", "missing recovery proof fails closed");
   writeFileSync(postFile, original.toString().replace("node-test-simulated", "linux-systemd"));
   assert.equal((await (await get(f.id)).json()).eligible, false);
   assert.equal((await admission(f)).reason, "unavailable");
   writeFileSync(postFile, original);
   await writeFile(join(f.feature, "untracked"), "changed\n");
   assert.equal((await (await get(f.id)).json()).eligible, false);
-  assert.equal((await admission(f)).reason, "unresolved");
+  assert.equal((await admission(f)).reason, "unavailable", "a corrupted proof cannot be restored into authority");
   assert.equal(existsSync(join(f.feature, "untracked")), true);
 });
 

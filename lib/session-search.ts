@@ -50,8 +50,9 @@ function metadataMatch(session: SessionInfo, matcher: RegExp): { result: Session
   return matches.sort((a, b) => a.rank - b.rank)[0] ?? null;
 }
 
-async function scanMessage(session: SessionInfo, matcher: RegExp, signal: AbortSignal, deadline: number): Promise<{ hit?: SessionSearchResult; truncated: boolean }> {
-  const stream = createReadStream(session.path, { encoding: "utf8", end: MAX_FILE_BYTES - 1, signal });
+async function scanMessage(session: SessionInfo, matcher: RegExp, signal: AbortSignal, deadline: number,
+  maxFileBytes: number): Promise<{ hit?: SessionSearchResult; truncated: boolean }> {
+  const stream = createReadStream(session.path, { encoding: "utf8", end: maxFileBytes - 1, signal });
   const lines = createInterface({ input: stream, crlfDelay: Infinity });
   let truncated = false;
   try {
@@ -91,7 +92,7 @@ async function scanMessage(session: SessionInfo, matcher: RegExp, signal: AbortS
     lines.close();
     stream.destroy();
   }
-  return { truncated: truncated || stream.bytesRead >= MAX_FILE_BYTES };
+  return { truncated: truncated || stream.bytesRead >= maxFileBytes };
 }
 
 // Scan recent files without an index; metadata is searched across the whole catalogue.
@@ -99,7 +100,12 @@ export async function searchSessionContents(
   sessions: readonly SessionInfo[],
   query: string,
   requestSignal?: AbortSignal,
+  limits: { maxFileBytes?: number } = {},
 ): Promise<SessionSearchResponse> {
+  // Callers may lower the per-file budget, never raise the production cap.
+  const maxFileBytes = limits.maxFileBytes ?? MAX_FILE_BYTES;
+  if (!Number.isSafeInteger(maxFileBytes) || maxFileBytes < 1 || maxFileBytes > MAX_FILE_BYTES)
+    throw new RangeError("Invalid session search file byte limit");
   const response: SessionSearchResponse = { results: [], truncated: false };
   const needle = query.trim();
   if (!needle) return response;
@@ -131,7 +137,7 @@ export async function searchSessionContents(
       break;
     }
     filesScanned++;
-    const scan = await scanMessage(result.session, matcher, signal, deadline);
+    const scan = await scanMessage(result.session, matcher, signal, deadline, maxFileBytes);
     if (scan.truncated) response.truncated = true;
     if (scan.hit?.entryId) {
       result.entryId = scan.hit.entryId;
@@ -149,7 +155,7 @@ export async function searchSessionContents(
       break;
     }
     filesScanned++;
-    const scan = await scanMessage(session, matcher, signal, deadline);
+    const scan = await scanMessage(session, matcher, signal, deadline, maxFileBytes);
     if (scan.truncated) response.truncated = true;
     if (scan.hit) response.results.push(scan.hit);
     if (response.results.length === MAX_RESULTS) {

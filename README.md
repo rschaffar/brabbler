@@ -45,7 +45,26 @@ To update, stop the running process with `Ctrl+C` and run the same install comma
 
 ### Nix installation
 
-The repository's `flake.nix` exposes `packages.<system>.pi-web` (and `default`) for x86_64/aarch64 Linux and aarch64 macOS. Once you have a committed checkout, `nix profile install /path/to/pi-web#pi-web` installs the `pi-web` command; in another flake use `inputs.pi-web.packages.${pkgs.system}.default` in `home.packages` or `environment.systemPackages`. Pin the Pi Web input to the revision you intend to deploy. The package builds the production Next.js app offline using a local Noto font; it does not configure a service, authentication, or reverse proxy. If you share a separately packaged Pi CLI, you can add an optional SDK-version check with `inputs.pi-web.packages.${pkgs.system}.default.override { piCli = yourPiPackage; }`. No NixOS configuration is changed by this flake. Package builds are for installation/release, **not** normal development.
+The flake exposes `packages.<system>.pi-web` (and `default`) and `apps.<system>.pi-web` (and `default`) for x86_64/aarch64 Linux and aarch64 macOS. From a committed checkout, `nix run . -- --no-open` runs the built `pi-web` command directly; `nix profile install /path/to/pi-web#pi-web` installs it. Pin the flake input to the desired revision when deploying it elsewhere. The Nix build installs the production Next.js app and its runtime dependencies using a fixed-output npm dependency cache, pinned Node and a local Noto font. The Nix output is an executable package, **not an npm tarball**; npm remains a build tool inside the Nix sandbox. Production builds are for installation/release, **not** normal development.
+
+On Linux, Home Manager users can import `inputs.pi-web.homeManagerModules.default` and enable `services.pi-web`. The module installs the same package and starts a loopback-only systemd user service; it does not configure a reverse proxy or manage credentials. For example:
+
+```nix
+{ inputs, pkgs, osConfig, ... }: {
+  imports = [ inputs.pi-web.homeManagerModules.default ];
+  services.pi-web = {
+    enable = true;
+    package = inputs.pi-web.packages.${pkgs.system}.default.override {
+      piCli = inputs.llm-agents.packages.${pkgs.system}.pi;
+    };
+    allowedHosts = [ "pi.example.internal" ];
+    environmentFile = osConfig.sops.secrets.pi-web-env.path;
+    environment.SSH_AUTH_SOCK = "%t/ssh-agent/selected.sock";
+  };
+}
+```
+
+Only the installation-specific host, secret-file path, optional package/SDK match, and non-secret extras such as an SSH-agent socket need to live in the consuming Home Manager configuration. When migrating an existing service, remove its old `systemd.user.services.pi-web` definition and any duplicate `home.packages` entry for Pi Web; the module owns both. Keep password values in a runtime `environmentFile`, not a Nix option; configure TLS termination separately. Mutable sessions and accounts stay outside the Nix store. The module is opt-in and does not alter NixOS configuration by itself.
 
 ## Configuration
 
@@ -186,12 +205,16 @@ still take precedence.
 
 ## Development
 
+On Linux, use the lockfile-backed Nix shell in **each worktree**:
+
 ```bash
-npm install
+nix develop
 npm run dev
 ```
 
-On Linux with Nix, `nix develop` supplies Node.js, Git and a wrapped Chromium for browser tests (no global Chromium or downloaded Playwright browser required). Then run `npm ci` and `npm run test:e2e` inside that shell; see [the browser test guide](./e2e/README.md). The development server runs at [http://127.0.0.1:30141](http://127.0.0.1:30141). Run the common checks with:
+Entering the shell builds dependencies from `package-lock.json` into the Nix store, then **copies** the built modules into this worktree's `node_modules` once per lockfile revision (reflinks where possible). Next/Turbopack rejects packages whose real paths escape the workspace root, so store symlinks and cross-checkout links do not work for Pi Web development. Re-entering with an unchanged dependency derivation reuses the local copy. Node.js, Git and Chromium for browser E2E are pinned by the flake. The first build needs package sources available; later invocations can reuse the Nix cache offline. If `node_modules` is already present but not marked as managed for this exact dependency build, the shell refuses to overwrite it; move it aside **deliberately** first. Never run `npm ci` over this managed tree. For dependency changes, use `nix develop .#update` and `npm install --package-lock-only`, update `nix/npm-deps.nix`'s hash, then move the old `node_modules` aside and re-enter the default shell. npm-only development remains possible for non-Nix contributors with a separate `npm ci` checkout.
+
+The development server runs at [http://127.0.0.1:30141](http://127.0.0.1:30141); see [the browser test guide](./e2e/README.md). Each browser-test run uses temporary fixtures and a free local port. Managed Git verification drops the browser password and Next/PORT runtime variables before executing selected checks, but dependency isolation does **not** change cross-session Git admission, external writers, or failed-check recovery; those remain separate workflow decisions. Run the common checks with:
 
 ```bash
 npm test
