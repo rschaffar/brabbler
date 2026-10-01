@@ -921,11 +921,9 @@ export class AgentSessionWrapper {
               ...(promptImages?.length ? { images: promptImages } : {}),
               ...(streamingBehavior ? { streamingBehavior } : {}),
               source: "rpc",
-              // Match pi's RPC contract: acknowledge only after synchronous prompt
-              // validation and extension preflight have accepted the submission.
-              preflightResult: (success) => {
-                if (success) acceptPreflight();
-              },
+              // The SDK calls this with "started", "queued" or "handled" only
+              // after accepting the submission; preflight failures reject instead.
+              preflightResult: () => acceptPreflight(),
             });
           } catch (error) {
             finishPrompt();

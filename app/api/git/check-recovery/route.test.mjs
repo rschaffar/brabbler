@@ -143,7 +143,9 @@ test("missing, corrupted or stale evidence remains quarantined; no rollback or G
   writeFileSync(postFile, original);
   await writeFile(join(f.feature, "untracked"), "changed\n");
   assert.equal((await (await get(f.id)).json()).eligible, false);
-  assert.equal((await admission(f)).reason, "unresolved", "restoring valid proof bytes does not release quarantine");
+  const restored = await admission(f);
+  assert.equal(restored.reason, "unresolved", "restoring valid proof bytes does not release quarantine");
+  assert.equal(restored.admitted, false);
   assert.equal(existsSync(join(f.feature, "untracked")), true);
 });
 

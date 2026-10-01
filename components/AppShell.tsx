@@ -816,7 +816,9 @@ export function AppShell() {
     activeNewSessionDraftKeyRef.current = null;
     // Adopt an explicitly selected session before the sidebar reports its cwd.
     const projectKey = workspaceKeyOf(session);
-    if (activeProjectKeyRef.current !== projectKey) {
+    // Initial URL restoration is not a project switch. A terminal restored
+    // from sessionStorage may not have reached this callback's render yet.
+    if (activeProjectKeyRef.current !== projectKey && !(isRestore && activeProjectKeyRef.current === null)) {
       setFileTabs([]);
       if (!activeFileTabId || activeFileTabId.startsWith("file:") || activeFileTabId.startsWith("git:")) {
         setActiveFileTabId(null);

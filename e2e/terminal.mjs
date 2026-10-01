@@ -123,10 +123,14 @@ try {
       await waitOutput(`SESSION:alive:${pid}`);
 
       await fontSelect.selectOption("system");
+      await page.waitForFunction(() => JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs") ?? "{}").open === true);
+      const savedTabs = await page.evaluate(() => JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs")));
+      assert.ok(savedTabs.tabs.some((tab) => tab.id === savedTabs.activeId), "the active terminal is persisted before reload");
       await page.reload();
-      const panelToggle = page.getByRole("button", { name: "Show file panel", exact: true });
-      if (await panelToggle.getAttribute("aria-expanded") === "false") await panelToggle.click();
-      await page.getByRole("tab", { name: "Terminal: workspace-a", exact: true }).click();
+      // Restoration is asynchronous. Do not toggle the initially closed panel
+      // before its saved open state has been applied (and accidentally close it).
+      await page.locator("#file-panel.right-panel-open").waitFor({ state: "visible" });
+      await page.getByRole("tab", { name: "Terminal: workspace-a", exact: true, selected: true }).waitFor({ state: "visible" });
       await ready();
       assert.equal(await fontSelect.inputValue(), "system", "font choice survives page reload");
       await fontSelect.selectOption("nerd");
