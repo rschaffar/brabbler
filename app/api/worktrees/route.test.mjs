@@ -19,6 +19,8 @@ const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() } });
 const { GET, POST, DELETE } = await jiti.import("./route.ts");
 const { allowFileRoot } = await jiti.import("../../../lib/file-access.ts");
 const { writeGitWorkflowSettingsDocument } = await jiti.import("../../../lib/git-workflow-settings-store.ts");
+const { selectGitProjectResources } = await jiti.import("../../../lib/git-project-resources.ts");
+const { readProjectAuthorization, saveProjectAuthorization } = await jiti.import("../../../lib/git-project-authorization.ts");
 const exec = promisify(execFile);
 const git = async (cwd, ...args) => (await exec("git", ["-C", cwd, ...args])).stdout.trim();
 const request = (method, body) => new Request("http://localhost/api/worktrees", { method, body: JSON.stringify(body) });
@@ -48,4 +50,25 @@ test("nested cwd cannot bypass disabled repository worktree mutations; read-only
   assert.match((await rootCreate.json()).error, /disabled/);
   assert.equal((await git(repo, "worktree", "list", "--porcelain")).match(/^worktree /gm).length, 2);
   assert.equal((await GET(new Request(`http://localhost/api/worktrees?cwd=${encodeURIComponent(repo)}`))).status, 200);
+});
+
+test("Project Deny blocks browser worktree creation without becoming an implicit grant", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "workflow-worktrees-deny-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const repo = join(dir, "repo");
+  await mkdir(repo);
+  await git(repo, "init", "-q", "-b", "main");
+  await git(repo, "config", "user.name", "Fixture");
+  await git(repo, "config", "user.email", "fixture@example.invalid");
+  await git(repo, "commit", "--allow-empty", "-qm", "base");
+  allowFileRoot(repo);
+  writeGitWorkflowSettingsDocument({ version: 1, paused: false, global: {}, projects: {} });
+  const selected = await selectGitProjectResources(repo);
+  const first = await readProjectAuthorization(selected, undefined, agentDir);
+  await saveProjectAuthorization(selected, undefined, "project", "workspace", "deny", first, agentDir);
+  const response = await POST(request("POST", { cwd: repo, branch: "forbidden", baseBranch: "main",
+    expectedBaseOid: await git(repo, "rev-parse", "HEAD"), mode: "create" }));
+  assert.equal(response.status, 409);
+  assert.match((await response.json()).error, /authorization denies worktree creation/);
+  assert.equal((await git(repo, "worktree", "list", "--porcelain")).match(/^worktree /gm).length, 1);
 });

@@ -8,7 +8,7 @@ import { isGitCheckoutGated } from "@/lib/git-checkout-gate";
 import { retireGitTaskBinding } from "@/lib/git-workflow-binding-store";
 import { gitTaskBindingRuntime } from "@/lib/git-workflow-binding-runtime";
 import { advanceGitWorkflowWriteEpoch } from "@/lib/git-workflow-write-epoch";
-import { validateGitWorkflowOverrides } from "@/lib/git-workflow-settings";
+import { validateGitWorkflowOverrides, validateGitWorkflowScopeOverrides } from "@/lib/git-workflow-settings";
 import { selectGitProjectResources, revalidateGitProjectResources, GitProjectResourceError } from "@/lib/git-project-resources";
 import { loadGitProjectSettings } from "@/lib/git-project-settings";
 import { appendGitProjectSessionSettings, readGitProjectSessionSettings } from "@/lib/git-project-session";
@@ -130,6 +130,10 @@ export async function applyWorkflowSettings(input: Record<string, unknown>,
       if (scope !== "pause" && scope !== "task") {
         try { overrides = validateGitWorkflowOverrides(prepared.overrides); }
         catch (cause) { throw new SettingsError(cause instanceof Error ? cause.message : "Invalid overrides", 400); }
+      }
+      if (scope !== "pause" && scope !== "task") {
+        try { overrides = validateGitWorkflowScopeOverrides(overrides, scope as "global" | "project" | "session", before[scope as "global" | "project" | "session"] ?? {}); }
+        catch (cause) { throw new SettingsError(cause instanceof Error ? cause.message : "Invalid scoped overrides", 400); }
       }
       if (scope === "pause" && typeof prepared.paused !== "boolean") throw new SettingsError("paused must be boolean", 400);
       if (scope === "task" && t.selection) throw new SettingsError("Explicit-project settings do not capture or adopt a task", 400);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,15 +13,29 @@ const agentDir = join(home, "agent");
 await mkdir(agentDir);
 const previous = Object.fromEntries(["HOME", "XDG_CONFIG_HOME", "PI_CODING_AGENT_DIR"].map((key) => [key, process.env[key]]));
 Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: join(home, ".config"), PI_CODING_AGENT_DIR: agentDir });
-const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true, moduleCache: false });
+// Only this node:test import wraps the real verification engine with the
+// deterministic containment protocol fake; HTTP cannot supply or select it.
+const verificationShim = join(home, "verification-test.ts");
+const realVerification = new URL("../../../../lib/git-verification.ts", import.meta.url).pathname;
+const backendFixture = new URL("../../../../lib/git-check-containment-test-backend.mjs", import.meta.url).pathname;
+await writeFile(verificationShim, `import { runGitVerification as run } from ${JSON.stringify(realVerification)};
+import { createTestContainmentBackend } from ${JSON.stringify(backendFixture)};
+export { inspectGitVerificationReceipts } from ${JSON.stringify(realVerification)};
+const backend = createTestContainmentBackend();
+export const runGitVerification = (options: Parameters<typeof run>[0]) => run({ ...options, testContainmentBackend: backend });
+`);
+const jiti = createJiti(import.meta.url, { alias: { "@/lib/git-verification": verificationShim, "@": process.cwd() }, interopDefault: true, moduleCache: false });
 const { GET, POST } = await jiti.import("./route.ts");
 const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
 const { cacheSessionPath, invalidateSessionPathCache, invalidateSessionListCache } = await jiti.import("../../../../lib/session-reader.ts");
 const { appendSessionGitWorkflow } = await jiti.import("../../../../lib/git-workflow-policy.ts");
-const { getRpcSession } = await jiti.import("../../../../lib/rpc-manager.ts");
+const { AgentSessionWrapper, getRpcSession } = await jiti.import("../../../../lib/rpc-manager.ts");
 const { acquireGitCheckoutGate, isGitCheckoutGated } = await jiti.import("../../../../lib/git-checkout-gate.ts");
 const { readGitAction, subscribeGitActionUpdates } = await jiti.import("../../../../lib/git-action-journal.ts");
+const { inspectGitOperationAdmission } = await jiti.import("../../../../lib/git-operation-admission.ts");
+const { selectGitProjectResources } = await jiti.import("../../../../lib/git-project-resources.ts");
+const { readProjectAuthorization, saveProjectAuthorization } = await jiti.import("../../../../lib/git-project-authorization.ts");
 const exec = promisify(execFile);
 const git = async (cwd, ...args) => (await exec("git", ["-C", cwd, ...args], { encoding: "utf8" })).stdout.trim();
 const get = (id) => GET(new Request(`http://localhost/api/git/integration?sessionId=${encodeURIComponent(id)}`));
@@ -66,7 +80,13 @@ async function fixture(t) {
   const id = sm.getSessionId();
   cacheSessionPath(id, sm.getSessionFile());
   allowFileRoot(feature); allowFileRoot(target);
-  t.after(async () => { invalidateSessionPathCache(id); invalidateSessionListCache(); await rm(dir, { recursive: true, force: true }); });
+  t.after(async () => {
+    // Each test owns disposable action history; an intentionally corrupted or
+    // recovery-required fixture must not quarantine unrelated later fixtures.
+    for (const entry of anchors(sm)) await rm(actionFile(entry.data.actionId, ""), { recursive: true, force: true });
+    invalidateSessionPathCache(id); invalidateSessionListCache();
+    await rm(dir, { recursive: true, force: true });
+  });
   return { id, feature, target, policy, sm };
 }
 async function proposal(f) {
@@ -76,6 +96,30 @@ async function proposal(f) {
   }
   return jsonOK(await post(op(f.id, "plan", { receiptIds: receipts })));
 }
+
+test("saved checks and integration Deny are separate live negative overlays on browser actions", async (t) => {
+  const f = await fixture(t);
+  const selection = await selectGitProjectResources(f.feature);
+  const owner = { sessionId: f.id, sessionFile: f.sm.getSessionFile(), sessionCwd: f.feature };
+  const set = async (action, decision) => saveProjectAuthorization(selection, owner, "session", action, decision,
+    await readProjectAuthorization(selection, owner, agentDir), agentDir);
+  await set("checks", "deny");
+  assert.equal((await post(op(f.id, "verify", { checkIndex: 0 }))).status, 409);
+  await set("checks", "inherit");
+  const projectStatus = () => readProjectAuthorization(selection, undefined, agentDir);
+  await saveProjectAuthorization(selection, undefined, "project", "checks", "deny", await projectStatus(), agentDir);
+  assert.equal((await post(op(f.id, "verify", { checkIndex: 0 }))).status, 409);
+  await saveProjectAuthorization(selection, undefined, "project", "checks", "inherit", await projectStatus(), agentDir);
+  const receipt = (await jsonOK(await post(op(f.id, "verify", { checkIndex: 0 })))).receipt;
+  await set("integration", "deny");
+  assert.equal((await get(f.id)).status, 200, "read-only review remains available under mutation Deny");
+  assert.equal((await post(op(f.id, "plan", { receiptIds: [receipt.id] }))).status, 409);
+  await set("integration", "inherit");
+  const candidate = await jsonOK(await post(op(f.id, "plan", { receiptIds: [receipt.id] })));
+  await set("integration", "deny");
+  assert.equal((await post(confirm(f.id, candidate))).status, 409);
+  assert.equal((await history(candidate.actionId)).record.state, "awaiting-decision");
+});
 
 test("human checks and exact plan share durable metadata-only anchors, explicit confirmation and actual result facts", async (t) => {
   const f = await fixture(t);
@@ -163,7 +207,33 @@ test("an in-flight saved check gates both checkouts against a previously approve
   assert.equal(isGitCheckoutGated(f.target), true);
   assert.equal(isGitCheckoutGated(f.feature), true);
   assert.equal((await post(confirm(f.id, p))).status, 409);
-  assert.equal((await checking).status, 200);
+  const checked = await jsonOK(await checking);
+  // Even a passing later check advances admission history: an old plan cannot
+  // be approved merely because refs/index and receipt policy still match.
+  assert.equal((await post(confirm(f.id, p))).status, 409);
+  const fresh = await jsonOK(await post(op(f.id, "plan", { receiptIds: [checked.receipt.id] })));
+  assert.equal((await post(confirm(f.id, fresh))).status, 200);
+});
+
+test("thinking/read-only chat in target checkout does not block verification, plan or integration; writer does", async (t) => {
+  const f = await fixture(t);
+  const registry = globalThis.__piSessions;
+  let emit;
+  const inner = { sessionId: "target-chat", isStreaming: true, isCompacting: false, isBashRunning: false,
+    sessionManager: { getCwd: () => f.target }, agent: { state: {} }, dispose: () => {},
+    getAllTools: () => [{ name: "read", sourceInfo: { source: "builtin", path: "<builtin:read>" } }],
+    resourceLoader: { getExtensions: () => ({ extensions: [{ path: "<inline:pi-web-checkout-operation-guard>" }], errors: [] }) },
+    subscribe: (listener) => { emit = listener; return () => {}; } };
+  const wrapper = new AgentSessionWrapper(inner, { checkoutGuardInstalled: true });
+  wrapper.start();
+  globalThis.__piSessions = new Map([...(registry ?? []), [wrapper.sessionId, wrapper]]);
+  t.after(() => { wrapper.destroy(); globalThis.__piSessions = registry; });
+  emit({ type: "tool_execution_start", toolCallId: "safe", toolName: "read" });
+  const p = await proposal(f);
+  emit({ type: "tool_execution_start", toolCallId: "unsafe", toolName: "bash" });
+  assert.equal((await post(confirm(f.id, p))).status, 409);
+  assert.equal((await history(p.actionId)).record.state, "awaiting-decision");
+  emit({ type: "tool_execution_end", toolCallId: "unsafe" });
   assert.equal((await post(confirm(f.id, p))).status, 200);
 });
 
@@ -200,25 +270,28 @@ test("each selected exact check has its own candidate and failed checks retain s
   assert.equal(stored.record.outcome.status, "failed");
   assert.deepEqual(stored.candidate.checks, [f.policy.checks[1]]);
   assert.doesNotMatch(stored.record.reason, /secret raw output/);
-  assert.deepEqual((await jsonOK(await get(f.id))).receipts, []);
+  assert.equal((await get(f.id)).status, 409); // unfinished check containment requires recovery
 });
 
 test("cancelled verification remains cancelled, with no passing receipt", async (t) => {
   const f = await fixture(t);
-  f.policy.checks[0].argv = [process.execPath, "-e", "setTimeout(() => {}, 10000)"];
+  const started = join(f.feature, "..", "verification-started");
+  f.policy.checks[0].argv = [process.execPath, "-e", `require('node:fs').writeFileSync(${JSON.stringify(started)}, 'started'); setTimeout(() => {}, 10000)`];
   appendSessionGitWorkflow(f.sm, f.policy);
   const controller = new AbortController();
-  const off = subscribeGitActionUpdates(f.id, ({ actionId }) => {
-    if (actionRecord(actionId).state === "executing") setTimeout(() => controller.abort(), 200);
-  });
+  // 'executing' describes the action journal, not proof that a check process
+  // launched. Cancel only after the child actually starts so quarantine is owed.
+  const poll = setInterval(() => { if (existsSync(started)) controller.abort(); }, 20);
+  const deadline = setTimeout(() => controller.abort(), 5000);
   let response;
   try { response = await post(op(f.id, "verify", { checkIndex: 0 }), controller.signal); }
-  finally { off(); }
+  finally { clearInterval(poll); clearTimeout(deadline); }
+  assert.equal(existsSync(started), true, "the fixture must start a check before cancellation");
   assert.equal(response.status, 409);
   const body = await response.json();
   assert.equal((await history(body.actionId)).record.state, "cancelled");
   assert.equal((await history(body.actionId)).record.outcome.status, "cancelled");
-  assert.deepEqual((await jsonOK(await get(f.id))).receipts, []);
+  assert.equal((await get(f.id)).status, 409); // cancellation cannot prove escaped descendants are stopped
   assert.equal(isGitCheckoutGated(f.target), false);
 });
 
@@ -272,31 +345,45 @@ test("beforeApply persists intended facts, then rechecks cancellation before any
   assert.equal(await git(f.target, "status", "--porcelain"), "");
 });
 
-test("failed pre-apply journaling prevents integration; failed outcome journaling returns actual result with recovery warning", async (t) => {
+test("unavailable pre-apply candidate cannot execute, but a new reviewed plan can", async (t) => {
   const f = await fixture(t);
   const unavailable = await proposal(f);
   await rm(actionFile(unavailable.actionId, "candidate.json"));
   assert.equal((await post(confirm(f.id, unavailable))).status, 409);
   assert.equal(await git(f.target, "rev-parse", "HEAD"), unavailable.plan.review.targetOid);
   const p = await proposal(f);
-  const off = subscribeGitActionUpdates(f.id, ({ actionId }) => {
-    if (actionId === p.actionId && actionRecord(actionId).intended) writeFileSync(actionFile(actionId), "injected invalid journal");
-  });
+  assert.equal((await post(confirm(f.id, p))).status, 200);
+  assert.equal(await git(f.target, "rev-parse", "HEAD"), p.plan.mergeOid);
+});
+
+test("failed outcome journaling after ref CAS preserves the actual OID and retains admission recovery", async (t) => {
+  const f = await fixture(t);
+  const p = await proposal(f);
+  const bin = await mkdtemp(join(tmpdir(), "pi-web-integration-outcome-"));
+  t.after(() => rm(bin, { recursive: true, force: true }));
+  const realGit = (await exec("which", ["git"])).stdout.trim();
+  const wrapper = join(bin, "git");
+  await writeFile(wrapper, `#!/bin/sh\ncase " $* " in *" update-ref refs/heads/target "*) "${realGit}" "$@" || exit $?; printf 'invalid outcome journal' > '${actionFile(p.actionId)}'; exit 0 ;; esac\nexec "${realGit}" "$@"\n`);
+  await chmod(wrapper, 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
   let response;
   try { response = await post(confirm(f.id, p)); }
-  finally { off(); }
+  finally { process.env.PATH = oldPath; }
   const result = await jsonOK(response);
   assert.equal(result.status, "integrated");
   assert.equal(result.mergeOid, p.plan.mergeOid);
   assert.equal(result.recoveryRequired, true);
   assert.match(result.recoveryWarning, /do not repeat/i);
-  assert.doesNotMatch(JSON.stringify(result), /refresh|no mutation|injected invalid journal/i);
   assert.equal(await git(f.target, "rev-parse", "HEAD"), result.mergeOid);
+  const commonDir = await git(f.feature, "rev-parse", "--path-format=absolute", "--git-common-dir");
+  assert.equal(inspectGitOperationAdmission(agentDir, commonDir).reason, "unresolved");
 });
 
 test("partial-state native result becomes recovery-required, with intended merge identity and without raw diagnostics in history", async (t) => {
   const f = await fixture(t);
   const p = await proposal(f);
+  const receiptIds = (await jsonOK(await get(f.id))).receipts.map((receipt) => receipt.id);
   const bin = await mkdtemp(join(tmpdir(), "pi-web-integration-partial-"));
   t.after(() => rm(bin, { recursive: true, force: true }));
   const realGit = (await exec("which", ["git"])).stdout.trim();
@@ -322,6 +409,13 @@ test("partial-state native result becomes recovery-required, with intended merge
   assert.doesNotMatch(JSON.stringify(stored), /secret git stderr/);
   assert.equal(await readFile(join(f.target, "note"), "utf8"), "feature\n");
   assert.equal(await git(f.target, "rev-parse", "HEAD"), p.plan.review.targetOid);
+  // The uncertain checkout effect blocks new checks and plans, even though
+  // the target ref still has its original OID.
+  const commonDir = await git(f.feature, "rev-parse", "--path-format=absolute", "--git-common-dir");
+  assert.equal(inspectGitOperationAdmission(agentDir, commonDir).reason, "unresolved");
+  assert.equal((await post(op(f.id, "verify", { checkIndex: 0 }))).status, 409);
+  assert.equal((await post(op(f.id, "plan", { receiptIds }))).status, 409);
+  assert.equal((await get(f.id)).status, 409);
 });
 
 test("beforeApply journal failure prevents checkout mutation even after native preflight succeeds", async (t) => {
@@ -342,7 +436,7 @@ test("beforeApply journal failure prevents checkout mutation even after native p
   assert.equal(await git(f.target, "status", "--porcelain"), "");
 });
 
-test("successful check retains its actual receipt if final history recording fails", async (t) => {
+test("corrupt check action before execution produces no successful receipt", async (t) => {
   const f = await fixture(t);
   let action;
   const off = subscribeGitActionUpdates(f.id, ({ actionId }) => {
@@ -354,13 +448,12 @@ test("successful check retains its actual receipt if final history recording fai
   let response;
   try { response = await post(op(f.id, "verify", { checkIndex: 0 })); }
   finally { off(); }
-  const result = await jsonOK(response);
+  assert.equal(response.status, 409);
+  const result = await response.json();
   assert.equal(result.actionId, action);
   assert.equal(result.recoveryRequired, true);
-  assert.equal(result.outcome.status, "passed");
-  assert.ok(result.receipt.id);
-  assert.match(result.recoveryWarning, /do not repeat/i);
-  assert.deepEqual((await jsonOK(await get(f.id))).receipts, [result.receipt]);
+  assert.equal(result.receipt, undefined);
+  assert.equal((await get(f.id)).status, 409);
 });
 
 test("unknown post-apply exception reports intended facts and recovery, never stale/refresh guidance", async (t) => {

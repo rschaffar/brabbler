@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { applyWorkflowSettings, responseFor, SettingsError, target } from "@/app/api/git/workflow/settings/service";
 import { revalidateGitProjectResources, type GitProjectResources } from "./git-project-resources";
-import { GIT_WORKFLOW_FIELDS, resolveGitWorkflowSettings, validateGitWorkflowOverrides, type GitWorkflowField, type GitWorkflowOverrides, type GitWorkflowSettings, type WorkflowScope } from "./git-workflow-settings";
+import { GIT_WORKFLOW_FIELDS, resolveGitWorkflowSettings, validateGitWorkflowOverrides, validateGitWorkflowScopeOverrides, type GitWorkflowField, type GitWorkflowOverrides, type GitWorkflowSettings, type WorkflowScope } from "./git-workflow-settings";
 import { samePath } from "./paths";
 import { readSessionHeader, resolveSessionPath } from "./session-reader";
 
@@ -25,7 +25,7 @@ function prune() {
   while (map.size >= MAX) map.delete(map.keys().next().value!);
 }
 function changesFrom(input: unknown): Change[] {
-  if (!Array.isArray(input) || !input.length || input.length > GIT_WORKFLOW_FIELDS.length) throw new SettingsError("Choose 1–10 workflow fields", 400);
+  if (!Array.isArray(input) || !input.length || input.length > GIT_WORKFLOW_FIELDS.length) throw new SettingsError(`Choose 1–${GIT_WORKFLOW_FIELDS.length} workflow fields`, 400);
   const seen = new Set<string>();
   return input.map((item: unknown) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new SettingsError("Invalid proposal change", 400);
@@ -86,7 +86,7 @@ export async function proposeGitSettings(sessionId: string, input: unknown) {
     if (change.inherit) delete after[change.field];
     else Object.assign(after, { [change.field]: change.value });
   }
-  validateGitWorkflowOverrides(after);
+  validateGitWorkflowScopeOverrides(after, scope, original);
   const effectiveAfter = scope === "global" ? resolveGitWorkflowSettings(after).values
     : scope === "project" ? resolveGitWorkflowSettings(before.global, after).values
       : resolveGitWorkflowSettings(before.global, before.project, after).values;

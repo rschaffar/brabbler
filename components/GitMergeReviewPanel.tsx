@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { GitCheckRecoveryPanel } from "./GitCheckRecoveryPanel";
 import type { GitReview, GitReviewDiff, GitReviewSelection } from "@/lib/git-review";
 import type { IntegrationPlan, IntegrationResult } from "@/lib/git-integration";
 
@@ -82,7 +83,10 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
   const [result, setResult] = useState<IntegrationResponse | null>(null);
   const [operation, setOperation] = useState<"verify" | "plan" | "confirm" | null>(null);
   const [blocked, setBlocked] = useState(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryAccepted, setRecoveryAccepted] = useState(false);
   const operationRef = useRef(false);
+  const recoveryInFlight = useRef(false);
   const request = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const integrationGeneration = useRef(0);
@@ -141,7 +145,12 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
   const trees = review && expectedTrees(review, choice);
 
   function refresh() {
-    if (operationRef.current) return;
+    if (operationRef.current || recoveryInFlight.current) return;
+    setRecoveryAccepted(false);
+    reloadReview();
+  }
+
+  function reloadReview() {
     invalidateDiff();
     invalidateIntegration();
     setBlocked(false);
@@ -161,7 +170,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
   }
 
   async function integrationAction(action: "verify" | "plan" | "confirm", checkIndex?: number) {
-    if (operationRef.current || blocked || result || !review || !integration || !sameReview(integration.review, review)) return;
+    if (operationRef.current || recoveryInFlight.current || blocked || result || !review || !integration || !sameReview(integration.review, review)) return;
     const receipts = matchingReceipts(integration, review);
     if (action === "plan" && !receipts) return;
     if (action === "confirm" && (!proposal?.actionId || !receipts || !proposalMatches(proposal.plan, review, sessionId, receipts))) return;
@@ -262,7 +271,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
     <div className="min-w-0 space-y-2">
       <p className="text-xs text-text-muted">Session checkout: <span className="break-all font-mono">{cwd}</span>. Branches are read from this persisted session and its local integration policy, not chosen here.</p>
       <p className="text-xs text-amber-500">Patches below are read-only comparisons of committed trees, not uncommitted checkout files. Verification, proposal and integration are separate explicit actions.</p>
-      <button type="button" disabled={operation !== null} onClick={refresh} className="min-h-8 text-xs text-accent hover:underline disabled:opacity-50">Refresh review</button>
+      <button type="button" disabled={operation !== null || recoveryBusy} onClick={refresh} className="min-h-8 text-xs text-accent hover:underline disabled:opacity-50">Refresh review</button>
       {loading && <p role="status">Loading local branches and commit identities…</p>}
       {error && <p role="alert" className="break-words text-red-400">{error}</p>}
       {!loading && review && <div className="min-w-0 space-y-2">
@@ -317,6 +326,11 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
         </div>}
       </div>}
       {integrationError && <p role="alert" className="break-words text-red-400">{integrationError}</p>}
+      {/* Remain available when integration GET fails (including quarantine 409) or review cannot load. */}
+      {recoveryAccepted && <p role="status">Recovery accepted. Review and receipts are being refreshed; no check was rerun and no passing receipt was created.</p>}
+      <GitCheckRecoveryPanel key={`${sessionId}:${revision}`} sessionId={sessionId} disabled={operation !== null}
+        onRecoveringChange={(busy) => { recoveryInFlight.current = busy; setRecoveryBusy(busy); }}
+        onRecovered={() => { setRecoveryAccepted(true); if (!operationRef.current) reloadReview(); }} />
       {integration && <div className="space-y-2 rounded border border-border p-2" aria-label="Local verification and integration">
         <strong>Local verification and integration</strong>
         {!review || !sameReview(integration.review, review) ? <p className="text-xs text-amber-500">Integration review identities differ or are unavailable. Refresh before verification.</p> : <>
@@ -327,11 +341,11 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
               return <li key={index} className="rounded border border-border p-2 text-xs">
                 <p>Check {index + 1}: {check.label}</p>
                 {matching ? <p className="break-all font-mono">Passed: receipt {matching.id}; check index {matching.checkIndex}; finished {new Date(matching.finishedAt).toLocaleString()}; log digest {matching.logDigest}</p> : <p>No matching passing receipt for the current review.</p>}
-                <button type="button" disabled={!review || blocked || !!result || operation !== null} onClick={() => void integrationAction("verify", index)} className="min-h-8 rounded border border-border px-2 text-accent disabled:opacity-50">{operation === "verify" ? "Verifying…" : `Run check ${index + 1}`}</button>
+                <button type="button" disabled={!review || blocked || !!result || operation !== null || recoveryBusy} onClick={() => void integrationAction("verify", index)} className="min-h-8 rounded border border-border px-2 text-accent disabled:opacity-50">{operation === "verify" ? "Verifying…" : `Run check ${index + 1}`}</button>
               </li>;
             })}
           </ol>}
-          <button type="button" disabled={!matchingReceipts(integration, review) || blocked || !!result || operation !== null}
+          <button type="button" disabled={!matchingReceipts(integration, review) || blocked || !!result || operation !== null || recoveryBusy}
             onClick={() => void integrationAction("plan")} className="min-h-8 rounded border border-border px-3 text-accent disabled:opacity-50">{operation === "plan" ? "Preparing…" : "Prepare exact integration proposal"}</button>
         </>}
       </div>}
@@ -355,7 +369,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
           {proposal.plan.diff.hasBinaryChanges && <p className="text-amber-500">Binary changes are included but contents are not displayed.</p>}
           {proposal.plan.diff.patch ? <pre className="max-h-80 min-w-0 overflow-auto whitespace-pre-wrap break-all rounded border border-border bg-bg p-2 font-mono text-text">{proposal.plan.diff.patch}</pre> : <p>No text changes in the candidate.</p>}
         </div>
-        <button type="button" disabled={operation !== null || blocked || !proposal.actionId || !review || !integration || !matchingReceipts(integration, review) || Date.now() >= proposal.plan.expiresAt} onClick={() => void integrationAction("confirm")}
+        <button type="button" disabled={operation !== null || recoveryBusy || blocked || !proposal.actionId || !review || !integration || !matchingReceipts(integration, review) || Date.now() >= proposal.plan.expiresAt} onClick={() => void integrationAction("confirm")}
           className="min-h-8 rounded border border-amber-500 px-3 font-medium text-text disabled:opacity-50">{operation === "confirm" ? "Integrating…" : `Confirm exact plan ${proposal.plan.planId}`}</button>
       </div>}
       {result && <div role="status" className="space-y-1 rounded border border-amber-500 p-2 text-xs">

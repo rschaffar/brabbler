@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { checkGitTaskBinding } from "./git-task-binding.mjs";
 
 /** Real scoped settings, local Git objects and a persisted chat; no model or mocked settings endpoint. */
-export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, cwd, targetWorktree, otherProject }) {
+export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, cwd, targetWorktree, otherProject, checkContainmentSupported }) {
   const gitAt = (path, ...args) => execFileSync("git", ["-C", path, ...args], { encoding: "utf8" }).trim();
   const git = (...args) => gitAt(cwd, ...args);
   const settingsPath = "/api/git/workflow/settings";
@@ -87,6 +87,12 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     if (!await details.evaluate((element) => element.open)) await details.locator("summary").click();
     return writeSettings("task", task.getByRole("button", { name: "Apply saved settings to this task", exact: true }));
   }
+  async function chooseLegacyContinuation(value) {
+    await expand("workspace");
+    const legacy = workflow.locator("#workflow-stage-workspace details").filter({ hasText: "Legacy chat continuation" });
+    if (!await legacy.evaluate((element) => element.open)) await legacy.locator(":scope > summary").click();
+    await control("onCreate").selectOption(value);
+  }
   async function addCheck(label) {
     await expand("checks");
     await workflow.getByRole("button", { name: "Add check", exact: true }).click();
@@ -148,32 +154,76 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await chooseScope("project"); await expand("integration");
     await control("targetBranch").fill("other-main");
     assert.equal((await save("project")).projectRoot, otherProject);
+    const authorization = workflow.getByRole("region", { name: "Saved action authorization" });
+    await authorization.locator("#workflow-auth-commit").selectOption("allow");
+    const allowSave = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/authorizations"
+      && response.request().method() === "PUT" && response.request().postDataJSON().scope === "project");
+    await authorization.getByRole("button", { name: /Save Selected commits allow for project/ }).click();
+    const allowResponse = await allowSave;
+    assert.equal(allowResponse.status(), 200, allowResponse.status() === 200 ? "" : await allowResponse.text());
+    const allowResult = await allowResponse.json();
+    assert.equal(allowResult.actions.commit.effective, "allow");
+    assert.equal(allowResult.approvalToken, false, "saved authorization is not a candidate approval token");
     await chooseScope("session");
-    await control("targetBranch").fill("b-chat");
+    assert.equal(await control("targetBranch").isDisabled(), true, "project-specific branches stay in Project");
+    await control("delivery").selectOption("leave");
     const bSaved = await save("session");
     assert.equal(bSaved.sessionScope, "project");
-    assert.deepEqual(bSaved.session, { targetBranch: "b-chat" });
+    assert.deepEqual(bSaved.session, { delivery: "leave" });
+    await authorization.locator("#workflow-auth-commit").selectOption("deny");
+    const denySave = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/authorizations"
+      && response.request().method() === "PUT" && response.request().postDataJSON().scope === "session");
+    await authorization.getByRole("button", { name: /Save Selected commits deny for this chat/ }).click();
+    const denyResponse = await denySave;
+    assert.equal(denyResponse.status(), 200, denyResponse.status() === 200 ? "" : await denyResponse.text());
+    assert.equal((await denyResponse.json()).actions.commit.effective, "deny", "chat restriction overrides a Project Allow");
+    await authorization.locator("#workflow-auth-commit").selectOption("inherit");
+    const resetSave = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/authorizations"
+      && response.request().method() === "PUT" && response.request().postDataJSON().decision === "inherit");
+    await authorization.getByRole("button", { name: /Save Selected commits inherit for this chat/ }).click();
+    const resetResponse = await resetSave;
+    assert.equal(resetResponse.status(), 200, resetResponse.status() === 200 ? "" : await resetResponse.text());
+    assert.equal((await resetResponse.json()).actions.commit.effective, "allow");
     assert.equal(await workflow.getByRole("button", { name: "Apply saved settings to this task", exact: true }).count(), 0);
     await selectProject(cwd); await expand("integration");
     assert.equal(await control("targetBranch").inputValue(), "");
-    await control("targetBranch").fill("a-unsaved");
+    await control("delivery").selectOption("pr");
     await selectProject(otherProject); await expand("integration");
-    assert.equal(await control("targetBranch").inputValue(), "b-chat");
-    await control("targetBranch").fill("b-unsaved");
+    assert.equal(await control("delivery").inputValue(), "leave");
+    await control("delivery").selectOption("local");
     await selectProject(cwd); await expand("integration");
-    assert.equal(await control("targetBranch").inputValue(), "a-unsaved");
+    assert.equal(await control("delivery").inputValue(), "pr");
     await save("session");
     await closeWorkflow(); await openWorkflow();
     await selectProject(otherProject); await expand("integration");
-    assert.equal(await control("targetBranch").inputValue(), "b-unsaved", "A save/close must not erase B's draft");
+    assert.equal(await control("delivery").inputValue(), "local", "A save/close must not erase B's draft");
     await workflow.getByRole("button", { name: "Discard", exact: true }).click();
-    assert.equal(await control("targetBranch").inputValue(), "b-chat");
-    await field("targetBranch").getByRole("button", { name: "Use Project value", exact: true }).click();
+    assert.equal(await control("delivery").inputValue(), "leave");
+    await field("delivery").getByRole("button", { name: "Use Project value", exact: true }).click();
     assert.equal((await save("session")).resolved.session.values.targetBranch, "other-main");
     await selectProject(cwd); await expand("integration");
-    assert.equal(await control("targetBranch").inputValue(), "a-unsaved");
-    await field("targetBranch").getByRole("button", { name: "Use Project value", exact: true }).click();
+    assert.equal(await control("delivery").inputValue(), "pr");
+    await field("delivery").getByRole("button", { name: "Use Project value", exact: true }).click();
     await save("session");
+    assert.equal(await control("managedGitToolsOnly").getAttribute("aria-checked"), "true");
+    await selectProject(otherProject); await chooseScope("project");
+    await control("managedGitToolsOnly").click();
+    assert.equal(await control("managedGitToolsOnly").getAttribute("aria-checked"), "false");
+    assert.equal(await workflow.getByRole("button", { name: "Save project defaults", exact: true }).isEnabled(), true, "project guidance override has an enabled Save");
+    assert.equal((await save("project")).project.managedGitToolsOnly, false);
+    await chooseScope("session");
+    assert.equal(await control("managedGitToolsOnly").getAttribute("aria-checked"), "false");
+    await control("managedGitToolsOnly").click();
+    assert.equal((await save("session")).session.managedGitToolsOnly, true);
+    await selectProject(cwd); await chooseScope("global");
+    await control("managedGitToolsOnly").click();
+    assert.equal((await save("global")).global.managedGitToolsOnly, false);
+    await chooseScope("session");
+    assert.equal(await control("managedGitToolsOnly").getAttribute("aria-checked"), "false", "A inherits Global, not B's chat override");
+    await chooseScope("global");
+    await field("managedGitToolsOnly").getByRole("button", { name: "Restore built-in default", exact: true }).click();
+    assert.equal((await save("global")).resolved.global.values.managedGitToolsOnly, true);
+    await chooseScope("session");
     const legacyLoaded = page.waitForResponse((response) => new URL(response.url()).pathname === settingsPath
       && response.request().method() === "GET" && new URL(response.url()).searchParams.get("sessionId") === sessionId
       && !new URL(response.url()).searchParams.has("projectPath"));
@@ -212,11 +262,14 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await control("enabled").click();
     await expand("commits");
     await control("commits").selectOption("manual");
-    await addCheck("Global fixture check");
+    await expand("checks");
+    assert.equal(await workflow.getByRole("button", { name: "Add check", exact: true }).isDisabled(), true);
+    await control("checkConfirmation").selectOption("none");
     const globalSaved = await save("global");
     assert.equal(globalSaved.global.enabled, false, "Off is a persisted false, not inheritance");
     assert.equal(globalSaved.resolved.global.origins.enabled, "global");
-    assert.deepEqual(globalSaved.global.checks, [{ label: "Global fixture check", argv: [process.execPath, "-e", "process.exit(0)"] }]);
+    assert.equal(globalSaved.global.checkConfirmation, "none");
+    assert.equal(Object.hasOwn(globalSaved.global, "checks"), false, "recipes are project-specific");
     await origin("enabled", "Set here");
     await closeWorkflow();
     await home();
@@ -234,6 +287,9 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await origin("commits", "From Global");
     await control("commits").selectOption("off");
     await expand("checks");
+    await addCheck("Project fixture check");
+    const projectRecipe = await save("project");
+    assert.deepEqual(projectRecipe.project.checks, [{ label: "Project fixture check", argv: [process.execPath, "-e", "process.exit(0)"] }]);
     await workflow.getByRole("button", { name: "No checks at this scope", exact: true }).click();
     const projectSaved = await save("project");
     assert.equal(projectSaved.projectRoot, cwd);
@@ -244,15 +300,15 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
 
     // Reset removes just the override: [] and Off must not have been mistaken for absence on save.
     await field("checks").getByRole("button", { name: "Use Global value", exact: true }).click();
-    await origin("checks", "From Global");
-    await workflow.locator(".workflow-recipe summary").filter({ hasText: "1. Global fixture check" }).waitFor();
+    await origin("checks", "Built-in default");
+    assert.equal(await workflow.locator(".workflow-recipe summary").count(), 0);
     await expand("commits");
     await field("commits").getByRole("button", { name: "Use Global value", exact: true }).click();
     await origin("commits", "From Global");
     const projectReset = await save("project");
     assert.equal(Object.hasOwn(projectReset.project, "checks"), false);
     assert.equal(Object.hasOwn(projectReset.project, "commits"), false);
-    assert.deepEqual(projectReset.resolved.project.values.checks, globalSaved.global.checks);
+    assert.deepEqual(projectReset.resolved.project.values.checks, []);
     assert.equal(projectReset.resolved.project.values.commits, "manual");
     await chooseScope("global");
     await field("enabled").getByRole("button", { name: "Restore built-in default", exact: true }).click();
@@ -263,20 +319,19 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
 
     // A child resolves SAVED parents only. Closing, switching scope and discarding one draft must not erase another.
     await expand("workspace");
-    await control("branch").fill("global-unsaved");
+    assert.equal(await control("branch").isDisabled(), true, "Global cannot define a named project branch");
+    await control("workspace").selectOption("worktree");
     await chooseScope("project");
     assert.equal(await control("branch").inputValue(), "feature");
-    await field("branch").getByRole("button", { name: "Use Global value", exact: true }).click();
-    assert.equal(await control("branch").inputValue(), "", "Unsaved Global branch must not leak into Project inheritance");
-    await origin("branch", "Built-in default");
+    await origin("workspace", "Built-in default");
     await control("branch").fill("project-unsaved");
     await closeWorkflow();
     await home();
     assert.equal(await control("branch").inputValue(), "project-unsaved", "Project draft survives close/reopen");
     await chooseScope("global");
-    assert.equal(await control("branch").inputValue(), "global-unsaved", "Global draft survives scope changes");
+    assert.equal(await control("workspace").inputValue(), "worktree", "Global draft survives scope changes");
     const beforeDiscard = await readSettings({ cwd });
-    assert.equal(Object.hasOwn(beforeDiscard.global, "branch"), false);
+    assert.equal(Object.hasOwn(beforeDiscard.global, "workspace"), false);
     assert.equal(beforeDiscard.project.branch, "feature");
     await workflow.getByRole("button", { name: "Discard", exact: true }).click();
     await chooseScope("project");
@@ -302,13 +357,14 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await origin("commits", "From Global");
     await control("commits").selectOption("off");
     await expand("checks");
-    await workflow.getByRole("button", { name: "No checks at this scope", exact: true }).click();
+    assert.equal(await workflow.getByRole("button", { name: "No checks at this scope", exact: true }).isDisabled(), true);
+    await control("checkConfirmation").selectOption("ask");
     const sessionSaved = await save("session");
-    assert.deepEqual(sessionSaved.session, { commits: "off", checks: [] });
+    assert.deepEqual(sessionSaved.session, { commits: "off", checkConfirmation: "ask" });
     assert.deepEqual(sessionSaved.task, initial.task, "Session save alone must not adopt or rewrite this task");
-    await origin("checks", "Set here");
-    await field("checks").getByRole("button", { name: "Use Project value", exact: true }).click();
-    await origin("checks", "From Global");
+    await origin("checkConfirmation", "Set here");
+    await field("checkConfirmation").getByRole("button", { name: "Use Project value", exact: true }).click();
+    await origin("checkConfirmation", "From Global");
     await expand("commits");
     await field("commits").getByRole("button", { name: "Use Project value", exact: true }).click();
     await origin("commits", "From Global");
@@ -319,7 +375,7 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     assert.equal(adopted.task.settings.targetBranch, "target");
     assert.equal(adopted.task.settings.branch, "feature");
     assert.equal(adopted.task.settings.commits, "manual");
-    assert.deepEqual(adopted.task.settings.checks, globalSaved.global.checks);
+    assert.deepEqual(adopted.task.settings.checks, []);
     const permissions = task.locator('details[aria-label="Current task permissions"]');
     await permissions.locator("summary").click();
     const commitPermissions = permissions.locator(".workflow-comparison > div").filter({ has: page.locator("dt", { hasText: /^Commits$/ }) });
@@ -337,19 +393,18 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
 
     // Every defaults scope can change without changing the captured task. Explicit Apply ignores unsaved drafts.
     await chooseScope("global");
-    await expand("workspace");
-    await control("onCreate").selectOption("stay");
+    await chooseLegacyContinuation("stay");
     assert.deepEqual((await save("global")).task, adopted.task);
     await chooseScope("project");
-    await control("onCreate").selectOption("fork");
+    await chooseLegacyContinuation("fork");
     assert.deepEqual((await save("project")).task, adopted.task);
     await chooseScope("session");
-    await control("onCreate").selectOption("stay");
+    await chooseLegacyContinuation("stay");
     const laterTasks = await save("session");
     assert.deepEqual(laterTasks.task, adopted.task);
     assert.equal(laterTasks.resolved.session.values.onCreate, "stay");
     await task.getByText("Task details · Defaults differ — compare", { exact: true }).waitFor();
-    await control("onCreate").selectOption("continue");
+    await chooseLegacyContinuation("continue");
     await chooseScope("global");
     assert.equal(await control("onCreate").inputValue(), "stay", "A child override/draft must not appear in Global");
     await chooseScope("project");
@@ -386,7 +441,7 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await home();
     assert.equal(await control("enabled").getAttribute("aria-checked"), "false");
     await expand("integration");
-    assert.equal(await control("targetBranch").isEnabled(), true, "Off does not lock the configuration editor");
+    assert.equal(await control("integrateConfirmation").isEnabled(), true, "Off does not lock the configuration editor");
     await field("enabled").getByRole("button", { name: "Use Project value", exact: true }).click();
     const enabled = await save("session");
     assert.equal(Object.hasOwn(enabled.session, "enabled"), false);
@@ -470,7 +525,8 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
         await expand(stage);
         await contained(`${width}px ${stage} settings`);
       }
-      // A dirty save footer and long checkout paths must fit too, not just the collapsed overview.
+      // Named branch drafts belong to Project and must fit the dirty footer.
+      await chooseScope("project");
       await expand("workspace");
       await control("branch").fill("e2e-long-draft-branch-for-workflow-containment");
       await contained(`${width}px dirty footer`);
@@ -482,6 +538,7 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
       await home();
       assert.equal(await control("branch").inputValue(), "e2e-long-draft-branch-for-workflow-containment");
       await workflow.getByRole("button", { name: "Discard", exact: true }).click();
+      await chooseScope("session");
       for (const [action, regionName, content] of [
         ["Workspace details", "Continue session in another worktree", "Actual chat checkout"],
         ["Review & commit", "Review & commit panel", "Session checkout"],
@@ -516,7 +573,11 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await candidate.getByText("Review exact commit candidate").waitFor();
     assert.equal(git("rev-parse", "HEAD"), before, "Preview must not commit");
     assert.match(await candidate.innerText(), /draft\.txt/);
+    const confirmed = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/commit"
+      && response.request().postDataJSON()?.operation === "confirm");
     await candidate.getByRole("button", { name: "Confirm commit" }).click();
+    const confirmResult = await confirmed;
+    assert.equal(confirmResult.status(), 200, confirmResult.status() === 200 ? "" : await confirmResult.text());
     await commitPanel.getByText("Last commit created").waitFor();
     assert.notEqual(git("rev-parse", "HEAD"), before);
     assert.equal(git("show", "--format=", "--name-only", "HEAD"), "draft.txt\nsecond-draft.txt");
@@ -542,23 +603,37 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     assert.equal(await commitCard.getByRole("button", { name: /^Confirm/ }).count(), 0, "History cannot approve an old commit");
     console.log("PASS: real manual commit coalesces into one durable card with actual identity, lazy multi-file diff and reload persistence");
 
-    // Saving a check neither runs it nor grants approval; the captured task must be explicitly updated first.
+    // Project-owned checks neither run nor grant approval on Save; the captured task must be explicitly updated first.
     await home();
-    await chooseScope("session");
+    await chooseScope("project");
     await expand("checks");
-    await workflow.getByRole("button", { name: "No checks at this scope", exact: true }).click();
     await addCheck("Fixture verification");
-    const checksSaved = await save("session");
+    const checksSaved = await save("project");
     assert.deepEqual(checksSaved.task, applied.task);
-    assert.equal(checksSaved.session.checks[0].label, "Fixture verification");
+    assert.equal(checksSaved.project.checks[0].label, "Fixture verification");
     const checksApplied = await apply();
     assert.equal(checksApplied.task.settings.checks[0].label, "Fixture verification");
     assert.equal(mutations.filter((entry) => entry.path === "/api/git/integration").length, 0, "Saving/applying checks must not run them");
     await openDetail("Integration review", "Local integration review");
     await review.getByRole("button", { name: "Refresh review" }).click();
     await review.getByRole("button", { name: "Run check 1" }).waitFor();
+    const quarantine = review.getByRole("region", { name: "Check quarantine recovery review" });
+    await quarantine.getByRole("button", { name: "Load recovery review" }).click();
+    await quarantine.getByText(/Recovery unavailable:/).waitFor();
+    assert.equal(await quarantine.getByRole("button", { name: "Approve recovery" }).count(), 0,
+      "No quarantined check must never offer a recovery approval");
     const targetBeforeVerification = gitAt(targetWorktree, "rev-parse", "HEAD");
     assert.deepEqual((await api(`/api/git/integration?sessionId=${sessionId}`)).receipts, []);
+    if (!checkContainmentSupported) {
+      const refused = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/integration"
+        && response.request().method() === "POST" && response.request().postDataJSON()?.operation === "verify");
+      await review.getByRole("button", { name: "Run check 1" }).click();
+      const denied = await refused;
+      assert.equal(denied.status(), 409, "a host without verified containment must refuse checks");
+      assert.deepEqual((await api(`/api/git/integration?sessionId=${sessionId}`)).receipts, []);
+      assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), targetBeforeVerification);
+      console.log("PASS: unavailable Linux check containment refuses verification before any integration");
+    } else {
     await review.getByRole("button", { name: "Run check 1" }).click();
     await review.getByText(/Passed: receipt/).waitFor();
     assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), targetBeforeVerification, "Verification must not integrate");
@@ -576,6 +651,7 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     assert.deepEqual(gitAt(targetWorktree, "show", "-s", "--format=%P", "HEAD").split(" "), [targetBeforeVerification, git("rev-parse", "HEAD")]);
     assert.equal(gitAt(targetWorktree, "show", "-s", "--format=%G?", "HEAD"), "N", "Local merge remains unsigned");
     console.log("PASS: explicit check, exact proposal, separately approved unsigned local non-FF merge");
+    }
 
     const continuation = await openDetail("Workspace details", "Continue session in another worktree");
     await continuation.getByLabel("Destination worktree").selectOption(targetWorktree);
@@ -610,8 +686,8 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await chooseScope("session");
     await expand("workspace");
     await control("workspace").selectOption("worktree");
-    await control("baseBranch").fill("");
-    await control("onCreate").selectOption("continue");
+    assert.equal(await control("baseBranch").isDisabled(), true, "the base is project-owned");
+    await chooseLegacyContinuation("continue");
     await save("session");
     const pendingBase = await apply();
     assert.equal(pendingBase.task.settings.workspace, "worktree");
@@ -627,8 +703,26 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     assert.match(await workflow.innerText(), /one new worktree only/);
     const sessionSave = workflow.getByRole("button", { name: "Save session settings", exact: true });
     if (await sessionSave.count()) assert.equal(await sessionSave.isDisabled(), true);
-    else assert.equal(await scopes.getByRole("button", { name: /^Session/ }).isDisabled(), true);
+    else {
+      // Authorization revocation stays reachable during a run; editing the
+      // captured session policy itself still requires an idle chat.
+      await scopes.getByRole("button", { name: /^Session/ }).click();
+      // Save lives in the dirty-draft footer; with no unsaved Session change it
+      // remains absent rather than rendering a disabled button.
+      if (await sessionSave.count()) assert.equal(await sessionSave.isDisabled(), true);
+      else assert.match(await workflow.innerText(), /Session settings unavailable/);
+    }
     assert.equal(await task.getByRole("button", { name: "Apply saved settings to this task", exact: true }).isDisabled(), true);
+    await selectProject(cwd);
+    await chooseScope("session");
+    const liveAuth = workflow.getByRole("region", { name: "Saved action authorization" });
+    await liveAuth.locator("#workflow-auth-commit").selectOption("deny");
+    const liveDeny = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/authorizations"
+      && response.request().method() === "PUT" && response.request().postDataJSON().scope === "session");
+    await liveAuth.getByRole("button", { name: /Save Selected commits deny for this chat/ }).click();
+    const liveDenyResult = await liveDeny;
+    assert.equal(liveDenyResult.status(), 200, liveDenyResult.status() === 200 ? "" : await liveDenyResult.text());
+    assert.equal((await liveDenyResult.json()).actions.commit.effective, "deny", "live revocation cannot require an idle chat");
     assert.equal(git("rev-parse", "HEAD"), manualCommit, "waiting question must not create/commit a worktree");
     await closeWorkflow();
     await question.getByRole("button", { name: "Cancel" }).click();

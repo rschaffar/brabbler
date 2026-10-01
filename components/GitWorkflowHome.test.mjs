@@ -46,6 +46,7 @@ function render({ data = fixture(), scope = "session", overrides, props = {} } =
     if (id === "@/lib/git-workflow-permissions") return permissions;
     if (id === "./git-workflow-drafts") return helpers;
     if (id === "./GitWorkflowTaskBinding") return { GitWorkflowTaskBinding: () => React.createElement("div", { "data-task-binding": true }) };
+    if (id === "./GitProjectAuthorizations") return { GitProjectAuthorizations: (props) => React.createElement("div", { "data-authorization-scope": props.scope }) };
     if (id.endsWith(".css")) return {};
     return realRequire(id);
   };
@@ -91,9 +92,10 @@ test("current task is pinned outside the editor and adoption is separate from sc
   }
 });
 
-test("unsupported modes are disabled, saved unsupported integration remains visible, and invalid drafts do not crash rendering", () => {
+test("future FF is a preference, squash/automatic stay disabled, and invalid drafts do not crash rendering", () => {
   const html = render({ overrides: { method: "ff", checks: [{ label: "", argv: [""] }] } });
-  assert.match(html, /value="ff" disabled="" selected=""/);
+  assert.match(html, /value="ff" selected=""/);
+  assert.match(html, /value="squash" disabled=""/);
   assert.match(html, /value="automatic" disabled=""/);
   assert.match(html, /scoped authorization and operation-level recovery admission/);
   assert.doesNotMatch(html, /Requires durable action/);
@@ -146,6 +148,31 @@ test("stable visibility, scope-specific conflicts, focus containment/restoration
   assert.match(css, /data-covering=true.*position: fixed/);
   assert.match(css, /env\(safe-area-inset-bottom\)/);
   assert.match(css, /color: var\(--accent-contrast\)/);
+});
+
+test("policy editor labels origins, delivery restrictions and scope-specific confirmation drafts without task adoption", () => {
+  const data = fixture({ sessionScope: "project", projectRoot: "/other", project: { mainBranch: "trunk", delivery: "pr", targetBranch: "project-main", checks: [] } });
+  const project = render({ data, scope: "project", overrides: { ...data.project, delivery: "leave", commitConfirmation: "none" } });
+  assert.match(project, /Project main branch/);
+  assert.match(project, /Use project main/);
+  assert.match(project, /PR and leave prohibit local integration/);
+  assert.match(project, /Local merge disabled/);
+  assert.match(project, /Commit confirmation: No confirmation preference \(not authorized\)/);
+  assert.match(project, /No confirmation-free permission is granted/);
+  assert.match(project, /No Git operation starts/);
+  assert.doesNotMatch(project, /data-task-binding/);
+  const chat = render({ data, scope: "session", overrides: { delivery: "leave", commitConfirmation: "none" } });
+  assert.match(chat, /A task × \/other/);
+  assert.match(chat, /Define branch in Project/);
+  assert.match(chat, /Local merge disabled/);
+  assert.match(chat, /value="none" selected=""/);
+  const global = render({ data, scope: "global" });
+  assert.match(global, /Define branch in Project/);
+  assert.match(global, /Recipes belong to Project, not Global or Chat/);
+  assert.match(global, /id="workflow-managedGitToolsOnly"[^>]*aria-checked="true"/);
+  const relaxed = render({ data, scope: "session", overrides: { managedGitToolsOnly: false } });
+  assert.match(relaxed, /id="workflow-managedGitToolsOnly"[^>]*aria-checked="false"/);
+  assert.match(relaxed, /neither blocks shell commands/);
 });
 
 test("a saved chat can select another configuration project without task or source adoption", () => {

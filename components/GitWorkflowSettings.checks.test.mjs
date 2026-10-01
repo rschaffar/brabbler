@@ -21,7 +21,9 @@ test("check definitions cannot imply run-on-save or unavailable execution contro
   assert.match(home, /execute project code, change files, and access networks/);
   assert.match(home, /Do not include URLs or credentials/);
   assert.match(home, /Per-recipe directory, environment and timeout editing is not supported yet/);
-  assert.match(home, /value="ask" disabled aria-label="Check execution"/);
+  assert.match(home, /confirmation\("checkConfirmation"\)/);
+  assert.match(home, /scope !== "project" \|\| values\.checks\.length/);
+  assert.match(home, /confirmation choices are preferences for future scoped tools, not standing authorization/);
   assert.match(home, /AUTOMATIC_WORKFLOW_UNAVAILABLE/);
   assert.doesNotMatch(home, /exec\(|spawn\(|shell: true|\/api\/git\/integration/);
 });

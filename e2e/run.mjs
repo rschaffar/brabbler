@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { createJiti } from "jiti";
 import { checkFilePanel, checkEditableFile, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkGitDecisionWaiting } from "./git-action-wait.mjs";
@@ -21,10 +22,12 @@ import { checkSettingsProposalCard } from "./git-settings-proposals.mjs";
 import { consumeExpectedTaskConflict } from "./git-task-binding.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
-import { seedGitActionHistory, checkSavedGitActionHistory } from "./git-action-history.mjs";
+import { seedGitActionHistory, interruptSeededGitAction, checkSavedGitActionHistory } from "./git-action-history.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
+const { newGitCheckUnit, assertGitCheckContainmentAvailable } = await createJiti(import.meta.url).import("../lib/git-check-containment.ts");
+const checkContainmentSupported = await assertGitCheckContainmentAvailable(newGitCheckUnit()).then(() => true, () => false);
 assert.ok(mode === "dev" || mode === "start", "E2E_SERVER_MODE must be dev or start");
 assert.ok(mode !== "dev" || !existsSync(join(root, ".next/dev/lock")), "Use a checkout without an active dev server");
 const artifacts = join(root, "test-results/e2e");
@@ -277,15 +280,27 @@ try {
     page = await context.newPage();
     page.setDefaultTimeout(30_000);
     const errors = [];
+    let busyIntegrationReads = 0;
     page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (event) => { if (event.type() === "error" && !consumeExpectedTaskConflict(page, event)) errors.push(event.text()); });
+    page.on("console", (event) => {
+      if (event.type() !== "error" || consumeExpectedTaskConflict(page, event)) return;
+      // The review panel polls while the fixture's ask_user holds this chat busy.
+      // Consume only a corroborated GET 409 from that read-only integration endpoint.
+      if (busyIntegrationReads > 0 && event.text() === "Failed to load resource: the server responded with a status of 409 (Conflict)") {
+        busyIntegrationReads--; return;
+      }
+      errors.push(event.text());
+    });
     page.on("response", (response) => {
+      if (response.status() === 409 && new URL(response.url()).pathname === "/api/git/integration"
+        && response.request().method() === "GET" && new URL(response.url()).searchParams.get("sessionId") === GIT) busyIntegrationReads++;
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
     });
     await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
-    await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree, otherProject });
-    await checkIntegratedGitGraph(page, targetWorktree);
+    await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree, otherProject, checkContainmentSupported });
+    if (checkContainmentSupported) await checkIntegratedGitGraph(page, targetWorktree);
     await checkSettingsProposalCard(page, { base, sessionId: PROPOSAL, proposalId: PROPOSAL_ID, projectRoot: gitProject });
+    await interruptSeededGitAction(agentDir, gitHistory.records.interrupted);
     await checkSavedGitActionHistory(page, { base, api, sessionId: GIT_HISTORY, records: gitHistory.records, artifacts });
     await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
     await checkGitDecisionWaiting(page, { base, width: page.viewportSize().width });
@@ -635,8 +650,9 @@ try {
     }
     if (viewport.width === 1280) {
       await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
-      await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree, otherProject });
-      await checkIntegratedGitGraph(page, targetWorktree);
+      await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree, otherProject, checkContainmentSupported });
+      if (checkContainmentSupported) await checkIntegratedGitGraph(page, targetWorktree);
+      await interruptSeededGitAction(agentDir, gitHistory.records.interrupted);
       await checkSavedGitActionHistory(page, { base, api, sessionId: GIT_HISTORY, records: gitHistory.records, artifacts });
     }
     // Use a separate tab: a deliberate full-page reload must not alter the

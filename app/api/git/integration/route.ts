@@ -11,13 +11,15 @@ import { finishHumanGitAction, humanGitActionSink, HUMAN_GIT_RECOVERY_WARNING, H
 import { GIT_ACTION_ID_PATTERN } from "@/lib/git-action-types";
 import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
 import { confirmIntegration, prepareIntegration } from "@/lib/git-integration";
+import { assertGitOperationAdmission, beginSupervisedGitOperationIntent, GitOperationRecoveryError, type GitOperationReservation } from "@/lib/git-operation-admission";
+import { selectGitProjectResources } from "@/lib/git-project-resources";
 import { reviewGitBranches, type GitReview } from "@/lib/git-review";
 import { inspectGitVerificationReceipts, runGitVerification } from "@/lib/git-verification";
 import { readSessionGitWorkflow } from "@/lib/git-workflow-policy";
-import { assertManagedGitAction, assertManagedGitWorkspace, ManagedGitAccessError, watchManagedGitAccess } from "@/lib/git-workflow-access";
+import { assertManagedGitAction, assertManagedGitProjectDenial, assertManagedGitWorkspace, ManagedGitAccessError, watchManagedGitAccess } from "@/lib/git-workflow-access";
 import { samePath, toNativePath } from "@/lib/paths";
 import { getProjectTrustStatus } from "@/lib/project-trust";
-import { hasBusyRpcSessionForCwd } from "@/lib/rpc-manager";
+import { hasConflictingRpcCheckoutOperation } from "@/lib/rpc-manager";
 import { readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
 import type { SessionEntry } from "@/lib/types";
 
@@ -58,7 +60,7 @@ async function targetCheckout(cwd: string, branch: string): Promise<string> {
   return target;
 }
 
-async function session(id: string) {
+async function session(id: string, action?: "checks" | "integration") {
   const file = await resolveSessionPath(id);
   if (!file) return { response: error("Session not found", 404) };
   const header = readSessionHeader(file);
@@ -71,6 +73,8 @@ async function session(id: string) {
     const value = readHumanGitSessionManager(scope);
     const state = await assertManagedGitAction(cwd, value.getEntries() as SessionEntry[], "integration", "human");
     await assertManagedGitWorkspace(state, cwd);
+    // GET is read-only review. Saved Deny gates only executable POST stages.
+    if (action) await assertManagedGitProjectDenial(cwd, { sessionId: id, sessionFile: file, sessionCwd: cwd }, action);
     return readSessionGitWorkflow(value.getEntries() as SessionEntry[]);
   };
   const saved = await policy();
@@ -100,7 +104,15 @@ async function session(id: string) {
 
 type Context = Extract<Awaited<ReturnType<typeof session>>, { cwd: string }>;
 function idle(context: Context): boolean {
-  return !hasBusyRpcSessionForCwd(context.cwd) && !hasBusyRpcSessionForCwd(context.targetCwd);
+  return !hasConflictingRpcCheckoutOperation(context.cwd) && !hasConflictingRpcCheckoutOperation(context.targetCwd);
+}
+async function admissionSelection(context: Context) {
+  const selection = await selectGitProjectResources(context.cwd);
+  if (!samePath(selection.cwd, context.cwd) || selection.branch !== context.featureBranch ||
+      !samePath(await targetCheckout(context.cwd, context.saved.integration!.targetBranch), context.targetCwd)) {
+    throw new Error("Git resource selection changed");
+  }
+  return selection;
 }
 function matches(review: GitReview, r: ReturnType<typeof inspectGitVerificationReceipts>[number], context: Context, id: string) {
   return r.sessionId === id && samePath(r.cwd, context.cwd) && samePath(r.targetCwd, context.targetCwd) &&
@@ -136,6 +148,7 @@ export async function GET(req: Request) {
     if ([...params.keys()].length !== 1 || !validId(id)) return error("Valid sessionId required", 400);
     const context = await session(id);
     if (context.response) return context.response;
+    await assertGitOperationAdmission(await admissionSelection(context as Context), context.agentDir);
     const review = await reviewGitBranches(context.cwd!, context.featureBranch!, context.saved!.integration!.targetBranch);
     const receipts = inspectGitVerificationReceipts(id).filter((r) => matches(review, r, context as Context, id))
       .map((r) => ({ id: r.id, checkIndex: r.checkIndex, startedAt: r.startedAt, finishedAt: r.finishedAt, logDigest: r.logDigest }));
@@ -157,12 +170,12 @@ export async function POST(req: Request) {
     return error("Invalid integration request", 400);
   }
   try {
-    const context = await session(id);
+    const context = await session(id, op === "verify" ? "checks" : "integration");
     if (context.response) return context.response;
     const c = context as Context;
     if (!c.saved.checks?.length) return error("Saved verification checks required", 409);
     if (!idle(c) || isGitCheckoutGated(c.cwd) || isGitCheckoutGated(c.targetCwd)) {
-      return error("Stop sessions in both checkouts before integration", 409);
+      return error("Stop checkout operations in both checkouts before integration", 409);
     }
     const guard = async () => {
       req.signal.throwIfAborted();
@@ -184,26 +197,37 @@ export async function POST(req: Request) {
         const { handle, native } = takeHumanGitCandidate(c.scope, input.actionId as string,
           { kind: "integration", planId: input.planId as string, targetCwd: c.targetCwd });
         let applying = false;
+        let reservation: GitOperationReservation | undefined;
         try {
-          await handle.update("executing", { decision: "approved" });
           await guard();
           const result = await confirmIntegration(native.plan.planId, input.approvePlanId as string, id, async () => {
+            await handle.update("executing", { decision: "approved" });
             await handle.update("executing", { intended: native.intended });
             await guard(); // after journal I/O, immediately before native checkout apply
+            reservation = await beginSupervisedGitOperationIntent(await admissionSelection(c), handle.record.id, "integration");
             applying = true;
+            return reservation;
           });
           // A partial result names the intended merge object, not a proven target ref update.
           const outcome = result.status === "integrated" ? { ...native.intended, ...result } : result;
-          return NextResponse.json(await finishHumanGitAction(handle, result, outcome, result.status === "partial-state"));
+          const recorded = await finishHumanGitAction(handle, result, outcome, result.status === "partial-state");
+          if (result.status === "integrated" && !("recoveryRequired" in recorded)) {
+            try { reservation?.resolve(); }
+            catch { return NextResponse.json({ ...recorded, recoveryRequired: true, recoveryWarning: HUMAN_GIT_RECOVERY_WARNING }); }
+          }
+          return NextResponse.json(recorded);
         } catch (cause) {
           await failGitAction(handle, applying, req.signal, cause);
           if (applying && !(cause instanceof GitActionRecordingError)) cause = new GitActionApplyError(handle.record.id, handle.record.intended);
           if (cause instanceof GitActionRecordingError) return NextResponse.json({ ...gitActionFailureResult(cause)!.details,
             recoveryWarning: cause.message }, { status: 409 });
+          if (cause instanceof GitOperationRecoveryError) return NextResponse.json({ actionId: handle.record.id,
+            error: cause.message, recoveryRequired: true }, { status: 409 });
           return NextResponse.json({ actionId: handle.record.id, error: cause instanceof ManagedGitAccessError || cause instanceof HumanGitSessionChangedError ? cause.message
             : "Integration unavailable or plan stale; refresh review and prepare a new proposal" }, { status: 409 });
         } finally { handle.release(); }
       }
+      await assertGitOperationAdmission(await admissionSelection(c), c.agentDir);
       const review = await reviewGitBranches(c.cwd, c.featureBranch, c.saved.integration!.targetBranch);
       if (op === "verify") {
         const checkIndex = input.checkIndex as number;
@@ -222,7 +246,7 @@ export async function POST(req: Request) {
             await guard();
             watcher.signal.throwIfAborted();
             started = true;
-            const receipt = await runGitVerification({ sessionId: id, cwd: c.cwd, agentDir: c.agentDir, review, checkIndex,
+            const receipt = await runGitVerification({ sessionId: id, cwd: c.cwd, agentDir: c.agentDir, review, checkIndex, actionId: handle.record.id,
               getPolicy: async () => { await guard(); return c.saved; }, isTrusted: c.trusted, signal: watcher.signal });
             return NextResponse.json(await finishHumanGitAction(handle,
               { receipt: { id: receipt.id, checkIndex: receipt.checkIndex, startedAt: receipt.startedAt,

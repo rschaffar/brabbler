@@ -11,7 +11,9 @@ const panel = await readFile(new URL("./GitMergeReviewPanel.tsx", import.meta.ur
 const compiled = ts.transpileModule(panel, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
 const componentModule = new Module(new URL("./GitMergeReviewPanel.tsx", import.meta.url).pathname);
 componentModule.filename = new URL("./GitMergeReviewPanel.tsx", import.meta.url).pathname;
-componentModule.require = createRequire(import.meta.url);
+componentModule.require = (id) => id === "./GitCheckRecoveryPanel"
+  ? { GitCheckRecoveryPanel: () => React.createElement("section", { "aria-label": "Check quarantine recovery review" }) }
+  : createRequire(import.meta.url)(id);
 componentModule._compile(compiled, componentModule.filename);
 const { GitMergeReviewPanel, reviewSelection, matchingReceipts, proposalMatches } = componentModule.exports;
 const chat = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
@@ -94,12 +96,15 @@ test("renderer shows the prepared authoritative proposal with one exact confirma
     const mod = new Module(componentModule.filename);
     mod.filename = componentModule.filename;
     const realRequire = createRequire(import.meta.url);
-    mod.require = (id) => id === "react" ? { ...React, useState: () => [states[index++], () => {}], useRef: () => ({ current: null }), useEffect: () => {} } : realRequire(id);
+    mod.require = (id) => id === "react" ? { ...React, useState: () => [states[index++], () => {}], useRef: () => ({ current: null }), useEffect: () => {} }
+      : id === "./GitCheckRecoveryPanel" ? { GitCheckRecoveryPanel: () => React.createElement("section", { "aria-label": "Check quarantine recovery review" }) }
+        : realRequire(id);
     mod._compile(compiled, mod.filename);
     return renderToStaticMarkup(React.createElement(mod.exports.GitMergeReviewPanel, { sessionId: "s", cwd: "/repo" }));
   }
   const unavailable = render(base.map((value, index) => index === 8 ? null : index === 9 ? "Saved merge target and checks required" : value));
   assert.match(unavailable, /Saved merge target and checks required/);
+  assert.match(unavailable, /Check quarantine recovery review/, "quarantine review stays accessible without integration status");
   assert.doesNotMatch(unavailable, /Run check 1|Prepare exact integration proposal|Confirm exact plan/);
   const before = render(base);
   assert.match(before, /Tests/);
@@ -129,6 +134,14 @@ test("renderer shows the prepared authoritative proposal with one exact confirma
   assert.match(blocked, /disabled=""[^>]*>Run check 1/);
 });
 
+test("check recovery refreshes the review after success, independently of failed integration GET", () => {
+  assert.match(panel, /<GitCheckRecoveryPanel key=\{`\$\{sessionId\}:\$\{revision\}`\} sessionId=\{sessionId\}/);
+  assert.match(panel, /onRecovered=\{\(\) => \{ setRecoveryAccepted\(true\); if \(!operationRef\.current\) reloadReview\(\); \}\}/);
+  assert.match(panel, /no check was rerun and no passing receipt was created/);
+  assert.match(panel, /setRevision\(\(value\) => value \+ 1\)/);
+  assert.match(panel, /fetch\(`\/api\/git\/integration\?\$\{new URLSearchParams\(\{ sessionId \}\)\}`/);
+});
+
 test("integration contract renders a separate deliberate review and exact-state approval, never auto-confirms", () => {
   assert.match(panel, /fetch\(`\/api\/git\/integration\?\$\{new URLSearchParams\(\{ sessionId \}\)\}`/);
   assert.match(panel, /operation: "verify", checkIndex/);
@@ -138,7 +151,7 @@ test("integration contract renders a separate deliberate review and exact-state 
   assert.match(panel, /body\.recoveryWarning/);
   assert.match(panel, /result\.recoveryWarning/);
   assert.match(panel, /onClick=\{\(\) => void integrationAction\("verify", index\)\}/);
-  assert.match(panel, /disabled=\{!matchingReceipts\(integration, review\) \|\| blocked \|\| !!result \|\| operation !== null\}/);
+  assert.match(panel, /disabled=\{!matchingReceipts\(integration, review\) \|\| blocked \|\| !!result \|\| operation !== null \|\| recoveryBusy\}/);
   assert.doesNotMatch(panel, /I have reviewed this exact proposal|proposal\.viewed/);
   assert.match(panel, /aria-label="Authoritative integration candidate diff"/);
   assert.match(panel, /\{proposal\.plan\.diff\.patch\}<\/pre>/);

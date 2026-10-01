@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -186,17 +186,17 @@ test("global/project/session saves preserve the current task until a separate ex
   assert.equal(captured.kind, "managed");
   assert.deepEqual(captured.settings, DEFAULT_GIT_WORKFLOW_SETTINGS);
   const initialFile = await readFile(f.file, "utf8");
-  await save("global", {}, { overrides: { commits: "manual", targetBranch: "main", checks: [check("Global", "npm", "test")] } });
+  await save("global", {}, { overrides: { commits: "manual", targetBranch: ":project-main", commitConfirmation: "ask" } });
   assert.deepEqual((await state(f.query)).task, captured);
-  await save("project", { cwd: f.cwd }, { overrides: { workspace: "worktree", baseBranch: "main", commits: "off" } });
+  await save("project", { cwd: f.cwd }, { overrides: { workspace: "worktree", mainBranch: "main", baseBranch: ":project-main", commits: "off", checks: [check("Project", "npm", "test")] } });
   assert.deepEqual((await state(f.query)).task, captured);
   assert.equal(await readFile(f.file, "utf8"), initialFile, "default saves must not append to an existing session");
-  const sessionOverrides = { commits: "manual", targetBranch: null, checks: [] };
+  const sessionOverrides = { commits: "manual", checkConfirmation: "disabled" };
   const sessionSaved = await save("session", f.query, { overrides: sessionOverrides });
   assert.deepEqual(sessionSaved.task, captured);
   assert.deepEqual(sessionSaved.session, sessionOverrides);
   assert.equal(sessionSaved.resolved.session.origins.workspace, "project");
-  assert.equal(sessionSaved.resolved.session.origins.targetBranch, "session");
+  assert.equal(sessionSaved.resolved.session.origins.checkConfirmation, "session");
   const documentBefore = await readFile(gitWorkflowSettingsPath(), "utf8");
   const applied = await save("task", f.query);
   assert.deepEqual(applied.task, { kind: "managed", settings: sessionSaved.resolved.session.values });
@@ -211,7 +211,7 @@ test("global/project/session saves preserve the current task until a separate ex
 
 test("reset removes overrides; false/null/empty lists do not inherit or implicitly apply", async (t) => {
   const f = await fixture(t);
-  const global = { enabled: true, baseBranch: "main", targetBranch: "main", checks: [check("Inherited", "npm", "test")] };
+  const global = { enabled: true, baseBranch: ":project-main", targetBranch: ":project-main", checks: [] };
   await save("global", {}, { overrides: global });
   const project = { enabled: false, baseBranch: null, targetBranch: null, checks: [] };
   await save("project", f.query, { overrides: project });
@@ -225,7 +225,7 @@ test("reset removes overrides; false/null/empty lists do not inherit or implicit
   assert.deepEqual(sessionReset.session, {});
   const projectReset = await save("project", f.query, { overrides: {} });
   assert.deepEqual(projectReset.project, {});
-  assert.equal(projectReset.resolved.session.values.baseBranch, "main");
+  assert.equal(projectReset.resolved.session.values.baseBranch, ":project-main");
   assert.deepEqual(projectReset.resolved.session.values.checks, global.checks);
   assert.equal(projectReset.resolved.session.origins.checks, "global");
   assert.deepEqual(projectReset.task, { kind: "none" });
@@ -482,7 +482,7 @@ test("one unchanged chat saves independent overrides for explicitly selected pro
   a.sm.appendCustomEntry("pi-web:tool-selection", { version: 1, tools: ["read", "edit"] });
   await save("project", { cwd: a.repo }, { overrides: { targetBranch: "a-target", commits: "ask" } });
   await save("project", { cwd: b.repo }, { overrides: { targetBranch: "b-target", commits: "manual" } });
-  await save("session", a.query, { overrides: { targetBranch: "unqualified-old-target", checks: [] } });
+  await save("session", a.query, { overrides: { commits: "manual", checks: [] } });
   const legacy = await state(a.query);
   const queryA = { sessionId: a.id, projectPath: a.cwd };
   const queryB = { sessionId: a.id, projectPath: b.cwd };
@@ -494,21 +494,69 @@ test("one unchanged chat saves independent overrides for explicitly selected pro
   assert.equal(beforeB.resolved.session.values.targetBranch, "b-target");
   assert.deepEqual(beforeB.session, {});
   assert.equal(beforeB.permissions.agent.commit.code, "manual-commits");
-  await save("session", queryA, { overrides: { targetBranch: "a-chat", checks: [] } });
-  await save("session", queryB, { overrides: { targetBranch: null, commits: "off" } });
-  assert.equal((await state(queryA)).resolved.session.values.targetBranch, "a-chat");
-  assert.deepEqual((await state({ sessionId: a.id, projectPath: a.repo })).session, { targetBranch: "a-chat", checks: [] });
-  assert.deepEqual((await state(queryB)).session, { commits: "off", targetBranch: null });
+  await save("session", queryA, { overrides: { delivery: "leave", commitConfirmation: "none" } });
+  await save("session", queryB, { overrides: { delivery: "pr", commits: "off" } });
+  assert.equal((await state(queryA)).resolved.session.values.delivery, "leave");
+  assert.deepEqual((await state({ sessionId: a.id, projectPath: a.repo })).session, { delivery: "leave", commitConfirmation: "none" });
+  assert.deepEqual((await state(queryB)).session, { commits: "off", delivery: "pr" });
   assert.equal((await state(queryB)).permissions.human.commit.kind, "blocked");
   await save("session", queryB, { overrides: {} });
   assert.equal((await state(queryB)).resolved.session.values.targetBranch, "b-target");
-  assert.equal((await state(queryA)).resolved.session.values.targetBranch, "a-chat");
+  assert.equal((await state(queryA)).resolved.session.values.delivery, "leave");
   assert.deepEqual((await state(a.query)).session, legacy.session, "unqualified compatibility records remain untouched");
   assert.deepEqual((await state(a.query)).task, legacy.task);
   assert.equal(SessionManager.open(a.file).getCwd(), a.cwd, "configuration must not relocate the chat");
   assert.equal((await state(queryA)).permissions.agent.commit.code, "project-scope-read-only");
   assert.equal(await git(a.cwd, "status", "--porcelain"), "");
   assert.equal(await git(b.cwd, "status", "--porcelain"), "");
+});
+
+test("policy writes stay scope-bound, cannot mint execution consent or capture a task", async (t) => {
+  const f = await fixture(t);
+  f.sm.appendCustomEntry("pi-web:tool-selection", { version: 1, tools: ["read", "edit"] });
+  const original = await readFile(f.file, "utf8");
+  const names = { mainBranch: "main", baseBranch: "main", targetBranch: "main", branch: "main",
+    checks: [check("Test", "npm", "test")] };
+  for (const [key, value] of Object.entries(names)) {
+    for (const [scope, query] of [["global", {}], ["session", { sessionId: f.id, projectPath: f.cwd }]]) {
+      const before = await state(query);
+      await json(await put({ scope, ...query, revision: before.revision, overrides: { [key]: value } }), 400);
+    }
+  }
+  assert.equal(await readFile(f.file, "utf8"), original);
+  await save("global", {}, { overrides: { baseBranch: ":project-main", targetBranch: ":project-main", integrateConfirmation: "none" } });
+  const selected = { sessionId: f.id, projectPath: f.cwd };
+  await save("project", selected, { overrides: { mainBranch: "main", delivery: "pr", targetBranch: ":project-main",
+    method: "ff", commits: "ask", commitConfirmation: "none", checks: [] } });
+  await save("session", selected, { overrides: { delivery: "local", integrateConfirmation: "none" } });
+  const result = await state(selected);
+  assert.deepEqual(result.task, { kind: "none" });
+  assert.equal(result.resolved.project.values.targetBranch, ":project-main");
+  assert.equal(result.resolved.session.values.delivery, "local", "display origin is not permission to override PR restriction");
+  assert.equal(result.permissions.agent.integration.code, "delivery-no-local-integration");
+  assert.equal(result.permissions.agent.commit.code, "project-scope-read-only");
+  assert.equal(result.resolved.session.origins.integrateConfirmation, "session");
+  assert.equal(result.resolved.project.origins.mainBranch, "project");
+  await save("project", selected, { overrides: { mainBranch: "main", delivery: "leave", commits: "off" } });
+  assert.equal((await state(selected)).permissions.human.integration.code, "delivery-no-local-integration");
+  assert.equal((await state(selected)).permissions.agent.commit.code, "session-commits-off");
+  assert.equal(SessionManager.open(f.file).getCwd(), f.cwd);
+});
+
+test("PR delivery blocks legacy local integration in a linked checkout and nested caller", async (t) => {
+  const f = await fixture(t, true);
+  const nested = join(f.cwd, "nested");
+  await mkdir(nested);
+  await save("global", {}, { overrides: { delivery: "local", integrateConfirmation: "none" } });
+  await save("project", { cwd: f.repo }, { overrides: { delivery: "pr" } });
+  for (const cwd of [f.repo, f.cwd, nested]) {
+    const result = await state({ cwd });
+    assert.equal(result.permissions, undefined);
+    const { loadGitWorkflowSettings } = await jiti.import("../../../../../lib/git-workflow-settings-store.ts");
+    const { managedGitPermission } = await jiti.import("../../../../../lib/git-workflow-permissions.ts");
+    const settings = await loadGitWorkflowSettings(cwd, [], agentDir);
+    assert.equal(managedGitPermission(settings, { subagent: false, tools: ["edit"] }, "integration", "agent").code, "delivery-no-local-integration");
+  }
 });
 
 test("project-scoped revisions cannot save to a different project and cannot capture a task", async (t) => {

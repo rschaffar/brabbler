@@ -25,6 +25,13 @@ export interface GitProjectResources {
   identities: { project: DirectoryIdentity; checkout: DirectoryIdentity; common: DirectoryIdentity; git: DirectoryIdentity;
     marker: DirectoryIdentity & { changed?: string; size?: string } };
 }
+/** Future operation schema: explicit canonical repository + registered checkout.
+ * A selector describes a resource, never authorization to execute there. */
+export interface GitResourceSelector {
+  repositoryPath: string;
+  checkoutPath: string;
+  workspaceBranch?: string;
+}
 export class GitProjectResourceError extends Error {
   constructor(readonly code: "invalid-selection" | "access-denied" | "unavailable" | "selection-changed" | "unsupported-platform", message: string) { super(message); }
 }
@@ -66,8 +73,9 @@ async function registrations(cwd: string) {
  * from Git's physical registration, not resolveProject's display/cache fallback.
  * Access is checked before invoking Git on an untrusted caller-supplied path.
  */
-export async function selectGitProjectResources(repositoryPath: string, workspaceBranch?: string): Promise<GitProjectResources> {
+export async function selectGitProjectResources(repositoryPath: string, workspaceBranch?: string, checkoutPath?: string): Promise<GitProjectResources> {
   pathInput(repositoryPath);
+  if (checkoutPath !== undefined) pathInput(checkoutPath);
   if (workspaceBranch !== undefined && !validLocalBranchName(workspaceBranch)) {
     throw new GitProjectResourceError("invalid-selection", "Select a valid local workspace branch.");
   }
@@ -78,8 +86,13 @@ export async function selectGitProjectResources(repositoryPath: string, workspac
     const seed = await gitDirectories(repositoryPath);
     const registered = await registrations(repositoryPath);
     const seedRows = registered.filter((item) => samePath(item.cwd, repositoryPath));
-    const matches = workspaceBranch === undefined ? seedRows : registered.filter((item) => item.branch === workspaceBranch);
-    if (seedRows.length !== 1 || matches.length !== 1 || !matches[0].branch || !validLocalBranchName(matches[0].branch)) {
+    // A path selector is unambiguous even when an externally corrupted worktree
+    // list contains two entries for the same branch. Still reject duplicate rows.
+    const matches = checkoutPath !== undefined ? registered.filter((item) => samePath(item.cwd, checkoutPath))
+      : workspaceBranch === undefined ? seedRows : registered.filter((item) => item.branch === workspaceBranch);
+    if (seedRows.length !== 1 || matches.length !== 1 || !matches[0].branch || !validLocalBranchName(matches[0].branch)
+      || (workspaceBranch !== undefined && matches[0].branch !== workspaceBranch)
+      || (checkoutPath !== undefined && registered.filter((item) => item.branch === matches[0].branch).length !== 1)) {
       throw new GitProjectResourceError("unavailable", "Select one registered checkout of a local branch in this repository.");
     }
     const { cwd, branch } = matches[0] as { cwd: string; branch: string };
@@ -87,6 +100,10 @@ export async function selectGitProjectResources(repositoryPath: string, workspac
     // Git lists the primary checkout first, including when called from a linked
     // worktree. This identity is independent of its current branch name.
     const projectRoot = registered[0].cwd;
+    if (checkoutPath !== undefined && !samePath(repositoryPath, projectRoot)) {
+      throw new GitProjectResourceError("invalid-selection", "Select the canonical primary repository root with an explicit checkout.");
+    }
+    if (!isExistingFilePathAllowed(projectRoot, roots)) throw new GitProjectResourceError("access-denied", "Canonical repository is outside the allowed file roots.");
     const selected = await gitDirectories(cwd);
     if (!samePath(seed.commonDir, selected.commonDir)) throw new GitProjectResourceError("selection-changed", "Selected worktree changed repositories.");
     const identities = {
@@ -105,6 +122,11 @@ export async function selectGitProjectResources(repositoryPath: string, workspac
     // Git stderr and arbitrary filesystem paths are not public error messages.
     throw new GitProjectResourceError("unavailable", "Physical registered repository/workspace unavailable; inspect the selection.");
   }
+}
+
+/** Strict selector for new read surfaces; legacy branch-only calls use selectGitProjectResources directly. */
+export async function selectCanonicalGitResources(selector: GitResourceSelector): Promise<GitProjectResources> {
+  return selectGitProjectResources(selector.repositoryPath, selector.workspaceBranch, selector.checkoutPath);
 }
 
 /** Catch replacement even when paths, branches, commits and index bytes match. */

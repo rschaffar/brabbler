@@ -24,7 +24,7 @@ export interface GitWorkflowPermissions {
 // make automation safe. This is capability information, never a grant.
 export const AUTOMATIC_COMMIT_UNAVAILABLE = "Confirmation-free commits are not implemented yet: scoped authorization and operation-level recovery admission are still required.";
 export const AUTOMATIC_WORKFLOW_UNAVAILABLE = "Confirmation-free execution is not implemented yet. Project selection and saved preferences are not execution permission.";
-export const PROJECT_GIT_WRITES_UNAVAILABLE = "Explicit-project scope currently supports settings, status and read-only review only. Project-scoped Git mutations are not implemented; no checkout is changed.";
+export const PROJECT_GIT_WRITES_UNAVAILABLE = "This project-scoped managed action is unavailable. Status, read-only review and a separate bounded selected-project commit path are supported; no checkout is changed.";
 
 export function hasManagedGitMutationTools(tools: readonly string[]): boolean {
   return tools.some((name) => ["bash", "powershell", "edit", "write"].includes(name));
@@ -59,6 +59,8 @@ export function managedGitPermission(
   if (state.paused) return blocked("paused", "All managed Git actions are paused. Resume them in Workflow.");
   if (!state.resolved.session.values.enabled || state.projectSessionRestrictions?.enabled === false) return blocked("disabled", "Managed Git is disabled for this project/chat. Configure it in Workflow.");
   if (stage === "commit" && (state.resolved.session.values.commits === "off" || state.projectSessionRestrictions?.commits === "off")) return blocked("session-commits-off", "Commits are disabled for this project/chat.");
+  if (stage === "integration" && (state.resolved.project.values.delivery !== "local" || state.resolved.session.values.delivery !== "local"
+    || state.projectSessionRestrictions?.delivery)) return blocked("delivery-no-local-integration", "This project delivers by handoff or leaves the branch; local integration is disabled.");
   if (stage === "commit" && actor === "agent" && (state.projectSessionRestrictions?.commits === "manual"
     || state.sessionScope === "project" && state.resolved.session.values.commits === "manual")) return gitCommitModePermission("manual", actor);
   if (state.sessionScope === "project" && stage !== "settings") return blocked("project-scope-read-only", PROJECT_GIT_WRITES_UNAVAILABLE);
@@ -83,6 +85,31 @@ export function managedGitPermission(
     return { kind: "legacy-consent", code: "legacy-worktree-policy", reason: "Uses this chat’s saved worktree policy without a new per-start approval. Exact checkout and base-ref checks still apply." };
   }
   if (stage === "settings") return { kind: "configuration-only", code: "preferences-only", reason: "Preferences are not execution approval. Configure managed tasks in Workflow." };
+  return confirmation();
+}
+
+/** Selected-project policy eligibility for a new operation. This does not grant
+ * confirmation-free execution: a separate current authorization must be checked
+ * after resource selection and again immediately before the native write. Old
+ * captured task consent is intentionally not consulted for another project.
+ */
+export function selectedProjectCommitEligibility(
+  state: GitWorkflowSettingsResponse, facts: GitWorkflowSessionFacts, actor: ManagedGitActor,
+): GitWorkflowPermission {
+  if (facts.subagent) return blocked("subagent", "Subagents cannot execute managed Git mutations.");
+  if (actor === "agent" && (!facts.tools || !hasManagedGitMutationTools(facts.tools))) {
+    return blocked(!facts.tools ? "unknown-tools" : "read-only", "Active coding mutation tools are required for agent commits.");
+  }
+  if (state.paused) return blocked("paused", "All managed Git actions are paused.");
+  if (!state.resolved.session.values.enabled) return blocked("disabled", "Managed Git is disabled for this project/chat.");
+  const values = state.resolved.session.values;
+  if (state.project.commits === "off" || values.commits === "off") {
+    return blocked("session-commits-off", "Commits are disabled for this project/chat.");
+  }
+  if (actor === "agent" && (state.project.commits === "manual" || values.commits === "manual")) {
+    return gitCommitModePermission("manual", actor);
+  }
+  // No preference (including confirmation:none) is execution authority.
   return confirmation();
 }
 

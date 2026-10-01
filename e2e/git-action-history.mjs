@@ -25,9 +25,11 @@ export async function seedGitActionHistory(agentDir, sessionId) {
     if (name === "oversized") { delete snapshot.diff; snapshot.diffUnavailable = "Candidate patch exceeds the 1 MB capture limit"; }
     let record = await createGitAction({ sessionId, source: "agent", candidate: snapshot }, agentDir);
     record = await transitionGitAction(record.id, record.revision, { state: "awaiting-decision" }, agentDir);
-    if (state !== "awaiting-decision") record = await transitionGitAction(record.id, record.revision, state === "executing"
-      ? { state, decision: "approved", intended: { commit: "4".repeat(40), tree: "2".repeat(40), parents: ["1".repeat(40)], authorEmail: "e2e@example.invalid" } }
-      : { state, decision: "declined" }, agentDir);
+    // Publish the artificial interrupted action only after the normal Git
+    // browser flows run. Durable admission rightly refuses any checkout if a
+    // retired legacy journal's Git resource can no longer be identified.
+    if (state !== "awaiting-decision" && name !== "interrupted") record = await transitionGitAction(record.id, record.revision,
+      { state, decision: "declined" }, agentDir);
     records[name] = record.id;
   }
   rmSync(join(agentDir, "pi-web", "git-actions", "v1", records.missing, "candidate.json"));
@@ -35,6 +37,15 @@ export async function seedGitActionHistory(agentDir, sessionId) {
   const entries = Object.values(records).map((id, index) => ({ type: "custom", customType: "pi-web:git-action",
     id: `saved-card-${index}`, parentId: index ? `saved-card-${index - 1}` : "root", timestamp: new Date().toISOString(), data: { version: 1, actionId: id } }));
   return { records, entries };
+}
+
+export async function interruptSeededGitAction(agentDir, id) {
+  const jiti = createJiti(import.meta.url);
+  const { readGitAction, transitionGitAction } = await jiti.import("../lib/git-action-journal.ts");
+  const { record } = await readGitAction(id, {}, agentDir);
+  assert.equal(record?.state, "awaiting-decision");
+  await transitionGitAction(id, record.revision, { state: "executing", decision: "approved",
+    intended: { commit: "4".repeat(40), tree: "2".repeat(40), parents: ["1".repeat(40)], authorEmail: "e2e@example.invalid" } }, agentDir);
 }
 
 export async function checkSavedGitActionHistory(page, { base, api, sessionId, records, artifacts }) {
