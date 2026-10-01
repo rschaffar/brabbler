@@ -32,6 +32,9 @@ export type GitCheckSnapshot = { version: 1; featurePath: string; targetPath: st
   featureBranch: string; targetBranch: string; featureOid: string; targetOid: string;
   reviewDigest: string; policyDigest: string; checkDigest: string;
   featureIndex: string; targetIndex: string; featureStatus: string; targetStatus: string; refs: string };
+// A later checkout capture has no merge review: it must never be mistaken for
+// the original check snapshot or a verification receipt.
+export type GitCheckRecoveryCurrentState = Omit<GitCheckSnapshot, "reviewDigest">;
 export type GitCheckCleanupProof = { unit: string; cgroupIdentity: string; invocation: string; empty: true;
   emptyEvidence: "pinned-populated-zero" | "verified-removed"; terminal: true;
   payload: "release-attempted" | "prevented-before-write" };
@@ -45,8 +48,11 @@ type Evidence = { version: 1; id: string; actionId: string; kind: GitActionKind;
   phase: Phase; createdAt: number; resolvedAt?: number; checkUnit?: string; disposition?: "recovered" };
 /** Construct only on the server after an explicit human review of this exact check.
  * This is an assertion by the caller, not a substitute for repository/process revalidation. */
-export type GitCheckHumanReviewReceipt = Readonly<{ kind: "human-reviewed-git-check-recovery";
-  id: string; actionId: string; resource: string; unit: string; proofIdentifier: string }>;
+type CheckReviewIdentity = Readonly<{ id: string; actionId: string; resource: string; unit: string; proofIdentifier: string }>;
+export type GitCheckHumanReviewReceipt =
+  | (CheckReviewIdentity & Readonly<{ kind: "human-reviewed-git-check-recovery" }>)
+  | (CheckReviewIdentity & Readonly<{ kind: "human-reviewed-git-check-recovery-moved";
+      currentStateDigest: string; reviewedMovement: true }>);
 export type GitOperationAdmission = { admitted: boolean; reason: "clear" | "unresolved" | "unavailable";
   /** Only validated action IDs, never executable authority. */ actionIds: readonly string[] };
 export class GitOperationRecoveryError extends Error {
@@ -76,9 +82,14 @@ const INVOCATION = /^[a-fA-F0-9]{32}$/;
 const SNAPSHOT_KEYS = ["version", "featurePath", "targetPath", "featureIdentity", "targetIdentity", "resourceIdentity",
   "featureBranch", "targetBranch", "featureOid", "targetOid", "reviewDigest", "policyDigest", "checkDigest",
   "featureIndex", "targetIndex", "featureStatus", "targetStatus", "refs"];
+const CURRENT_STATE_KEYS = SNAPSHOT_KEYS.filter((key) => key !== "reviewDigest");
 function validSnapshot(value: unknown): value is GitCheckSnapshot {
   return keys(value, SNAPSHOT_KEYS) && value.version === 1 &&
     SNAPSHOT_KEYS.slice(1).every((key) => HASH.test(value[key] as string));
+}
+function validCurrentState(value: unknown): value is GitCheckRecoveryCurrentState {
+  return keys(value, CURRENT_STATE_KEYS) && value.version === 1 &&
+    CURRENT_STATE_KEYS.slice(1).every((key) => HASH.test(value[key] as string));
 }
 function validProof(value: unknown, unit: string): value is GitCheckCleanupProof {
   return keys(value, ["unit", "cgroupIdentity", "invocation", "empty", "emptyEvidence", "terminal", "payload"]) &&
@@ -338,8 +349,10 @@ export function readUnresolvedGitCheckRecovery(agentDir: string, commonDir: stri
  * Crashes after publication strand a resolved record behind the reservation;
  * this function never reaps or retries such partial releases. */
 export function resolveHumanReviewedGitCheck(agentDir: string, commonDir: string, id: string, actionId: string,
-  freshSnapshot: GitCheckSnapshot, proofIdentifier: string, receipt: GitCheckHumanReviewReceipt): void {
-  if (!uuid(id) || !uuid(actionId) || !validSnapshot(freshSnapshot) || !INVOCATION.test(proofIdentifier)) deny();
+  freshSnapshot: GitCheckSnapshot | GitCheckRecoveryCurrentState, proofIdentifier: string, receipt: GitCheckHumanReviewReceipt): void {
+  const moved = receipt?.kind === "human-reviewed-git-check-recovery-moved";
+  if (!uuid(id) || !uuid(actionId) || !(moved ? validCurrentState(freshSnapshot) : validSnapshot(freshSnapshot)) ||
+    !INVOCATION.test(proofIdentifier)) deny();
   const { folders, dir, gate } = locations(agentDir, commonDir);
   for (const folder of folders) directory(folder);
   const status = scan(commonDir, dir, gate);
@@ -358,11 +371,23 @@ export function resolveHumanReviewedGitCheck(agentDir: string, commonDir: string
   const pre = loadCheck(path.join(dir, `${id}.pre`), intent, "pre");
   const post = loadCheck(path.join(dir, `${id}.post`), intent, "post") as CheckPost;
   if (post.preSha256 !== sha(encodeCheck(pre)) || !recoverablePost(post, pre.snapshot) ||
-    JSON.stringify(freshSnapshot) !== JSON.stringify(post.snapshot) ||
     post.cleanupProof.invocation !== proofIdentifier ||
-    !keys(receipt, ["kind", "id", "actionId", "resource", "unit", "proofIdentifier"]) ||
-    receipt.kind !== "human-reviewed-git-check-recovery" || receipt.id !== id || receipt.actionId !== actionId ||
-    receipt.resource !== commonDir || receipt.unit !== intent.checkUnit || receipt.proofIdentifier !== proofIdentifier) deny();
+    !keys(receipt, ["kind", "id", "actionId", "resource", "unit", "proofIdentifier",
+      ...(moved ? ["currentStateDigest", "reviewedMovement"] : [])]) ||
+    receipt.id !== id || receipt.actionId !== actionId || receipt.resource !== commonDir ||
+    receipt.unit !== intent.checkUnit || receipt.proofIdentifier !== proofIdentifier) deny();
+  if (moved) {
+    if (!validCurrentState(freshSnapshot) || receipt.kind !== "human-reviewed-git-check-recovery-moved" ||
+      receipt.reviewedMovement !== true || receipt.currentStateDigest !== sha(JSON.stringify(freshSnapshot))) deny();
+    // Branch movement is not authority to change the selected physical worktrees,
+    // repository instance, saved check, or policy. Only later Git state may drift.
+    const stable: (keyof GitCheckRecoveryCurrentState)[] = ["featurePath", "targetPath", "featureIdentity",
+      "targetIdentity", "resourceIdentity", "featureBranch", "targetBranch", "policyDigest", "checkDigest"];
+    if (stable.some((key) => freshSnapshot[key] !== post.snapshot[key]) ||
+      ["featureOid", "targetOid", "featureIndex", "targetIndex", "featureStatus", "targetStatus", "refs"]
+        .every((key) => freshSnapshot[key as keyof GitCheckRecoveryCurrentState] === post.snapshot[key as keyof GitCheckSnapshot])) deny();
+  } else if (!validSnapshot(freshSnapshot) || receipt.kind !== "human-reviewed-git-check-recovery" ||
+    JSON.stringify(freshSnapshot) !== JSON.stringify(post.snapshot)) deny();
   // One last scan before publication: extra files or another unresolved record
   // cannot be ignored. The exclusive reservation is the checkout protocol.
   const again = scan(commonDir, dir, gate);

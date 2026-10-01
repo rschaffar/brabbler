@@ -300,7 +300,8 @@ try {
       if (event.type() !== "error" || consumeExpectedTaskConflict(page, event)) return;
       // The review panel polls while the fixture's ask_user holds this chat busy.
       // Consume only a corroborated GET 409 from that read-only integration endpoint.
-      if (busyIntegrationReads > 0 && event.text() === "Failed to load resource: the server responded with a status of 409 (Conflict)") {
+      if (busyIntegrationReads > 0 && event.text() === "Failed to load resource: the server responded with a status of 409 (Conflict)"
+        && new URL(event.location().url).pathname === "/api/git/integration") {
         busyIntegrationReads--; return;
       }
       errors.push(event.text());
@@ -469,11 +470,22 @@ try {
     page.setDefaultTimeout(30_000);
     const errors = [];
     const olderResponses = [];
+    let busyIntegrationReads = 0;
     page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (event) => { if (event.type() === "error" && !consumeExpectedTaskConflict(page, event)) errors.push(event.text()); });
+    page.on("console", (event) => {
+      if (event.type() !== "error" || consumeExpectedTaskConflict(page, event)) return;
+      // A read-only review poll can conflict with the fixture's pending question.
+      if (busyIntegrationReads > 0 && event.text() === "Failed to load resource: the server responded with a status of 409 (Conflict)"
+        && new URL(event.location().url).pathname === "/api/git/integration") {
+        busyIntegrationReads--; return;
+      }
+      errors.push(event.text());
+    });
     page.on("response", (response) => {
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
       const url = new URL(response.url());
+      if (response.status() === 409 && url.pathname === "/api/git/integration"
+        && response.request().method() === "GET" && url.searchParams.get("sessionId") === GIT) busyIntegrationReads++;
       if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
     });
     if (process.env.E2E_FILE_EDIT_ONLY === "1") {

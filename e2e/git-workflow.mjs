@@ -48,10 +48,9 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
       assert.equal((await loaded).status(), 200, "Workflow reads real settings");
     }
     await workflow.waitFor({ state: "visible" });
-    await page.waitForFunction(() => {
-      const button = document.querySelector("#workflow-panel .workflow-header button");
-      return button && !button.disabled;
-    });
+    // Policy buttons are intentionally disabled while a chat runs; the
+    // Close control remains available when the panel has mounted.
+    await workflow.getByRole("button", { name: "Close Workflow", exact: true }).waitFor({ state: "visible" });
   }
   async function closeWorkflow() {
     await workflow.getByRole("button", { name: "Close Workflow", exact: true }).click();
@@ -622,6 +621,37 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await quarantine.getByText(/Recovery unavailable:/).waitFor();
     assert.equal(await quarantine.getByRole("button", { name: "Approve recovery" }).count(), 0,
       "No quarantined check must never offer a recovery approval");
+    // Exercise the browser's moved-state review without touching any durable
+    // check evidence. The real route and ledger are covered by OS-backed tests.
+    const reviewed = [];
+    const recoveryMock = (route) => {
+      if (route.request().method() === "POST") {
+        reviewed.push(route.request().postDataJSON());
+        return route.fulfill({ json: { recovered: true, actionId: "00000000-0000-4000-8000-000000000001" } });
+      }
+      return route.fulfill({ json: { eligible: true, mode: "moved",
+        actionId: "00000000-0000-4000-8000-000000000001", revision: "00000000-0000-4000-8000-000000000002",
+        unit: "pi-web-git-check-00000000-0000-4000-8000-000000000003.service",
+        original: { featureHead: "3".repeat(40), targetHead: "4".repeat(40),
+          featureHeadDigest: "a".repeat(64), targetHeadDigest: "b".repeat(64), refsDigest: "c".repeat(64) },
+        feature: { path: cwd, branch: "feature", head: git("rev-parse", "HEAD"), status: [] },
+        target: { path: targetWorktree, branch: "target", head: gitAt(targetWorktree, "rev-parse", "HEAD"), status: [] },
+        containment: { emptyEvidence: "verified-removed", payload: "release-attempted" }, expiresAt: Date.now() + 60_000 } });
+    };
+    await page.route("**/api/git/check-recovery*", recoveryMock);
+    try {
+      await quarantine.getByRole("button", { name: "Load recovery review" }).click();
+      await quarantine.getByText("Repository changed since the failed check").waitFor();
+      const approveRecovery = quarantine.getByRole("button", { name: "Approve recovery" });
+      assert.equal(await approveRecovery.isDisabled(), true, "drift needs separate acknowledgement");
+      await quarantine.getByRole("checkbox").check();
+      const mockApproval = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/check-recovery"
+        && response.request().method() === "POST");
+      await approveRecovery.click();
+      assert.equal((await mockApproval).status(), 200);
+      assert.deepEqual(reviewed, [{ sessionId, actionId: "00000000-0000-4000-8000-000000000001",
+        revision: "00000000-0000-4000-8000-000000000002", acknowledged: true, reviewedMovement: true }]);
+    } finally { await page.unroute("**/api/git/check-recovery*", recoveryMock); }
     const targetBeforeVerification = gitAt(targetWorktree, "rev-parse", "HEAD");
     assert.deepEqual((await api(`/api/git/integration?sessionId=${sessionId}`)).receipts, []);
     if (!checkContainmentSupported) {

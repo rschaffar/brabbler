@@ -8,6 +8,8 @@ export type CheckRecoveryPreview = {
   actionId: string;
   revision: string;
   unit: string;
+  mode: "unchanged" | "moved";
+  original: { featureHead: string; targetHead: string; featureHeadDigest: string; targetHeadDigest: string; refsDigest: string };
   feature: Resource;
   target: Resource;
   containment: { emptyEvidence: string; payload: string };
@@ -27,8 +29,14 @@ function isResource(value: unknown): value is Resource {
 export function isCheckRecoveryPreview(value: unknown): value is CheckRecoveryPreview {
   if (!value || typeof value !== "object") return false;
   const preview = value as Partial<CheckRecoveryPreview>;
+  const original = preview.original;
+  const hash = /^[a-f0-9]{64}$/;
+  const oid = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
   return preview.eligible === true && typeof preview.actionId === "string" && !!preview.actionId &&
     typeof preview.revision === "string" && !!preview.revision && typeof preview.unit === "string" && !!preview.unit &&
+    (preview.mode === "unchanged" || preview.mode === "moved") && !!original &&
+    oid.test(original.featureHead) && oid.test(original.targetHead) &&
+    hash.test(original.featureHeadDigest) && hash.test(original.targetHeadDigest) && hash.test(original.refsDigest) &&
     isResource(preview.feature) && isResource(preview.target) &&
     !!preview.containment && typeof preview.containment.emptyEvidence === "string" &&
     typeof preview.containment.payload === "string" && Number.isFinite(preview.expiresAt);
@@ -58,6 +66,7 @@ export function GitCheckRecoveryPanel({ sessionId, disabled = false, onRecoverin
   const [loading, setLoading] = useState(false);
   const [approving, setApproving] = useState(false);
   const [recovered, setRecovered] = useState(false);
+  const [reviewedMovement, setReviewedMovement] = useState(false);
   const [clock, setClock] = useState(Date.now());
   const request = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
@@ -82,6 +91,7 @@ export function GitCheckRecoveryPanel({ sessionId, disabled = false, onRecoverin
     const controller = new AbortController();
     request.current = controller;
     setStatus(null); // A previous preview cannot authorize a new attempt while reloading.
+    setReviewedMovement(false);
     setRecovered(false);
     setError(null);
     setLoading(true);
@@ -105,7 +115,8 @@ export function GitCheckRecoveryPanel({ sessionId, disabled = false, onRecoverin
   }
 
   async function approve() {
-    if (!preview || expired || Date.now() >= preview.expiresAt || disabled || inFlight.current || loading) return;
+    if (!preview || expired || Date.now() >= preview.expiresAt || disabled || inFlight.current || loading ||
+      (preview.mode === "moved" && !reviewedMovement)) return;
     inFlight.current = true;
     setApproving(true);
     setError(null);
@@ -113,7 +124,8 @@ export function GitCheckRecoveryPanel({ sessionId, disabled = false, onRecoverin
     try {
       const response = await fetch("/api/git/check-recovery", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, actionId: preview.actionId, revision: preview.revision, acknowledged: true }),
+        body: JSON.stringify({ sessionId, actionId: preview.actionId, revision: preview.revision, acknowledged: true,
+          ...(preview.mode === "moved" ? { reviewedMovement: true } : {}) }),
       });
       const body: unknown = await response.json();
       if (!response.ok) throw new Error(errorMessage(body, `Recovery not approved (HTTP ${response.status})`));
@@ -121,12 +133,14 @@ export function GitCheckRecoveryPanel({ sessionId, disabled = false, onRecoverin
         throw new Error("Recovery result is unconfirmed. Inspect both worktrees and refresh manually.");
       if (!mounted.current) return;
       setStatus(null); // Single-use: no repeated approval, even if refreshing the review fails.
+      setReviewedMovement(false);
       setRecovered(true);
       window.dispatchEvent(new CustomEvent("pi-web:git-actions-changed", { detail: { sessionId } }));
       onRecovered();
     } catch (cause) {
       if (!mounted.current) return;
       setStatus(null); // 409/stale, transport errors and ambiguous results must not retain approval authority.
+      setReviewedMovement(false);
       setError(`${cause instanceof Error ? cause.message : "Recovery unavailable"}. Inspect both worktrees and refs; load a new review only after manual investigation. Do not retry the check or merge automatically.`);
     } finally {
       inFlight.current = false;
@@ -154,10 +168,23 @@ export function GitCheckRecoveryPanel({ sessionId, disabled = false, onRecoverin
         <dt>Check payload disposition</dt><dd>{preview.containment.payload}</dd>
         <dt>Expires</dt><dd>{new Date(preview.expiresAt).toLocaleString()}</dd>
       </dl>
+      {preview.mode === "moved" && <div className="rounded border border-amber-500 p-2 text-xs text-amber-500">
+        <strong>Repository changed since the failed check</strong>
+        <p>The original pre/post check snapshots matched. The current branches or Git state no longer match that snapshot; this is not a review of today&apos;s merge. Original commits were found by matching their recorded fingerprints to reachable Git objects. This does not prove who moved the branches:</p>
+        <dl className="break-all font-mono"><dt>Original feature commit</dt><dd>{preview.original.featureHead}</dd>
+          <dt>Original target commit</dt><dd>{preview.original.targetHead}</dd>
+          <dt>Original feature HEAD SHA-256</dt><dd>{preview.original.featureHeadDigest}</dd>
+          <dt>Original target HEAD SHA-256</dt><dd>{preview.original.targetHeadDigest}</dd>
+          <dt>Original refs SHA-256</dt><dd>{preview.original.refsDigest}</dd></dl>
+      </div>}
       <ResourceDetails name="Feature" resource={preview.feature} />
       <ResourceDetails name="Target" resource={preview.target} />
+      {preview.mode === "moved" && <label className="flex items-start gap-2 text-xs text-amber-500">
+        <input type="checkbox" checked={reviewedMovement} onChange={(event) => setReviewedMovement(event.target.checked)} />
+        I inspected the later branch movement, both current clean checkouts, and possible ignored or non-Git effects. This only releases the failed-check quarantine.
+      </label>}
       {expired && <p role="alert" className="text-amber-500">Recovery preview expired. Load a new review after inspecting the resources; do not reuse this approval.</p>}
-      <button type="button" disabled={expired || loading || approving || disabled} onClick={() => void approve()}
+      <button type="button" disabled={expired || loading || approving || disabled || (preview.mode === "moved" && !reviewedMovement)} onClick={() => void approve()}
         className="min-h-8 rounded border border-amber-500 px-3 font-medium text-text disabled:opacity-50">{approving ? "Approving recovery…" : "Approve recovery"}</button>
     </div>}
   </section>;
