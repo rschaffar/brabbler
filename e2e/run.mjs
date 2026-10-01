@@ -59,7 +59,8 @@ const ARCHIVE = "e2e-archive-session";
 const BULK = ["e2e-bulk-desktop-a", "e2e-bulk-desktop-b", "e2e-bulk-mobile-a", "e2e-bulk-mobile-b"];
 const OTHER = "e2e-other-project";
 const GIT = "e2e-git-workflow";
-const GIT_HISTORY = "e2e-git-action-history";
+// A real UUID lets this saved-history chat also exercise durable workspace receipts.
+const GIT_HISTORY = "0fca1683-cb89-4e3a-90ba-9f01bd3f7e09";
 const PROPOSAL = "e2e-git-settings-proposal";
 const PROPOSAL_ID = "12345678-1234-4234-8234-123456789abc";
 let gitHistory;
@@ -223,6 +224,19 @@ try {
       { type: "compaction", id: "saved-compaction", parentId: gitHistory.entries.at(-1).id, timestamp,
         summary: "Keep the short task context, not private patches.", firstKeptEntryId: "saved-compaction", tokensBefore: 100 },
       message("answer", "saved-compaction", "assistant", "Saved Git action history fixture")], gitProject);
+    // This session already reached its destination. The durable continue
+    // receipt must remain readable without remounting its saved Git cards.
+    const { recordGitWorkspaceTransition, claimGitWorkspaceTransition, finishGitWorkspaceTransition } =
+      await createJiti(import.meta.url).import("../lib/git-workspace-transition.ts");
+    const receiptRoot = join(agentDir, "pi-web", "git-workspace-transitions", "v1");
+    mkdirSync(receiptRoot, { recursive: true, mode: 0o700 });
+    const nonce = "fa014c1f-043b-46e3-b0f9-37f5d03a420a";
+    recordGitWorkspaceTransition(GIT_HISTORY, {
+      version: 1, originCwd: project, destinationPath: gitProject, branch: "feature",
+      baseOid: "a".repeat(40), featureTip: "a".repeat(40), onCreate: "continue", createdAt: timestamp, nonce,
+    }, receiptRoot);
+    assert.equal(claimGitWorkspaceTransition(GIT_HISTORY, nonce, receiptRoot), true);
+    finishGitWorkspaceTransition(GIT_HISTORY, nonce, gitProject, receiptRoot);
   }
 
   const probe = createServer();

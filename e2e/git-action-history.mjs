@@ -49,10 +49,31 @@ export async function interruptSeededGitAction(agentDir, id) {
 }
 
 export async function checkSavedGitActionHistory(page, { base, api, sessionId, records, artifacts }) {
+  // This UUID chat already reached its worktree and retains a succeeded
+  // continue receipt. Its saved cards must survive every status read.
+  const assertStableReceiptCard = async () => {
+    const savedCard = page.locator(`[data-git-action-id="${records.declined}"]`);
+    await savedCard.getByRole("heading", { name: /Declined/ }).waitFor();
+    await savedCard.evaluate((element) => { element.dataset.e2eStableReceiptCard = "1"; });
+    let transitionReads = 0;
+    let forcedListReads = 0;
+    const observe = (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === "/api/git/workspace-transition" && url.searchParams.get("sessionId") === sessionId) transitionReads++;
+      if (url.pathname === "/api/sessions" && url.searchParams.has("force")) forcedListReads++;
+    };
+    page.on("request", observe);
+    try {
+      await page.waitForTimeout(1800);
+      assert.equal(await savedCard.getAttribute("data-e2e-stable-receipt-card"), "1", "completed transition must not remount a saved Git card");
+      assert.ok(transitionReads <= 2, `completed transition repeatedly polled on remount (${transitionReads} reads)`);
+      assert.ok(forcedListReads <= 2, `chat remount repeatedly forced the sidebar catalogue (${forcedListReads} reads)`);
+    } finally { page.off("request", observe); }
+  };
   await page.goto(`${base}/?session=${sessionId}`, { waitUntil: "load" });
   await page.getByText("Saved Git action history fixture", { exact: true }).waitFor();
   const card = (name) => page.locator(`[data-git-action-id="${records[name]}"]`);
-  await card("declined").getByRole("heading", { name: /Declined/ }).waitFor();
+  await assertStableReceiptCard();
   await card("expired").getByRole("heading", { name: /Expired/ }).waitFor();
   await card("interrupted").getByRole("heading", { name: /Recovery required/ }).waitFor();
   assert.match(await card("interrupted").innerText(), /prepared|Prepared/);
@@ -102,7 +123,7 @@ export async function checkSavedGitActionHistory(page, { base, api, sessionId, r
   await card("oversized").getByText(/Candidate patch exceeds the 1 MB capture limit/).waitFor();
   assert.equal(await card("oversized").getByRole("region", { name: /diff|patch/i }).count(), 0, "Unavailable bytes must not appear as a partial diff");
   await page.reload({ waitUntil: "load" });
-  await card("declined").getByRole("heading", { name: /Declined/ }).waitFor();
+  await assertStableReceiptCard();
   await card("expired").getByRole("heading", { name: /Expired/ }).waitFor();
   assert.equal(await page.getByRole("button", { name: /^(Approve|Confirm|Retry) (commit|merge|integration|action)/ }).count(), 0);
   await page.setViewportSize({ width: 1280, height: 800 });
