@@ -30,14 +30,17 @@ function validPath(value: string): boolean {
     !path.isAbsolute(value) && !value.split("/").some((p) => p === "" || p === "." || p === "..");
 }
 
-interface State { branch: string; head: string; indexHash: string; indexPath: string; paths: string[]; }
+export type GitCommitMode = "whole-file" | "staged";
+interface State { branch: string; head: string; indexHash: string; indexPath: string; paths: string[]; mode: GitCommitMode; }
 export interface GitCommitPreview {
   repositoryRoot: string;
   branch: string;
   head: string;
   paths: string[];
   tree: string;
-  /** Server-authenticated HMAC-SHA256 over checkout, branch, HEAD, paths, index bytes and tree. */
+  /** Explicit candidate source; authenticated together with the selected paths. */
+  mode: GitCommitMode;
+  /** Server-authenticated HMAC-SHA256 over checkout, mode, branch, HEAD, paths, index bytes and tree. */
   reviewToken: string;
 }
 export type GitCommitResult =
@@ -81,7 +84,7 @@ async function safePaths(cwd: string, paths: string[]): Promise<void> {
   }
 }
 
-async function state(cwd: string, requested: string[], ownedLock?: string): Promise<State> {
+async function state(cwd: string, requested: string[], mode: GitCommitMode, ownedLock?: string): Promise<State> {
   if (!path.isAbsolute(cwd) || !samePath(cwd, await fs.realpath(cwd))) fail("explicit physical checkout root required");
   const root = await git(cwd, ["rev-parse", "--show-toplevel"]).then((value) => toNativePath(value.trim()), () => fail("explicit repository-root checkout required"));
   if (!samePath(root, cwd)) fail("cwd must be the repository root");
@@ -91,11 +94,12 @@ async function state(cwd: string, requested: string[], ownedLock?: string): Prom
   try { branch = (await git(cwd, ["symbolic-ref", "--quiet", "HEAD"])).trim(); }
   catch { return fail("detached HEAD or unborn branch"); }
   if (!branch.startsWith("refs/heads/")) fail("not a local branch");
-  const head = (await git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"])).trim();
-  if ((await git(cwd, ["rev-parse", "--verify", branch])).trim() !== head) fail("branch moved");
+  const headOid = (await git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"])).trim();
+  if ((await git(cwd, ["rev-parse", "--verify", branch])).trim() !== headOid) fail("branch moved");
   const indexPath = toNativePath((await git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"])).trim());
   if (!ownedLock && await fs.stat(`${indexPath}.lock`).then(() => true, () => false)) fail("index locked");
   if (ownedLock && indexPath !== ownedLock) fail("index path changed");
+  if (mode === "staged" && !(await fs.lstat(indexPath)).isFile()) fail("unsafe index path");
   const indexHash = hash(await fs.readFile(indexPath));
   if ((await git(cwd, ["ls-files", "-u", "-z"])) !== "") fail("unmerged index");
   const entriesInIndex = (await git(cwd, ["ls-files", "-s", "-z"])).split("\0").filter(Boolean).map((entry) => {
@@ -108,6 +112,29 @@ async function state(cwd: string, requested: string[], ownedLock?: string): Prom
     if (!match) fail("invalid HEAD entry");
     return `${match[1]} ${match[2]}\t${match[3]}`;
   }).sort();
+  if (mode === "staged") {
+    // -v alone does not reveal intent-to-add (its empty blob appears as an ordinary H entry).
+    // --debug exposes the extended index flags even on unrelated entries.
+    const debug = await git(cwd, ["ls-files", "--debug", "-z"]);
+    const flags = [...debug.matchAll(/\tflags: ([0-9a-f]+)\n/g)].map((match) => match[1]);
+    if (flags.length !== entriesInIndex.length || flags.some((flag) => flag !== "0")) fail("nonstandard index flags or intent-to-add");
+    const head = new Map(entriesInHead.map((entry) => [entry.slice(entry.indexOf("\t") + 1), entry]));
+    const index = new Map(entriesInIndex.map((entry) => [entry.slice(entry.indexOf("\t") + 1), entry]));
+    if (!requested.length || requested.length !== new Set(requested).size) fail("select distinct changed staged paths");
+    for (const p of requested) {
+      if (!validPath(p)) fail("invalid path");
+      if (index.get(p) === head.get(p)) fail(`path not changed in index: ${p}`);
+      for (const entry of [index.get(p), head.get(p)]) {
+        if (entry?.startsWith("160000 ")) fail("submodule changes unsupported");
+        if (entry && !/^(100644|100755|120000) /.test(entry)) fail("unsupported index mode");
+      }
+    }
+    const paths = [...requested].sort();
+    await safePaths(cwd, paths);
+    await checkFilters(cwd, paths);
+    await checkFilters(cwd, paths, undefined, true);
+    return { branch, head: headOid, indexHash, indexPath, paths, mode };
+  }
   if (JSON.stringify(entriesInIndex) !== JSON.stringify(entriesInHead)) fail("index differs from HEAD");
   const indexFlags = await git(cwd, ["ls-files", "-v", "-z"]);
   if (indexFlags.split("\0").some((entry) => entry !== "" && !entry.startsWith("H "))) fail("nonstandard index flags");
@@ -134,10 +161,14 @@ async function state(cwd: string, requested: string[], ownedLock?: string): Prom
   const selected = requested.flatMap((p) => available.get(p) ?? renameSources.get(p) ?? fail(`path not in current status: ${p}`));
   const paths = [...new Set(selected)].sort();
   await safePaths(cwd, paths);
-  const attrs = await git(cwd, ["check-attr", "-z", "filter", "--", ...paths]);
+  await checkFilters(cwd, paths);
+  return { branch, head: headOid, indexHash, indexPath, paths, mode };
+}
+
+async function checkFilters(cwd: string, paths: string[], index?: string, cached = false): Promise<void> {
+  const attrs = await git(cwd, ["check-attr", ...(cached ? ["--cached"] : []), "-z", "filter", "--", ...paths], index);
   const parts = attrs.split("\0");
   for (let i = 2; i < parts.length; i += 3) if (parts[i] && parts[i] !== "unspecified" && parts[i] !== "unset") fail("filter attribute policy");
-  return { branch, head, indexHash, indexPath, paths };
 }
 
 async function candidate(cwd: string, s: State): Promise<{ tree: string; index: Buffer }> {
@@ -145,19 +176,41 @@ async function candidate(cwd: string, s: State): Promise<{ tree: string; index: 
   const index = path.join(dir, "index");
   try {
     await git(cwd, ["read-tree", s.head], index);
-    await git(cwd, ["--literal-pathspecs", "add", "-A", "--", ...s.paths], index);
+    if (s.mode === "staged") {
+      const staged = new Map((await git(cwd, ["ls-files", "-s", "-z"])).split("\0").filter(Boolean).map((entry) => {
+        const match = /^(\d{6}) ([a-f0-9]{40,64}) 0\t([\s\S]*)$/.exec(entry);
+        if (!match) fail("invalid index entry");
+        return [match[3], { mode: match[1], oid: match[2] }] as const;
+      }));
+      for (const p of s.paths) {
+        const entry = staged.get(p);
+        if (entry) await git(cwd, ["update-index", "--add", "--cacheinfo", entry.mode, entry.oid, p], index);
+        else await git(cwd, ["--literal-pathspecs", "update-index", "--force-remove", "--", p], index);
+      }
+      // The temporary candidate uses HEAD plus the selected index records, never the
+      // worktree. After CAS the original index remains valid: selected records now
+      // match HEAD, while unrelated staged records and partial unstaged hunks remain.
+      await checkFilters(cwd, s.paths, index, true);
+    } else {
+      await git(cwd, ["--literal-pathspecs", "add", "-A", "--", ...s.paths], index);
+    }
     await git(cwd, ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--check", s.head, "--"], index);
     const touched = (await git(cwd, ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-only", "-z", s.head, "--"], index)).split("\0").filter(Boolean).sort();
     if (JSON.stringify(touched) !== JSON.stringify(s.paths)) fail("staged paths differ from selection");
     const stages = await git(cwd, ["ls-files", "-s", "-z", "--", ...s.paths.map((p) => `:(literal)${p}`)], index);
     if (stages.split("\0").some((r) => r.startsWith("160000 "))) fail("submodule changes unsupported");
     const tree = (await git(cwd, ["write-tree"], index)).trim();
+    if (s.mode === "staged") {
+      const original = await fs.readFile(s.indexPath);
+      if (hash(original) !== s.indexHash) fail("index changed");
+      return { tree, index: original };
+    }
     return { tree, index: await fs.readFile(index) };
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
 }
 function token(cwd: string, s: State, tree: string): string {
   return createHmac("sha256", reviewSecret())
-    .update(JSON.stringify([path.resolve(cwd), s.branch, s.head, s.paths, s.indexHash, tree]))
+    .update(JSON.stringify([path.resolve(cwd), s.mode, s.branch, s.head, s.paths, s.indexHash, tree]))
     .digest("hex");
 }
 
@@ -210,18 +263,19 @@ async function assertNoGitOperation(cwd: string): Promise<void> {
     if (present) throw new GitCommitOperationError(`Git ${operation} is in progress. Finish or abort it explicitly before requesting a commit.`);
   }
 }
-async function prepare(cwd: string, selected: string[], ownedLock?: string): Promise<{ preview: GitCommitPreview; state: State; index: Buffer }> {
-  const s = await state(cwd, selected, ownedLock);
+async function prepare(cwd: string, selected: string[], mode: GitCommitMode, ownedLock?: string): Promise<{ preview: GitCommitPreview; state: State; index: Buffer }> {
+  const s = await state(cwd, selected, mode, ownedLock);
   const result = await candidate(cwd, s);
   return { state: s, index: result.index, preview: {
-    repositoryRoot: cwd, branch: s.branch, head: s.head, paths: s.paths,
+    repositoryRoot: cwd, branch: s.branch, head: s.head, paths: s.paths, mode,
     tree: result.tree, reviewToken: token(cwd, s, result.tree),
   } };
 }
 
 /** No checkout/index/ref mutation. The returned token identifies the full candidate snapshot. */
-export async function prepareGitCommit(cwd: string, selectedPaths: string[]): Promise<GitCommitPreview> {
-  return (await prepare(cwd, selectedPaths)).preview;
+export async function prepareGitCommit(cwd: string, selectedPaths: string[], mode: GitCommitMode = "whole-file"): Promise<GitCommitPreview> {
+  if (mode !== "whole-file" && mode !== "staged") fail("invalid candidate mode");
+  return (await prepare(cwd, selectedPaths, mode)).preview;
 }
 
 /** Never commits a preview that has become stale. No hooks, signing, or remote operations. */
@@ -229,8 +283,9 @@ export async function confirmGitCommit(preview: GitCommitPreview, message: strin
   beforeRefUpdate?: (intended: { commit: string; tree: string; parents: string[]; authorEmail: string }) => Promise<void>,
 ): Promise<GitCommitResult> {
   if (!message.trim() || message.includes("\0")) fail("invalid commit message");
+  if (preview.mode !== "whole-file" && preview.mode !== "staged") fail("invalid candidate mode");
   const cwd = preview.repositoryRoot;
-  const first = await prepare(cwd, preview.paths);
+  const first = await prepare(cwd, preview.paths, preview.mode);
   if (first.preview.reviewToken !== preview.reviewToken || first.preview.tree !== preview.tree ||
       first.preview.branch !== preview.branch || first.preview.head !== preview.head ||
       JSON.stringify(first.preview.paths) !== JSON.stringify(preview.paths)) fail("stale preview");
@@ -243,7 +298,7 @@ export async function confirmGitCommit(preview: GitCommitPreview, message: strin
   try {
     lockIdentity = await lock.stat();
     // Hold the real Git index lock throughout final validation and the ref CAS.
-    const latest = await prepare(cwd, preview.paths, first.state.indexPath);
+    const latest = await prepare(cwd, preview.paths, preview.mode, first.state.indexPath);
     if (latest.preview.reviewToken !== preview.reviewToken || latest.preview.tree !== preview.tree) fail("stale preview");
     if (hash(await fs.readFile(first.state.indexPath)) !== first.state.indexHash) fail("index changed");
     await assertCheckout(cwd, preview.branch, preview.head);
@@ -261,6 +316,15 @@ export async function confirmGitCommit(preview: GitCommitPreview, message: strin
     // An approval/journal callback can outlive the earlier operation-state check.
     // Ref CAS does not protect sequencer/merge/rebase metadata. Refuse, never continue it.
     await assertNoGitOperation(cwd);
+    if (preview.mode === "staged") {
+      // Journal callbacks and external processes can alter selection, policy or
+      // index bytes while we hold the lock. Ref CAS alone cannot detect that.
+      const final = await prepare(cwd, preview.paths, preview.mode, first.state.indexPath);
+      if (final.preview.reviewToken !== preview.reviewToken || final.preview.tree !== preview.tree ||
+          hash(await fs.readFile(first.state.indexPath)) !== first.state.indexHash) fail("stale preview");
+      const currentLock = await fs.lstat(lockPath);
+      if (currentLock.dev !== lockIdentity.dev || currentLock.ino !== lockIdentity.ino) fail("index lock ownership lost");
+    }
     // update-ref is an atomic compare-and-swap. External writers can still race.
     await git(cwd, ["update-ref", preview.branch, commit, preview.head]);
     committed = commit;

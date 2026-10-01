@@ -1,4 +1,4 @@
-import { prepareGitCommit, confirmGitCommit, GitCommitOperationError } from "./git-commit";
+import { prepareGitCommit, confirmGitCommit, GitCommitOperationError, type GitCommitMode } from "./git-commit";
 import { getGitCommitTreeOid, getGitTreeDiff } from "./git-review";
 import { beginGitAction, failGitAction, finishGitAction, snapshotGitActionCandidate, GitActionApplyError, GitActionRecordingError, type GitActionSink } from "./git-action-controller";
 import type { GitActionCandidate } from "./types";
@@ -10,7 +10,7 @@ import { readProjectAuthorization, type ProjectAuthorizationOwner } from "./git-
 /** Shared exact-Ask and explicitly authorized selected-project commit path.
  * Patch bytes live in private artifacts/UI, never tool results. */
 export async function requestWorkflowCommit(options: {
-  cwd: string; paths: string[]; message: string; signal?: AbortSignal;
+  cwd: string; paths: string[]; message: string; mode?: GitCommitMode; signal?: AbortSignal;
   sink: GitActionSink;
   ask: (candidate: GitActionCandidate, signal?: AbortSignal) => Promise<boolean>;
   beforeApply: () => Promise<void>;
@@ -35,7 +35,7 @@ export async function requestWorkflowCommit(options: {
     await assertStandingGrant();
     const selection = options.selected ?? await selectGitCommitAdmission(options.cwd);
     if (options.selected) await assertGitOperationAdmission(selection, options.agentDir);
-    const preview = await prepareGitCommit(options.cwd, options.paths);
+    const preview = await prepareGitCommit(options.cwd, options.paths, options.mode);
     const parentTree = await getGitCommitTreeOid(options.cwd, preview.head);
     const diff = await getGitTreeDiff(options.cwd, parentTree, preview.tree);
     const candidate = { kind: "commit" as const, preview, message: options.message, diff };

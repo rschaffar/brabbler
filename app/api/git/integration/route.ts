@@ -10,7 +10,7 @@ import { beginGitAction, failGitAction, gitActionFailureResult, snapshotGitActio
 import { finishHumanGitAction, humanGitActionSink, HUMAN_GIT_RECOVERY_WARNING, HumanGitCandidateError, HumanGitSessionChangedError, keepHumanGitCandidate, readHumanGitSessionManager, takeHumanGitCandidate } from "@/lib/git-action-human";
 import { GIT_ACTION_ID_PATTERN } from "@/lib/git-action-types";
 import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
-import { confirmIntegration, prepareIntegration } from "@/lib/git-integration";
+import { confirmIntegration, prepareIntegration, confirmFastForwardIntegration, prepareFastForwardIntegration } from "@/lib/git-integration";
 import { assertGitOperationAdmission, beginSupervisedGitOperationIntent, GitOperationRecoveryError, type GitOperationReservation } from "@/lib/git-operation-admission";
 import { selectGitProjectResources } from "@/lib/git-project-resources";
 import { reviewGitBranches, type GitReview } from "@/lib/git-review";
@@ -77,8 +77,8 @@ async function session(id: string, action?: "checks" | "integration") {
     return readSessionGitWorkflow(value.getEntries() as SessionEntry[]);
   };
   const saved = await policy();
-  if (!saved?.integration || saved.integration.method !== "merge") {
-    return { response: error("Saved merge target required", 409) };
+  if (!saved?.integration || !["merge", "ff"].includes(saved.integration.method)) {
+    return { response: error("Saved local merge or fast-forward target required", 409) };
   }
   const { stdout } = await exec("git", ["--no-optional-locks", "-C", cwd, "symbolic-ref", "--quiet", "HEAD"], {
     encoding: "utf8", env: gitExecEnv(), timeout: 15000, maxBuffer: 4096,
@@ -196,7 +196,8 @@ export async function POST(req: Request) {
         let reservation: GitOperationReservation | undefined;
         try {
           await guard();
-          const result = await confirmIntegration(native.plan.planId, input.approvePlanId as string, id, async () => {
+          const confirm = "method" in native.plan ? confirmFastForwardIntegration : confirmIntegration;
+          const result = await confirm(native.plan.planId, input.approvePlanId as string, id, async () => {
             await handle.update("executing", { decision: "approved" });
             await handle.update("executing", { intended: native.intended });
             await guard(); // after journal I/O, immediately before native checkout apply
@@ -204,7 +205,7 @@ export async function POST(req: Request) {
             applying = true;
             return reservation;
           });
-          // A partial result names the intended merge object, not a proven target ref update.
+          // A partial result names intended objects, never a proven target ref update.
           const outcome = result.status === "integrated" ? { ...native.intended, ...result } : result;
           const recorded = await finishHumanGitAction(handle, result, outcome, result.status === "partial-state");
           if (result.status === "integrated" && !("recoveryRequired" in recorded)) {
@@ -267,13 +268,17 @@ export async function POST(req: Request) {
         const r = receipts.find((receipt) => receipt.id === rid);
         return !r || r.checkIndex !== index || !matches(review, r, c, id);
       })) return error("Current successful receipts required for every saved check", 409);
-      const plan = await prepareIntegration({ sessionId: id, cwd: c.cwd, agentDir: c.agentDir,
-        featureBranch: c.featureBranch, receiptIds: ids, getPolicy: c.policy });
-      // Capture identity from the already verified immutable merge object, not ambient author config.
-      const { stdout } = await exec("git", ["--no-optional-locks", "-C", c.cwd, "show", "-s", "--format=%ae", plan.mergeOid, "--"], {
+      const options = { sessionId: id, cwd: c.cwd, agentDir: c.agentDir,
+        featureBranch: c.featureBranch, receiptIds: ids, getPolicy: c.policy };
+      const plan = c.saved.integration!.method === "ff"
+        ? await prepareFastForwardIntegration(options) : await prepareIntegration(options);
+      // Capture identity from the verified immutable result object, not ambient author config.
+      const resultOid = "method" in plan ? plan.featureOid : plan.mergeOid;
+      const { stdout } = await exec("git", ["--no-optional-locks", "-C", c.cwd, "show", "-s", "--format=%ae", resultOid, "--"], {
         encoding: "utf8", env: { ...gitExecEnv(), GIT_NO_REPLACE_OBJECTS: "1" }, timeout: 15000, maxBuffer: 4096,
       });
-      const intended = { mergeOid: plan.mergeOid, tree: plan.review.mergeTreeOid, parents: [plan.review.targetOid, plan.review.featureOid],
+      const intended = { ...("method" in plan ? {} : { mergeOid: plan.mergeOid }), tree: plan.review.featureTreeOid,
+        parents: "method" in plan ? plan.parents : [plan.review.targetOid, plan.review.featureOid],
         authorEmail: stdout.trim(), featureOid: plan.review.featureOid, targetOid: plan.review.targetOid, targetBranch: plan.review.targetBranch };
       const snapshot = { ...snapshotGitActionCandidate({ kind: "integration", featureCwd: c.cwd, targetCwd: c.targetCwd,
         plan, receipts: ids.map((rid) => receipts.find((r) => r.id === rid)!) }), checks: c.saved.checks, candidateTreeOid: plan.review.mergeTreeOid };

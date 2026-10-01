@@ -112,6 +112,28 @@ test("manual commit permits an active chat but rejects checkout mismatch and sta
   assert.equal((await git("git", ["-C", cwd, "rev-parse", "HEAD"])).stdout.trim(), result.commit);
 });
 
+test("browser staged candidate commits only selected index entries and authenticates the mode", async (t) => {
+  const { cwd, id } = await fixture(t);
+  await writeFile(join(cwd, "a"), "selected staged\n");
+  await git("git", ["-C", cwd, "add", "a"]);
+  await writeFile(join(cwd, "a"), "selected staged\nunstaged\n");
+  await writeFile(join(cwd, "other"), "other staged\n");
+  await git("git", ["-C", cwd, "add", "other"]);
+  assert.equal((await post({ ...previewRequest(id), mode: "unknown" })).status, 400);
+  const response = await post({ ...previewRequest(id), mode: "staged" });
+  assert.equal(response.status, 200);
+  const candidate = await response.json();
+  assert.equal(candidate.preview.mode, "staged");
+  assert.match(candidate.candidateDiff.patch, /selected staged/);
+  assert.doesNotMatch(candidate.candidateDiff.patch, /other staged|unstaged/);
+  assert.equal((await post({ ...confirmRequest(id, candidate), preview: { ...candidate.preview, mode: "whole-file" } })).status, 409);
+  const committed = await post(confirmRequest(id, candidate));
+  assert.equal(committed.status, 200);
+  assert.equal((await git("git", ["-C", cwd, "show", "HEAD:a"])).stdout.trim(), "selected staged");
+  assert.equal((await git("git", ["-C", cwd, "diff", "--cached", "--name-only"])).stdout.trim(), "other");
+  assert.equal((await git("git", ["-C", cwd, "diff", "--name-only"])).stdout.trim(), "a");
+});
+
 test("saved Project/Chat Deny blocks browser preview and live revocation blocks confirmation; Allow does not skip preview", async (t) => {
   const f = await fixture(t);
   await writeFile(join(f.cwd, "a"), "candidate\n");

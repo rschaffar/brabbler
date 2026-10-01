@@ -170,6 +170,35 @@ test("human checks and exact plan share durable metadata-only anchors, explicit 
   assert.deepEqual((await history(actionId)).candidate, pending.candidate);
 });
 
+test("browser FF plan confirms only the existing feature tip and records no merge commit", async (t) => {
+  const f = await fixture(t);
+  f.policy.integration.method = "ff";
+  appendSessionGitWorkflow(f.sm, f.policy);
+  const p = await proposal(f);
+  assert.equal(p.plan.method, "ff");
+  assert.equal(p.plan.featureOid, await git(f.feature, "rev-parse", "HEAD"));
+  assert.equal(p.plan.mergeOid, undefined);
+  assert.equal(p.plan.message, undefined);
+  const before = await history(p.actionId);
+  assert.equal(before.candidate.integrationMethod, "ff");
+  assert.equal(before.candidate.mergeOid, undefined);
+  assert.equal(before.record.intended, undefined);
+  const result = await jsonOK(await post(confirm(f.id, p)));
+  assert.equal(result.method, "ff");
+  assert.equal(result.featureOid, p.plan.featureOid);
+  assert.equal(result.mergeOid, undefined);
+  assert.equal(await git(f.target, "rev-parse", "HEAD"), p.plan.featureOid);
+  assert.equal(await git(f.target, "rev-parse", "HEAD^{tree}"), p.plan.treeOid);
+  assert.equal(await git(f.target, "show", "-s", "--format=%P", "HEAD"), p.plan.parents.join(" "));
+  const completed = await history(p.actionId);
+  assert.equal(completed.record.outcome.mergeOid, undefined);
+  assert.equal(completed.record.outcome.featureOid, p.plan.featureOid);
+  assert.deepEqual(completed.record.outcome.parents, p.plan.parents);
+  assert.equal(completed.record.outcome.authorEmail, "tester@example.invalid");
+  assert.equal(completed.record.state, "succeeded");
+  assert.equal((await post(confirm(f.id, p))).status, 409);
+});
+
 test("refuses browser authority, missing policy, stale receipts and disallowed scope without journal writes", async (t) => {
   const f = await fixture(t);
   for (const extra of [{ cwd: f.feature }, { argv: ["true"] }, { featureBranch: "feature" }, { targetBranch: "target" }]) {

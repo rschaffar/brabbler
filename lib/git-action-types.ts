@@ -15,12 +15,16 @@ export interface GitActionCandidateSnapshot {
   featureBranch?: string;
   targetBranch?: string;
   message?: string;
+  /** New commit snapshots record whether the candidate came from selected index entries. */
+  commitMode?: "whole-file" | "staged";
   paths?: string[];
   parentOid?: string;
   candidateTreeOid?: string;
   featureOid?: string;
   targetOid?: string;
   mergeOid?: string;
+  /** Method-specific integration evidence; older merge snapshots omit it. */
+  integrationMethod?: "merge" | "ff";
   checks?: GitWorkflowCheck[];
   selection?: { kind: "merge" } | { kind: "commits"; commitOids: string[] };
   diff?: { fromTreeOid: string; toTreeOid: string; patch: string; hasBinaryChanges: boolean };

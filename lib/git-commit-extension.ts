@@ -25,15 +25,16 @@ export function createGitCommitExtension(
       pi.registerTool({
         name: "git_commit",
         label: "Git Commit",
-        description: "Request a commit of explicit paths and an exact message with operation commit. Workflow settings decide whether the agent may request exact-candidate approval or must refuse; no prose approval is needed. Select a registered local worktree with workspaceBranch. Legacy preview/confirm requires saved agent-commit consent. No remote or integration operations; follow stricter repository instructions.",
+        description: "Request a commit of explicit paths and an exact message with operation commit. Default whole-file mode stages selected working-tree files; mode:staged commits only the named changed index entries and preserves other staged/unstaged content. Workflow settings decide whether the agent may request exact-candidate approval or must refuse; no prose approval is needed. Select a registered local worktree with workspaceBranch. Legacy preview/confirm requires saved agent-commit consent. No remote or integration operations; follow stricter repository instructions.",
         executionMode: "sequential",
         parameters: Type.Object({
           operation: Type.Unsafe<"commit" | "preview" | "confirm">({ type: "string", enum: ["commit", "preview", "confirm"] }),
           workspaceBranch: Type.Optional(Type.String({ description: "Checked-out local branch identifying a registered worktree in this chat's repository; omit for this chat's checkout" })),
           paths: Type.Optional(Type.Array(Type.String())),
+          mode: Type.Optional(Type.Unsafe<"whole-file" | "staged">({ type: "string", enum: ["whole-file", "staged"], description: "Explicit staged index entries, or whole files (default); only for commit/preview" })),
           preview: Type.Optional(Type.Object({
             repositoryRoot: Type.String(), branch: Type.String(), head: Type.String(),
-            paths: Type.Array(Type.String()), tree: Type.String(), reviewToken: Type.String(),
+            paths: Type.Array(Type.String()), mode: Type.Unsafe<"whole-file" | "staged">({ type: "string", enum: ["whole-file", "staged"] }), tree: Type.String(), reviewToken: Type.String(),
           })),
           message: Type.Optional(Type.String()),
         }),
@@ -54,9 +55,10 @@ export function createGitCommitExtension(
             await liveGuard(); // Includes legacy preview/confirm invocation, not just the final write.
             if (params.operation === "commit") {
               if (!params.paths?.length || !params.message?.trim() || params.preview) return failure("Select paths and an exact commit message");
+              if (params.mode !== undefined && params.mode !== "whole-file" && params.mode !== "staged") return failure("Unsupported commit mode");
               const ui = ctx.ui as typeof ctx.ui & Partial<AgentGitWorkflowUiContext>;
               if (!ctx.hasUI || !ui.gitAction) return failure("Commit approval requires an interactive Pi Web session");
-              return await requestWorkflowCommit({ cwd: workspace, paths: params.paths, message: params.message, signal: _signal,
+              return await requestWorkflowCommit({ cwd: workspace, paths: params.paths, mode: params.mode, message: params.message, signal: _signal,
                 sink: gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)),
                 ask: (candidate, signal) => ui.gitAction!(candidate, signal), beforeApply: async () => {
                   await assertManagedGitWorkspace(await liveGuard(), workspace);
@@ -65,15 +67,15 @@ export function createGitCommitExtension(
             }
             if (state.task.kind === "managed" || getSavedPolicy()?.commits !== "agent") return failure("Use operation commit to request approval; legacy preview/confirm requires saved agent-commit consent");
             if (params.operation === "preview") {
-              if (!Array.isArray(params.paths) || !params.paths.length) return failure("Select paths to preview");
+              if (!Array.isArray(params.paths) || !params.paths.length || params.mode !== undefined && !["whole-file", "staged"].includes(params.mode)) return failure("Select paths and a supported mode to preview");
               const paths = params.paths;
               const preview = await withGitCheckoutGate([workspace], async () => {
                 await liveGuard();
-                return prepareGitCommit(workspace, paths);
+                return prepareGitCommit(workspace, paths, params.mode);
               });
               return { content: [{ type: "text" as const, text: JSON.stringify(preview) }], details: { preview } };
             }
-            if (params.operation !== "confirm" || !params.preview || typeof params.message !== "string" ||
+            if (params.operation !== "confirm" || params.mode !== undefined || !params.preview || typeof params.message !== "string" ||
               !samePath(params.preview.repositoryRoot, workspace)) return failure("Invalid or mismatched preview");
             const preview = params.preview as GitCommitPreview;
             const message = params.message;

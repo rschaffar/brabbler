@@ -34,7 +34,7 @@ export function gitActionSink(manager: ActionManager, append: (type: string, dat
 export function snapshotGitActionCandidate(candidate: Exclude<GitActionCandidate, { kind: "preferences" }>): GitActionCandidateSnapshot {
   switch (candidate.kind) {
     case "commit": return { kind: "commit", repositoryRoot: candidate.preview.repositoryRoot,
-      featureBranch: candidate.preview.branch, message: candidate.message, paths: [...candidate.preview.paths],
+      featureBranch: candidate.preview.branch, message: candidate.message, commitMode: candidate.preview.mode, paths: [...candidate.preview.paths],
       parentOid: candidate.preview.head, candidateTreeOid: candidate.preview.tree, diff: { ...candidate.diff } };
     case "review": return { kind: "review", repositoryRoot: candidate.featureCwd,
       featureBranch: candidate.review.featureBranch, targetBranch: candidate.review.targetBranch,
@@ -45,7 +45,8 @@ export function snapshotGitActionCandidate(candidate: Exclude<GitActionCandidate
     case "integration": return { kind: "integration", repositoryRoot: candidate.featureCwd,
       featureBranch: candidate.plan.review.featureBranch, targetBranch: candidate.plan.review.targetBranch,
       featureOid: candidate.plan.review.featureOid, targetOid: candidate.plan.review.targetOid,
-      mergeOid: candidate.plan.mergeOid, message: candidate.plan.message,
+      integrationMethod: "method" in candidate.plan ? "ff" : "merge",
+      ...("method" in candidate.plan ? {} : { mergeOid: candidate.plan.mergeOid, message: candidate.plan.message }),
       checks: candidate.receipts.map((receipt) => ({ label: `Check ${receipt.checkIndex + 1}`, argv: [...receipt.argv] })), diff: { ...candidate.plan.diff } };
   }
 }

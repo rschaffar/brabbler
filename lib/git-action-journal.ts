@@ -98,13 +98,21 @@ function array<T>(value: unknown, max: number, item: (value: unknown) => T): T[]
 }
 function sessionId(value: unknown): string { return text(value, 256); }
 function candidate(input: unknown, summary = false): GitActionCandidateSnapshot {
-  const v = fields(input, ["kind", "repositoryRoot"], ["featureBranch", "targetBranch", "message", "paths", "parentOid",
-    "candidateTreeOid", "featureOid", "targetOid", "mergeOid", "checks", "selection", "diffUnavailable", ...(summary ? [] : ["diff"])]);
+  const v = fields(input, ["kind", "repositoryRoot"], ["featureBranch", "targetBranch", "message", "commitMode", "paths", "parentOid",
+    "candidateTreeOid", "featureOid", "targetOid", "mergeOid", "integrationMethod", "checks", "selection", "diffUnavailable", ...(summary ? [] : ["diff"])]);
   const root = text(v.repositoryRoot, GIT_ACTION_LIMITS.pathBytes);
   if (!isAbsolute(root) && !win32.isAbsolute(root)) invalid("repository root");
   const result: GitActionCandidateSnapshot = { kind: choice(v.kind, KINDS), repositoryRoot: root };
   for (const key of ["featureBranch", "targetBranch"] as const) if (v[key] !== undefined) result[key] = text(v[key], 1024);
   if (v.message !== undefined) result.message = text(v.message, GIT_ACTION_LIMITS.messageBytes);
+  if (v.commitMode !== undefined) {
+    if (result.kind !== "commit") invalid("commit mode on non-commit action");
+    result.commitMode = choice(v.commitMode, ["whole-file", "staged"]) as "whole-file" | "staged";
+  }
+  if (v.integrationMethod !== undefined) {
+    if (result.kind !== "integration") invalid("integration method on non-integration action");
+    result.integrationMethod = choice(v.integrationMethod, ["merge", "ff"]) as "merge" | "ff";
+  }
   if (v.diffUnavailable !== undefined) result.diffUnavailable = text(v.diffUnavailable, GIT_ACTION_LIMITS.reasonBytes);
   if (v.paths !== undefined) result.paths = array(v.paths, GIT_ACTION_LIMITS.paths, (path) => text(path, GIT_ACTION_LIMITS.pathBytes));
   for (const key of ["parentOid", "candidateTreeOid", "featureOid", "targetOid", "mergeOid"] as const) if (v[key] !== undefined) result[key] = oid(v[key]);

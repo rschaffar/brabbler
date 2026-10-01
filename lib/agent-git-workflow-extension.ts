@@ -20,7 +20,7 @@ import { beginGitAction, failGitAction, finishGitAction, gitActionFailureResult,
 import { gitExecEnv } from "./git-exec";
 import { acquireGitCheckoutGate, GitCheckoutBusyError } from "./git-checkout-gate";
 import { GitCommitOperationError } from "./git-commit";
-import { prepareIntegration, confirmIntegration } from "./git-integration";
+import { prepareIntegration, confirmIntegration, prepareFastForwardIntegration, confirmFastForwardIntegration } from "./git-integration";
 import { assertGitOperationAdmission, beginSupervisedGitOperationIntent, type GitOperationReservation } from "./git-operation-admission";
 import { runGitVerification } from "./git-verification";
 import { validateGitWorkflowPolicy, type GitWorkflowCheck, validLocalBranchName } from "./git-workflow-policy";
@@ -131,7 +131,8 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
           workspaceBranch: Type.Optional(Type.String({ description: "Checked-out local branch within the explicitly selected repository, or this chat's repository when repositoryPath is omitted" })),
           targetBranch: Type.Optional(Type.String({ description: "Existing local target branch for review" })),
           commitOids: Type.Optional(Type.Array(Type.String(), { description: "Optional ordered consecutive commits to compare instead of the whole proposed merge" })),
-          paths: Type.Optional(Type.Array(Type.String(), { description: "Complete changed file paths for commit" })),
+          paths: Type.Optional(Type.Array(Type.String(), { description: "Explicit changed paths for commit; staged mode selects only those index entries" })),
+          mode: Type.Optional(Type.Unsafe<"whole-file" | "staged">({ type: "string", enum: ["whole-file", "staged"], description: "Commit source: whole files by default, or only explicitly selected staged index entries" })),
           message: Type.Optional(Type.String({ description: "Exact commit message (included in an Ask candidate or saved-Allow no-prompt action)" })),
           confirmation: Type.Optional(Type.Unsafe<"ask" | "none">({ type: "string", enum: ["ask", "none"], description: "Selected-project commit only. Default ask. Request none only if stricter repository/user instructions permit; requires live saved Allow and selected commitConfirmation:none." })),
           checks: Type.Optional(Type.Array(Type.Object({ label: Type.String(), argv: Type.Array(Type.String()) }), { description: "Ordered verification commands, without a shell. Explicit user approval required before execution." })),
@@ -164,15 +165,16 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
             }
             // Tool schemas describe future scoped operations, but cannot authorize
             // them. Refuse unrecognized runtime arguments instead of ignoring them.
-            const allowed = new Set(["operation", "repositoryPath", "checkoutPath", "workspaceBranch", "targetBranch", "commitOids", "paths", "message", "confirmation", "checks"]);
-            if (Object.keys(params).some((key) => !allowed.has(key)) || params.confirmation !== undefined &&
+            const allowed = new Set(["operation", "repositoryPath", "checkoutPath", "workspaceBranch", "targetBranch", "commitOids", "paths", "mode", "message", "confirmation", "checks"]);
+            if (Object.keys(params).some((key) => !allowed.has(key)) || params.mode !== undefined &&
+              (params.operation !== "commit" || !["whole-file", "staged"].includes(params.mode)) || params.confirmation !== undefined &&
               (params.operation !== "commit" || params.repositoryPath === undefined || !["ask", "none"].includes(params.confirmation))) {
               return failure("Unsupported Git workflow arguments");
             }
             const selected = params.repositoryPath !== undefined ? await selectGitProjectResources(params.repositoryPath, params.workspaceBranch, params.checkoutPath) : undefined;
             const selectedState = selected ? await loadGitProjectSettings(selected, entries(), agentDir, ctx.sessionManager.getSessionId()) : undefined;
             if (params.operation === "status") {
-              if (params.targetBranch !== undefined || params.commitOids !== undefined || params.paths !== undefined || params.message !== undefined || params.checks !== undefined || params.confirmation !== undefined) return failure("Status accepts only resource selectors");
+              if (params.targetBranch !== undefined || params.commitOids !== undefined || params.paths !== undefined || params.mode !== undefined || params.message !== undefined || params.checks !== undefined || params.confirmation !== undefined) return failure("Status accepts only resource selectors");
               if (selected && selectedState) {
                 const summary = { selection: gitProjectResourceSummary(selected), saved: selectedState.resolved.session,
                   paused: selectedState.paused, sessionScope: "project", legacySessionSettings: selectedState.legacySessionSettings,
@@ -205,7 +207,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
             const workspace = selected?.cwd ?? await selectGitWorkspace(sessionCwd, params.workspaceBranch);
             if (params.operation === "preferences") {
               if (state?.task.kind === "managed") return failure("Configure all scopes in the Workflow panel. Legacy preferences cannot override this managed task.");
-              if (params.targetBranch || params.paths || params.message || params.commitOids || !ui.gitPreferences) return failure("Provide only proposed checks for early preferences");
+              if (params.targetBranch || params.paths || params.mode || params.message || params.commitOids || !ui.gitPreferences) return failure("Provide only proposed checks for early preferences");
               const manager = ctx.sessionManager;
               if (!manager?.getSessionId() || !writableManager?.isPersisted() || !samePath(manager.getCwd(), sessionCwd)
                 || !samePath(manager.getHeader()?.cwd ?? "", sessionCwd) || !samePath(sessionCwd, await realpath(sessionCwd))) return failure("Persisted session checkout required");
@@ -242,7 +244,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
             }
             if (params.operation === "review") {
               const targetBranch = params.targetBranch ?? selectedState?.resolved.session.values.targetBranch;
-              if (!validLocalBranchName(targetBranch) || params.paths || params.message || params.checks) return failure("Choose a local target branch to review, or configure the explicitly selected project's target");
+              if (!validLocalBranchName(targetBranch) || params.paths || params.mode || params.message || params.checks) return failure("Choose a local target branch to review, or configure the explicitly selected project's target");
               const selection: GitReviewSelection = params.commitOids?.length
                 ? { kind: "commits", commitOids: params.commitOids }
                 : { kind: "merge" };
@@ -294,8 +296,11 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 return failure("Choose a local target and at least one ordered verification check");
               }
               // Validate an ephemeral policy with the same allowlist and digest used by receipts and plans.
+              // Squash is a readable legacy preference, never permission to substitute a merge.
+              if (task?.method === "squash") return failure("Squash integration is unsupported; no checks or integration ran");
+              const method = task?.method === "ff" ? "ff" : "merge";
               const policy = validateGitWorkflowPolicy({ mode: "current", onCreate: "stay", commits: "manual",
-                integration: { targetBranch, method: "merge" }, checks: requestedChecks });
+                integration: { targetBranch, method }, checks: requestedChecks });
               const checks = policy.checks as GitWorkflowCheck[];
               preApprovalStage("caller");
               const manager = ctx.sessionManager;
@@ -379,8 +384,9 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 throw cause;
               } finally { checkAction.release(); }
               if (!await valid()) return failure("Checkout selection or trust changed after verification");
-              const plan = await prepareIntegration({ sessionId, cwd: workspace, agentDir, featureBranch: branch,
-                receiptIds: receipts.map((r) => r.id), getPolicy: guardedPolicy });
+              const integrationOptions = { sessionId, cwd: workspace, agentDir, featureBranch: branch,
+                receiptIds: receipts.map((r) => r.id), getPolicy: guardedPolicy };
+              const plan = method === "ff" ? await prepareFastForwardIntegration(integrationOptions) : await prepareIntegration(integrationOptions);
               const mergeCandidate = { kind: "integration" as const, featureCwd: workspace, targetCwd: target, plan, receipts };
               const mergeAction = await beginGitAction(sink, "agent", snapshotGitActionCandidate(mergeCandidate));
               let applying = false;
@@ -389,14 +395,17 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 await mergeAction.update("awaiting-decision");
                 if (!await ui.gitAction!({ ...mergeCandidate, actionId: mergeAction.record.id }, signal) || signal?.aborted) {
                   await mergeAction.update(signal?.aborted ? "cancelled" : "declined", { decision: signal?.aborted ? "cancelled" : "declined" });
-                  return { content: [{ type: "text" as const, text: "Exact merge declined; no integration executed." }], details: { approved: false, actionId: mergeAction.record.id } };
+                  return { content: [{ type: "text" as const, text: "Exact integration declined; no target ref was updated." }], details: { approved: false, actionId: mergeAction.record.id } };
                 }
                 const releaseMerge = acquireGitCheckoutGate([workspace, target]);
                 try {
-                  if (!await valid()) throw new ManagedGitAccessError("Checkout became busy or untrusted before merge");
-                  const result = await confirmIntegration(plan.planId, plan.planId, sessionId, async () => {
+                  if (!await valid()) throw new ManagedGitAccessError("Checkout became busy or untrusted before integration");
+                  const confirm = "method" in plan ? confirmFastForwardIntegration : confirmIntegration;
+                  const result = await confirm(plan.planId, plan.planId, sessionId, async () => {
                     await mergeAction.update("executing", { decision: "approved" });
-                    await mergeAction.update("executing", { intended: { mergeOid: plan.mergeOid, targetBranch } });
+                    await mergeAction.update("executing", { intended: "method" in plan
+                      ? { featureOid: plan.featureOid, targetOid: plan.review.targetOid, targetBranch, tree: plan.treeOid, parents: plan.parents }
+                      : { mergeOid: plan.mergeOid, targetBranch } });
                     if (!await valid()) throw new ManagedGitAccessError("Integration cancelled or checkout changed before apply");
                     reservation = await beginSupervisedGitOperationIntent(resources, mergeAction.record.id, "integration", agentDir);
                     applying = true;
@@ -465,7 +474,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
               if (signal?.aborted) throw new ManagedGitAccessError("Commit cancelled");
             };
             await beforeApply();
-            return await requestWorkflowCommit({ cwd: workspace, paths: params.paths, message: params.message, signal,
+            return await requestWorkflowCommit({ cwd: workspace, paths: params.paths, mode: params.mode, message: params.message, signal,
               ...(selected ? { selected, agentDir, owner: selectedOwner } : {}), skipApproval: skipCommitPrompt,
               sink: gitActionSink(manager, (type, data) => pi.appendEntry(type, data)),
               ask: (candidate, abort) => ui.gitAction!(candidate, abort), beforeApply });

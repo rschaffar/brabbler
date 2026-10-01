@@ -25,7 +25,10 @@ test("review keeps diff read-only and requires explicit paths, message, preview,
   assert.match(panel, /candidateDiffUnavailable/);
   assert.match(panel, /preview\.reviewToken/);
   assert.match(panel, /unsupported diffs do not exclude a file/);
-  assert.match(panel, /JSON\.stringify\(\{ operation: "preview", sessionId, paths: selected, message \}\)/);
+  assert.match(panel, /JSON\.stringify\(\{ operation: "preview", sessionId, paths, mode, message \}\)/);
+  assert.match(panel, /mode === "staged" \? \[\.\.\.new Set\(selected\.flatMap/);
+  assert.match(panel, /file\.originalFilePath/);
+  assert.match(panel, /setSelected\(\[\]\); setMode\(event\.target\.value as typeof mode\)/);
   assert.match(panel, /JSON\.stringify\(\{ operation: "confirm", sessionId, preview, message, actionId: candidate\.actionId \}\)/);
   assert.match(panel, /new CustomEvent\("pi-web:git-actions-changed", \{ detail: \{ sessionId \} \}\)/);
   assert.match(panel, /body\.recoveryRequired/);

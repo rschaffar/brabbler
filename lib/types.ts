@@ -137,7 +137,7 @@ export type GitActionCandidate = (
   | { kind: "commit"; preview: import("./git-commit").GitCommitPreview; message: string; diff: import("./git-review").GitReviewDiff }
   | { kind: "review"; featureCwd: string; review: import("./git-review").GitReview; selection: import("./git-review").GitReviewSelection; diff: import("./git-review").GitReviewDiff }
   | { kind: "checks"; featureCwd: string; targetCwd: string; targetBranch: string; featureBranch: string; checks: import("./git-workflow-policy").GitWorkflowCheck[] }
-  | { kind: "integration"; featureCwd: string; targetCwd: string; plan: import("./git-integration").IntegrationPlan; receipts: import("./git-verification").VerificationReceipt[] }
+  | { kind: "integration"; featureCwd: string; targetCwd: string; plan: import("./git-integration").IntegrationPlan | import("./git-integration").FastForwardIntegrationPlan; receipts: import("./git-verification").VerificationReceipt[] }
 ) & { /** Read-only history identity, not an approval capability. */ actionId?: string };
 
 export type ExtensionUiRequest =

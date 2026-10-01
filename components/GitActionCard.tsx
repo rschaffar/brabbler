@@ -150,10 +150,11 @@ function CandidateDetails({ candidate }: { candidate: Omit<GitActionCandidateSna
       {candidate.candidateTreeOid && <><dt>Candidate tree</dt><dd className="font-mono">{candidate.candidateTreeOid}</dd></>}
       {candidate.featureOid && <><dt>Feature</dt><dd className="font-mono">{candidate.featureOid}</dd></>}
       {candidate.targetOid && <><dt>Target</dt><dd className="font-mono">{candidate.targetOid}</dd></>}
+      {candidate.integrationMethod && <><dt>Integration method</dt><dd>{candidate.integrationMethod === "ff" ? "Fast-forward to existing feature tip (no new merge commit)" : "Unsigned non-fast-forward merge"}</dd></>}
       {candidate.mergeOid && <><dt>Proposed merge</dt><dd className="font-mono">{candidate.mergeOid}</dd></>}
       {candidate.message && <><dt>Message</dt><dd className="whitespace-pre-wrap break-words">{candidate.message}</dd></>}
     </dl>
-    {candidate.paths && <div>Complete paths<ul className="max-h-48 overflow-auto font-mono">{candidate.paths.map((path) => <li key={path} className="break-all">{path}</li>)}</ul></div>}
+    {candidate.paths && <div>{candidate.commitMode === "staged" ? "Selected staged index paths" : candidate.commitMode === "whole-file" ? "Selected whole-file paths" : "Selected paths (legacy mode not recorded)"}<ul className="max-h-48 overflow-auto font-mono">{candidate.paths.map((path) => <li key={path} className="break-all">{path}</li>)}</ul></div>}
     {candidate.selection && <p className="break-all">Comparison: {candidate.selection.kind === "merge" ? "Target tree → proposed merge-result tree" : `Consecutive commits: ${candidate.selection.commitOids.join(", ")}`}</p>}
     {candidate.checks && <ol className="list-inside list-decimal">{candidate.checks.map((check, index) => <li key={index} className="break-all">{check.label} · <code>{JSON.stringify(check.argv)}</code></li>)}</ol>}
   </div>;

@@ -93,6 +93,27 @@ test("expand shows captured identities and honest missing/corrupt/oversized plac
   assert.match(render({ expanded: true, artifact: { record, candidate: { ...record.summary, diffUnavailable: "Patch not captured" } } }), /Patch not captured/);
 });
 
+test("staged history names the index source; old cards do not assume whole-file mode", () => {
+  const staged = { ...record, summary: { ...record.summary, commitMode: "staged" } };
+  const html = render({ history: { record: staged }, expanded: true,
+    artifact: { record: staged, candidate: { ...staged.summary, diffUnavailable: "Patch not captured" } } });
+  assert.match(html, /Selected staged index paths/);
+  const legacy = render({ expanded: true, artifact: { record, candidate: { ...record.summary, diffUnavailable: "Patch not captured" } } });
+  assert.match(legacy, /Selected paths \(legacy mode not recorded\)/);
+  assert.doesNotMatch(legacy, /Selected whole-file paths/);
+});
+
+test("fast-forward history records the existing tip without inventing a merge object", () => {
+  const ff = { ...record, kind: "integration", summary: { kind: "integration", repositoryRoot: "/repo/feature",
+    integrationMethod: "ff", featureOid: oid("c"), targetOid: oid("a") },
+    outcome: { status: "integrated", featureOid: oid("c"), targetOid: oid("a"), tree: oid("b"), parents: [oid("a")] } };
+  const html = render({ history: { record: ff }, expanded: true,
+    artifact: { record: ff, candidate: { ...ff.summary, diffUnavailable: "Patch not captured" } } });
+  assert.match(html, /Fast-forward to existing feature tip \(no new merge commit\)/);
+  assert.doesNotMatch(html, /Proposed merge:|Merged commit:/);
+  assert.match(html, /Parents/);
+});
+
 test("artifact request is gated on expansion; no focus theft, model calls or approval reconstruction", async () => {
   const source = await readFile(new URL("./GitActionCard.tsx", import.meta.url), "utf8");
   assert.match(source, /if \(!expanded \|\| !sessionId \|\| liveRequest\) return/);

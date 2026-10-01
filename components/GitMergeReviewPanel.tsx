@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { GitCheckRecoveryPanel } from "./GitCheckRecoveryPanel";
 import type { GitReview, GitReviewDiff, GitReviewSelection } from "@/lib/git-review";
-import type { IntegrationPlan, IntegrationResult } from "@/lib/git-integration";
+import type { LocalIntegrationPlan, LocalIntegrationResult } from "@/lib/git-integration";
 
 type ReceiptMetadata = { id: string; checkIndex: number; startedAt: number; finishedAt: number; logDigest: string };
 type IntegrationStatus = {
@@ -11,10 +11,10 @@ type IntegrationStatus = {
   checks: { checkIndex: number; label: string }[];
   receipts: ReceiptMetadata[];
 };
-type Proposal = { actionId: string; plan: IntegrationPlan };
-type IntegrationResponse = IntegrationResult & { actionId: string; recoveryWarning?: string };
+type Proposal = { actionId: string; plan: LocalIntegrationPlan };
+type IntegrationResponse = LocalIntegrationResult & { actionId: string; recoveryWarning?: string };
 
-export function proposalMatches(plan: IntegrationPlan, review: GitReview, sessionId: string, receipts: ReceiptMetadata[]): boolean {
+export function proposalMatches(plan: LocalIntegrationPlan, review: GitReview, sessionId: string, receipts: ReceiptMetadata[]): boolean {
   return !!plan && !!plan.planId && plan.sessionId === sessionId && plan.expiresAt > Date.now() &&
     sameReview(plan.review, review) && Array.isArray(plan.receiptIds) &&
     plan.receiptIds.length === receipts.length && plan.receiptIds.every((id, index) => id === receipts[index].id) &&
@@ -197,7 +197,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
         if (sameReview(latest.review, review) && body.receipt.id && latest.receipts.some((receipt) => receipt.id === body.receipt.id)) setIntegration(latest);
         else throw new Error("Verification receipt no longer matches this checkout. Refresh before continuing.");
       } else if (action === "plan") {
-        const body = await bodyOrError<{ plan: IntegrationPlan; actionId: string }>(response, sessionId);
+        const body = await bodyOrError<{ plan: LocalIntegrationPlan; actionId: string }>(response, sessionId);
         if (version !== integrationGeneration.current) return;
         const plan = body.plan;
         if (!proposalMatches(plan, review, sessionId, receipts!)) {
@@ -359,9 +359,16 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
           <dt>Target branch and expected commit OID</dt><dd>{proposal.plan.review.targetBranch}: {proposal.plan.review.targetOid}</dd>
           <dt>Feature tree OID</dt><dd>{proposal.plan.review.featureTreeOid}</dd>
           <dt>Target tree OID</dt><dd>{proposal.plan.review.targetTreeOid}</dd>
-          <dt>Merge result tree OID</dt><dd>{proposal.plan.review.mergeTreeOid}</dd>
-          <dt>Exact merge commit OID</dt><dd>{proposal.plan.mergeOid}</dd>
-          <dt>Merge message</dt><dd>{proposal.plan.message}</dd>
+          <dt>Result tree OID</dt><dd>{proposal.plan.review.mergeTreeOid}</dd>
+          {"method" in proposal.plan ? <>
+            <dt>Method</dt><dd>Fast-forward to existing feature commit (no new merge commit)</dd>
+            <dt>Exact resulting target OID</dt><dd>{proposal.plan.featureOid}</dd>
+            <dt>Existing tip parents</dt><dd>{proposal.plan.parents.join(", ")}</dd>
+          </> : <>
+            <dt>Method</dt><dd>Unsigned non-fast-forward merge</dd>
+            <dt>Exact merge commit OID</dt><dd>{proposal.plan.mergeOid}</dd>
+            <dt>Merge message</dt><dd>{proposal.plan.message}</dd>
+          </>}
           <dt>Verification receipt IDs (saved check order)</dt><dd><ol>{proposal.plan.receiptIds.map((id, index) => <li key={id}>{index + 1}: {id}</li>)}</ol></dd>
           <dt>Candidate comparison trees</dt><dd>{proposal.plan.diff.fromTreeOid} → {proposal.plan.diff.toTreeOid}</dd>
         </dl>
@@ -374,7 +381,9 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
       </div>}
       {result && <div role="status" className="space-y-1 rounded border border-amber-500 p-2 text-xs">
         <strong>{result.status === "integrated" ? "Local integration completed" : "Partial state — inspect manually; do not retry"}</strong>
-        <p className="break-all font-mono">Target: {result.targetBranch}; {result.status === "integrated" ? "merge commit" : "intended merge commit (ref update unproven)"}: {result.mergeOid}</p>
+        <p className="break-all font-mono">Target: {result.targetBranch}; {"method" in result
+          ? `${result.status === "integrated" ? "fast-forwarded to existing feature tip" : "intended fast-forward (ref update unproven)"}: ${result.featureOid}`
+          : `${result.status === "integrated" ? "merge commit" : "intended merge commit (ref update unproven)"}: ${result.mergeOid}`}</p>
         {result.status === "partial-state" && <p className="break-all text-amber-500">{result.reason} Recovery record: {result.recoveryPath}. Inspect both worktrees, refs and index before any further action. Do not retry blindly.</p>}
         {result.recoveryWarning && <p role="alert" className="text-amber-500">{result.recoveryWarning}</p>}
       </div>}

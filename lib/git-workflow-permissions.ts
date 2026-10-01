@@ -75,8 +75,11 @@ export function managedGitPermission(
     if (stage === "workspace" && !task.baseBranch) {
       return blocked("missing-worktree-base", "This task has no captured worktree base. For one create-only worktree the agent can propose an exact-approved local base; to use automatic chat continuation, Stop the run and Save/Apply the base in Workflow.");
     }
-    if ((stage === "integration" || stage === "checks") && (!task.targetBranch || task.method !== "merge" || !task.checks.length)) {
-      return blocked("missing-integration-setup", "This task needs a local non-FF merge target and ordered checks. Configure and apply them in Workflow.");
+    if (stage === "integration" && task.delivery !== "local") {
+      return blocked("delivery-no-local-integration", "This captured task does not authorize local integration.");
+    }
+    if ((stage === "integration" || stage === "checks") && (!task.targetBranch || !["merge", "ff"].includes(task.method) || !task.checks.length)) {
+      return blocked("missing-integration-setup", "This task needs a local FF/non-FF target and ordered checks. Configure and apply them in Workflow.");
     }
   }
   if (stage === "workspace" && actor === "agent" && state.task.kind !== "managed") {

@@ -6,7 +6,7 @@ import { failGitAction, gitActionFailureResult, snapshotGitActionCandidate, GitA
 import { finishHumanGitAction, humanGitActionSink, HumanGitCandidateError, HumanGitSessionChangedError, keepHumanGitCandidate, readHumanGitSessionManager, takeHumanGitCandidate } from "@/lib/git-action-human";
 import { GIT_ACTION_ID_PATTERN, type GitActionCandidateSnapshot } from "@/lib/git-action-types";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
-import { confirmGitCommit, prepareGitCommit, GitCommitOperationError, type GitCommitPreview } from "@/lib/git-commit";
+import { confirmGitCommit, prepareGitCommit, GitCommitOperationError, type GitCommitMode, type GitCommitPreview } from "@/lib/git-commit";
 import { acquireGitCheckoutGate, isGitCheckoutGated, GitCheckoutBusyError } from "@/lib/git-checkout-gate";
 import { getGitCommitTreeOid, getGitTreeDiff, GitReviewError, GIT_REVIEW_DIFF_MAX_BYTES } from "@/lib/git-review";
 import { samePath } from "@/lib/paths";
@@ -61,11 +61,13 @@ export async function POST(req: Request) {
         return error("Select paths to commit", 400);
       }
       if (typeof input.message !== "string" || !input.message.trim() || input.message.includes("\0")) return error("Preview requires the exact commit message", 400);
+      if (input.mode !== undefined && input.mode !== "whole-file" && input.mode !== "staged") return error("Invalid commit mode", 400);
+      const mode = (input.mode ?? "whole-file") as GitCommitMode;
       // Also serialize metadata appends with managed checkout/session operations.
       const release = acquireGitCheckoutGate([cwd]);
       try {
         await guard();
-        const preview = await prepareGitCommit(cwd, input.paths);
+        const preview = await prepareGitCommit(cwd, input.paths, mode);
         // Both OIDs come from the server's prepared snapshot, never the request body.
         const headTree = await getGitCommitTreeOid(cwd, preview.head);
         let candidateDiff;
@@ -79,7 +81,7 @@ export async function POST(req: Request) {
         const snapshot: GitActionCandidateSnapshot = candidateDiff
           ? snapshotGitActionCandidate({ kind: "commit", preview, message: input.message, diff: candidateDiff })
           : { kind: "commit", repositoryRoot: cwd, featureBranch: preview.branch, message: input.message,
-            paths: [...preview.paths], parentOid: preview.head, candidateTreeOid: preview.tree, diffUnavailable: candidateDiffUnavailable };
+            commitMode: preview.mode, paths: [...preview.paths], parentOid: preview.head, candidateTreeOid: preview.tree, diffUnavailable: candidateDiffUnavailable };
         await guard();
         const action = await keepHumanGitCandidate(humanGitActionSink(scope), scope, { kind: "commit", preview, message: input.message }, snapshot);
         return NextResponse.json({ ...action, preview, ...(candidateDiff ? { candidateDiff } : { candidateDiffUnavailable }) });
@@ -89,7 +91,7 @@ export async function POST(req: Request) {
       const preview = input.preview as GitCommitPreview | undefined;
       if (!preview || typeof preview !== "object" || Array.isArray(preview) ||
         typeof preview.repositoryRoot !== "string" || !samePath(preview.repositoryRoot, cwd) ||
-        typeof preview.reviewToken !== "string" || typeof preview.tree !== "string" ||
+        typeof preview.reviewToken !== "string" || typeof preview.tree !== "string" || !["whole-file", "staged"].includes(preview.mode) ||
         typeof preview.branch !== "string" || typeof preview.head !== "string" ||
         !Array.isArray(preview.paths) || !preview.paths.every((p) => typeof p === "string") ||
         typeof input.message !== "string" || typeof input.actionId !== "string" || !GIT_ACTION_ID_PATTERN.test(input.actionId)) return error("Invalid or mismatched preview; prepare a new preview", 409);

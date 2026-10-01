@@ -63,6 +63,14 @@ test("read-only diff displays exact tree identities and binary summaries, discar
   assert.doesNotMatch(panel, /dangerouslySetInnerHTML|Confirm merge|onClick=.*approve/i);
 });
 
+test("exact proposal and outcome distinguish FF from a newly created merge commit", () => {
+  assert.match(panel, /Fast-forward to existing feature commit \(no new merge commit\)/);
+  assert.match(panel, /Exact resulting target OID/);
+  assert.match(panel, /fast-forwarded to existing feature tip/);
+  assert.match(panel, /intended fast-forward \(ref update unproven\)/);
+  assert.match(panel, /Exact merge commit OID/);
+});
+
 test("server-matched receipts require every saved check in order, current snapshot and unexpired metadata", () => {
   const snapshot = { ...review, featureBranch: "feature", targetBranch: "main", featureOid: oid(9), targetOid: oid(2), featureTreeOid: oid(20), targetTreeOid: oid(21), mergeTreeOid: oid(20) };
   const now = Date.now();

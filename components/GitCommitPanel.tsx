@@ -73,6 +73,7 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
+  const [mode, setMode] = useState<"whole-file" | "staged">("whole-file");
   const [message, setMessage] = useState("");
   const [candidate, setCandidate] = useState<CommitCandidate | null>(null);
   const preview = candidate?.preview ?? null;
@@ -114,13 +115,18 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
   async function submitPreview(event: FormEvent) {
     event.preventDefault();
     if (disabled || !available || !selected.length || !message.trim() || operationRef.current) return;
+    const paths = mode === "staged" ? [...new Set(selected.flatMap((picked) => {
+      const file = status?.files.find((entry) => relativePath(root!, entry.filePath) === picked);
+      return file?.indexStatus === "R" && file.originalFilePath
+        ? [relativePath(root!, file.originalFilePath), picked] : [picked];
+    }))] : selected;
     operationRef.current = true;
     const version = ++generation.current;
     setOperation("preview"); setCandidate(null); setError(null);
     try {
       const response = await fetch("/api/git/commit", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ operation: "preview", sessionId, paths: selected, message }),
+        body: JSON.stringify({ operation: "preview", sessionId, paths, mode, message }),
       });
       const body = await responseBody<CommitCandidate>(response, sessionId);
       if (generation.current === version) setCandidate(body);
@@ -156,20 +162,28 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
 
   return <section className="git-panel-content min-w-0 text-sm text-text" aria-label="Review & commit panel">
     <div className="space-y-2">
-      <p className="text-xs text-text-muted">Session checkout: <span className="break-all font-mono">{cwd}</span>. Nothing is staged or committed until you confirm.</p>
+      <p className="text-xs text-text-muted">Session checkout: <span className="break-all font-mono">{cwd}</span>. Preview changes no index or ref; staged mode uses content already staged before confirmation.</p>
       <button type="button" disabled={operation !== null} onClick={refresh} className="text-xs text-accent hover:underline disabled:opacity-50">Refresh changed files</button>
       {statusError && <p role="alert" className="text-red-400">Status unavailable: {statusError}</p>}
       {!status && !statusError && <p role="status">Loading changed files…</p>}
       {status && !status.isGitRepository && <p>Not a Git repository.</p>}
       {status?.isGitRepository && !atRoot && <p role="alert" className="text-amber-500">This session cwd is not the checkout root ({root}). Commit preview requires a session at the checkout root.</p>}
       {status?.isGitRepository && root && <form onSubmit={(event) => void submitPreview(event)} className="space-y-2">
-        <p className="text-xs text-text-muted">Select complete changed files (none selected by default). Staged changes or conflicts may make preview unavailable.</p>
+        <label className="block text-xs">Commit source
+          <select value={mode} disabled={disabled} onChange={(event) => { invalidate(); setSelected([]); setMode(event.target.value as typeof mode); }}
+            className="ml-2 rounded border border-border bg-bg p-1 text-text disabled:opacity-50">
+            <option value="whole-file">Whole files from working tree</option>
+            <option value="staged">Only selected staged index entries</option>
+          </select>
+        </label>
+        <p className="text-xs text-text-muted">{mode === "staged" ? "Select changed index entries. Unstaged changes and unrelated staged entries remain; a staged rename includes both source and destination." : "Select complete changed files (none selected by default). Staged changes or conflicts may make preview unavailable."}</p>
         {status.files.length === 0 ? <p>No changed files.</p> : <ul className="space-y-1">
           {status.files.map((file) => {
             const path = relativePath(root!, file.filePath);
+            const unavailable = mode === "staged" && (file.indexStatus === " " || file.indexStatus === "?" || file.status === "conflict" || file.indexStatus === "R" && !file.originalFilePath);
             return <li key={file.filePath} className="min-w-0 rounded border border-border px-2 py-1">
               <label className="flex min-w-0 items-start gap-2">
-                <input type="checkbox" className="mt-1" checked={selected.includes(path)} disabled={disabled}
+                <input type="checkbox" className="mt-1" checked={selected.includes(path)} disabled={disabled || unavailable}
                   onChange={(event) => { invalidate(); setSelected((old) => event.target.checked ? [...old, path] : old.filter((item) => item !== path)); }} />
                 <span className="min-w-0 break-all font-mono text-xs">{path} <span className="font-sans text-text-muted">({file.status}; index {file.indexStatus}, worktree {file.worktreeStatus})</span></span>
               </label>
@@ -177,7 +191,7 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
             </li>;
           })}
         </ul>}
-        <p className="text-xs text-amber-500">Working-tree diffs above are read-only aids, NOT the authoritative commit candidate. Preview identifies the exact whole-file tree; selected files include all their contents, not just visible hunks. Binary, large and unsupported diffs may have no patch here.</p>
+        <p className="text-xs text-amber-500">Working-tree diffs above are read-only aids, NOT the authoritative commit candidate. Preview identifies the exact {mode === "staged" ? "selected index" : "whole-file"} tree. {mode === "staged" ? "Only selected staged content is committed; other staged and unstaged content remains." : "Selected files include all their contents, not just visible hunks."} Binary, large and unsupported diffs may have no patch here.</p>
         <label className="block text-xs">Commit message
           <textarea value={message} disabled={disabled} rows={3} onChange={(event) => { invalidate(); setMessage(event.target.value); }}
             className="mt-1 block w-full rounded border border-border bg-bg p-2 text-text disabled:opacity-50" />
@@ -186,9 +200,9 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
       </form>}
       {preview && available && <div className="space-y-2 rounded border border-amber-500/50 p-3" aria-label="Commit preview">
         <strong>Review exact commit candidate</strong>
-        <p className="text-xs text-amber-500">Whole files will be committed. Diffs above are not the candidate and unsupported diffs do not exclude a file. Re-preview if the checkout changes.</p>
+        <p className="text-xs text-amber-500">{preview.mode === "staged" ? "Only the selected index entries will be committed; other staged and unstaged changes remain." : "Whole files will be committed."} Diffs above are not the candidate and unsupported diffs do not exclude a file. Re-preview if the checkout changes.</p>
         <dl className="space-y-1 break-all font-mono text-xs">
-          <dt>Branch</dt><dd>{preview.branch}</dd><dt>HEAD (parent)</dt><dd>{preview.head}</dd><dt>Candidate tree</dt><dd>{preview.tree}</dd>
+          <dt>Mode</dt><dd>{preview.mode}</dd><dt>Branch</dt><dd>{preview.branch}</dd><dt>HEAD (parent)</dt><dd>{preview.head}</dd><dt>Candidate tree</dt><dd>{preview.tree}</dd>
           <dt>Exact review token</dt><dd>{preview.reviewToken}</dd>
           <dt>Exact selected paths</dt><dd><ul>{preview.paths.map((path) => <li key={path}>{path}</li>)}</ul></dd>
         </dl>

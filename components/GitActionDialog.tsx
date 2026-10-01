@@ -25,12 +25,16 @@ export function GitActionDialog({ request, onRespond }: {
   const merging = candidate.kind === "integration";
   return <section role="group" aria-labelledby={titleId} className="my-4 min-w-0 overflow-hidden rounded-lg border border-border bg-bg text-sm text-text">
     <header className="border-b border-border px-4 py-3">
-      <h3 id={titleId} className="font-semibold">{choosing ? "Choose Git workflow preferences" : committing ? "Review exact commit" : checking ? "Authorize ordered checks" : merging ? "Approve exact local merge" : "Review local Git comparison"}</h3>
+      <h3 id={titleId} className="font-semibold">{choosing ? "Choose Git workflow preferences" : committing ? "Review exact commit" : checking ? "Authorize ordered checks" : merging ? "method" in candidate.plan ? "Approve exact local fast-forward" : "Approve exact local merge" : "Review local Git comparison"}</h3>
       <p className="mt-1 text-xs text-text-muted">{choosing ? "These choices are saved for this chat only. No checks run and no commit, merge, cleanup or remote action is approved. Later actions require separate review and approval."
         : committing
-        ? "Only the selected complete files and this exact message will be committed after your approval. No merge, cleanup or remote action."
+        ? candidate.preview.mode === "staged"
+          ? "Only the selected staged index entries and this exact message will be committed after your approval. Other staged and unstaged changes remain. No merge, cleanup or remote action."
+          : "Only the selected complete working-tree files and this exact message will be committed after your approval. No merge, cleanup or remote action."
         : checking ? "These commands can execute project code and modify files. Approval here runs checks only, NOT the merge. No shell, cleanup or remote action."
-        : merging ? "A separate approval of this exact plan updates the local target with an unsigned non-fast-forward merge. No cleanup or remote action."
+        : merging ? "method" in candidate.plan
+          ? "A separate approval of this exact plan fast-forwards the local target to the existing feature tip. No merge commit, cleanup or remote action."
+          : "A separate approval of this exact plan updates the local target with an unsigned non-fast-forward merge. No cleanup or remote action."
         : "Read-only comparison. Acknowledging this card does not approve or perform a merge, cleanup or remote action."}</p>
       <p className="mt-1 text-xs text-text-muted">{request.expiresAt === undefined
         ? "Waits for your response or Stop; no automatic response timeout."
@@ -64,8 +68,13 @@ export function GitActionDialog({ request, onRespond }: {
           <dt>Feature</dt><dd>{candidate.plan.review.featureBranch} · {candidate.plan.review.featureOid} · {candidate.featureCwd}</dd>
           <dt>Target</dt><dd>{candidate.plan.review.targetBranch} · {candidate.plan.review.targetOid} · {candidate.targetCwd}</dd>
           <dt>Result tree</dt><dd>{candidate.plan.review.mergeTreeOid}</dd>
-          <dt>Merge commit</dt><dd>{candidate.plan.mergeOid}</dd>
-          <dt>Message</dt><dd>{candidate.plan.message}</dd>
+          {"method" in candidate.plan ? <>
+            <dt>Fast-forward target to</dt><dd>{candidate.plan.featureOid}</dd>
+            <dt>Existing tip parents</dt><dd>{candidate.plan.parents.join(", ")}</dd>
+          </> : <>
+            <dt>Merge commit</dt><dd>{candidate.plan.mergeOid}</dd>
+            <dt>Message</dt><dd>{candidate.plan.message}</dd>
+          </>}
           <dt>Plan ID</dt><dd className="font-mono">{candidate.plan.planId}</dd>
           <dt>Verification plan expires</dt><dd>{new Date(candidate.plan.expiresAt).toLocaleString()}</dd>
         </dl>
@@ -76,10 +85,11 @@ export function GitActionDialog({ request, onRespond }: {
         </li>)}</ol>
       </div> : committing ? <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-xs">
         <dt>Checkout</dt><dd className="break-all">{candidate.preview.repositoryRoot}</dd>
+        <dt>Commit source</dt><dd>{candidate.preview.mode === "staged" ? "Selected staged index entries" : "Complete working-tree files"}</dd>
         <dt>Branch</dt><dd className="break-all">{candidate.preview.branch}</dd>
         <dt>Parent</dt><dd className="break-all font-mono">{candidate.preview.head}</dd>
         <dt>Candidate tree</dt><dd className="break-all font-mono">{candidate.preview.tree}</dd>
-        <dt>Complete paths</dt><dd className="break-all">{candidate.preview.paths.join(", ")}</dd>
+        <dt>Selected {candidate.preview.mode === "staged" ? "staged index" : "whole-file"} paths</dt><dd className="break-all">{candidate.preview.paths.join(", ")}</dd>
         <dt>Message</dt><dd className="whitespace-pre-wrap break-words">{candidate.message}</dd>
       </dl> : <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-xs">
         <dt>Feature</dt><dd className="break-all">{candidate.review.featureBranch} · <span className="font-mono">{candidate.review.featureOid}</span> · {candidate.featureCwd}</dd>
@@ -98,9 +108,9 @@ export function GitActionDialog({ request, onRespond }: {
       </details>}
     </div>
     <footer className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3">
-      <button type="button" onClick={() => onRespond(request, { cancelled: true })} className="rounded border border-border px-3 py-2">{choosing ? "Cancel" : committing ? "Decline commit" : checking ? "Decline checks" : merging ? "Decline merge" : "Dismiss"}</button>
+      <button type="button" onClick={() => onRespond(request, { cancelled: true })} className="rounded border border-border px-3 py-2">{choosing ? "Cancel" : committing ? "Decline commit" : checking ? "Decline checks" : merging ? "method" in candidate.plan ? "Decline fast-forward" : "Decline merge" : "Dismiss"}</button>
       <button type="button" disabled={choosing && !target} onClick={() => onRespond(request, choosing ? { preferences: { targetBranch: target, method: "merge", checkIndexes: selected, mode, cleanup } } : merging ? { approvePlanId: candidate.plan.planId } : { confirmed: true })}
-        className="rounded bg-accent px-3 py-2 text-[var(--accent-contrast)] disabled:opacity-50">{choosing ? "Save chat preferences" : committing ? "Approve exact commit" : checking ? "Run these checks" : merging ? "Approve exact local merge" : "I reviewed this comparison"}</button>
+        className="rounded bg-accent px-3 py-2 text-[var(--accent-contrast)] disabled:opacity-50">{choosing ? "Save chat preferences" : committing ? "Approve exact commit" : checking ? "Run these checks" : merging ? "method" in candidate.plan ? "Approve exact local fast-forward" : "Approve exact local merge" : "I reviewed this comparison"}</button>
     </footer>
   </section>;
 }
