@@ -26,6 +26,7 @@ import { GitMergeReviewPanel } from "./GitMergeReviewPanel";
 import { GitActionDialog } from "./GitActionDialog";
 import { GitActionLiveFallback, GitActionProvider } from "./GitActionContext";
 import { gitActionId } from "@/lib/git-action-ui";
+import { shouldFollowWorkspaceTransition } from "@/lib/git-workspace-transition-follow";
 import { gitSettingsProposalId } from "@/lib/git-settings-proposal-ui";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
@@ -366,6 +367,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           setWorkspaceTransitionNotice(`Workspace transition needs manual recovery. The worktree was retained at ${transition.destinationPath}${transition.newSessionId ? ` (fork ${transition.newSessionId} retained)` : ""}. Inspect the session and worktree before continuing.`);
         } else if (transition.status === "succeeded") {
           handledWorkspaceTransitionRef.current = transition.nonce;
+          // A continue receipt survives the move and every later page load.
+          // Following it again remounts this chat and starts the poll again.
+          if (!shouldFollowWorkspaceTransition(transition, session.cwd)) return;
           try {
             if (transition.action === "fork" && transition.newSessionId) {
               workspaceCallbacksRef.current.onSessionForkedToWorktree?.(transition.newSessionId, transition.destinationPath);
@@ -385,7 +389,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     const onVisibility = () => { if (!document.hidden) void poll(); };
     document.addEventListener("visibilitychange", onVisibility);
     return () => { stopped = true; window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisibility); };
-  }, [session?.id, session?.relation?.kind]);
+  }, [session?.id, session?.cwd, session?.relation?.kind]);
   const [quotedSelection, setQuotedSelection] = useState<{
     text: string;
     top: number;
