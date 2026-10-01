@@ -1,6 +1,9 @@
 {
   lib,
   buildNpmPackage,
+  fetchNpmDeps,
+  git,
+  nodejs,
   noto-fonts,
   src,
   piCli ? null,
@@ -30,7 +33,10 @@ assert lib.assertMsg (piCli == null || mismatched == [ ]) (
 buildNpmPackage {
   pname = "pi-web";
   version = manifest.version;
-  inherit src;
+  inherit src nodejs;
+  # The same lockfile-derived, fixed-output npm cache is used by the dev shell.
+  npmDeps = import ./npm-deps.nix { inherit fetchNpmDeps src; };
+  npmDepsFetcherVersion = 2;
 
   # The normal Next build downloads a Google font. Nix builds are offline.
   postPatch = ''
@@ -41,9 +47,10 @@ buildNpmPackage {
     cp ${noto-fonts}/share/fonts/noto/NotoSansMono.ttf app/NotoSansMono.ttf
   '';
 
-  npmDepsHash = "sha256-jtDjDsXF51IrMCf3sEjY6NAXwWMRgNp6P/mXmVxlk3g=";
-  npmDepsFetcherVersion = 2;
   npmRebuildFlags = [ "node-pty" ];
+  # `nix run` and systemd user services must find the pinned Node/npm and Git
+  # without depending on the invoking shell's PATH.
+  makeWrapperArgs = [ "--prefix" "PATH" ":" (lib.makeBinPath [ nodejs git ]) ];
 
   meta = {
     description = "Web UI for the Pi coding agent";

@@ -10,7 +10,7 @@ import { createJiti } from "jiti";
 
 const home = await mkdtemp(join(tmpdir(), "pi-web-integration-route-home-"));
 const agentDir = join(home, "agent");
-await mkdir(agentDir);
+await mkdir(agentDir, { mode: 0o700 });
 const previous = Object.fromEntries(["HOME", "XDG_CONFIG_HOME", "PI_CODING_AGENT_DIR"].map((key) => [key, process.env[key]]));
 Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: join(home, ".config"), PI_CODING_AGENT_DIR: agentDir });
 // Only this node:test import wraps the real verification engine with the
