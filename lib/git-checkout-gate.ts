@@ -25,7 +25,7 @@ export class GitCheckoutBusyError extends Error {
   constructor() { super("Git checkout is busy with another local transaction"); }
 }
 
-/** Atomically reserve both source and target before checking for already-running sessions. */
+/** Atomically reserve both source and target against other in-process checkout transactions and new tool calls. */
 export function acquireGitCheckoutGate(cwds: readonly string[]): () => void {
   const paths = state().paths;
   if (cwds.some((cwd) => isGitCheckoutGated(cwd))) {
@@ -76,7 +76,7 @@ export function createGitCheckoutOperationGuard(options: {
   };
 }
 
-/** Never use around a human wait. Recheck existing writers inside the reservation. */
+/** Never use around a human wait. Native preflight and durable admission still recheck the candidate under this reservation. */
 export async function withGitCheckoutGate<T>(cwds: readonly string[], action: () => Promise<T>): Promise<T> {
   const release = acquireGitCheckoutGate(cwds);
   try { return await action(); }

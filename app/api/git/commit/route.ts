@@ -10,7 +10,6 @@ import { confirmGitCommit, prepareGitCommit, GitCommitOperationError, type GitCo
 import { acquireGitCheckoutGate, isGitCheckoutGated, GitCheckoutBusyError } from "@/lib/git-checkout-gate";
 import { getGitCommitTreeOid, getGitTreeDiff, GitReviewError, GIT_REVIEW_DIFF_MAX_BYTES } from "@/lib/git-review";
 import { samePath } from "@/lib/paths";
-import { hasConflictingRpcCheckoutOperation } from "@/lib/rpc-manager";
 import { readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
 import { beginSupervisedGitCommitIntent, revalidateGitCommitAdmission, selectGitCommitAdmission, GitOperationRecoveryError, type GitOperationReservation } from "@/lib/git-operation-admission";
 
@@ -53,7 +52,6 @@ export async function POST(req: Request) {
       await assertManagedGitWorkspace(state, cwd);
       const latestRoots = await getAllowedFileRoots();
       if (!isFilePathAllowed(cwd, latestRoots) || !isExistingFilePathAllowed(cwd, latestRoots)) throw new ManagedGitAccessError("Checkout no longer allowed");
-      if (hasConflictingRpcCheckoutOperation(cwd)) throw new ManagedGitAccessError("Stop checkout operations in this checkout before committing");
       req.signal.throwIfAborted();
       return manager;
     };

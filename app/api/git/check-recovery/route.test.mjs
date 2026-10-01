@@ -218,6 +218,11 @@ test("real OS failed-check recovery invalidates old capabilities and settles onc
   const evidence = readUnresolvedGitCheckRecovery(agentDir, selected.commonDir);
   assert.equal(evidence.source, "linux-systemd", "real check must record a validated OS post-check proof");
   assert.equal(evidence.cleanupProof?.empty, true);
+  const sessions = globalThis.__piSessions;
+  globalThis.__piSessions = new Map([...(sessions ?? []), ["another-active-chat", {
+    cwd: f.target, sessionId: "another-active-chat", isAlive: () => true, isRunning: () => true,
+  }]]);
+  t.after(() => { globalThis.__piSessions = sessions; });
   const preview = await (await get(f.id)).json();
   assert.equal(preview.eligible, true, JSON.stringify(preview));
   assert.equal(preview.actionId, actionId);

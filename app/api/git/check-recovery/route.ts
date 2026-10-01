@@ -20,7 +20,6 @@ import { readSessionGitWorkflow } from "@/lib/git-workflow-policy";
 import { readHumanGitSessionManager } from "@/lib/git-action-human";
 import { samePath } from "@/lib/paths";
 import { getProjectTrustStatus } from "@/lib/project-trust";
-import { hasConflictingRpcCheckoutOperation } from "@/lib/rpc-manager";
 import { readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
 import type { SessionEntry } from "@/lib/types";
 
@@ -89,8 +88,7 @@ async function scope(sessionId: string) {
 }
 type Scope = Awaited<ReturnType<typeof scope>>;
 function idle(s: Scope) {
-  return !isGitVerificationRunning(s.feature.cwd) && !isGitVerificationRunning(s.target.cwd) &&
-    !hasConflictingRpcCheckoutOperation(s.feature.cwd) && !hasConflictingRpcCheckoutOperation(s.target.cwd);
+  return !isGitVerificationRunning(s.feature.cwd) && !isGitVerificationRunning(s.target.cwd);
 }
 async function unitStopped(unit: string, invocation: string): Promise<boolean> {
   if (process.platform !== "linux" || !/^pi-web-git-check-[a-f0-9-]{36}\.service$/.test(unit) || !/^[a-fA-F0-9]{32}$/.test(invocation)) return false;

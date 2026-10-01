@@ -23,6 +23,7 @@ const { readGitAction, subscribeGitActionUpdates, transitionGitAction, releaseGi
 const { beginGitOperationIntent, inspectGitOperationAdmission } = await jiti.import("../../../../lib/git-operation-admission.ts");
 const { beginGitAction, gitActionSink } = await jiti.import("../../../../lib/git-action-controller.ts");
 const { AgentSessionWrapper } = await jiti.import("../../../../lib/rpc-manager.ts");
+const { acquireGitCheckoutGate } = await jiti.import("../../../../lib/git-checkout-gate.ts");
 const { selectGitProjectResources } = await jiti.import("../../../../lib/git-project-resources.ts");
 const { readProjectAuthorization, saveProjectAuthorization } = await jiti.import("../../../../lib/git-project-authorization.ts");
 const git = promisify(execFile);
@@ -73,14 +74,14 @@ test("missing session, invalid cwd input and unauthorized persisted checkout", a
   finally { globalThis.__piAllowedRootsCache = old; }
   assert.deepEqual(await actions(), before);
 });
-test("manual commit without policy, running rejection, checkout mismatch, stale preview and success", async (t) => {
+test("manual commit permits an active chat but rejects checkout mismatch and stale preview", async (t) => {
   const { cwd, id } = await fixture(t);
   const previous = globalThis.__piSessions;
   const live = { cwd, sessionId: id, isAlive: () => false, isRunning: () => true };
   globalThis.__piSessions = new Map([[id, live]]);
   t.after(() => { globalThis.__piSessions = previous; });
   await writeFile(join(cwd, "a"), "second\n");
-  assert.equal((await post(previewRequest(id))).status, 409);
+  assert.equal((await post(previewRequest(id))).status, 200);
   live.isRunning = () => false;
   const denied = await post(previewRequest(id, "approved", ["https://user:secret@example.invalid/repo"]));
   assert.equal(denied.status, 409);
@@ -134,7 +135,7 @@ test("saved Project/Chat Deny blocks browser preview and live revocation blocks 
   assert.equal((await (await post(confirmRequest(f.id, candidate))).json()).status, "committed");
 });
 
-test("another thinking/read-only chat permits browser commit; a parallel writer blocks confirmation without consuming approval", async (t) => {
+test("another active session permits browser commit; a Git transaction blocks confirmation without consuming approval", async (t) => {
   const f = await fixture(t);
   const previous = globalThis.__piSessions;
   let emit;
@@ -153,10 +154,12 @@ test("another thinking/read-only chat permits browser commit; a parallel writer 
   assert.equal(candidateResponse.status, 200, await candidateResponse.clone().text());
   const candidate = await candidateResponse.json();
   emit({ type: "tool_execution_start", toolCallId: "unsafe", toolName: "edit" });
-  assert.equal((await post(confirmRequest(f.id, candidate))).status, 409);
-  assert.equal((await history(candidate.actionId)).record.state, "awaiting-decision", "Admission failure must not consume approval");
-  emit({ type: "tool_execution_end", toolCallId: "unsafe" });
+  const release = acquireGitCheckoutGate([f.cwd]);
+  try { assert.equal((await post(confirmRequest(f.id, candidate))).status, 409); }
+  finally { release(); }
+  assert.equal((await history(candidate.actionId)).record.state, "awaiting-decision", "A concurrent transaction must not consume approval");
   assert.equal((await (await post(confirmRequest(f.id, candidate))).json()).status, "committed");
+  emit({ type: "tool_execution_end", toolCallId: "unsafe" });
 });
 
 test("an unresolved check child quarantines the physical resource across browser sessions without touching HEAD", async (t) => {

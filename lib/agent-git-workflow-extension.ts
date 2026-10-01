@@ -25,7 +25,6 @@ import { runGitVerification } from "./git-verification";
 import { validateGitWorkflowPolicy, type GitWorkflowCheck, validLocalBranchName } from "./git-workflow-policy";
 import { getProjectTrustStatus } from "./project-trust";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "./file-access";
-import { hasConflictingRpcCheckoutOperation } from "./rpc-manager";
 import { samePath, toNativePath } from "./paths";
 import { selectGitWorkspace } from "./git-workspace-selector";
 import type { GitActionCandidate } from "./types";
@@ -40,7 +39,6 @@ const INTEGRATION_PREAPPROVAL_DIAGNOSTICS = {
   checks: "Integration check validation could not complete. Inspect the ordered check labels and executable/argument bounds (including UTF-8 bytes).",
   target: "Integration target checkout validation could not complete. Inspect the local target branch, its distinct registered physical checkout, and allowed roots.",
   trust: "Integration trust validation could not complete. Inspect project trust for both registered checkouts.",
-  busy: "Integration session-busy validation could not complete. Inspect running or starting sessions in both registered checkouts.",
   admission: "Integration Git-resource admission could not complete. Inspect unfinished checks, integration and durable action history for this repository.",
   journal: "Integration check-candidate journaling could not complete. Inspect durable Git action history availability and candidate bounds.",
 } as const;
@@ -311,10 +309,6 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 preApprovalStage("trust");
                 return getProjectTrustStatus(workspace, agentDir).trusted && getProjectTrustStatus(target, agentDir).trusted;
               };
-              const idle = () => {
-                preApprovalStage("busy");
-                return !hasConflictingRpcCheckoutOperation(workspace, sessionId, _id) && !hasConflictingRpcCheckoutOperation(target, sessionId, _id);
-              };
               const guardedPolicy = async () => {
                 preApprovalStage("permission");
                 const current = await guard("integration");
@@ -327,7 +321,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
               };
               const valid = async () => {
                 await guardedPolicy();
-                if (signal?.aborted || !trusted() || !idle()) return false;
+                if (signal?.aborted || !trusted()) return false;
                 preApprovalStage("workspace");
                 if (!samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) return false;
                 preApprovalStage("target");
@@ -338,7 +332,6 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 return (await featureBranch(workspace)) === branch && !signal?.aborted;
               };
               if (!trusted()) return failure("Trust both registered checkouts before integration");
-              if (!idle()) return failure("A checkout operation is active; wait for it to finish before integration");
               if (!await valid()) return failure("Checkout selection or authorization changed before integration");
               preApprovalStage("admission");
               const resources = await selectGitProjectResources(workspace);
@@ -362,7 +355,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 // No gate while the browser is answering. Reserve both checkouts only during execution.
                 const releaseChecks = acquireGitCheckoutGate([workspace, target]);
                 try {
-                  if (!await valid()) throw new ManagedGitAccessError("Checkout became busy or untrusted before verification");
+                  if (!await valid()) throw new ManagedGitAccessError("Checkout selection or trust changed before verification");
                   await checkAction.update("executing", { decision: "approved" });
                   for (let i = 0; i < checks.length; i++) {
                     if (!await valid()) throw new ManagedGitAccessError("Verification cancelled or checkout changed");
@@ -382,7 +375,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 } else await failGitAction(checkAction, false, signal, cause);
                 throw cause;
               } finally { checkAction.release(); }
-              if (!await valid()) return failure("Checkout became busy or untrusted after verification");
+              if (!await valid()) return failure("Checkout selection or trust changed after verification");
               const plan = await prepareIntegration({ sessionId, cwd: workspace, agentDir, featureBranch: branch,
                 receiptIds: receipts.map((r) => r.id), getPolicy: guardedPolicy });
               const mergeCandidate = { kind: "integration" as const, featureCwd: workspace, targetCwd: target, plan, receipts };
@@ -466,7 +459,6 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 }, "commit", agentDir);
                 if (signal?.aborted || !samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) throw new ManagedGitAccessError("Commit cancelled or workspace changed");
               }
-              if (hasConflictingRpcCheckoutOperation(workspace, manager.getSessionId(), _id)) throw new ManagedGitAccessError("Another checkout operation is active; wait before committing.");
               if (signal?.aborted) throw new ManagedGitAccessError("Commit cancelled");
             };
             await beforeApply();

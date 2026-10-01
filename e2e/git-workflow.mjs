@@ -635,7 +635,7 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
       console.log("PASS: unavailable Linux check containment refuses verification before any integration");
     } else {
     await review.getByRole("button", { name: "Run check 1" }).click();
-    await review.getByText(/Passed: receipt/).waitFor();
+    await review.getByText(/Passed: receipt/).waitFor({ timeout: 90_000 }); // First systemd check can exceed Playwright's 30s default on a cold host.
     assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), targetBeforeVerification, "Verification must not integrate");
     await review.getByRole("button", { name: "Prepare exact integration proposal" }).click();
     const proposal = review.getByLabel("Exact integration proposal");

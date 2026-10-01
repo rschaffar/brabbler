@@ -30,7 +30,7 @@ const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
 const { cacheSessionPath, invalidateSessionPathCache, invalidateSessionListCache } = await jiti.import("../../../../lib/session-reader.ts");
 const { appendSessionGitWorkflow } = await jiti.import("../../../../lib/git-workflow-policy.ts");
-const { AgentSessionWrapper, getRpcSession } = await jiti.import("../../../../lib/rpc-manager.ts");
+const { AgentSessionWrapper } = await jiti.import("../../../../lib/rpc-manager.ts");
 const { acquireGitCheckoutGate, isGitCheckoutGated } = await jiti.import("../../../../lib/git-checkout-gate.ts");
 const { readGitAction, subscribeGitActionUpdates } = await jiti.import("../../../../lib/git-action-journal.ts");
 const { inspectGitOperationAdmission } = await jiti.import("../../../../lib/git-operation-admission.ts");
@@ -215,7 +215,7 @@ test("an in-flight saved check gates both checkouts against a previously approve
   assert.equal((await post(confirm(f.id, fresh))).status, 200);
 });
 
-test("thinking/read-only chat in target checkout does not block verification, plan or integration; writer does", async (t) => {
+test("another session targeting the target checkout does not block verification, plan or integration", async (t) => {
   const f = await fixture(t);
   const registry = globalThis.__piSessions;
   let emit;
@@ -229,26 +229,20 @@ test("thinking/read-only chat in target checkout does not block verification, pl
   globalThis.__piSessions = new Map([...(registry ?? []), [wrapper.sessionId, wrapper]]);
   t.after(() => { wrapper.destroy(); globalThis.__piSessions = registry; });
   emit({ type: "tool_execution_start", toolCallId: "safe", toolName: "read" });
-  const p = await proposal(f);
   emit({ type: "tool_execution_start", toolCallId: "unsafe", toolName: "bash" });
-  assert.equal((await post(confirm(f.id, p))).status, 409);
-  assert.equal((await history(p.actionId)).record.state, "awaiting-decision");
-  emit({ type: "tool_execution_end", toolCallId: "unsafe" });
+  const p = await proposal(f); // The other chat is active throughout verification and planning.
   assert.equal((await post(confirm(f.id, p))).status, 200);
+  emit({ type: "tool_execution_end", toolCallId: "unsafe" });
 });
 
-test("busy source or target blocks confirmation without consuming approval", async (t) => {
+test("concurrent Git transaction blocks confirmation without consuming approval", async (t) => {
   const f = await fixture(t);
   const p = await proposal(f);
-  const registry = globalThis.__piSessions;
-  const busy = { cwd: f.target, isRunning: () => true, isAlive: () => true };
-  globalThis.__piSessions = new Map([...(registry ?? []), ["busy-integration-fixture", busy]]);
-  try { assert.equal((await post(confirm(f.id, p))).status, 409); }
-  finally { globalThis.__piSessions = registry; }
-  assert.equal(getRpcSession("busy-integration-fixture"), undefined);
-  const release = acquireGitCheckoutGate([f.target]);
-  try { assert.equal((await post(confirm(f.id, p))).status, 409); }
-  finally { release(); }
+  for (const cwd of [f.feature, f.target]) {
+    const release = acquireGitCheckoutGate([cwd]);
+    try { assert.equal((await post(confirm(f.id, p))).status, 409); }
+    finally { release(); }
+  }
   assert.equal((await history(p.actionId)).record.state, "awaiting-decision");
   assert.equal((await post(confirm(f.id, p))).status, 200);
   assert.equal(isGitCheckoutGated(f.target), false);
