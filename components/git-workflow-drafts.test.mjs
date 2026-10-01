@@ -3,7 +3,7 @@ import test from "node:test";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url);
-const { changedWorkflowFields, resetWorkflowField, workflowDraftKey, receiveWorkflowSettings, resolveWorkflowDraft, workflowRequestTarget, isUnpersistedWorkflowSession } = await jiti.import("./git-workflow-drafts.ts");
+const { changedWorkflowFields, configureNewAgentCommits, resetWorkflowField, workflowDraftKey, receiveWorkflowSettings, resolveWorkflowDraft, workflowRequestTarget, isUnpersistedWorkflowSession } = await jiti.import("./git-workflow-drafts.ts");
 const { resolveGitWorkflowSettings } = await jiti.import("../lib/git-workflow-settings.ts");
 function response(options = {}) {
   const data = { revision: "r1", paused: false, projectRoot: "/repo", cwd: "/repo-worktrees/topic", global: { commits: "manual" }, project: { commits: "ask" }, session: {}, task: { kind: "none" }, sessionEditable: true, ...options };
@@ -28,6 +28,22 @@ test("Off, null targets and empty checks differ from inherit; resetting touches 
   assert.deepEqual(resetWorkflowField(explicit, "enabled"), { managedGitToolsOnly: false, checks: [], targetBranch: null, commits: "off" });
   assert.equal(explicit.enabled, false);
   assert.deepEqual(changedWorkflowFields({ enabled: false, commits: "off" }, { commits: "off", enabled: false }), []);
+});
+
+test("new agent-commit draft is an explicit paired edit, not an automatic migration or saved authorization", () => {
+  for (const old of ["off", "manual", "ask"]) {
+    const saved = { commits: old, workspace: "current", commitConfirmation: "ask" };
+    const draft = configureNewAgentCommits(saved);
+    assert.deepEqual(draft, { commits: "ask", workspace: "current", commitConfirmation: "none" });
+    assert.deepEqual(saved, { commits: old, workspace: "current", commitConfirmation: "ask" });
+  }
+  const settings = response({ global: { commits: "off" }, project: { commits: "manual" }, session: { commits: "off" } });
+  const drafts = receiveWorkflowSettings({}, settings, "chat");
+  const selected = edit(drafts, "session:chat", configureNewAgentCommits(drafts["session:chat"].overrides));
+  assert.equal(resolveWorkflowDraft(settings, "session", selected["session:chat"].overrides).values.commitConfirmation, "none");
+  assert.deepEqual(settings.session, { commits: "off" });
+  assert.deepEqual(drafts["session:chat"].baseline, { commits: "off" });
+  assert.deepEqual(drafts["project:/repo"].overrides, { commits: "manual" });
 });
 
 test("resolution shows selected scope only, with saved parents, not an unsaved parent or a downstream override", () => {

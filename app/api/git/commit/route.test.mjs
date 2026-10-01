@@ -134,6 +134,25 @@ test("browser staged candidate commits only selected index entries and authentic
   assert.equal((await git("git", ["-C", cwd, "diff", "--name-only"])).stdout.trim(), "a");
 });
 
+test("staged browser approval fails closed if index bytes change while awaiting confirmation", async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.cwd, "a"), "staged original\n");
+  await git("git", ["-C", f.cwd, "add", "a"]);
+  const candidate = await (await post({ ...previewRequest(f.id), mode: "staged" })).json();
+  assert.equal(candidate.preview.mode, "staged");
+  await writeFile(join(f.cwd, "a"), "staged replacement\n");
+  await git("git", ["-C", f.cwd, "add", "a"]);
+  const response = await post(confirmRequest(f.id, candidate));
+  assert.equal(response.status, 409);
+  const saved = await history(candidate.actionId);
+  assert.equal(saved.record.state, "blocked");
+  assert.equal(saved.record.decision, "approved");
+  assert.equal(saved.record.outcome, undefined);
+  assert.match(saved.candidate.diff.patch, /staged original/);
+  assert.doesNotMatch(saved.candidate.diff.patch, /staged replacement/);
+  assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), candidate.preview.head);
+});
+
 test("saved Project/Chat Deny blocks browser preview and live revocation blocks confirmation; Allow does not skip preview", async (t) => {
   const f = await fixture(t);
   await writeFile(join(f.cwd, "a"), "candidate\n");

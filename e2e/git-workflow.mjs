@@ -385,7 +385,10 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await expand("commits");
     assert.equal(await control("commits").locator('option[value="automatic"]').isDisabled(), true);
     assert.match(await workflow.locator("#workflow-stage-commits").innerText(), /scoped authorization and operation-level recovery admission/);
-    await control("commits").selectOption("ask");
+    await workflow.getByRole("button", { name: "Draft new agent commits: Ask + no-confirm preference" }).click();
+    assert.equal(await control("commits").inputValue(), "ask");
+    assert.equal(await control("commitConfirmation").inputValue(), "none");
+    assert.equal((await readSettings()).task.settings.commits, "manual", "The new draft cannot silently adopt or authorize the current task");
     assert.equal(await commitPermissions.innerText(), permissionText, "Unsaved preferences never change task permission facts");
     await workflow.getByRole("button", { name: "Discard", exact: true }).click();
     await permissions.locator("summary").click();

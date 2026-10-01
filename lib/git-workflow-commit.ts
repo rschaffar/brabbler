@@ -1,9 +1,9 @@
-import { prepareGitCommit, confirmGitCommit, GitCommitOperationError, type GitCommitMode } from "./git-commit";
-import { getGitCommitTreeOid, getGitTreeDiff } from "./git-review";
-import { beginGitAction, failGitAction, finishGitAction, snapshotGitActionCandidate, GitActionApplyError, GitActionRecordingError, type GitActionSink } from "./git-action-controller";
+import type { GitCommitMode } from "./git-commit";
+import { beginGitAction, failGitAction, finishGitAction, type GitActionSink } from "./git-action-controller";
+import { applyExactCommitOperation, captureExactCommitCandidate } from "./git-exact-commit-operation";
 import type { GitActionCandidate } from "./types";
 import { withGitCheckoutGate } from "./git-checkout-gate";
-import { assertGitOperationAdmission, beginSupervisedGitOperationIntent, revalidateGitCommitAdmission, selectGitCommitAdmission, GitOperationRecoveryError, type GitOperationReservation } from "./git-operation-admission";
+import { assertGitOperationAdmission, selectGitCommitAdmission, GitOperationRecoveryError } from "./git-operation-admission";
 import type { GitProjectResources } from "./git-project-resources";
 import { readProjectAuthorization, type ProjectAuthorizationOwner } from "./git-project-authorization";
 
@@ -35,17 +35,14 @@ export async function requestWorkflowCommit(options: {
     await assertStandingGrant();
     const selection = options.selected ?? await selectGitCommitAdmission(options.cwd);
     if (options.selected) await assertGitOperationAdmission(selection, options.agentDir);
-    const preview = await prepareGitCommit(options.cwd, options.paths, options.mode);
-    const parentTree = await getGitCommitTreeOid(options.cwd, preview.head);
-    const diff = await getGitTreeDiff(options.cwd, parentTree, preview.tree);
-    const candidate = { kind: "commit" as const, preview, message: options.message, diff };
-    const action = await beginGitAction(options.sink, "agent", snapshotGitActionCandidate(candidate));
-    return { candidate, action, selection };
+    const captured = await captureExactCommitCandidate(options.cwd, options.paths, options.message, options.mode ?? "whole-file");
+    const action = await beginGitAction(options.sink, "agent", captured.snapshot);
+    return { candidate: captured.candidate!, action, selection }; // Agent Ask requires a complete patch.
   });
   // No checkout reservation while a human reviews (or between capture and
   // apply on the no-prompt path). Admission is rechecked under the apply gate.
-  let applying = false;
-  let reservation: GitOperationReservation | undefined;
+  let enteredApply = false;
+  let atRefBoundary = false;
   try {
     if (options.skipApproval) {
       await options.beforeApply();
@@ -64,42 +61,28 @@ export async function requestWorkflowCommit(options: {
       await action.update("executing", { decision: "approved" });
     }
     const result = await withGitCheckoutGate([options.cwd], async () => {
-      await options.beforeApply();
-      await assertStandingGrant();
-      options.signal?.throwIfAborted();
-      await revalidateGitCommitAdmission(selection);
-      reservation = await beginSupervisedGitOperationIntent(selection, action.record.id, "commit", options.agentDir);
-      const result = await confirmGitCommit(candidate.preview, options.message, async (intended) => {
-        await action.update("executing", { intended });
-        await options.beforeApply();
-        await assertStandingGrant();
-        options.signal?.throwIfAborted();
-        await revalidateGitCommitAdmission(selection);
-        reservation!.assertOwned();
-        applying = true;
+      enteredApply = true;
+      return applyExactCommitOperation({ handle: action, preview: candidate.preview, message: options.message, selection,
+        agentDir: options.agentDir, signal: options.signal, revalidateBeforeIntent: true,
+        beforeApply: async () => { await options.beforeApply(); await assertStandingGrant(); },
+        atRefBoundary: () => { atRefBoundary = true; },
+        beforeRefUpdate: (reservation) => reservation.assertOwned(),
+        finish: async (result) => { await finishGitAction(action, result, result.status === "partial-success"); return result; },
+        shouldResolve: (result) => result.status === "committed",
       });
-      await finishGitAction(action, result, result.status === "partial-success");
-      if (result.status === "committed") {
-        try { reservation.resolve(); } catch { throw new GitOperationRecoveryError(action.record.id); }
-      }
-      return result;
     });
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: { ...result, actionId: action.record.id,
       ...(options.skipApproval ? { approval: "saved-project-allow" } : {}),
       ...(result.status === "partial-success" ? { recoveryRequired: true } : {}) } };
   } catch (cause) {
-    await failGitAction(action, applying, options.signal, cause);
-    // Only a journalled pre-CAS refusal is safe to resolve. Other failures
-    // (including a failed journal write) remain durable recovery blockers.
-    if (reservation && action.record.state === "blocked" && (!applying || cause instanceof GitCommitOperationError)) {
-      try { reservation.resolve(); } catch { throw new GitOperationRecoveryError(action.record.id); }
-    }
-    if (!applying && options.signal?.aborted && !(cause instanceof GitOperationRecoveryError)) return {
+    // The shared operation settles post-admission failures; a busy apply gate
+    // never entered it and must still preserve the already-recorded decision.
+    if (!enteredApply) await failGitAction(action, false, options.signal, cause);
+    if (!atRefBoundary && options.signal?.aborted && !(cause instanceof GitOperationRecoveryError)) return {
       content: [{ type: "text" as const, text: "Commit cancelled; no commit was made." }],
       details: { approved: false, actionId: action.record.id },
     };
     if (cause instanceof GitOperationRecoveryError) throw cause;
-    if (applying && !(cause instanceof GitCommitOperationError) && !(cause instanceof GitActionRecordingError)) throw new GitActionApplyError(action.record.id, action.record.intended);
     throw cause;
   } finally { action.release(); }
 }

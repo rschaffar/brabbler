@@ -36,6 +36,12 @@ export function resetWorkflowField(overrides: GitWorkflowOverrides, field: GitWo
   return next;
 }
 
+/** Explicit editor choice for a NEW agent-commit setup, never a migration of saved settings or captured tasks.
+ * The preference alone is not an Allow or a request to execute without asking. */
+export function configureNewAgentCommits(overrides: GitWorkflowOverrides): GitWorkflowOverrides {
+  return { ...overrides, commits: "ask", commitConfirmation: "none" };
+}
+
 /**
  * Refresh clean scopes, but never overwrite a draft whose saved baseline changed.
  * A 409 is sticky: only an explicit successful discard/reload resolves it. An

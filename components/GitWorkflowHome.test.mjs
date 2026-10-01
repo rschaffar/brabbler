@@ -69,6 +69,20 @@ test("every scope renders the same five expandable stages with its own resolved 
   assert.match(render({ scope: "project" }), /id="workflow-targetBranch"[^>]*value="local-target"/);
 });
 
+test("new commit draft affordance is explicit for Off/Manual, while existing Ask remains untouched", () => {
+  const off = render({ data: fixture({ project: { commits: "off" } }), scope: "project" });
+  const manual = render({ data: fixture({ project: { commits: "manual" } }), scope: "project" });
+  const ask = render({ data: fixture({ project: { commits: "ask" } }), scope: "project" });
+  for (const html of [off, manual]) {
+    assert.match(html, /Draft new agent commits: Ask \+ no-confirm preference/);
+    assert.match(html, /Drafting does not save settings, approve a candidate or grant execution/);
+  }
+  assert.doesNotMatch(ask, /Draft new agent commits: Ask \+ no-confirm preference/);
+  assert.match(ask, /selected-project request with a fresh saved Allow/);
+  assert.match(ask, /FF is supported for eligible session-bound local integration/);
+  assert.doesNotMatch(ask, /FF and squash cannot execute yet/);
+});
+
 test("no-chat Global editing is usable and cannot initialize a chat", () => {
   const html = render({ data: fixture({ projectRoot: undefined, cwd: undefined, session: null, sessionEditable: false }), scope: "global", props: { session: null, cwd: null } });
   assert.match(html, /No active task/);
@@ -92,7 +106,7 @@ test("current task is pinned outside the editor and adoption is separate from sc
   }
 });
 
-test("future FF is a preference, squash/automatic stay disabled, and invalid drafts do not crash rendering", () => {
+test("FF method is a preference, squash/automatic stay disabled, and invalid drafts do not crash rendering", () => {
   const html = render({ overrides: { method: "ff", checks: [{ label: "", argv: [""] }] } });
   assert.match(html, /value="ff" selected=""/);
   assert.match(html, /value="squash" disabled=""/);

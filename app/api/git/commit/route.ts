@@ -2,16 +2,16 @@ import { statSync } from "node:fs";
 import { NextResponse } from "next/server";
 import { assertManagedGitAction, assertManagedGitProjectDenial, assertManagedGitWorkspace, ManagedGitAccessError } from "@/lib/git-workflow-access";
 import type { SessionEntry } from "@/lib/types";
-import { failGitAction, gitActionFailureResult, snapshotGitActionCandidate, GitActionApplyError, GitActionRecordingError } from "@/lib/git-action-controller";
+import { failGitAction, gitActionFailureResult, GitActionRecordingError } from "@/lib/git-action-controller";
 import { finishHumanGitAction, humanGitActionSink, HumanGitCandidateError, HumanGitSessionChangedError, keepHumanGitCandidate, readHumanGitSessionManager, takeHumanGitCandidate } from "@/lib/git-action-human";
-import { GIT_ACTION_ID_PATTERN, type GitActionCandidateSnapshot } from "@/lib/git-action-types";
+import { GIT_ACTION_ID_PATTERN } from "@/lib/git-action-types";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
-import { confirmGitCommit, prepareGitCommit, GitCommitOperationError, type GitCommitMode, type GitCommitPreview } from "@/lib/git-commit";
+import { GitCommitOperationError, type GitCommitMode, type GitCommitPreview } from "@/lib/git-commit";
+import { applyExactCommitOperation, captureExactCommitCandidate } from "@/lib/git-exact-commit-operation";
 import { acquireGitCheckoutGate, isGitCheckoutGated, GitCheckoutBusyError } from "@/lib/git-checkout-gate";
-import { getGitCommitTreeOid, getGitTreeDiff, GitReviewError, GIT_REVIEW_DIFF_MAX_BYTES } from "@/lib/git-review";
 import { samePath } from "@/lib/paths";
 import { readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
-import { beginSupervisedGitCommitIntent, revalidateGitCommitAdmission, selectGitCommitAdmission, GitOperationRecoveryError, type GitOperationReservation } from "@/lib/git-operation-admission";
+import { selectGitCommitAdmission, GitOperationRecoveryError } from "@/lib/git-operation-admission";
 
 export const dynamic = "force-dynamic";
 
@@ -67,21 +67,8 @@ export async function POST(req: Request) {
       const release = acquireGitCheckoutGate([cwd]);
       try {
         await guard();
-        const preview = await prepareGitCommit(cwd, input.paths, mode);
-        // Both OIDs come from the server's prepared snapshot, never the request body.
-        const headTree = await getGitCommitTreeOid(cwd, preview.head);
-        let candidateDiff;
-        let candidateDiffUnavailable;
-        try {
-          candidateDiff = await getGitTreeDiff(cwd, headTree, preview.tree);
-        } catch (cause) {
-          if (!(cause instanceof GitReviewError) || cause.code !== "DIFF_TOO_LARGE") throw cause;
-          candidateDiffUnavailable = `Candidate patch exceeds the ${GIT_REVIEW_DIFF_MAX_BYTES / (1024 * 1024)} MB limit; review the whole-file candidate tree before confirming.`;
-        }
-        const snapshot: GitActionCandidateSnapshot = candidateDiff
-          ? snapshotGitActionCandidate({ kind: "commit", preview, message: input.message, diff: candidateDiff })
-          : { kind: "commit", repositoryRoot: cwd, featureBranch: preview.branch, message: input.message,
-            commitMode: preview.mode, paths: [...preview.paths], parentOid: preview.head, candidateTreeOid: preview.tree, diffUnavailable: candidateDiffUnavailable };
+        // Both trees and the mode are native server-derived facts, not caller OIDs.
+        const { preview, snapshot, candidateDiff, candidateDiffUnavailable } = await captureExactCommitCandidate(cwd, input.paths, input.message, mode, true);
         await guard();
         const action = await keepHumanGitCandidate(humanGitActionSink(scope), scope, { kind: "commit", preview, message: input.message }, snapshot);
         return NextResponse.json({ ...action, preview, ...(candidateDiff ? { candidateDiff } : { candidateDiffUnavailable }) });
@@ -103,32 +90,22 @@ export async function POST(req: Request) {
         await guard();
         const selection = await selectGitCommitAdmission(cwd);
         const { handle, native } = takeHumanGitCandidate(scope, input.actionId, { kind: "commit", preview, message: input.message });
-        let applying = false;
-        let reservation: GitOperationReservation | undefined;
+        let enteredApply = false;
         try {
           await handle.update("executing", { decision: "approved" });
-          await guard();
-          reservation = await beginSupervisedGitCommitIntent(selection, handle.record.id);
-          const result = await confirmGitCommit(native.preview, native.message, async (intended) => {
-            // Approval alone is not success. Persist the actual object identity before the ref CAS.
-            await handle.update("executing", { intended });
-            await guard(); // revocation/cancellation after journal I/O, immediately before mutation
-            await revalidateGitCommitAdmission(selection);
-            applying = true;
+          enteredApply = true;
+          const response = await applyExactCommitOperation({ handle, preview: native.preview, message: native.message, selection,
+            signal: req.signal, beforeApply: async () => { await guard(); },
+            finish: (result) => finishHumanGitAction(handle, result, result, result.status === "partial-success"),
+            shouldResolve: (result, recorded) => result.status === "committed" && !("recoveryRequired" in recorded && recorded.recoveryRequired),
           });
-          const response = await finishHumanGitAction(handle, result, result, result.status === "partial-success");
-          if (result.status === "committed" && !("recoveryRequired" in response && response.recoveryRequired)) {
-            try { reservation.resolve(); } catch { throw new GitOperationRecoveryError(handle.record.id); }
-          }
-          return NextResponse.json({ ...response, ...(result.status === "partial-success" ? { recoveryRequired: true } : {}) });
+          return NextResponse.json({ ...response, ...(response.status === "partial-success" ? { recoveryRequired: true } : {}) });
         } catch (cause) {
-          await failGitAction(handle, applying, req.signal, cause);
-          if (reservation && handle.record.state === "blocked" && (!applying || cause instanceof GitCommitOperationError)) {
-            try { reservation.resolve(); } catch { cause = new GitOperationRecoveryError(handle.record.id); }
-          }
+          // An executing-update refusal predates admission; the shared apply
+          // function owns failures after entry, including durable intent cleanup.
+          if (!enteredApply) await failGitAction(handle, false, req.signal, cause);
           if (cause instanceof GitOperationRecoveryError) return NextResponse.json({ actionId: handle.record.id,
             error: cause.message, recoveryRequired: true }, { status: 409 });
-          if (applying && !(cause instanceof GitCommitOperationError) && !(cause instanceof GitActionRecordingError)) cause = new GitActionApplyError(handle.record.id, handle.record.intended);
           if (cause instanceof GitActionRecordingError) return NextResponse.json({ ...gitActionFailureResult(cause)!.details,
             recoveryWarning: cause.message }, { status: 409 });
           return NextResponse.json({ actionId: handle.record.id, error: cause instanceof ManagedGitAccessError || cause instanceof HumanGitSessionChangedError || cause instanceof GitCommitOperationError ? cause.message

@@ -14,7 +14,7 @@ import {
 import type { SessionInfo } from "@/lib/types";
 import { AUTOMATIC_COMMIT_UNAVAILABLE, AUTOMATIC_WORKFLOW_UNAVAILABLE } from "@/lib/git-workflow-permissions";
 import {
-  changedWorkflowFields, isUnpersistedWorkflowSession, receiveWorkflowSettings,
+  changedWorkflowFields, configureNewAgentCommits, isUnpersistedWorkflowSession, receiveWorkflowSettings,
   resetWorkflowField, resolveWorkflowDraft, workflowDraftKey, workflowFields, workflowRequestTarget, workflowScopes,
   type WorkflowDrafts,
 } from "./git-workflow-drafts";
@@ -272,6 +272,11 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
     if (disabled || !draftKey) return;
     setDrafts((current) => ({ ...current, [draftKey]: { ...current[draftKey], overrides: resetWorkflowField(current[draftKey].overrides, field), error: current[draftKey].conflict ? current[draftKey].error : undefined } }));
   }
+  function configureCommits() {
+    if (disabled || !draftKey) return;
+    setDrafts((current) => ({ ...current, [draftKey]: { ...current[draftKey], overrides: configureNewAgentCommits(current[draftKey].overrides),
+      error: current[draftKey].conflict ? current[draftKey].error : undefined } }));
+  }
   async function put(destination: WorkflowScope | "pause" | "task" | "optout") {
     if (!data || operationRef.current || (destination === scope && (disabled || entry?.conflict || resolution?.validationError))) return;
     const key = destination === scope ? draftKey : null;
@@ -336,7 +341,9 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
   function confirmation(name: "workspaceConfirmation" | "commitConfirmation" | "prepareConfirmation" | "checkConfirmation" | "integrateConfirmation" | "cleanupConfirmation") {
     return select(name, [
       ...(name === "commitConfirmation" ? [] : [{ value: "disabled", label: "Not enabled for future operation (legacy gates unchanged)" }]),
-      { value: "ask", label: "Ask for exact action" }, { value: "none", label: "No confirmation preference · execution not yet available" },
+      { value: "ask", label: "Ask for exact action" }, { value: "none", label: name === "commitConfirmation"
+        ? "No confirmation preference · selected commits still need saved Allow and an explicit request"
+        : "No confirmation preference · execution not yet available" },
     ]);
   }
   function changeCheck(index: number, part: "label" | "executable" | "arguments", value: string) {
@@ -355,7 +362,8 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
     if (stage === "commits") return <>
       {select("commits", [{ value: "off", label: "Off" }, { value: "manual", label: "Manual · human review only" }, { value: "ask", label: "Ask · agent may request review" }, { value: "automatic", label: "Automatic · unavailable", disabled: true }])}
       {confirmation("commitConfirmation")}
-      <p className="workflow-muted">For newly configured commits, choose Ask agent commits and No confirmation preference separately. Existing Off/Manual/Ask and legacy consent stay unchanged. Complete selected files only. {AUTOMATIC_COMMIT_UNAVAILABLE}</p>
+      {(values.commits === "off" || values.commits === "manual") && <button type="button" disabled={disabled} onClick={configureCommits}>Draft new agent commits: Ask + no-confirm preference</button>}
+      <p className="workflow-muted">Drafting does not save settings, approve a candidate or grant execution. Existing Off/Manual/Ask, pinned tasks and chat opt-outs are unchanged until explicitly saved and, where applicable, separately applied. Only an explicit selected-project request with a fresh saved Allow can omit candidate confirmation, subject to stricter instructions. Whole selected files are the default; staged index entries require an explicit source choice. {AUTOMATIC_COMMIT_UNAVAILABLE}</p>
     </>;
     if (stage === "checks") return <>
       {confirmation("checkConfirmation")}
@@ -378,9 +386,9 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
     if (stage === "integration") return <>
       {select("delivery", [{ value: "local", label: "Local integration" }, { value: "pr", label: "PR handoff · no local merge or remote operation" }, { value: "leave", label: "Leave branch · no local merge" }])}
       {branchField("targetBranch")}
-      {select("method", [{ value: "merge", label: "Non-fast-forward merge" }, { value: "ff", label: "Fast-forward only · future engine" }, { value: "squash", label: "Squash · legacy read-only", disabled: true }])}
+      {select("method", [{ value: "merge", label: "Non-fast-forward merge" }, { value: "ff", label: "Fast-forward only · requires exact receipts and approval" }, { value: "squash", label: "Squash · legacy read-only", disabled: true }])}
       {confirmation("prepareConfirmation")}{confirmation("integrateConfirmation")}
-      <p className="workflow-muted">PR and leave prohibit local integration; neither authorizes fetch, push or PR creation. Direct work on the destination needs no merge-to-self. FF and squash cannot execute yet. {AUTOMATIC_WORKFLOW_UNAVAILABLE}</p>
+      <p className="workflow-muted">PR and leave prohibit local integration; neither authorizes fetch, push or PR creation. Direct work on the destination needs no merge-to-self. FF is supported for eligible session-bound local integration with exact checks and approval; squash is unavailable. {AUTOMATIC_WORKFLOW_UNAVAILABLE}</p>
     </>;
     return <>
       {select("cleanup", [{ value: "retain", label: "Retain worktree and local branch" }, { value: "ask", label: "Ask to clean up · unavailable", disabled: true }, { value: "automatic", label: "Automatic · unavailable", disabled: true }])}
