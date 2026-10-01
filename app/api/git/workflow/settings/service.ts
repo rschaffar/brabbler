@@ -180,7 +180,7 @@ export async function applyWorkflowSettings(input: Record<string, unknown>,
       finally {
         // Reload the idle wrapper on its next request so opting out also
         // removes the managed tool schemas, not merely their execution grants.
-        if (scope === "optout" && t.live?.sessionFile === t.file) t.live.destroy();
+        if (scope === "optout" && t.live && t.live.sessionFile === t.file) t.live.destroy();
       }
     });
 }
