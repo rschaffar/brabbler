@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,7 +37,7 @@ const { POST: verify } = await jiti.import("../integration/route.ts");
 const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
 const { cacheSessionPath, invalidateSessionPathCache, invalidateSessionListCache } = await jiti.import("../../../../lib/session-reader.ts");
-const { appendSessionGitWorkflow } = await jiti.import("../../../../lib/git-workflow-policy.ts");
+const { appendSessionGitWorkflow, validateGitWorkflowPolicy } = await jiti.import("../../../../lib/git-workflow-policy.ts");
 const { inspectGitOperationAdmission, readUnresolvedGitCheckRecovery } = await jiti.import("../../../../lib/git-operation-admission.ts");
 const { selectGitProjectResources } = await jiti.import("../../../../lib/git-project-resources.ts");
 const { writeGitWorkflowSettingsDocument } = await jiti.import("../../../../lib/git-workflow-settings-store.ts");
@@ -143,7 +143,7 @@ test("missing, corrupted or stale evidence remains quarantined; no rollback or G
   writeFileSync(postFile, original);
   await writeFile(join(f.feature, "untracked"), "changed\n");
   assert.equal((await (await get(f.id)).json()).eligible, false);
-  assert.equal((await admission(f)).reason, "unavailable", "a corrupted proof cannot be restored into authority");
+  assert.equal((await admission(f)).reason, "unresolved", "restoring valid proof bytes does not release quarantine");
   assert.equal(existsSync(join(f.feature, "untracked")), true);
 });
 
@@ -151,6 +151,7 @@ test("agent multi-check action in another registered feature worktree remains qu
   const f = await fixture(t);
   const chat = SessionManager.create(f.target);
   chat.appendMessage({ role: "user", content: "check the feature", timestamp: Date.now() });
+  chat.appendMessage({ role: "assistant", content: [{ type: "text", text: "ready" }], timestamp: Date.now() });
   f.policy.checks.unshift({ label: "Earlier check", argv: [process.execPath, "-e", "process.exit(0)"] });
   appendSessionGitWorkflow(chat, f.policy);
   const sessionId = chat.getSessionId();
@@ -232,4 +233,75 @@ test("real OS failed-check recovery invalidates old capabilities and settles onc
   assert.equal((await post(request)).status, 200);
   assert.equal((await admission(f)).reason, "clear");
   assert.equal((await post(request)).status, 409);
+});
+
+test("real OS agent check needs separate review after both refs move; stale or dirty reviews cannot release", {
+  skip: process.platform !== "linux" || process.env.PI_WEB_TEST_REAL_SYSTEMD_RECOVERY !== "1",
+}, async (t) => {
+  const f = await fixture(t, "setTimeout(() => process.exit(7), 600)");
+  const chat = SessionManager.create(f.target);
+  chat.appendMessage({ role: "user", content: "check the feature", timestamp: Date.now() });
+  chat.appendMessage({ role: "assistant", content: [{ type: "text", text: "ready" }], timestamp: Date.now() });
+  appendSessionGitWorkflow(chat, f.policy);
+  const sessionId = chat.getSessionId();
+  cacheSessionPath(sessionId, chat.getSessionFile());
+  t.after(() => invalidateSessionPathCache(sessionId));
+  const sink = gitActionSink(chat, (type, data) => chat.appendCustomEntry(type, data));
+  const action = await beginGitAction(sink, "agent", snapshotGitActionCandidate({
+    kind: "checks", featureCwd: f.feature, targetCwd: f.target,
+    featureBranch: "feature", targetBranch: "target", checks: f.policy.checks,
+  }));
+  try {
+    await action.update("awaiting-decision");
+    await action.update("executing", { decision: "approved" });
+    const { runGitVerification: realRun } = await createJiti(import.meta.url, {
+      alias: { "@": process.cwd() }, interopDefault: true, moduleCache: false,
+    }).import("../../../../lib/git-verification.ts");
+    const ephemeral = validateGitWorkflowPolicy({ mode: "current", onCreate: "stay", commits: "manual",
+      integration: { targetBranch: "target", method: "merge" }, checks: f.policy.checks });
+    await assert.rejects(realRun({ sessionId, cwd: f.feature, agentDir,
+      review: await reviewGitBranches(f.feature, "feature", "target"), checkIndex: 0,
+      actionId: action.record.id, getPolicy: () => ephemeral, isTrusted: () => true }), /check failed/);
+    await action.update("failed", { reason: "Saved check failed" });
+  } finally { action.release(); }
+  const resource = await selectGitProjectResources(f.feature);
+  const evidence = readUnresolvedGitCheckRecovery(agentDir, resource.commonDir);
+  assert.equal(evidence.source, "linux-systemd");
+  assert.deepEqual(evidence.before, evidence.after, "the check itself left Git unchanged");
+  const originalFeature = await git(f.feature, "rev-parse", "HEAD");
+  const originalTarget = await git(f.target, "rev-parse", "HEAD");
+  await writeFile(join(f.feature, "feature-added"), "later feature work\n");
+  await git(f.feature, "add", "feature-added"); await git(f.feature, "commit", "-qm", "later feature work");
+  await writeFile(join(f.target, "target-added"), "later target work\n");
+  await git(f.target, "add", "target-added"); await git(f.target, "commit", "-qm", "later target work");
+  const marker = join(agentDir, "fsmonitor-invoked"), monitor = join(agentDir, "fsmonitor.sh");
+  await writeFile(monitor, `#!/bin/sh\nprintf invoked > "${marker}"\n`);
+  chmodSync(monitor, 0o700);
+  await git(f.feature, "config", "core.fsmonitor", monitor);
+  const preview = await (await get(sessionId)).json();
+  assert.equal(existsSync(marker), false, "recovery inspection must never execute a project fsmonitor command");
+  assert.equal(preview.eligible, true, JSON.stringify(preview));
+  assert.equal(preview.mode, "moved");
+  assert.equal(preview.original.featureHead, originalFeature);
+  assert.equal(preview.original.targetHead, originalTarget);
+  assert.equal(preview.original.featureHeadDigest, evidence.after.featureOid);
+  assert.equal(preview.original.targetHeadDigest, evidence.after.targetOid);
+  assert.equal(preview.feature.head, await git(f.feature, "rev-parse", "HEAD"));
+  assert.equal(preview.target.head, await git(f.target, "rev-parse", "HEAD"));
+  assert.deepEqual(preview.feature.status, []);
+  const request = { sessionId, actionId: action.record.id, revision: preview.revision, acknowledged: true };
+  assert.equal((await post(request)).status, 409, "unchanged-state approval cannot release a moved review");
+  assert.equal((await admission(f)).reason, "unresolved");
+  const next = await (await get(sessionId)).json();
+  assert.equal(next.eligible, true);
+  await writeFile(join(f.target, "unreviewed"), "not reviewed\n");
+  assert.equal((await post({ ...request, revision: next.revision, reviewedMovement: true })).status, 409);
+  assert.equal((await (await get(sessionId)).json()).eligible, false, "dirty drift remains quarantined");
+  await git(f.target, "add", "unreviewed"); await git(f.target, "commit", "-qm", "reviewed later work");
+  const final = await (await get(sessionId)).json();
+  assert.equal(final.eligible, true, JSON.stringify(final));
+  assert.equal(final.mode, "moved");
+  assert.equal((await post({ ...request, revision: final.revision, reviewedMovement: true })).status, 200);
+  assert.equal((await admission(f)).reason, "clear");
+  assert.equal((await post({ ...request, revision: final.revision, reviewedMovement: true })).status, 409);
 });

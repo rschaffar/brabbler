@@ -11,6 +11,8 @@ const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.Modu
 const filename = new URL("./GitCheckRecoveryPanel.tsx", import.meta.url).pathname;
 const oid = (n) => n.toString(16).padStart(40, "0");
 const preview = () => ({ eligible: true, actionId: "quarantined-action", revision: "exact-revision", unit: "pi-web-git-check-unit.service",
+  mode: "unchanged", original: { featureHead: oid(3), targetHead: oid(4),
+    featureHeadDigest: "a".repeat(64), targetHeadDigest: "b".repeat(64), refsDigest: "c".repeat(64) },
   feature: { path: "/repo/worktrees/feature", branch: "feature/x", head: oid(1), status: [" M tracked.txt", "?? new.txt"] },
   target: { path: "/repo", branch: "main", head: oid(2), status: ["No tracked changes"] },
   containment: { emptyEvidence: "pinned-populated-zero", payload: "release-attempted" }, expiresAt: Date.now() + 60_000 });
@@ -46,7 +48,19 @@ function harness(onRecovered = () => {}, onRecoveringChange = () => {}) {
     assert.ok(match, `missing button ${label}`);
     return match;
   }
-  return { html, button, valid: mod.exports.isCheckRecoveryPreview };
+  function checkbox() {
+    const walk = (node) => {
+      if (!node || typeof node !== "object") return null;
+      if (Array.isArray(node)) return node.map(walk).find(Boolean) ?? null;
+      if (typeof node.type === "function") return walk(node.type(node.props));
+      if (node.type === "input" && node.props.type === "checkbox") return node;
+      return walk(node.props?.children);
+    };
+    const match = walk(tree());
+    assert.ok(match, "missing changed-state acknowledgement");
+    return match;
+  }
+  return { html, button, checkbox, valid: mod.exports.isCheckRecoveryPreview };
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -57,6 +71,7 @@ test("recovery is opt-in and refuses incomplete identity snapshots", () => {
   assert.doesNotMatch(ui.html(), /Approve recovery|type="checkbox"/);
   assert.equal(ui.valid(preview()), true);
   for (const invalid of [{ ...preview(), revision: "" }, { ...preview(), target: { ...preview().target, status: "clean" } },
+    { ...preview(), mode: "unknown" }, { ...preview(), original: { ...preview().original, refsDigest: "bad" } },
     { ...preview(), expiresAt: NaN }, { eligible: false, reason: "No safe candidate" }]) assert.equal(ui.valid(invalid), false);
 });
 
@@ -88,6 +103,31 @@ test("exact resource identities, status, unit and evidence precede single approv
   assert.deepEqual(events[0].detail, { sessionId: "chat-id" });
   assert.match(ui.html(), /no verification check has been rerun or receipt created/);
   assert.doesNotMatch(ui.html(), /Approve recovery|Passed: receipt/);
+});
+
+test("moved-state approval requires separate acknowledgement and sends its exact mode", async (t) => {
+  const calls = [];
+  const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
+  t.after(() => { globalThis.fetch = oldFetch; globalThis.window = oldWindow; });
+  globalThis.window = { dispatchEvent() {} };
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options]);
+    return Response.json(url.includes("?") ? { ...preview(), mode: "moved" } : { recovered: true });
+  };
+  const ui = harness();
+  ui.button("Load recovery review").props.onClick(); await settle();
+  assert.match(ui.html(), /Repository changed since the failed check/);
+  assert.match(ui.html(), /Original feature HEAD SHA-256/);
+  assert.match(ui.html(), /Original feature commit/);
+  assert.match(ui.html(), new RegExp(oid(3)));
+  assert.equal(ui.button("Approve recovery").props.disabled, true);
+  ui.button("Approve recovery").props.onClick(); await settle();
+  assert.equal(calls.length, 1, "a click without drift review cannot POST");
+  ui.checkbox().props.onChange({ target: { checked: true } });
+  assert.equal(ui.button("Approve recovery").props.disabled, false);
+  ui.button("Approve recovery").props.onClick(); await settle();
+  assert.deepEqual(JSON.parse(calls[1][1].body), { sessionId: "chat-id", actionId: "quarantined-action",
+    revision: "exact-revision", acknowledged: true, reviewedMovement: true });
 });
 
 test("ineligible and expired previews never approve; a 409 clears stale authority without retrying", async (t) => {

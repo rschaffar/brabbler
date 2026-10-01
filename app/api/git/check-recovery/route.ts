@@ -10,13 +10,13 @@ import { GIT_ACTION_ID_PATTERN } from "@/lib/git-action-types";
 import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
 import { gitExecEnv } from "@/lib/git-exec";
 import { invalidateGitIntegrationPlansForResource } from "@/lib/git-integration";
-import { readUnresolvedGitCheckRecovery, resolveHumanReviewedGitCheck } from "@/lib/git-operation-admission";
+import { readUnresolvedGitCheckRecovery, resolveHumanReviewedGitCheck, type GitCheckRecoveryCurrentState } from "@/lib/git-operation-admission";
 import { revalidateGitProjectResources, selectGitProjectResources } from "@/lib/git-project-resources";
 import { reviewGitBranches } from "@/lib/git-review";
-import { captureGitCheckRecoverySnapshot, gitCheckRecoveryDigest, invalidateGitVerificationReceiptsForCheckout, isGitVerificationRunning } from "@/lib/git-verification";
+import { captureGitCheckRecoveryCurrentState, captureGitCheckRecoverySnapshot, gitCheckRecoveryDigest, invalidateGitVerificationReceiptsForResource, isGitVerificationRunning } from "@/lib/git-verification";
 import { assertManagedGitWorkspace, managedGitSessionFacts } from "@/lib/git-workflow-access";
 import { loadGitWorkflowSettings } from "@/lib/git-workflow-settings-store";
-import { readCapturedSessionGitWorkflow } from "@/lib/git-workflow-policy";
+import { readCapturedSessionGitWorkflow, validateGitWorkflowPolicy } from "@/lib/git-workflow-policy";
 import { readHumanGitSessionManager } from "@/lib/git-action-human";
 import { samePath } from "@/lib/paths";
 import { getProjectTrustStatus } from "@/lib/project-trust";
@@ -31,11 +31,13 @@ const MAX_TICKETS = 128;
 const denied = (reason = "Recovery unavailable; inspect both checkouts and the action history") => NextResponse.json({ eligible: false, reason });
 const error = (message: string, status: number) => NextResponse.json({ error: message }, { status });
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const fingerprint = (value: string) => createHash("sha256").update(value).digest("hex");
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const exact = (value: Record<string, unknown>, names: string[]) => Object.keys(value).length === names.length && names.every((name) => Object.hasOwn(value, name));
 
 type Ticket = { sessionId: string; sessionFile: string; cwd: string; featureCwd: string; target: string; commonDir: string;
-  id: string; actionId: string; actionRevision: number; snapshot: string; invocation: string; expiresAt: number };
+  id: string; actionId: string; actionRevision: number; snapshot: string; mode: "unchanged" | "moved";
+  invocation: string; expiresAt: number };
 // This is a one-use same-process human review latch, not a same-user security boundary.
 const ticketKey = Symbol.for("pi-web:git-check-recovery:reviews");
 function tickets(): Map<string, Ticket> {
@@ -44,10 +46,30 @@ function tickets(): Map<string, Ticket> {
 }
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
-  return (await exec("git", ["--no-optional-locks", "-C", cwd, ...args], {
+  return (await exec("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", "-C", cwd, ...args], {
     encoding: "utf8", env: { ...gitExecEnv(), GIT_NO_REPLACE_OBJECTS: "1", GIT_PAGER: "cat" },
     timeout: 15_000, maxBuffer: 64 * 1024,
   })).stdout;
+}
+async function originalTips(cwd: string, featureDigest: string, targetDigest: string) {
+  // An agent check candidate need not store original OIDs. Find commit objects
+  // whose identities match the immutable post-check digests. Reachable refs
+  // are search leads, never proof of who advanced a branch. A missing object or an
+  // overlarge history makes this bounded human-review path unavailable.
+  const { stdout } = await exec("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", "-C", cwd,
+    "rev-list", "--all", "--max-count=8192"], {
+    encoding: "utf8", env: { ...gitExecEnv(), GIT_NO_REPLACE_OBJECTS: "1", GIT_PAGER: "cat" },
+    timeout: 15_000, maxBuffer: 640 * 1024,
+  });
+  let featureHead: string | undefined, targetHead: string | undefined;
+  for (const oid of stdout.trim().split("\n")) {
+    if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(oid)) throw new Error("invalid historical commit");
+    const fingerprinted = fingerprint(oid);
+    if (fingerprinted === featureDigest) featureHead = oid;
+    if (fingerprinted === targetDigest) targetHead = oid;
+  }
+  if (!featureHead || !targetHead) throw new Error("original commits unavailable for review");
+  return { featureHead, targetHead };
 }
 async function allowed(cwd: string) {
   const roots = await getAllowedFileRoots();
@@ -66,13 +88,20 @@ async function scope(sessionId: string) {
   // Recovery is inspection and disposition, NOT another check or Git mutation.
   // In particular, paused/Off/Deny must not prevent inspection of an orphan.
   const settings = await loadGitWorkflowSettings(cwd, entries, agentDir, "active-session");
-  const policy = readCapturedSessionGitWorkflow(entries);
-  if (!policy?.checks?.length || policy.integration?.method !== "merge") throw new Error("no saved check");
+  const savedPolicy = readCapturedSessionGitWorkflow(entries);
   const chat = await selectGitProjectResources(cwd);
   const pending = readUnresolvedGitCheckRecovery(agentDir, chat.commonDir);
   const history = await readGitAction(pending.actionId, { includeArtifact: true }, agentDir);
   if (history.record?.sessionId !== sessionId || history.candidate?.kind !== "checks" ||
     !await allowed(history.candidate.repositoryRoot)) throw new Error("check owner changed");
+  // Agent-triggered integration uses a validated, ephemeral policy from the
+  // exact check action; it need not equal the chat's older saved legacy policy.
+  // Its digest is checked against the immutable original proof in inspect().
+  const policy = history.record.source === "agent"
+    ? validateGitWorkflowPolicy({ mode: "current", onCreate: "stay", commits: "manual",
+        integration: { targetBranch: history.candidate.targetBranch, method: "merge" },
+        checks: history.candidate.checks }) : savedPolicy;
+  if (!policy?.checks?.length || policy.integration?.method !== "merge") throw new Error("no check policy");
   const feature = await selectGitProjectResources(history.candidate.repositoryRoot);
   if (!samePath(feature.cwd, history.candidate.repositoryRoot) || !samePath(feature.commonDir, chat.commonDir) ||
     !samePath(feature.projectRoot, chat.projectRoot) ||
@@ -147,14 +176,37 @@ async function inspect(s: Scope) {
     ? candidate.checks.length !== 1 || JSON.stringify(candidate.checks[0]) !== JSON.stringify(checks[checkIndex]) ||
       action.outcome?.status !== action.state
     : JSON.stringify(candidate.checks) !== JSON.stringify(checks)) throw new Error("candidate changed");
-  const review = await reviewGitBranches(s.feature.cwd, s.feature.branch, s.target.branch);
-  if (candidate.featureOid !== undefined && candidate.featureOid !== review.featureOid ||
-    candidate.targetOid !== undefined && candidate.targetOid !== review.targetOid ||
-    candidate.candidateTreeOid !== undefined && candidate.candidateTreeOid !== review.mergeTreeOid) throw new Error("review changed");
-  const snapshot = await captureGitCheckRecoverySnapshot(s.feature.cwd, s.target.cwd, review, hash(s.policy), evidence.after.checkDigest);
-  if (JSON.stringify(snapshot) !== JSON.stringify(evidence.after)) throw new Error("post snapshot changed");
+  // Candidate OIDs, where saved, must describe the ORIGINAL check, not the
+  // current branches. An agent multi-check candidate need not contain OIDs.
+  if (candidate.featureOid !== undefined && fingerprint(candidate.featureOid) !== evidence.after.featureOid ||
+    candidate.targetOid !== undefined && fingerprint(candidate.targetOid) !== evidence.after.targetOid) throw new Error("original candidate changed");
+  const current = await captureGitCheckRecoveryCurrentState(s.feature.cwd, s.target.cwd, hash(s.policy), evidence.after.checkDigest);
+  const stable: (keyof GitCheckRecoveryCurrentState)[] = ["featurePath", "targetPath", "featureIdentity", "targetIdentity",
+    "resourceIdentity", "featureBranch", "targetBranch", "policyDigest", "checkDigest"];
+  if (stable.some((key) => current[key] !== evidence.after![key])) throw new Error("recovery resource changed");
+  const moved = ["featureOid", "targetOid", "featureIndex", "targetIndex", "featureStatus", "targetStatus", "refs"]
+    .some((key) => current[key as keyof GitCheckRecoveryCurrentState] !== evidence.after![key as keyof typeof current]);
+  let snapshot: GitCheckRecoveryCurrentState | typeof evidence.after;
+  let heads: { featureHead: string; targetHead: string };
+  if (moved) {
+    // An original tree candidate cannot be re-reviewed against a different
+    // merge candidate without the old review. Refuse this bounded exception.
+    if (candidate.candidateTreeOid !== undefined) throw new Error("original tree review unavailable");
+    const [feature, target] = await Promise.all([checkoutView(s.feature.cwd), checkoutView(s.target.cwd)]);
+    if (feature.status.length || target.status.length) throw new Error("checkout dirty");
+    heads = await originalTips(s.feature.cwd, evidence.after.featureOid, evidence.after.targetOid);
+    snapshot = current;
+  } else {
+    const review = await reviewGitBranches(s.feature.cwd, s.feature.branch, s.target.branch);
+    if (candidate.featureOid !== undefined && candidate.featureOid !== review.featureOid ||
+      candidate.targetOid !== undefined && candidate.targetOid !== review.targetOid ||
+      candidate.candidateTreeOid !== undefined && candidate.candidateTreeOid !== review.mergeTreeOid) throw new Error("review changed");
+    snapshot = await captureGitCheckRecoverySnapshot(s.feature.cwd, s.target.cwd, review, hash(s.policy), evidence.after.checkDigest);
+    if (JSON.stringify(snapshot) !== JSON.stringify(evidence.after)) throw new Error("post snapshot changed");
+    heads = { featureHead: review.featureOid, targetHead: review.targetOid };
+  }
   if (!await unitStopped(evidence.unit, proof.invocation)) throw new Error("unit not proven stopped");
-  return { evidence, action, snapshot, proof };
+  return { evidence, action, snapshot, proof, heads, mode: moved ? "moved" as const : "unchanged" as const };
 }
 async function checkoutView(cwd: string) {
   const branch = (await git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")).trim();
@@ -183,11 +235,13 @@ export async function GET(req: Request) {
     if (isGitCheckoutGated(s.feature.cwd) || isGitCheckoutGated(s.target.cwd)) return denied();
     const release = acquireGitCheckoutGate([s.feature.cwd, s.target.cwd]);
     try {
-      const { evidence, action, snapshot, proof } = await inspect(s);
+      const { evidence, action, snapshot, proof, heads, mode } = await inspect(s);
       const [feature, target] = await Promise.all([checkoutView(s.feature.cwd), checkoutView(s.target.cwd)]);
       // No awaited operation after this final state check before issuing the review latch.
       const latest = await inspect(s);
-      if (latest.action.revision !== action.revision || JSON.stringify(latest.snapshot) !== JSON.stringify(snapshot)) throw new Error("preview changed");
+      if (latest.action.revision !== action.revision || latest.mode !== mode ||
+        JSON.stringify(latest.heads) !== JSON.stringify(heads) ||
+        JSON.stringify(latest.snapshot) !== JSON.stringify(snapshot)) throw new Error("preview changed");
       const pending = tickets();
       for (const [name, item] of pending) if (item.expiresAt <= Date.now() ||
         item.sessionId === sessionId && item.actionId === evidence.actionId) pending.delete(name);
@@ -196,8 +250,10 @@ export async function GET(req: Request) {
       const revision = randomUUID(); // unpredictable and one-use; journal revision stays server-side
       pending.set(revision, { sessionId, sessionFile: s.sessionFile, cwd: s.cwd, featureCwd: s.feature.cwd,
         target: s.target.cwd, commonDir: s.feature.commonDir, id: evidence.id, actionId: evidence.actionId,
-        actionRevision: action.revision, snapshot: JSON.stringify(snapshot), invocation: proof.invocation, expiresAt });
-      return NextResponse.json({ eligible: true, actionId: evidence.actionId, revision, unit: evidence.unit,
+        actionRevision: action.revision, snapshot: JSON.stringify(snapshot), mode, invocation: proof.invocation, expiresAt });
+      return NextResponse.json({ eligible: true, actionId: evidence.actionId, revision, unit: evidence.unit, mode,
+        original: { ...heads, featureHeadDigest: evidence.after!.featureOid,
+          targetHeadDigest: evidence.after!.targetOid, refsDigest: evidence.after!.refs },
         feature, target, containment: { emptyEvidence: proof.emptyEvidence, payload: proof.payload }, expiresAt });
     } finally { release(); }
   } catch { return denied(); }
@@ -223,7 +279,9 @@ async function bodyOf(req: Request): Promise<unknown> {
 export async function POST(req: Request) {
   let input: unknown;
   try { input = await bodyOf(req); } catch { return error("Invalid or oversized JSON", 400); }
-  if (!record(input) || !exact(input, ["sessionId", "actionId", "revision", "acknowledged"]) ||
+  const reviewedMovement = record(input) && input.reviewedMovement === true;
+  if (!record(input) || !exact(input, ["sessionId", "actionId", "revision", "acknowledged",
+    ...(reviewedMovement ? ["reviewedMovement"] : [])]) ||
     typeof input.sessionId !== "string" || !SESSION.test(input.sessionId) ||
     typeof input.actionId !== "string" || !GIT_ACTION_ID_PATTERN.test(input.actionId) ||
     typeof input.revision !== "string" || !GIT_ACTION_ID_PATTERN.test(input.revision) ||
@@ -232,7 +290,8 @@ export async function POST(req: Request) {
   const ticket = tickets().get(revision);
   // Consume before the first await: concurrent or replayed confirmations cannot share a review.
   tickets().delete(revision);
-  if (!ticket || ticket.sessionId !== sessionId || ticket.actionId !== actionId || ticket.expiresAt <= Date.now()) return error("Recovery review expired; inspect again", 409);
+  if (!ticket || ticket.sessionId !== sessionId || ticket.actionId !== actionId || ticket.expiresAt <= Date.now() ||
+    (ticket.mode === "moved") !== reviewedMovement) return error("Recovery review expired; inspect again", 409);
   try {
     const s = await scope(sessionId);
     if (ticket.sessionFile !== s.sessionFile || !samePath(ticket.cwd, s.cwd) ||
@@ -244,7 +303,7 @@ export async function POST(req: Request) {
       const inspected = await inspect(s);
       if (inspected.evidence.id !== ticket.id || inspected.evidence.actionId !== actionId ||
         inspected.action.revision !== ticket.actionRevision || inspected.proof.invocation !== ticket.invocation ||
-        JSON.stringify(inspected.snapshot) !== ticket.snapshot) throw new Error("review changed");
+        inspected.mode !== ticket.mode || JSON.stringify(inspected.snapshot) !== ticket.snapshot) throw new Error("review changed");
       // Re-read policy/session, trust, registered resources, manager and post-check
       // snapshot after all waits; no await between final snapshot and disposition.
       const fresh = await scope(sessionId);
@@ -253,23 +312,34 @@ export async function POST(req: Request) {
         !samePath(fresh.feature.commonDir, ticket.commonDir)) throw new Error("selection changed");
       const final = await inspect(fresh);
       if (final.evidence.id !== ticket.id || final.action.revision !== ticket.actionRevision ||
-        final.proof.invocation !== ticket.invocation || JSON.stringify(final.snapshot) !== ticket.snapshot ||
-        !idle(fresh)) throw new Error("recovery changed");
+        final.proof.invocation !== ticket.invocation || final.mode !== ticket.mode ||
+        JSON.stringify(final.snapshot) !== ticket.snapshot || !idle(fresh)) throw new Error("recovery changed");
       req.signal.throwIfAborted();
-      const review = await reviewGitBranches(fresh.feature.cwd, fresh.feature.branch, fresh.target.branch);
-      // Last async read immediately before the synchronous invalidation and ledger
-      // disposition: include ref, index, status, path and resource identities.
-      const finalSnapshot = await captureGitCheckRecoverySnapshot(fresh.feature.cwd, fresh.target.cwd, review,
-        hash(fresh.policy), final.evidence.after!.checkDigest);
+      const review = ticket.mode === "unchanged"
+        ? await reviewGitBranches(fresh.feature.cwd, fresh.feature.branch, fresh.target.branch) : null;
+      // Last async read before disposition: ref, index, status, path and
+      // resource identities. A moved checkout is not a current merge candidate.
+      const finalSnapshot = review
+        ? await captureGitCheckRecoverySnapshot(fresh.feature.cwd, fresh.target.cwd, review,
+          hash(fresh.policy), final.evidence.after!.checkDigest)
+        : await captureGitCheckRecoveryCurrentState(fresh.feature.cwd, fresh.target.cwd,
+          hash(fresh.policy), final.evidence.after!.checkDigest);
       if (JSON.stringify(finalSnapshot) !== ticket.snapshot || !idle(fresh)) throw new Error("checkout changed");
       req.signal.throwIfAborted();
       // These invalidate process-local success capabilities, never create one.
       // Any failure leaves the durable quarantine in place.
       invalidateGitIntegrationPlansForResource(fresh.feature.commonDir);
-      invalidateGitVerificationReceiptsForCheckout(fresh.feature.cwd);
-      resolveHumanReviewedGitCheck(fresh.agentDir, fresh.feature.commonDir, ticket.id, actionId, finalSnapshot,
-        ticket.invocation, { kind: "human-reviewed-git-check-recovery", id: ticket.id, actionId,
-          resource: fresh.feature.commonDir, unit: final.evidence.unit, proofIdentifier: ticket.invocation });
+      invalidateGitVerificationReceiptsForResource(fresh.feature.commonDir);
+      const identity = { id: ticket.id, actionId, resource: fresh.feature.commonDir,
+        unit: final.evidence.unit, proofIdentifier: ticket.invocation };
+      if (ticket.mode === "moved") {
+        resolveHumanReviewedGitCheck(fresh.agentDir, fresh.feature.commonDir, ticket.id, actionId, finalSnapshot,
+          ticket.invocation, { ...identity, kind: "human-reviewed-git-check-recovery-moved",
+            currentStateDigest: hash(finalSnapshot), reviewedMovement: true });
+      } else {
+        resolveHumanReviewedGitCheck(fresh.agentDir, fresh.feature.commonDir, ticket.id, actionId, finalSnapshot,
+          ticket.invocation, { ...identity, kind: "human-reviewed-git-check-recovery" });
+      }
       return NextResponse.json({ recovered: true, actionId });
     } finally { release(); }
   } catch { return error("Recovery unavailable; inspect both checkouts and the action history", 409); }

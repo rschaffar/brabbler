@@ -11,7 +11,7 @@ import { newGitCheckUnit, runContainedGitCheck, linuxSystemdBackend,
   type ContainmentBackend, type ContainedCheckResult } from "./git-check-containment";
 import { revalidateGitProjectResources, selectGitProjectResources } from "./git-project-resources";
 import { assertGitOperationAdmission, beginSupervisedGitOperationIntent, assertGitCheckRecoverySnapshotCapacity,
-  type GitCheckSnapshot, type GitCheckCleanupProof } from "./git-operation-admission";
+  type GitCheckSnapshot, type GitCheckRecoveryCurrentState, type GitCheckCleanupProof } from "./git-operation-admission";
 import { GIT_ACTION_ID_PATTERN } from "./git-action-types";
 import { samePath, toNativePath } from "./paths";
 
@@ -37,6 +37,7 @@ export interface VerificationReceipt {
   readonly id: string;
   readonly sessionId: string;
   readonly cwd: string;
+  readonly commonDir: string;
   readonly featureBranch: string;
   readonly featureOid: string;
   readonly featureTreeOid: string;
@@ -65,9 +66,15 @@ export function lookupGitVerificationReceipt(id: string): VerificationReceipt | 
 export function inspectGitVerificationReceipts(sessionId: string): readonly VerificationReceipt[] {
   return [...store().receipts.values()].filter((receipt) => receipt.sessionId === sessionId);
 }
-/** A human recovery cannot revive an older success after releasing a later failed
- * check. Drop all receipts for the affected physical checkout before disposition;
- * new verification must create new receipts under the reopened resource gate. */
+/** Drop process-local capabilities created before a reviewed failed check.
+ * The admission ledger is per Git common directory, not per feature checkout.
+ * Legacy hot-reload receipts without a resource identity are also invalidated. */
+export function invalidateGitVerificationReceiptsForResource(commonDir: string): void {
+  for (const [id, receipt] of store().receipts) {
+    if (!receipt.commonDir || samePath(receipt.commonDir, commonDir)) store().receipts.delete(id);
+  }
+}
+/** A checkout-scoped invalidator remains useful for other callers and tests. */
 export function invalidateGitVerificationReceiptsForCheckout(cwd: string): void {
   for (const [id, receipt] of store().receipts) if (samePath(receipt.cwd, cwd)) store().receipts.delete(id);
 }
@@ -169,8 +176,8 @@ async function privateLog(agentDir: string, id: string, output: Buffer): Promise
 // Capture raw status even when dirty: a human needs the changed state, not an
 // optimistic clean-only receipt. Ref output and arbitrary checkout data are
 // hashed before entering the bounded, private ledger.
-export async function captureGitCheckRecoverySnapshot(feature: string, target: string, review: GitReview,
-  policyDigest: string, checkDigest: string): Promise<GitCheckSnapshot> {
+export async function captureGitCheckRecoveryCurrentState(feature: string, target: string,
+  policyDigest: string, checkDigest: string): Promise<GitCheckRecoveryCurrentState> {
   const f = await selectGitProjectResources(feature);
   const t = await selectGitProjectResources(target);
   if (f.commonDir !== t.commonDir) unavailable("worktree resource changed");
@@ -193,9 +200,21 @@ export async function captureGitCheckRecoverySnapshot(feature: string, target: s
     resourceIdentity: digest(f.commonDir + "\0" + JSON.stringify(f.identities.common)),
     featureBranch: featureState.branch, targetBranch: targetState.branch,
     featureOid: featureState.head, targetOid: targetState.head,
-    reviewDigest: digest(JSON.stringify(review)), policyDigest, checkDigest,
-    featureIndex: featureState.index, targetIndex: targetState.index,
+    policyDigest, checkDigest, featureIndex: featureState.index, targetIndex: targetState.index,
     featureStatus: featureState.status, targetStatus: targetState.status, refs: digest(refs) };
+}
+
+/** Preserve the original check snapshot's exact field order for durable proof. */
+export async function captureGitCheckRecoverySnapshot(feature: string, target: string, review: GitReview,
+  policyDigest: string, checkDigest: string): Promise<GitCheckSnapshot> {
+  const current = await captureGitCheckRecoveryCurrentState(feature, target, policyDigest, checkDigest);
+  return { version: 1, featurePath: current.featurePath, targetPath: current.targetPath,
+    featureIdentity: current.featureIdentity, targetIdentity: current.targetIdentity,
+    resourceIdentity: current.resourceIdentity, featureBranch: current.featureBranch,
+    targetBranch: current.targetBranch, featureOid: current.featureOid, targetOid: current.targetOid,
+    reviewDigest: digest(JSON.stringify(review)), policyDigest: current.policyDigest, checkDigest: current.checkDigest,
+    featureIndex: current.featureIndex, targetIndex: current.targetIndex,
+    featureStatus: current.featureStatus, targetStatus: current.targetStatus, refs: current.refs };
 }
 
 async function runCheck(cwd: string, argv: readonly string[], timeout: number, unit: string,
@@ -331,7 +350,7 @@ async function runVerification(options: GitVerificationOptions): Promise<Verific
     // There is no recovery/clear path for failed, aborted or uncertain checks.
     try { reservation.resolve(); }
     catch { unavailable("check process containment recovery required; inspect the worktrees manually"); }
-    const receipt: VerificationReceipt = Object.freeze({ id, sessionId: options.sessionId, cwd,
+    const receipt: VerificationReceipt = Object.freeze({ id, sessionId: options.sessionId, cwd, commonDir: selection.commonDir,
       featureBranch: review.featureBranch, featureOid: review.featureOid, featureTreeOid: review.featureTreeOid,
       targetCwd, targetBranch: review.targetBranch, targetOid: review.targetOid, targetTreeOid: review.targetTreeOid,
       mergeTreeOid: review.mergeTreeOid, policyDigest, checkIndex: options.checkIndex,
