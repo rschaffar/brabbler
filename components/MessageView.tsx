@@ -903,7 +903,7 @@ function AssistantMessageView({
           </button>
         )}
         {time && !isStreaming && (
-          <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>
+          <span style={{ fontSize: 10, color: "var(--text-dim)", whiteSpace: "nowrap" }}>{time}</span>
         )}
       </div>
     </div>
