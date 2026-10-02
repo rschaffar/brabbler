@@ -6,7 +6,23 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   const checkoutHead = execFileSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   await page.goto(`${base}/?session=${sessionId}`, { waitUntil: "domcontentloaded" });
   await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Git Explorer", exact: true }).click();
+  const gitButton = page.getByRole("button", { name: "Git Explorer", exact: true });
+  const initialViewport = page.viewportSize();
+  const sidebarWasOpen = await page.locator("#session-sidebar").isVisible();
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    const buttonBounds = await gitButton.boundingBox();
+    const iconBounds = await gitButton.locator("svg").boundingBox();
+    assert.ok(buttonBounds && iconBounds, "Git button and icon are visible");
+    assert.ok(Math.abs(buttonBounds.x + buttonBounds.width / 2 - iconBounds.x - iconBounds.width / 2) <= 1,
+      `Git icon is horizontally centered at ${width}px`);
+    assert.ok(Math.abs(buttonBounds.y + buttonBounds.height / 2 - iconBounds.y - iconBounds.height / 2) <= 1,
+      `Git icon is vertically centered at ${width}px`);
+  }
+  await page.setViewportSize(initialViewport);
+  // Entering the mobile layout closes the sidebar; restore it for the history fixture.
+  if (sidebarWasOpen) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+  await gitButton.click();
   const explorer = page.locator("#git-explorer-panel");
   const graph = explorer.getByLabel("Commit graph");
   const branch = explorer.getByRole("combobox", { name: "History branch" });

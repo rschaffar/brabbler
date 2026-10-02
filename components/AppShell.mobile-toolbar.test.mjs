@@ -6,6 +6,16 @@ const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8"
 const mobileHookSource = await readFile(new URL("../hooks/useIsMobile.ts", import.meta.url), "utf8");
 const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
+test("centers top-bar overview icons, including the block-level Git SVG", () => {
+  const rule = styles.match(/\.activity-top-button\s*\{([^}]+)\}/)?.[1];
+  assert.ok(rule);
+  assert.match(rule, /display:\s*flex/);
+  assert.match(rule, /align-items:\s*center/);
+  assert.match(rule, /justify-content:\s*center/);
+  assert.match(rule, /padding:\s*0/);
+  assert.match(source, /className="activity-top-button" aria-label="Git Explorer"/);
+});
+
 test("shows the selected session title and project beneath the mobile toolbar only in chat", () => {
   assert.match(source, /selectedSession\.name \|\| \(skillExpansionToCommand\(selectedSession\.firstMessage\) \?\? selectedSession\.firstMessage\)\.slice\(0, 50\) \|\| selectedSession\.id\.slice\(0, 12\)/);
   assert.match(source, /: translate\("i18n\.newSession"\)/);
