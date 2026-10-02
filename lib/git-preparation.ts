@@ -305,6 +305,7 @@ export async function preflightGitPreparation(request: GitPreparationRequest, ag
     if (request.mainBranch !== undefined && request.mainBranch !== mainBranch) refuse("invalid-selection", "Requested main differs from saved project main");
     const target = await selectCanonicalGitResources(request.target);
     if (source.branch === mainBranch) refuse("main-source", "The designated project main branch must never be rewritten");
+    if (target.branch !== mainBranch) refuse("invalid-selection", "Target checkout must be the saved designated project main branch");
     if (!samePath(source.projectRoot, target.projectRoot) || !samePath(source.commonDir, target.commonDir) ||
         samePath(source.cwd, target.cwd) || source.branch === target.branch) refuse("invalid-selection", "Distinct registered checkouts in one repository required");
     return await withGitProjectReview(source, async (sourceRepo) => withGitProjectReview(target, async (targetRepo) => {

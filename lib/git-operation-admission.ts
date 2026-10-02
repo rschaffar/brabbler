@@ -7,7 +7,7 @@ import { readGitAction } from "./git-action-journal";
 import { GIT_ACTION_ID_PATTERN, type GitActionKind } from "./git-action-types";
 
 /**
- * Server-only conservative admission ledger for supervised commits. A reservation
+ * Server-only conservative admission ledger for supervised Git operations. A reservation
  * is short-lived (never held through approval) but its intent survives crashes.
  * A chat/session is not a resource; a successful process exit is not proof of
  * child containment.
@@ -24,8 +24,15 @@ import { GIT_ACTION_ID_PATTERN, type GitActionKind } from "./git-action-types";
 const MAX_ENTRIES = 1024;
 const entryLimit = () => process.env.NODE_TEST_CONTEXT && process.env.PI_WEB_GIT_ADMISSION_TEST_LIMIT === "32" ? 32 : MAX_ENTRIES;
 const MAX_DOCUMENT = 4096;
-const KINDS: readonly GitActionKind[] = ["commit", "review", "checks", "integration"];
+type GitOperationIntentKind = GitActionKind | "prepare";
+const KINDS: readonly GitOperationIntentKind[] = ["commit", "review", "checks", "integration", "prepare"];
 type Phase = "intent" | "resolved";
+/** Caller attests to a completed native preparation AND a verified final repository
+ * state (including no operation markers). A preflight snapshot, planned OID,
+ * exit code alone, failure or uncertain partial result is not this proof. The
+ * ledger validates and preserves the assertion; it does not execute or verify Git. */
+export type GitPrepareOutcomeProof = Readonly<{ version: 1; outcome: "completed";
+  beforeOid: string; afterOid: string; resultTreeOid: string }>;
 /** Digests keep arbitrary repo paths, branch names and ref output out of bounded ledger files. */
 export type GitCheckSnapshot = { version: 1; featurePath: string; targetPath: string;
   featureIdentity: string; targetIdentity: string; resourceIdentity: string;
@@ -44,8 +51,9 @@ type CheckPre = { version: 1; id: string; actionId: string; resource: string; un
 type CheckPost = { version: 1; id: string; actionId: string; resource: string; unit: string;
   preSha256: string; snapshot: GitCheckSnapshot; cleanupProof: GitCheckCleanupProof; outcome: GitCheckOutcome;
   source: "linux-systemd" | "node-test-simulated" };
-type Evidence = { version: 1; id: string; actionId: string; kind: GitActionKind; resource: string;
-  phase: Phase; createdAt: number; resolvedAt?: number; checkUnit?: string; disposition?: "recovered" };
+type Evidence = { version: 1; id: string; actionId: string; kind: GitOperationIntentKind; resource: string;
+  phase: Phase; createdAt: number; resolvedAt?: number; checkUnit?: string; disposition?: "recovered";
+  prepareOutcome?: GitPrepareOutcomeProof };
 /** Construct only on the server after an explicit human review of this exact check.
  * This is an assertion by the caller, not a substitute for repository/process revalidation. */
 type CheckReviewIdentity = Readonly<{ id: string; actionId: string; resource: string; unit: string; proofIdentifier: string }>;
@@ -65,8 +73,10 @@ export interface GitOperationReservation {
   readonly actionId: string;
   readonly id: string;
   /** Call only after independent evidence proves the effect AND any child processes are finished.
-   * Do not call on a rejected/aborted check or an uncertain Git update. */
-  resolve(): void;
+   * Do not call on a rejected/aborted check or an uncertain Git update.
+   * Preparation requires the caller's positively verified actual outcome; read-only
+   * preflight and an uncertain/partial operation must remain quarantined. */
+  resolve(proof?: GitPrepareOutcomeProof): void;
   /** Recheck durable reservation and intent inside the final native apply gate. */
   assertOwned(): void;
   /** Immutable recovery artifacts only; neither method releases quarantine. */
@@ -78,6 +88,14 @@ function deny(): never { throw new Error("Git operation admission unavailable; i
 const sha = (s: string | Buffer) => createHash("sha256").update(s).digest("hex");
 const CHECK_UNIT = /^pi-web-git-check-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\.service$/;
 const HASH = /^[a-f0-9]{64}$/;
+const OID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+function validPrepareOutcome(value: unknown): value is GitPrepareOutcomeProof {
+  return keys(value, ["version", "outcome", "beforeOid", "afterOid", "resultTreeOid"]) &&
+    value.version === 1 && value.outcome === "completed" && OID.test(value.beforeOid as string) &&
+    OID.test(value.afterOid as string) && OID.test(value.resultTreeOid as string) &&
+    (value.beforeOid as string).length === (value.afterOid as string).length &&
+    (value.afterOid as string).length === (value.resultTreeOid as string).length;
+}
 const INVOCATION = /^[a-fA-F0-9]{32}$/;
 const SNAPSHOT_KEYS = ["version", "featurePath", "targetPath", "featureIdentity", "targetIdentity", "resourceIdentity",
   "featureBranch", "targetBranch", "featureOid", "targetOid", "reviewDigest", "policyDigest", "checkDigest",
@@ -183,14 +201,17 @@ function load(file: string, resource: string, id: string): Evidence {
   if (!keys(value, ["version", "id", "actionId", "kind", "resource", "phase", "createdAt",
     ...(typeof (value as Record<string, unknown>)?.resolvedAt === "number" ? ["resolvedAt"] : []),
     ...(typeof (value as Record<string, unknown>)?.checkUnit === "string" ? ["checkUnit"] : []),
-    ...(Object.hasOwn(value as object, "disposition") ? ["disposition"] : [])]) ||
-    value.version !== 1 || value.id !== id || !uuid(value.actionId) || !KINDS.includes(value.kind as GitActionKind) ||
+    ...(Object.hasOwn(value as object, "disposition") ? ["disposition"] : []),
+    ...(Object.hasOwn(value as object, "prepareOutcome") ? ["prepareOutcome"] : [])]) ||
+    value.version !== 1 || value.id !== id || !uuid(value.actionId) || !KINDS.includes(value.kind as GitOperationIntentKind) ||
     value.resource !== resource || !["intent", "resolved"].includes(value.phase as string) ||
     (value.kind === "checks" ? !CHECK_UNIT.test(value.checkUnit as string) : Object.hasOwn(value, "checkUnit")) ||
     !Number.isSafeInteger(value.createdAt) || (value.createdAt as number) < 0 ||
     (value.phase === "intent" && Object.hasOwn(value, "resolvedAt")) ||
     (value.phase === "resolved" && (!Number.isSafeInteger(value.resolvedAt) || (value.resolvedAt as number) < (value.createdAt as number))) ||
     (Object.hasOwn(value, "disposition") && (value.disposition !== "recovered" || value.phase !== "resolved" || value.kind !== "checks")) ||
+    (value.kind === "prepare" && value.phase === "resolved" ? !validPrepareOutcome(value.prepareOutcome) :
+      Object.hasOwn(value, "prepareOutcome")) ||
     outer.sha256 !== sha(JSON.stringify(value)) || !bytes.equals(Buffer.from(encode(value as Evidence)))) deny();
   return value as unknown as Evidence;
 }
@@ -404,7 +425,7 @@ export function resolveHumanReviewedGitCheck(agentDir: string, commonDir: string
 }
 
 /** Begin only after physical resource selection and authorization. A reservation is durable BEFORE any caller side effect. */
-export function beginGitOperationIntent(agentDir: string, commonDir: string, actionId: string, kind: GitActionKind,
+export function beginGitOperationIntent(agentDir: string, commonDir: string, actionId: string, kind: GitOperationIntentKind,
   checkUnit?: string): GitOperationReservation {
   if (!uuid(actionId) || !KINDS.includes(kind) || kind === "checks" && !CHECK_UNIT.test(checkUnit ?? "") ||
     kind !== "checks" && checkUnit !== undefined) deny();
@@ -437,7 +458,7 @@ export function beginGitOperationIntent(agentDir: string, commonDir: string, act
     if (finished) deny();
     directory(gate);
     if (fs.readdirSync(gate).length !== 1 || !readFile(path.join(gate, "owner")).equals(Buffer.from(owner))
-      || load(file, commonDir, id).phase !== "intent") deny();
+      || JSON.stringify(load(file, commonDir, id)) !== JSON.stringify(record)) deny();
   };
   return { actionId, id, assertOwned,
     recordCheckBefore(snapshot) {
@@ -454,8 +475,14 @@ export function beginGitOperationIntent(agentDir: string, commonDir: string, act
       writeCheck(path.join(dir, `${id}.post`), { version: 1, id, actionId, resource: commonDir, unit: checkUnit!,
         preSha256: sha(encodeCheck(pre)), snapshot, cleanupProof: proof, outcome, source });
     },
-    resolve() {
+    resolve(proof) {
     assertOwned();
+    if (kind === "prepare") {
+      if (!validPrepareOutcome(proof)) deny();
+      // Never clear an unknown/corrupt/orphan or a second unresolved intent.
+      const status = scan(commonDir, dir, gate);
+      if (status.reason !== "unresolved" || status.actionIds.length !== 1 || status.actionIds[0] !== actionId) deny();
+    } else if (proof !== undefined) deny();
     if (kind === "checks") {
       const pre = loadCheck(path.join(dir, `${id}.pre`), record, "pre");
       let post: CheckPost | undefined;
@@ -471,7 +498,8 @@ export function beginGitOperationIntent(agentDir: string, commonDir: string, act
          post.outcome.status !== 0 || post.outcome.timedOut || post.outcome.overflow || !post.outcome.containmentComplete ||
          post.cleanupProof.payload !== "release-attempted")) deny();
     }
-    write(file, { ...record, phase: "resolved", resolvedAt: Math.max(Date.now(), record.createdAt) }, false);
+    write(file, { ...record, phase: "resolved", resolvedAt: Math.max(Date.now(), record.createdAt),
+      ...(kind === "prepare" ? { prepareOutcome: proof } : {}) }, false);
     // A replaced reservation cannot be released by a stale handle. An error
     // between unlink and rmdir strands a conservative orphan, never clears it.
     if (!readFile(path.join(gate, "owner")).equals(Buffer.from(owner))) deny();
@@ -556,7 +584,7 @@ export async function assertGitOperationAdmission(selection: GitProjectResources
  * only the caller can resolve after recording the exact outcome and positively
  * proving any spawned check children have stopped. */
 export async function beginSupervisedGitOperationIntent(selection: GitProjectResources, actionId: string,
-  kind: "commit" | "checks" | "integration", agentDir = getAgentDir(), checkUnit?: string): Promise<GitOperationReservation> {
+  kind: "commit" | "checks" | "integration" | "prepare", agentDir = getAgentDir(), checkUnit?: string): Promise<GitOperationReservation> {
   await revalidateGitProjectResources(selection);
   // Reject known legacy quarantine before publishing our own intent. Otherwise
   // an unrelated old blocker strands a second, avoidable orphan on this checkout.

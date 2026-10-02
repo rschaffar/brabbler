@@ -118,6 +118,31 @@ export function selectedProjectCommitEligibility(
   return confirmation();
 }
 
+/** Future independently selected preparation availability. Neither this answer nor
+ * prepareConfirmation:none authorizes a history rewrite: the caller must still
+ * obtain a separate saved action grant or exact approval, then recheck before
+ * native apply. Captured task consent is intentionally not inherited. */
+export function selectedProjectPreparationEligibility(
+  state: GitWorkflowSettingsResponse, facts: GitWorkflowSessionFacts, actor: ManagedGitActor,
+): GitWorkflowPermission {
+  if (state.optedOut) return blocked("chat-opted-out", "Pi Web Git workflow is off for this chat.");
+  if (facts.subagent) return blocked("subagent", "Subagents cannot prepare Git history.");
+  if (state.sessionScope !== "project" || !state.selection?.projectRoot || !state.selection.cwd) {
+    return blocked("project-selection-required", "Select one canonical project and physical checkout for preparation.");
+  }
+  if (actor === "agent" && (!facts.tools || !hasManagedGitMutationTools(facts.tools))) {
+    return blocked(!facts.tools ? "unknown-tools" : "read-only", "Active coding mutation tools are required for agent preparation.");
+  }
+  if (state.paused) return blocked("paused", "All managed Git actions are paused.");
+  if (!state.resolved.session.values.enabled || state.projectSessionRestrictions?.enabled === false) {
+    return blocked("disabled", "Managed Git is disabled for this project/chat.");
+  }
+  const values = state.resolved.session.values;
+  if (!state.project.mainBranch) return blocked("missing-main", "Save a designated project main branch before preparation.");
+  if (values.prepareConfirmation === "disabled") return blocked("preparation-disabled", "Preparation is disabled for this project/chat.");
+  return confirmation();
+}
+
 export function managedGitPermissions(state: GitWorkflowSettingsResponse, facts: GitWorkflowSessionFacts): GitWorkflowPermissions {
   const actorPermissions = (actor: ManagedGitActor) => Object.fromEntries(MANAGED_GIT_STAGES.map((stage) => [stage, managedGitPermission(state, facts, stage, actor)])) as Record<ManagedGitStage, GitWorkflowPermission>;
   const agent = actorPermissions("agent");
