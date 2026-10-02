@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
 import { samePath } from "./paths";
 import { GIT_ACTION_ID_PATTERN, isTerminalGitAction,
-  type GitActionCandidateSnapshot, type GitActionHistoryResponse, type GitActionOutcome,
+  type GitActionCandidateSnapshot, type GitActionHistoryResponse, type GitActionOutcome, type GitActionResourceAttribution,
   type GitActionRecord, type GitActionSource, type GitActionState, type GitActionUpdateEvent } from "./git-action-types";
 
 /**
@@ -98,8 +98,16 @@ function array<T>(value: unknown, max: number, item: (value: unknown) => T): T[]
   return result;
 }
 function sessionId(value: unknown): string { return text(value, 256); }
+function directoryInstance(value: unknown): GitActionResourceAttribution["commonIdentity"] {
+  const v = fields(value, ["device", "inode", "birthtime"]);
+  const component = (part: unknown) => {
+    if (typeof part !== "string" || !/^(?:0|[1-9][0-9]{0,19})$/.test(part)) invalid("directory instance");
+    return part;
+  };
+  return { device: component(v.device), inode: component(v.inode), birthtime: component(v.birthtime) };
+}
 function candidate(input: unknown, summary = false): GitActionCandidateSnapshot {
-  const v = fields(input, ["kind", "repositoryRoot"], ["projectRoot", "sourceCheckoutRoot", "targetCheckoutRoot", "featureBranch", "targetBranch", "message", "commitMode", "paths", "parentOid",
+  const v = fields(input, ["kind", "repositoryRoot"], ["projectRoot", "sourceCheckoutRoot", "targetCheckoutRoot", "resourceAttribution", "featureBranch", "targetBranch", "message", "commitMode", "paths", "parentOid",
     "candidateTreeOid", "featureOid", "targetOid", "mergeOid", "integrationMethod", "checks", "selection", "diffUnavailable", ...(summary ? [] : ["diff"])]);
   const physicalPath = (value: unknown): string => {
     const path = text(value, GIT_ACTION_LIMITS.pathBytes);
@@ -120,6 +128,20 @@ function candidate(input: unknown, summary = false): GitActionCandidateSnapshot 
       if (result.kind !== "integration" && result.kind !== "checks" && result.kind !== "review") invalid("target checkout on commit");
       result.targetCheckoutRoot = physicalPath(v.targetCheckoutRoot);
     }
+  }
+  if (Object.hasOwn(v, "resourceAttribution")) {
+    if (!result.projectRoot || !result.sourceCheckoutRoot) invalid("incomplete resource attribution");
+    const a = fields(v.resourceAttribution, ["version", "commonDir", "commonIdentity", "projectIdentity"]);
+    if (a.version !== 2) invalid("resource attribution version");
+    const canonicalPath = (value: string) => {
+      if (value !== (isAbsolute(value) ? resolve(value) : win32.resolve(value))) invalid("noncanonical resource path");
+    };
+    canonicalPath(root); canonicalPath(result.projectRoot); canonicalPath(result.sourceCheckoutRoot);
+    if (result.targetCheckoutRoot) canonicalPath(result.targetCheckoutRoot);
+    const commonDir = physicalPath(a.commonDir);
+    canonicalPath(commonDir);
+    result.resourceAttribution = { version: 2, commonDir,
+      commonIdentity: directoryInstance(a.commonIdentity), projectIdentity: directoryInstance(a.projectIdentity) };
   }
   for (const key of ["featureBranch", "targetBranch"] as const) if (v[key] !== undefined) result[key] = text(v[key], 1024);
   if (v.message !== undefined) result.message = text(v.message, GIT_ACTION_LIMITS.messageBytes);

@@ -1,7 +1,7 @@
-import { execFile } from "node:child_process";
-import { constants } from "node:fs";
+import { execFile, execFileSync } from "node:child_process";
+import { constants, lstatSync, realpathSync } from "node:fs";
 import { lstat, open, realpath, stat, type FileHandle } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isWindowsAbsolutePath } from "./file-access";
 import { gitExecEnv } from "./git-exec";
@@ -66,6 +66,98 @@ async function registrations(cwd: string) {
     else if (field.startsWith("branch refs/heads/") && entries.length) entries.at(-1)!.branch = field.slice("branch refs/heads/".length);
   }
   return entries;
+}
+
+const unavailableCheckouts = () => new GitProjectResourceError("unavailable", "Cannot classify every registered checkout of the selected repository.");
+/** Pure strict parser for admission only. A partial/ambiguous Git listing is not
+ * positive evidence that an old checkout path is absent. */
+export function parseBoundedGitWorktreePaths(bytes: Buffer): readonly string[] {
+  if (bytes.length > 128 * 1024) throw unavailableCheckouts();
+  const output = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  if (!output.endsWith("\0\0")) throw unavailableCheckouts();
+  const rows = output.slice(0, -2).split("\0\0");
+  if (rows.length === 0 || rows.length > 256) throw unavailableCheckouts();
+  const listed: string[] = [];
+  for (const row of rows) {
+    // Bare primary repositories have no selected local-branch checkout in
+    // selectGitProjectResources and are deliberately unsupported here too.
+    // Git's two-field bare form must not be read as a complete checkout row.
+    const fields = row.split("\0"), header = fields[0];
+    if (fields.length < 3 || fields.length > 5 || !header.startsWith("worktree ") ||
+      !/^HEAD (?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(fields[1]) ||
+      !(fields[2] === "detached" || fields[2] === "bare" ||
+        fields[2].startsWith("branch refs/heads/") && fields[2].length > 18 &&
+        fields[2].length <= 4114 && !/[\x00-\x1f\x7f]/.test(fields[2])) ||
+      fields.slice(3).some((field) => !/^(?:locked|prunable)(?: .{1,4096})?$/.test(field)) ||
+      new Set(fields.slice(3).map((field) => field.split(" ", 1)[0])).size !== fields.length - 3) throw unavailableCheckouts();
+    const cwd = toNativePath(header.slice(9));
+    pathInput(cwd);
+    if (cwd !== resolve(cwd) || listed.some((previous) => samePath(previous, cwd))) throw unavailableCheckouts();
+    listed.push(cwd);
+  }
+  return listed;
+}
+/** Admission-only enumeration. The ordinary selector tolerates stale rows and
+ * parses just the selected branch; proving non-overlap requires a complete,
+ * bounded, unambiguous listing, including detached and prunable worktrees.
+ * No Git commands are run at any listed path. */
+/** Synchronous final-boundary inventory for a supervised reservation. Bounded
+ * like the async scan; it never mutates Git or reads an untrusted checkout's
+ * Git metadata. A changed directory instance or invalid row fails closed. */
+export function registeredGitProjectCheckoutPathsSync(selection: GitProjectResources): readonly string[] {
+  try {
+    for (const [dir, expected] of [[selection.cwd, selection.identities.checkout],
+      [selection.projectRoot, selection.identities.project], [selection.commonDir, selection.identities.common]] as const) {
+      const info = lstatSync(dir, { bigint: true });
+      if (!info.isDirectory() || info.isSymbolicLink() || !samePath(dir, realpathSync(dir)) ||
+        JSON.stringify(identity(info)) !== JSON.stringify(expected)) throw unavailableCheckouts();
+    }
+    const bytes = execFileSync("git", ["--no-optional-locks", "-C", selection.cwd, "worktree", "list", "--porcelain", "-z"],
+      { env: gitExecEnv(), timeout: 15_000, maxBuffer: 128 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+    const listed = parseBoundedGitWorktreePaths(bytes);
+    if (!samePath(listed[0], selection.projectRoot) || listed.filter((cwd) => samePath(cwd, selection.cwd)).length !== 1)
+      throw unavailableCheckouts();
+    const existing: string[] = [];
+    for (const cwd of listed) {
+      let info;
+      try { info = lstatSync(cwd); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT" && !samePath(cwd, selection.cwd) && !samePath(cwd, selection.projectRoot)) continue;
+        throw error;
+      }
+      if (!info.isDirectory() || info.isSymbolicLink() || !samePath(cwd, realpathSync(cwd))) throw unavailableCheckouts();
+      existing.push(cwd);
+    }
+    return existing;
+  } catch { throw unavailableCheckouts(); }
+}
+
+export async function registeredGitProjectCheckoutPaths(selection: GitProjectResources): Promise<readonly string[]> {
+  await revalidateGitProjectResources(selection);
+  try {
+    const bytes = (await exec("git", ["--no-optional-locks", "-C", selection.cwd, "worktree", "list", "--porcelain", "-z"],
+      { encoding: "buffer", env: gitExecEnv(), timeout: 15_000, maxBuffer: 128 * 1024 })).stdout;
+    const listed = parseBoundedGitWorktreePaths(bytes);
+    if (!samePath(listed[0], selection.projectRoot) || listed.filter((cwd) => samePath(cwd, selection.cwd)).length !== 1)
+      throw unavailableCheckouts();
+    const existing: string[] = [];
+    for (const cwd of listed) {
+      let info;
+      try { info = await lstat(cwd); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT" && !samePath(cwd, selection.cwd) && !samePath(cwd, selection.projectRoot)) continue;
+        throw error;
+      }
+      if (!info.isDirectory() || info.isSymbolicLink() || !samePath(cwd, await realpath(cwd))) throw unavailableCheckouts();
+      existing.push(cwd);
+    }
+    await revalidateGitProjectResources(selection);
+    return existing;
+  } catch {
+    // Unknown Git output, a changed/unreadable path or an oversized listing
+    // cannot become positive evidence of non-overlap.
+    throw unavailableCheckouts();
+  }
 }
 
 /**

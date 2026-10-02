@@ -55,6 +55,7 @@ export async function applyExactCommitOperation<T>(options: {
       await options.beforeApply();
       options.signal?.throwIfAborted();
       await revalidateGitCommitAdmission(selection);
+      reservation!.assertOwned();
       options.beforeRefUpdate?.(reservation!);
       options.atRefBoundary?.();
       applying = true;

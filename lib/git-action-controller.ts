@@ -14,11 +14,16 @@ export function gitActionAttribution(source: GitProjectResources, target?: GitPr
     || !samePath(source.commonDir, target.commonDir)
     || source.identities.common.device !== target.identities.common.device
     || source.identities.common.inode !== target.identities.common.inode
-    || source.identities.common.birthtime !== target.identities.common.birthtime)) {
+    || source.identities.common.birthtime !== target.identities.common.birthtime
+    || source.identities.project.device !== target.identities.project.device
+    || source.identities.project.inode !== target.identities.project.inode
+    || source.identities.project.birthtime !== target.identities.project.birthtime)) {
     throw new Error("Git action target belongs to a different captured repository");
   }
   return { projectRoot: source.projectRoot, sourceCheckoutRoot: source.cwd,
-    ...(target ? { targetCheckoutRoot: target.cwd } : {}) };
+    ...(target ? { targetCheckoutRoot: target.cwd } : {}),
+    resourceAttribution: { version: 2 as const, commonDir: source.commonDir,
+      commonIdentity: { ...source.identities.common }, projectIdentity: { ...source.identities.project } } };
 }
 
 export interface GitActionSink {

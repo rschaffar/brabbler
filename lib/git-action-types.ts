@@ -6,6 +6,13 @@ export const GIT_ACTION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0
 export type GitActionKind = "commit" | "review" | "checks" | "integration";
 export type GitActionState = "proposed" | "awaiting-decision" | "executing" | "succeeded" | "declined" | "cancelled" | "expired" | "blocked" | "failed" | "recovery-required";
 export type GitActionSource = "agent" | "human" | "legacy-agent";
+/** Optional v2 server-captured directory instances. Absence retains the original path-only v1 meaning. */
+export interface GitActionResourceAttribution {
+  version: 2;
+  commonDir: string;
+  commonIdentity: { device: string; inode: string; birthtime: string };
+  projectIdentity: { device: string; inode: string; birthtime: string };
+}
 export interface GitActionAnchor { version: 1; actionId: string }
 
 /** Allowlisted display data only: no review tokens, plan IDs, receipt IDs, jobs or approval capabilities. */
@@ -17,6 +24,8 @@ export interface GitActionCandidateSnapshot {
   projectRoot?: string;
   sourceCheckoutRoot?: string;
   targetCheckoutRoot?: string;
+  /** Complete only with the v1 project/source paths; never inferred when reading history. */
+  resourceAttribution?: GitActionResourceAttribution;
   featureBranch?: string;
   targetBranch?: string;
   message?: string;

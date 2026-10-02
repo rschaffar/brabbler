@@ -2,9 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { selectGitProjectResources, revalidateGitProjectResources, type GitProjectResources } from "./git-project-resources";
+import { selectGitProjectResources, revalidateGitProjectResources, registeredGitProjectCheckoutPaths,
+  registeredGitProjectCheckoutPathsSync, type GitProjectResources } from "./git-project-resources";
 import { readGitAction } from "./git-action-journal";
-import { GIT_ACTION_ID_PATTERN, type GitActionKind } from "./git-action-types";
+import { GIT_ACTION_ID_PATTERN, type GitActionKind, type GitActionResourceAttribution } from "./git-action-types";
+import { samePath } from "./paths";
 
 /**
  * Server-only conservative admission ledger for supervised Git operations. A reservation
@@ -515,16 +517,39 @@ export function beginGitOperationIntent(agentDir: string, commonDir: string, act
  * Scan a bounded index of action IDs; refuse corrupt/unreadable history rather than
  * treating missing records or artifacts as absence. Unrelated repos remain usable.
  */
-async function assertNoHistoricalRecovery(agentDir: string, commonDir: string, ownId: string): Promise<void> {
+function sameInstance(a: GitActionResourceAttribution["commonIdentity"], b: GitProjectResources["identities"]["common"]): boolean {
+  return a.device === b.device && a.inode === b.inode && a.birthtime === b.birthtime;
+}
+/** A complete captured v2 record can be classified even if its source checkout no longer exists.
+ * Admission requires positive distinct evidence for BOTH canonical directories and every captured checkout path. */
+function distinctCapturedResource(selection: GitProjectResources, checkouts: readonly string[],
+  summary: NonNullable<Awaited<ReturnType<typeof readGitAction>>["record"]>["summary"]): boolean {
+  const captured = summary.resourceAttribution!;
+  return !samePath(captured.commonDir, selection.commonDir)
+    && !sameInstance(captured.commonIdentity, selection.identities.common)
+    && !samePath(summary.projectRoot!, selection.projectRoot)
+    && !sameInstance(captured.projectIdentity, selection.identities.project)
+    && checkouts.every((cwd) => !samePath(summary.sourceCheckoutRoot!, cwd)
+      && (summary.targetCheckoutRoot === undefined || !samePath(summary.targetCheckoutRoot, cwd)));
+}
+async function assertNoHistoricalRecovery(agentDir: string, selection: GitProjectResources, ownId: string): Promise<readonly string[] | undefined> {
   const base = path.join(agentDir, "pi-web", "git-actions", "v1");
-  if (!fs.existsSync(base)) return;
-  // The journal owns the directory layout; never follow links during an admission scan.
-  for (const dir of [agentDir, path.join(agentDir, "pi-web"), path.join(agentDir, "pi-web", "git-actions"), base]) physicalDirectory(dir);
+  // Only a genuinely absent child of a validated existing directory means no
+  // history. existsSync also returns false for dangling links and EACCES.
+  const folders = [agentDir, path.join(agentDir, "pi-web"), path.join(agentDir, "pi-web", "git-actions"), base];
+  for (let i = 0; i < folders.length; i++) {
+    try { physicalDirectory(folders[i]); }
+    catch (error) {
+      if (i > 0 && (error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+  }
   // Walk one entry at a time. A global count cap would quarantine an unrelated
   // repository after enough settled cards elsewhere; the durable operation
   // ledger itself remains bounded per Git resource. Every historical action
   // is still inspected, including old uncertainty with no classifiable root.
   const history = fs.opendirSync(base);
+  let currentCheckouts: readonly string[] | undefined;
   try { for (let entry; (entry = history.readSync()) !== null;) {
     const id = entry.name;
     if (!entry.isDirectory() || !uuid(id)) throw new GitOperationRecoveryError();
@@ -533,7 +558,12 @@ async function assertNoHistoricalRecovery(agentDir: string, commonDir: string, o
     // The action being confirmed must still have its captured candidate;
     // process-local previews do not replace missing durable review evidence.
     if (id === ownId) {
-      if (item.unavailable || !item.candidate) throw new GitOperationRecoveryError(id);
+      if (item.unavailable || !item.candidate ||
+        !item.record.summary.resourceAttribution &&
+          (item.record.state === "executing" || item.record.state === "recovery-required"))
+        throw new GitOperationRecoveryError(id);
+      // An unresolved path-only action is not exempt merely because its ID
+      // was supplied as the current candidate. It has no instance proof.
       continue;
     }
     // A decision never approved for execution is safe to ignore even when its
@@ -541,19 +571,29 @@ async function assertNoHistoricalRecovery(agentDir: string, commonDir: string, o
     // blockers for their resource; an old blocked or succeeded action without
     // evidence must not be silently treated as an unrelated declined preview.
     if (["declined", "expired", "cancelled"].includes(item.record.state)) continue;
-    if (item.unavailable || !item.candidate) {
-      if (item.record.summary.repositoryRoot === commonDir || item.record.state === "executing"
-        || item.record.state === "recovery-required") throw new GitOperationRecoveryError(id);
-      // The missing artifact might belong to another checkout of this repo;
-      // resolve the canonical resource below before deciding it is unrelated.
-    } else if (item.record.state !== "executing" && item.record.state !== "recovery-required") continue;
-    // If the old checkout was removed or cannot be inspected, it cannot be
-    // proven unrelated. No global migration/clear based on session liveness.
-    let old: GitProjectResources;
-    try { old = await selectGitProjectResources(item.record.summary.repositoryRoot); }
-    catch { throw new GitOperationRecoveryError(id); }
-    if (old.commonDir === commonDir) throw new GitOperationRecoveryError(id);
-  } } finally { history.closeSync(); }
+    if (item.record.summary.resourceAttribution) {
+      // Both the summary and immutable artifact must validate. Missing or
+      // mismatched evidence cannot establish an unrelated repository.
+      if (item.unavailable || !item.candidate) throw new GitOperationRecoveryError(id);
+      if (item.record.state === "executing" || item.record.state === "recovery-required") {
+        currentCheckouts ??= await registeredGitProjectCheckoutPaths(selection);
+        if (!distinctCapturedResource(selection, currentCheckouts, item.record.summary)) throw new GitOperationRecoveryError(id);
+      }
+      continue;
+    }
+    if (item.unavailable || !item.candidate) throw new GitOperationRecoveryError(id);
+    // Neither v1's optional project/checkout paths nor a currently resolvable
+    // source proves the *original* repository's directory instance. Moving A,
+    // then recreating both captured paths with a replacement, makes a path-only
+    // negative comparison falsely admit A. Quarantine ALL unresolved v1
+    // globally until explicit human recovery; do not infer identity from paths.
+    if (item.record.state === "executing" || item.record.state === "recovery-required")
+      throw new GitOperationRecoveryError(id);
+  }
+  if (currentCheckouts && JSON.stringify(currentCheckouts) !== JSON.stringify(await registeredGitProjectCheckoutPaths(selection)))
+    throw new GitOperationRecoveryError();
+  return currentCheckouts;
+  } finally { history.closeSync(); }
 }
 
 /** Capture BEFORE a human decision; revalidate it after acquiring the checkout gate.
@@ -574,7 +614,7 @@ export async function assertGitOperationAdmission(selection: GitProjectResources
     // symlinks, corruption and an existing unresolved entry never mean clear.
     for (const folder of folders.slice(1)) if (!present(folder)) break;
     if (present(dir) && !scan(selection.commonDir, dir, gate).admitted) throw new GitOperationRecoveryError();
-    await assertNoHistoricalRecovery(agentDir, selection.commonDir, ownActionId);
+    await assertNoHistoricalRecovery(agentDir, selection, ownActionId);
   } catch { throw new GitOperationRecoveryError(); }
   await revalidateGitProjectResources(selection);
 }
@@ -588,16 +628,33 @@ export async function beginSupervisedGitOperationIntent(selection: GitProjectRes
   await revalidateGitProjectResources(selection);
   // Reject known legacy quarantine before publishing our own intent. Otherwise
   // an unrelated old blocker strands a second, avoidable orphan on this checkout.
-  try { await assertNoHistoricalRecovery(agentDir, selection.commonDir, actionId); }
+  let before: readonly string[] | undefined;
+  try { before = await assertNoHistoricalRecovery(agentDir, selection, actionId); }
   catch { throw new GitOperationRecoveryError(actionId); }
   let operation: GitOperationReservation;
   try { operation = beginGitOperationIntent(agentDir, selection.commonDir, actionId, kind, checkUnit); }
   catch { throw new GitOperationRecoveryError(actionId); }
-  try { await assertNoHistoricalRecovery(agentDir, selection.commonDir, actionId); }
+  let after: readonly string[] | undefined;
+  try { after = await assertNoHistoricalRecovery(agentDir, selection, actionId); }
   catch { // Do not release a reservation if history changed during admission.
     throw new GitOperationRecoveryError(actionId);
   }
-  return operation;
+  if (JSON.stringify(before) !== JSON.stringify(after)) throw new GitOperationRecoveryError(actionId);
+  if (!after) return operation;
+  // Retain the positively classified inventory in this process-only owner.
+  // Recheck synchronously at each native callback, not just before publication
+  // of the intent. This narrows, but cannot eliminate, external Git races.
+  const assertOwned = () => {
+    operation.assertOwned();
+    try {
+      if (JSON.stringify(registeredGitProjectCheckoutPathsSync(selection)) !== JSON.stringify(after))
+        throw new GitOperationRecoveryError(actionId);
+    } catch { throw new GitOperationRecoveryError(actionId); }
+  };
+  return { actionId: operation.actionId, id: operation.id, assertOwned,
+    recordCheckBefore(snapshot) { assertOwned(); operation.recordCheckBefore(snapshot); },
+    recordCheckAfter(snapshot, proof, outcome, source) { assertOwned(); operation.recordCheckAfter(snapshot, proof, outcome, source); },
+    resolve(proof) { assertOwned(); operation.resolve(proof); } };
 }
 export function beginSupervisedGitCommitIntent(selection: GitProjectResources, actionId: string): Promise<GitOperationReservation> {
   return beginSupervisedGitOperationIntent(selection, actionId, "commit");
