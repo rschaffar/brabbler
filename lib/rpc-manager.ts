@@ -12,7 +12,7 @@ import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { inheritAgentGitPreferences, resolveAgentGitPreferenceChoice } from "./agent-git-preferences";
 import { appendSessionGitWorkflow, inheritSessionGitWorkflow, readSessionGitWorkflow, validateGitWorkflowPolicy, type GitWorkflowPolicy } from "./git-workflow-policy";
 import { loadGitWorkflowSettings } from "./git-workflow-settings-store";
-import { snapshotManagedSessionGitWorkflow } from "./git-workflow-session";
+import { restoreSessionGitWorkflowForRecreation, snapshotFreshManagedSessionGitWorkflow } from "./git-workflow-session";
 import { assertManagedGitAction, hasManagedGitMutationTools } from "./git-workflow-access";
 import { createGitWorkflowExtension } from "./git-workflow-extension";
 import { readManagedSessionGitWorkflow } from "./git-workflow-session";
@@ -2209,6 +2209,7 @@ export async function setRpcSessionTools(
   const sessionCwd = existing.cwd;
   const model = existing.inner.model;
   const currentThinkingLevel = existing.inner.agent.state?.thinkingLevel;
+  const workflowEntries = existing.inner.sessionManager.getEntries() as unknown as SessionEntry[];
   await existing.shutdown();
 
   if (persistedFile) {
@@ -2216,14 +2217,14 @@ export async function setRpcSessionTools(
     return { session: started.session, sessionId: started.realSessionId, recreated: true };
   }
 
-  const started = await startRpcSession(`__recreate__${randomUUID()}`, "", sessionCwd, {
+  const started = await startRpcSessionInternal(`__recreate__${randomUUID()}`, "", sessionCwd, {
     ...(toolNames !== undefined ? { toolNames } : {}),
     ...(model ? { initialModel: { provider: model.provider, modelId: model.id } } : {}),
     allowInitialModelFallback: true,
     ...(currentThinkingLevel && THINKING_LEVEL_NAMES.has(currentThinkingLevel as ThinkingLevel)
       ? { thinkingLevel: currentThinkingLevel as ThinkingLevel }
       : {}),
-  });
+  }, workflowEntries);
   return { session: started.session, sessionId: started.realSessionId, recreated: true };
 }
 
@@ -2255,6 +2256,7 @@ export async function setRpcSessionAccount(sessionId: string, sessionFile: strin
     const pinnedTools = readSessionToolSelection(manager.getEntries() as unknown as SessionEntry[]);
     const model = existing?.isAlive() ? existing.inner.model : null;
     const thinking = existing?.isAlive() ? existing.inner.agent.state?.thinkingLevel : undefined;
+    const workflowEntries = manager.getEntries() as unknown as SessionEntry[];
     if (existing?.isAlive()) await existing.shutdown();
     const persisted = manager.getSessionFile();
     if (persisted && existsSync(persisted)) {
@@ -2264,8 +2266,8 @@ export async function setRpcSessionAccount(sessionId: string, sessionFile: strin
       return started.realSessionId;
     }
     // An initialized composer has not written a session file yet: preserve its
-    // model, thinking and tool choices when creating the replacement wrapper.
-    const started = await startRpcSession(`__recreate__${randomUUID()}`, "", manager.getCwd(), {
+    // model, thinking, tool choices and exact workflow (without fresh origin).
+    const started = await startRpcSessionInternal(`__recreate__${randomUUID()}`, "", manager.getCwd(), {
       accounts: next,
       ...(pinnedTools !== undefined ? { toolNames: pinnedTools } : {}),
       ...(model ? { initialModel: { provider: model.provider, modelId: model.id } } : {}),
@@ -2273,7 +2275,7 @@ export async function setRpcSessionAccount(sessionId: string, sessionFile: strin
       ...(thinking && THINKING_LEVEL_NAMES.has(thinking as ThinkingLevel)
         ? { thinkingLevel: thinking as ThinkingLevel }
         : {}),
-    });
+    }, workflowEntries);
     return started.realSessionId;
   } finally {
     release();
@@ -2436,6 +2438,14 @@ export async function startRpcSession(
   cwd: string | undefined,
   options: RpcSessionStartOptions = {},
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
+  return startRpcSessionInternal(sessionId, sessionFile, cwd, options);
+}
+
+/** Recreation state is internal only, never a caller-controlled startup grant. */
+async function startRpcSessionInternal(
+  sessionId: string, sessionFile: string, cwd: string | undefined, options: RpcSessionStartOptions,
+  recreatedWorkflowEntries?: readonly SessionEntry[],
+): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const { initialModel, allowInitialModelFallback, thinkingLevel } = options;
   const requestedToolNames = options.toolNames === undefined
     ? undefined
@@ -2459,10 +2469,17 @@ export async function startRpcSession(
   const sessionCwd = sessionManager.getCwd();
   // Existing sessions use only their saved entry; project defaults never retrofit them.
   // Explicit null on a new session is a persisted opt-out, not a missing option.
+  // New subagents bypass this path: subagent-runtime creates their manager with
+  // parentSession + subagent metadata, then registers the SDK session directly.
+  // Subagent reopen enters here with a sessionFile and never mints provenance.
   if (!sessionFile) {
-    if (options.gitWorkflow === undefined) {
+    if (recreatedWorkflowEntries !== undefined) {
+      // An initialized composer is not new consent. Preserve even absence/null
+      // exactly; never retarget managed tasks or mint another creation marker.
+      restoreSessionGitWorkflowForRecreation(sessionManager, recreatedWorkflowEntries);
+    } else if (options.gitWorkflow === undefined) {
       const defaults = await loadGitWorkflowSettings(sessionCwd);
-      snapshotManagedSessionGitWorkflow(sessionManager, defaults.resolved.project.values);
+      snapshotFreshManagedSessionGitWorkflow(sessionManager, defaults.resolved.project.values);
     } else {
       // Compatibility for explicitly queued old-browser choices. Never adopt a
       // new global default into an already initialized or persisted session.
