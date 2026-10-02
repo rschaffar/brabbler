@@ -48,6 +48,19 @@ export async function getAllowedFileRoots(): Promise<Set<string>> {
   return roots;
 }
 
+/**
+ * Read-only admission snapshot for historical reads. Never scans sessions, home,
+ * projects or Git. Only fresh already-resolved cache entries and explicitly
+ * admitted roots qualify; an unknown cold/expired-cache root fails closed.
+ * In particular, a request or a session header cannot add its own cwd here.
+ */
+export function getKnownAllowedFileRoots(): Set<string> {
+  const roots = new Set(globalThis.__piAdditionalAllowedRoots ?? []);
+  const cached = globalThis.__piAllowedRootsCache;
+  if (cached && cached.expiresAt > Date.now()) for (const root of cached.roots) roots.add(root);
+  return roots;
+}
+
 /** Authorize a path lexically, without touching the filesystem. */
 export function isFilePathAllowed(target: string, allowedRoots: Set<string>): boolean {
   return isPathWithinRoots(target, allowedRoots);
