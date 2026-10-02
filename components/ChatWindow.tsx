@@ -1174,8 +1174,6 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                 const currentRefIdx = visibleRefIndexByMessage.get(idx);
                 const keyPrefix = options.keyPrefix ?? "message";
                 const messageKey = entryIds[idx] || idx;
-                let showTimestamp = msg.role === "assistant";
-                if (options.showTimestamp !== undefined) showTimestamp = options.showTimestamp;
                 const view = (
                   <MessageView
                     key={`${keyPrefix}-view-${messageKey}`}
@@ -1191,7 +1189,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                     forking={forkingEntryId === entryIds[idx]}
                     onNavigate={sessionBusy ? undefined : handleNavigate}
                     onEditContent={handleEditContent}
-                    showTimestamp={showTimestamp}
+                    showTimestamp={options.showTimestamp}
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
                     sessionId={session?.id ?? sessionIdRef.current ?? undefined}
                     writtenFiles={options.writtenFiles}
@@ -1274,6 +1272,8 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                     attachRef: false,
                     keyPrefix: "process",
                     messageOverride: message,
+                    // The split final entry shows its timestamp beside its answer's usage.
+                    showTimestamp: processIdx !== finalAssistantIdx || !finalAnswerMessage,
                   }));
                 }
 
