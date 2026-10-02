@@ -3,6 +3,19 @@ import {
   type GitWorkflowField, type GitWorkflowOverrides, type GitWorkflowSettingsResponse, type WorkflowScope,
 } from "../lib/git-workflow-settings";
 
+import type { GitCheckRecipe } from "../lib/git-check-recipe";
+
+/** Raw typing may be incomplete. Change only the edited legacy field; retain extensions and omission. */
+export function editWorkflowCheck(check: GitCheckRecipe, part: "label" | "executable" | "arguments", value: string): GitCheckRecipe {
+  return {
+    ...check,
+    ...(Object.hasOwn(check, "env") ? { env: { ...check.env } } : {}),
+    label: part === "label" ? value : check.label,
+    argv: part === "executable" ? [value, ...check.argv.slice(1)]
+      : part === "arguments" ? [check.argv[0], ...(value === "" ? [] : value.split("\n"))] : [...check.argv],
+  };
+}
+
 export const workflowScopes: WorkflowScope[] = ["global", "project", "session"];
 export const workflowFields: GitWorkflowField[] = [
   "enabled", "managedGitToolsOnly", "workspace", "mainBranch", "baseBranch", "branch", "onCreate", "workspaceConfirmation",

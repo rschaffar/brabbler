@@ -1,5 +1,6 @@
 import { validateGitWorkflowPolicy, validLocalBranchName, type GitWorkflowCheck, type GitWorkflowPolicy } from "./git-workflow-policy";
 import type { GitWorkflowPermissions } from "./git-workflow-permissions";
+import { validateGitCheckRecipes } from "./git-check-recipe";
 
 export type WorkflowScope = "global" | "project" | "session";
 export interface GitWorkflowSettings {
@@ -96,7 +97,7 @@ export function validateGitWorkflowOverrides(input: unknown): GitWorkflowOverrid
       case "method": valid = value === "merge" || value === "ff" || value === "squash"; break;
       case "cleanup": valid = value === "retain"; break;
       case "checks": {
-        result.checks = validateGitWorkflowPolicy({ mode: "current", onCreate: "stay", commits: "manual", checks: value }).checks!;
+        result.checks = validateGitCheckRecipes(value);
         continue;
       }
     }
@@ -168,7 +169,7 @@ export function settingsFromLegacyPolicy(policy: GitWorkflowPolicy): GitWorkflow
     baseBranch: policy.mode === "worktree" ? policy.baseBranch : null,
     branch: policy.mode === "current" ? policy.branch ?? null : null,
     onCreate: policy.onCreate, commits: policy.commits === "agent" ? "ask" : "manual",
-    checks: policy.checks?.map((check) => ({ label: check.label, argv: [...check.argv] })) ?? [],
+    checks: validateGitCheckRecipes(policy.checks ?? []),
     targetBranch: policy.integration?.targetBranch ?? null, method: policy.integration?.method ?? "merge",
   };
 }

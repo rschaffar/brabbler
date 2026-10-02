@@ -106,6 +106,21 @@ test("current task is pinned outside the editor and adoption is separate from sc
   }
 });
 
+test("extended recipes remain visible and retained without claiming runner support", () => {
+  const check = { label: "Subproject", argv: ["npm", "test"], cwd: "packages/web", env: { CI: "1" }, requiredStage: "handoff" };
+  const data = fixture({ project: { checks: [check] } });
+  const edited = helpers.editWorkflowCheck(check, "label", "Renamed");
+  const html = render({ data, scope: "project", overrides: { checks: [edited] } });
+  assert.match(html, /Renamed/);
+  assert.match(html, /packages\/web/);
+  assert.match(html, /handoff/);
+  assert.match(html, /&quot;CI&quot;:&quot;1&quot;/);
+  assert.match(html, /Extended recipe execution is not supported yet/);
+  assert.match(html, /fields are preserved when editing labels or arguments/);
+  assert.deepEqual(data.project.checks, [check]);
+  assert.doesNotMatch(render({ data: fixture({ project: { checks: [{ label: "Old", argv: ["npm", "test"] }] } }), scope: "project" }), /Extended recipe fields retained/);
+});
+
 test("FF method is a preference, squash/automatic stay disabled, and invalid drafts do not crash rendering", () => {
   const html = render({ overrides: { method: "ff", checks: [{ label: "", argv: [""] }] } });
   assert.match(html, /value="ff" selected=""/);

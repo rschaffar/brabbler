@@ -7,6 +7,7 @@ import { gitExecEnv } from "./git-exec";
 import { sanitizeProjectCommandEnvironment } from "./project-command-env";
 import { reviewGitBranches, type GitReview } from "./git-review";
 import { validateGitWorkflowPolicy, type GitWorkflowPolicy } from "./git-workflow-policy";
+import { hasExtendedGitCheckRecipe } from "./git-check-recipe";
 import { newGitCheckUnit, runContainedGitCheck, linuxSystemdBackend,
   type ContainmentBackend, type ContainedCheckResult } from "./git-check-containment";
 import { revalidateGitProjectResources, selectGitProjectResources } from "./git-project-resources";
@@ -153,7 +154,12 @@ function policyHash(policy: GitWorkflowPolicy): string { return digest(JSON.stri
 async function savedPolicy(options: GitVerificationOptions): Promise<GitWorkflowPolicy> {
   const input = await options.getPolicy();
   if (input === null || input === undefined) unavailable("no saved policy");
-  return validateGitWorkflowPolicy(input);
+  const policy = validateGitWorkflowPolicy(input);
+  const check = policy.checks?.[options.checkIndex];
+  // Every capture/recapture must refuse extensions, including explicit defaults.
+  // This integration-only argv runner cannot honor cwd, env or stage yet.
+  if (check && hasExtendedGitCheckRecipe(check)) unavailable("extended check recipe execution unsupported");
+  return policy;
 }
 async function privateLog(agentDir: string, id: string, output: Buffer): Promise<void> {
   if (!path.isAbsolute(agentDir)) unavailable("absolute agent directory required");
@@ -292,6 +298,9 @@ async function runVerification(options: GitVerificationOptions): Promise<Verific
     assertGitCheckRecoverySnapshotCapacity(selection.commonDir, actionId, unit, pre);
     await revalidateGitProjectResources(selection);
     if (options.signal?.aborted) unavailable("check cancelled");
+    // Recapture before creating quarantine, not only at the later launch boundary.
+    if (policyHash(await savedPolicy(options)) !== policyDigest || !await options.isTrusted(cwd))
+      unavailable("trust or policy changed before check intent");
     const reservation = await beginSupervisedGitOperationIntent(selection, actionId,
       "checks", options.agentDir, unit);
     if (JSON.stringify(pre) !== JSON.stringify(await captureGitCheckRecoverySnapshot(cwd, targetCwd, review, policyDigest, checkDigest)))

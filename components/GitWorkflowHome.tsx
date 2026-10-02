@@ -14,7 +14,7 @@ import {
 import type { SessionInfo } from "@/lib/types";
 import { AUTOMATIC_COMMIT_UNAVAILABLE, AUTOMATIC_WORKFLOW_UNAVAILABLE } from "@/lib/git-workflow-permissions";
 import {
-  changedWorkflowFields, configureNewAgentCommits, isUnpersistedWorkflowSession, receiveWorkflowSettings,
+  changedWorkflowFields, configureNewAgentCommits, editWorkflowCheck, isUnpersistedWorkflowSession, receiveWorkflowSettings,
   resetWorkflowField, resolveWorkflowDraft, workflowDraftKey, workflowFields, workflowRequestTarget, workflowScopes,
   type WorkflowDrafts,
 } from "./git-workflow-drafts";
@@ -347,8 +347,7 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
     ]);
   }
   function changeCheck(index: number, part: "label" | "executable" | "arguments", value: string) {
-    update("checks", values.checks.map((check, i) => i !== index ? check : part === "label" ? { ...check, label: value }
-      : { ...check, argv: part === "executable" ? [value, ...check.argv.slice(1)] : [check.argv[0], ...(value === "" ? [] : value.split("\n"))] }));
+    update("checks", values.checks.map((check, i) => i !== index ? check : editWorkflowCheck(check, part, value)));
   }
   function stageEditor(stage: Stage) {
     if (stage === "workspace") return <>
@@ -374,6 +373,11 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
           <label>Label<input disabled={disabled || scope !== "project"} maxLength={MAX_GIT_WORKFLOW_CHECK_LABEL} value={check.label} onChange={(event) => changeCheck(index, "label", event.target.value)} /></label>
           <label>Executable<input disabled={disabled || scope !== "project"} maxLength={MAX_GIT_WORKFLOW_CHECK_EXECUTABLE} value={check.argv[0] ?? ""} onChange={(event) => changeCheck(index, "executable", event.target.value)} /></label>
           <label>Arguments · one literal argument per line<textarea disabled={disabled || scope !== "project"} rows={3} maxLength={MAX_GIT_WORKFLOW_CHECK_ARGS * (MAX_GIT_WORKFLOW_CHECK_ARG + 1)} value={check.argv.slice(1).join("\n")} onChange={(event) => changeCheck(index, "arguments", event.target.value)} /></label>
+          {(["cwd", "env", "requiredStage"] as const).some((key) => Object.hasOwn(check, key)) && <p className="workflow-muted">Extended recipe fields retained: <code>{JSON.stringify({
+            ...(Object.hasOwn(check, "cwd") ? { cwd: check.cwd } : {}),
+            ...(Object.hasOwn(check, "env") ? { env: check.env } : {}),
+            ...(Object.hasOwn(check, "requiredStage") ? { requiredStage: check.requiredStage } : {}),
+          })}</code>. Extended recipe execution is not supported yet.</p>}
           <div className="workflow-actions"><button type="button" disabled={disabled || scope !== "project" || index === 0} onClick={() => { const checks = [...values.checks]; [checks[index - 1], checks[index]] = [checks[index], checks[index - 1]]; update("checks", checks); }}>Move up</button>
             <button type="button" disabled={disabled || scope !== "project" || index === values.checks.length - 1} onClick={() => { const checks = [...values.checks]; [checks[index], checks[index + 1]] = [checks[index + 1], checks[index]]; update("checks", checks); }}>Move down</button>
             <button type="button" disabled={disabled || scope !== "project"} onClick={() => update("checks", values.checks.filter((_, i) => i !== index))}>Remove</button></div>
@@ -381,7 +385,7 @@ export function GitWorkflowHome({ visible, onClose, cwd, session, busy, attentio
         <div className="workflow-actions"><button type="button" disabled={disabled || scope !== "project" || values.checks.length >= MAX_GIT_WORKFLOW_CHECKS} onClick={() => update("checks", [...values.checks, { label: "", argv: [""] }])}>Add check</button>
           <button type="button" disabled={disabled || scope !== "project"} onClick={() => update("checks", [])}>No checks at this scope</button></div>
       </div>)}
-      <p className="workflow-muted">Recipes belong to Project, not Global or Chat. An empty list does not waive project-required verification. Per-recipe directory, environment and timeout editing is not supported yet. {AUTOMATIC_WORKFLOW_UNAVAILABLE}</p>
+      <p className="workflow-muted">Recipes belong to Project, not Global or Chat. An empty list does not waive project-required verification. Per-recipe directory, environment and required-stage fields are preserved when editing labels or arguments, but their editing and execution are not supported yet. {AUTOMATIC_WORKFLOW_UNAVAILABLE}</p>
     </>;
     if (stage === "integration") return <>
       {select("delivery", [{ value: "local", label: "Local integration" }, { value: "pr", label: "PR handoff · no local merge or remote operation" }, { value: "leave", label: "Leave branch · no local merge" }])}

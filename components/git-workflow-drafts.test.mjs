@@ -3,7 +3,7 @@ import test from "node:test";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url);
-const { changedWorkflowFields, configureNewAgentCommits, resetWorkflowField, workflowDraftKey, receiveWorkflowSettings, resolveWorkflowDraft, workflowRequestTarget, isUnpersistedWorkflowSession } = await jiti.import("./git-workflow-drafts.ts");
+const { changedWorkflowFields, configureNewAgentCommits, editWorkflowCheck, resetWorkflowField, workflowDraftKey, receiveWorkflowSettings, resolveWorkflowDraft, workflowRequestTarget, isUnpersistedWorkflowSession } = await jiti.import("./git-workflow-drafts.ts");
 const { resolveGitWorkflowSettings } = await jiti.import("../lib/git-workflow-settings.ts");
 function response(options = {}) {
   const data = { revision: "r1", paused: false, projectRoot: "/repo", cwd: "/repo-worktrees/topic", global: { commits: "manual" }, project: { commits: "ask" }, session: {}, task: { kind: "none" }, sessionEditable: true, ...options };
@@ -54,6 +54,32 @@ test("resolution shows selected scope only, with saved parents, not an unsaved p
   assert.equal(resolveWorkflowDraft(data, "session", {}).values.commits, "ask");
   assert.equal(resolveWorkflowDraft(data, "session", {}).origins.commits, "project");
   assert.equal(resolveWorkflowDraft(data, "session", { commits: "off" }).origins.commits, "session");
+});
+
+test("recipe draft edits preserve all optional fields and exact omission across navigation and refresh", () => {
+  const old = { label: "Legacy", argv: ["npm", "test"] };
+  const extended = { label: "Extended", argv: ["node", "check.mjs"], cwd: "packages/web", env: { CI: "1" }, requiredStage: "handoff" };
+  for (const [part, value] of [["label", "New label"], ["executable", "npm"], ["arguments", "run\ntest"], ["arguments", ""]]) {
+    const edited = editWorkflowCheck(extended, part, value);
+    assert.equal(edited.cwd, extended.cwd);
+    assert.deepEqual(edited.env, extended.env);
+    assert.equal(edited.requiredStage, extended.requiredStage);
+    assert.notEqual(edited.env, extended.env);
+    assert.notEqual(edited.argv, extended.argv);
+    assert.deepEqual(Object.keys(editWorkflowCheck(old, part, value)), ["label", "argv"]);
+  }
+  const data = response({ project: { checks: [old, extended] } });
+  const draft = { checks: [old, editWorkflowCheck(extended, "label", "Changed")] };
+  let drafts = edit(receiveWorkflowSettings({}, data, "chat"), "project:/repo", draft);
+  drafts = receiveWorkflowSettings(drafts, response({ projectRoot: "/other", project: {} }), "chat");
+  drafts = receiveWorkflowSettings(drafts, data, "chat");
+  assert.deepEqual(drafts["project:/repo"].overrides, draft);
+  assert.deepEqual(resolveWorkflowDraft(data, "project", draft).values.checks, draft.checks);
+  const incomplete = { checks: [old, editWorkflowCheck(extended, "executable", "")] };
+  const result = resolveWorkflowDraft(data, "project", incomplete);
+  assert.ok(result.validationError);
+  assert.deepEqual(result.values.checks, incomplete.checks);
+  assert.deepEqual(data.project.checks, [old, extended], "saved baseline remains untouched");
 });
 
 test("incomplete text/recipe drafts stay renderable and non-saveable until the shared validator accepts them", () => {

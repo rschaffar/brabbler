@@ -5,17 +5,13 @@ import { inheritGitProjectSessionSettings } from "./git-project-session";
 
 export const GIT_WORKFLOW_TYPE = "pi-web:git-workflow";
 
-export type GitWorkflowCheck = { label: string; argv: string[] };
+import { validateGitCheckRecipes, type GitCheckRecipe } from "./git-check-recipe";
+export {
+  MAX_GIT_WORKFLOW_CHECKS, MAX_GIT_WORKFLOW_CHECK_ARGS, MAX_GIT_WORKFLOW_CHECK_LABEL,
+  MAX_GIT_WORKFLOW_CHECK_EXECUTABLE, MAX_GIT_WORKFLOW_CHECK_ARG,
+} from "./git-check-recipe";
 
-export const MAX_GIT_WORKFLOW_CHECKS = 12;
-export const MAX_GIT_WORKFLOW_CHECK_ARGS = 32;
-export const MAX_GIT_WORKFLOW_CHECK_LABEL = 80;
-export const MAX_GIT_WORKFLOW_CHECK_EXECUTABLE = 256;
-export const MAX_GIT_WORKFLOW_CHECK_ARG = 512;
-
-// Check bounds also apply to UTF-8 bytes in durable Git action history.
-// TextEncoder keeps this shared policy compatible with browsers and Node.
-const checkTextEncoder = new TextEncoder();
+export type GitWorkflowCheck = GitCheckRecipe;
 
 export type GitWorkflowPolicy = {
   mode: "worktree";
@@ -62,38 +58,6 @@ export function validLocalBranchName(value: unknown): value is string {
     && !part.endsWith(".") && !part.endsWith(".lock"));
 }
 
-function validCheckText(value: unknown, max: number): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= max
-    && checkTextEncoder.encode(value).length <= max && value.trim() === value && !/[\x00-\x1f\x7f\u0085\u2028\u2029]/.test(value);
-}
-
-function validCheckArg(value: unknown, max: number): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= max
-    && checkTextEncoder.encode(value).length <= max && value.trim().length > 0 && !/[\x00-\x1f\x7f\u0085\u2028\u2029]/.test(value)
-    // These are screening rules, not a guarantee that arbitrary project code is safe.
-    && !/(?:[a-z][a-z\d+.-]*:\/\/|\b(?:https?|ssh|git|ftp|file|mailto):|www\.|\b[^\s@]+@[^\s@:]+\.[^\s@:]+(?::|\/))/i.test(value)
-    && !/(?:^|[^a-z\d])(?:(?:--?)?(?:api[-_]?key|token|password|passwd|secret|credential|authorization|auth)(?:[=:_-]|$)|bearer\s+|(?:sk-[a-z\d]{12,}|gh[pousr]_[a-z\d]{12,}|github_pat_[a-z\d_]{12,}|AKIA[A-Z0-9]{16}))/i.test(value);
-}
-
-function validateChecks(input: unknown): GitWorkflowCheck[] {
-  if (!Array.isArray(input) || input.length > MAX_GIT_WORKFLOW_CHECKS) throw new Error("Invalid Git workflow checks");
-  return input.map((check: unknown) => {
-    if (!record(check) || !fields(check, ["label", "argv"])
-      || !validCheckText(check.label, MAX_GIT_WORKFLOW_CHECK_LABEL)
-      || !Array.isArray(check.argv) || check.argv.length < 1 || check.argv.length > MAX_GIT_WORKFLOW_CHECK_ARGS + 1
-      || !validCheckArg(check.argv[0], MAX_GIT_WORKFLOW_CHECK_EXECUTABLE)
-      || !check.argv.slice(1).every((arg: unknown) => validCheckArg(arg, MAX_GIT_WORKFLOW_CHECK_ARG))
-      // Do not save the common shell "execute this string" forms as argv checks.
-      || (/^(?:sh|bash|zsh|fish|dash|ksh|cmd(?:\.exe)?|powershell(?:\.exe)?|pwsh(?:\.exe)?)$/i
-        .test(String(check.argv[0]).split(/[\\/]/).pop() ?? "")
-        && check.argv.slice(1).some((arg: unknown) => typeof arg === "string"
-          && /^(?:-[a-z]*c[a-z]*|-{1,2}(?:command|encodedcommand)|\/c)$/i.test(arg)))) {
-      throw new Error("Invalid Git workflow check: use a label and bounded executable/arguments (no empty, control characters, URLs or obvious credentials)");
-    }
-    return { label: check.label as string, argv: [...check.argv] as string[] };
-  });
-}
-
 /** Reject unknown fields (including future approvals or remote actions), rather than persisting them. */
 export function validateGitWorkflowPolicy(input: unknown): GitWorkflowPolicy {
   if (!record(input) || (input.mode !== "worktree" && input.mode !== "current")
@@ -120,7 +84,7 @@ export function validateGitWorkflowPolicy(input: unknown): GitWorkflowPolicy {
       targetBranch: input.integration.targetBranch as string,
       method: input.integration.method as "merge" | "ff" | "squash",
     } } : {}),
-    ...(Object.hasOwn(input, "checks") ? { checks: validateChecks(input.checks) } : {}),
+    ...(Object.hasOwn(input, "checks") ? { checks: validateGitCheckRecipes(input.checks) } : {}),
   };
   return input.mode === "worktree"
     ? { mode: "worktree", baseBranch: input.baseBranch as string, ...common }
