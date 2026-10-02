@@ -12,6 +12,7 @@ const css = await readFile(new URL("./GitWorkflowHome.css", import.meta.url), "u
 const jiti = createJiti(import.meta.url);
 const settings = await jiti.import("../lib/git-workflow-settings.ts");
 const policy = await jiti.import("../lib/git-workflow-policy.ts");
+const recipes = await jiti.import("../lib/git-check-recipe.ts");
 const permissions = await jiti.import("../lib/git-workflow-permissions.ts");
 const helpers = await jiti.import("./git-workflow-drafts.ts");
 const compiled = ts.transpileModule(home, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -21,13 +22,14 @@ function fixture(options = {}) {
   data.resolved = Object.fromEntries(["global", "project", "session"].map((scope) => [scope, settings.resolveGitWorkflowSettings(data.global, scope !== "global" ? data.project : undefined, scope === "session" ? data.session ?? {} : undefined)]));
   return data;
 }
-function render({ data = fixture(), scope = "session", overrides, props = {} } = {}) {
+function render({ data = fixture(), scope = "session", overrides, recipeEditors, props = {} } = {}) {
   const actualProps = { visible: true, session, cwd: "/sidebar", busy: false, attention: false, detail: null, onClose() {}, onDetailChange() {}, onDetailHost() {}, ...props };
   const context = JSON.stringify([actualProps.session?.id ?? null, actualProps.session?.cwd ?? actualProps.cwd ?? null, Boolean(actualProps.session?.transient), null]);
   let drafts = helpers.receiveWorkflowSettings({}, data, actualProps.session?.id);
   if (overrides) {
     const key = helpers.workflowDraftKey(scope, data.projectRoot, actualProps.session?.id, data.sessionScope);
-    drafts = { ...drafts, [key]: { ...drafts[key], overrides } };
+    drafts = { ...drafts, [key]: { ...drafts[key], overrides,
+      recipeEditors: recipeEditors ?? (overrides.checks ? helpers.createWorkflowRecipeEditors(overrides.checks, key) : drafts[key].recipeEditors) } };
   }
   // Seed only server-loaded state; event/fetch behavior is exercised by browser tests.
   const states = { 2: scope, 4: drafts, 5: { context, data, sessionBound: !!actualProps.session } };
@@ -43,6 +45,7 @@ function render({ data = fixture(), scope = "session", overrides, props = {} } =
     if (id === "@/hooks/useResizablePanel") return { useResizablePanel: () => ({ panelRef: { current: null }, separatorProps: { role: "separator" } }) };
     if (id === "@/lib/git-workflow-settings") return settings;
     if (id === "@/lib/git-workflow-policy") return policy;
+    if (id === "@/lib/git-check-recipe") return recipes;
     if (id === "@/lib/git-workflow-permissions") return permissions;
     if (id === "./git-workflow-drafts") return helpers;
     if (id === "./GitWorkflowTaskBinding") return { GitWorkflowTaskBinding: () => React.createElement("div", { "data-task-binding": true }) };
@@ -78,9 +81,25 @@ test("new commit draft affordance is explicit for Off/Manual, while existing Ask
     assert.match(html, /Drafting does not save settings, approve a candidate or grant execution/);
   }
   assert.doesNotMatch(ask, /Draft new agent commits: Ask \+ no-confirm preference/);
-  assert.match(ask, /selected-project request with a fresh saved Allow/);
+  assert.match(ask, /eligible fresh agent commit request in a persisted ordinary chat/);
   assert.match(ask, /FF is supported for eligible session-bound local integration/);
   assert.doesNotMatch(ask, /FF and squash cannot execute yet/);
+});
+
+test("commit no-confirm copy describes eligible fresh agent support without relaxing manual Ask or advertising future stages", () => {
+  const html = render({ overrides: { commitConfirmation: "none" } });
+  const commits = html.match(/<div id="workflow-stage-commits"[\s\S]*?<\/section>/)[0];
+  assert.match(commits, /<option value="none" selected="">No confirmation preference · eligible fresh agent commits still need saved Allow and live guards/);
+  assert.match(commits, /explicit eligible fresh agent commit request in a persisted ordinary chat/);
+  assert.match(commits, /confirmation:none, a fresh saved Allow and live guards/);
+  assert.match(commits, /subject to stricter instructions/);
+  assert.match(commits, /Manual human commit routes still require exact Ask approval/);
+  assert.match(commits, /Drafting does not save settings, approve a candidate or grant execution/);
+  assert.doesNotMatch(commits, /execution not yet available/);
+  const workspace = html.match(/<div id="workflow-stage-workspace"[\s\S]*?<\/section>/)[0];
+  assert.match(workspace, /No confirmation preference · execution not yet available/);
+  const cleanup = html.match(/<div id="workflow-stage-cleanup"[\s\S]*?<\/section>/)[0];
+  assert.match(cleanup, /dispatch unavailable/);
 });
 
 test("no-chat Global editing is usable and cannot initialize a chat", () => {
@@ -106,7 +125,7 @@ test("current task is pinned outside the editor and adoption is separate from sc
   }
 });
 
-test("extended recipes remain visible and retained without claiming runner support", () => {
+test("Project recipes expose optional literal fields without claiming execution, authorization or default serialization", () => {
   const check = { label: "Subproject", argv: ["npm", "test"], cwd: "packages/web", env: { CI: "1" }, requiredStage: "handoff" };
   const data = fixture({ project: { checks: [check] } });
   const edited = helpers.editWorkflowCheck(check, "label", "Renamed");
@@ -114,11 +133,103 @@ test("extended recipes remain visible and retained without claiming runner suppo
   assert.match(html, /Renamed/);
   assert.match(html, /packages\/web/);
   assert.match(html, /handoff/);
-  assert.match(html, /&quot;CI&quot;:&quot;1&quot;/);
-  assert.match(html, /Extended recipe execution is not supported yet/);
-  assert.match(html, /fields are preserved when editing labels or arguments/);
+  assert.match(html, /Environment name<input maxLength="64" value="CI"/);
+  assert.match(html, /Literal value<input maxLength="512" value="1"/);
+  assert.match(html, /Checkout-relative directory · optional<input maxLength="256"[^>]*value="packages\/web"/);
+  assert.match(html, /Required stage · recipe prerequisite/);
+  assert.match(html, /<option value="handoff" selected="">Handoff<\/option>/);
+  assert.match(html, /<option value="commit">Commit<\/option>/);
+  assert.match(html, /<option value="integration">Integration · explicit<\/option>/);
+  assert.match(html, /<option value="none">None · optional\/manual only<\/option>/);
+  assert.match(html, /not human confirmation or permission to execute/);
+  assert.match(html, /Saving does not run checks or grant execution/);
+  assert.match(html, /An empty list does not waive project-required verification/);
+  assert.match(html, /Up to 32 rows, 8192 UTF-8 bytes total/);
+  assert.match(html, /removing all rows omits env/);
   assert.deepEqual(data.project.checks, [check]);
-  assert.doesNotMatch(render({ data: fixture({ project: { checks: [{ label: "Old", argv: ["npm", "test"] }] } }), scope: "project" }), /Extended recipe fields retained/);
+  const old = render({ data: fixture({ project: { checks: [{ label: "Old", argv: ["npm", "test"] }] } }), scope: "project" });
+  assert.match(old, /value="" selected="">Default · integration \(field omitted\)/);
+  assert.match(old, /placeholder="Checkout root \(field omitted\)" value=""/);
+  assert.doesNotMatch(old, /Environment name<input/);
+  assert.doesNotMatch(old, /Extended recipe fields retained|editing and execution are not supported yet/);
+});
+
+test("recipe controls are Project-only and Global/Session never enable recipe definitions", () => {
+  const data = fixture({ project: { checks: [{ label: "Scoped", argv: ["true"], cwd: ".", env: { CI: "1" }, requiredStage: "integration" }] } });
+  const session = render({ data, scope: "session" }).match(/<div id="workflow-stage-checks"[\s\S]*?<\/section>/)[0];
+  assert.match(session, /Checkout-relative directory · optional<input disabled=""/);
+  assert.match(session, /Required stage · recipe prerequisite<select disabled=""/);
+  assert.match(session, /<fieldset disabled=""><legend>Literal environment overrides/);
+  assert.match(session, /<button type="button" disabled="">Add check/);
+  assert.match(session, /<button type="button" disabled="">No checks at this scope/);
+  const global = render({ data, scope: "global" });
+  assert.doesNotMatch(global, /Environment name<input/);
+  assert.match(global, /<button type="button" disabled="">Add check/);
+  assert.match(global, /Recipes belong to Project, not Global or Chat/);
+  assert.match(render({ data, scope: "project" }), /<option value="integration" selected="">Integration · explicit/);
+});
+
+test("invalid raw environment rows and optional recipe fields remain visible with an error and Save blocked", () => {
+  const check = { label: "Test", argv: ["true"] };
+  const data = fixture({ project: { checks: [check] } });
+  const entry = helpers.receiveWorkflowSettings({}, data, "saved-chat")["project:/repo"];
+  const cases = [
+    [{ id: "one", name: "CI", value: "first" }, { id: "two", name: "CI", value: "second" }],
+    [{ id: "one", name: "", value: "$LITERAL" }], [{ id: "one", name: "API_TOKEN", value: "value" }],
+    Array.from({ length: recipes.MAX_GIT_CHECK_ENV_ENTRIES }, (_, i) => ({ id: String(i), name: `VAR_${i}`, value: "" })),
+  ];
+  for (const rows of cases) {
+    const edited = helpers.editWorkflowCheckEnvironment(entry, [check], 0, rows);
+    const html = render({ data, scope: "project", overrides: edited.overrides, recipeEditors: edited.recipeEditors });
+    assert.equal(html.match(/Environment name<input/g)?.length, rows.length);
+    if (rows.length < recipes.MAX_GIT_CHECK_ENV_ENTRIES) {
+      assert.match(html, /id="workflow-error"/);
+      assert.match(html, /class="workflow-primary" disabled="">Save project defaults/);
+      assert.match(html, /1 project change/);
+    } else assert.match(html, /<button type="button" disabled="">Add environment row/);
+  }
+  for (const cwd of ["../outside", "packages/", "a".repeat(recipes.MAX_GIT_CHECK_CWD + 1)]) {
+    const html = render({ data, scope: "project", overrides: { checks: [helpers.editWorkflowCheckOptional(check, "cwd", cwd)] } });
+    assert.ok(html.includes(`value="${cwd}"`));
+    assert.match(html, /id="workflow-error"/);
+    assert.match(html, /class="workflow-primary" disabled="">Save project defaults/);
+  }
+  assert.match(home, /key=\{recipeEditors\[index\]\.id\}/);
+  assert.match(home, /key=\{row\.id\}/);
+  assert.doesNotMatch(home, /key=\{row\.name\}|key=\{check\.label\}/);
+  assert.match(home, /overrides: workflowDraftOverrides\(entry!\)/);
+  assert.match(home, /resolveWorkflowDraft\(data, scope, draft, entry\?\.recipeEditors\)/);
+});
+
+test("cleanup excerpt describes separate eligibility, independent approval and unavailable dispatch, never after-integration automation", () => {
+  for (const scope of ["global", "project", "session"]) {
+    const html = render({ scope, overrides: { cleanup: "worktree-and-branch" } });
+    const excerpt = html.match(/<div id="workflow-stage-cleanup"[\s\S]*?<\/section>/)?.[0];
+    assert.ok(excerpt);
+    assert.match(excerpt, /Eligible feature resources/);
+    assert.doesNotMatch(excerpt, />After integration</);
+    assert.match(excerpt, /<option value="retain">Retain<\/option>/);
+    assert.match(excerpt, /<option value="worktree-and-branch" selected="">Allow separate worktree \+ branch cleanup<\/option>/);
+    assert.doesNotMatch(excerpt, /value="automatic"|Ask to clean up/);
+    assert.match(excerpt, /named worktree or local branch may be independently requested for deletion/);
+    assert.match(excerpt, /Cleanup confirmation is independent/);
+    assert.match(excerpt, /fresh saved Allow or exact Ask approval, plus resource safety checks/);
+    assert.match(excerpt, /Saving settings grants no cleanup permission and removes nothing/);
+    assert.match(excerpt, /Never automatic or scheduled, including after integration/);
+    assert.match(excerpt, /Cleanup dispatch is unavailable pending engine\/controller support/);
+    assert.match(html, /Allow separate worktree \+ branch cleanup · deletion unavailable/);
+    assert.match(html, /No confirmation changes/);
+    assert.match(html, /No confirmation-free permission is granted/);
+  }
+  const none = render({ overrides: { cleanup: "worktree-and-branch", cleanupConfirmation: "none" } });
+  assert.match(none, /No confirmation preference · still needs saved Allow; dispatch unavailable/);
+  const retained = render({ overrides: { cleanup: "retain", cleanupConfirmation: "ask" } });
+  assert.match(retained, /<option value="retain" selected="">Retain<\/option>/);
+  assert.match(retained, /Retain · deletion unavailable/);
+  assert.match(render(), /<option value="inherit" selected="">Use inherited value · Retain<\/option>/);
+  const legacy = render({ data: fixture({ project: { cleanup: "worktree-and-branch" }, task: { kind: "legacy",
+    policy: { mode: "current", onCreate: "stay", commits: "manual" } } }) });
+  assert.match(legacy, /Eligible feature resources<\/dt><dd>Task: Retain/);
 });
 
 test("FF method is a preference, squash/automatic stay disabled, and invalid drafts do not crash rendering", () => {

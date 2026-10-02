@@ -25,7 +25,8 @@ export interface GitWorkflowSettings {
   checkConfirmation: "disabled" | "ask" | "none";
   integrateConfirmation: "disabled" | "ask" | "none";
   cleanupConfirmation: "disabled" | "ask" | "none";
-  cleanup: "retain";
+  /** Eligibility for separate named-resource deletion requests only; never automation, scheduling or a grant. */
+  cleanup: "retain" | "worktree-and-branch";
 }
 export type GitWorkflowField = keyof GitWorkflowSettings;
 export type GitWorkflowOverrides = Partial<GitWorkflowSettings>;
@@ -95,7 +96,7 @@ export function validateGitWorkflowOverrides(input: unknown): GitWorkflowOverrid
       case "onCreate": valid = value === "continue" || value === "fork" || value === "stay"; break;
       case "commits": valid = value === "off" || value === "manual" || value === "ask"; break;
       case "method": valid = value === "merge" || value === "ff" || value === "squash"; break;
-      case "cleanup": valid = value === "retain"; break;
+      case "cleanup": valid = value === "retain" || value === "worktree-and-branch"; break;
       case "checks": {
         result.checks = validateGitCheckRecipes(value);
         continue;
@@ -108,8 +109,8 @@ export function validateGitWorkflowOverrides(input: unknown): GitWorkflowOverrid
 }
 
 const POLICY_FIELDS: GitWorkflowField[] = ["managedGitToolsOnly", "mainBranch", "delivery", "workspaceConfirmation", "commitConfirmation",
-  "prepareConfirmation", "checkConfirmation", "integrateConfirmation", "cleanupConfirmation"];
-/** Old captured v2 tasks did not carry policy preferences. Read them conservatively. */
+  "prepareConfirmation", "checkConfirmation", "integrateConfirmation", "cleanupConfirmation", "cleanup"];
+/** Old captured v2 tasks may omit policy preferences or cleanup. Read as retain without rewriting or granting authority. */
 export function validateGitWorkflowSettings(input: unknown): GitWorkflowSettings {
   const checked = validateGitWorkflowOverrides(input);
   if (!GIT_WORKFLOW_FIELDS.every((key) => POLICY_FIELDS.includes(key) || Object.hasOwn(checked, key))) throw new Error("Incomplete workflow settings");
