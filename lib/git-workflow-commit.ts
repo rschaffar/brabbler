@@ -1,5 +1,5 @@
 import type { GitCommitMode } from "./git-commit";
-import { beginGitAction, failGitAction, finishGitAction, type GitActionSink } from "./git-action-controller";
+import { beginGitAction, failGitAction, finishGitAction, gitActionAttribution, type GitActionSink } from "./git-action-controller";
 import { applyExactCommitOperation, captureExactCommitCandidate } from "./git-exact-commit-operation";
 import type { GitActionCandidate } from "./types";
 import { withGitCheckoutGate } from "./git-checkout-gate";
@@ -36,7 +36,7 @@ export async function requestWorkflowCommit(options: {
     const selection = options.selected ?? await selectGitCommitAdmission(options.cwd);
     if (options.selected) await assertGitOperationAdmission(selection, options.agentDir);
     const captured = await captureExactCommitCandidate(options.cwd, options.paths, options.message, options.mode ?? "whole-file");
-    const action = await beginGitAction(options.sink, "agent", captured.snapshot);
+    const action = await beginGitAction(options.sink, "agent", { ...captured.snapshot, ...gitActionAttribution(selection) });
     return { candidate: captured.candidate!, action, selection }; // Agent Ask requires a complete patch.
   });
   // No checkout reservation while a human reviews (or between capture and

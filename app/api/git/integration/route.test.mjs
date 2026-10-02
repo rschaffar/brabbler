@@ -134,6 +134,9 @@ test("human checks and exact plan share durable metadata-only anchors, explicit 
   assert.equal(checked.record.source, "human");
   assert.equal(checked.record.state, "succeeded");
   assert.equal(checked.record.decision, "approved");
+  assert.equal(checked.record.summary.projectRoot, f.target);
+  assert.equal(checked.candidate.sourceCheckoutRoot, f.feature);
+  assert.equal(checked.candidate.targetCheckoutRoot, f.target);
   assert.equal(checked.record.outcome.status, "passed");
   assert.deepEqual(checked.candidate.checks, f.policy.checks);
   assert.equal(checked.candidate.featureOid, await git(f.feature, "rev-parse", "HEAD"));
@@ -144,6 +147,9 @@ test("human checks and exact plan share durable metadata-only anchors, explicit 
   assert.equal(pending.record.state, "awaiting-decision");
   assert.equal(pending.record.outcome, undefined);
   assert.equal(pending.candidate.message, plan.message);
+  assert.equal(pending.record.summary.projectRoot, f.target);
+  assert.equal(pending.candidate.sourceCheckoutRoot, f.feature);
+  assert.equal(pending.candidate.targetCheckoutRoot, f.target);
   assert.deepEqual(pending.candidate.diff, plan.diff);
   assert.deepEqual(pending.candidate.checks, f.policy.checks);
   assert.doesNotMatch(JSON.stringify(pending), /planId|receiptIds|reviewToken/);

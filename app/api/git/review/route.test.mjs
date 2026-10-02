@@ -81,6 +81,9 @@ test("GET derives the checkout branch and persisted target; POST serves whole, s
   assert.equal(history.record.state, "succeeded");
   assert.equal(history.record.decision, undefined, "Capturing a comparison is not an execution approval or a claim it was read");
   assert.equal(history.record.outcome.status, "comparison-captured");
+  assert.equal(history.record.summary.projectRoot, cwd);
+  assert.equal(history.candidate.sourceCheckoutRoot, cwd);
+  assert.equal(history.candidate.targetCheckoutRoot, undefined, "un-checked-out target is a branch, not a physical checkout");
   assert.deepEqual(history.candidate.diff, whole);
   assert.equal(whole.fromTreeOid, review.targetTreeOid);
   assert.equal(whole.toTreeOid, review.mergeTreeOid);

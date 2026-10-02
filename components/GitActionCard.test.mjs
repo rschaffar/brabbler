@@ -20,7 +20,30 @@ test("compact durable card reports captured message, branch, time, actual result
   for (const value of ["Captured message", "feature", "target", "human@example.test", oid("c"), oid("a")]) assert.ok(html.includes(value));
   assert.match(html, /<time dateTime=/);
   assert.match(html, /Captured candidate · 1 file/);
-  assert.doesNotMatch(html, /Approve exact commit|\/deleted\/worktree|private/);
+  assert.match(html, /Captured project: not recorded \(legacy action\)/);
+  assert.match(html, /Source checkout: \/deleted\/worktree \(legacy repositoryRoot\)/);
+  assert.doesNotMatch(html, /Approve exact commit|private/);
+});
+
+test("collapsed and expanded cards distinguish identical branches across projects and physical checkouts", () => {
+  for (const project of ["/projects/alpha", "/projects/beta"]) {
+    const source = `${project}-worktrees/feature`, target = `${project}-worktrees/target`;
+    const scoped = { ...record, summary: { ...record.summary, repositoryRoot: source,
+      projectRoot: project, sourceCheckoutRoot: source, targetCheckoutRoot: target,
+      featureBranch: "feature", targetBranch: "main" } };
+    for (const expanded of [false, true]) {
+      const html = render({ history: { record: scoped }, expanded,
+        artifact: expanded ? { record: scoped, candidate: { ...scoped.summary, diffUnavailable: "No patch" } } : null });
+      for (const value of [`Captured project: ${project}`, `Source checkout: ${source}`, `Target checkout: ${target}`, "feature", "main"])
+        assert.ok(html.includes(value), value);
+      assert.doesNotMatch(html, /Approve exact commit/);
+    }
+  }
+  const legacy = render({ expanded: true, artifact: { record, unavailable: "missing" } });
+  assert.match(legacy, /Captured project: not recorded \(legacy action\)/);
+  assert.match(legacy, /Target branch: target \(checkout not recorded\)/);
+  assert.match(legacy, /Not recorded in this legacy action/);
+  assert.doesNotMatch(legacy, /Target checkout:/);
 });
 
 test("new comparison capture is not labelled as human review; old acknowledged review remains distinct", () => {

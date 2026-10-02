@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
 import { gitExecEnv } from "@/lib/git-exec";
 import { beginGitAction, failGitAction, gitActionSink, snapshotGitActionCandidate } from "@/lib/git-action-controller";
+import { revalidateGitProjectResources, selectGitProjectResources } from "@/lib/git-project-resources";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { GitReviewError, getGitReviewDiff, reviewGitBranches, type GitReviewSelection } from "@/lib/git-review";
 import { readCapturedSessionGitWorkflow } from "@/lib/git-workflow-policy";
@@ -142,6 +143,14 @@ export async function POST(req: Request) {
     // GET remains side-effect-free. An explicit Show patch POST captures this
     // comparison as history, not as approval of any commit/integration.
     const id = body.sessionId, cwd = result.cwd!, file = result.file!;
+    const source = await selectGitProjectResources(cwd);
+    // A review target can be an un-checked-out branch; do not invent a
+    // physical destination when there is no registered target checkout.
+    const target = await selectGitProjectResources(cwd, result.review!.targetBranch).catch(() => undefined);
+    const snapshot = snapshotGitActionCandidate({ kind: "review", featureCwd: cwd,
+      review: result.review!, selection: selection as GitReviewSelection, diff }, source, target);
+    await revalidateGitProjectResources(source);
+    if (target) await revalidateGitProjectResources(target);
     const action = await beginGitAction({ sessionId: id, append(record) {
       // Re-open at the synchronous append boundary, never retain an idle stale
       // manager across asynchronous Git/artifact work or recreate a moved file.
@@ -151,9 +160,10 @@ export async function POST(req: Request) {
       if (live?.isAlive() && live.sessionFile !== file) throw new Error("Session file changed");
       const manager = live?.isAlive() ? live.inner.sessionManager : SessionManager.open(file, undefined);
       return gitActionSink(manager, (type, data) => manager.appendCustomEntry(type, data)).append(record);
-    } }, "human", snapshotGitActionCandidate({ kind: "review", featureCwd: cwd,
-      review: result.review!, selection: selection as GitReviewSelection, diff }));
+    } }, "human", snapshot);
     try {
+      await revalidateGitProjectResources(source);
+      if (target) await revalidateGitProjectResources(target);
       await action.update("awaiting-decision");
       await action.update("succeeded", { outcome: { status: "comparison-captured" } });
       return NextResponse.json({ diff, actionId: action.record.id });

@@ -256,7 +256,13 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 ? await withGitProjectReview(selected, (repository) => compare(repository, selected.branch))
                 : await compare(workspace, await featureBranch(workspace));
               const candidate = { kind: "review" as const, featureCwd: workspace, review, selection, diff };
-              const action = await beginGitAction(gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)), "agent", snapshotGitActionCandidate(candidate));
+              const source = selected ?? await selectGitProjectResources(workspace);
+              const target = await selectGitProjectResources(source.cwd, review.targetBranch).catch(() => undefined);
+              const snapshot = snapshotGitActionCandidate(candidate, source, target);
+              // Recheck immediately before journalling; external writers can still race this boundary.
+              await revalidateGitProjectResources(source);
+              if (target) await revalidateGitProjectResources(target);
+              const action = await beginGitAction(gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)), "agent", snapshot);
               let finalizing = false;
               try {
                 // A comparison is evidence, not a decision. Capture the bounded
@@ -266,9 +272,10 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                   await action.update("cancelled");
                   return failure("Git comparison cancelled; no operation was approved or executed");
                 }
-                if (selected) await revalidateGitProjectResources(selected);
-                else if (!samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))
-                  || (await featureBranch(workspace)) !== review.featureBranch) {
+                await revalidateGitProjectResources(source);
+                if (target) await revalidateGitProjectResources(target);
+                if (!selected && (!samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))
+                  || (await featureBranch(workspace)) !== review.featureBranch)) {
                   throw new Error("Review workspace selection changed");
                 }
                 const details = { status: "captured", actionId: action.record.id,
@@ -369,7 +376,8 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
               preApprovalStage("journal");
               const sink = gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data));
               const checkCandidate = { kind: "checks" as const, featureCwd: workspace, targetCwd: target, targetBranch, featureBranch: branch, checks };
-              const checkAction = await beginGitAction(sink, "agent", snapshotGitActionCandidate(checkCandidate));
+              const targetResources = await selectGitProjectResources(target);
+              const checkAction = await beginGitAction(sink, "agent", snapshotGitActionCandidate(checkCandidate, resources, targetResources));
               const receipts = [];
               let checksStarted = false;
               try {
@@ -410,7 +418,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 receiptIds: receipts.map((r) => r.id), getPolicy: guardedPolicy };
               const plan = method === "ff" ? await prepareFastForwardIntegration(integrationOptions) : await prepareIntegration(integrationOptions);
               const mergeCandidate = { kind: "integration" as const, featureCwd: workspace, targetCwd: target, plan, receipts };
-              const mergeAction = await beginGitAction(sink, "agent", snapshotGitActionCandidate(mergeCandidate));
+              const mergeAction = await beginGitAction(sink, "agent", snapshotGitActionCandidate(mergeCandidate, resources, targetResources));
               let applying = false;
               let reservation: GitOperationReservation | undefined;
               try {

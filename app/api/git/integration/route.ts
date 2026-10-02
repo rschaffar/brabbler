@@ -234,9 +234,10 @@ export async function POST(req: Request) {
         if (!check) return error("Saved check index required", 409);
         const watcher = await watchManagedGitAccess(guard, req.signal);
         try {
+          const source = await admissionSelection(c), target = await selectGitProjectResources(c.targetCwd);
           const handle = await beginGitAction(sink(), "human", {
             ...snapshotGitActionCandidate({ kind: "checks", featureCwd: c.cwd, targetCwd: c.targetCwd,
-              featureBranch: review.featureBranch, targetBranch: review.targetBranch, checks: [check] }),
+              featureBranch: review.featureBranch, targetBranch: review.targetBranch, checks: [check] }, source, target),
             featureOid: review.featureOid, targetOid: review.targetOid, candidateTreeOid: review.mergeTreeOid,
           });
           let started = false;
@@ -282,8 +283,9 @@ export async function POST(req: Request) {
       const intended = { ...("method" in plan ? {} : { mergeOid: plan.mergeOid }), tree: plan.review.featureTreeOid,
         parents: "method" in plan ? plan.parents : [plan.review.targetOid, plan.review.featureOid],
         authorEmail: stdout.trim(), featureOid: plan.review.featureOid, targetOid: plan.review.targetOid, targetBranch: plan.review.targetBranch };
+      const source = await admissionSelection(c), target = await selectGitProjectResources(c.targetCwd);
       const snapshot = { ...snapshotGitActionCandidate({ kind: "integration", featureCwd: c.cwd, targetCwd: c.targetCwd,
-        plan, receipts: ids.map((rid) => receipts.find((r) => r.id === rid)!) }), checks: c.saved.checks, candidateTreeOid: plan.review.mergeTreeOid };
+        plan, receipts: ids.map((rid) => receipts.find((r) => r.id === rid)!) }, source, target), checks: c.saved.checks, candidateTreeOid: plan.review.mergeTreeOid };
       await guard();
       const action = await keepHumanGitCandidate(sink(), c.scope, { kind: "integration", plan, targetCwd: c.targetCwd, intended }, snapshot);
       return NextResponse.json({ ...action, plan });

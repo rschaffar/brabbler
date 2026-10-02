@@ -2,7 +2,7 @@ import { statSync } from "node:fs";
 import { NextResponse } from "next/server";
 import { assertManagedGitAction, assertManagedGitProjectDenial, assertManagedGitWorkspace, ManagedGitAccessError } from "@/lib/git-workflow-access";
 import type { SessionEntry } from "@/lib/types";
-import { failGitAction, gitActionFailureResult, GitActionRecordingError } from "@/lib/git-action-controller";
+import { failGitAction, gitActionAttribution, gitActionFailureResult, GitActionRecordingError } from "@/lib/git-action-controller";
 import { finishHumanGitAction, humanGitActionSink, HumanGitCandidateError, HumanGitSessionChangedError, keepHumanGitCandidate, readHumanGitSessionManager, takeHumanGitCandidate } from "@/lib/git-action-human";
 import { GIT_ACTION_ID_PATTERN } from "@/lib/git-action-types";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
@@ -12,6 +12,7 @@ import { acquireGitCheckoutGate, isGitCheckoutGated, GitCheckoutBusyError } from
 import { samePath } from "@/lib/paths";
 import { readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
 import { selectGitCommitAdmission, GitOperationRecoveryError } from "@/lib/git-operation-admission";
+import { selectGitProjectResources } from "@/lib/git-project-resources";
 
 export const dynamic = "force-dynamic";
 
@@ -68,9 +69,11 @@ export async function POST(req: Request) {
       try {
         await guard();
         // Both trees and the mode are native server-derived facts, not caller OIDs.
+        const selection = await selectGitProjectResources(cwd);
         const { preview, snapshot, candidateDiff, candidateDiffUnavailable } = await captureExactCommitCandidate(cwd, input.paths, input.message, mode, true);
         await guard();
-        const action = await keepHumanGitCandidate(humanGitActionSink(scope), scope, { kind: "commit", preview, message: input.message }, snapshot);
+        const action = await keepHumanGitCandidate(humanGitActionSink(scope), scope, { kind: "commit", preview, message: input.message },
+          { ...snapshot, ...gitActionAttribution(selection) });
         return NextResponse.json({ ...action, preview, ...(candidateDiff ? { candidateDiff } : { candidateDiffUnavailable }) });
       } finally { release(); }
     }

@@ -3,6 +3,23 @@ import { GIT_ACTION_ANCHOR_TYPE, isGitActionAnchor, type GitActionCandidateSnaps
 import { invalidateSessionListCache, invalidateSessionManagerCache } from "./session-reader";
 import type { GitActionCandidate, SessionEntry } from "./types";
 import { GitCommitOperationError } from "./git-commit";
+import { samePath } from "./paths";
+import type { GitProjectResources } from "./git-project-resources";
+
+/** Only server-captured physical identities; not an access check or grant. */
+export function gitActionAttribution(source: GitProjectResources, target?: GitProjectResources) {
+  // Equal project paths can name different repositories after a replacement.
+  // Both checkouts must have captured the same actual common Git directory.
+  if (target && (!samePath(source.projectRoot, target.projectRoot)
+    || !samePath(source.commonDir, target.commonDir)
+    || source.identities.common.device !== target.identities.common.device
+    || source.identities.common.inode !== target.identities.common.inode
+    || source.identities.common.birthtime !== target.identities.common.birthtime)) {
+    throw new Error("Git action target belongs to a different captured repository");
+  }
+  return { projectRoot: source.projectRoot, sourceCheckoutRoot: source.cwd,
+    ...(target ? { targetCheckoutRoot: target.cwd } : {}) };
+}
 
 export interface GitActionSink {
   sessionId: string;
@@ -31,18 +48,20 @@ export function gitActionSink(manager: ActionManager, append: (type: string, dat
 }
 
 /** Explicitly omit all native live tokens/plan/receipt capabilities. */
-export function snapshotGitActionCandidate(candidate: Exclude<GitActionCandidate, { kind: "preferences" }>): GitActionCandidateSnapshot {
+export function snapshotGitActionCandidate(candidate: Exclude<GitActionCandidate, { kind: "preferences" }>,
+  source?: GitProjectResources, target?: GitProjectResources): GitActionCandidateSnapshot {
+  const attribution = source ? gitActionAttribution(source, target) : {};
   switch (candidate.kind) {
-    case "commit": return { kind: "commit", repositoryRoot: candidate.preview.repositoryRoot,
+    case "commit": return { kind: "commit", repositoryRoot: candidate.preview.repositoryRoot, ...attribution,
       featureBranch: candidate.preview.branch, message: candidate.message, commitMode: candidate.preview.mode, paths: [...candidate.preview.paths],
       parentOid: candidate.preview.head, candidateTreeOid: candidate.preview.tree, diff: { ...candidate.diff } };
-    case "review": return { kind: "review", repositoryRoot: candidate.featureCwd,
+    case "review": return { kind: "review", repositoryRoot: candidate.featureCwd, ...attribution,
       featureBranch: candidate.review.featureBranch, targetBranch: candidate.review.targetBranch,
       featureOid: candidate.review.featureOid, targetOid: candidate.review.targetOid,
       selection: candidate.selection, diff: { ...candidate.diff } };
-    case "checks": return { kind: "checks", repositoryRoot: candidate.featureCwd,
+    case "checks": return { kind: "checks", repositoryRoot: candidate.featureCwd, ...attribution,
       featureBranch: candidate.featureBranch, targetBranch: candidate.targetBranch, checks: candidate.checks };
-    case "integration": return { kind: "integration", repositoryRoot: candidate.featureCwd,
+    case "integration": return { kind: "integration", repositoryRoot: candidate.featureCwd, ...attribution,
       featureBranch: candidate.plan.review.featureBranch, targetBranch: candidate.plan.review.targetBranch,
       featureOid: candidate.plan.review.featureOid, targetOid: candidate.plan.review.targetOid,
       integrationMethod: "method" in candidate.plan ? "ff" : "merge",

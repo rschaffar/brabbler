@@ -86,7 +86,7 @@ export function createGitCommitExtension(
               const diff = await getGitTreeDiff(workspace, await getGitCommitTreeOid(workspace, preview.head), preview.tree);
               const selection = await selectGitCommitAdmission(workspace);
               const action = await beginGitAction(gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)),
-                "legacy-agent", snapshotGitActionCandidate({ kind: "commit", preview, message, diff }));
+                "legacy-agent", snapshotGitActionCandidate({ kind: "commit", preview, message, diff }, selection));
               try {
                 // Direct legacy confirm is saved consent, not a human decision.
                 // The shared operation settles only after entry; a failed entry

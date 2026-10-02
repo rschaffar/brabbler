@@ -11,7 +11,12 @@ export interface GitActionAnchor { version: 1; actionId: string }
 /** Allowlisted display data only: no review tokens, plan IDs, receipt IDs, jobs or approval capabilities. */
 export interface GitActionCandidateSnapshot {
   kind: GitActionKind;
+  /** Legacy source path; retain its original meaning for v1 records. */
   repositoryRoot: string;
+  /** Captured canonical project and physical checkouts; display evidence, never authority. */
+  projectRoot?: string;
+  sourceCheckoutRoot?: string;
+  targetCheckoutRoot?: string;
   featureBranch?: string;
   targetBranch?: string;
   message?: string;

@@ -2,6 +2,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
+import { samePath } from "./paths";
 import { GIT_ACTION_ID_PATTERN, isTerminalGitAction,
   type GitActionCandidateSnapshot, type GitActionHistoryResponse, type GitActionOutcome,
   type GitActionRecord, type GitActionSource, type GitActionState, type GitActionUpdateEvent } from "./git-action-types";
@@ -98,11 +99,28 @@ function array<T>(value: unknown, max: number, item: (value: unknown) => T): T[]
 }
 function sessionId(value: unknown): string { return text(value, 256); }
 function candidate(input: unknown, summary = false): GitActionCandidateSnapshot {
-  const v = fields(input, ["kind", "repositoryRoot"], ["featureBranch", "targetBranch", "message", "commitMode", "paths", "parentOid",
+  const v = fields(input, ["kind", "repositoryRoot"], ["projectRoot", "sourceCheckoutRoot", "targetCheckoutRoot", "featureBranch", "targetBranch", "message", "commitMode", "paths", "parentOid",
     "candidateTreeOid", "featureOid", "targetOid", "mergeOid", "integrationMethod", "checks", "selection", "diffUnavailable", ...(summary ? [] : ["diff"])]);
+  const physicalPath = (value: unknown): string => {
+    const path = text(value, GIT_ACTION_LIMITS.pathBytes);
+    if (!isAbsolute(path) && !win32.isAbsolute(path) || /[\x00-\x1f\x7f]/.test(path) || path !== path.trim()) invalid("checkout path");
+    return path;
+  };
   const root = text(v.repositoryRoot, GIT_ACTION_LIMITS.pathBytes);
   if (!isAbsolute(root) && !win32.isAbsolute(root)) invalid("repository root");
   const result: GitActionCandidateSnapshot = { kind: choice(v.kind, KINDS), repositoryRoot: root };
+  // Older v1 snapshots have no attribution. New ones must carry a complete
+  // source pair, never a project-only guess or an unbound destination.
+  if (v.projectRoot !== undefined || v.sourceCheckoutRoot !== undefined || v.targetCheckoutRoot !== undefined) {
+    if (v.projectRoot === undefined || v.sourceCheckoutRoot === undefined) invalid("incomplete attribution");
+    result.projectRoot = physicalPath(v.projectRoot);
+    result.sourceCheckoutRoot = physicalPath(v.sourceCheckoutRoot);
+    if (!samePath(root, result.sourceCheckoutRoot)) invalid("source checkout mismatch");
+    if (v.targetCheckoutRoot !== undefined) {
+      if (result.kind !== "integration" && result.kind !== "checks" && result.kind !== "review") invalid("target checkout on commit");
+      result.targetCheckoutRoot = physicalPath(v.targetCheckoutRoot);
+    }
+  }
   for (const key of ["featureBranch", "targetBranch"] as const) if (v[key] !== undefined) result[key] = text(v[key], 1024);
   if (v.message !== undefined) result.message = text(v.message, GIT_ACTION_LIMITS.messageBytes);
   if (v.commitMode !== undefined) {

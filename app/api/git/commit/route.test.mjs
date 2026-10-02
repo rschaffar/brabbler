@@ -350,6 +350,8 @@ test("durable human candidate uses the shared agent contract, metadata anchors o
   assert.equal(stored.record.outcome, undefined);
   assert.equal(stored.candidate.message, "approved");
   assert.equal(stored.candidate.parentOid, candidate.preview.head);
+  assert.equal(stored.record.summary.projectRoot, f.cwd);
+  assert.equal(stored.candidate.sourceCheckoutRoot, f.cwd);
   assert.match(stored.candidate.diff.patch, /captured private patch/);
   assert.doesNotMatch(JSON.stringify(stored), /reviewToken|planId|receiptIds/);
   assert.equal(stored.record.summary.diff, undefined);
