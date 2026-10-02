@@ -22,8 +22,8 @@ export interface GitWorkflowPermissions {
 
 // Keep unsupported modes visible without pretending that durable cards alone
 // make automation safe. This is capability information, never a grant.
-export const AUTOMATIC_COMMIT_UNAVAILABLE = "Confirmation-free commits are not implemented yet: scoped authorization and operation-level recovery admission are still required.";
-export const AUTOMATIC_WORKFLOW_UNAVAILABLE = "Confirmation-free execution is not implemented yet. Project selection and saved preferences are not execution permission.";
+export const AUTOMATIC_COMMIT_UNAVAILABLE = "Automatic commit mode is unsupported. Eligible managed Ask commits separately support explicit confirmation:none through scoped authorization and operation-level recovery admission and an independent live gate: fresh untouched persisted ordinary creation provenance, live commitConfirmation:none and fresh saved Allow. Saved Allow alone does not skip Ask; stricter repository/user instructions still apply.";
+export const AUTOMATIC_WORKFLOW_UNAVAILABLE = "Automatic workflow mode is unsupported; no full automatic workflow is enabled. Eligible managed Ask commits separately support explicit confirmation:none through an independent fresh-provenance, live-policy and saved-Allow gate. Saved Allow alone does not skip Ask or authorize other workflow actions; stricter repository/user instructions still apply.";
 export const PROJECT_GIT_WRITES_UNAVAILABLE = "This project-scoped managed action is unavailable. Status, read-only review and a separate bounded selected-project commit path are supported; no checkout is changed.";
 
 export function hasManagedGitMutationTools(tools: readonly string[]): boolean {
