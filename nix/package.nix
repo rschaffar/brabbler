@@ -28,6 +28,9 @@ buildNpmPackage {
   '';
 
   npmRebuildFlags = [ "node-pty" ];
+  # npm prune fails after the successful Next build with ERR_INVALID_ARG_TYPE
+  # ("from" is undefined). Keep the already installed dependencies instead.
+  dontNpmPrune = true;
   # `nix run` and systemd user services must find the pinned Node/npm and Git
   # without depending on the invoking shell's PATH.
   makeWrapperArgs = [
