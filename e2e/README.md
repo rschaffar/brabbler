@@ -56,7 +56,8 @@ Coverage:
   first-browser baselines, cross-tab acknowledgement and reload, cross-project
   filtering, and navigation at 1280px, 700px, and 390px without model credentials.
 - The focused Git workflow run checks an in-chat agent settings proposal card with a mocked read/apply endpoint (the real locked save/identity path is tested by API tests), project/session preferences without a browser reload,
-  whole-merge/single-commit/consecutive-range review, explicit manual commit preview/confirmation,
+  whole-merge/single-commit/consecutive-range review, default whole-file manual commit and explicit staged
+  partial-hunk preview/confirmation (exact tree/commit, surviving unstaged hunk and unrelated staged entry),
   saved-check verification, exact proposal acknowledgement, and separately confirmed local FF and non-FF integration
   **when the Linux user-service check containment backend is available**. The FF assertion proves the target becomes the
   existing feature object with its original parents and tree, then restores only the clean disposable fixture before

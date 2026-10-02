@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { checkGitTaskBinding } from "./git-task-binding.mjs";
 
@@ -558,15 +559,29 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     if (originalViewport) await page.setViewportSize(originalViewport);
     console.log("PASS: ~500px desktop and 390px Workflow settings, dirty footer and task-detail containment");
 
+    // The disposable whole-file candidate also supplies a tracked file with
+    // distant lines for the staged partial-hunk scenario below.
+    assert.equal(git("rev-parse", "--show-toplevel"), cwd);
+    assert.match(basename(dirname(cwd)), /^pi-web-e2e-/, "Only edit the disposable E2E fixture");
+    const draftBaseline = ["Manual commit fixture", ...Array.from({ length: 20 }, (_, i) => `Unchanged context ${i + 1}`),
+      "Unstaged hunk anchor"].join("\n") + "\n";
+    writeFileSync(join(cwd, "draft.txt"), draftBaseline);
     const commitPanel = await openDetail("Review & commit", "Review & commit panel");
     await commitPanel.getByText(/^draft\.txt\s+\(/).waitFor();
+    const source = commitPanel.getByLabel("Commit source");
+    assert.equal(await source.inputValue(), "whole-file", "Whole working-tree files remain the default");
     for (const checkbox of await commitPanel.getByRole("checkbox").all()) await checkbox.check();
     await commitPanel.getByLabel("Commit message").fill("E2E manual commit");
     const before = git("rev-parse", "HEAD");
     const previewResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/commit"
       && response.request().postDataJSON()?.operation === "preview");
     await commitPanel.getByRole("button", { name: "Preview", exact: true }).click();
-    const savedPreview = await (await previewResponse).json();
+    const manualPreviewHttp = await previewResponse;
+    assert.equal(manualPreviewHttp.status(), 200, manualPreviewHttp.status() === 200 ? "" : await manualPreviewHttp.text());
+    const savedPreview = await manualPreviewHttp.json();
+    assert.equal(manualPreviewHttp.request().postDataJSON().mode, "whole-file");
+    assert.equal(savedPreview.preview.mode, "whole-file");
+    assert.match(savedPreview.candidateDiff.patch, /Unstaged hunk anchor/, "Whole-file default includes the entire selected file");
     assert.equal(typeof savedPreview.actionId, "string");
     const pendingHistory = await api(`/api/git/actions/${savedPreview.actionId}?sessionId=${sessionId}`);
     assert.equal(pendingHistory.record.state, "awaiting-decision", "Live journal ownership is shared across Next route modules");
@@ -583,6 +598,7 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await commitPanel.getByText("Last commit created").waitFor();
     assert.notEqual(git("rev-parse", "HEAD"), before);
     assert.equal(git("show", "--format=", "--name-only", "HEAD"), "draft.txt\nsecond-draft.txt");
+    assert.equal(execFileSync("git", ["-C", cwd, "show", "HEAD:draft.txt"], { encoding: "utf8" }), draftBaseline);
     assert.equal(git("show", "-s", "--format=%ae", "HEAD"), "e2e@example.invalid", "Commit uses the throwaway HOME identity");
     const manualCommit = git("rev-parse", "HEAD");
     await closeWorkflow();
@@ -604,6 +620,130 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     assert.equal(await commitCard.count(), 1);
     assert.equal(await commitCard.getByRole("button", { name: /^Confirm/ }).count(), 0, "History cannot approve an old commit");
     console.log("PASS: real manual commit coalesces into one durable card with actual identity, lazy multi-file diff and reload persistence");
+
+    // Stage one of two distant edits on the same tracked file; keep an unrelated
+    // staged entry to prove selection is from the index, not the whole index or
+    // the visible working-tree diff. All writes are inside the throwaway fixture.
+    assert.equal(git("status", "--porcelain"), "", "Start staged review from a clean fixture");
+    const selectedDraft = draftBaseline.replace("Manual commit fixture", "Selected staged hunk");
+    const workingDraft = selectedDraft.replace("Unstaged hunk anchor", "Unstaged worktree hunk");
+    const unrelatedIndex = "Unrelated staged entry\n";
+    writeFileSync(join(cwd, "draft.txt"), selectedDraft);
+    git("add", "--", "draft.txt");
+    writeFileSync(join(cwd, "draft.txt"), workingDraft);
+    writeFileSync(join(cwd, "second-draft.txt"), unrelatedIndex);
+    git("add", "--", "second-draft.txt");
+    const stagedHunks = git("diff", "HEAD", "--", "draft.txt");
+    assert.equal((stagedHunks.match(/^@@/gm) ?? []).length, 2, "Fixture must contain separate selected and unstaged hunks");
+    const indexEntry = git("ls-files", "--stage", "--", "draft.txt");
+    const stagedBlob = indexEntry.match(/^100644 ([a-f0-9]{40,64}) 0\tdraft\.txt$/)?.[1];
+    assert.ok(stagedBlob, `Expected an ordinary staged blob: ${indexEntry}`);
+    const originalEntries = git("ls-files", "--stage");
+    const headBeforeStaged = git("rev-parse", "HEAD");
+    const rawGit = (...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+    assert.equal(rawGit("show", ":draft.txt"), selectedDraft);
+    assert.equal(rawGit("show", ":second-draft.txt"), unrelatedIndex);
+    assert.equal(readFileSync(join(cwd, "draft.txt"), "utf8"), workingDraft);
+    // Independently build HEAD + just the selected index blob in a separate
+    // index outside the checkout (never alter the real index to predict a tree).
+    const expectedIndex = join(dirname(cwd), "expected-staged-commit.index");
+    const expectedGit = (...args) => execFileSync("git", ["-C", cwd, ...args], {
+      encoding: "utf8", env: { ...process.env, GIT_INDEX_FILE: expectedIndex },
+    }).trim();
+    expectedGit("read-tree", headBeforeStaged);
+    expectedGit("update-index", "--add", "--cacheinfo", "100644", stagedBlob, "draft.txt");
+    const expectedTree = expectedGit("write-tree");
+    assert.notEqual(expectedTree, git("write-tree"), "The real index includes the unrelated staged entry");
+
+    const stagedPanel = await openDetail("Review & commit", "Review & commit panel");
+    const refreshedStatus = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/status"
+      && new URL(response.url()).searchParams.get("cwd") === cwd);
+    await stagedPanel.getByRole("button", { name: "Refresh changed files" }).click();
+    assert.equal((await refreshedStatus).status(), 200);
+    await stagedPanel.getByText(/^draft\.txt\s+\(/).waitFor();
+    assert.equal(await stagedPanel.getByLabel("Commit source").inputValue(), "whole-file");
+    await stagedPanel.getByLabel("Commit source").selectOption("staged");
+    assert.match(await stagedPanel.innerText(), /Unstaged changes and unrelated staged entries remain/);
+    const stagedRow = stagedPanel.getByText(/^draft\.txt\s+\(/).locator("xpath=ancestor::li[1]");
+    assert.match(await stagedRow.innerText(), /index M, worktree M/, "Same path has both staged and unstaged edits");
+    await stagedRow.getByRole("checkbox").check();
+    assert.equal(await stagedPanel.getByRole("checkbox", { checked: true }).count(), 1, "Do not select the unrelated staged entry");
+    await stagedPanel.getByLabel("Commit message").fill("E2E staged partial-hunk commit");
+    const indexBeforePreview = readFileSync(git("rev-parse", "--path-format=absolute", "--git-path", "index"));
+    const stagedPreviewResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/commit"
+      && response.request().postDataJSON()?.operation === "preview");
+    await stagedPanel.getByRole("button", { name: "Preview", exact: true }).click();
+    const stagedHttp = await stagedPreviewResponse;
+    assert.equal(stagedHttp.status(), 200, stagedHttp.status() === 200 ? "" : await stagedHttp.text());
+    assert.deepEqual(stagedHttp.request().postDataJSON(), {
+      operation: "preview", sessionId, paths: ["draft.txt"], mode: "staged", message: "E2E staged partial-hunk commit",
+    });
+    const stagedCandidate = await stagedHttp.json();
+    assert.equal(stagedCandidate.preview.mode, "staged");
+    assert.deepEqual(stagedCandidate.preview.paths, ["draft.txt"]);
+    assert.equal(stagedCandidate.preview.head, headBeforeStaged);
+    assert.equal(stagedCandidate.preview.tree, expectedTree);
+    assert.equal(stagedCandidate.candidateDiff.fromTreeOid, git("rev-parse", `${headBeforeStaged}^{tree}`));
+    assert.equal(stagedCandidate.candidateDiff.toTreeOid, expectedTree);
+    assert.match(stagedCandidate.candidateDiff.patch, /Selected staged hunk/);
+    assert.doesNotMatch(stagedCandidate.candidateDiff.patch, /Unstaged worktree hunk|Unrelated staged entry/);
+    const stagedPreview = stagedPanel.locator('[aria-label="Commit preview"]');
+    await stagedPreview.getByText("Review exact commit candidate").waitFor();
+    assert.match(await stagedPreview.innerText(), /Only the selected index entries will be committed; other staged and unstaged changes remain/);
+    assert.equal(await stagedPreview.locator("dt", { hasText: "Mode" }).locator("xpath=following-sibling::dd[1]").innerText(), "staged");
+    assert.equal(await stagedPreview.locator("dt", { hasText: "Candidate tree" }).locator("xpath=following-sibling::dd[1]").innerText(), expectedTree);
+    const candidatePatch = stagedPreview.getByLabel("Authoritative candidate patch");
+    assert.match(await candidatePatch.innerText(), /Selected staged hunk/);
+    assert.doesNotMatch(await candidatePatch.innerText(), /Unstaged worktree hunk|Unrelated staged entry/);
+    assert.equal(git("rev-parse", "HEAD"), headBeforeStaged, "Staged preview is read-only");
+    assert.deepEqual(readFileSync(git("rev-parse", "--path-format=absolute", "--git-path", "index")), indexBeforePreview);
+    assert.equal(readFileSync(join(cwd, "draft.txt"), "utf8"), workingDraft);
+
+    const stagedConfirmResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/commit"
+      && response.request().postDataJSON()?.operation === "confirm");
+    await stagedPreview.getByRole("button", { name: "Confirm commit" }).click();
+    const stagedConfirmed = await stagedConfirmResponse;
+    assert.equal(stagedConfirmed.status(), 200, stagedConfirmed.status() === 200 ? "" : await stagedConfirmed.text());
+    const stagedApproval = stagedConfirmed.request().postDataJSON();
+    assert.equal(stagedApproval.actionId, stagedCandidate.actionId);
+    assert.equal(stagedApproval.message, "E2E staged partial-hunk commit");
+    assert.deepEqual(stagedApproval.preview, stagedCandidate.preview, "Approval binds the exact staged candidate");
+    const stagedResult = await stagedConfirmed.json();
+    assert.equal(stagedResult.status, "committed");
+    assert.equal(stagedResult.tree, expectedTree);
+    assert.deepEqual(stagedResult.parents, [headBeforeStaged]);
+    const stagedCommit = git("rev-parse", "HEAD");
+    assert.equal(stagedResult.commit, stagedCommit);
+    assert.equal(git("show", "-s", "--format=%B", "HEAD"), stagedApproval.message);
+    assert.equal(git("show", "-s", "--format=%ae", "HEAD"), "e2e@example.invalid");
+    assert.equal(git("rev-parse", "HEAD^{tree}"), expectedTree);
+    assert.equal(git("show", "--format=", "--name-only", "HEAD"), "draft.txt");
+    assert.equal(rawGit("show", "HEAD:draft.txt"), selectedDraft);
+    assert.equal(rawGit("show", "HEAD:second-draft.txt"), "Second captured commit file\n");
+    assert.equal(git("ls-files", "--stage"), originalEntries, "Confirm must preserve the original index entries");
+    assert.equal(rawGit("show", ":draft.txt"), selectedDraft);
+    assert.equal(rawGit("show", ":second-draft.txt"), unrelatedIndex);
+    assert.equal(readFileSync(join(cwd, "second-draft.txt"), "utf8"), unrelatedIndex);
+    assert.equal(git("diff", "--cached", "--name-only"), "second-draft.txt");
+    assert.equal(readFileSync(join(cwd, "draft.txt"), "utf8"), workingDraft, "Unstaged hunk remains in the worktree");
+    assert.equal(git("diff", "--name-only"), "draft.txt");
+    assert.match(git("diff", "--", "draft.txt"), /Unstaged worktree hunk/);
+    assert.doesNotMatch(git("diff", "--", "draft.txt"), /Selected staged hunk/);
+    await stagedPanel.getByText("Last commit created").waitFor();
+    await closeWorkflow();
+    const stagedCard = page.locator(`[data-git-action-id="${stagedCandidate.actionId}"]`);
+    await stagedCard.getByRole("heading", { name: /Commit.*Succeeded/ }).waitFor();
+    await stagedCard.getByRole("button", { name: /^Captured candidate/ }).click();
+    await stagedCard.getByText("Selected staged index paths").waitFor();
+    assert.equal(await stagedCard.getByRole("button", { name: /^Confirm/ }).count(), 0, "History cannot reapprove a staged commit");
+    console.log("PASS: real browser staged partial-hunk commit approves only the selected index tree; unrelated staged and unstaged edits survive");
+
+    // Verification/integration needs a clean checkout. Restore only the two
+    // fixture edits AFTER proving their survival; do not undo the new commit.
+    assert.equal(git("rev-parse", "--show-toplevel"), cwd);
+    git("restore", "--staged", "--worktree", "--", "draft.txt", "second-draft.txt");
+    assert.equal(git("status", "--porcelain"), "", "Fixture cleanup leaves the new feature commit intact");
+    assert.equal(git("rev-parse", "HEAD"), stagedCommit);
 
     // Project-owned checks neither run nor grant approval on Save; the captured task must be explicitly updated first.
     await home();
@@ -838,7 +978,7 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     const liveDenyResult = await liveDeny;
     assert.equal(liveDenyResult.status(), 200, liveDenyResult.status() === 200 ? "" : await liveDenyResult.text());
     assert.equal((await liveDenyResult.json()).actions.commit.effective, "deny", "live revocation cannot require an idle chat");
-    assert.equal(git("rev-parse", "HEAD"), manualCommit, "waiting question must not create/commit a worktree");
+    assert.equal(git("rev-parse", "HEAD"), stagedCommit, "waiting question must not create/commit a worktree");
     await closeWorkflow();
     await question.getByRole("button", { name: "Cancel" }).click();
     await question.waitFor({ state: "hidden" });
