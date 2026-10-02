@@ -7,6 +7,9 @@ import { samePath } from "./paths";
 import { selectGitWorkspace } from "./git-workspace-selector";
 import { assertManagedGitAction, assertManagedGitProjectDenial, assertManagedGitWorkspace, ManagedGitAccessError } from "./git-workflow-access";
 import { requestWorkflowCommit } from "./git-workflow-commit";
+import { agentGitCommitAuthorization } from "./git-agent-commit-authorization";
+import { selectGitProjectResources } from "./git-project-resources";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { beginGitAction, failGitAction, finishGitAction, gitActionFailureResult, gitActionSink, snapshotGitActionCandidate } from "./git-action-controller";
 import { applyExactCommitOperation } from "./git-exact-commit-operation";
 import { getGitCommitTreeOid, getGitTreeDiff } from "./git-review";
@@ -26,12 +29,13 @@ export function createGitCommitExtension(
       pi.registerTool({
         name: "git_commit",
         label: "Git Commit",
-        description: "Request a commit of explicit paths and an exact message with operation commit. Default whole-file mode stages selected working-tree files; mode:staged commits only the named changed index entries and preserves other staged/unstaged content. Workflow settings decide whether the agent may request exact-candidate approval or must refuse; no prose approval is needed. Select a registered local worktree with workspaceBranch. Legacy preview/confirm requires saved agent-commit consent. No remote or integration operations; follow stricter repository instructions.",
+        description: "Request a commit of explicit paths and an exact message with operation commit. Default whole-file mode stages selected working-tree files; mode:staged commits only the named changed index entries and preserves other staged/unstaged content. Default/confirmation:ask requests exact-candidate approval once. Request confirmation:none only when compatible with all applicable repository/user instructions: it requires fresh untouched persisted ordinary creation provenance, an enabled managed Ask caller task, live selected commitConfirmation:none and fresh saved Allow. Saved Allow alone never skips Ask. No UI is needed for a qualified none request. Select a registered local worktree with workspaceBranch. Legacy preview/confirm requires saved agent-commit consent. No remote or integration operations; follow stricter repository instructions.",
         executionMode: "sequential",
         parameters: Type.Object({
           operation: Type.Unsafe<"commit" | "preview" | "confirm">({ type: "string", enum: ["commit", "preview", "confirm"] }),
           workspaceBranch: Type.Optional(Type.String({ description: "Checked-out local branch identifying a registered worktree in this chat's repository; omit for this chat's checkout" })),
           paths: Type.Optional(Type.Array(Type.String())),
+          confirmation: Type.Optional(Type.Unsafe<"ask" | "none">({ type: "string", enum: ["ask", "none"], description: "operation:commit only; default ask. Request none only when compatible with stricter instructions and eligible fresh provenance, live policy and saved Allow." })),
           mode: Type.Optional(Type.Unsafe<"whole-file" | "staged">({ type: "string", enum: ["whole-file", "staged"], description: "Explicit staged index entries, or whole files (default); only for commit/preview" })),
           preview: Type.Optional(Type.Object({
             repositoryRoot: Type.String(), branch: Type.String(), head: Type.String(),
@@ -42,6 +46,7 @@ export function createGitCommitExtension(
         async execute(_id, params, _signal, _update, ctx) {
           const failure = (message: string) => ({ content: [{ type: "text" as const, text: message }], isError: true, details: { error: message } });
           if (!samePath(ctx.cwd, sessionCwd)) return failure("Session checkout changed; commit refused");
+          if (params.confirmation !== undefined && (params.operation !== "commit" || !["ask", "none"].includes(params.confirmation))) return failure("confirmation is supported only for operation commit (ask or none)");
           try {
             const guard = () => assertManagedGitAction(sessionCwd, (ctx.sessionManager?.getEntries?.() ?? []) as SessionEntry[], "commit", "agent", undefined, pi.getActiveTools?.());
             const state = await guard();
@@ -58,8 +63,14 @@ export function createGitCommitExtension(
               if (!params.paths?.length || !params.message?.trim() || params.preview) return failure("Select paths and an exact commit message");
               if (params.mode !== undefined && params.mode !== "whole-file" && params.mode !== "staged") return failure("Unsupported commit mode");
               const ui = ctx.ui as typeof ctx.ui & Partial<AgentGitWorkflowUiContext>;
-              if (!ctx.hasUI || !ui.gitAction) return failure("Commit approval requires an interactive Pi Web session");
+              const none = params.confirmation === "none";
+              const selected = none ? await selectGitProjectResources(workspace) : undefined;
+              const authorizeWithoutConfirmation = selected ? agentGitCommitAuthorization({ sessionCwd,
+                manager: ctx.sessionManager, selected, confirmation: "none", effectiveTools: () => pi.getActiveTools?.() }) : undefined;
+              await authorizeWithoutConfirmation?.();
+              if (!none && (!ctx.hasUI || !ui?.gitAction)) return failure("Commit approval requires an interactive Pi Web session");
               return await requestWorkflowCommit({ cwd: workspace, paths: params.paths, mode: params.mode, message: params.message, signal: _signal,
+                ...(selected ? { selected, agentDir: getAgentDir(), authorizeWithoutConfirmation } : {}),
                 sink: gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)),
                 ask: (candidate, signal) => ui.gitAction!(candidate, signal), beforeApply: async () => {
                   await assertManagedGitWorkspace(await liveGuard(), workspace);

@@ -5,7 +5,6 @@ import type { GitActionCandidate } from "./types";
 import { withGitCheckoutGate } from "./git-checkout-gate";
 import { assertGitOperationAdmission, selectGitCommitAdmission, GitOperationRecoveryError } from "./git-operation-admission";
 import type { GitProjectResources } from "./git-project-resources";
-import { readProjectAuthorization, type ProjectAuthorizationOwner } from "./git-project-authorization";
 
 /** Shared exact-Ask and explicitly authorized selected-project commit path.
  * Patch bytes live in private artifacts/UI, never tool results. */
@@ -14,22 +13,15 @@ export async function requestWorkflowCommit(options: {
   sink: GitActionSink;
   ask: (candidate: GitActionCandidate, signal?: AbortSignal) => Promise<boolean>;
   beforeApply: () => Promise<void>;
-  /** Only a caller with its own live selected-project Allow/None gate may set
-   * this. This flag is a request, not authorization; beforeApply rechecks. */
-  skipApproval?: boolean;
+  /** Agent-only live authorization closure, not a boolean assumption of
+   * authority. Supplied only for an explicit confirmation:none request. */
+  authorizeWithoutConfirmation?: () => Promise<void>;
   /** Explicit-project callers supply a server-selected identity and its private
    * admission root. Legacy chat-checkout commits retain their existing route. */
   selected?: GitProjectResources;
   agentDir?: string;
-  owner?: ProjectAuthorizationOwner;
 }) {
-  const assertStandingGrant = async () => {
-    if (!options.skipApproval) return;
-    if (!options.selected || !options.owner || !options.agentDir ||
-      (await readProjectAuthorization(options.selected, options.owner, options.agentDir)).actions.commit.effective !== "allow") {
-      throw new Error("No-prompt commit requires a fresh effective saved selected-project Allow");
-    }
-  };
+  const assertStandingGrant = async () => { await options.authorizeWithoutConfirmation?.(); };
   const { candidate, action, selection } = await withGitCheckoutGate([options.cwd], async () => {
     await options.beforeApply();
     await assertStandingGrant();
@@ -44,7 +36,7 @@ export async function requestWorkflowCommit(options: {
   let enteredApply = false;
   let atRefBoundary = false;
   try {
-    if (options.skipApproval) {
+    if (options.authorizeWithoutConfirmation) {
       await options.beforeApply();
       await assertStandingGrant();
       options.signal?.throwIfAborted();
@@ -72,7 +64,7 @@ export async function requestWorkflowCommit(options: {
       });
     });
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: { ...result, actionId: action.record.id,
-      ...(options.skipApproval ? { approval: "saved-project-allow" } : {}),
+      ...(options.authorizeWithoutConfirmation ? { approval: "saved-project-allow" } : {}),
       ...(result.status === "partial-success" ? { recoveryRequired: true } : {}) } };
   } catch (cause) {
     // The shared operation settles post-admission failures; a busy apply gate
