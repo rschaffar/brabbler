@@ -137,7 +137,7 @@ test("missing, corrupted or stale evidence remains quarantined; no rollback or G
   await rm(postFile);
   assert.equal((await (await get(f.id)).json()).eligible, false);
   assert.equal((await admission(f)).reason, "unresolved", "missing recovery proof fails closed");
-  writeFileSync(postFile, original.toString().replace("node-test-simulated", "linux-systemd"));
+  writeFileSync(postFile, original.toString().replace("node-test-simulated", "linux-systemd"), { mode: 0o600 });
   assert.equal((await (await get(f.id)).json()).eligible, false);
   assert.equal((await admission(f)).reason, "unavailable");
   writeFileSync(postFile, original);
