@@ -151,7 +151,7 @@ async function inspect(s: Scope) {
   await revalidateGitProjectResources(s.target);
   const evidence = readUnresolvedGitCheckRecovery(s.agentDir, s.feature.commonDir);
   const proof = evidence.cleanupProof;
-  if (evidence.source !== "linux-systemd" || !evidence.after || !proof || !evidence.outcome ||
+  if (evidence.source !== "linux-systemd" || !evidence.after || evidence.after.version !== 1 || !proof || !evidence.outcome ||
     evidence.outcome.status === 0 && !evidence.outcome.timedOut && !evidence.outcome.overflow ||
     JSON.stringify(evidence.before) !== JSON.stringify(evidence.after) || !proof.empty || !proof.terminal ||
     proof.unit !== evidence.unit || !["release-attempted", "prevented-before-write"].includes(proof.payload)) throw new Error("incomplete proof");
@@ -206,7 +206,7 @@ async function inspect(s: Scope) {
     heads = { featureHead: review.featureOid, targetHead: review.targetOid };
   }
   if (!await unitStopped(evidence.unit, proof.invocation)) throw new Error("unit not proven stopped");
-  return { evidence, action, snapshot, proof, heads, mode: moved ? "moved" as const : "unchanged" as const };
+  return { evidence: { ...evidence, after: evidence.after }, action, snapshot, proof, heads, mode: moved ? "moved" as const : "unchanged" as const };
 }
 async function checkoutView(cwd: string) {
   const branch = (await git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")).trim();

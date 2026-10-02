@@ -8,13 +8,16 @@ import { sanitizeProjectCommandEnvironment } from "./project-command-env";
 import { reviewGitBranches, type GitReview } from "./git-review";
 import { validateGitWorkflowPolicy, type GitWorkflowPolicy } from "./git-workflow-policy";
 import { hasExtendedGitCheckRecipe } from "./git-check-recipe";
-import { newGitCheckUnit, runContainedGitCheck, linuxSystemdBackend,
-  type ContainmentBackend, type ContainedCheckResult } from "./git-check-containment";
-import { revalidateGitProjectResources, selectGitProjectResources } from "./git-project-resources";
+import { newGitCheckUnit, runContainedGitCheck, pinGitCheckCwd, linuxSystemdBackend,
+  type ContainmentBackend, type ContainedCheckResult, type GitCheckReleaseGuard } from "./git-check-containment";
+import { revalidateGitProjectResources, selectGitProjectResources, type GitProjectResources } from "./git-project-resources";
 import { assertGitOperationAdmission, beginSupervisedGitOperationIntent, assertGitCheckRecoverySnapshotCapacity,
   type GitCheckSnapshot, type GitCheckRecoveryCurrentState, type GitCheckCleanupProof } from "./git-operation-admission";
 import { GIT_ACTION_ID_PATTERN } from "./git-action-types";
 import { samePath, toNativePath } from "./paths";
+import { gitCheckRunningCheckouts, registerGitCheckReceiptEpoch, gitCheckReceiptEpochStatus,
+  fenceGitCheckReceiptCohort, settleLiveGitCheck, captureLiveGitCheckAttemptBoundary, gitCheckSyncValue, readGitCheckAuthorityStamp,
+  assertGitCheckSelectionSync, gitCheckSourceReadSync, gitCheckIndexBytesSync } from "./git-check-runner";
 
 const exec = promisify(execFile);
 // A full `npm test` run can produce several hundred KiB of TAP output. Bound
@@ -25,7 +28,7 @@ const storeKey = Symbol.for("pi-web:git-verification:successful-receipts");
 type Store = { receipts: Map<string, VerificationReceipt>; running: Set<string> };
 function store(): Store {
   const global = globalThis as unknown as Record<symbol, Store | undefined>;
-  return (global[storeKey] ??= { receipts: new Map(), running: new Set() });
+  return (global[storeKey] ??= { receipts: new Map(), running: gitCheckRunningCheckouts() });
 }
 function digest(value: string | Buffer): string { return createHash("sha256").update(value).digest("hex"); }
 class VerificationError extends Error {
@@ -62,10 +65,16 @@ export function isGitVerificationRunning(cwd: string): boolean {
   return store().running.has(cwd);
 }
 export function lookupGitVerificationReceipt(id: string): VerificationReceipt | undefined {
-  return store().receipts.get(id);
+  const receipt = store().receipts.get(id);
+  if (receipt) {
+    const status = gitCheckReceiptEpochStatus(id);
+    if (status === "stale") store().receipts.delete(id);
+    if (status !== "current") return;
+  }
+  return receipt;
 }
 export function inspectGitVerificationReceipts(sessionId: string): readonly VerificationReceipt[] {
-  return [...store().receipts.values()].filter((receipt) => receipt.sessionId === sessionId);
+  return [...store().receipts.values()].filter((receipt) => receipt.sessionId === sessionId && !!lookupGitVerificationReceipt(receipt.id));
 }
 /** Drop process-local capabilities created before a reviewed failed check.
  * The admission ledger is per Git common directory, not per feature checkout.
@@ -92,6 +101,12 @@ export interface GitVerificationOptions {
   getPolicy: () => GitWorkflowPolicy | null | undefined | Promise<GitWorkflowPolicy | null | undefined>;
   /** Application-owned authorization/trust decision. Must not default to true. */
   isTrusted: (cwd: string) => boolean | Promise<boolean>;
+  /** Trusted bootstrap revision reader, required for asynchronous getPolicy or
+   * trust callbacks. Must synchronously expose a monotonic revision of policy,
+   * grants/trust, actor/tool/opt-out and selection; increment on change-and-restore
+   * too. Never a request/static stamp. Missing/unknown async fences fail closed.
+   * Genuinely synchronous live callbacks remain supported without this adapter. */
+  readAuthorityRevisionSync?: () => string;
   timeoutMs?: number;
   signal?: AbortSignal;
   /** The already-journalled check action; one such action may run ordered checks. */
@@ -100,6 +115,7 @@ export interface GitVerificationOptions {
   testContainmentBackend?: ContainmentBackend;
   /** Explicit node:test-only simulation of recovery recording; never production proof. */
   testRecoveryEvidence?: boolean;
+  testBeforeReceiptRegistration?: () => Promise<void>;
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
@@ -151,15 +167,21 @@ export function gitCheckRecoveryDigest(checkIndex: number, argv: readonly string
   return digest(JSON.stringify({ index: checkIndex, argv }));
 }
 function policyHash(policy: GitWorkflowPolicy): string { return digest(JSON.stringify(policy)); }
-async function savedPolicy(options: GitVerificationOptions): Promise<GitWorkflowPolicy> {
-  const input = await options.getPolicy();
+function commandEnvironmentDigest(): string {
+  return digest(JSON.stringify(Object.entries(sanitizeProjectCommandEnvironment(gitExecEnv()))
+    .filter(([, value]) => value !== undefined).sort(([a], [b]) => a.localeCompare(b))));
+}
+function policyValue(input: GitWorkflowPolicy | null | undefined, checkIndex: number): GitWorkflowPolicy {
   if (input === null || input === undefined) unavailable("no saved policy");
   const policy = validateGitWorkflowPolicy(input);
-  const check = policy.checks?.[options.checkIndex];
+  const check = policy.checks?.[checkIndex];
   // Every capture/recapture must refuse extensions, including explicit defaults.
   // This integration-only argv runner cannot honor cwd, env or stage yet.
   if (check && hasExtendedGitCheckRecipe(check)) unavailable("extended check recipe execution unsupported");
   return policy;
+}
+async function savedPolicy(options: GitVerificationOptions): Promise<GitWorkflowPolicy> {
+  return policyValue(await options.getPolicy(), options.checkIndex);
 }
 async function privateLog(agentDir: string, id: string, output: Buffer): Promise<void> {
   if (!path.isAbsolute(agentDir)) unavailable("absolute agent directory required");
@@ -223,13 +245,42 @@ export async function captureGitCheckRecoverySnapshot(feature: string, target: s
     featureStatus: current.featureStatus, targetStatus: current.targetStatus, refs: current.refs };
 }
 
+function captureSnapshotSync(f: GitProjectResources, t: GitProjectResources, review: GitReview,
+  policyDigest: string, checkDigest: string): GitCheckSnapshot {
+  const state = (selection: GitProjectResources) => {
+    assertGitCheckSelectionSync(selection);
+    const read = (args: string[]) => gitCheckSourceReadSync(selection, args);
+    const indexPath = path.join(selection.gitDir, "index");
+    const bytes = gitCheckIndexBytesSync(indexPath), status = read(["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+      flags = read(["ls-files", "-v", "-z"]), branch = read(["symbolic-ref", "--quiet", "HEAD"]), head = read(["rev-parse", "--verify", "HEAD^{commit}"]);
+    if (status !== "" || flags.split("\0").some((entry) => entry && !entry.startsWith("H "))) unavailable("source changed");
+    assertGitCheckSelectionSync(selection);
+    return { index: digest(indexPath + "\0" + digest(bytes)), status: digest(status + "\0" + flags),
+      branch: digest(branch.trim()), head: digest(head.trim()) };
+  };
+  const feature = state(f), target = state(t), refs = gitCheckSourceReadSync(f, ["show-ref", "--head"]);
+  assertGitCheckSelectionSync(f); assertGitCheckSelectionSync(t);
+  return { version: 1, featurePath: digest(f.cwd), targetPath: digest(t.cwd),
+    featureIdentity: digest(JSON.stringify(f.identities)), targetIdentity: digest(JSON.stringify(t.identities)),
+    resourceIdentity: digest(f.commonDir + "\0" + JSON.stringify(f.identities.common)),
+    featureBranch: feature.branch, targetBranch: target.branch, featureOid: feature.head, targetOid: target.head,
+    reviewDigest: digest(JSON.stringify(review)), policyDigest, checkDigest, featureIndex: feature.index, targetIndex: target.index,
+    featureStatus: feature.status, targetStatus: target.status, refs: digest(refs) };
+}
+
 async function runCheck(cwd: string, argv: readonly string[], timeout: number, unit: string,
-  backend: ContainmentBackend, signal?: AbortSignal): Promise<ContainedCheckResult> {
+  backend: ContainmentBackend, selection: Awaited<ReturnType<typeof selectGitProjectResources>>,
+  beforeRelease: GitCheckReleaseGuard["beforeRelease"], assertBeforeReleaseSync: GitCheckReleaseGuard["assertBeforeReleaseSync"],
+  signal?: AbortSignal): Promise<ContainedCheckResult> {
   // Saved checks run project commands, not Pi Web's server. Do not forward the
   // browser password or Next's internal runtime variables into their cgroup.
   // This is environment hygiene, not isolation from the same user's files.
-  return runContainedGitCheck({ cwd, argv, timeoutMs: timeout, unit, signal,
-    env: sanitizeProjectCommandEnvironment(gitExecEnv()) }, backend);
+  const cwdPin = await pinGitCheckCwd(cwd);
+  try {
+    if (JSON.stringify(cwdPin.instance) !== JSON.stringify(selection.identities.checkout)) unavailable("physical checkout changed");
+    return await runContainedGitCheck({ cwd, argv, timeoutMs: timeout, unit, signal,
+      env: sanitizeProjectCommandEnvironment(gitExecEnv()) }, backend, { cwdPin, beforeRelease, assertBeforeReleaseSync });
+  } finally { await cwdPin.close(); }
 }
 
 /** Runs precisely one explicitly selected saved argv. A passing exit is not an integration approval. */
@@ -246,17 +297,22 @@ async function runVerification(options: GitVerificationOptions): Promise<Verific
   if (!options || typeof options.sessionId !== "string" || !options.sessionId || options.sessionId.length > 512 ||
       typeof options.isTrusted !== "function" || typeof options.getPolicy !== "function" ||
       !Number.isInteger(options.checkIndex) || typeof options.agentDir !== "string") unavailable("invalid request");
+  const authorityStamp = options.readAuthorityRevisionSync ? readGitCheckAuthorityStamp(options.readAuthorityRevisionSync) : undefined;
   const cwd = await fs.realpath(options.cwd);
   if (!samePath(cwd, options.cwd)) unavailable("physical checkout required");
   const running = store().running;
   if (running.has(cwd)) unavailable("verification already running for this checkout");
   running.add(cwd);
+  let attemptResource: string | undefined;
+  let completed = false;
   try {
     if (!await options.isTrusted(cwd)) unavailable("project not trusted");
     const policy = await savedPolicy(options);
     const check = policy.checks?.[options.checkIndex];
     if (!check) unavailable("saved check index required");
     const policyDigest = policyHash(policy);
+    const environmentDigest = commandEnvironmentDigest();
+    const cohort = digest(JSON.stringify({ kind: "paired-v1", sessionId: options.sessionId, policyDigest, environmentDigest }));
     const review = options.review;
     if (!review || !oid.test(review.featureOid) || !oid.test(review.targetOid) || !oid.test(review.featureTreeOid) ||
         !oid.test(review.targetTreeOid) || !oid.test(review.mergeTreeOid) ||
@@ -274,7 +330,7 @@ async function runVerification(options: GitVerificationOptions): Promise<Verific
     if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > TIMEOUT_MS) unavailable("invalid timeout");
     if (options.signal?.aborted) unavailable("check cancelled");
     if (options.actionId !== undefined && !GIT_ACTION_ID_PATTERN.test(options.actionId)) unavailable("invalid check action");
-    if ((options.testContainmentBackend || options.testRecoveryEvidence) && !process.env.NODE_TEST_CONTEXT)
+    if ((options.testContainmentBackend || options.testRecoveryEvidence || options.testBeforeReceiptRegistration) && !process.env.NODE_TEST_CONTEXT)
       unavailable("test containment backend unavailable");
     if (options.testRecoveryEvidence && !options.testContainmentBackend) unavailable("test recovery backend required");
     const backend = options.testContainmentBackend ?? linuxSystemdBackend;
@@ -288,12 +344,25 @@ async function runVerification(options: GitVerificationOptions): Promise<Verific
         !samePath(options.agentDir, await fs.realpath(options.agentDir)) || (agentDirStat.mode & 0o077) !== 0) {
       unavailable("private agent directory required");
     }
-    const selection = await selectGitProjectResources(cwd);
+    const selection = await selectGitProjectResources(cwd), targetSelection = await selectGitProjectResources(targetCwd);
     await assertGitOperationAdmission(selection, options.agentDir, options.actionId);
     // Validate and bound the entire baseline before publishing the intent.
     // Repeat it under the reservation so no stale baseline can be launched.
     const checkDigest = gitCheckRecoveryDigest(options.checkIndex, check.argv);
     const pre = await captureGitCheckRecoverySnapshot(cwd, targetCwd, review, policyDigest, checkDigest);
+    const assertCurrentSync = () => {
+      if (JSON.stringify(captureSnapshotSync(selection, targetSelection, review, policyDigest, checkDigest)) !== JSON.stringify(pre))
+        unavailable("source changed at synchronous boundary; recovery required");
+      if (options.readAuthorityRevisionSync) {
+        if (readGitCheckAuthorityStamp(options.readAuthorityRevisionSync) !== authorityStamp)
+          unavailable("authority revision changed; recovery required");
+      } else {
+        if (gitCheckSyncValue(options.isTrusted(cwd)) !== true ||
+          policyHash(policyValue(gitCheckSyncValue(options.getPolicy()), options.checkIndex)) !== policyDigest)
+          unavailable("live synchronous trust or policy changed; recovery required");
+      }
+      if (options.signal?.aborted || commandEnvironmentDigest() !== environmentDigest) unavailable("environment or cancellation changed; recovery required");
+    };
     const actionId = options.actionId ?? randomUUID();
     assertGitCheckRecoverySnapshotCapacity(selection.commonDir, actionId, unit, pre);
     await revalidateGitProjectResources(selection);
@@ -303,14 +372,26 @@ async function runVerification(options: GitVerificationOptions): Promise<Verific
       unavailable("trust or policy changed before check intent");
     const reservation = await beginSupervisedGitOperationIntent(selection, actionId,
       "checks", options.agentDir, unit);
+    attemptResource = selection.commonDir;
     if (JSON.stringify(pre) !== JSON.stringify(await captureGitCheckRecoverySnapshot(cwd, targetCwd, review, policyDigest, checkDigest)))
       unavailable("checkout changed before check launch; recovery required");
     await revalidateGitProjectResources(selection);
     if (options.signal?.aborted || !await options.isTrusted(cwd) || policyHash(await savedPolicy(options)) !== policyDigest)
       unavailable("trust, policy or check cancelled; recovery required");
     reservation.recordCheckBefore(pre);
+    const attempt = captureLiveGitCheckAttemptBoundary(reservation, options.agentDir, selection.commonDir, pre);
     if (options.signal?.aborted) unavailable("check cancelled; recovery required");
-    const result = await runCheck(cwd, check.argv, timeout, unit, backend, options.signal);
+    const result = await runCheck(cwd, check.argv, timeout, unit, backend, selection, async () => {
+      // Trusted server closure, never a request-provided callback. Native cgroup
+      // startup/placement has finished but project argv is still withheld.
+      await revalidateGitProjectResources(selection);
+      if (JSON.stringify(pre) !== JSON.stringify(await captureGitCheckRecoverySnapshot(cwd, targetCwd, review, policyDigest, checkDigest)))
+        unavailable("checkout changed at check payload release; recovery required");
+      if (policyHash(await savedPolicy(options)) !== policyDigest || !await options.isTrusted(cwd) || options.signal?.aborted ||
+        commandEnvironmentDigest() !== environmentDigest)
+        unavailable("trust, policy, environment or check cancelled at payload release; recovery required");
+      reservation.assertOwned();
+    }, () => { reservation.assertOwned(); assertCurrentSync(); }, options.signal);
     const finishedAt = Date.now();
     // A fake cannot manufacture production cleanup evidence. This explicit
     // seam exists solely for direct node:test fixtures, not routes or models.
@@ -357,15 +438,25 @@ async function runVerification(options: GitVerificationOptions): Promise<Verific
     // a later unsuccessful check.
     // Preserve the existing successful-check settlement under the live owner.
     // There is no recovery/clear path for failed, aborted or uncertain checks.
-    try { reservation.resolve(); }
-    catch { unavailable("check process containment recovery required; inspect the worktrees manually"); }
+    assertCurrentSync();
+    let settlement: ReturnType<typeof settleLiveGitCheck>;
+    try {
+      settlement = settleLiveGitCheck({ reservation, result, agentDir: options.agentDir, commonDir: selection.commonDir, before: pre, after: post!, attempt });
+    } catch { unavailable("check process containment recovery required; inspect the worktrees manually"); }
+    await options.testBeforeReceiptRegistration?.();
+    assertCurrentSync();
     const receipt: VerificationReceipt = Object.freeze({ id, sessionId: options.sessionId, cwd, commonDir: selection.commonDir,
       featureBranch: review.featureBranch, featureOid: review.featureOid, featureTreeOid: review.featureTreeOid,
       targetCwd, targetBranch: review.targetBranch, targetOid: review.targetOid, targetTreeOid: review.targetTreeOid,
       mergeTreeOid: review.mergeTreeOid, policyDigest, checkIndex: options.checkIndex,
       argv: Object.freeze([...check.argv]), startedAt, finishedAt, exitStatus: 0, logDigest: digest(result.log),
     });
+    registerGitCheckReceiptEpoch(id, options.agentDir, selection.commonDir, { cohort, settlement, snapshot: pre });
     store().receipts.set(id, receipt);
+    completed = true;
     return receipt;
-  } finally { running.delete(cwd); }
+  } finally {
+    if (attemptResource && !completed) fenceGitCheckReceiptCohort(options.agentDir, attemptResource);
+    running.delete(cwd);
+  }
 }

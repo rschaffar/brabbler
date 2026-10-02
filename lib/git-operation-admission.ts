@@ -36,14 +36,22 @@ type Phase = "intent" | "resolved";
 export type GitPrepareOutcomeProof = Readonly<{ version: 1; outcome: "completed";
   beforeOid: string; afterOid: string; resultTreeOid: string }>;
 /** Digests keep arbitrary repo paths, branch names and ref output out of bounded ledger files. */
-export type GitCheckSnapshot = { version: 1; featurePath: string; targetPath: string;
+export type GitPairedCheckSnapshot = { version: 1; featurePath: string; targetPath: string;
   featureIdentity: string; targetIdentity: string; resourceIdentity: string;
   featureBranch: string; targetBranch: string; featureOid: string; targetOid: string;
   reviewDigest: string; policyDigest: string; checkDigest: string;
   featureIndex: string; targetIndex: string; featureStatus: string; targetStatus: string; refs: string };
 // A later checkout capture has no merge review: it must never be mistaken for
 // the original check snapshot or a verification receipt.
-export type GitCheckRecoveryCurrentState = Omit<GitCheckSnapshot, "reviewDigest">;
+export type GitCheckRecoveryCurrentState = Omit<GitPairedCheckSnapshot, "reviewDigest">;
+/** Independent verification: exactly one real selected checkout, never a fabricated pair.
+ * Every field except the discriminator is a SHA-256 digest; recipe/environment values
+ * and arbitrary repository data must not enter this durable bounded document. */
+export type GitSelectedCheckSnapshot = { version: 2; checkoutPath: string; checkoutIdentity: string;
+  resourceIdentity: string; branch: string; head: string; tree: string; index: string; status: string; refs: string;
+  policyDigest: string; policyRevision: string; recipeDigest: string; checkDigest: string;
+  cwdIdentity: string; environmentDigest: string; stageDigest: string };
+export type GitCheckSnapshot = GitPairedCheckSnapshot | GitSelectedCheckSnapshot;
 export type GitCheckCleanupProof = { unit: string; cgroupIdentity: string; invocation: string; empty: true;
   emptyEvidence: "pinned-populated-zero" | "verified-removed"; terminal: true;
   payload: "release-attempted" | "prevented-before-write" };
@@ -103,9 +111,16 @@ const SNAPSHOT_KEYS = ["version", "featurePath", "targetPath", "featureIdentity"
   "featureBranch", "targetBranch", "featureOid", "targetOid", "reviewDigest", "policyDigest", "checkDigest",
   "featureIndex", "targetIndex", "featureStatus", "targetStatus", "refs"];
 const CURRENT_STATE_KEYS = SNAPSHOT_KEYS.filter((key) => key !== "reviewDigest");
+const SELECTED_SNAPSHOT_KEYS = ["version", "checkoutPath", "checkoutIdentity", "resourceIdentity",
+  "branch", "head", "tree", "index", "status", "refs", "policyDigest", "policyRevision", "recipeDigest",
+  "checkDigest", "cwdIdentity", "environmentDigest", "stageDigest"];
 function validSnapshot(value: unknown): value is GitCheckSnapshot {
+  // Keep v1 validation and serialization unchanged. Strict alternatives refuse
+  // mixed snapshots, unknown fields and version relabelling, even with valid hashes.
   return keys(value, SNAPSHOT_KEYS) && value.version === 1 &&
-    SNAPSHOT_KEYS.slice(1).every((key) => HASH.test(value[key] as string));
+    SNAPSHOT_KEYS.slice(1).every((key) => HASH.test(value[key] as string)) ||
+    keys(value, SELECTED_SNAPSHOT_KEYS) && value.version === 2 &&
+    SELECTED_SNAPSHOT_KEYS.slice(1).every((key) => HASH.test(value[key] as string));
 }
 function validCurrentState(value: unknown): value is GitCheckRecoveryCurrentState {
   return keys(value, CURRENT_STATE_KEYS) && value.version === 1 &&
@@ -304,7 +319,7 @@ function scan(commonDir: string, dir: string, gate: string): GitOperationAdmissi
     const pre = loadCheck(path.join(dir, `${id}.pre`), intent, "pre");
     if (artifact.endsWith(".post")) {
       const post = loadCheck(path.join(dir, artifact), intent, "post") as CheckPost;
-      if (post.preSha256 !== sha(encodeCheck(pre)) ||
+      if (post.snapshot.version !== pre.snapshot.version || post.preSha256 !== sha(encodeCheck(pre)) ||
         intent.disposition === "recovered" && !recoverablePost(post, pre.snapshot)) deny();
     }
   }
@@ -318,6 +333,64 @@ export function inspectGitOperationAdmission(agentDir: string, commonDir: string
     return scan(commonDir, dir, gate);
   } catch { return { admitted: false, reason: "unavailable", actionIds: [] }; }
 }
+/** Recipe-specific execution bindings stay on each exact receipt. The common
+ * source/policy/stage snapshot identifies successful sibling-check cohorts. */
+export function gitCheckSnapshotCohortDigest(snapshot: GitCheckSnapshot): string {
+  if (!validSnapshot(snapshot)) deny();
+  const perRecipe = snapshot.version === 1 ? ["checkDigest"] :
+    ["checkDigest", "recipeDigest", "cwdIdentity", "environmentDigest"];
+  return sha(JSON.stringify(Object.fromEntries(Object.entries(snapshot).filter(([key]) => !perRecipe.includes(key)))));
+}
+export type GitCheckAttemptState = Readonly<{ epoch: string; attempts: readonly Readonly<{
+  id: string; digest: string; successful: boolean; pending: boolean; cohortDigest?: string }> [] }>;
+/** Durable attempt state for process-only receipts in BOTH engines. Only the
+ * live successful owner can advance a cohort over positively completed sibling
+ * checks. Failure/uncertainty/recovered dispositions never qualify as success.
+ * Reads do not create attempts. No new ledger schema/file or weaker v1 proof. */
+export function readGitCheckAttemptState(agentDir: string, commonDir: string): GitCheckAttemptState {
+  const { folders, dir, gate } = locations(agentDir, commonDir);
+  for (const folder of folders) directory(folder);
+  const status = scan(commonDir, dir, gate);
+  if (!status.admitted && !status.actionIds.length) deny(); // incomplete/orphan reservation
+  // A positively identified non-check owned mutation does not itself change
+  // the verification epoch. Consumers still require admission/their own valid
+  // reservation; otherwise checking a receipt inside an integration intent
+  // would invalidate that intent's already-approved evidence.
+  const checks: Evidence[] = [];
+  const attempts: { id: string; digest: string; successful: boolean; pending: boolean; cohortDigest?: string }[] = [];
+  for (const name of fs.readdirSync(dir).sort()) {
+    if (!name.endsWith(".json")) continue;
+    const record = load(path.join(dir, name), commonDir, name.slice(0, -5));
+    if (record.kind !== "checks") continue;
+    checks.push(record);
+    let successful = false;
+    let cohortDigest: string | undefined;
+    if (record.phase === "resolved" && record.disposition !== "recovered") {
+      const pre = loadCheck(path.join(dir, `${record.id}.pre`), record, "pre");
+      let post: CheckPost | undefined;
+      try { post = loadCheck(path.join(dir, `${record.id}.post`), record, "post") as CheckPost; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+      successful = post ? post.preSha256 === sha(encodeCheck(pre)) &&
+        (post.source === "linux-systemd" || post.source === "node-test-simulated" && !!process.env.NODE_TEST_CONTEXT) &&
+        JSON.stringify(pre.snapshot) === JSON.stringify(post.snapshot) && post.outcome.status === 0 &&
+        !post.outcome.timedOut && !post.outcome.overflow && post.outcome.containmentComplete &&
+        post.cleanupProof.payload === "release-attempted" : !!process.env.NODE_TEST_CONTEXT;
+      // The no-post exemption is exactly the existing node:test owner-settlement
+      // seam, never production process/cleanup evidence.
+      if (!successful) deny();
+      cohortDigest = gitCheckSnapshotCohortDigest(pre.snapshot);
+    }
+    attempts.push({ id: record.id, digest: sha(encode(record)), successful, pending: record.phase === "intent",
+      ...(cohortDigest ? { cohortDigest } : {}) });
+  }
+  const resource = fs.lstatSync(commonDir, { bigint: true });
+  return Object.freeze({ epoch: sha(JSON.stringify({ commonDir, device: String(resource.dev), inode: String(resource.ino),
+    birthtime: String(resource.birthtimeNs), checks })), attempts: Object.freeze(attempts.map((item) => Object.freeze(item))) });
+}
+export function gitCheckAttemptEpoch(agentDir: string, commonDir: string): string {
+  return readGitCheckAttemptState(agentDir, commonDir).epoch;
+}
+
 /** Read-only, immutable recovery evidence. Never authorizes clearing the ledger.
  * A missing or invalid artifact fails closed; simulated proof is explicitly
  * labeled and must never be mistaken for OS containment.
@@ -336,7 +409,7 @@ export function readGitCheckRecoveryEvidence(agentDir: string, commonDir: string
   let post: CheckPost | undefined;
   try { post = loadCheck(postFile, intent, "post") as CheckPost; }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  if (post && post.preSha256 !== sha(encodeCheck(pre))) deny();
+  if (post && (post.snapshot.version !== pre.snapshot.version || post.preSha256 !== sha(encodeCheck(pre)))) deny();
   return Object.freeze({ before: Object.freeze(pre.snapshot),
     ...(post ? { after: Object.freeze(post.snapshot), cleanupProof: Object.freeze(post.cleanupProof),
       outcome: Object.freeze(post.outcome), source: post.source } : {}) });
@@ -400,7 +473,7 @@ export function resolveHumanReviewedGitCheck(agentDir: string, commonDir: string
     receipt.id !== id || receipt.actionId !== actionId || receipt.resource !== commonDir ||
     receipt.unit !== intent.checkUnit || receipt.proofIdentifier !== proofIdentifier) deny();
   if (moved) {
-    if (!validCurrentState(freshSnapshot) || receipt.kind !== "human-reviewed-git-check-recovery-moved" ||
+    if (post.snapshot.version !== 1 || !validCurrentState(freshSnapshot) || receipt.kind !== "human-reviewed-git-check-recovery-moved" ||
       receipt.reviewedMovement !== true || receipt.currentStateDigest !== sha(JSON.stringify(freshSnapshot))) deny();
     // Branch movement is not authority to change the selected physical worktrees,
     // repository instance, saved check, or policy. Only later Git state may drift.
@@ -408,7 +481,7 @@ export function resolveHumanReviewedGitCheck(agentDir: string, commonDir: string
       "targetIdentity", "resourceIdentity", "featureBranch", "targetBranch", "policyDigest", "checkDigest"];
     if (stable.some((key) => freshSnapshot[key] !== post.snapshot[key]) ||
       ["featureOid", "targetOid", "featureIndex", "targetIndex", "featureStatus", "targetStatus", "refs"]
-        .every((key) => freshSnapshot[key as keyof GitCheckRecoveryCurrentState] === post.snapshot[key as keyof GitCheckSnapshot])) deny();
+        .every((key) => freshSnapshot[key as keyof GitCheckRecoveryCurrentState] === post.snapshot[key as keyof GitCheckRecoveryCurrentState])) deny();
   } else if (!validSnapshot(freshSnapshot) || receipt.kind !== "human-reviewed-git-check-recovery" ||
     JSON.stringify(freshSnapshot) !== JSON.stringify(post.snapshot)) deny();
   // One last scan before publication: extra files or another unresolved record
@@ -474,6 +547,7 @@ export function beginGitOperationIntent(agentDir: string, commonDir: string, act
         !["linux-systemd", "node-test-simulated"].includes(source) ||
         source === "node-test-simulated" && !process.env.NODE_TEST_CONTEXT) deny();
       const pre = loadCheck(path.join(dir, `${id}.pre`), record, "pre");
+      if (snapshot.version !== pre.snapshot.version) deny();
       writeCheck(path.join(dir, `${id}.post`), { version: 1, id, actionId, resource: commonDir, unit: checkUnit!,
         preSha256: sha(encodeCheck(pre)), snapshot, cleanupProof: proof, outcome, source });
     },

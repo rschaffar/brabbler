@@ -1,6 +1,7 @@
 import { spawn, execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { constants, closeSync, fstatSync, lstatSync, mkdtempSync, openSync, readSync, realpathSync, rmSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { constants, closeSync, fstatSync, lstatSync, mkdtempSync, openSync, readSync, readFileSync,
+  readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
@@ -29,6 +30,45 @@ export interface ContainedCheckOptions {
   /** Bounded to 8 MiB; defaults to 8 MiB. */
   maxLogBytes?: number;
   env?: NodeJS.ProcessEnv;
+}
+type DirectoryInstance = { device: string; inode: string; birthtime: string };
+const directoryInstance = (s: { dev: bigint; ino: bigint; birthtimeNs: bigint }): DirectoryInstance =>
+  ({ device: String(s.dev), inode: String(s.ino), birthtime: String(s.birthtimeNs) });
+/** Opaque server-created directory pin. Never accept one from a request/model. */
+export interface GitCheckCwdPin {
+  readonly cwd: string; readonly instance: Readonly<DirectoryInstance>;
+  readonly workingDirectory: string; readonly identityDigest: string;
+  close(): Promise<void>;
+}
+const cwdPins = new WeakMap<GitCheckCwdPin, FileHandle>();
+export async function pinGitCheckCwd(cwd: string): Promise<GitCheckCwdPin> {
+  if (process.platform !== "linux" || !path.isAbsolute(cwd) || await fs.realpath(cwd) !== cwd)
+    throw new Error("physical Linux check cwd required");
+  const fd = await fs.open(cwd, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try {
+    const s = await fd.stat({ bigint: true }), named = await fs.lstat(cwd, { bigint: true });
+    if (!s.isDirectory() || !named.isDirectory() || named.isSymbolicLink() ||
+      s.dev !== named.dev || s.ino !== named.ino || await fs.realpath(cwd) !== cwd) throw new Error("check cwd changed");
+    const instance = Object.freeze(directoryInstance(s));
+    const pin: GitCheckCwdPin = Object.freeze({ cwd, instance,
+      workingDirectory: `/proc/${process.pid}/fd/${fd.fd}`,
+      identityDigest: createHash("sha256").update(JSON.stringify({ cwd, ...instance })).digest("hex"),
+      async close() { cwdPins.delete(pin); await fd.close(); } });
+    cwdPins.set(pin, fd);
+    return pin;
+  } catch (error) { await fd.close(); throw error; }
+}
+/** Trusted server-only release controls, passed separately from command options.
+ * No route/tool may expose callbacks or pins. The payload remains inert until
+ * this callback and positive actual-launcher cwd/process proof both succeed. */
+export interface GitCheckReleaseGuard {
+  cwdPin: GitCheckCwdPin; beforeRelease: () => Promise<void>;
+  /** Mandatory synchronous server fence AFTER every await, at the actual write.
+   * Must throw on revoked/unknown authority or changed source. No Promise/default. */
+  assertBeforeReleaseSync: () => void;
+}
+export interface ContainedCheckLaunchOptions extends ContainedCheckOptions {
+  workingDirectory: string; cwdInstance: Readonly<DirectoryInstance>;
 }
 export interface ContainedCheckResult {
   /** Only 0 together with containmentComplete (and no timeout/overflow) can pass a check. */
@@ -62,6 +102,8 @@ export interface CgroupObservation {
   populated: boolean;
   /** True only when the live gated launcher is the sole process and no child cgroup exists. */
   launcherPlaced: boolean;
+  /** Original proc-directory/start-time identity, not a recyclable PID alone. */
+  launcherIdentity?: string;
   unit: Unit;
 }
 export interface CheckTransport {
@@ -81,7 +123,11 @@ export interface CheckTransport {
 /** Injection point for deterministic protocol tests; an injected backend is NOT OS containment evidence. */
 export interface ContainmentBackend {
   absent(unit: string, ms: number): Promise<boolean>;
-  start(options: ContainedCheckOptions): CheckTransport;
+  start(options: ContainedCheckLaunchOptions): CheckTransport;
+  /** Synchronous final boundary, after live authority/snapshot callback. Reads
+   * only safe process metadata and the ORIGINAL pinned proc directory/cgroup.
+   * A backend without positive actual-cwd proof cannot release a payload. */
+  assertLauncherCwd?(unit: string, observation: CgroupObservation, expected: Readonly<DirectoryInstance>): void;
   /** null means systemd has not yet placed the gated launcher; only valid before release. */
   observe(unit: string, ms: number): Promise<CgroupObservation | null>;
   stop(unit: string, ms: number): Promise<void>;
@@ -188,6 +234,13 @@ function eligible(u: Unit, name: string, group: string): boolean {
 /** Real backend: systemd starts a NON-delegated transient user service, not a scope. */
 interface PinnedGroup { events: FileHandle; identity: string; invocation: string; group: string }
 const pinned = new Map<string, PinnedGroup>();
+const launchers = new Map<string, { proc: FileHandle; pid: string; start: string; identity: string; invocation: string; group: string }>();
+function processStartTime(bytes: string): string {
+  // /proc/stat's comm may contain spaces/parentheses. Field 22 is starttime.
+  const value = bytes.slice(bytes.lastIndexOf(")") + 2).trim().split(/\s+/)[19];
+  if (!/^\d+$/.test(value ?? "")) throw new Error("process identity unavailable");
+  return value;
+}
 async function readPinned(events: FileHandle): Promise<boolean> {
   const bytes = Buffer.alloc(4096);
   const { bytesRead } = await events.read(bytes, 0, bytes.length, 0);
@@ -260,7 +313,7 @@ const systemdImplementation: ContainmentBackend = {
       server.once("error", reject);
       server.listen(socketPath, () => {
         const args = ["--user", "--quiet", "--remain-after-exit", "--service-type=exec", "--expand-environment=no",
-          `--unit=${options.unit}`, `--working-directory=${options.cwd}`,
+          `--unit=${options.unit}`, `--working-directory=${options.workingDirectory}`,
           "--property=Delegate=no", "--property=KillMode=control-group", "--property=Restart=no",
           "--property=TimeoutStopSec=2s", "--property=SendSIGKILL=yes",
           // The manager, not Pi Web, owns this deadline after a server crash.
@@ -361,23 +414,38 @@ const systemdImplementation: ContainmentBackend = {
       if (matches.length !== 1) throw new Error("missing population evidence");
       const pid = Number(u.MainPID);
       let launcherPlaced = false;
-      if (Number.isSafeInteger(pid) && pid > 1) {
-        try {
+      let launcherIdentity: string | undefined;
+      let proc: FileHandle | undefined;
+      try {
+        if (Number.isSafeInteger(pid) && pid > 1) {
+          // Hold this proc directory across callback awaits: a replacement PID
+          // cannot retarget reads through the original open descriptor.
+          proc = await fs.open(`/proc/${pid}`, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+          const procPath = `/proc/self/fd/${proc.fd}`, procStat = await proc.stat({ bigint: true });
+          const start = processStartTime(await fs.readFile(`${procPath}/stat`, "utf8"));
           const [membership, procs, entries] = await Promise.all([
-            fs.readFile(`/proc/${pid}/cgroup`, "utf8"), fs.readFile(`/proc/self/fd/${dir.fd}/cgroup.procs`, "utf8"),
+            fs.readFile(`${procPath}/cgroup`, "utf8"), fs.readFile(`/proc/self/fd/${dir.fd}/cgroup.procs`, "utf8"),
             fs.readdir(`/proc/self/fd/${dir.fd}`, { withFileTypes: true }),
           ]);
-          // The private cgroup starts with exactly the inert launcher, not
-          // another pre-existing command hidden in a nested cgroup.
           launcherPlaced = membership.trim() === `0::${group}` && procs.trim() === String(pid) &&
-            !entries.some((entry) => entry.isDirectory());
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-          // Launcher exited between property read and /proc read. No pre-start proof.
+            !entries.some((entry) => entry.isDirectory()) &&
+            processStartTime(await fs.readFile(`${procPath}/stat`, "utf8")) === start;
+          launcherIdentity = `${pid}:${procStat.dev}:${procStat.ino}:${start}`;
+          const after = await show(name, ms);
+          if (!eligible(after, name, group) || after.InvocationID !== u.InvocationID || after.MainPID !== u.MainPID ||
+            (await dir.stat()).ino !== stat.ino) throw new Error("unit/cgroup/process identity changed");
+          if (launcherPlaced) {
+            const previous = launchers.get(name);
+            if (previous && previous.identity !== launcherIdentity) throw new Error("launcher replaced");
+            if (!previous) {
+              launchers.set(name, { proc, pid: String(pid), start, identity: launcherIdentity, invocation: u.InvocationID, group });
+              proc = undefined; // owned until forget(), including rejected release
+            }
+          }
         }
-      }
+      } finally { await proc?.close(); }
       const after = await show(name, ms);
-      if (!eligible(after, name, group) || after.InvocationID !== u.InvocationID ||
+      if (!eligible(after, name, group) || after.InvocationID !== u.InvocationID || after.MainPID !== u.MainPID ||
           (await dir.stat()).ino !== stat.ino) throw new Error("unit/cgroup identity changed");
       const identity = `${stat.dev}:${stat.ino}:${u.InvocationID}:${group}`;
       if (launcherPlaced && !pinned.has(name)) {
@@ -389,7 +457,7 @@ const systemdImplementation: ContainmentBackend = {
         pinned.set(name, { events: eventsFile, identity, invocation: u.InvocationID, group });
       }
       if (pinned.has(name) && pinned.get(name)?.identity !== identity) throw new Error("cgroup replaced");
-      return { identity, populated: matches[0][1] === "1", launcherPlaced, unit: after };
+      return { identity, populated: matches[0][1] === "1", launcherPlaced, launcherIdentity, unit: after };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENODEV" && known) {
         const latest = await show(name, ms);
@@ -397,6 +465,28 @@ const systemdImplementation: ContainmentBackend = {
       }
       throw error;
     } finally { await dir.close(); }
+  },
+  assertLauncherCwd(name, observation, expected) {
+    const launcher = launchers.get(name), group = pinned.get(name);
+    if (!launcher || !group || !observation.launcherPlaced || !observation.populated ||
+      observation.identity !== group.identity || observation.launcherIdentity !== launcher.identity ||
+      observation.unit.InvocationID !== launcher.invocation || observation.unit.MainPID !== launcher.pid)
+      throw new Error("original launcher proof unavailable");
+    const proc = `/proc/self/fd/${launcher.proc.fd}`;
+    if (processStartTime(readFileSync(`${proc}/stat`, "utf8")) !== launcher.start ||
+      readFileSync(`${proc}/cgroup`, "utf8").trim() !== `0::${launcher.group}`)
+      throw new Error("original process changed");
+    const actual = directoryInstance(statSync(`${proc}/cwd`, { bigint: true }));
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("launcher cwd instance changed");
+    const dir = openSync(groupPath(launcher.group), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    try {
+      const s = fstatSync(dir);
+      if (`${s.dev}:${s.ino}:${launcher.invocation}:${launcher.group}` !== group.identity ||
+        readFileSync(`/proc/self/fd/${dir}/cgroup.procs`, "utf8").trim() !== launcher.pid ||
+        readdirSync(`/proc/self/fd/${dir}`, { withFileTypes: true }).some((entry) => entry.isDirectory()) ||
+        processStartTime(readFileSync(`${proc}/stat`, "utf8")) !== launcher.start)
+        throw new Error("original launcher placement changed");
+    } finally { closeSync(dir); }
   },
   stop(name, ms) { return control(name, "stop", ms); },
   async originalEmpty(name, identity, invocation, ms) {
@@ -424,6 +514,9 @@ const systemdImplementation: ContainmentBackend = {
   async forget(name) {
     const record = pinned.get(name);
     pinned.delete(name);
+    const launcher = launchers.get(name);
+    launchers.delete(name);
+    await launcher?.proc.close();
     await record?.events.close();
   },
   async terminal(name, invocation, ms) {
@@ -448,9 +541,10 @@ export const linuxSystemdBackend: ContainmentBackend = Object.freeze(systemdImpl
 /** Fail closed: never infer completion from exit, pipe EOF, a process group, or a recycled PID.
  * A replacement backend is accepted only under node:test, never by a production caller.
  */
-export async function runContainedGitCheck(options: ContainedCheckOptions, backend: ContainmentBackend = linuxSystemdBackend): Promise<ContainedCheckResult> {
+export async function runContainedGitCheck(options: ContainedCheckOptions, backend: ContainmentBackend = linuxSystemdBackend,
+  guard?: GitCheckReleaseGuard): Promise<ContainedCheckResult> {
   if (backend !== linuxSystemdBackend && !process.env.NODE_TEST_CONTEXT) throw new Error("test-only containment backend");
-  return runProtocol(options, backend);
+  return runProtocol(options, backend, guard);
 }
 
 /** Availability is advisory: the gated launch must still re-prove placement. No user command is started here. */
@@ -479,7 +573,19 @@ export function __testRunContainedGitCheck(options: ContainedCheckOptions, fake:
   return runProtocol(options, fake);
 }
 
-async function runProtocol(options: ContainedCheckOptions, backend: ContainmentBackend): Promise<ContainedCheckResult> {
+const liveSuccessKey = Symbol.for("pi-web:git-check-containment:live-successes");
+const liveSuccesses = ((globalThis as unknown as Record<symbol, WeakMap<ContainedCheckResult, string>>)[liveSuccessKey] ??= new WeakMap());
+function successDigest(result: ContainedCheckResult): string {
+  return createHash("sha256").update(JSON.stringify({ ...result, log: createHash("sha256").update(result.log).digest("hex") })).digest("hex");
+}
+/** Only the actual returned, positively completed live unit result is eligible.
+ * A historical record/plain object/copy is not a new settlement capability. */
+export function consumeLiveContainedGitCheckSuccess(result: ContainedCheckResult): boolean {
+  const expected = liveSuccesses.get(result);
+  liveSuccesses.delete(result);
+  return expected !== undefined && expected === successDigest(result);
+}
+async function runProtocol(options: ContainedCheckOptions, backend: ContainmentBackend, guard?: GitCheckReleaseGuard): Promise<ContainedCheckResult> {
   const result: ContainedCheckResult = { unit: options?.unit ?? "", status: null, log: Buffer.alloc(0),
     containmentComplete: false, timedOut: false, overflow: false };
   if (!valid(options)) return result;
@@ -493,6 +599,7 @@ async function runProtocol(options: ContainedCheckOptions, backend: ContainmentB
   let releaseAttempted = false;
   let complete = false;
   let transport: CheckTransport | undefined;
+  let cwdPin: GitCheckCwdPin | undefined;
   const chunks: Buffer[] = [];
   let size = 0;
   const onChunk = (chunk: Buffer) => {
@@ -501,10 +608,13 @@ async function runProtocol(options: ContainedCheckOptions, backend: ContainmentB
     if (take < chunk.length) result.overflow = true;
   };
   try {
+    cwdPin = guard?.cwdPin ?? await pinGitCheckCwd(options.cwd);
+    if (!cwdPins.has(cwdPin) || cwdPin.cwd !== options.cwd) throw new Error("server cwd pin required");
     if (expired() || !await backend.absent(options.unit, remaining()) || expired()) return result;
-    // The only unit command at this point is the inert, gated launcher.
+    // The manager resolves an open parent-process FD, NEVER the mutable recipe
+    // pathname. Unsupported proc-FD working directories fail closed, no fallback.
     started = true; // even a failed start may have reached the manager: try stop
-    transport = backend.start(options);
+    transport = backend.start({ ...options, workingDirectory: cwdPin.workingDirectory, cwdInstance: cwdPin.instance });
     result.evidenceDir = transport.evidenceDir;
     transport.output(onChunk);
     await transport.started;
@@ -526,10 +636,27 @@ async function runProtocol(options: ContainedCheckOptions, backend: ContainmentB
         if (u.ActiveState !== "active" || !observation.populated || !observation.launcherPlaced) break;
         identity = observation.identity;
         invocation = u.InvocationID;
+        // Re-read exact live authority/snapshot/reservation AFTER manager
+        // startup/placement. A rejection stops the proven ORIGINAL group without
+        // ever giving the inert launcher project argv/environment.
+        await guard?.beforeRelease();
+        if (expired()) break;
+        if (!backend.assertLauncherCwd) throw new Error("actual launcher cwd proof unavailable");
+        backend.assertLauncherCwd(options.unit, observation, cwdPin.instance);
         const payload = JSON.stringify({ argv: options.argv, env: options.env ?? process.env }) + "\n";
-        if (Buffer.byteLength(payload) > 1048576 || expired()) break;
+        if (Buffer.byteLength(payload) > 1048576 || expired() || transport.ready && !transport.ready()) break;
         // A throwing release may already have written bytes to the gate.
         // Never call it "prevented before write" after an attempt.
+        if (guard) {
+          if (typeof guard.assertBeforeReleaseSync !== "function") throw new Error("synchronous release fence required");
+          const checked: unknown = guard.assertBeforeReleaseSync();
+          if (checked !== undefined) {
+            if (checked && typeof (checked as Promise<unknown>).then === "function") void Promise.resolve(checked).catch(() => {});
+            throw new Error("release fence must be synchronous and return void");
+          }
+        }
+        if (expired()) break;
+        // NO await, callback, serialization or manager probe after the fence.
         releaseAttempted = true;
         transport.release(payload);
         released = true;
@@ -589,6 +716,11 @@ async function runProtocol(options: ContainedCheckOptions, backend: ContainmentB
       if (discard) result.evidenceDir = undefined;
     } catch { result.containmentComplete = false; result.cleanupProof = undefined; }
     try { await backend.forget?.(options.unit); } catch { result.containmentComplete = false; result.cleanupProof = undefined; }
+    if (cwdPin && !guard) {
+      try { await cwdPin.close(); } catch { result.containmentComplete = false; result.cleanupProof = undefined; }
+    }
   }
+  if (result.status === 0 && result.containmentComplete && !result.timedOut && !result.overflow &&
+    (result.cleanupProof || process.env.NODE_TEST_CONTEXT)) liveSuccesses.set(result, successDigest(result));
   return result;
 }

@@ -42,6 +42,7 @@ const { inspectGitOperationAdmission, readUnresolvedGitCheckRecovery } = await j
 const { selectGitProjectResources } = await jiti.import("../../../../lib/git-project-resources.ts");
 const { writeGitWorkflowSettingsDocument } = await jiti.import("../../../../lib/git-workflow-settings-store.ts");
 const { beginGitAction, gitActionSink, snapshotGitActionCandidate } = await jiti.import("../../../../lib/git-action-controller.ts");
+const { readGitAction } = await jiti.import("../../../../lib/git-action-journal.ts");
 const { runGitVerification } = await jiti.import("../../../../lib/git-verification.ts");
 const { createTestContainmentBackend } = await import("../../../../lib/git-check-containment-test-backend.mjs");
 const { reviewGitBranches } = await jiti.import("../../../../lib/git-review.ts");
@@ -160,10 +161,24 @@ test("agent multi-check action in another registered feature worktree remains qu
   cacheSessionPath(sessionId, chat.getSessionFile());
   t.after(() => invalidateSessionPathCache(sessionId));
   const sink = gitActionSink(chat, (type, data) => chat.appendCustomEntry(type, data));
-  const action = await beginGitAction(sink, "agent", snapshotGitActionCandidate({
+  // A fresh production action captures physical resources, even when the
+  // calling chat lives in the primary checkout rather than the check's source.
+  const source = await selectGitProjectResources(f.feature);
+  const target = await selectGitProjectResources(f.target);
+  const snapshot = snapshotGitActionCandidate({
     kind: "checks", featureCwd: f.feature, targetCwd: f.target, featureBranch: "feature", targetBranch: "target", checks: f.policy.checks,
-  }));
+  }, source, target);
+  const action = await beginGitAction(sink, "agent", snapshot);
   try {
+    const history = await readGitAction(action.record.id, { includeArtifact: true }, agentDir);
+    assert.deepEqual(history.candidate, snapshot, "fresh artifact preserves the server capture");
+    for (const captured of [history.candidate, history.record.summary]) {
+      assert.equal(captured.projectRoot, target.projectRoot);
+      assert.equal(captured.sourceCheckoutRoot, source.cwd);
+      assert.equal(captured.targetCheckoutRoot, target.cwd);
+      assert.deepEqual(captured.resourceAttribution, { version: 2, commonDir: source.commonDir,
+        commonIdentity: source.identities.common, projectIdentity: source.identities.project });
+    }
     await action.update("awaiting-decision");
     await action.update("executing", { decision: "approved" });
     const base = createTestContainmentBackend();
@@ -179,6 +194,12 @@ test("agent multi-check action in another registered feature worktree remains qu
   const resource = await selectGitProjectResources(f.feature);
   const evidence = readUnresolvedGitCheckRecovery(agentDir, resource.commonDir);
   assert.equal(evidence.actionId, action.record.id);
+  assert.equal(evidence.source, "node-test-simulated");
+  assert.equal(evidence.cleanupProof.payload, "release-attempted", "owned revalidation allowed the check payload");
+  assert.equal(evidence.cleanupProof.empty, true);
+  assert.equal(evidence.outcome.status, 7, "the selected failing command actually ran");
+  assert.equal(evidence.outcome.containmentComplete, true);
+  assert.deepEqual(evidence.after, evidence.before, "the failed command left the captured resources unchanged");
   assert.equal(evidence.after.checkDigest.length, 64);
   const response = await get(sessionId);
   assert.equal(response.status, 200);
