@@ -1174,20 +1174,6 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                 const currentRefIdx = visibleRefIndexByMessage.get(idx);
                 const keyPrefix = options.keyPrefix ?? "message";
                 const messageKey = entryIds[idx] || idx;
-                let showTimestamp = false;
-                if (msg.role === "assistant") {
-                  showTimestamp = true;
-                  for (let j = idx + 1; j < messages.length; j++) {
-                    const r = messages[j].role;
-                    if (r === "user") break;
-                    if (r === "assistant") { showTimestamp = false; break; }
-                  }
-                  // Hide on the currently-streaming tail (the streaming bubble owns the live timestamp)
-                  if (showTimestamp && streamState.isStreaming && idx === messages.length - 1) {
-                    showTimestamp = false;
-                  }
-                }
-                if (options.showTimestamp !== undefined) showTimestamp = options.showTimestamp;
                 const view = (
                   <MessageView
                     key={`${keyPrefix}-view-${messageKey}`}
@@ -1203,7 +1189,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                     forking={forkingEntryId === entryIds[idx]}
                     onNavigate={sessionBusy ? undefined : handleNavigate}
                     onEditContent={handleEditContent}
-                    showTimestamp={showTimestamp}
+                    showTimestamp={options.showTimestamp}
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
                     sessionId={session?.id ?? sessionIdRef.current ?? undefined}
                     writtenFiles={options.writtenFiles}
@@ -1286,7 +1272,8 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                     attachRef: false,
                     keyPrefix: "process",
                     messageOverride: message,
-                    showTimestamp: false,
+                    // The split final entry shows its timestamp beside its answer's usage.
+                    showTimestamp: processIdx !== finalAssistantIdx || !finalAnswerMessage,
                   }));
                 }
 

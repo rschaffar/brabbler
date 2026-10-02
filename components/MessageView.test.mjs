@@ -29,6 +29,59 @@ function renderMessage(message, props = {}) {
   );
 }
 
+const timestamp = Date.parse("2026-01-02T13:04:05.000Z");
+const timestampedAssistant = {
+  role: "assistant",
+  content: [{ type: "text", text: "Timestamped answer" }],
+  timestamp,
+  usage: { input: 100, output: 20, cacheRead: 30, cacheWrite: 0, cost: { total: 0.0123 } },
+};
+
+test("shows the stored assistant timestamp directly after cost and before Copy by default", () => {
+  const html = renderMessage(timestampedAssistant);
+  assert.match(html, /100 in · 20 out · 30 cache R · \$0\.0123<\/div><time /);
+  assert.match(html, /<time dateTime="2026-01-02T13:04:05\.000Z"/);
+  assert.match(html, /<\/time><button[^>]*title="Copy message"/);
+  assert.equal((html.match(/<time /g) ?? []).length, 1);
+});
+
+test("shows timestamps on consecutive assistant messages and tool-call-only messages", () => {
+  const toolMessage = {
+    ...timestampedAssistant,
+    content: [{ type: "toolCall", toolCallId: "timestamp-tool", toolName: "bash", input: { command: "echo test" } }],
+  };
+  for (const message of [timestampedAssistant, { ...timestampedAssistant, timestamp: timestamp + 1000 }, toolMessage]) {
+    const html = renderMessage(message);
+    assert.ok(html.includes(`<time dateTime="${new Date(message.timestamp).toISOString()}"`));
+  }
+});
+
+test("shows the stored streaming timestamp without exposing unfinished usage", () => {
+  const html = renderMessage(timestampedAssistant, { isStreaming: true });
+  assert.match(html, /<time dateTime="2026-01-02T13:04:05\.000Z"/);
+  assert.doesNotMatch(html, /\$0\.0123|title="Copy message"/);
+});
+
+test("can hide the duplicated process-prefix timestamp of a split final entry", () => {
+  const html = renderMessage(timestampedAssistant, { showTimestamp: false });
+  assert.doesNotMatch(html, /<time /);
+});
+
+test("does not invent timestamps for messages with missing or invalid dates", () => {
+  for (const value of [undefined, NaN, Infinity, 1e20]) {
+    const html = renderMessage({ ...timestampedAssistant, timestamp: value });
+    assert.doesNotMatch(html, /<time |Invalid Date/);
+  }
+  assert.match(renderMessage({ ...timestampedAssistant, timestamp: 0 }), /dateTime="1970-01-01T00:00:00\.000Z"/);
+});
+
+test("preserves the existing user message timestamp", () => {
+  const html = renderMessage({ role: "user", content: "Timestamped user", timestamp });
+  const date = new Date(timestamp);
+  const expectedTime = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  assert.ok(html.includes(expectedTime));
+});
+
 test("projects a Git anchor as a durable card without rendering model-facing content", () => {
   const id = "12345678-1234-1234-1234-123456789abc";
   const html = renderMessage({ role: "custom", customType: "pi-web:git-action", content: "", display: true, details: { actionId: id }, timestamp: 1000 }, { sessionId: "current-chat" });

@@ -17,6 +17,7 @@ import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
+import { checkMessageTimestamps } from "./message-timestamps.mjs";
 import { checkGitWorkflow } from "./git-workflow.mjs";
 import { checkSettingsProposalCard } from "./git-settings-proposals.mjs";
 import { consumeExpectedTaskConflict } from "./git-task-binding.mjs";
@@ -146,7 +147,11 @@ try {
       },
     ]),
   ];
-  Object.assign(richEntries.at(-1).message, { provider: "test", model: "E2E Model" });
+  for (const entry of richEntries) entry.message.timestamp = Date.parse(timestamp);
+  Object.assign(richEntries.at(-1).message, {
+    provider: "test", model: "E2E Model",
+    usage: { input: 100, output: 20, cacheRead: 30, cacheWrite: 0, cost: { total: 0.0123 } },
+  });
   writeSession(RICH, richEntries);
   // The default page is 50 *visible* messages (user / assistant / compaction).
   // toolResults ride along free after #810, so 48 tool-call assistants + the
@@ -324,6 +329,20 @@ try {
     await context.close();
     context = undefined;
     page = undefined;
+  } else if (process.env.E2E_TIMESTAMPS_ONLY === "1") {
+    browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
+      page = await context.newPage();
+      const errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await checkMessageTimestamps(page, timestamp);
+      assert.deepEqual(errors, [], "Message timestamp browser errors");
+      await context.close();
+      context = undefined;
+      page = undefined;
+    }
   } else {
   const detail = await api(`/api/sessions/${LONG}?deferThinking=1&deferMedia=1`);
   assert.deepEqual(detail.context.entryIds, ids(4950, 5000));
@@ -802,6 +821,7 @@ try {
     assert.equal(await finalMessage.getByRole("button", { name: /^Thinking/ }).count(), 0);
     assert.equal(await finalMessage.getByText("test/E2E Model", { exact: true }).count(), 1);
     assert.equal(thinkingRequests.length, 0);
+    await checkMessageTimestamps(page, timestamp);
     await processDetails.click();
     assert.equal(await thinking.count(), 3);
     assert.equal(await thinking.last().innerText(), "E2E final reasoning");

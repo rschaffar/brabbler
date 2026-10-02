@@ -231,8 +231,9 @@ export function getModelDisplayName(
 }
 
 function formatTime(ts?: number): string | null {
-  if (!ts) return null;
+  if (ts === undefined || !Number.isFinite(ts)) return null;
   const d = new Date(ts);
+  if (!Number.isFinite(d.getTime())) return null;
   const now = new Date();
   const isToday = d.getFullYear() === now.getFullYear() &&
     d.getMonth() === now.getMonth() &&
@@ -276,7 +277,7 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onNavigate, onEditContent, showTimestamp, prevTimestamp, sessionId, writtenFiles }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onNavigate, onEditContent, showTimestamp = true, prevTimestamp, sessionId, writtenFiles }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} onEditContent={onEditContent} />;
   }
@@ -862,12 +863,15 @@ function AssistantMessageView({
       )}
 
       <div style={{
-        display: "flex", alignItems: "center", gap: 8, marginTop: 4,
+        display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 4,
       }}>
         {message.usage && !isStreaming && (
           <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
             {formatUsage(message.usage)}
           </div>
+        )}
+        {time && (
+          <time dateTime={new Date(message.timestamp!).toISOString()} title={new Date(message.timestamp!).toLocaleString()} style={{ fontSize: 11, color: "var(--text-dim)", whiteSpace: "nowrap" }}>{time}</time>
         )}
         {textContent && !isStreaming && (
           <button
@@ -901,9 +905,6 @@ function AssistantMessageView({
             )}
              {copied ? t("i18n.copied") : t("i18n.copy")}
           </button>
-        )}
-        {time && !isStreaming && (
-          <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>
         )}
       </div>
     </div>
