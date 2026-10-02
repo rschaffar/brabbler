@@ -122,7 +122,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
       pi.registerTool({
         name: "git_workflow",
         label: "Git Workflow",
-        description: "Inspect captured settings with status; configure all scopes in the Workflow panel. Review local candidates, request an exact commit (alias of git_commit operation commit), or integrate using the captured local target/checks. Integration asks for check execution and exact-state merge approval. Explicit-project commit requires canonical repositoryPath and physical registered checkoutPath. Default confirmation is Ask. Only request confirmation:none if applicable repository/user instructions permit skipping this candidate prompt; it requires selected policy confirmation:none and fresh effective saved Allow at every gate. A grant never overrides stricter instructions. Other explicit-project mutations remain unavailable. Selection never moves the chat or retargets shell/file tools; never substitute a shell for a denied action.",
+        description: "Inspect captured settings with status; configure all scopes in the Workflow panel. Capture a read-only local comparison as concise metadata with an on-demand private diff (no human acknowledgement), request an exact commit (alias of git_commit operation commit), or integrate using the captured local target/checks. Integration asks for check execution and exact-state merge approval. Explicit-project commit requires canonical repositoryPath and physical registered checkoutPath. Default confirmation is Ask. Only request confirmation:none if applicable repository/user instructions permit skipping this candidate prompt; it requires selected policy confirmation:none and fresh effective saved Allow at every gate. A grant never overrides stricter instructions. Other explicit-project mutations remain unavailable. Selection never moves the chat or retargets shell/file tools; never substitute a shell for a denied action.",
         executionMode: "sequential",
         parameters: Type.Object({
           operation: Type.Unsafe<"status" | "preferences" | "review" | "commit" | "integrate">({ type: "string", enum: ["status", "preferences", "review", "commit", "integrate"] }),
@@ -199,7 +199,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
               return { content: [{ type: "text" as const, text: JSON.stringify(summary) }], details: summary };
             }
             const skipCommitPrompt = !!selected && params.operation === "commit" && params.confirmation === "none";
-            if ((!ctx.hasUI || !ui?.gitAction) && !skipCommitPrompt) return failure("Git workflow review/commit requires an interactive Pi Web session");
+            if (params.operation !== "review" && (!ctx.hasUI || !ui?.gitAction) && !skipCommitPrompt) return failure("Git workflow preferences/commit/integration requires an interactive Pi Web session");
             preApprovalStage("permission");
             const state = params.operation === "review" || selected && params.operation === "commit" ? null
               : await guard(params.operation === "commit" ? "commit" : params.operation === "integrate" ? "integration" : "settings");
@@ -257,24 +257,46 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 : await compare(workspace, await featureBranch(workspace));
               const candidate = { kind: "review" as const, featureCwd: workspace, review, selection, diff };
               const action = await beginGitAction(gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data)), "agent", snapshotGitActionCandidate(candidate));
+              let finalizing = false;
               try {
-                await action.update("awaiting-decision");
-                const viewed = await ui.gitAction!({ ...candidate, actionId: action.record.id }, signal);
-                if (selected && !signal?.aborted) {
-                  try { await revalidateGitProjectResources(selected); }
-                  catch (cause) {
-                    await action.update("blocked", { decision: viewed ? "reviewed" : "dismissed", reason: "The comparison was read-only; its captured repository/workspace changed while displayed." });
-                    throw cause;
-                  }
+                // A comparison is evidence, not a decision. Capture the bounded
+                // patch privately before returning metadata; no browser request or
+                // history record can be used as integration approval.
+                if (signal?.aborted) {
+                  await action.update("cancelled");
+                  return failure("Git comparison cancelled; no operation was approved or executed");
                 }
-                await action.update(signal?.aborted ? "cancelled" : viewed ? "succeeded" : "declined", { decision: signal?.aborted ? "cancelled" : viewed ? "reviewed" : "dismissed" });
-                return { content: [{ type: "text" as const, text: viewed
-                  ? `User reviewed ${selection.kind === "merge" ? "the whole proposed merge" : "the selected contiguous commits"}. No integration was approved or executed. Target ${review.targetBranch} ${review.targetOid}; feature ${review.featureBranch} ${review.featureOid}.`
-                  : "Git comparison dismissed. No operation was approved or executed." }],
-                  details: { viewed, selection, targetOid: review.targetOid, featureOid: review.featureOid, actionId: action.record.id,
-                    ...(selected ? { resources: gitProjectResourceSummary(selected) } : {}) } };
-              } catch (cause) { await failGitAction(action, false, signal, cause); throw cause; }
-              finally { action.release(); }
+                if (selected) await revalidateGitProjectResources(selected);
+                else if (!samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))
+                  || (await featureBranch(workspace)) !== review.featureBranch) {
+                  throw new Error("Review workspace selection changed");
+                }
+                const details = { status: "captured", actionId: action.record.id,
+                  selection: selection.kind === "merge" ? { kind: "merge" } : { kind: "commits", count: selection.commitOids.length,
+                    firstOid: selection.commitOids[0], lastOid: selection.commitOids.at(-1) },
+                  targetBranch: review.targetBranch, targetOid: review.targetOid,
+                  featureBranch: review.featureBranch, featureOid: review.featureOid,
+                  fromTreeOid: diff.fromTreeOid, toTreeOid: diff.toTreeOid,
+                  ...(selected ? { resources: gitProjectResourceSummary(selected) } : { cwd: workspace }) };
+                const text = JSON.stringify(details);
+                finalizing = true;
+                await action.update("succeeded");
+                finalizing = false;
+                return { content: [{ type: "text" as const, text }], details };
+              } catch (cause) {
+                await failGitAction(action, false, signal, cause);
+                // The final write may already have published despite reporting
+                // failure. Return known comparison identities, not a guessed
+                // journal state or an invitation to retry from the action ID.
+                if (finalizing) {
+                  const details = { status: "recording-unconfirmed", actionId: action.record.id,
+                    targetOid: review.targetOid, featureOid: review.featureOid,
+                    fromTreeOid: diff.fromTreeOid, toTreeOid: diff.toTreeOid,
+                    error: "Final comparison record could not be confirmed; inspect private history. This read-only action did not update Git refs." };
+                  return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details, isError: true };
+                }
+                throw cause;
+              } finally { action.release(); }
             }
             if (params.operation === "integrate") {
               const denial = (action: "checks" | "integration") => assertManagedGitProjectDenial(workspace, {

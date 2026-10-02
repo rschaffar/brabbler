@@ -7,7 +7,8 @@ import { MultiFileGitDiff } from "./MultiFileGitDiff";
 
 type Request = Extract<ExtensionUiRequest, { method: "git_action" }>;
 
-/** A single-use candidate card: review acknowledgement never authorizes a merge. */
+/** Only live requests reach this card. New reviews do not request UI, but a pending
+ * review from an older live wrapper must remain answerable across hot reload/reconnect. */
 export function GitActionDialog({ request, onRespond }: {
   request: Request;
   onRespond: (request: Request, response: { confirmed: boolean } | { approvePlanId: string } | { preferences: AgentGitPreferenceChoice } | { cancelled: true }) => void;
@@ -35,7 +36,7 @@ export function GitActionDialog({ request, onRespond }: {
         : merging ? "method" in candidate.plan
           ? "A separate approval of this exact plan fast-forwards the local target to the existing feature tip. No merge commit, cleanup or remote action."
           : "A separate approval of this exact plan updates the local target with an unsigned non-fast-forward merge. No cleanup or remote action."
-        : "Read-only comparison. Acknowledging this card does not approve or perform a merge, cleanup or remote action."}</p>
+        : "Earlier read-only comparison still waiting for a response. Continue or dismiss this pending request; neither authorizes a commit, merge, cleanup or remote action."}</p>
       <p className="mt-1 text-xs text-text-muted">{request.expiresAt === undefined
         ? "Waits for your response or Stop; no automatic response timeout."
         : `Respond by ${new Date(request.expiresAt).toLocaleString()}.`}</p>
@@ -107,10 +108,13 @@ export function GitActionDialog({ request, onRespond }: {
         <MultiFileGitDiff {...(merging ? candidate.plan.diff : candidate.diff)} before={(merging ? candidate.plan.diff : candidate.diff).fromTreeOid} after={(merging ? candidate.plan.diff : candidate.diff).toTreeOid} />
       </details>}
     </div>
-    <footer className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3">
-      <button type="button" onClick={() => onRespond(request, { cancelled: true })} className="rounded border border-border px-3 py-2">{choosing ? "Cancel" : committing ? "Decline commit" : checking ? "Decline checks" : merging ? "method" in candidate.plan ? "Decline fast-forward" : "Decline merge" : "Dismiss"}</button>
+    {candidate.kind === "review" ? <footer className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3">
+      <button type="button" onClick={() => onRespond(request, { cancelled: true })} className="rounded border border-border px-3 py-2">Dismiss pending comparison</button>
+      <button type="button" onClick={() => onRespond(request, { confirmed: true })} className="rounded bg-accent px-3 py-2 text-[var(--accent-contrast)]">Continue read-only comparison</button>
+    </footer> : <footer className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3">
+      <button type="button" onClick={() => onRespond(request, { cancelled: true })} className="rounded border border-border px-3 py-2">{choosing ? "Cancel" : committing ? "Decline commit" : checking ? "Decline checks" : merging ? "method" in candidate.plan ? "Decline fast-forward" : "Decline merge" : "Decline merge"}</button>
       <button type="button" disabled={choosing && !target} onClick={() => onRespond(request, choosing ? { preferences: { targetBranch: target, method: "merge", checkIndexes: selected, mode, cleanup } } : merging ? { approvePlanId: candidate.plan.planId } : { confirmed: true })}
-        className="rounded bg-accent px-3 py-2 text-[var(--accent-contrast)] disabled:opacity-50">{choosing ? "Save chat preferences" : committing ? "Approve exact commit" : checking ? "Run these checks" : merging ? "method" in candidate.plan ? "Approve exact local fast-forward" : "Approve exact local merge" : "I reviewed this comparison"}</button>
-    </footer>
+        className="rounded bg-accent px-3 py-2 text-[var(--accent-contrast)] disabled:opacity-50">{choosing ? "Save chat preferences" : committing ? "Approve exact commit" : checking ? "Run these checks" : merging ? "method" in candidate.plan ? "Approve exact local fast-forward" : "Approve exact local merge" : "Approve exact local merge"}</button>
+    </footer>}
   </section>;
 }

@@ -12,6 +12,15 @@ const stateLabels: Record<GitActionState, string> = {
   declined: "Declined", cancelled: "Cancelled", expired: "Expired / interrupted", blocked: "Blocked", failed: "Failed", "recovery-required": "Recovery required",
 };
 const kindLabels = { commit: "Commit", review: "Git review", checks: "Checks", integration: "Local integration" };
+function actionStateLabel(record: GitActionRecord): string {
+  // A captured comparison is not a human assessment of its patch. Preserve
+  // the meaning of older read-only review acknowledgements in history.
+  if (record.kind === "review" && record.state === "succeeded") {
+    if (record.decision === undefined) return "Comparison captured";
+    if (record.decision === "reviewed") return "Comparison acknowledged by human";
+  }
+  return stateLabels[record.state];
+}
 
 export function GitActionCard({ actionId, timestamp, sessionId }: { actionId: string; timestamp?: number; sessionId?: string }) {
   const context = useGitActionContext();
@@ -76,7 +85,7 @@ export function GitActionCardView({ actionId, timestamp, history, error, expande
   return <section role="group" aria-labelledby={titleId} data-git-action-id={actionId} className="my-4 min-w-0 overflow-hidden rounded-lg border border-border bg-bg-panel text-sm text-text">
     <header className="space-y-1 px-4 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h3 id={titleId} className="font-semibold">{record ? kindLabels[record.kind] : "Git action"}{record && <span className={warning ? "ml-2 text-[var(--error)]" : "ml-2 font-normal text-text-muted"}>{stateLabels[record.state]}</span>}</h3>
+        <h3 id={titleId} className="font-semibold">{record ? kindLabels[record.kind] : "Git action"}{record && <span className={warning ? "ml-2 text-[var(--error)]" : "ml-2 font-normal text-text-muted"}>{actionStateLabel(record)}</span>}</h3>
         {time !== undefined && <time dateTime={new Date(time).toISOString()} title={new Date(time).toLocaleString()} className="text-xs text-text-muted">{new Date(time).toLocaleTimeString()}</time>}
       </div>
       {(summary?.featureBranch || summary?.targetBranch) && <p className="break-all text-xs text-text-muted">{summary.featureBranch}{summary.targetBranch && ` → ${summary.targetBranch}`}</p>}

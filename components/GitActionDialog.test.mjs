@@ -42,13 +42,20 @@ test("early chat preferences are not an operation approval", () => {
   assert.match(html, /type="checkbox"/, "Check selection still needs its ordinary selector");
 });
 
-test("read-only comparison cannot be confused with a merge confirmation", () => {
-  const html = render({ kind: "review", featureCwd: "/repo-worktrees/feature", review: { featureBranch: "feature", featureOid: oid("c"), targetBranch: "target", targetOid: oid("d"), mergeTreeOid: oid("b") }, selection: { kind: "merge" }, diff });
+test("an older pending read-only comparison remains answerable without a new approval claim", () => {
+  const candidate = { kind: "review", featureCwd: "/repo-worktrees/feature", review: { featureBranch: "feature", featureOid: oid("c"), targetBranch: "target", targetOid: oid("d"), mergeTreeOid: oid("b") }, selection: { kind: "merge" }, diff };
+  const html = render(candidate);
   assert.match(html, /Whole proposed merge/);
   assert.match(html, /\/repo-worktrees\/feature/);
-  assert.match(html, /does not approve or perform a merge/);
-  assert.match(html, /I reviewed this comparison/);
-  assert.doesNotMatch(html, /Approve exact commit|Confirm merge|Merge now/);
+  assert.match(html, /Earlier read-only comparison still waiting for a response/);
+  assert.match(html, /neither authorizes a commit, merge, cleanup or remote action/);
+  assert.match(html, /Waits for your response or Stop/);
+  assert.match(html, /Dismiss pending comparison/);
+  assert.match(html, /Continue read-only comparison/);
+  assert.doesNotMatch(html, /I reviewed|Approve exact commit|Confirm merge|Merge now|type="checkbox"/);
+  const timed = render(candidate, { expiresAt: Date.now() + 1000 });
+  assert.match(timed, /Respond by/);
+  assert.doesNotMatch(timed, /no automatic response timeout/);
 });
 
 test("check and merge approval cards show both physical checkouts", () => {

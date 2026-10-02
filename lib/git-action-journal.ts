@@ -24,7 +24,7 @@ const SOURCES = ["agent", "human", "legacy-agent"] as const;
 const STATES = ["proposed", "awaiting-decision", "executing", "succeeded", "declined", "cancelled", "expired", "blocked", "failed", "recovery-required"] as const;
 const DECISIONS = ["approved", "declined", "cancelled", "reviewed", "dismissed"] as const;
 const NEXT: Partial<Record<GitActionState, readonly GitActionState[]>> = {
-  proposed: ["awaiting-decision", "executing", "blocked", "failed", "cancelled", "expired"],
+  proposed: ["awaiting-decision", "executing", "succeeded", "blocked", "failed", "cancelled", "expired"],
   "awaiting-decision": ["executing", "succeeded", "declined", "cancelled", "blocked", "failed", "expired"],
   executing: ["executing", "succeeded", "failed", "cancelled", "blocked", "recovery-required"],
 };
@@ -346,6 +346,8 @@ export async function transitionGitAction(
     if (current.processId !== runtime().processId || !runtime().active.has(dir)) throw new Error("Git action is no longer live; history is read-only");
     if (current.revision !== expectedRevision) throw new Error("Git action revision conflict");
     if (!NEXT[current.state]?.includes(update.state)
+      || update.state === "succeeded" && current.state === "proposed"
+        && (current.kind !== "review" || update.decision !== undefined || update.intended !== undefined || update.outcome !== undefined)
       || current.state === "awaiting-decision" && update.state === "succeeded" && current.kind !== "review") {
       throw new Error(`Illegal Git action transition: ${current.state} -> ${update.state}`);
     }
@@ -360,7 +362,15 @@ export async function transitionGitAction(
       || current.intended !== undefined && canonical(current.intended) !== canonical(update.intended))) {
       throw new Error("Git action intended result is immutable and must precede completion");
     }
-    loadCandidate(dir, current); // Fail closed if the reviewed artifact was lost or changed.
+    const captured = loadCandidate(dir, current); // Verifies artifact/summary identity and OID syntax; never trust a caller-supplied patch.
+    if (current.state === "proposed" && update.state === "succeeded" &&
+      (!captured.diff || !captured.selection || !captured.featureBranch || !captured.targetBranch ||
+        !captured.featureOid || !captured.targetOid)) {
+      // Direct completion attests only that a bounded comparison was captured,
+      // not that a human reviewed it. Older awaiting-decision reviews keep their
+      // original edge and may lack these fields.
+      throw new Error("Incomplete Git review comparison artifact");
+    }
     const next: GitActionRecord = { ...current, ...update, revision: integer(current.revision + 1, 1),
       updatedAt: integer(Math.max(Date.now(), current.updatedAt + 1)) };
     const document = recordDocument(next);

@@ -23,6 +23,22 @@ test("compact durable card reports captured message, branch, time, actual result
   assert.doesNotMatch(html, /Approve exact commit|\/deleted\/worktree|private/);
 });
 
+test("new comparison capture is not labelled as human review; old acknowledged review remains distinct", () => {
+  const base = { ...record, kind: "review", state: "succeeded", outcome: undefined,
+    summary: { kind: "review", repositoryRoot: "/deleted/worktree", featureBranch: "feature", targetBranch: "target",
+      featureOid: oid("c"), targetOid: oid("a"), selection: { kind: "merge" } } };
+  const captured = render({ history: { record: { ...base, decision: undefined } } });
+  assert.match(captured, /Git review.*Comparison captured/);
+  assert.doesNotMatch(captured, /Succeeded|acknowledged|Approve|I reviewed/);
+  const acknowledged = render({ history: { record: { ...base, decision: "reviewed" } }, expanded: true,
+    artifact: { record: base, candidate: { ...base.summary, diffUnavailable: "Retained legacy placeholder" } } });
+  assert.match(acknowledged, /Git review.*Comparison acknowledged by human/);
+  assert.match(acknowledged, /decision: reviewed/);
+  assert.doesNotMatch(acknowledged, /Comparison captured|Approve exact commit/);
+  assert.match(render(), /Commit.*Succeeded/, "mutation result wording is unchanged");
+  assert.match(render({ history: { record: { ...record, kind: "integration" } } }), /Local integration.*Succeeded/);
+});
+
 test("prepared intent is visible during recovery but never called a confirmed result", () => {
   const intended = { commit: oid("d"), mergeOid: oid("e"), tree: oid("f"), parents: [oid("a")], featureOid: oid("1"), targetOid: oid("2"), authorEmail: "prepared@example.test" };
   const html = render({ history: { record: { ...record, state: "recovery-required", intended, outcome: undefined } } });
