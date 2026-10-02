@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { checkGitTaskBinding } from "./git-task-binding.mjs";
 
 /** Real scoped settings, local Git objects and a persisted chat; no model or mocked settings endpoint. */
@@ -616,6 +616,83 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     const checksApplied = await apply();
     assert.equal(checksApplied.task.settings.checks[0].label, "Fixture verification");
     assert.equal(mutations.filter((entry) => entry.path === "/api/git/integration").length, 0, "Saving/applying checks must not run them");
+    // Use the fixture's disposable target for FF, then restore it for the separate non-FF test.
+    // A saved method is not approval: this needs its own browser check, plan and confirmation.
+    let ffPlanId;
+    if (checkContainmentSupported) {
+      assert.equal(dirname(cwd), dirname(targetWorktree));
+      assert.match(basename(dirname(cwd)), /^pi-web-e2e-/, "FF may touch only the temporary E2E fixture");
+      assert.equal(gitAt(targetWorktree, "status", "--porcelain"), "", "Fixture target must start clean");
+      const originalTarget = gitAt(targetWorktree, "rev-parse", "HEAD");
+      const featureTip = git("rev-parse", "HEAD");
+      const featureTree = git("rev-parse", "HEAD^{tree}");
+      const featureParents = git("show", "-s", "--format=%P", "HEAD").split(" ");
+      await chooseScope("project"); await expand("integration");
+      await control("method").selectOption("ff");
+      assert.equal((await save("project")).project.method, "ff");
+      assert.equal((await apply()).task.settings.method, "ff");
+      await openDetail("Integration review", "Local integration review");
+      await review.getByRole("button", { name: "Run check 1" }).waitFor();
+      await review.getByRole("button", { name: "Run check 1" }).click();
+      await review.getByText(/Passed: receipt/).waitFor({ timeout: 90_000 });
+      assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), originalTarget, "FF verification does not update target");
+      const ffPlanResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/integration"
+        && response.request().postDataJSON()?.operation === "plan");
+      await review.getByRole("button", { name: "Prepare exact integration proposal" }).click();
+      const ffHttp = await ffPlanResponse;
+      assert.equal(ffHttp.status(), 200, ffHttp.status() === 200 ? "" : await ffHttp.text());
+      const ffPlan = (await ffHttp.json()).plan;
+      ffPlanId = ffPlan.planId;
+      assert.equal(ffPlan.method, "ff");
+      assert.equal(ffPlan.review.targetOid, originalTarget);
+      assert.equal(ffPlan.review.featureOid, featureTip);
+      assert.equal(ffPlan.featureOid, featureTip);
+      assert.equal(ffPlan.treeOid, featureTree);
+      assert.equal(ffPlan.diff.toTreeOid, featureTree);
+      assert.deepEqual(ffPlan.parents, featureParents);
+      assert.equal(ffPlan.mergeOid, undefined, "FF must not propose a synthetic merge commit");
+      const ffProposal = review.getByLabel("Exact integration proposal");
+      await ffProposal.getByText("Review exact integration proposal — not yet applied").waitFor();
+      assert.match(await ffProposal.innerText(), /Fast-forward to existing feature commit \(no new merge commit\)/);
+      assert.equal(await ffProposal.locator("dt", { hasText: "Exact resulting target OID" }).locator("xpath=following-sibling::dd[1]").innerText(), featureTip);
+      assert.equal(await ffProposal.locator("dt", { hasText: "Existing tip parents" }).locator("xpath=following-sibling::dd[1]").innerText(), featureParents.join(", "));
+      assert.equal(await ffProposal.getByText("Exact merge commit OID").count(), 0);
+      assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), originalTarget, "FF proposal does not update target");
+      const ffConfirmResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/integration"
+        && response.request().postDataJSON()?.operation === "confirm");
+      await ffProposal.getByRole("button", { name: /^Confirm exact plan/ }).click();
+      const ffConfirmed = await ffConfirmResponse;
+      assert.equal(ffConfirmed.status(), 200, ffConfirmed.status() === 200 ? "" : await ffConfirmed.text());
+      assert.equal(ffConfirmed.request().postDataJSON().planId, ffPlanId);
+      assert.equal(ffConfirmed.request().postDataJSON().approvePlanId, ffPlanId);
+      const ffResult = await ffConfirmed.json();
+      assert.equal(ffResult.status, "integrated");
+      assert.equal(ffResult.method, "ff");
+      assert.equal(ffResult.featureOid, featureTip);
+      assert.equal(ffResult.treeOid, featureTree);
+      assert.deepEqual(ffResult.parents, featureParents);
+      assert.equal(ffResult.mergeOid, undefined);
+      await review.getByText("Local integration completed").waitFor();
+      assert.match(await review.innerText(), /fast-forwarded to existing feature tip/);
+      assert.equal(gitAt(targetWorktree, "rev-parse", "refs/heads/target"), featureTip, "FF moves target to the existing feature object");
+      assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD^{tree}"), featureTree);
+      assert.deepEqual(gitAt(targetWorktree, "show", "-s", "--format=%P", "HEAD").split(" "), featureParents);
+      assert.equal(git("rev-parse", "HEAD"), featureTip, "FF does not change the feature ref");
+      console.log("PASS: browser FF check, exact plan and separate approval move target to the existing feature tip without a merge commit");
+
+      assert.equal(gitAt(targetWorktree, "rev-parse", "--show-toplevel"), targetWorktree, "Reset only the disposable fixture checkout");
+      assert.equal(gitAt(targetWorktree, "status", "--porcelain"), "", "Do not discard work while restoring the fixture");
+      gitAt(targetWorktree, "reset", "--hard", originalTarget);
+      assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), originalTarget);
+      assert.equal(gitAt(targetWorktree, "status", "--porcelain"), "");
+      await home(); await chooseScope("project"); await expand("integration");
+      await control("method").selectOption("merge");
+      assert.equal((await save("project")).project.method, "merge");
+      assert.equal((await apply()).task.settings.method, "merge");
+      // A completed result intentionally disables another action in the same panel instance.
+      // Reload the persisted chat to start a fresh, separately reviewed non-FF attempt.
+      await page.reload({ waitUntil: "load" });
+    }
     await openDetail("Integration review", "Local integration review");
     await review.getByRole("button", { name: "Refresh review" }).click();
     await review.getByRole("button", { name: "Run check 1" }).waitFor();
@@ -670,7 +747,12 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await review.getByRole("button", { name: "Run check 1" }).click();
     await review.getByText(/Passed: receipt/).waitFor({ timeout: 90_000 }); // First systemd check can exceed Playwright's 30s default on a cold host.
     assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), targetBeforeVerification, "Verification must not integrate");
+    const mergePlanResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/integration"
+      && response.request().postDataJSON()?.operation === "plan");
     await review.getByRole("button", { name: "Prepare exact integration proposal" }).click();
+    const mergePlan = await mergePlanResponse;
+    assert.equal(mergePlan.status(), 200, mergePlan.status() === 200 ? "" : await mergePlan.text());
+    assert.notEqual((await mergePlan.json()).plan.planId, ffPlanId, "Non-FF needs a new exact plan, not FF approval");
     const proposal = review.getByLabel("Exact integration proposal");
     await proposal.getByText("Review exact integration proposal — not yet applied").waitFor();
     const expectedMerge = await proposal.locator("dt", { hasText: "Exact merge commit OID" }).locator("xpath=following-sibling::dd[1]").innerText();
