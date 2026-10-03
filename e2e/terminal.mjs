@@ -83,7 +83,27 @@ try {
       const button = page.getByRole("button", { name: "Show sidebar", exact: true });
       if (await button.count()) await button.click();
     };
-    const showPanel = () => page.getByRole("button", { name: "Show file panel", exact: true }).click();
+    const visiblePanel = async () => {
+      // This button stays mounted and keeps its name when the main toggle changes.
+      const toggle = page.locator("#file-panel").getByRole("button", { name: "Hide file panel", exact: true, includeHidden: true });
+      await toggle.waitFor({ state: "attached" });
+      const expanded = await toggle.getAttribute("aria-expanded");
+      assert.ok(expanded === "true" || expanded === "false", "panel state is initialized");
+      if (expanded === "false") await page.getByRole("button", { name: "Show file panel", exact: true }).click();
+      await page.waitForFunction(() => {
+        const panel = document.getElementById("file-panel");
+        if (panel?.querySelector('button[aria-expanded]')?.getAttribute("aria-expanded") !== "true") return false;
+        const bounds = panel.getBoundingClientRect();
+        const header = panel.firstElementChild.getBoundingClientRect();
+        // Closed desktop panels retain full-width children; visibility alone
+        // does not establish that the tab bar is unclipped or onscreen.
+        return header.width > 0 && header.height > 0
+          && header.left >= Math.max(0, bounds.left) - 1
+          && header.right <= Math.min(innerWidth, bounds.right) + 1
+          && header.top >= Math.max(0, bounds.top) - 1
+          && header.bottom <= Math.min(innerHeight, bounds.bottom) + 1;
+      });
+    };
     const hidePanel = async () => {
       const button = page.locator("#file-panel").getByRole("button", { name: "Hide file panel", exact: true, includeHidden: true });
       if (await button.getAttribute("aria-expanded") === "true") await button.click();
@@ -118,7 +138,9 @@ try {
       await hidePanel();
       await showSidebar();
       await page.getByText("Terminal session two", { exact: true }).click();
-      await showPanel();
+      await page.getByText("Terminal session two message", { exact: true }).waitFor();
+      await visiblePanel();
+      await ready();
       await run("printf '\\nSESSION:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput(`SESSION:alive:${pid}`);
 
@@ -127,10 +149,17 @@ try {
       const savedTabs = await page.evaluate(() => JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs")));
       assert.ok(savedTabs.tabs.some((tab) => tab.id === savedTabs.activeId), "the active terminal is persisted before reload");
       await page.reload();
-      // Restoration is asynchronous. Do not toggle the initially closed panel
-      // before its saved open state has been applied (and accidentally close it).
-      await page.locator("#file-panel.right-panel-open").waitFor({ state: "visible" });
-      await page.getByRole("tab", { name: "Terminal: workspace-a", exact: true, selected: true }).waitFor({ state: "visible" });
+      // Terminal storage restores before the asynchronous sidebar/session load,
+      // which can close the panel again. Observe both restores before opening.
+      await page.getByText("Terminal session two message", { exact: true }).waitFor();
+      await page.waitForFunction((cwd) => {
+        const panel = [...document.querySelectorAll(".terminal-panel")].find((element) =>
+          element.querySelector(".terminal-panel-path > span:last-child")?.getAttribute("title") === cwd);
+        return Boolean(panel?.querySelector(".is-ready"))
+          && panel.querySelector('select[aria-label="Terminal font"]')?.value === "system";
+      }, workspace);
+      await visiblePanel();
+      await page.getByRole("tab", { name: "Terminal: workspace-a", exact: true }).click();
       await ready();
       assert.equal(await fontSelect.inputValue(), "system", "font choice survives page reload");
       await fontSelect.selectOption("nerd");
