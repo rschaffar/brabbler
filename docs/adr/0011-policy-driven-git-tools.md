@@ -2,6 +2,8 @@
 
 ## Status and reading guide
 
+**Concurrency revision, 2026-10-03:** [ADR 0012](0012-optimistic-git-invocations.md) supersedes this record's application reservations, repository-wide quarantine, foreign receipt fencing and placement leases. Independent authorization, required checks and exact native Git transactions remain mandatory. Its implementation is in progress; the older mechanisms described below remain historical/current-source evidence until replaced, not the accepted future contract.
+
 **Accepted product direction, 2026-09-29; source implementation update for Phases 2–5.** The user clarified the intended experience after using the integrated Workflow panel and requested a design update before further implementation. This record supersedes the incompatible future direction in [ADR 0010](0010-integrated-git-workflow.md), especially mandatory task/workspace binding, session handoff, and host-driven start/finish orchestration. It also revises the eventual same-repository limitation of [ADR 0009](0009-cross-worktree-agent-git-tools.md). The bounded selected-operation source now implements these core capabilities; that is not installation, activation, permission migration or full-suite acceptance.
 
 Start with **The intended experience** below. [Git workflow](../git-workflow.md) describes what is implemented today. The [policy-driven Git tools plan](../plans/2026-09-29_policy-driven-git-tools-plan.md) is the sole active implementation roadmap; the previous plan retains historical evidence.

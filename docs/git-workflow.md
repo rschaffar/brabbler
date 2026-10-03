@@ -2,6 +2,8 @@
 
 ## Source support versus installed behavior
 
+**Accepted revision, not yet connected:** [ADR 0012 — Independent Git invocations](adr/0012-optimistic-git-invocations.md) replaces cross-session quarantine/reservations with exact per-invocation authorization and native optimistic Git transactions. Another session's history or activity will not veto an operation; required passing checks and stale-candidate rejection remain. Implementation is tracked in roadmap Phase 6. The quarantine/lease descriptions below still describe the existing runtime, not that replacement or an installed promise.
+
 [ADR 0011 — Project policies and agent-driven Git operations](adr/0011-policy-driven-git-tools.md) records the decision: one chat can select several projects/worktrees without moving or adopting a task; separate saved permissions can preanswer routine decisions, and every actual preparation rewrite returns to the agent.
 
 **This guide documents the feature source, not an installed release or activated policy.** The selected runtime now connects native workspace creation/attachment, preparation, source-only checks, FF/non-FF local integration, eligible cleanup and explicit reconciliation to live authorization, admission and durable history. Whole-file and explicit staged commits remain supported. Task/source metadata and chat transitions are not prerequisites for selected operations. Separately saved Global, Project and Chat × Project Allow/Deny records are not execution tokens: explicit `confirmation: "none"` additionally needs that action's selected confirmation preference `none`, compatible instructions and every live native gate. No policy save schedules work. The special fresh-creation restrictions on no-confirmation commits are described below.
