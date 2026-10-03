@@ -259,8 +259,8 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
               if (item) { item.ctx = ctx; item.signal = signal; }
               else {
                 const { createGitSelectedOperationRuntime } = await import("./git-selected-operation-runtime");
-                const holder = { ctx, signal, busy: false } as SelectedRuntime;
-                holder.runtime = createGitSelectedOperationRuntime({ sessionCwd, agentDir,
+                const holder: Omit<SelectedRuntime, "runtime"> = { ctx, signal, busy: false };
+                const runtime = createGitSelectedOperationRuntime({ sessionCwd, agentDir,
                   manager: { getSessionId: () => holder.ctx.sessionManager.getSessionId(), getSessionFile: () => holder.ctx.sessionManager.getSessionFile(),
                     getCwd: () => holder.ctx.sessionManager.getCwd(), getHeader: () => holder.ctx.sessionManager.getHeader(),
                     getEntries: () => holder.ctx.sessionManager.getEntries(), getBranch: () => holder.ctx.sessionManager.getBranch() },
@@ -270,7 +270,8 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                   ask: (candidate) => { const ui = holder.ctx.ui as typeof holder.ctx.ui & Partial<AgentGitWorkflowUiContext>;
                     if (!holder.ctx.hasUI || !ui?.gitAction) return Promise.resolve(false);
                     return ui.gitAction(candidate, holder.signal); } });
-                selectedRuntimes.set(file, holder); item = holder;
+                item = Object.assign(holder, { runtime });
+                selectedRuntimes.set(file, item);
               }
               let request: SelectedControllerRequests[SelectedControllerOperation];
               const selection = { selector, ...(params.confirmation === undefined ? {} : { confirmation: params.confirmation }) };

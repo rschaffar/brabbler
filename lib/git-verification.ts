@@ -12,7 +12,7 @@ import { newGitCheckUnit, runContainedGitCheck, pinGitCheckCwd, linuxSystemdBack
   type ContainmentBackend, type ContainedCheckResult, type GitCheckReleaseGuard } from "./git-check-containment";
 import { revalidateGitProjectResources, selectGitProjectResources, type GitProjectResources } from "./git-project-resources";
 import { assertGitOperationAdmission, beginSupervisedGitOperationIntent, assertGitCheckRecoverySnapshotCapacity,
-  type GitCheckSnapshot, type GitCheckRecoveryCurrentState, type GitCheckCleanupProof } from "./git-operation-admission";
+  type GitCheckSnapshot, type GitPairedCheckSnapshot, type GitCheckRecoveryCurrentState, type GitCheckCleanupProof } from "./git-operation-admission";
 import { GIT_ACTION_ID_PATTERN } from "./git-action-types";
 import { samePath, toNativePath } from "./paths";
 import { gitCheckRunningCheckouts, registerGitCheckReceiptEpoch, gitCheckReceiptEpochStatus,
@@ -248,7 +248,7 @@ export async function captureGitCheckRecoveryCurrentState(feature: string, targe
 
 /** Preserve the original check snapshot's exact field order for durable proof. */
 export async function captureGitCheckRecoverySnapshot(feature: string, target: string, review: GitReview,
-  policyDigest: string, checkDigest: string): Promise<GitCheckSnapshot> {
+  policyDigest: string, checkDigest: string): Promise<GitPairedCheckSnapshot> {
   const current = await captureGitCheckRecoveryCurrentState(feature, target, policyDigest, checkDigest);
   return { version: 1, featurePath: current.featurePath, targetPath: current.targetPath,
     featureIdentity: current.featureIdentity, targetIdentity: current.targetIdentity,

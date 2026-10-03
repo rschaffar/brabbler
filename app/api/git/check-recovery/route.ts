@@ -183,9 +183,10 @@ async function inspect(s: Scope) {
   const current = await captureGitCheckRecoveryCurrentState(s.feature.cwd, s.target.cwd, hash(s.policy), evidence.after.checkDigest);
   const stable: (keyof GitCheckRecoveryCurrentState)[] = ["featurePath", "targetPath", "featureIdentity", "targetIdentity",
     "resourceIdentity", "featureBranch", "targetBranch", "policyDigest", "checkDigest"];
-  if (stable.some((key) => current[key] !== evidence.after![key])) throw new Error("recovery resource changed");
+  const originalSnapshot = evidence.after;
+  if (stable.some((key) => current[key] !== originalSnapshot[key])) throw new Error("recovery resource changed");
   const moved = ["featureOid", "targetOid", "featureIndex", "targetIndex", "featureStatus", "targetStatus", "refs"]
-    .some((key) => current[key as keyof GitCheckRecoveryCurrentState] !== evidence.after![key as keyof typeof current]);
+    .some((key) => current[key as keyof GitCheckRecoveryCurrentState] !== originalSnapshot[key as keyof typeof current]);
   let snapshot: GitCheckRecoveryCurrentState | typeof evidence.after;
   let heads: { featureHead: string; targetHead: string };
   if (moved) {

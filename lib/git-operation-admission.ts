@@ -800,9 +800,10 @@ export function resolveHumanReviewedGitCheck(agentDir: string, commonDir: string
     // repository instance, saved check, or policy. Only later Git state may drift.
     const stable: (keyof GitCheckRecoveryCurrentState)[] = ["featurePath", "targetPath", "featureIdentity",
       "targetIdentity", "resourceIdentity", "featureBranch", "targetBranch", "policyDigest", "checkDigest"];
-    if (stable.some((key) => freshSnapshot[key] !== post.snapshot[key]) ||
+    const originalSnapshot = post.snapshot;
+    if (stable.some((key) => freshSnapshot[key] !== originalSnapshot[key]) ||
       ["featureOid", "targetOid", "featureIndex", "targetIndex", "featureStatus", "targetStatus", "refs"]
-        .every((key) => freshSnapshot[key as keyof GitCheckRecoveryCurrentState] === post.snapshot[key as keyof GitCheckRecoveryCurrentState])) deny();
+        .every((key) => freshSnapshot[key as keyof GitCheckRecoveryCurrentState] === originalSnapshot[key as keyof GitCheckRecoveryCurrentState])) deny();
   } else if (!validSnapshot(freshSnapshot) || receipt.kind !== "human-reviewed-git-check-recovery" ||
     JSON.stringify(freshSnapshot) !== JSON.stringify(post.snapshot)) deny();
   // One last scan before publication: extra files or another unresolved record
