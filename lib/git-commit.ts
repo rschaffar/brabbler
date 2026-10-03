@@ -1,10 +1,12 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
-import { execFile } from "node:child_process";
-import { promises as fs } from "node:fs";
+import { execFile, execFileSync } from "node:child_process";
+import { promises as fs, constants, closeSync, openSync, fstatSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { gitExecEnv } from "./git-exec";
+import { readGitOperationReservationOwner, type GitOperationReservation, type GitOperationReservationOwner } from "./git-operation-admission";
+import type { GitProjectResources } from "./git-project-resources";
 import { samePath, toNativePath } from "./paths";
 
 const exec = promisify(execFile);
@@ -84,7 +86,7 @@ async function safePaths(cwd: string, paths: string[]): Promise<void> {
   }
 }
 
-async function state(cwd: string, requested: string[], mode: GitCommitMode, ownedLock?: string): Promise<State> {
+async function state(cwd: string, requested: string[], mode: GitCommitMode, ownedLock?: GitCommitNativeBoundaryHandle): Promise<State> {
   if (!path.isAbsolute(cwd) || !samePath(cwd, await fs.realpath(cwd))) fail("explicit physical checkout root required");
   const root = await git(cwd, ["rev-parse", "--show-toplevel"]).then((value) => toNativePath(value.trim()), () => fail("explicit repository-root checkout required"));
   if (!samePath(root, cwd)) fail("cwd must be the repository root");
@@ -97,9 +99,13 @@ async function state(cwd: string, requested: string[], mode: GitCommitMode, owne
   const headOid = (await git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"])).trim();
   if ((await git(cwd, ["rev-parse", "--verify", branch])).trim() !== headOid) fail("branch moved");
   const indexPath = toNativePath((await git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"])).trim());
-  if (!ownedLock && await fs.stat(`${indexPath}.lock`).then(() => true, () => false)) fail("index locked");
-  if (ownedLock && indexPath !== ownedLock) fail("index path changed");
-  if (mode === "staged" && !(await fs.lstat(indexPath)).isFile()) fail("unsafe index path");
+  if (!ownedLock && await fs.lstat(`${indexPath}.lock`).then(() => true, (error) => {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return false;
+  })) fail("index locked");
+  if (ownedLock && readGitCommitNativeBoundary(ownedLock)?.indexPath !== indexPath) fail("stale preview or index lock ownership lost");
+  const indexStat = await fs.lstat(indexPath);
+  if (!indexStat.isFile() || indexStat.isSymbolicLink() || indexStat.nlink !== 1) fail("unsafe index path");
   const indexHash = hash(await fs.readFile(indexPath));
   if ((await git(cwd, ["ls-files", "-u", "-z"])) !== "") fail("unmerged index");
   const entriesInIndex = (await git(cwd, ["ls-files", "-s", "-z"])).split("\0").filter(Boolean).map((entry) => {
@@ -263,7 +269,7 @@ async function assertNoGitOperation(cwd: string): Promise<void> {
     if (present) throw new GitCommitOperationError(`Git ${operation} is in progress. Finish or abort it explicitly before requesting a commit.`);
   }
 }
-async function prepare(cwd: string, selected: string[], mode: GitCommitMode, ownedLock?: string): Promise<{ preview: GitCommitPreview; state: State; index: Buffer }> {
+async function prepare(cwd: string, selected: string[], mode: GitCommitMode, ownedLock?: GitCommitNativeBoundaryHandle): Promise<{ preview: GitCommitPreview; state: State; index: Buffer }> {
   const s = await state(cwd, selected, mode, ownedLock);
   const result = await candidate(cwd, s);
   return { state: s, index: result.index, preview: {
@@ -278,27 +284,156 @@ export async function prepareGitCommit(cwd: string, selectedPaths: string[], mod
   return (await prepare(cwd, selectedPaths, mode)).preview;
 }
 
+declare const nativeBoundaryBrand: unique symbol;
+/** Invocation-only capability, minted from our open FD, never a JSON/path exemption. */
+export type GitCommitNativeBoundaryHandle = Readonly<{ [nativeBoundaryBrand]: true }>;
+export interface GitCommitNativeBoundary {
+  readonly preview: Readonly<GitCommitPreview>;
+  readonly message: string;
+  readonly indexPath: string;
+  readonly indexLockPath: string;
+  readonly indexDigest: string;
+  readonly lockDevice: string;
+  readonly lockInode: string;
+}
+declare const protectedBoundaryBrand: unique symbol;
+/** Joint process-only seal, not a structurally asserted ledger exemption. */
+export interface GitCommitProtectedBoundary {
+  readonly [protectedBoundaryBrand]: true;
+  readonly ownedLock: GitCommitNativeBoundaryHandle;
+  readonly reservation: GitOperationReservation;
+}
+const protectedBoundaries = new WeakMap<GitCommitProtectedBoundary, {
+  owner: GitOperationReservationOwner; sourceDigest: string; agentDir: string;
+}>();
+/** Mint only from the ledger's authentic issued commit owner AND our active FD.
+ * Other-kind/source/ledger, copies and resolved reservations cannot mint proof. */
+export function captureGitCommitProtectedBoundary(ownedLock: GitCommitNativeBoundaryHandle, reservation: GitOperationReservation,
+  source: Readonly<GitProjectResources>, agentDir?: string): GitCommitProtectedBoundary {
+  const owner = readGitOperationReservationOwner(reservation), b = readGitCommitNativeBoundary(ownedLock);
+  if (!owner || owner.kind !== "commit" || !owner.agentDir || agentDir !== undefined && owner.agentDir !== agentDir ||
+      JSON.stringify(owner.selection) !== JSON.stringify(source) || !b || b.preview.repositoryRoot !== source.cwd ||
+      b.preview.branch !== `refs/heads/${source.branch}` || b.indexPath !== path.join(source.gitDir, "index")) {
+    throw new GitCommitOperationError("Git commit protected boundary has no authentic live source reservation.");
+  }
+  const boundary = Object.freeze({ ownedLock, reservation }) as GitCommitProtectedBoundary;
+  protectedBoundaries.set(boundary, { owner, sourceDigest: hash(JSON.stringify(source)), agentDir: owner.agentDir });
+  return boundary;
+}
+/** Checker-only read: identity-issued joint seal; repeat actual ledger ownership,
+ * original source/index/refs and open FD/path identity now, without an await. */
+export function readGitCommitProtectedBoundary(boundary: GitCommitProtectedBoundary, source: Readonly<GitProjectResources>,
+  agentDir: string): GitCommitNativeBoundary | undefined {
+  const saved = protectedBoundaries.get(boundary);
+  if (!saved || saved.agentDir !== agentDir || saved.sourceDigest !== hash(JSON.stringify(source))) return;
+  const owner = readGitOperationReservationOwner(boundary.reservation);
+  if (!owner || owner !== saved.owner || owner.kind !== "commit" || owner.agentDir !== agentDir ||
+      JSON.stringify(owner.selection) !== JSON.stringify(source)) return;
+  const b = readGitCommitNativeBoundary(boundary.ownedLock);
+  if (!b || b.preview.repositoryRoot !== source.cwd || b.preview.branch !== `refs/heads/${source.branch}` ||
+      b.indexPath !== path.join(source.gitDir, "index")) return;
+  return b;
+}
+interface NativeInvocation {
+  active: boolean; fd: number; boundary: GitCommitNativeBoundary;
+  identities: readonly { path: string; device: string; inode: string; birthtime: string }[];
+  refs: string;
+  indexIdentity: string;
+  markerIdentity: string;
+}
+const nativeInvocations = new WeakMap<GitCommitNativeBoundaryHandle, NativeInvocation>();
+function gitSync(cwd: string, args: string[]): string {
+  return execFileSync("git", ["--no-optional-locks", "-C", cwd, ...args], {
+    env: gitExecEnv(), encoding: "utf8", timeout: 30_000, maxBuffer: MAX_OUTPUT, stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+function originalIndexDigestSync(file: string, expected: string): string | undefined {
+  const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const before = fstatSync(fd, { bigint: true });
+    if (!before.isFile() || before.nlink !== BigInt(1) || before.size > BigInt(MAX_OUTPUT) ||
+        `${before.dev}:${before.ino}:${before.birthtimeNs}` !== expected) return;
+    const bytes = readFileSync(fd), after = fstatSync(fd, { bigint: true }), named = lstatSync(file, { bigint: true });
+    if (!named.isFile() || named.isSymbolicLink() || named.dev !== before.dev || named.ino !== before.ino ||
+        before.size !== BigInt(bytes.length) || after.size !== before.size || after.mtimeNs !== before.mtimeNs ||
+        after.ctimeNs !== before.ctimeNs || named.mtimeNs !== before.mtimeNs || named.ctimeNs !== before.ctimeNs) return;
+    return hash(bytes);
+  } finally { closeSync(fd); }
+}
+/** Trusted checker bridge only. Rechecks FD AND pathname identity, pinned roots,
+ * original index and refs. A copied/expired/replaced handle returns no proof. */
+export function readGitCommitNativeBoundary(handle: GitCommitNativeBoundaryHandle): GitCommitNativeBoundary | undefined {
+  const invocation = nativeInvocations.get(handle);
+  if (!invocation?.active) return;
+  try {
+    const b = invocation.boundary;
+    for (const expected of invocation.identities) {
+      const s = lstatSync(expected.path, { bigint: true });
+      if (!s.isDirectory() || s.isSymbolicLink() || realpathSync(expected.path) !== expected.path ||
+          String(s.dev) !== expected.device || String(s.ino) !== expected.inode || String(s.birthtimeNs) !== expected.birthtime) return;
+    }
+    const index = lstatSync(b.indexPath, { bigint: true });
+    const marker = lstatSync(path.join(b.preview.repositoryRoot, ".git"), { bigint: true });
+    if (marker.isSymbolicLink() || !marker.isDirectory() && !marker.isFile() ||
+        !index.isFile() || index.isSymbolicLink() || index.nlink !== BigInt(1) ||
+        `${index.dev}:${index.ino}:${index.birthtimeNs}` !== invocation.indexIdentity ||
+        `${marker.dev}:${marker.ino}:${marker.birthtimeNs}:${marker.isFile() ? hash(readFileSync(path.join(b.preview.repositoryRoot, ".git"))) : "directory"}` !== invocation.markerIdentity) return;
+    const fd = fstatSync(invocation.fd, { bigint: true }), named = lstatSync(b.indexLockPath, { bigint: true });
+    if (!fd.isFile() || !named.isFile() || named.isSymbolicLink() || fd.nlink !== BigInt(1) ||
+        String(fd.dev) !== b.lockDevice || String(fd.ino) !== b.lockInode || fd.dev !== named.dev || fd.ino !== named.ino ||
+        originalIndexDigestSync(b.indexPath, invocation.indexIdentity) !== b.indexDigest ||
+        gitSync(b.preview.repositoryRoot, ["show-ref", "--head"]) !== invocation.refs ||
+        gitSync(b.preview.repositoryRoot, ["symbolic-ref", "--quiet", "HEAD"]).trim() !== b.preview.branch) return;
+    return b;
+  } catch { return; }
+}
+
 /** Never commits a preview that has become stale. No hooks, signing, or remote operations. */
 export async function confirmGitCommit(preview: GitCommitPreview, message: string,
-  beforeRefUpdate?: (intended: { commit: string; tree: string; parents: string[]; authorEmail: string }) => Promise<void>,
+  beforeRefUpdate?: (intended: { commit: string; tree: string; parents: string[]; authorEmail: string },
+    ownedLock: GitCommitNativeBoundaryHandle) => Promise<void | (() => void)>,
 ): Promise<GitCommitResult> {
   if (!message.trim() || message.includes("\0")) fail("invalid commit message");
+  const paths = [...preview.paths];
+  Object.freeze(paths);
+  preview = Object.freeze({ ...preview, paths });
   if (preview.mode !== "whole-file" && preview.mode !== "staged") fail("invalid candidate mode");
   const cwd = preview.repositoryRoot;
   const first = await prepare(cwd, preview.paths, preview.mode);
   if (first.preview.reviewToken !== preview.reviewToken || first.preview.tree !== preview.tree ||
       first.preview.branch !== preview.branch || first.preview.head !== preview.head ||
       JSON.stringify(first.preview.paths) !== JSON.stringify(preview.paths)) fail("stale preview");
+  const metadata = toNativePath((await git(cwd, ["rev-parse", "--absolute-git-dir"])).trim());
+  const common = toNativePath((await git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim());
+  const identities = await Promise.all([...new Set([cwd, metadata, common])].map(async (p) => {
+    const s = await fs.lstat(p, { bigint: true });
+    if (!s.isDirectory() || s.isSymbolicLink() || await fs.realpath(p) !== p) fail("physical checkout changed");
+    return { path: p, device: String(s.dev), inode: String(s.ino), birthtime: String(s.birthtimeNs) };
+  }));
+  const refs = await git(cwd, ["show-ref", "--head"]);
+  const indexStat = await fs.lstat(first.state.indexPath, { bigint: true });
+  const markerStat = await fs.lstat(path.join(cwd, ".git"), { bigint: true });
+  if (markerStat.isSymbolicLink() || !markerStat.isDirectory() && !markerStat.isFile()) fail("physical checkout marker required");
+  const indexIdentity = `${indexStat.dev}:${indexStat.ino}:${indexStat.birthtimeNs}`;
+  const markerIdentity = `${markerStat.dev}:${markerStat.ino}:${markerStat.birthtimeNs}:${markerStat.isFile() ? hash(await fs.readFile(path.join(cwd, ".git"))) : "directory"}`;
   const lockPath = `${first.state.indexPath}.lock`;
   const lock = await fs.open(lockPath, "wx", 0o600).catch(() => fail("index locked"));
+  const ownedLock = Object.freeze(Object.create(null)) as GitCommitNativeBoundaryHandle;
+  let invocation: NativeInvocation | undefined;
   let committed: string | null = null;
   let authorEmail = "";
   let installed = false;
   let lockIdentity: Awaited<ReturnType<typeof lock.stat>> | undefined;
   try {
     lockIdentity = await lock.stat();
+    invocation = { active: true, fd: lock.fd, identities, refs, indexIdentity, markerIdentity, boundary: Object.freeze({
+      preview, message,
+      indexPath: first.state.indexPath, indexLockPath: lockPath, indexDigest: first.state.indexHash,
+      lockDevice: String(lockIdentity.dev), lockInode: String(lockIdentity.ino),
+    }) };
+    nativeInvocations.set(ownedLock, invocation);
     // Hold the real Git index lock throughout final validation and the ref CAS.
-    const latest = await prepare(cwd, preview.paths, preview.mode, first.state.indexPath);
+    const latest = await prepare(cwd, preview.paths, preview.mode, ownedLock);
     if (latest.preview.reviewToken !== preview.reviewToken || latest.preview.tree !== preview.tree) fail("stale preview");
     if (hash(await fs.readFile(first.state.indexPath)) !== first.state.indexHash) fail("index changed");
     await assertCheckout(cwd, preview.branch, preview.head);
@@ -309,25 +444,46 @@ export async function confirmGitCommit(preview: GitCommitPreview, message: strin
     await verifyCommit(cwd, commit, latest.preview.tree, preview.head, message, author, committer);
     // Persist prepared identity BEFORE the ref mutation. A failed journal write
     // leaves only an unreachable object, never a silently unrecorded commit.
-    await beforeRefUpdate?.({ commit, tree: latest.preview.tree, parents: [preview.head], authorEmail });
+    const postguard = await beforeRefUpdate?.({ commit, tree: latest.preview.tree, parents: [preview.head], authorEmail }, ownedLock);
     await assertCheckout(cwd, preview.branch, preview.head);
     const beforeRef = await fs.lstat(lockPath);
     if (beforeRef.dev !== lockIdentity.dev || beforeRef.ino !== lockIdentity.ino) fail("index lock ownership lost");
     // An approval/journal callback can outlive the earlier operation-state check.
     // Ref CAS does not protect sequencer/merge/rebase metadata. Refuse, never continue it.
     await assertNoGitOperation(cwd);
-    if (preview.mode === "staged") {
-      // Journal callbacks and external processes can alter selection, policy or
-      // index bytes while we hold the lock. Ref CAS alone cannot detect that.
-      const final = await prepare(cwd, preview.paths, preview.mode, first.state.indexPath);
-      if (final.preview.reviewToken !== preview.reviewToken || final.preview.tree !== preview.tree ||
-          hash(await fs.readFile(first.state.indexPath)) !== first.state.indexHash) fail("stale preview");
-      const currentLock = await fs.lstat(lockPath);
-      if (currentLock.dev !== lockIdentity.dev || currentLock.ino !== lockIdentity.ino) fail("index lock ownership lost");
+    // BOTH modes recapture real status/index/candidate after awaited journal and
+    // authority callbacks. Whole-file must not install an earlier candidate after
+    // a late worktree write; staged still never imports unstaged/unselected hunks.
+    const final = await prepare(cwd, preview.paths, preview.mode, ownedLock);
+    if (final.preview.reviewToken !== preview.reviewToken || final.preview.tree !== preview.tree ||
+        hash(await fs.readFile(first.state.indexPath)) !== first.state.indexHash) fail("stale preview");
+    if (!readGitCommitNativeBoundary(ownedLock)) fail("index lock ownership or checkout lost");
+    if (postguard !== undefined) {
+      if (typeof postguard !== "function") fail("invalid native authority guard");
+      const result: unknown = postguard();
+      if (result !== undefined) {
+        void Promise.resolve(result).catch(() => {});
+        fail("native authority guard must be synchronous");
+      }
     }
+    // The returned guard is trusted but may itself observe a synchronous external
+    // change. Recheck the native FD/source/ref proof and operation markers after
+    // it too; a final callback can never grant a raw lock or marker exemption.
+    if (!readGitCommitNativeBoundary(ownedLock)) throw new GitCommitOperationError("Git commit unavailable: stale preview or index lock ownership lost");
+    for (const [marker, operation] of operationMarkers) {
+      try {
+        lstatSync(path.join(metadata, marker));
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw new GitCommitOperationError("Git operation state could not be inspected; commit blocked.");
+      }
+      throw new GitCommitOperationError(`Git ${operation} is in progress. Finish or abort it explicitly before requesting a commit.`);
+    }
+    // No await between final synchronous authority/source fence and starting CAS.
     // update-ref is an atomic compare-and-swap. External writers can still race.
     await git(cwd, ["update-ref", preview.branch, commit, preview.head]);
     committed = commit;
+    invocation.active = false;
     await assertCheckout(cwd, preview.branch, commit);
     await lock.writeFile(latest.index);
     await lock.sync();
@@ -344,6 +500,8 @@ export async function confirmGitCommit(preview: GitCommitPreview, message: strin
       parents: [preview.head], authorEmail, reason: "Commit created, but checkout finalization failed" };
     throw error;
   } finally {
+    if (invocation) invocation.active = false;
+    nativeInvocations.delete(ownedLock);
     await lock.close().catch(() => {});
     if (!installed) {
       // Remove only the lock we created, never a replacement belonging to another writer.

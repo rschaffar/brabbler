@@ -22,7 +22,13 @@ await writeFile(verificationShim, `import { runGitVerification as run } from ${J
 import { createTestContainmentBackend } from ${JSON.stringify(backendFixture)};
 export { inspectGitVerificationReceipts } from ${JSON.stringify(realVerification)};
 const backend = createTestContainmentBackend();
-export const runGitVerification = (options: Parameters<typeof run>[0]) => run({ ...options, testContainmentBackend: backend });
+export const runGitVerification = (options: Parameters<typeof run>[0]) => {
+  let policyReads = 0;
+  return run({ ...options, testContainmentBackend: backend,
+    getPolicy: async () => { const policy = await options.getPolicy();
+      await (globalThis as any).__integrationFinalPolicyMutation?.(++policyReads);
+      return policy; } });
+};
 `);
 const jiti = createJiti(import.meta.url, { alias: { "@/lib/git-verification": verificationShim, "@": process.cwd() }, interopDefault: true, moduleCache: false });
 const { GET, POST } = await jiti.import("./route.ts");
@@ -30,12 +36,15 @@ const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
 const { cacheSessionPath, invalidateSessionPathCache, invalidateSessionListCache } = await jiti.import("../../../../lib/session-reader.ts");
 const { appendSessionGitWorkflow } = await jiti.import("../../../../lib/git-workflow-policy.ts");
+const { snapshotManagedSessionGitWorkflow } = await jiti.import("../../../../lib/git-workflow-session.ts");
+const { settingsFromLegacyPolicy } = await jiti.import("../../../../lib/git-workflow-settings.ts");
 const { AgentSessionWrapper } = await jiti.import("../../../../lib/rpc-manager.ts");
 const { acquireGitCheckoutGate, isGitCheckoutGated } = await jiti.import("../../../../lib/git-checkout-gate.ts");
 const { readGitAction, subscribeGitActionUpdates } = await jiti.import("../../../../lib/git-action-journal.ts");
 const { inspectGitOperationAdmission } = await jiti.import("../../../../lib/git-operation-admission.ts");
 const { selectGitProjectResources } = await jiti.import("../../../../lib/git-project-resources.ts");
 const { readProjectAuthorization, saveProjectAuthorization } = await jiti.import("../../../../lib/git-project-authorization.ts");
+const { readGitWorkflowSettingsDocument, writeGitWorkflowSettingsDocument } = await jiti.import("../../../../lib/git-workflow-settings-store.ts");
 const exec = promisify(execFile);
 const git = async (cwd, ...args) => (await exec("git", ["-C", cwd, ...args], { encoding: "utf8" })).stdout.trim();
 const get = (id) => GET(new Request(`http://localhost/api/git/integration?sessionId=${encodeURIComponent(id)}`));
@@ -97,6 +106,42 @@ async function proposal(f) {
   return jsonOK(await post(op(f.id, "plan", { receiptIds: receipts })));
 }
 
+test("FF and non-FF managed receipts survive their own journal and ordinary SDK history, but not changed saved policy or refs", async (t) => {
+  for (const method of ["ff", "merge"]) await t.test(method, async (t) => {
+    const f = await fixture(t); f.policy.integration.method = method;
+    const settings = settingsFromLegacyPolicy(f.policy);
+    snapshotManagedSessionGitWorkflow(f.sm, settings);
+    const before = await jsonOK(await get(f.id));
+    const result = await jsonOK(await post(op(f.id, "verify", { checkIndex: 0 })));
+    assert.equal((await history(result.actionId)).record.state, "succeeded");
+    let current = await jsonOK(await get(f.id));
+    assert.deepEqual(current.review, before.review); assert.deepEqual(current.receipts, [result.receipt]);
+    const manager = SessionManager.open(f.sm.getSessionFile());
+    manager.appendMessage({ role: "toolResult", toolCallId: "ordinary-progress", toolName: "read", content: [{ type: "text", text: "history only" }],
+      isError: false, timestamp: Date.now() });
+    current = await jsonOK(await get(f.id));
+    assert.deepEqual(current.receipts, [result.receipt], "real SDK history must not retire the current check");
+    const proposal = await jsonOK(await post(op(f.id, "plan", { receiptIds: [result.receipt.id] })));
+    assert.deepEqual(proposal.plan.receiptIds, [result.receipt.id]);
+    assert.equal((await history(proposal.actionId)).record.state, "awaiting-decision");
+    assert.equal(await git(f.target, "rev-parse", "HEAD"), before.review.targetOid, "checks/proposals do not update target refs");
+    snapshotManagedSessionGitWorkflow(SessionManager.open(f.sm.getSessionFile()), { ...settings, checks: [{ ...settings.checks[0], label: "changed policy" }] });
+    assert.deepEqual((await jsonOK(await get(f.id))).receipts, []);
+    assert.equal((await post(op(f.id, "plan", { receiptIds: [result.receipt.id] }))).status, 409);
+    snapshotManagedSessionGitWorkflow(SessionManager.open(f.sm.getSessionFile()), settings);
+    assert.deepEqual((await jsonOK(await get(f.id))).receipts, [], "policy restoration must not resurrect the old authority epoch");
+    assert.equal((await post(op(f.id, "plan", { receiptIds: [result.receipt.id] }))).status, 409);
+    const fresh = await jsonOK(await post(op(f.id, "verify", { checkIndex: 0 })));
+    assert.notEqual(fresh.receipt.id, result.receipt.id);
+    assert.deepEqual((await jsonOK(await get(f.id))).receipts, [fresh.receipt]);
+    await writeFile(join(f.feature, "note"), "new committed source\n");
+    await git(f.feature, "add", "note"); await git(f.feature, "commit", "-qm", "source changed");
+    assert.deepEqual((await jsonOK(await get(f.id))).receipts, []);
+    assert.equal((await post(op(f.id, "plan", { receiptIds: [fresh.receipt.id] }))).status, 409);
+    assert.equal(await git(f.target, "rev-parse", "HEAD"), before.review.targetOid);
+  });
+});
+
 test("saved checks and integration Deny are separate live negative overlays on browser actions", async (t) => {
   const f = await fixture(t);
   const selection = await selectGitProjectResources(f.feature);
@@ -115,7 +160,9 @@ test("saved checks and integration Deny are separate live negative overlays on b
   assert.equal((await get(f.id)).status, 200, "read-only review remains available under mutation Deny");
   assert.equal((await post(op(f.id, "plan", { receiptIds: [receipt.id] }))).status, 409);
   await set("integration", "inherit");
-  const candidate = await jsonOK(await post(op(f.id, "plan", { receiptIds: [receipt.id] })));
+  assert.equal((await post(op(f.id, "plan", { receiptIds: [receipt.id] }))).status, 409, "restoring grants cannot restore a retired authority epoch");
+  const fresh = (await jsonOK(await post(op(f.id, "verify", { checkIndex: 0 })))).receipt;
+  const candidate = await jsonOK(await post(op(f.id, "plan", { receiptIds: [fresh.id] })));
   await set("integration", "deny");
   assert.equal((await post(confirm(f.id, candidate))).status, 409);
   assert.equal((await history(candidate.actionId)).record.state, "awaiting-decision");
@@ -530,4 +577,27 @@ test("unknown post-apply exception reports intended facts and recovery, never st
   assert.doesNotMatch(JSON.stringify(result), /refresh|new proposal|secret post-apply/);
   assert.equal(await git(f.target, "rev-parse", "HEAD"), result.intended.mergeOid);
   assert.equal((await history(p.actionId)).record.state, "recovery-required");
+});
+
+test("the real legacy browser caller fences change-and-restore during the last async policy callback without clearing quarantine", async (t) => {
+  const f = await fixture(t), document = readGitWorkflowSettingsDocument(agentDir);
+  const featureHead = await git(f.feature, "rev-parse", "HEAD"), targetHead = await git(f.target, "rev-parse", "HEAD");
+  let mutated = false;
+  globalThis.__integrationFinalPolicyMutation = async (read) => {
+    if (read !== 7) return; // final post-log policy await, immediately before synchronous settlement
+    mutated = true;
+    writeGitWorkflowSettingsDocument({ ...document, paused: true }, agentDir);
+    writeGitWorkflowSettingsDocument(document, agentDir);
+  };
+  let response;
+  try { response = await post(op(f.id, "verify", { checkIndex: 0 })); }
+  finally { delete globalThis.__integrationFinalPolicyMutation; }
+  assert.equal(mutated, true, "fault occurs at the native final awaited policy read, not a source-context bypass");
+  assert.equal(response.status, 409);
+  const result = await response.json(); assert.equal(result.receipt, undefined);
+  const resources = await selectGitProjectResources(f.feature);
+  assert.equal(inspectGitOperationAdmission(agentDir, resources.commonDir).admitted, false);
+  assert.equal((await get(f.id)).status, 409, "a stale synchronous authority stamp cannot release a pending original-unit check");
+  assert.equal(await git(f.feature, "rev-parse", "HEAD"), featureHead);
+  assert.equal(await git(f.target, "rev-parse", "HEAD"), targetHead);
 });

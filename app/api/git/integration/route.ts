@@ -15,6 +15,7 @@ import { assertGitOperationAdmission, beginSupervisedGitOperationIntent, GitOper
 import { selectGitProjectResources } from "@/lib/git-project-resources";
 import { reviewGitBranches, type GitReview } from "@/lib/git-review";
 import { inspectGitVerificationReceipts, runGitVerification } from "@/lib/git-verification";
+import { createGitCheckAuthorityFence } from "@/lib/git-check-authority-fence";
 import { readSessionGitWorkflow } from "@/lib/git-workflow-policy";
 import { assertManagedGitAction, assertManagedGitProjectDenial, assertManagedGitWorkspace, ManagedGitAccessError, watchManagedGitAccess } from "@/lib/git-workflow-access";
 import { samePath, toNativePath } from "@/lib/paths";
@@ -247,7 +248,8 @@ export async function POST(req: Request) {
             watcher.signal.throwIfAborted();
             started = true;
             const receipt = await runGitVerification({ sessionId: id, cwd: c.cwd, agentDir: c.agentDir, review, checkIndex, actionId: handle.record.id,
-              getPolicy: async () => { await guard(); return c.saved; }, isTrusted: c.trusted, signal: watcher.signal });
+              getPolicy: async () => { await guard(); return c.saved; }, isTrusted: c.trusted, signal: watcher.signal,
+              readAuthorityRevisionSync: createGitCheckAuthorityFence({ scope: c.scope, agentDir: c.agentDir, checkouts: [c.cwd, c.targetCwd] }) });
             return NextResponse.json(await finishHumanGitAction(handle,
               { receipt: { id: receipt.id, checkIndex: receipt.checkIndex, startedAt: receipt.startedAt,
                 finishedAt: receipt.finishedAt, logDigest: receipt.logDigest } },

@@ -30,6 +30,11 @@ function store(): Store {
   const global = globalThis as unknown as Record<symbol, Store | undefined>;
   return (global[storeKey] ??= { receipts: new Map(), running: gitCheckRunningCheckouts() });
 }
+const receiptAuthorityKey = Symbol.for("pi-web:git-verification:receipt-authority");
+function receiptAuthorities(): WeakMap<VerificationReceipt, { read: () => string; revision: string }> {
+  const state = globalThis as unknown as Record<symbol, WeakMap<VerificationReceipt, { read: () => string; revision: string }>>;
+  return state[receiptAuthorityKey] ??= new WeakMap();
+}
 function digest(value: string | Buffer): string { return createHash("sha256").update(value).digest("hex"); }
 class VerificationError extends Error {
   constructor(reason: string) { super(`Git verification unavailable: ${reason}`); }
@@ -67,6 +72,15 @@ export function isGitVerificationRunning(cwd: string): boolean {
 export function lookupGitVerificationReceipt(id: string): VerificationReceipt | undefined {
   const receipt = store().receipts.get(id);
   if (receipt) {
+    // Preserve the original trusted writer epoch after publication too. Reading
+    // current policy values alone would resurrect a receipt after a real policy,
+    // tool, trust or navigation change-and-restore. Ordinary history is neutral
+    // in the caller's adapter; never rebaseline it at GET/plan time.
+    const authority = receiptAuthorities().get(receipt);
+    if (authority) {
+      try { if (readGitCheckAuthorityStamp(authority.read) !== authority.revision) throw new Error("receipt authority changed"); }
+      catch { store().receipts.delete(id); receiptAuthorities().delete(receipt); return; }
+    }
     const status = gitCheckReceiptEpochStatus(id);
     if (status === "stale") store().receipts.delete(id);
     if (status !== "current") return;
@@ -452,6 +466,8 @@ async function runVerification(options: GitVerificationOptions): Promise<Verific
       argv: Object.freeze([...check.argv]), startedAt, finishedAt, exitStatus: 0, logDigest: digest(result.log),
     });
     registerGitCheckReceiptEpoch(id, options.agentDir, selection.commonDir, { cohort, settlement, snapshot: pre });
+    if (options.readAuthorityRevisionSync && authorityStamp !== undefined)
+      receiptAuthorities().set(receipt, { read: options.readAuthorityRevisionSync, revision: authorityStamp });
     store().receipts.set(id, receipt);
     completed = true;
     return receipt;

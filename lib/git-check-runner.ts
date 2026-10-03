@@ -5,6 +5,7 @@ import { gitExecEnv } from "./git-exec";
 import path from "node:path";
 import { samePath } from "./paths";
 import { runContainedGitCheck, pinGitCheckCwd, linuxSystemdBackend, consumeLiveContainedGitCheckSuccess,
+  readContainedGitCheckExecutionFacts, type GitContainedCheckExecutionFacts,
   type ContainedCheckResult, type ContainmentBackend } from "./git-check-containment";
 import { beginSupervisedGitOperationIntent, assertGitCheckRecoverySnapshotCapacity, readGitCheckAttemptState,
   gitCheckSnapshotCohortDigest, readUnresolvedGitCheckRecovery, readGitCheckRecoveryEvidence,
@@ -223,6 +224,9 @@ export async function superviseGitCheck(options: {
   captureAfter: () => Promise<GitCheckSnapshot>;
   /** Drain live-revocation probes before the synchronous successful settlement. */
   beforeResolve?: () => Promise<void>;
+  /** Trusted durable lifecycle. Actual measured terminal facts only; the ID is
+   * proposed private evidence, NOT a published receipt. Throws retain quarantine. */
+  onExecution?: (facts: Readonly<GitContainedCheckExecutionFacts>, id: string, passing: boolean) => Promise<void>;
 }): Promise<{ id: string; settlement: GitCheckSettlementAttestation; startedAt: number; finishedAt: number; logDigest: string }> {
   const { before, selection, backend } = options;
   const same = (snapshot: GitCheckSnapshot) => JSON.stringify(before) === JSON.stringify(snapshot);
@@ -237,12 +241,11 @@ export async function superviseGitCheck(options: {
   const attempt = captureLiveGitCheckAttemptBoundary(reservation, options.agentDir, selection.commonDir, before);
   if (!same(await options.revalidate()) || options.signal?.aborted) throw new Error("check changed before launch; recovery required");
   reservation.assertOwned();
-  const startedAt = Date.now();
   const cwdPin = await pinGitCheckCwd(options.cwd);
   let result: Awaited<ReturnType<typeof runContainedGitCheck>>;
   try {
-    if (before.version === 2 ? cwdPin.identityDigest !== before.cwdIdentity :
-      JSON.stringify(cwdPin.instance) !== JSON.stringify(selection.identities.checkout)) throw new Error("physical check cwd changed");
+    if (before.version === 1 ? JSON.stringify(cwdPin.instance) !== JSON.stringify(selection.identities.checkout) :
+      cwdPin.identityDigest !== before.cwdIdentity) throw new Error("physical check cwd changed");
     result = await runContainedGitCheck({ cwd: options.cwd, argv: options.argv, env: options.env,
       timeoutMs: options.timeoutMs, unit: options.unit, signal: options.signal }, backend, { cwdPin,
       beforeRelease: async () => {
@@ -254,29 +257,44 @@ export async function superviseGitCheck(options: {
           throw new Error("synchronous source/authority fence required");
       } });
   } finally { await cwdPin.close(); }
-  const finishedAt = Date.now();
-  let post: GitCheckSnapshot | undefined;
-  try { post = await options.captureAfter(); } catch { /* retain intent */ }
-  if (post && result.cleanupProof && (backend === linuxSystemdBackend || options.testRecoveryEvidence)) {
-    reservation.recordCheckAfter(post, result.cleanupProof, { status: result.status, timedOut: result.timedOut,
-      overflow: result.overflow, containmentComplete: result.containmentComplete,
-      logDigest: gitCheckDigest(result.log), finishedAt }, backend === linuxSystemdBackend ? "linux-systemd" : "node-test-simulated");
+  const facts = readContainedGitCheckExecutionFacts(result);
+  if (!facts) throw new Error("actual protocol measurement required");
+  const { startedAt, finishedAt, logDigest } = facts, id = randomUUID();
+  let notified = false;
+  const notify = async (passing: boolean) => {
+    notified = true; // callback failure must never invoke a second/reentrant success
+    await options.onExecution?.(facts, id, passing);
+  };
+  try {
+    let post: GitCheckSnapshot | undefined;
+    try { post = await options.captureAfter(); } catch { /* retain intent */ }
+    if (post && result.cleanupProof && (backend === linuxSystemdBackend || options.testRecoveryEvidence)) {
+      reservation.recordCheckAfter(post, result.cleanupProof, { status: result.status, timedOut: result.timedOut,
+        overflow: result.overflow, containmentComplete: result.containmentComplete,
+        logDigest, finishedAt }, backend === linuxSystemdBackend ? "linux-systemd" : "node-test-simulated");
+    }
+    await saveGitCheckPrivateLog(options.agentDir, id, result.log);
+    if (options.signal?.aborted || result.status !== 0 || result.timedOut || result.overflow || !result.containmentComplete ||
+      !post || !same(post) || (backend === linuxSystemdBackend && !result.cleanupProof)) {
+      throw new Error("check failed or changed; recovery required");
+    }
+    await options.beforeResolve?.();
+    let fresh = await options.revalidate();
+    if (options.signal?.aborted || !same(fresh)) throw new Error("check changed; recovery required");
+    if (typeof options.assertCurrentSync !== "function" || gitCheckSyncValue(options.assertCurrentSync()) !== undefined)
+      throw new Error("synchronous settlement fence required");
+    // Durable journal FIRST, then revalidate after its await, then seal admission.
+    // No passing receipt exists at any point inside the callback.
+    await notify(true);
+    if (options.onExecution) fresh = await options.revalidate();
+    if (options.signal?.aborted || !same(fresh) || gitCheckSyncValue(options.assertCurrentSync()) !== undefined)
+      throw new Error("check changed during durable recording; recovery required");
+    const settlement = settleLiveGitCheck({ reservation, result, agentDir: options.agentDir, commonDir: selection.commonDir, before, after: fresh, attempt });
+    settled = true;
+    return { id, settlement, startedAt, finishedAt, logDigest };
+  } catch (cause) {
+    if (!notified) await notify(false);
+    throw cause;
   }
-  const id = randomUUID();
-  await saveGitCheckPrivateLog(options.agentDir, id, result.log);
-  if (options.signal?.aborted || result.status !== 0 || result.timedOut || result.overflow || !result.containmentComplete ||
-    !post || !same(post) || (backend === linuxSystemdBackend && !result.cleanupProof)) {
-    throw new Error("check failed or changed; recovery required");
-  }
-  await options.beforeResolve?.();
-  const fresh = await options.revalidate();
-  // Recheck cancellation AFTER asynchronous validation, immediately before the
-  // owner's synchronous settlement. Late revocation cannot release quarantine.
-  if (options.signal?.aborted || !same(fresh)) throw new Error("check changed; recovery required");
-  if (typeof options.assertCurrentSync !== "function" || gitCheckSyncValue(options.assertCurrentSync()) !== undefined)
-    throw new Error("synchronous settlement fence required");
-  const settlement = settleLiveGitCheck({ reservation, result, agentDir: options.agentDir, commonDir: selection.commonDir, before, after: fresh, attempt });
-  settled = true;
-  return { id, settlement, startedAt, finishedAt, logDigest: gitCheckDigest(result.log) };
   } finally { if (!settled) fenceGitCheckReceiptCohort(options.agentDir, selection.commonDir); }
 }

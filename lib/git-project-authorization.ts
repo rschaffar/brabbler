@@ -14,7 +14,7 @@ import type { SessionEntry } from "./types";
 
 /** Standing decisions are metadata only. No operation gate may rely on this
  * module alone; recovery, candidate admission and dispatch are not complete. */
-export const PROJECT_AUTHORIZATION_ACTIONS = ["workspace", "commit", "checks", "integration"] as const;
+export const PROJECT_AUTHORIZATION_ACTIONS = ["workspace", "commit", "checks", "prepare", "integration", "cleanup"] as const;
 export type ProjectAuthorizationAction = typeof PROJECT_AUTHORIZATION_ACTIONS[number];
 export type ProjectAuthorizationScope = "global" | "project" | "session";
 export type ProjectAuthorizationDecision = "allow" | "deny" | "inherit";
@@ -24,7 +24,7 @@ type ProjectIdentity = { project: Identity; common: Identity };
 type RecordEntry = { scope: ProjectAuthorizationScope; action: ProjectAuthorizationAction; decision: "allow" | "deny";
   projectRoot?: string; projectIdentity?: ProjectIdentity; sessionId?: string; sessionFile?: string; sessionCwd?: string;
   sessionInstance?: string; sessionPolicy?: string };
-type Document = { version: 2; revision: string; grants: RecordEntry[] };
+type Document = { version: 3; revision: string; grants: RecordEntry[] };
 export type ProjectAuthorizationStatus = { revision: string; policyRevision: string; approvalToken: false;
   actions: Record<ProjectAuthorizationAction, { global: ProjectAuthorizationDecision; project: ProjectAuthorizationDecision | "stale";
     session: ProjectAuthorizationDecision | "stale"; effective: "allow" | "deny" | "none"; source: ProjectAuthorizationScope | "none" }> };
@@ -56,22 +56,26 @@ function validateProjectIdentity(value: unknown): ProjectIdentity {
 }
 function documentFromDisk(agentDir: string): Document {
   const parent = gitWorkflowPrivateParent(agentDir);
-  if (!parent) return { version: 2, revision: "none", grants: [] };
+  if (!parent) return { version: 3, revision: "none", grants: [] };
   let bytes: Buffer;
   try { bytes = readBindingFile(join(parent, "git-project-authorizations.json"), MAX_DOCUMENT_BYTES, true).bytes; }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 2, revision: "none", grants: [] };
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 3, revision: "none", grants: [] };
     throw error;
   }
   const data = bindingFields(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)), ["version", "revision", "grants"]);
+  // v2 records retain their exact actions/identity/revision; missing prepare and
+  // cleanup mean no decision, never an alias of commit. Reads do not migrate disk.
   // No legacy import: v1 session-only records are not standing scoped grants.
-  if (data.version !== 2 || typeof data.revision !== "string" || !REVISION.test(data.revision)
+  if ((data.version !== 2 && data.version !== 3) || typeof data.revision !== "string" || !REVISION.test(data.revision)
     || !Array.isArray(data.grants) || data.grants.length > MAX_GRANTS) throw new ProjectAuthorizationError("Unsupported project authorization document");
   const seen = new Set<string>();
   const grants = data.grants.map((item: unknown) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new ProjectAuthorizationError("Invalid authorization record");
     const raw = item as Record<string, unknown>;
-    if (!scopeIsValid(raw.scope) || !actionIsValid(raw.action) || (raw.decision !== "allow" && raw.decision !== "deny")) {
+    if (!scopeIsValid(raw.scope) || !actionIsValid(raw.action)
+      || data.version === 2 && (raw.action === "prepare" || raw.action === "cleanup")
+      || (raw.decision !== "allow" && raw.decision !== "deny")) {
       throw new ProjectAuthorizationError("Invalid authorization record");
     }
     const fields = raw.scope === "global" ? ["scope", "action", "decision"] : raw.scope === "project"
@@ -99,13 +103,13 @@ function documentFromDisk(agentDir: string): Document {
     seen.add(key);
     return row;
   });
-  return { version: 2, revision: data.revision, grants };
+  return { version: 3, revision: data.revision, grants };
 }
 function writeDocument(agentDir: string, grants: RecordEntry[]): void {
   if (grants.length > MAX_GRANTS) throw new ProjectAuthorizationError("Too many project authorizations");
   const parent = gitWorkflowPrivateParent(agentDir, true)!;
   documentFromDisk(agentDir); // Never overwrite a newer/corrupt schema.
-  const bytes = JSON.stringify({ version: 2, revision: randomUUID(), grants } satisfies Document);
+  const bytes = JSON.stringify({ version: 3, revision: randomUUID(), grants } satisfies Document);
   if (Buffer.byteLength(bytes) > MAX_DOCUMENT_BYTES) throw new ProjectAuthorizationError("Too many project authorizations");
   writePrivateFileAtomicSync(join(parent, "git-project-authorizations.json"), bytes);
   syncGitWorkflowDirectory(parent);

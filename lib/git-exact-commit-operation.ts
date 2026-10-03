@@ -1,26 +1,30 @@
-import { confirmGitCommit, prepareGitCommit, GitCommitOperationError, type GitCommitMode, type GitCommitPreview, type GitCommitResult } from "./git-commit";
+import { confirmGitCommit, prepareGitCommit, captureGitCommitProtectedBoundary, GitCommitOperationError, type GitCommitMode, type GitCommitPreview, type GitCommitResult } from "./git-commit";
 import { failGitAction, snapshotGitActionCandidate, GitActionApplyError, GitActionRecordingError, type GitActionHandle } from "./git-action-controller";
 import type { GitActionCandidateSnapshot } from "./git-action-types";
 import { getGitCommitTreeOid, getGitTreeDiff, GitReviewError, GIT_REVIEW_DIFF_MAX_BYTES } from "./git-review";
 import { beginSupervisedGitOperationIntent, revalidateGitCommitAdmission, GitOperationRecoveryError, type GitOperationReservation } from "./git-operation-admission";
 import type { GitProjectResources } from "./git-project-resources";
+import { captureGitCommitVerification, bindGitCommitVerification, revalidateGitCommitVerification,
+  type GitCommitVerificationContext, type GitCommitVerificationHandle, type GitCommitProtectedBoundary } from "./git-commit-verification";
 
 /** Run under the caller's capture gate. Only the browser may offer an oversized
  * patch as explicitly unavailable; the agent's Ask card still requires a diff. */
 export async function captureExactCommitCandidate(cwd: string, paths: string[], message: string, mode: GitCommitMode,
-  allowOversizedDiff = false) {
+  allowOversizedDiff = false, verificationContext?: GitCommitVerificationContext) {
+  const verification = await captureGitCommitVerification(cwd, verificationContext);
   const preview = await prepareGitCommit(cwd, paths, mode);
+  bindGitCommitVerification(verification.handle, preview, message);
   const parentTree = await getGitCommitTreeOid(cwd, preview.head);
   try {
     const diff = await getGitTreeDiff(cwd, parentTree, preview.tree);
     const candidate = { kind: "commit" as const, preview, message, diff };
-    return { preview, candidate, snapshot: snapshotGitActionCandidate(candidate), candidateDiff: diff, candidateDiffUnavailable: undefined };
+    return { preview, candidate, snapshot: snapshotGitActionCandidate(candidate), candidateDiff: diff, candidateDiffUnavailable: undefined, verification };
   } catch (cause) {
     if (!allowOversizedDiff || !(cause instanceof GitReviewError) || cause.code !== "DIFF_TOO_LARGE") throw cause;
     const candidateDiffUnavailable = `Candidate patch exceeds the ${GIT_REVIEW_DIFF_MAX_BYTES / (1024 * 1024)} MB limit; review the whole-file candidate tree before confirming.`;
     const snapshot: GitActionCandidateSnapshot = { kind: "commit", repositoryRoot: cwd, featureBranch: preview.branch, message,
       commitMode: preview.mode, paths: [...preview.paths], parentOid: preview.head, candidateTreeOid: preview.tree, diffUnavailable: candidateDiffUnavailable };
-    return { preview, candidate: undefined, snapshot, candidateDiff: undefined, candidateDiffUnavailable };
+    return { preview, candidate: undefined, snapshot, candidateDiff: undefined, candidateDiffUnavailable, verification };
   }
 }
 
@@ -30,7 +34,11 @@ export async function captureExactCommitCandidate(cwd: string, paths: string[], 
 export async function applyExactCommitOperation<T>(options: {
   handle: GitActionHandle; preview: GitCommitPreview; message: string; selection: GitProjectResources;
   signal?: AbortSignal; agentDir?: string;
-  beforeApply: () => Promise<void>;
+  beforeApply: (protectedBoundary?: GitCommitProtectedBoundary) => Promise<void | (() => void)>;
+  /** Server-only source B callbacks/IDs, independent of old caller A policy. */
+  verificationContext?: GitCommitVerificationContext;
+  /** Process-owned capture result; never reconstruct from JSON/history. */
+  verificationHandle?: GitCommitVerificationHandle;
   /** The agent previously revalidated before writing intent; the browser did
    * so in the native callback. Neither actor's admission order is relaxed. */
   revalidateBeforeIntent?: boolean;
@@ -45,20 +53,51 @@ export async function applyExactCommitOperation<T>(options: {
   let applying = false;
   let reservation: Awaited<ReturnType<typeof beginSupervisedGitOperationIntent>> | undefined;
   try {
+    if (selection.cwd !== preview.repositoryRoot || `refs/heads/${selection.branch}` !== preview.branch) {
+      throw new GitCommitOperationError("Git commit source does not match the captured physical checkout.");
+    }
+    // Even legacy/manual apply callers that omit both new fields must discover
+    // the actual canonical source prerequisites. No optional-callback bypass.
+    let verificationHandle = options.verificationHandle;
+    if (!verificationHandle) {
+      const captured = await captureGitCommitVerification(preview.repositoryRoot, options.verificationContext);
+      verificationHandle = captured.handle;
+      bindGitCommitVerification(verificationHandle, preview, message);
+    }
     await options.beforeApply();
     options.signal?.throwIfAborted();
+    const beforeIntentGuard = await revalidateGitCommitVerification(verificationHandle, preview, message, undefined, handle.record.sessionId);
     if (options.revalidateBeforeIntent) await revalidateGitCommitAdmission(selection);
+    beforeIntentGuard();
     reservation = await beginSupervisedGitOperationIntent(selection, handle.record.id, "commit", options.agentDir);
-    const result = await confirmGitCommit(preview, message, async (intended) => {
+    const result = await confirmGitCommit(preview, message, async (intended, ownedLock) => {
       // No ref CAS until the exact object identity is durable and access is live.
       await handle.update("executing", { intended });
-      await options.beforeApply();
+      const protectedBoundary = captureGitCommitProtectedBoundary(ownedLock, reservation!, selection, options.agentDir);
+      const authorityGuard = await options.beforeApply(protectedBoundary);
       options.signal?.throwIfAborted();
       await revalidateGitCommitAdmission(selection);
+      const evidenceGuard = await revalidateGitCommitVerification(verificationHandle!, preview, message, protectedBoundary, handle.record.sessionId);
       reservation!.assertOwned();
-      options.beforeRefUpdate?.(reservation!);
-      options.atRefBoundary?.();
-      applying = true;
+      // Native runs this AFTER its post-await real status/index recapture and
+      // immediately before starting ref CAS. No optimistic async authority stamp.
+      return () => {
+        options.signal?.throwIfAborted();
+        reservation!.assertOwned();
+        options.beforeRefUpdate?.(reservation!);
+        options.atRefBoundary?.();
+        if (authorityGuard !== undefined) {
+          if (typeof authorityGuard !== "function") throw new Error("Git commit authority guard must be synchronous");
+          const value: unknown = authorityGuard();
+          if (value !== undefined) {
+            void Promise.resolve(value).catch(() => {});
+            throw new Error("Git commit authority guard must be synchronous");
+          }
+        }
+        evidenceGuard();
+        reservation!.assertOwned();
+        applying = true;
+      };
     });
     const recorded = await options.finish(result);
     if (options.shouldResolve(result, recorded)) {

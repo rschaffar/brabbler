@@ -1,12 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { gitExecEnv } from "./git-exec";
+import { readGitWorkspaceNativeProof, type GitWorkspaceEvidence, type GitWorkspaceCompletedProof } from "./git-workspace-operation";
+import type { GitCleanupEvidence, GitCleanupRemovalProof, GitCleanupCompletedProof } from "./git-cleanup-operation";
 import fs from "node:fs";
 import path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { selectGitProjectResources, revalidateGitProjectResources, registeredGitProjectCheckoutPaths,
-  registeredGitProjectCheckoutPathsSync, type GitProjectResources } from "./git-project-resources";
+  registeredGitProjectCheckoutPathsSync, parseBoundedGitWorktreePaths, type GitProjectResources } from "./git-project-resources";
 import { readGitAction } from "./git-action-journal";
 import { GIT_ACTION_ID_PATTERN, type GitActionKind, type GitActionResourceAttribution } from "./git-action-types";
 import { samePath } from "./paths";
+import { validLocalBranchName } from "./git-workflow-policy";
 
 /**
  * Server-only conservative admission ledger for supervised Git operations. A reservation
@@ -26,8 +31,19 @@ import { samePath } from "./paths";
 const MAX_ENTRIES = 1024;
 const entryLimit = () => process.env.NODE_TEST_CONTEXT && process.env.PI_WEB_GIT_ADMISSION_TEST_LIMIT === "32" ? 32 : MAX_ENTRIES;
 const MAX_DOCUMENT = 4096;
-type GitOperationIntentKind = GitActionKind | "prepare";
-const KINDS: readonly GitOperationIntentKind[] = ["commit", "review", "checks", "integration", "prepare"];
+type GitOperationIntentKind = GitActionKind | "prepare" | "workspace" | "cleanup";
+const KINDS: readonly GitOperationIntentKind[] = ["commit", "review", "checks", "integration", "prepare", "workspace", "cleanup"];
+export type GitNativeEvidenceStage = "binding" | "removal" | "completed" | "failure";
+/** Trusted native verifier's identity reader, never reconstructed from a payload. */
+export type GitNativeProofReader = (handle: unknown) => unknown;
+/** Process-only, identity-issued seal. Serialized copies never resolve an intent. */
+export type GitNativeEvidenceSeal = Readonly<{ id: string; actionId: string; stage: GitNativeEvidenceStage; sha256: string }>;
+type NativeArtifact = { version: 1; id: string; actionId: string; kind: "workspace" | "cleanup"; resource: string;
+  stage: GitNativeEvidenceStage; bindingSha256: string | null; removalSha256: string | null; payload: unknown };
+const MAX_NATIVE_DOCUMENT = 2 * 1024 * 1024;
+// A low-level path-only reservation may quarantine, but cannot settle native
+// mutations without the supervised physical inventory verifier's private seal.
+const verifiedNativeInventorySeals = new WeakSet<object>();
 type Phase = "intent" | "resolved";
 /** Caller attests to a completed native preparation AND a verified final repository
  * state (including no operation markers). A preflight snapshot, planned OID,
@@ -51,7 +67,17 @@ export type GitSelectedCheckSnapshot = { version: 2; checkoutPath: string; check
   resourceIdentity: string; branch: string; head: string; tree: string; index: string; status: string; refs: string;
   policyDigest: string; policyRevision: string; recipeDigest: string; checkDigest: string;
   cwdIdentity: string; environmentDigest: string; stageDigest: string };
-export type GitCheckSnapshot = GitPairedCheckSnapshot | GitSelectedCheckSnapshot;
+/** Strict new working-workspace evidence. Never relabel v1/v2 or claim the
+ * eventual candidate tree was tested. Digests bind actual content AND index. */
+export type GitWorkingWorkspaceCheckSnapshot = Omit<GitSelectedCheckSnapshot, "version"> & {
+  version: 3; evidenceScope: "working-workspace"; candidateTreeVerified: false; repositoryChecksWaived: false;
+  workspaceManifestVersion: 2; workspaceContentDigest: string; workspaceIndexDigest: string;
+  workspaceCoverage: "tracked-index-head-union-and-nonignored-physical-workspace";
+  ignoredCachesCovered: false; externalInputsCovered: false;
+  workspaceSummary: Readonly<{ paths: number; tracked: number; untracked: number; regularFiles: number; symlinks: number;
+    absent: number; directories: number; totalBytes: number; indexBytes: number }>;
+};
+export type GitCheckSnapshot = GitPairedCheckSnapshot | GitSelectedCheckSnapshot | GitWorkingWorkspaceCheckSnapshot;
 export type GitCheckCleanupProof = { unit: string; cgroupIdentity: string; invocation: string; empty: true;
   emptyEvidence: "pinned-populated-zero" | "verified-removed"; terminal: true;
   payload: "release-attempted" | "prevented-before-write" };
@@ -63,7 +89,7 @@ type CheckPost = { version: 1; id: string; actionId: string; resource: string; u
   source: "linux-systemd" | "node-test-simulated" };
 type Evidence = { version: 1; id: string; actionId: string; kind: GitOperationIntentKind; resource: string;
   phase: Phase; createdAt: number; resolvedAt?: number; checkUnit?: string; disposition?: "recovered";
-  prepareOutcome?: GitPrepareOutcomeProof };
+  prepareOutcome?: GitPrepareOutcomeProof; nativeOutcomeSha256?: string };
 /** Construct only on the server after an explicit human review of this exact check.
  * This is an assertion by the caller, not a substitute for repository/process revalidation. */
 type CheckReviewIdentity = Readonly<{ id: string; actionId: string; resource: string; unit: string; proofIdentifier: string }>;
@@ -90,9 +116,50 @@ export interface GitOperationReservation {
   /** Recheck durable reservation and intent inside the final native apply gate. */
   assertOwned(): void;
   /** Immutable recovery artifacts only; neither method releases quarantine. */
+  /** Trusted native callback only. Publication is immutable and does NOT release.
+   * Workspace completion authenticates the leaf's private proof identity. */
+  recordNativeEvidence(stage: GitNativeEvidenceStage, payload: unknown, nativeReader?: GitNativeProofReader): GitNativeEvidenceSeal;
+  /** Only THIS live reservation's identity-issued completed seal can settle it. */
+  resolveNativeOutcome(seal: GitNativeEvidenceSeal): void;
   recordCheckBefore(snapshot: GitCheckSnapshot): void;
   recordCheckAfter(snapshot: GitCheckSnapshot, proof: GitCheckCleanupProof, outcome: GitCheckOutcome,
     source: "linux-systemd" | "node-test-simulated"): void;
+}
+export type GitOperationReservationOwner = Readonly<{ id: string; actionId: string; kind: GitOperationIntentKind; agentDir: string;
+  selection: Readonly<GitProjectResources> }>;
+const reservationOwners = new WeakMap<object, { owner: GitOperationReservationOwner; assertOwned: () => void; agentDir: string }>();
+function freezeOwner<T>(value: T): T {
+  if (value && typeof value === "object") { for (const item of Object.values(value)) freezeOwner(item); Object.freeze(value); }
+  return value;
+}
+function issueReservationOwner(op: GitOperationReservation, selection: GitProjectResources, kind: GitOperationIntentKind, agentDir: string) {
+  reservationOwners.set(op, { owner: freezeOwner({ id: op.id, actionId: op.actionId, kind, agentDir, selection: structuredClone(selection) }),
+    assertOwned: op.assertOwned, agentDir });
+  return op;
+}
+/** Narrow identity reader for the native protected commit boundary. No grant,
+ * action-ID lookup or structural assertOwned interface. Keep the SAME held owner.
+ * Directory/marker replacement, another intent, corruption and resolution deny. */
+export function readGitOperationReservationOwner(handle: unknown): GitOperationReservationOwner | undefined {
+  if (!handle || typeof handle !== "object") return undefined;
+  const saved = reservationOwners.get(handle); if (!saved) return undefined;
+  try {
+    saved.assertOwned();
+    const r = saved.owner.selection;
+    for (const [dir, expected] of [[r.projectRoot, r.identities.project], [r.cwd, r.identities.checkout],
+      [r.commonDir, r.identities.common], [r.gitDir, r.identities.git]] as const) {
+      const s = fs.lstatSync(dir, { bigint: true });
+      if (!s.isDirectory() || s.isSymbolicLink() || fs.realpathSync(dir) !== dir ||
+        JSON.stringify({ device: String(s.dev), inode: String(s.ino), birthtime: String(s.birthtimeNs) }) !== JSON.stringify(expected)) return undefined;
+    }
+    const marker = fs.lstatSync(path.join(r.cwd, ".git"), { bigint: true });
+    if (marker.isSymbolicLink() || (!marker.isDirectory() && !marker.isFile()) ||
+      JSON.stringify({ device: String(marker.dev), inode: String(marker.ino), birthtime: String(marker.birthtimeNs),
+        ...(marker.isFile() ? { changed: String(marker.ctimeNs), size: String(marker.size) } : {}) }) !== JSON.stringify(r.identities.marker)) return undefined;
+    const status = inspectGitOperationAdmission(saved.agentDir, r.commonDir);
+    if (status.reason !== "unresolved" || status.actionIds.length !== 1 || status.actionIds[0] !== saved.owner.actionId) return undefined;
+    return saved.owner;
+  } catch { return undefined; }
 }
 function deny(): never { throw new Error("Git operation admission unavailable; inspect the resource ledger manually"); }
 const sha = (s: string | Buffer) => createHash("sha256").update(s).digest("hex");
@@ -114,13 +181,28 @@ const CURRENT_STATE_KEYS = SNAPSHOT_KEYS.filter((key) => key !== "reviewDigest")
 const SELECTED_SNAPSHOT_KEYS = ["version", "checkoutPath", "checkoutIdentity", "resourceIdentity",
   "branch", "head", "tree", "index", "status", "refs", "policyDigest", "policyRevision", "recipeDigest",
   "checkDigest", "cwdIdentity", "environmentDigest", "stageDigest"];
+const WORKING_SNAPSHOT_KEYS = [...SELECTED_SNAPSHOT_KEYS, "evidenceScope", "candidateTreeVerified", "repositoryChecksWaived",
+  "workspaceManifestVersion", "workspaceContentDigest", "workspaceIndexDigest", "workspaceCoverage", "ignoredCachesCovered", "externalInputsCovered", "workspaceSummary"];
+const WORKING_SUMMARY_KEYS = ["paths", "tracked", "untracked", "regularFiles", "symlinks", "absent", "directories", "totalBytes", "indexBytes"];
+function validWorkingSummary(value: unknown): boolean {
+  if (!keys(value, WORKING_SUMMARY_KEYS) || !Object.values(value).every((v) => Number.isSafeInteger(v) && (v as number) >= 0)) return false;
+  const s = value as GitWorkingWorkspaceCheckSnapshot["workspaceSummary"];
+  return s.paths <= 20000 && s.directories <= 1024 && s.totalBytes <= 128 * 1024 * 1024 && s.indexBytes <= 16 * 1024 * 1024 &&
+    s.tracked + s.untracked === s.paths && s.regularFiles + s.symlinks + s.absent + s.directories === s.paths;
+}
 function validSnapshot(value: unknown): value is GitCheckSnapshot {
   // Keep v1 validation and serialization unchanged. Strict alternatives refuse
   // mixed snapshots, unknown fields and version relabelling, even with valid hashes.
   return keys(value, SNAPSHOT_KEYS) && value.version === 1 &&
     SNAPSHOT_KEYS.slice(1).every((key) => HASH.test(value[key] as string)) ||
     keys(value, SELECTED_SNAPSHOT_KEYS) && value.version === 2 &&
-    SELECTED_SNAPSHOT_KEYS.slice(1).every((key) => HASH.test(value[key] as string));
+    SELECTED_SNAPSHOT_KEYS.slice(1).every((key) => HASH.test(value[key] as string)) ||
+    keys(value, WORKING_SNAPSHOT_KEYS) && value.version === 3 &&
+    SELECTED_SNAPSHOT_KEYS.slice(1).every((key) => HASH.test(value[key] as string)) && value.stageDigest === sha("commit") &&
+    value.evidenceScope === "working-workspace" && value.candidateTreeVerified === false && value.repositoryChecksWaived === false &&
+    value.workspaceManifestVersion === 2 && HASH.test(value.workspaceContentDigest as string) && HASH.test(value.workspaceIndexDigest as string) &&
+    value.workspaceCoverage === "tracked-index-head-union-and-nonignored-physical-workspace" && value.ignoredCachesCovered === false &&
+    value.externalInputsCovered === false && validWorkingSummary(value.workspaceSummary);
 }
 function validCurrentState(value: unknown): value is GitCheckRecoveryCurrentState {
   return keys(value, CURRENT_STATE_KEYS) && value.version === 1 &&
@@ -188,9 +270,9 @@ function makeDir(dir: string): void {
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
   directory(dir);
 }
-function readFile(file: string): Buffer {
+function readFile(file: string, limit = MAX_DOCUMENT): Buffer {
   const stat = fs.lstatSync(file);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > MAX_DOCUMENT
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > limit
     || (process.platform !== "win32" && (stat.mode & 0o077) !== 0)) deny();
   const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
   try {
@@ -219,7 +301,8 @@ function load(file: string, resource: string, id: string): Evidence {
     ...(typeof (value as Record<string, unknown>)?.resolvedAt === "number" ? ["resolvedAt"] : []),
     ...(typeof (value as Record<string, unknown>)?.checkUnit === "string" ? ["checkUnit"] : []),
     ...(Object.hasOwn(value as object, "disposition") ? ["disposition"] : []),
-    ...(Object.hasOwn(value as object, "prepareOutcome") ? ["prepareOutcome"] : [])]) ||
+    ...(Object.hasOwn(value as object, "prepareOutcome") ? ["prepareOutcome"] : []),
+    ...(Object.hasOwn(value as object, "nativeOutcomeSha256") ? ["nativeOutcomeSha256"] : [])]) ||
     value.version !== 1 || value.id !== id || !uuid(value.actionId) || !KINDS.includes(value.kind as GitOperationIntentKind) ||
     value.resource !== resource || !["intent", "resolved"].includes(value.phase as string) ||
     (value.kind === "checks" ? !CHECK_UNIT.test(value.checkUnit as string) : Object.hasOwn(value, "checkUnit")) ||
@@ -229,8 +312,235 @@ function load(file: string, resource: string, id: string): Evidence {
     (Object.hasOwn(value, "disposition") && (value.disposition !== "recovered" || value.phase !== "resolved" || value.kind !== "checks")) ||
     (value.kind === "prepare" && value.phase === "resolved" ? !validPrepareOutcome(value.prepareOutcome) :
       Object.hasOwn(value, "prepareOutcome")) ||
+    (["workspace", "cleanup"].includes(value.kind as string) && value.phase === "resolved" ? !HASH.test(value.nativeOutcomeSha256 as string) :
+      Object.hasOwn(value, "nativeOutcomeSha256")) ||
     outer.sha256 !== sha(JSON.stringify(value)) || !bytes.equals(Buffer.from(encode(value as Evidence)))) deny();
   return value as unknown as Evidence;
+}
+function nativeKind(record: Evidence): record is Evidence & { kind: "workspace" | "cleanup" } {
+  return record.kind === "workspace" || record.kind === "cleanup";
+}
+function nativeObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
+}
+function validIdentity(value: unknown): boolean {
+  return keys(value, ["device", "inode", "birthtime"]) && Object.values(value).every((v) => typeof v === "string" && /^[0-9]{1,30}$/.test(v));
+}
+function validResource(value: unknown, common: string): value is GitProjectResources {
+  if (!keys(value, ["projectRoot", "cwd", "branch", "commonDir", "gitDir", "identities"]) || value.commonDir !== common ||
+    ![value.projectRoot, value.cwd, value.commonDir, value.gitDir].every((v) => typeof v === "string" && path.isAbsolute(v) &&
+      path.resolve(v) === v && v.length <= 4096 && !/[\x00-\x1f\x7f]/.test(v)) ||
+    !validLocalBranchName(value.branch) ||
+    !keys(value.identities, ["project", "checkout", "common", "git", "marker"])) return false;
+  const ids = value.identities;
+  return [ids.project, ids.checkout, ids.common, ids.git].every(validIdentity) && nativeObject(ids.marker) &&
+    keys(ids.marker, ["device", "inode", "birthtime", ...(Object.hasOwn(ids.marker, "changed") ? ["changed", "size"] : [])]) &&
+    Object.values(ids.marker).every((v) => typeof v === "string" && /^[0-9]{1,30}$/.test(v));
+}
+function validNativeInventory(value: unknown, cleanup: boolean): boolean {
+  if (!keys(value, cleanup ? ["refs", "registrations", "admins", "checkouts"] : ["refs", "registrations", "checkouts"]) ||
+    typeof value.refs !== "string" || Buffer.byteLength(value.refs) > 512 * 1024 || value.refs.split("\n").length > 2001 ||
+    typeof value.registrations !== "string" || !nativeObject(value.checkouts)) return false;
+  const refRows = value.refs.split("\n");
+  if (refRows.pop() !== "" || refRows.some((row) => !/^refs\/[^\x00-\x20\x7f]+\0(?:[a-f0-9]{40}|[a-f0-9]{64})\0(?:refs\/[^\x00-\x20\x7f]+)?$/.test(row)) ||
+    new Set(refRows.map((row) => row.split("\0")[0])).size !== refRows.length) return false;
+  const paths = parseBoundedGitWorktreePaths(Buffer.from(value.registrations));
+  if (JSON.stringify(Object.keys(value.checkouts)) !== JSON.stringify(paths) || !Object.values(value.checkouts).every(validIdentity)) return false;
+  return !cleanup || nativeObject(value.admins) && Object.keys(value.admins).length <= 256 &&
+    Object.entries(value.admins).every(([key, digest]) => key.length <= 4096 && !/[\/\x00-\x1f\x7f]/.test(key) && HASH.test(digest as string));
+}
+function validWorkspaceSnapshot(value: unknown, r: GitProjectResources): boolean {
+  return keys(value, ["ref", "oid", "indexDigest", "headDigest", "indexIdentity", "headIdentity", "trackedFilesDigest", "configDigest"]) &&
+    value.ref === `refs/heads/${r.branch}` && OID.test(value.oid as string) &&
+    [value.indexDigest, value.headDigest, value.trackedFilesDigest, value.configDigest].every((v) => HASH.test(v as string)) &&
+    validIdentity(value.indexIdentity) && validIdentity(value.headIdentity);
+}
+function validWorkspaceRequest(e: GitWorkspaceEvidence): boolean {
+  const r = e.request;
+  return keys(r, ["repositoryPath", "sourceCheckoutPath", "destinationPath", "branch", "baseBranch", "expectedBaseOid", "mode",
+    ...(r?.mode === "attach" ? ["expectedTipOid"] : [])]) && ["create", "attach"].includes(r.mode) &&
+    r.repositoryPath === e.source.projectRoot && r.sourceCheckoutPath === e.source.cwd &&
+    typeof r.destinationPath === "string" && path.isAbsolute(r.destinationPath) && path.resolve(r.destinationPath) === r.destinationPath &&
+    r.destinationPath.length <= 4096 && !/[\x00-\x1f\x7f]/.test(r.destinationPath) && validLocalBranchName(r.branch) && validLocalBranchName(r.baseBranch) &&
+    OID.test(r.expectedBaseOid) && e.resultOid === (r.mode === "create" ? r.expectedBaseOid : r.expectedTipOid) &&
+    (r.mode !== "attach" || OID.test(r.expectedTipOid)) && validWorkspaceSnapshot(e.sourceSnapshot, e.source) &&
+    (!e.baseCheckout || validWorkspaceSnapshot(e.baseSnapshot, e.baseCheckout)) &&
+    (e.parentIdentity ? validIdentity(e.parentIdentity) : !!e.parentCreation &&
+      keys(e.parentCreation, ["path", "expectedAbsent", "ancestorPath", "ancestorIdentity", "mode"]) &&
+      e.parentCreation.path === path.dirname(r.destinationPath) && e.parentCreation.path === `${e.source.projectRoot}-worktrees` &&
+      e.parentCreation.expectedAbsent === true && e.parentCreation.mode === 0o700 &&
+      e.parentCreation.ancestorPath === path.dirname(e.source.projectRoot) && validIdentity(e.parentCreation.ancestorIdentity));
+}
+function workspaceBinding(payload: unknown): { evidence: GitWorkspaceEvidence; checkouts: Record<string, GitProjectResources["identities"]["checkout"]> } {
+  if (!keys(payload, ["evidence", "checkouts"]) || !nativeObject(payload.evidence)) deny();
+  return payload as unknown as ReturnType<typeof workspaceBinding>;
+}
+function encodeNative(record: NativeArtifact): string {
+  const data = JSON.stringify({ version: 1, record, sha256: sha(JSON.stringify(record)) });
+  if (Buffer.byteLength(data) > MAX_NATIVE_DOCUMENT) deny();
+  return data;
+}
+function publishNative(file: string, data: string): void {
+  const temp = path.join(path.dirname(file), `.${randomUUID()}.tmp`);
+  try {
+    fs.writeFileSync(temp, data, { flag: "wx", mode: 0o600, flush: true }); fs.linkSync(temp, file);
+    fs.unlinkSync(temp); syncDir(path.dirname(file));
+  } finally { try { fs.unlinkSync(temp); } catch { /* published immutable evidence remains */ } }
+}
+function loadNative(file: string, intent: Evidence, stage: GitNativeEvidenceStage): NativeArtifact {
+  const bytes = readFile(file, MAX_NATIVE_DOCUMENT), outer: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  if (!keys(outer, ["version", "record", "sha256"]) || outer.version !== 1 ||
+    !keys(outer.record, ["version", "id", "actionId", "kind", "resource", "stage", "bindingSha256", "removalSha256", "payload"])) deny();
+  const r = outer.record;
+  if (!nativeKind(intent) || r.version !== 1 || r.id !== intent.id || r.actionId !== intent.actionId || r.kind !== intent.kind ||
+    r.resource !== intent.resource || r.stage !== stage || !["binding", "removal", "completed", "failure"].includes(stage) ||
+    outer.sha256 !== sha(JSON.stringify(r)) || !bytes.equals(Buffer.from(encodeNative(r as NativeArtifact)))) deny();
+  return r as NativeArtifact;
+}
+function validateNativeLinks(dir: string, intent: Evidence, record: NativeArtifact): void {
+  if (!nativeKind(intent) || record.kind !== intent.kind || !nativeObject(record.payload)) deny();
+  const p = record.payload;
+  if (record.stage === "binding") {
+    if (record.bindingSha256 !== null || record.removalSha256 !== null) deny();
+    if (intent.kind === "workspace") {
+      const { evidence: e, checkouts } = workspaceBinding(p);
+      if (!keys(e, ["version", "actionId", "request", "source", "sourceSnapshot", "refs", "registrations", "resultOid", "treeOid",
+        ...(e.baseCheckout ? ["baseCheckout", "baseSnapshot"] : []), ...(e.parentIdentity ? ["parentIdentity"] : []),
+        ...(e.parentCreation ? ["parentCreation"] : [])]) || e.version !== 1 || e.actionId !== intent.actionId ||
+        !validResource(e.source, intent.resource) || e.baseCheckout && !validResource(e.baseCheckout, intent.resource) ||
+        (!!e.parentIdentity === !!e.parentCreation) || !OID.test(e.resultOid) || !OID.test(e.treeOid) || !validWorkspaceRequest(e) ||
+        !validNativeInventory({ refs: e.refs, registrations: e.registrations, checkouts }, false)) deny();
+    } else {
+      const e = p as unknown as GitCleanupEvidence;
+      if (!keys(e, ["version", "actionId", "integration", "creator", "main", "source", "target", "mainSnapshot", "inventory", "sharedStorageDigest"]) ||
+        e.version !== 1 || e.actionId !== intent.actionId || !e.integration || !e.creator ||
+        !validResource(e.integration.feature, intent.resource) || !validResource(e.integration.target, intent.resource) ||
+        !validResource(e.main, intent.resource) || !validNativeInventory(e.inventory, true) || !HASH.test(e.sharedStorageDigest)) deny();
+    }
+    return;
+  }
+  const bindingBytes = readFile(path.join(dir, `${intent.id}.binding`), MAX_NATIVE_DOCUMENT);
+  if (record.bindingSha256 !== sha(bindingBytes)) deny();
+  const binding = loadNative(path.join(dir, `${intent.id}.binding`), intent, "binding"); validateNativeLinks(dir, intent, binding);
+  if (record.stage === "failure") {
+    if (p.version !== 1 || p.actionId !== intent.actionId || p.recoveryRequired !== true || record.removalSha256 !== null) deny();
+    return;
+  }
+  if (intent.kind === "workspace") {
+    const { evidence: e } = workspaceBinding(binding.payload), proof = p as unknown as GitWorkspaceCompletedProof;
+    if (record.stage !== "completed" || record.removalSha256 !== null ||
+      !keys(p, ["version", "outcome", "actionId", "mode", "destination", "sourceOid", "baseOid", "branchRef", "resultOid", "treeOid",
+        "sourceIndexDigest", "destinationIndexDigest", "sourceTrackedFilesDigest", "destinationTrackedFilesDigest", "configDigest", "refsDigest",
+        "registrationsDigest", "backlinkDigest", "status", ...(proof.knownParentCreation ? ["knownParentCreation"] : [])]) ||
+      proof.version !== 1 || proof.actionId !== intent.actionId || proof.outcome !== "completed" || proof.status !== "clean" ||
+      proof.mode !== e.request.mode || proof.sourceOid !== e.sourceSnapshot.oid || proof.baseOid !== e.request.expectedBaseOid ||
+      proof.resultOid !== e.resultOid || proof.treeOid !== e.treeOid || proof.branchRef !== `refs/heads/${e.request.branch}` ||
+      !validResource(proof.destination, intent.resource) || proof.destination.cwd !== e.request.destinationPath ||
+      proof.destination.branch !== e.request.branch || proof.sourceIndexDigest !== e.sourceSnapshot.indexDigest ||
+      proof.sourceTrackedFilesDigest !== e.sourceSnapshot.trackedFilesDigest || proof.configDigest !== e.sourceSnapshot.configDigest ||
+      [proof.destinationIndexDigest, proof.destinationTrackedFilesDigest, proof.refsDigest, proof.registrationsDigest, proof.backlinkDigest].some((v) => !HASH.test(v)) ||
+      (!!e.parentCreation !== !!proof.knownParentCreation)) deny();
+    if (e.parentCreation) {
+      const known = proof.knownParentCreation!, plan = e.parentCreation;
+      if (!keys(known, ["path", "identity", "mode", "ownerUid", "ancestorPath", "ancestorIdentity"]) || known.path !== plan.path ||
+        !validIdentity(known.identity) || known.mode !== plan.mode || !Number.isSafeInteger(known.ownerUid) || known.ownerUid < 0 ||
+        known.ancestorPath !== plan.ancestorPath || JSON.stringify(known.ancestorIdentity) !== JSON.stringify(plan.ancestorIdentity)) deny();
+    }
+    return;
+  }
+  const e = binding.payload as GitCleanupEvidence, source = e.integration.feature;
+  const removed = nativeRemovedInventory(e);
+  const removal = (record.stage === "removal" ? p : loadNative(path.join(dir, `${intent.id}.removal`), intent, "removal").payload) as GitCleanupRemovalProof;
+  if (!keys(removal, ["version", "actionId", "kind", "sourcePath", "sourceIdentity", "adminPath", "featureOid", "exit", "sourceAbsent", "adminAbsent", "before", "after"]) ||
+    removal.version !== 1 || removal.actionId !== intent.actionId || removal.kind !== "removed" || removal.sourcePath !== source.cwd ||
+    JSON.stringify(removal.sourceIdentity) !== JSON.stringify(source.identities.checkout) || removal.adminPath !== source.gitDir ||
+    removal.featureOid !== e.integration.featureOid || removal.exit !== 0 || removal.sourceAbsent !== true || removal.adminAbsent !== true ||
+    JSON.stringify(removal.before) !== JSON.stringify(e.inventory) || JSON.stringify(removal.after) !== JSON.stringify(removed)) deny();
+  if (record.stage === "removal") { if (record.removalSha256 !== null) deny(); return; }
+  const completed = p as unknown as GitCleanupCompletedProof;
+  const removalBytes = readFile(path.join(dir, `${intent.id}.removal`), MAX_NATIVE_DOCUMENT);
+  if (record.stage !== "completed" || record.removalSha256 !== sha(removalBytes) ||
+    !keys(p, ["version", "actionId", "kind", "removal", "deletedRef", "deletedOid", "transactionExit", "finalInventory", "nativeHeadReflogMayHaveChanged"]) ||
+    completed.version !== 1 || completed.actionId !== intent.actionId || completed.kind !== "completed" ||
+    JSON.stringify(completed.removal) !== JSON.stringify(removal) || completed.deletedRef !== `refs/heads/${source.branch}` ||
+    completed.deletedOid !== e.integration.featureOid || completed.transactionExit !== 0 || completed.nativeHeadReflogMayHaveChanged !== true ||
+    JSON.stringify(completed.finalInventory) !== JSON.stringify(nativeCompletedInventory(e))) deny();
+}
+function nativeRemovedInventory(e: GitCleanupEvidence) {
+  const s = e.integration.feature, rows = e.inventory.registrations.slice(0, -2).split("\0\0"), own = `worktree ${s.cwd}\0HEAD ${e.integration.featureOid}\0branch refs/heads/${s.branch}`;
+  if (rows.filter((row) => row === own).length !== 1 || rows.some((row) => row !== own && row.split("\0").includes(`branch refs/heads/${s.branch}`)) ||
+    path.dirname(s.gitDir) !== path.join(s.commonDir, "worktrees") || s.cwd === s.projectRoot) deny();
+  const admins = { ...e.inventory.admins }, checkouts = { ...e.inventory.checkouts };
+  if (!Object.hasOwn(admins, path.basename(s.gitDir)) || JSON.stringify(checkouts[s.cwd]) !== JSON.stringify(s.identities.checkout)) deny();
+  delete admins[path.basename(s.gitDir)]; delete checkouts[s.cwd];
+  return { refs: e.inventory.refs, registrations: rows.filter((row) => row !== own).join("\0\0") + "\0\0", admins, checkouts };
+}
+function nativeCompletedInventory(e: GitCleanupEvidence) {
+  const result = nativeRemovedInventory(e);
+  result.refs = result.refs.split("\n").filter((row) => !row.startsWith(`refs/heads/${e.integration.feature.branch}\0`)).join("\n");
+  return result;
+}
+function nativeInventory(selection: GitProjectResources) {
+  const paths = registeredGitProjectCheckoutPathsSync(selection);
+  const git = (...args: string[]) => execFileSync("git", ["--no-optional-locks", "-C", selection.cwd,
+    `--git-dir=${selection.gitDir}`, `--work-tree=${selection.cwd}`, ...args], {
+    encoding: "utf8", env: { ...gitExecEnv(), GIT_COMMON_DIR: selection.commonDir }, timeout: 15000, maxBuffer: 512 * 1024, stdio: ["ignore", "pipe", "pipe"],
+  });
+  const refs = git("for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)", "refs"), registrations = git("worktree", "list", "--porcelain", "-z");
+  if (JSON.stringify(parseBoundedGitWorktreePaths(Buffer.from(registrations))) !== JSON.stringify(paths)) deny();
+  const checkouts = Object.fromEntries(paths.map((cwd) => {
+    const s = fs.lstatSync(cwd, { bigint: true });
+    return [cwd, { device: String(s.dev), inode: String(s.ino), birthtime: String(s.birthtimeNs) }];
+  }));
+  const result = { refs, registrations, checkouts }; if (!validNativeInventory(result, false)) deny(); return result;
+}
+/** No inventory waiver. ONLY durable, linked, measured native transition can
+ * replace the exact original inventory. Cleanup remains pinned to surviving target. */
+function nativeInventoryReservation(selection: GitProjectResources, op: GitOperationReservation): GitOperationReservation {
+  let expected = nativeInventory(selection), binding: unknown, removalRecorded = false;
+  const assertOwned = () => { op.assertOwned(); if (JSON.stringify(nativeInventory(selection)) !== JSON.stringify(expected)) deny(); };
+  return { ...op, assertOwned,
+    resolve() { assertOwned(); deny(); },
+    recordNativeEvidence(stage, payload, nativeReader) {
+      if (stage === "failure") return op.recordNativeEvidence(stage, payload);
+      op.assertOwned();
+      const current = nativeInventory(selection);
+      if (stage === "binding") {
+        assertOwned();
+        const e = (nativeObject(payload) && Object.hasOwn(payload, "evidence") ? workspaceBinding(payload).evidence : payload) as GitWorkspaceEvidence | GitCleanupEvidence;
+        const r = "integration" in e ? e.integration.target : e.source;
+        const inventory = "integration" in e ? e.inventory : { refs: e.refs, registrations: e.registrations, checkouts: workspaceBinding(payload).checkouts };
+        if (JSON.stringify(r) !== JSON.stringify(selection) || JSON.stringify({ refs: inventory.refs, registrations: inventory.registrations, checkouts: inventory.checkouts }) !== JSON.stringify(expected)) deny();
+      } else {
+        if (!binding) deny();
+        if (nativeObject(binding) && Object.hasOwn(binding, "evidence")) {
+          const { evidence: e } = workspaceBinding(binding), p = payload as GitWorkspaceCompletedProof;
+          if (stage !== "completed" || !readGitWorkspaceNativeProof(p)) deny();
+          const rows = expected.registrations.slice(0, -2).split("\0\0");
+          const added = `worktree ${e.request.destinationPath}\0HEAD ${e.resultOid}\0branch refs/heads/${e.request.branch}`;
+          const refs = e.refs.trimEnd().split("\n").filter(Boolean);
+          if (e.request.mode === "create") refs.push(`refs/heads/${e.request.branch}\0${e.resultOid}\0`);
+          const oldCheckouts = { ...current.checkouts }; delete oldCheckouts[e.request.destinationPath];
+          if (JSON.stringify(oldCheckouts) !== JSON.stringify(expected.checkouts) ||
+            JSON.stringify(current.registrations.slice(0, -2).split("\0\0").sort()) !== JSON.stringify([...rows, added].sort()) ||
+            JSON.stringify(current.refs.trimEnd().split("\n").filter(Boolean).sort()) !== JSON.stringify(refs.sort()) ||
+            p.refsDigest !== sha(current.refs) || p.registrationsDigest !== sha(current.registrations) ||
+            JSON.stringify(current.checkouts[e.request.destinationPath]) !== JSON.stringify(p.destination.identities.checkout)) deny();
+        } else {
+          const e = binding as GitCleanupEvidence, wanted = stage === "removal" && !removalRecorded ? nativeRemovedInventory(e) :
+            stage === "completed" && removalRecorded ? nativeCompletedInventory(e) : undefined;
+          if (!wanted || JSON.stringify(current) !== JSON.stringify({ refs: wanted.refs, registrations: wanted.registrations, checkouts: wanted.checkouts })) deny();
+        }
+      }
+      const seal = op.recordNativeEvidence(stage, payload, nativeReader);
+      // Original inventory remains mandatory until immutable publication+fsync succeeds.
+      if (stage === "binding") binding = structuredClone(payload);
+      else { expected = current; if (stage === "removal") removalRecorded = true; }
+      if (stage === "completed") verifiedNativeInventorySeals.add(seal);
+      return seal;
+    },
+    resolveNativeOutcome(seal) { assertOwned(); op.resolveNativeOutcome(seal); },
+  };
 }
 function encodeCheck(record: CheckPre | CheckPost): string {
   const body = JSON.stringify(record);
@@ -287,7 +597,7 @@ function write(file: string, record: Evidence, exclusive: boolean): void {
 function scan(commonDir: string, dir: string, gate: string): GitOperationAdmission {
   if (!present(dir)) return { admitted: true, reason: "clear", actionIds: [] };
   const entries = fs.readdirSync(dir);
-  if (entries.length > entryLimit() * 3 + 1) deny();
+  if (entries.length > entryLimit() * 5 + 1) deny();
   const actions: string[] = [];
   let reserved = false;
   const records = new Map<string, Evidence>();
@@ -300,7 +610,7 @@ function scan(commonDir: string, dir: string, gate: string): GitOperationAdmissi
       if (contents.length && (contents.length !== 1 || contents[0] !== "owner" || readFile(path.join(gate, "owner")).length > 256)) deny();
       reserved = true; continue;
     }
-    const match = /^([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\.(json|pre|post)$/.exec(name);
+    const match = /^([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\.(json|pre|post|binding|removal|completed|failure)$/.exec(name);
     if (!match) deny();
     if (match[2] !== "json") { artifacts.add(name); continue; }
     const value = load(path.join(dir, name), commonDir, match[1]);
@@ -309,13 +619,24 @@ function scan(commonDir: string, dir: string, gate: string): GitOperationAdmissi
   }
   if (records.size > entryLimit()) deny();
   for (const record of records.values()) {
+    if (["workspace", "cleanup"].includes(record.kind) && record.phase === "resolved" &&
+      (!artifacts.has(`${record.id}.binding`) || !artifacts.has(`${record.id}.completed`) ||
+        sha(readFile(path.join(dir, `${record.id}.completed`), MAX_NATIVE_DOCUMENT)) !== record.nativeOutcomeSha256)) deny();
     if (record.disposition === "recovered" &&
       (!artifacts.has(`${record.id}.pre`) || !artifacts.has(`${record.id}.post`))) deny();
   }
   for (const artifact of artifacts) {
-    const id = artifact.slice(0, artifact.endsWith(".post") ? -5 : -4);
+    const id = artifact.slice(0, 36);
     const intent = records.get(id);
-    if (!intent || intent.kind !== "checks") deny();
+    if (!intent) deny();
+    if (["workspace", "cleanup"].includes(intent.kind)) {
+      const stage = artifact.slice(id.length + 1) as GitNativeEvidenceStage;
+      const native = loadNative(path.join(dir, artifact), intent, stage);
+      validateNativeLinks(dir, intent, native);
+      if (stage === "failure" && !actions.includes(intent.actionId)) actions.push(intent.actionId);
+      continue;
+    }
+    if (intent.kind !== "checks" || !artifact.endsWith(".pre") && !artifact.endsWith(".post")) deny();
     const pre = loadCheck(path.join(dir, `${id}.pre`), intent, "pre");
     if (artifact.endsWith(".post")) {
       const post = loadCheck(path.join(dir, artifact), intent, "post") as CheckPost;
@@ -518,6 +839,8 @@ export function beginGitOperationIntent(agentDir: string, commonDir: string, act
   // occurs after mkdir, leave it in place for manual investigation.
   fs.mkdirSync(gate, { mode: 0o700 });
   syncDir(dir);
+  const gateStat = fs.lstatSync(gate, { bigint: true });
+  const gateIdentity = `${gateStat.dev}:${gateStat.ino}:${gateStat.birthtimeNs}`;
   const id = randomUUID(), owner = `${id}:${randomUUID()}`;
   fs.writeFileSync(path.join(gate, "owner"), owner, { flag: "wx", mode: 0o600, flush: true });
   syncDir(gate);
@@ -529,13 +852,54 @@ export function beginGitOperationIntent(agentDir: string, commonDir: string, act
     ...(checkUnit ? { checkUnit } : {}) };
   write(file, record, true);
   let finished = false;
+  const nativeSeals = new WeakMap<object, string>();
   const assertOwned = () => {
     if (finished) deny();
     directory(gate);
+    const currentGate = fs.lstatSync(gate, { bigint: true });
+    if (`${currentGate.dev}:${currentGate.ino}:${currentGate.birthtimeNs}` !== gateIdentity) deny();
     if (fs.readdirSync(gate).length !== 1 || !readFile(path.join(gate, "owner")).equals(Buffer.from(owner))
       || JSON.stringify(load(file, commonDir, id)) !== JSON.stringify(record)) deny();
+    if (kind === "workspace" || kind === "cleanup") {
+      const status = scan(commonDir, dir, gate);
+      if (status.reason !== "unresolved" || status.actionIds.length !== 1 || status.actionIds[0] !== actionId) deny();
+    }
   };
   return { actionId, id, assertOwned,
+    recordNativeEvidence(stage, payload, nativeReader) {
+      if (!["workspace", "cleanup"].includes(kind) || !["binding", "removal", "completed", "failure"].includes(stage)) deny();
+      // Known post-completion failures remain durable blockers, including failed
+      // usage-lease release. They never resurrect a live reservation.
+      if (!finished) assertOwned();
+      else if (stage !== "failure" || load(file, commonDir, id).nativeOutcomeSha256 === undefined) deny();
+      const bindingFile = path.join(dir, `${id}.binding`), removalFile = path.join(dir, `${id}.removal`);
+      const artifact: NativeArtifact = { version: 1, id, actionId, kind: kind as "workspace" | "cleanup", resource: commonDir, stage,
+        bindingSha256: stage === "binding" ? null : sha(readFile(bindingFile, MAX_NATIVE_DOCUMENT)),
+        removalSha256: stage === "completed" && kind === "cleanup" ? sha(readFile(removalFile, MAX_NATIVE_DOCUMENT)) : null, payload };
+      if (stage === "completed" && kind === "workspace" && !readGitWorkspaceNativeProof(payload)) deny();
+      if (kind === "cleanup" && (stage === "removal" || stage === "completed")) {
+        const native = nativeReader?.(payload);
+        if (!nativeObject(native) || JSON.stringify(native) !== JSON.stringify(payload)) deny();
+      }
+      validateNativeLinks(dir, record, artifact);
+      const data = encodeNative(artifact), artifactFile = path.join(dir, `${id}.${stage}`);
+      publishNative(artifactFile, data);
+      const seal = Object.freeze({ id, actionId, stage, sha256: sha(data) }); nativeSeals.set(seal, data);
+      return seal;
+    },
+    resolveNativeOutcome(seal) {
+      assertOwned();
+      if (!["workspace", "cleanup"].includes(kind) || !seal || seal.stage !== "completed" ||
+        seal.id !== id || seal.actionId !== actionId || !nativeSeals.has(seal) || !verifiedNativeInventorySeals.has(seal)) deny();
+      const status = scan(commonDir, dir, gate);
+      if (status.reason !== "unresolved" || status.actionIds.length !== 1 || status.actionIds[0] !== actionId ||
+        fs.existsSync(path.join(dir, `${id}.failure`))) deny();
+      const data = readFile(path.join(dir, `${id}.completed`), MAX_NATIVE_DOCUMENT);
+      if (data.toString() !== nativeSeals.get(seal) || sha(data) !== seal.sha256) deny();
+      write(file, { ...record, phase: "resolved", resolvedAt: Math.max(Date.now(), record.createdAt), nativeOutcomeSha256: seal.sha256 }, false);
+      if (!readFile(path.join(gate, "owner")).equals(Buffer.from(owner))) deny();
+      fs.unlinkSync(path.join(gate, "owner")); syncDir(gate); fs.rmdirSync(gate); syncDir(dir); finished = true;
+    },
     recordCheckBefore(snapshot) {
       assertOwned();
       if (kind !== "checks" || !validSnapshot(snapshot)) deny();
@@ -553,6 +917,7 @@ export function beginGitOperationIntent(agentDir: string, commonDir: string, act
     },
     resolve(proof) {
     assertOwned();
+    if (kind === "workspace" || kind === "cleanup") deny();
     if (kind === "prepare") {
       if (!validPrepareOutcome(proof)) deny();
       // Never clear an unknown/corrupt/orphan or a second unresolved intent.
@@ -698,7 +1063,7 @@ export async function assertGitOperationAdmission(selection: GitProjectResources
  * only the caller can resolve after recording the exact outcome and positively
  * proving any spawned check children have stopped. */
 export async function beginSupervisedGitOperationIntent(selection: GitProjectResources, actionId: string,
-  kind: "commit" | "checks" | "integration" | "prepare", agentDir = getAgentDir(), checkUnit?: string): Promise<GitOperationReservation> {
+  kind: "commit" | "checks" | "integration" | "prepare" | "workspace" | "cleanup", agentDir = getAgentDir(), checkUnit?: string): Promise<GitOperationReservation> {
   await revalidateGitProjectResources(selection);
   // Reject known legacy quarantine before publishing our own intent. Otherwise
   // an unrelated old blocker strands a second, avoidable orphan on this checkout.
@@ -714,7 +1079,8 @@ export async function beginSupervisedGitOperationIntent(selection: GitProjectRes
     throw new GitOperationRecoveryError(actionId);
   }
   if (JSON.stringify(before) !== JSON.stringify(after)) throw new GitOperationRecoveryError(actionId);
-  if (!after) return operation;
+  if (kind === "workspace" || kind === "cleanup") return issueReservationOwner(nativeInventoryReservation(selection, operation), selection, kind, agentDir);
+  if (!after) return issueReservationOwner(operation, selection, kind, agentDir);
   // Retain the positively classified inventory in this process-only owner.
   // Recheck synchronously at each native callback, not just before publication
   // of the intent. This narrows, but cannot eliminate, external Git races.
@@ -725,10 +1091,11 @@ export async function beginSupervisedGitOperationIntent(selection: GitProjectRes
         throw new GitOperationRecoveryError(actionId);
     } catch { throw new GitOperationRecoveryError(actionId); }
   };
-  return { actionId: operation.actionId, id: operation.id, assertOwned,
+  return issueReservationOwner({ actionId: operation.actionId, id: operation.id, assertOwned,
+    recordNativeEvidence() { deny(); }, resolveNativeOutcome() { deny(); },
     recordCheckBefore(snapshot) { assertOwned(); operation.recordCheckBefore(snapshot); },
     recordCheckAfter(snapshot, proof, outcome, source) { assertOwned(); operation.recordCheckAfter(snapshot, proof, outcome, source); },
-    resolve(proof) { assertOwned(); operation.resolve(proof); } };
+    resolve(proof) { assertOwned(); operation.resolve(proof); } }, selection, kind, agentDir);
 }
 export function beginSupervisedGitCommitIntent(selection: GitProjectResources, actionId: string): Promise<GitOperationReservation> {
   return beginSupervisedGitOperationIntent(selection, actionId, "commit");

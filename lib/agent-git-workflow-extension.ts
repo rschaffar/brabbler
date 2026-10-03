@@ -3,7 +3,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { realpath } from "node:fs/promises";
 import { promisify } from "node:util";
 import { Type } from "@earendil-works/pi-ai";
-import type { InlineExtension, SessionManager } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, InlineExtension, SessionManager } from "@earendil-works/pi-coding-agent";
 import { appendAgentGitPreferences, readAgentGitPreferences, type AgentGitPreferences } from "./agent-git-preferences";
 import type { SessionEntry } from "./types";
 import { getGitReviewDiff, reviewGitBranches, type GitReviewSelection, type GitReviewRepository } from "./git-review";
@@ -15,7 +15,8 @@ import { readManagedSessionGitWorkflow } from "./git-workflow-session";
 import { selectGitProjectResources, revalidateGitProjectResources, withGitProjectReview, gitProjectResourceSummary, GitProjectResourceError } from "./git-project-resources";
 import { loadGitWorkflowSettings } from "./git-workflow-settings-store";
 import { getGitTaskBindingStatus } from "./git-workflow-binding";
-import { requestWorkflowCommit } from "./git-workflow-commit";
+import { requestWorkflowCommit, workflowCommitFailureResult } from "./git-workflow-commit";
+import { createGitAgentActionArtifactReader, GIT_AGENT_PATCH_CHUNK_BYTES, type GitAgentActionArtifactResult } from "./git-agent-action-artifact";
 import { beginGitAction, failGitAction, finishGitAction, gitActionFailureResult, gitActionSink, snapshotGitActionCandidate, GitActionApplyError, GitActionRecordingError } from "./git-action-controller";
 import { gitExecEnv } from "./git-exec";
 import { acquireGitCheckoutGate, GitCheckoutBusyError } from "./git-checkout-gate";
@@ -25,10 +26,13 @@ import { assertGitOperationAdmission, beginSupervisedGitOperationIntent, GitOper
 import { runGitVerification } from "./git-verification";
 import { validateGitWorkflowPolicy, type GitWorkflowCheck, validLocalBranchName } from "./git-workflow-policy";
 import { getProjectTrustStatus } from "./project-trust";
-import { getAllowedFileRoots, isExistingFilePathAllowed } from "./file-access";
+import { getAllowedFileRoots, getKnownAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "./file-access";
 import { samePath, toNativePath } from "./paths";
 import { selectGitWorkspace } from "./git-workspace-selector";
 import type { GitActionCandidate } from "./types";
+import type { createGitSelectedOperationRuntime } from "./git-selected-operation-runtime";
+import type { SelectedControllerOperation, SelectedControllerRequests } from "./git-selected-operation-controller";
+import { GitCommitVerificationError } from "./git-commit-verification";
 
 const exec = promisify(execFile);
 
@@ -91,11 +95,17 @@ async function featureBranch(cwd: string): Promise<string> {
 
 /** A human-bound first slice of the generic Git workflow: no saved policy is needed for inspection or an approved commit. */
 export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: string = getAgentDir(),
-  writableManager?: Pick<SessionManager, "getEntries" | "appendCustomEntry" | "isPersisted">): InlineExtension {
+  writableManager?: Pick<SessionManager, "getEntries" | "appendCustomEntry" | "isPersisted">,
+  trustedRuntime?: { readSelectionRevisionSync(): string }): InlineExtension {
   return {
     name: "pi-web-agent-git-workflow",
     hidden: true,
     factory: (pi) => {
+      // One process-owned controller generation per physical persisted caller.
+      // Nothing is reconstructed from action/history IDs after reload.
+      type SelectedRuntime = { runtime: ReturnType<typeof createGitSelectedOperationRuntime>;
+        ctx: ExtensionContext; signal?: AbortSignal; busy: boolean };
+      const selectedRuntimes = new Map<string, SelectedRuntime>();
       pi.registerTool({
         name: "git_workflow_propose_settings",
         label: "Propose Workflow settings",
@@ -122,10 +132,13 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
       pi.registerTool({
         name: "git_workflow",
         label: "Git Workflow",
-        description: "Inspect captured settings with status; configure all scopes in the Workflow panel. Capture a read-only local comparison as concise metadata with an on-demand private diff (no human acknowledgement), request an exact commit (alias of git_commit operation commit), or integrate using the captured local target/checks. Integration asks for check execution and exact-state merge approval. Explicit-project commit requires canonical repositoryPath and physical registered checkoutPath. Default confirmation is Ask. Only request confirmation:none when compatible with all applicable repository/user instructions; it requires fresh untouched persisted ordinary creation provenance, an enabled managed Ask caller task, live selected policy confirmation:none and fresh effective saved Allow at capture and before native CAS. It also works for the server-resolved chat checkout/workspaceBranch without UI. Old, legacy, copied or recaptured callers must use Ask; saved Allow alone never skips Ask. A grant never overrides stricter instructions. Other explicit-project mutations remain unavailable. Selection never moves the chat or retargets shell/file tools; never substitute a shell for a denied action.",
+        description: "Inspect captured settings with status; configure all scopes in the Workflow panel. Capture a read-only local comparison as concise metadata (no human acknowledgement). Use artifact with actionId, UTF-8 byte offset and optional limitBytes (4–24576) for on-demand captured diffs: ≤24KiB chunks with nextOffset, whole-patch SHA-256, binary/end/completePatch flags; no UI or live Git. Other results stay metadata-only. Request an exact commit (alias of git_commit operation commit), or integrate using the captured local target/checks. Integration asks for check execution and exact-state merge approval. Explicit-project commit requires canonical repositoryPath and physical registered checkoutPath. Default confirmation is Ask. Only request confirmation:none when compatible with all applicable repository/user instructions; it requires fresh untouched persisted ordinary creation provenance, an enabled managed Ask caller task, live selected policy confirmation:none and fresh effective saved Allow at capture and before native CAS. It also works for the server-resolved chat checkout/workspaceBranch without UI. Old, legacy, copied or recaptured callers must use Ask; saved Allow alone never skips Ask. A grant never overrides stricter instructions. Selected workspace/prepare/verify/integrate/cleanup/reconcile dispatch before captured-task requirements and use the selected project's live saved policy. Mandatory native adapters that are unavailable refuse explicitly (currently workspace, check authority, cleanup and reconciliation). workspaceMode:current returns metadata only and starts nothing. Prepare requires canonical Project main and its real target checkout. Selected integration uses saved checks, never inline checks. Pass revisionDependency only after receiving a completed preparation/verification result in a separate tool turn; batching/prequeueing follow-ons is refused. No automatic next stage, local delivery, handoff, or chat move. Selection never moves the chat or retargets shell/file tools; never substitute a shell for a denied action.",
         executionMode: "sequential",
         parameters: Type.Object({
-          operation: Type.Unsafe<"status" | "preferences" | "review" | "commit" | "integrate">({ type: "string", enum: ["status", "preferences", "review", "commit", "integrate"] }),
+          operation: Type.Unsafe<"status" | "preferences" | "review" | "commit" | "integrate" | "artifact" | "workspace" | "prepare" | "verify" | "cleanup" | "reconcile">({ type: "string", enum: ["status", "preferences", "review", "commit", "integrate", "artifact", "workspace", "prepare", "verify", "cleanup", "reconcile"] }),
+          actionId: Type.Optional(Type.String({ description: "Artifact only: captured action referenced by this persisted session's raw history" })),
+          offset: Type.Optional(Type.Integer({ description: "Artifact only: required UTF-8 byte offset, starting at 0; continue with nextOffset", minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+          limitBytes: Type.Optional(Type.Integer({ description: "Artifact only: optional UTF-8 chunk byte limit, default 24576", minimum: 4, maximum: GIT_AGENT_PATCH_CHUNK_BYTES })),
           repositoryPath: Type.Optional(Type.String({ description: "Absolute physical canonical repository checkout root for explicit status/review/commit; never chat relocation or mutation authority", maxLength: 4096 })),
           checkoutPath: Type.Optional(Type.String({ description: "Physical registered checkout root in canonical repositoryPath; required for selected-project commit", maxLength: 4096 })),
           workspaceBranch: Type.Optional(Type.String({ description: "Checked-out local branch within the explicitly selected repository, or this chat's repository when repositoryPath is omitted" })),
@@ -135,10 +148,159 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
           mode: Type.Optional(Type.Unsafe<"whole-file" | "staged">({ type: "string", enum: ["whole-file", "staged"], description: "Commit source: whole files by default, or only explicitly selected staged index entries" })),
           message: Type.Optional(Type.String({ description: "Exact commit message (included in an Ask candidate or saved-Allow no-prompt action)" })),
           confirmation: Type.Optional(Type.Unsafe<"ask" | "none">({ type: "string", enum: ["ask", "none"], description: "Commit only. Default ask. Request none only when compatible with stricter instructions; requires fresh untouched persisted ordinary creation, enabled managed Ask caller, live saved Allow and selected commitConfirmation:none." })),
-          checks: Type.Optional(Type.Array(Type.Object({ label: Type.String(), argv: Type.Array(Type.String()) }), { description: "Ordered verification commands, without a shell. Explicit user approval required before execution." })),
+          checks: Type.Optional(Type.Array(Type.Object({ label: Type.String(), argv: Type.Array(Type.String()) }), { description: "Legacy integration/preferences only. Selected operations reject commands and use saved recipes." })),
+          workspaceMode: Type.Optional(Type.Unsafe<"current" | "create" | "attach">({ type: "string", enum: ["current", "create", "attach"] })),
+          destinationPath: Type.Optional(Type.String({ maxLength: 4096 })),
+          newBranch: Type.Optional(Type.String({ maxLength: 255 })),
+          baseBranch: Type.Optional(Type.String({ maxLength: 255 })),
+          expectedBaseOid: Type.Optional(Type.String({ pattern: "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" })),
+          expectedTipOid: Type.Optional(Type.String({ pattern: "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" })),
+          targetCheckoutPath: Type.Optional(Type.String({ maxLength: 4096 })),
+          stage: Type.Optional(Type.Unsafe<"none" | "commit" | "integration" | "handoff">({ type: "string", enum: ["none", "commit", "integration", "handoff"] })),
+          checkIndexes: Type.Optional(Type.Array(Type.Integer({ minimum: 0, maximum: 63 }), { minItems: 1, maxItems: 64, uniqueItems: true })),
+          receiptIds: Type.Optional(Type.Array(Type.String({ maxLength: 4096 }), { maxItems: 64, uniqueItems: true })),
+          revisionDependency: Type.Optional(Type.String({ maxLength: 4096 })),
+          ignoredNames: Type.Optional(Type.Array(Type.String({ maxLength: 4096 }), { maxItems: 2000, uniqueItems: true })),
         }),
         async execute(_id, params, signal, _update, ctx) {
           const failure = (message: string) => ({ content: [{ type: "text" as const, text: message }], isError: true, details: { error: message } });
+          // Historical captured evidence is independent of live Git resources,
+          // task policy and UI. Never select a checkout or reconstruct authority.
+          if (params.operation === "artifact") {
+            const result = (details: GitAgentActionArtifactResult) => ({
+              content: [{ type: "text" as const, text: JSON.stringify(details) }], details,
+              ...(details.status !== "ok" ? { isError: true } : {}),
+            });
+            try {
+              const required = ["operation", "actionId", "offset"], allowed = [...required, "limitBytes"];
+              const props = Object.getOwnPropertyDescriptors(params);
+              if (![Object.prototype, null].includes(Object.getPrototypeOf(params)) || Array.isArray(params)
+                || required.some((key) => !Object.hasOwn(props, key))
+                || Reflect.ownKeys(params).some((key) => typeof key !== "string" || !allowed.includes(key)
+                  || !props[key].enumerable || !("value" in props[key]))) {
+                return result({ status: "invalid-request", error: "Invalid captured Git patch request." });
+              }
+              if (signal?.aborted) return failure("Git workflow cancelled");
+              const manager = ctx.sessionManager, header = manager.getHeader();
+              if (!header || typeof header.cwd !== "string" || ctx.cwd !== header.cwd) {
+                return result({ status: "denied", error: "Captured Git action access denied." });
+              }
+              // The SDK exposes a read-only manager facade to tools. A file
+              // pointer is necessary, not proof: the helper pins the physical
+              // JSONL/header. Also honor full-manager isPersisted when available.
+              const persistence = manager as typeof manager & Partial<Pick<SessionManager, "isPersisted">>;
+              const persistedManager = {
+                getHeader: () => manager.getHeader(), getSessionId: () => manager.getSessionId(),
+                getCwd: () => manager.getCwd(), getSessionFile: () => manager.getSessionFile(),
+                getEntries: () => manager.getEntries(), getLeafId: () => manager.getLeafId(),
+                isPersisted: () => !!manager.getSessionFile() && persistence.isPersisted?.() !== false,
+              };
+              const read = createGitAgentActionArtifactReader({ sessionManager: persistedManager,
+                sessionId: manager.getSessionId(), cwd: header.cwd, agentDir: getAgentDir(),
+                authorizeRoot: (cwd) => isFilePathAllowed(cwd, getKnownAllowedFileRoots()),
+              });
+              return result(await read({ actionId: params.actionId, offset: params.offset,
+                ...(Object.hasOwn(params, "limitBytes") ? { limitBytes: params.limitBytes } : {}),
+              }));
+            } catch {
+              return result({ status: "unavailable", error: "Captured Git artifact is unavailable." });
+            }
+          }
+          // Artifact MUST remain above even parameter interpretation, SDK UI,
+          // live caller classification, policy, resource and native gates.
+          const selectedOperation = ["workspace", "prepare", "verify", "cleanup", "reconcile"].includes(params.operation)
+            || params.operation === "integrate" && (params.repositoryPath !== undefined || params.targetCheckoutPath !== undefined
+              || params.receiptIds !== undefined || params.revisionDependency !== undefined);
+          if (selectedOperation) {
+            const operation = params.operation as SelectedControllerOperation;
+            const response = <T extends { status: string }>(details: T) => ({ content: [{ type: "text" as const, text: JSON.stringify(details) }], details,
+              ...(["blocked", "recovery-required", "target-moved"].includes(details.status) ? { isError: true } : {}) });
+            try {
+              const common = ["operation", "repositoryPath", "checkoutPath", "workspaceBranch", "confirmation"];
+              const fields = { workspace: ["workspaceMode", "destinationPath", "newBranch", "baseBranch", "expectedBaseOid", "expectedTipOid"],
+                prepare: ["targetBranch", "targetCheckoutPath"], verify: ["stage", "checkIndexes", "revisionDependency"],
+                integrate: ["targetBranch", "targetCheckoutPath", "receiptIds", "revisionDependency"], cleanup: ["ignoredNames"], reconcile: ["targetBranch", "targetCheckoutPath"] };
+              const props = Object.getOwnPropertyDescriptors(params), allowed = [...common, ...fields[operation]];
+              if (![Object.prototype, null].includes(Object.getPrototypeOf(params)) || Reflect.ownKeys(params).some((key) => typeof key !== "string"
+                || !allowed.includes(key) || !("value" in props[key]) || !props[key].enumerable)
+                || params.confirmation !== undefined && !["ask", "none"].includes(params.confirmation)) {
+                return response({ status: "blocked", operation, code: "invalid-request" });
+              }
+              if (signal?.aborted || ctx.cwd !== sessionCwd || !samePath(agentDir, getAgentDir())) return response({ status: "blocked", operation, code: "caller-context-changed" });
+              const manager = ctx.sessionManager, file = manager.getSessionFile();
+              if (!file) return response({ status: "blocked", operation, code: "persisted-owner-required" });
+              // A returned dependency must have actually reached the SDK transcript
+              // before THIS assistant tool batch. An in-flight promise, sibling
+              // tool call, history ID or parsed journal can never satisfy this.
+              if (params.revisionDependency !== undefined) {
+                const branch = manager.getBranch(), latest = [...branch].reverse().find((e) => e.type === "message" && e.message.role === "assistant");
+                const prior = branch.find((e) => e.type === "message" && e.message.role === "toolResult" && e.message.toolName === "git_workflow"
+                  && (e.message.details as { revisionDependency?: unknown } | undefined)?.revisionDependency === params.revisionDependency && !e.message.isError);
+                if (!latest || !prior || branch.indexOf(prior) >= branch.indexOf(latest)) return response({ status: "blocked", operation, code: "completed-return-dependency-required" });
+              }
+              const { selectCanonicalGitResources } = await import("./git-project-resources");
+              let source;
+              if (params.repositoryPath !== undefined) {
+                if (params.checkoutPath === undefined) return response({ status: "blocked", operation, code: "explicit-checkout-required" });
+                source = await selectCanonicalGitResources({ repositoryPath: params.repositoryPath, checkoutPath: params.checkoutPath, workspaceBranch: params.workspaceBranch });
+              } else {
+                if (params.checkoutPath !== undefined) return response({ status: "blocked", operation, code: "canonical-repository-required" });
+                // Deliberate default: positively verified actual chat checkout,
+                // never the last project browsed in Workflow or a guessed repo.
+                source = await selectGitProjectResources(sessionCwd, params.workspaceBranch);
+              }
+              const selector = { repositoryPath: source.projectRoot, checkoutPath: source.cwd, workspaceBranch: source.branch };
+              if (operation === "workspace" && params.workspaceMode === "current") {
+                if (Object.keys(params).some((key) => !["operation", "repositoryPath", "checkoutPath", "workspaceBranch", "workspaceMode"].includes(key))) return response({ status: "blocked", operation, code: "invalid-request" });
+                return response({ status: "current", operation, scope: gitProjectResourceSummary(source), nativeCreation: false, chatMoved: false });
+              }
+              let item = selectedRuntimes.get(file);
+              if (item?.busy) return response({ status: "blocked", operation, code: "operation-in-progress" });
+              if (item) { item.ctx = ctx; item.signal = signal; }
+              else {
+                const { createGitSelectedOperationRuntime } = await import("./git-selected-operation-runtime");
+                const holder = { ctx, signal, busy: false } as SelectedRuntime;
+                holder.runtime = createGitSelectedOperationRuntime({ sessionCwd, agentDir,
+                  manager: { getSessionId: () => holder.ctx.sessionManager.getSessionId(), getSessionFile: () => holder.ctx.sessionManager.getSessionFile(),
+                    getCwd: () => holder.ctx.sessionManager.getCwd(), getHeader: () => holder.ctx.sessionManager.getHeader(),
+                    getEntries: () => holder.ctx.sessionManager.getEntries(), getBranch: () => holder.ctx.sessionManager.getBranch() },
+                  effectiveTools: () => pi.getActiveTools?.(), readSelectionRevisionSync: trustedRuntime?.readSelectionRevisionSync,
+                  appendEntry: (type, data) => pi.appendEntry(type, data),
+                  isCancelled: () => !!holder.signal?.aborted || holder.ctx.cwd !== sessionCwd,
+                  ask: (candidate) => { const ui = holder.ctx.ui as typeof holder.ctx.ui & Partial<AgentGitWorkflowUiContext>;
+                    if (!holder.ctx.hasUI || !ui?.gitAction) return Promise.resolve(false);
+                    return ui.gitAction(candidate, holder.signal); } });
+                selectedRuntimes.set(file, holder); item = holder;
+              }
+              let request: SelectedControllerRequests[SelectedControllerOperation];
+              const selection = { selector, ...(params.confirmation === undefined ? {} : { confirmation: params.confirmation }) };
+              if (operation === "workspace") {
+                if (!params.destinationPath || !validLocalBranchName(params.newBranch) || !validLocalBranchName(params.baseBranch) || !params.expectedBaseOid
+                  || !["create", "attach"].includes(params.workspaceMode ?? "") || params.workspaceMode === "create" && Object.hasOwn(params, "expectedTipOid")
+                  || params.workspaceMode === "attach" && !params.expectedTipOid) return response({ status: "blocked", operation, code: "invalid-request" });
+                request = { ...selection, workspace: { repositoryPath: source.projectRoot, sourceCheckoutPath: source.cwd, destinationPath: params.destinationPath,
+                  branch: params.newBranch, baseBranch: params.baseBranch, expectedBaseOid: params.expectedBaseOid,
+                  ...(params.workspaceMode === "attach" ? { mode: "attach", expectedTipOid: params.expectedTipOid! } : { mode: "create" }) } };
+              } else if (operation === "verify") {
+                request = { ...selection, stage: params.stage ?? "integration", ...(params.checkIndexes ? { checkIndexes: params.checkIndexes } : {}),
+                  ...(params.revisionDependency ? { revisionDependency: params.revisionDependency } : {}) };
+              } else if (operation === "cleanup") request = { ...selection, ...(params.ignoredNames ? { ignoredNames: params.ignoredNames } : {}) };
+              else {
+                const policy = await loadGitProjectSettings(source, manager.getEntries() as SessionEntry[], agentDir, manager.getSessionId());
+                const targetBranch = operation === "prepare" || operation === "reconcile" ? policy.project.mainBranch : policy.resolved.session.values.targetBranch;
+                if (!validLocalBranchName(targetBranch) || params.targetBranch !== undefined && params.targetBranch !== targetBranch) return response({ status: "blocked", operation, code: "selected-project-target-required" });
+                const target = params.targetCheckoutPath !== undefined ? await selectCanonicalGitResources({ repositoryPath: source.projectRoot,
+                  checkoutPath: params.targetCheckoutPath, workspaceBranch: targetBranch }) : await selectGitProjectResources(source.projectRoot, targetBranch);
+                request = { ...selection, target: { repositoryPath: target.projectRoot, checkoutPath: target.cwd, workspaceBranch: target.branch },
+                  ...(operation === "integrate" ? { ...(params.receiptIds ? { receiptIds: params.receiptIds } : {}), ...(params.revisionDependency ? { revisionDependency: params.revisionDependency } : {}) } : {}) };
+              }
+              item.busy = true;
+              try {
+                const details = await item.runtime.run(operation, request);
+                return response({ ...details, ...(details.recoveryRequired ? { warning: "Do not retry. Inspect the actual checkout and durable action evidence." } : {}) });
+              } finally { item.busy = false; }
+            } catch { return response({ status: "blocked", operation, code: "selected-runtime-unavailable" }); }
+          }
           let preApprovalPhase: IntegrationPreApprovalPhase | undefined = params.operation === "integrate" ? "caller" : undefined;
           const preApprovalStage = (phase: IntegrationPreApprovalPhase) => { if (preApprovalPhase) preApprovalPhase = phase; };
           try {
@@ -165,7 +327,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
             }
             // Tool schemas describe future scoped operations, but cannot authorize
             // them. Refuse unrecognized runtime arguments instead of ignoring them.
-            const allowed = new Set(["operation", "repositoryPath", "checkoutPath", "workspaceBranch", "targetBranch", "commitOids", "paths", "mode", "message", "confirmation", "checks"]);
+            const allowed = new Set(["operation", "repositoryPath", "checkoutPath", "workspaceBranch", "targetBranch", "commitOids", "paths", "mode", "message", "confirmation", "checks", ...(params.operation === "commit" ? ["receiptIds"] : [])]);
             if (Object.keys(params).some((key) => !allowed.has(key)) || params.mode !== undefined &&
               (params.operation !== "commit" || !["whole-file", "staged"].includes(params.mode)) || params.confirmation !== undefined &&
               (params.operation !== "commit" || !["ask", "none"].includes(params.confirmation))) {
@@ -377,6 +539,23 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
               const sink = gitActionSink(ctx.sessionManager, (type, data) => pi.appendEntry(type, data));
               const checkCandidate = { kind: "checks" as const, featureCwd: workspace, targetCwd: target, targetBranch, featureBranch: branch, checks };
               const targetResources = await selectGitProjectResources(target);
+              const { createGitCheckAuthorityFence } = await import("./git-check-authority-fence");
+              const { getRpcSession } = await import("./rpc-manager");
+              const nativeSelectionRevision = createGitCheckAuthorityFence({
+                scope: { sessionId, sessionFile: manager.getSessionFile()!, cwd: sessionCwd }, agentDir, checkouts: [workspace, target] });
+              const readAuthorityRevisionSync = createGitCheckAuthorityFence({
+                scope: { sessionId, sessionFile: manager.getSessionFile()!, cwd: sessionCwd }, agentDir,
+                checkouts: [workspace, target], readSelectionRevisionSync: () => {
+                  if (trustedRuntime) return trustedRuntime.readSelectionRevisionSync();
+                  if (!getRpcSession(sessionId)?.isAlive()) throw new Error("Live monotonic authority provider required");
+                  return nativeSelectionRevision();
+                }, readSelectionStateSync: () => ({
+                  cwd: ctx.cwd, sessionId: manager.getSessionId(), file: manager.getSessionFile(), header: manager.getHeader(),
+                  tools: pi.getActiveTools?.(), cancelled: !!signal?.aborted, source: resources, target: targetResources,
+                  // Actual effective SDK state wins over independently saved tools.
+                  entries: entries().filter((entry) => entry.type === "custom" && entry.customType !== "pi-web:git-action"),
+                }),
+              });
               const checkAction = await beginGitAction(sink, "agent", snapshotGitActionCandidate(checkCandidate, resources, targetResources));
               const receipts = [];
               let checksStarted = false;
@@ -402,7 +581,7 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                       checksStarted = true;
                       receipts.push(await runGitVerification({ sessionId, cwd: workspace, agentDir, review, checkIndex: i,
                         actionId: checkAction.record.id, getPolicy: async () => { await denial("checks"); return guardedPolicy(); },
-                        isTrusted: trusted, signal: watcher.signal }));
+                        isTrusted: trusted, signal: watcher.signal, readAuthorityRevisionSync }));
                     } finally { watcher.dispose(); }
                   }
                   await finishGitAction(checkAction, { status: "verified" });
@@ -463,6 +642,15 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
             }
             const manager = ctx.sessionManager;
             const commitResources = selected ?? (requestingNone ? await selectGitProjectResources(workspace) : undefined);
+            const commitSource = commitResources ?? await selectGitProjectResources(workspace);
+            if (params.receiptIds !== undefined && (!Array.isArray(params.receiptIds) || params.receiptIds.length > 64 ||
+              new Set(params.receiptIds).size !== params.receiptIds.length || params.receiptIds.some((id) => typeof id !== "string" || !id || id.length > 256))) return failure("Invalid commit receipt IDs");
+            const { createGitSelectedOperationRuntime } = await import("./git-selected-operation-runtime");
+            const commitRuntime = createGitSelectedOperationRuntime({ sessionCwd, agentDir, manager,
+              effectiveTools: () => pi.getActiveTools?.(), readSelectionRevisionSync: trustedRuntime?.readSelectionRevisionSync,
+              appendEntry: (type, data) => pi.appendEntry(type, data), ask: (candidate) => ui.gitAction!(candidate, signal),
+              isCancelled: () => !!signal?.aborted || !samePath(ctx.cwd, sessionCwd) });
+            const verificationContext = commitRuntime.commitVerificationContext(commitSource, params.receiptIds ?? []);
             const assertAuthorization = commitResources ? agentGitCommitAuthorization({ sessionCwd, manager,
               selected: commitResources, explicitProject: !!selected, confirmation: requestingNone ? "none" : "ask",
               effectiveTools: () => pi.getActiveTools?.(), agentDir }) : undefined;
@@ -479,17 +667,26 @@ export function createAgentGitWorkflowExtension(sessionCwd: string, agentDir: st
                 if (signal?.aborted || !samePath(workspace, await selectGitWorkspace(sessionCwd, params.workspaceBranch))) throw new ManagedGitAccessError("Commit cancelled or workspace changed");
               }
               if (signal?.aborted) throw new ManagedGitAccessError("Commit cancelled");
+              return commitRuntime.captureAuthorityGuard(commitSource);
             };
-            await beforeApply();
-            return await requestWorkflowCommit({ cwd: workspace, paths: params.paths, mode: params.mode, message: params.message, signal,
-              ...(commitResources ? { selected: commitResources, agentDir } : {}), authorizeWithoutConfirmation,
-              sink: gitActionSink(manager, (type, data) => pi.appendEntry(type, data)),
-              ask: (candidate, abort) => ui.gitAction!(candidate, abort), beforeApply });
+            try {
+              await beforeApply();
+              return await requestWorkflowCommit({ cwd: workspace, paths: params.paths, mode: params.mode, message: params.message, signal,
+                ...(commitResources ? { selected: commitResources, agentDir } : {}), authorizeWithoutConfirmation, verificationContext,
+                sink: gitActionSink(manager, (type, data) => pi.appendEntry(type, data)),
+                ask: (candidate, abort) => ui.gitAction!(candidate, abort), beforeApply });
+            } finally { commitRuntime.dispose(); }
           } catch (cause) {
-            const recorded = gitActionFailureResult(cause);
+            const recorded = params.operation === "commit" ? workflowCommitFailureResult(cause) : gitActionFailureResult(cause);
             if (recorded) return recorded;
+            if (params.operation === "commit") {
+              const { readGitSelectedRuntimeRefusal } = await import("./git-selected-operation-runtime");
+              const refusal = readGitSelectedRuntimeRefusal(cause);
+              if (refusal) return { ...failure(`Commit refused: ${refusal}.`), details: { error: `Commit refused: ${refusal}.`, code: refusal } };
+            }
             if (cause instanceof GitProjectResourceError) return { ...failure(cause.message), details: { error: cause.message, code: cause.code } };
             if (cause instanceof GitIntegrationTargetMovedError) return { ...failure(cause.message), details: { error: cause.message, code: cause.code } };
+            if (cause instanceof GitCommitVerificationError) return failure(cause.message);
             if (cause instanceof ManagedGitAccessError || cause instanceof GitCheckoutBusyError || cause instanceof GitCommitOperationError) return failure(cause.message);
             // Never send raw Git stderr, argv, trust contents or arbitrary errors.
             if (preApprovalPhase) {

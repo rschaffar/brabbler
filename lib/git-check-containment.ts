@@ -573,6 +573,20 @@ export function __testRunContainedGitCheck(options: ContainedCheckOptions, fake:
   return runProtocol(options, fake);
 }
 
+/** Native protocol measurements; plain/copy/historical results are not facts. */
+export interface GitContainedCheckExecutionFacts {
+  readonly startedAt: number; readonly finishedAt: number; readonly unit: string;
+  readonly cgroupIdentity?: string; readonly invocation?: string; readonly launcherIdentity?: string;
+  readonly payload: "release-attempted" | "prevented-before-write";
+  readonly exitStatus: number | null; readonly containmentComplete: boolean;
+  readonly timedOut: boolean; readonly overflow: boolean; readonly logDigest: string; readonly logBytes: number;
+}
+const executionFacts = new WeakMap<ContainedCheckResult, { digest: string; facts: Readonly<GitContainedCheckExecutionFacts> }>();
+export function readContainedGitCheckExecutionFacts(result: ContainedCheckResult): Readonly<GitContainedCheckExecutionFacts> | undefined {
+  const measured = executionFacts.get(result);
+  if (!measured) return;
+  return measured.digest === successDigest(result) ? measured.facts : undefined;
+}
 const liveSuccessKey = Symbol.for("pi-web:git-check-containment:live-successes");
 const liveSuccesses = ((globalThis as unknown as Record<symbol, WeakMap<ContainedCheckResult, string>>)[liveSuccessKey] ??= new WeakMap());
 function successDigest(result: ContainedCheckResult): string {
@@ -589,12 +603,14 @@ async function runProtocol(options: ContainedCheckOptions, backend: ContainmentB
   const result: ContainedCheckResult = { unit: options?.unit ?? "", status: null, log: Buffer.alloc(0),
     containmentComplete: false, timedOut: false, overflow: false };
   if (!valid(options)) return result;
-  const deadline = Date.now() + (options.timeoutMs ?? MAX_TIME);
+  const startedAt = Date.now();
+  const deadline = startedAt + (options.timeoutMs ?? MAX_TIME);
   const remaining = () => Math.max(1, Math.min(ADMIN_MS, deadline - Date.now()));
   const expired = () => Date.now() >= deadline || !!options.signal?.aborted;
   let started = false;
   let identity = "";
   let invocation = "";
+  let launcherIdentity: string | undefined;
   let released = false;
   let releaseAttempted = false;
   let complete = false;
@@ -636,6 +652,7 @@ async function runProtocol(options: ContainedCheckOptions, backend: ContainmentB
         if (u.ActiveState !== "active" || !observation.populated || !observation.launcherPlaced) break;
         identity = observation.identity;
         invocation = u.InvocationID;
+        launcherIdentity = observation.launcherIdentity;
         // Re-read exact live authority/snapshot/reservation AFTER manager
         // startup/placement. A rejection stops the proven ORIGINAL group without
         // ever giving the inert launcher project argv/environment.
@@ -720,6 +737,11 @@ async function runProtocol(options: ContainedCheckOptions, backend: ContainmentB
       try { await cwdPin.close(); } catch { result.containmentComplete = false; result.cleanupProof = undefined; }
     }
   }
+  executionFacts.set(result, { digest: successDigest(result), facts: Object.freeze({ startedAt, finishedAt: Date.now(),
+    unit: result.unit, ...(identity ? { cgroupIdentity: identity } : {}), ...(invocation ? { invocation } : {}),
+    ...(launcherIdentity ? { launcherIdentity } : {}), payload: releaseAttempted ? "release-attempted" : "prevented-before-write",
+    exitStatus: result.status, containmentComplete: result.containmentComplete, timedOut: result.timedOut, overflow: result.overflow,
+    logDigest: createHash("sha256").update(result.log).digest("hex"), logBytes: result.log.length }) });
   if (result.status === 0 && result.containmentComplete && !result.timedOut && !result.overflow &&
     (result.cleanupProof || process.env.NODE_TEST_CONTEXT)) liveSuccesses.set(result, successDigest(result));
   return result;

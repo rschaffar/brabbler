@@ -2,7 +2,7 @@ import { statSync } from "node:fs";
 import { NextResponse } from "next/server";
 import { assertManagedGitAction, assertManagedGitProjectDenial, assertManagedGitWorkspace, ManagedGitAccessError } from "@/lib/git-workflow-access";
 import type { SessionEntry } from "@/lib/types";
-import { failGitAction, gitActionAttribution, gitActionFailureResult, GitActionRecordingError } from "@/lib/git-action-controller";
+import { failGitAction, gitActionAttribution, gitActionFailureResult, GitActionRecordingError, type GitActionHandle } from "@/lib/git-action-controller";
 import { finishHumanGitAction, humanGitActionSink, HumanGitCandidateError, HumanGitSessionChangedError, keepHumanGitCandidate, readHumanGitSessionManager, takeHumanGitCandidate } from "@/lib/git-action-human";
 import { GIT_ACTION_ID_PATTERN } from "@/lib/git-action-types";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
@@ -13,6 +13,22 @@ import { samePath } from "@/lib/paths";
 import { readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
 import { selectGitCommitAdmission, GitOperationRecoveryError } from "@/lib/git-operation-admission";
 import { selectGitProjectResources } from "@/lib/git-project-resources";
+import { createHumanGitCommitVerificationContext } from "@/lib/git-check-authority-fence";
+import { GitCommitVerificationError, type GitCommitVerificationHandle } from "@/lib/git-commit-verification";
+import { readGitAction } from "@/lib/git-action-journal";
+
+// Only the live process association binds check evidence to the exact preview.
+// No receipt objects, policy callbacks or approval facts are taken from JSON.
+const bindingKey = Symbol.for("pi-web:human-commit-verification:v1");
+type CheckBinding = Readonly<{ scope: Readonly<{ sessionId: string; sessionFile: string; cwd: string }>; receiptIds: readonly string[];
+  handle: GitCommitVerificationHandle; expiresAt: number }>;
+function bindings(): Map<string, CheckBinding> {
+  const g = globalThis as unknown as Record<symbol, Map<string, CheckBinding>>;
+  return g[bindingKey] ??= new Map();
+}
+function validReceiptIds(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length <= 12 && value.every((id) => typeof id === "string" && GIT_ACTION_ID_PATTERN.test(id)) && new Set(value).size === value.length;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +45,8 @@ export async function POST(req: Request) {
     const id = input.sessionId;
     if (typeof id !== "string" || !id.trim() || id !== id.trim()) return error("Valid sessionId required", 400);
     if (Object.hasOwn(input, "cwd")) return error("cwd is derived from the session", 400);
+    if (input.receiptIds !== undefined && !validReceiptIds(input.receiptIds)) return error("Only receipt IDs are accepted as check evidence", 400);
+    if (["command", "argv", "env", "proof", "receipts", "agentDir", "skip", "skipChecks", "skipRequiredChecks", "verificationContext"].some((key) => Object.hasOwn(input, key))) return error("Caller check overrides are not accepted", 400);
     const file = await resolveSessionPath(id);
     if (!file) return error("Session not found", 404);
     const header = readSessionHeader(file);
@@ -70,11 +88,17 @@ export async function POST(req: Request) {
         await guard();
         // Both trees and the mode are native server-derived facts, not caller OIDs.
         const selection = await selectGitProjectResources(cwd);
-        const { preview, snapshot, candidateDiff, candidateDiffUnavailable } = await captureExactCommitCandidate(cwd, input.paths, input.message, mode, true);
+        const receiptIds = [...(input.receiptIds as string[] | undefined ?? [])];
+        const context = createHumanGitCommitVerificationContext(scope, receiptIds, selection);
+        const { preview, snapshot, candidateDiff, candidateDiffUnavailable, verification } = await captureExactCommitCandidate(cwd, input.paths, input.message, mode, true, context);
+        if (verification.summary.receiptIds.length !== receiptIds.length) return error("Only required commit-stage receipt IDs are accepted", 409);
         await guard();
         const action = await keepHumanGitCandidate(humanGitActionSink(scope), scope, { kind: "commit", preview, message: input.message },
           { ...snapshot, ...gitActionAttribution(selection) });
-        return NextResponse.json({ ...action, preview, ...(candidateDiff ? { candidateDiff } : { candidateDiffUnavailable }) });
+        for (const [id, binding] of bindings()) if (binding.expiresAt <= Date.now()) bindings().delete(id);
+        bindings().set(action.actionId, Object.freeze({ scope: Object.freeze({ ...scope }), receiptIds: Object.freeze([...receiptIds].sort()),
+          handle: verification.handle, expiresAt: action.expiresAt }));
+        return NextResponse.json({ ...action, preview, verification: verification.summary, ...(candidateDiff ? { candidateDiff } : { candidateDiffUnavailable }) });
       } finally { release(); }
     }
     if (input.operation === "confirm") {
@@ -92,13 +116,45 @@ export async function POST(req: Request) {
       try {
         await guard();
         const selection = await selectGitCommitAdmission(cwd);
+        const binding = bindings().get(input.actionId);
+        const receiptIds = input.receiptIds as string[] | undefined ?? [];
+        if (binding && binding.expiresAt <= Date.now()) {
+          bindings().delete(input.actionId);
+          // Retire the original action too; restoring a test/system clock must
+          // not revive an awaiting historical approval or its evidence binding.
+          takeHumanGitCandidate(scope, input.actionId, { kind: "commit", preview, message: input.message });
+          throw new HumanGitCandidateError();
+        }
+        if (!binding || binding.expiresAt <= Date.now() || binding.scope.sessionId !== id ||
+          !samePath(binding.scope.sessionFile, file) || !samePath(binding.scope.cwd, cwd) ||
+          JSON.stringify(binding.receiptIds) !== JSON.stringify([...receiptIds].sort())) return error("Check evidence set mismatched or expired; prepare a new preview", 409);
         const { handle, native } = takeHumanGitCandidate(scope, input.actionId, { kind: "commit", preview, message: input.message });
+        bindings().delete(input.actionId);
         let enteredApply = false;
         try {
-          await handle.update("executing", { decision: "approved" });
+          // Keep the action awaiting during the native receipt/admission
+          // preflight. An executing journal entry would quarantine its own
+          // unreserved resource. Persist the actual approval together with the
+          // native prepared intent (or a definite preflight refusal), not a
+          // premature execution claim. No native admission exemption is added.
+          const approvedHandle: GitActionHandle = {
+            get record() { return handle.record; }, release: () => handle.release(),
+            update: (state, extra = {}) => handle.update(state, { ...extra,
+              ...(handle.record.decision === undefined ? { decision: "approved" as const } : {}) }),
+          };
           enteredApply = true;
-          const response = await applyExactCommitOperation({ handle, preview: native.preview, message: native.message, selection,
-            signal: req.signal, beforeApply: async () => { await guard(); },
+          const response = await applyExactCommitOperation({ handle: approvedHandle, preview: native.preview, message: native.message, selection,
+            signal: req.signal, beforeApply: async () => {
+              await guard();
+              // Recheck the immutable captured review at both native boundaries,
+              // including after the intent write's awaited notifications. A live
+              // token cannot substitute for lost/corrupt durable review evidence.
+              const review = await readGitAction(handle.record.id, { includeArtifact: true });
+              if (review.unavailable || !review.record || !review.candidate || review.record.sessionId !== id ||
+                review.candidate.kind !== "commit" || !samePath(review.candidate.repositoryRoot, cwd)) throw new GitOperationRecoveryError(handle.record.id);
+            },
+            verificationHandle: binding.handle,
+            verificationContext: createHumanGitCommitVerificationContext(scope, binding.receiptIds, selection),
             finish: (result) => finishHumanGitAction(handle, result, result, result.status === "partial-success"),
             shouldResolve: (result, recorded) => result.status === "committed" && !("recoveryRequired" in recorded && recorded.recoveryRequired),
           });
@@ -111,7 +167,7 @@ export async function POST(req: Request) {
             error: cause.message, recoveryRequired: true }, { status: 409 });
           if (cause instanceof GitActionRecordingError) return NextResponse.json({ ...gitActionFailureResult(cause)!.details,
             recoveryWarning: cause.message }, { status: 409 });
-          return NextResponse.json({ actionId: handle.record.id, error: cause instanceof ManagedGitAccessError || cause instanceof HumanGitSessionChangedError || cause instanceof GitCommitOperationError ? cause.message
+          return NextResponse.json({ actionId: handle.record.id, error: cause instanceof ManagedGitAccessError || cause instanceof HumanGitSessionChangedError || cause instanceof GitCommitOperationError || cause instanceof GitCommitVerificationError ? cause.message
             : "Commit unavailable or preview stale; refresh the preview" }, { status: 409 });
         } finally { handle.release(); }
       } finally { release(); }
@@ -122,7 +178,7 @@ export async function POST(req: Request) {
     if (cause instanceof GitOperationRecoveryError) return NextResponse.json({ error: cause.message, recoveryRequired: true,
       actionId: cause.actionId }, { status: 409 });
     if (cause instanceof ManagedGitAccessError || cause instanceof HumanGitCandidateError || cause instanceof HumanGitSessionChangedError
-      || cause instanceof GitCheckoutBusyError || cause instanceof GitCommitOperationError) return error(cause.message, 409);
+      || cause instanceof GitCheckoutBusyError || cause instanceof GitCommitOperationError || cause instanceof GitCommitVerificationError) return error(cause.message, 409);
     // Git stderr and subprocess errors may contain remote credentials or config values.
     return error("Commit unavailable or preview stale; refresh the preview", 409);
   }

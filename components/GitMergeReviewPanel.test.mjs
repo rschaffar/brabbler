@@ -5,6 +5,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import Module, { createRequire } from "node:module";
 import ts from "typescript";
+import vm from "node:vm";
 
 const panel = await readFile(new URL("./GitMergeReviewPanel.tsx", import.meta.url), "utf8");
 // Compile only this client component to exercise its pure selection logic in Node.
@@ -140,6 +141,88 @@ test("renderer shows the prepared authoritative proposal with one exact confirma
   const blocked = render(base.map((value, index) => index === 13 ? true : value));
   assert.match(blocked, /Run check 1<\/button>/);
   assert.match(blocked, /disabled=""[^>]*>Run check 1/);
+});
+
+// Execute actual hooks and request handlers, not a receipt reducer. These HTTP
+// DTO fixtures cover rendering races only; route/native tests prove real receipts.
+function harness(fetch, clock) {
+  let index = 0; const slots = [], effects = [], pending = [], events = [];
+  const react = {
+    useState(initial) { const i = index++; if (!(i in slots)) slots[i] = initial;
+      return [slots[i], value => { slots[i] = typeof value === "function" ? value(slots[i]) : value; }]; },
+    useRef(initial) { const i = index++; return slots[i] ??= { current: initial }; },
+    useEffect(fn, deps) { const i = index++, old = effects[i];
+      if (!old || deps.some((v, n) => !Object.is(v, old.deps[n]))) pending.push(() => { old?.cleanup?.(); effects[i] = { deps, cleanup: fn() }; }); },
+  };
+  class ClockDate extends Date { static now() { return clock.now; } }
+  const mod = { exports: {} }, jsx = (type, props) => ({ type, props });
+  vm.runInNewContext(compiled, { module: mod, exports: mod.exports, require: id => id === "react" ? react
+    : id === "./GitCheckRecoveryPanel" ? { GitCheckRecoveryPanel: () => null } : { jsx, jsxs: jsx },
+    fetch, Date: ClockDate, AbortController, URLSearchParams, Response, TextEncoder,
+    window: { dispatchEvent: event => events.push(event) }, CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } } });
+  return { events, render(props) { index = 0; const tree = mod.exports.GitMergeReviewPanel(props); for (const effect of pending.splice(0)) effect(); return tree; },
+    close() { for (const effect of effects) effect?.cleanup?.(); } };
+}
+function nodes(node) { if (!node || typeof node !== "object") return []; if (Array.isArray(node)) return node.flatMap(nodes);
+  return [node, ...nodes(node.props?.children)]; }
+function text(node) { if (Array.isArray(node)) return node.map(text).join(""); if (node && typeof node === "object") return text(node.props?.children);
+  return node == null ? "" : String(node); }
+const settle = () => new Promise(resolve => setImmediate(resolve));
+function deferred() { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; }
+const respond = body => new Response(JSON.stringify(body), { status: 200 });
+const snapshot = { ...review, featureBranch: "feature", targetBranch: "target", featureOid: oid(9), targetOid: oid(2), featureTreeOid: oid(20), targetTreeOid: oid(21), mergeTreeOid: oid(20) };
+
+test("actual verify → current GET survives own history notification and same-scope rerenders; changed server review/evidence still refuses", async (t) => {
+  for (const change of ["none", "ref", "policy"]) await t.test(change, async () => {
+    const now = Date.now(), late = deferred(), requests = [], clock = { now: now + 1 };
+    const receipt = { id: "returned-from-server", checkIndex: 0, startedAt: now - 100, finishedAt: now, logDigest: "digest" };
+    let verified = false;
+    const h = harness((url, init) => {
+      requests.push({ url, input: init?.body ? JSON.parse(init.body) : null });
+      if (url.startsWith("/api/git/review")) return Promise.resolve(respond({ review: snapshot }));
+      if (init?.method === "POST") { verified = true; return late.promise; }
+      return Promise.resolve(respond({ review: verified && change === "ref" ? { ...snapshot, targetOid: oid(99) } : snapshot,
+        checks: [{ checkIndex: 0, label: "Check" }], receipts: verified && change !== "policy" ? [receipt] : [] }));
+    }, clock);
+    try {
+      const props = { sessionId: "A", cwd: "/fixture/A" };
+      h.render(props); await settle(); let tree = h.render(props);
+      nodes(tree).find(node => node.type === "button" && text(node) === "Run check 1").props.onClick();
+      h.render({ ...props }); h.render({ ...props });
+      late.resolve(respond({ receipt })); await settle(); await settle(); tree = h.render({ ...props });
+      assert.equal(h.events.length, 1, "ordinary history refresh notification is not a policy revision");
+      assert.deepEqual(requests.filter(r => r.input).map(r => r.input), [{ sessionId: "A", operation: "verify", checkIndex: 0 }]);
+      const proposalButton = nodes(tree).find(node => node.type === "button" && text(node) === "Prepare exact integration proposal");
+      if (change === "none") {
+        assert.match(text(tree), /Passed: receipt returned-from-server/); assert.equal(proposalButton.props.disabled, false);
+      } else {
+        assert.doesNotMatch(text(tree), /Passed: receipt/); assert.equal(proposalButton.props.disabled, true);
+        assert.match(text(tree), /Verification receipt no longer matches this checkout/);
+      }
+    } finally { h.close(); }
+  });
+});
+
+test("frozen browser time behind a fresh server receipt reproduces the E2E label failure; advancing the clock fixes only display, not server matching", async () => {
+  const serverNow = Date.now(), clock = { now: serverNow - 60000 };
+  const receipt = { id: "server-current", checkIndex: 0, startedAt: serverNow - 100, finishedAt: serverNow, logDigest: "digest" };
+  let verified = false;
+  const h = harness((url, init) => {
+    if (url.startsWith("/api/git/review")) return Promise.resolve(respond({ review: snapshot }));
+    if (init?.method === "POST") { verified = true; return Promise.resolve(respond({ receipt })); }
+    return Promise.resolve(respond({ review: snapshot, checks: [{ checkIndex: 0, label: "Check" }], receipts: verified ? [receipt] : [] }));
+  }, clock);
+  try {
+    const props = { sessionId: "A", cwd: "/fixture/A" };
+    h.render(props); await settle(); let tree = h.render(props);
+    nodes(tree).find(node => node.type === "button" && text(node) === "Run check 1").props.onClick();
+    await settle(); await settle(); tree = h.render(props);
+    assert.doesNotMatch(text(tree), /Passed: receipt/); assert.doesNotMatch(text(tree), /Verification receipt no longer matches/);
+    clock.now = serverNow + 1; tree = h.render(props);
+    assert.match(text(tree), /Passed: receipt server-current/);
+    clock.now = serverNow + 16 * 60000; tree = h.render(props);
+    assert.doesNotMatch(text(tree), /Passed: receipt/, "do not waive the real frontend deadline to accommodate an incorrectly frozen test clock");
+  } finally { h.close(); }
 });
 
 test("check recovery refreshes the review after success, independently of failed integration GET", () => {

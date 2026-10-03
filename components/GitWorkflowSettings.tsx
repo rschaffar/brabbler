@@ -5,7 +5,7 @@ import {
   MAX_GIT_WORKFLOW_CHECKS, MAX_GIT_WORKFLOW_CHECK_ARGS, MAX_GIT_WORKFLOW_CHECK_LABEL,
   MAX_GIT_WORKFLOW_CHECK_EXECUTABLE, MAX_GIT_WORKFLOW_CHECK_ARG,
   validateGitWorkflowPolicy, type GitWorkflowPolicy, type GitWorkflowCheck,
-} from "@/lib/git-workflow-policy";
+} from "@/lib/git-workflow-policy-contract";
 import { sendAgentCommand } from "@/lib/agent-client";
 
 type WorkflowResponse = {

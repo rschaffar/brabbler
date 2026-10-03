@@ -1,4 +1,4 @@
-import { validateGitWorkflowPolicy, validLocalBranchName, type GitWorkflowCheck, type GitWorkflowPolicy } from "./git-workflow-policy";
+import { validateGitWorkflowPolicy, validLocalBranchName, type GitWorkflowCheck, type GitWorkflowPolicy } from "./git-workflow-policy-contract";
 import type { GitWorkflowPermissions } from "./git-workflow-permissions";
 import { validateGitCheckRecipes } from "./git-check-recipe";
 

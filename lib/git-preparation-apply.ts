@@ -8,9 +8,12 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { acquireGitCheckoutGate } from "./git-checkout-gate";
 import { gitExecEnv } from "./git-exec";
-import { assertGitOperationAdmission, beginSupervisedGitOperationIntent } from "./git-operation-admission";
+import { GIT_ACTION_ID_PATTERN } from "./git-action-types";
+import { assertGitOperationAdmission, beginSupervisedGitOperationIntent, readGitOperationReservationOwner,
+  type GitOperationReservation, type GitPrepareOutcomeProof } from "./git-operation-admission";
 import { planGitPreparationCandidate, type GitPreparationCandidate } from "./git-preparation-candidate";
-import { preflightGitPreparation, type GitPreparationRequest, type GitPreparationSnapshot } from "./git-preparation";
+import { preflightGitPreparation, revalidateGitPreparationInventory, verifyGitPreparationTrackedContents,
+  type GitPreparationRequest, type GitPreparationSnapshot, type GitPreparationTrackedContents } from "./git-preparation";
 import { selectCanonicalGitResources, revalidateGitProjectResources, type GitProjectResources } from "./git-project-resources";
 import { loadGitProjectSettings } from "./git-project-settings";
 import type { GitReviewRepository } from "./git-review";
@@ -78,28 +81,38 @@ async function immutable(file: string, data: unknown): Promise<void> {
   await syncDir(dirname(file));
 }
 async function git(repo: Bound, hooks: string, index: string | undefined, ...args: string[]): Promise<string> {
-  const { stdout } = await exec("git", ["--no-optional-locks", "-C", repo.cwd, `--git-dir=${repo.gitDir}`,
+  return launchGit(repo, hooks, index, args);
+}
+async function launchGit(repo: Bound, hooks: string, index: string | undefined, args: string[], beforeSpawn?: () => void): Promise<string> {
+  const argv = ["--no-optional-locks", "-C", repo.cwd, `--git-dir=${repo.gitDir}`,
     `--work-tree=${repo.cwd}`, "-c", "core.fsmonitor=false", "-c", `core.hooksPath=${hooks}`,
-    "-c", "commit.gpgsign=false", "-c", "core.attributesFile=/dev/null", ...args], {
-    encoding: "utf8", timeout: 30_000, maxBuffer: 8 * 1024 * 1024,
+    "-c", "commit.gpgsign=false", "-c", "core.attributesFile=/dev/null", ...args];
+  const options = { encoding: "utf8" as const, timeout: 30_000, maxBuffer: 8 * 1024 * 1024,
     env: { ...gitExecEnv(index), GIT_COMMON_DIR: repo.commonDir, GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1",
-      GIT_NO_LAZY_FETCH: "1", GIT_ATTR_NOSYSTEM: "1", GIT_PAGER: "cat" },
-  });
+      GIT_NO_LAZY_FETCH: "1", GIT_ATTR_NOSYSTEM: "1", GIT_PAGER: "cat" } };
+  // All argument/environment/hook preparation precedes this SYNCHRONOUS guard.
+  // No await or caller hook may intervene between it and the actual child launch.
+  beforeSpawn?.();
+  const { stdout } = await exec("git", argv, options);
   return stdout;
 }
-async function updateRefs(repo: Bound, hooks: string, snapshot: GitPreparationSnapshot, newOid: string): Promise<void> {
+async function updateRefs(repo: Bound, hooks: string, snapshot: GitPreparationSnapshot, newOid: string,
+  beforeSpawn: () => void): Promise<void> {
   // Both ref locks are held during prepare/commit. A separate show-ref followed
   // by update-ref on only the feature branch would not protect the target.
-  const commands = `start\nverify ${snapshot.target.ref} ${snapshot.target.oid}\n` +
-    `update ${snapshot.source.ref} ${newOid} ${snapshot.source.oid}\nprepare\ncommit\n`;
+  // stdin's no-deref option applies to the NEXT operation only: repeat it for
+  // both refs so a late symbolic-ref substitution cannot redirect the approved
+  // source update into an unapproved third branch (or alias target verification).
+  const commands = `start\noption no-deref\nverify ${snapshot.target.ref} ${snapshot.target.oid}\n` +
+    `option no-deref\nupdate ${snapshot.source.ref} ${newOid} ${snapshot.source.oid}\nprepare\ncommit\n`;
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("git", ["--no-optional-locks", "-C", repo.cwd, `--git-dir=${repo.gitDir}`,
+    const argv = ["--no-optional-locks", "-C", repo.cwd, `--git-dir=${repo.gitDir}`,
       `--work-tree=${repo.cwd}`, "-c", "core.fsmonitor=false", "-c", `core.hooksPath=${hooks}`,
-      "-c", "commit.gpgsign=false", "-c", "core.attributesFile=/dev/null", "update-ref", "--stdin"], {
-      stdio: ["pipe", "ignore", "ignore"], timeout: 30_000,
-      env: { ...gitExecEnv(), GIT_COMMON_DIR: repo.commonDir, GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1",
-        GIT_NO_LAZY_FETCH: "1", GIT_ATTR_NOSYSTEM: "1", GIT_PAGER: "cat" },
-    });
+      "-c", "commit.gpgsign=false", "-c", "core.attributesFile=/dev/null", "update-ref", "--stdin"];
+    const env = { ...gitExecEnv(), GIT_COMMON_DIR: repo.commonDir, GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1",
+      GIT_NO_LAZY_FETCH: "1", GIT_ATTR_NOSYSTEM: "1", GIT_PAGER: "cat" };
+    beforeSpawn(); // after ALL setup, immediately before the actual ref-CAS child
+    const child = spawn("git", argv, { stdio: ["pipe", "ignore", "ignore"], timeout: 30_000, env });
     child.stdin.on("error", () => { /* close reports failure */ });
     child.stdin.end(commands);
     child.on("error", reject);
@@ -142,7 +155,67 @@ async function collisionCheck(repo: Bound, hooks: string, oldTree: string, newTr
 export type GitPreparationApplyResult =
   | { status: "already-prepared"; oldSourceOid: string; newSourceOid: string; targetOid: string }
   | { status: "prepared"; oldSourceOid: string; newSourceOid: string; targetOid: string; treeOid: string; recoveryPath: string }
-  | { status: "partial-state"; oldSourceOid: string; observedSourceOid: string | null; targetOid: string; recoveryPath: string };
+  | { status: "partial-state"; oldSourceOid: string; observedSourceOid: string | null; targetOid: string; recoveryPath: string;
+      recoveryRequired: true;
+      /** Present only when final Git state was positively verified before completion/admission failed. */
+      newSourceOid?: string; treeOid?: string };
+type PreparedResult = Extract<GitPreparationApplyResult, { status: "prepared" }>;
+declare const completionBrand: unique symbol;
+/** Private object identity, never serializable authority. */
+export interface GitPreparationVerifiedCompletion { readonly [completionBrand]: true }
+export interface GitPreparationCompletionEvidence {
+  readonly stage: "verified-pending-admission" | "completed";
+  readonly actionId: string;
+  readonly intentId: string;
+  readonly result: Readonly<PreparedResult>;
+  readonly proof: GitPrepareOutcomeProof;
+  readonly source: GitProjectResources;
+  readonly target: GitProjectResources;
+  readonly settingsRevision: string;
+  /** Actual bounded physical content/index verification, not cached Git status. */
+  readonly sourceTrackedContents: Readonly<GitPreparationTrackedContents>;
+  readonly targetTrackedContents: Readonly<GitPreparationTrackedContents>;
+}
+const completionKey = Symbol.for("pi-web:git-preparation-apply:completed");
+function completions(): WeakMap<object, GitPreparationCompletionEvidence> {
+  const shared = globalThis as unknown as Record<symbol, WeakMap<object, GitPreparationCompletionEvidence> | undefined>;
+  return shared[completionKey] ??= new WeakMap();
+}
+/** Server-only authenticity check. During onCompleted this is PENDING, not a
+ * reentry successor. Only after apply returns may the controller register the
+ * identical returned result whose stage is completed. Copies/restarts fail. */
+export function readGitPreparationCompletion(handle: object): GitPreparationCompletionEvidence | undefined {
+  return handle && typeof handle === "object" ? completions().get(handle) : undefined;
+}
+function freezeEvidence<T>(value: T): T {
+  if (value && typeof value === "object") {
+    for (const child of Object.values(value)) freezeEvidence(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+/** Existing resolved intents also collide: an action ID is not a retry key.
+ * Admission separately validates these bounded ledger envelopes. Never edit it. */
+async function assertUnusedActionId(source: GitProjectResources, agentDir: string, actionId: string): Promise<void> {
+  const dir = join(agentDir, "pi-web", "git-operation-admission", "v1", digest(source.commonDir));
+  let names: string[];
+  try { names = await readdir(dir); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
+  if (names.length > 3073) refuse();
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    const fd = await open(join(dir, name), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const info = await fd.stat();
+      if (!info.isFile() || info.size > 4096) refuse();
+      const bytes = Buffer.alloc(4097);
+      const { bytesRead } = await fd.read(bytes, 0, bytes.length, 0);
+      if (bytesRead !== info.size) refuse();
+      const envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, bytesRead)));
+      if (!envelope?.record || envelope.record.actionId === actionId) refuse();
+    } finally { await fd.close(); }
+  }
+}
 export interface GitPreparedApply {
   readonly snapshot: GitPreparationSnapshot;
   readonly candidate: GitPreparationCandidate;
@@ -187,8 +260,23 @@ export async function prepareGitPreparationApply(request: GitPreparationRequest,
 }
 export interface GitPreparationApplyOptions {
   prepared: GitPreparedApply;
-  /** Actor-specific LIVE permission, checked before work and again immediately at the ref boundary. */
-  authorize: (phase: "before-apply" | "final-ref") => Promise<void>;
+  /** Server-owned already-anchored journal ID, NEVER copied from raw tool args.
+   * UUID syntax and any existing native intent collision are refused. */
+  actionId?: string;
+  /** Server-only hook AFTER the durable native intent exists, BEFORE effects.
+   * Receives the actual held reservation, authenticated ONLY with the shared
+   * readGitOperationReservationOwner reader. Never use IDs/structural copies to
+   * exempt active history. The runtime may activate its journal here and retain
+   * this exact owner for its subsequent live authorization checks. */
+  onIntent?: (reservation: GitOperationReservation) => void | Promise<void>;
+  /** Actor-specific LIVE permission before work, immediately before checkout
+   * effects, and at the final ref boundary. Helpers grant no actor authority. */
+  authorize: (phase: "before-apply" | "final-effect" | "final-ref") => Promise<void>;
+  /** Trusted controller hook after actual rewrite verification, BEFORE native
+   * admission resolves. Persist the authentic measured outcome; do not publish
+   * a reentry successor here. Failure quarantines even an exact Git result.
+   * No-op does not invoke this rewrite-completion hook. */
+  onCompleted?: (completion: GitPreparationVerifiedCompletion) => void | Promise<void>;
   /** Test seams; never supplied by an external request. */
   afterIntent?: () => void | Promise<void>;
   afterCheckout?: () => void | Promise<void>;
@@ -200,12 +288,36 @@ export interface GitPreparationApplyOptions {
 /** Every comparison is recomputed on the server. Caller-supplied OIDs are consistency
  * assertions, not authority. No recovery or retry entry point exists. */
 export async function applyGitPreparation(options: GitPreparationApplyOptions): Promise<GitPreparationApplyResult> {
+  return applyPreparation(options);
+}
+function authorityGuard(callback: unknown): () => void {
+  if (typeof callback !== "function" || Object.prototype.toString.call(callback) !== "[object Function]") refuse();
+  return () => {
+    // A synchronous function that RETURNS an async/thenable/non-void value is
+    // also unsupported. Never await it or admit the pending authority claim.
+    if (callback() !== undefined) refuse();
+  };
+}
+/** Runtime-only mandatory live authority. NOT a pre-async wrapper around the
+ * legacy apply: the guard is carried into both actual child launch boundaries.
+ * A no-op has a fresh guarded read, but no intent/completion/rewrite proof. */
+export async function applyGitPreparationWithAuthority(
+  options: Parameters<typeof applyGitPreparation>[0] & { assertCurrentSync(): void },
+): Promise<GitPreparationApplyResult> {
+  const assertCurrentSync = authorityGuard(options?.assertCurrentSync);
+  return applyPreparation(options, assertCurrentSync);
+}
+async function applyPreparation(options: GitPreparationApplyOptions, assertCurrentSync?: () => void): Promise<GitPreparationApplyResult> {
   if (!options || typeof options.authorize !== "function" || !options.prepared ||
-      options.afterIndexInstall && !process.env.NODE_TEST_CONTEXT) refuse();
+      options.afterIndexInstall && !process.env.NODE_TEST_CONTEXT ||
+      options.actionId !== undefined && (typeof options.actionId !== "string" || !GIT_ACTION_ID_PATTERN.test(options.actionId)) ||
+      options.onCompleted !== undefined && typeof options.onCompleted !== "function" ||
+      options.onIntent !== undefined && typeof options.onIntent !== "function") refuse();
   const saved = issued().get(options.prepared);
   if (!saved) refuse();
   issued().delete(options.prepared); // one attempt, even if gate acquisition or validation fails
   const { snapshot, candidate, settingsRevision, agentDir } = saved;
+  const actionId = options.actionId ?? randomUUID();
   assertDesignatedMain(snapshot);
   if (Date.now() - saved.issuedAt > 5 * 60_000 ||
       JSON.stringify(options.prepared.snapshot) !== JSON.stringify(snapshot) ||
@@ -223,10 +335,18 @@ export async function applyGitPreparation(options: GitPreparationApplyOptions): 
     };
     await fresh();
     await assertMainSettings(sourceSelection, agentDir, snapshot, settingsRevision);
-    await assertGitOperationAdmission(sourceSelection, agentDir);
+    await assertGitOperationAdmission(sourceSelection, agentDir, assertCurrentSync ? undefined : options.actionId);
+    await assertUnusedActionId(sourceSelection, agentDir, actionId);
     if (JSON.stringify(await planGitPreparationCandidate(snapshot, agentDir)) !== JSON.stringify(candidate)) refuse();
     if (snapshot.status === "already-prepared") {
       if (candidate.status !== "already-prepared" || candidate.oldSourceOid !== candidate.newSourceOid) refuse();
+      if (assertCurrentSync) {
+        await options.authorize("before-apply");
+        await fresh();
+        await assertMainSettings(sourceSelection, agentDir, snapshot, settingsRevision);
+        await assertGitOperationAdmission(sourceSelection, agentDir);
+        assertCurrentSync(); // AFTER final read/authorization awaits; no rewrite ordering is issued
+      }
       return { status: "already-prepared", oldSourceOid: snapshot.source.oid, newSourceOid: snapshot.source.oid, targetOid: snapshot.target.oid };
     }
     if (candidate.status !== "candidate" || candidate.oldSourceOid !== snapshot.source.oid || candidate.targetOid !== snapshot.target.oid ||
@@ -236,7 +356,8 @@ export async function applyGitPreparation(options: GitPreparationApplyOptions): 
     await fresh();
     await assertMainSettings(sourceSelection, agentDir, snapshot, settingsRevision);
     if (JSON.stringify(await planGitPreparationCandidate(snapshot, agentDir)) !== JSON.stringify(candidate)) refuse();
-    await assertGitOperationAdmission(sourceSelection, agentDir);
+    await assertGitOperationAdmission(sourceSelection, agentDir, assertCurrentSync ? undefined : options.actionId);
+    await assertUnusedActionId(sourceSelection, agentDir, actionId);
     return await withPinnedRepositories(sourceSelection, targetSelection, async (source, target) => {
       const hooks = await privateRecovery(agentDir).then(async (dir) => {
         const path = join(dir, `hooks-${randomUUID()}`);
@@ -285,15 +406,26 @@ export async function applyGitPreparation(options: GitPreparationApplyOptions): 
       const tempIndex = join(recoveryDir, `${id}.index`);
       // Immutable evidence is durable before the admission intent and before ANY index/checkout/ref effect.
       await immutable(recoveryPath, { version: 1, phase: "prepared", source: sourceSelection, target: targetSelection,
-        snapshot, candidate, settingsRevision, oldTree, newTree: tree,
+        actionId, snapshot, candidate, settingsRevision, oldTree, newTree: tree,
         physicalIndexPath: join(sourceSelection.gitDir, "index"), physicalLockPath: join(sourceSelection.gitDir, "index.lock"), tempIndex });
-      const admission = await beginSupervisedGitOperationIntent(sourceSelection, id, "prepare", agentDir);
+      await assertUnusedActionId(sourceSelection, agentDir, actionId);
+      const admission = await beginSupervisedGitOperationIntent(sourceSelection, actionId, "prepare", agentDir);
+      const assertHeld = () => {
+        const held = readGitOperationReservationOwner(admission);
+        if (!held || held.kind !== "prepare" || held.actionId !== actionId || held.agentDir !== agentDir ||
+            JSON.stringify(held.selection) !== JSON.stringify(sourceSelection)) refuse();
+      };
       let lock: Awaited<ReturnType<typeof open>> | undefined;
       let started = false;
       let installed = false;
       let phase = "before-checkout";
       let lockIdentity: { dev: number; ino: number } | undefined;
+      let verifiedResult: Readonly<PreparedResult> | undefined;
+      let completion: GitPreparationVerifiedCompletion | undefined;
       try {
+        assertHeld();
+        await options.onIntent?.(admission);
+        assertHeld();
         await options.afterIntent?.();
         lock = await open(lockPath, "wx", 0o600);
         const info = await lock.stat(); lockIdentity = { dev: info.dev, ino: info.ino };
@@ -310,12 +442,22 @@ export async function applyGitPreparation(options: GitPreparationApplyOptions): 
         await collisionCheck(source, hooks, oldTree, tree);
         await safeConfig();
         await assertMainSettings(sourceSelection, agentDir, snapshot, settingsRevision);
-        admission.assertOwned();
-        started = true; // read-tree -u may partially modify the worktree even on nonzero exit.
-        phase = "checkout";
-        await runSource(tempIndex, "read-tree", "-u", "-m", snapshot.source.oid, candidate.newSourceOid);
+        await revalidateGitPreparationInventory(sourceSelection, targetSelection, snapshot);
+        await verifyGitPreparationTrackedContents(source, oldTree, { indexFile: tempIndex, previousTreeOid: tree });
+        await verifyGitPreparationTrackedContents(target, snapshot.target.trackedContents.treeOid);
+        // Long inventory/config/index/content I/O precedes live authorization at the
+        // FIRST physical checkout effect. No actor authority is inferred here.
+        await options.authorize("final-effect");
+        await launchGit(source, hooks, tempIndex, ["read-tree", "-u", "-m", snapshot.source.oid, candidate.newSourceOid], () => {
+          assertHeld();
+          assertCurrentSync?.();
+          started = true; // only a launched read-tree -u can partially modify the checkout
+          phase = "checkout";
+        });
         await options.afterCheckout?.();
         if ((await lstat(tempIndex)).size > 16 * 1024 * 1024 || (await runSource(tempIndex, "write-tree")).trim() !== tree) refuse();
+        await verifyGitPreparationTrackedContents(source, tree, { indexFile: tempIndex, previousTreeOid: oldTree });
+        await verifyGitPreparationTrackedContents(target, snapshot.target.trackedContents.treeOid);
         await assertOriginalIndex();
         if (await runSource(tempIndex, "diff-files", "--no-ext-diff", "--no-textconv", "--name-only", "-z", "--") !== "" ||
             await runSource(tempIndex, "ls-files", "--others", "--exclude-standard", "-z") !== "") refuse();
@@ -339,16 +481,24 @@ export async function applyGitPreparation(options: GitPreparationApplyOptions): 
         catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
         // The caller owns live pause/opt-out/actor checks. An intervening policy
         // write, even with equal values, also fences this exact approved candidate.
-        await options.authorize("final-ref");
         await assertMainSettings(sourceSelection, agentDir, snapshot, settingsRevision);
+        await revalidateGitPreparationInventory(sourceSelection, targetSelection, snapshot);
         await checkRefs(source, target, hooks, snapshot);
         await revalidateGitProjectResources(sourceSelection); await revalidateGitProjectResources(targetSelection);
         await noMarkers(source.gitDir); await noMarkers(target.gitDir);
         await ownedLock(lockPath, lockIdentity);
         await assertOriginalIndex();
-        admission.assertOwned();
+        // read-tree can leave unchanged paths whose cached Git stat lies. Prove
+        // candidate bytes/index again immediately before the source ref CAS;
+        // all awaited content reads still PRECEDE the final native authority guard.
+        await verifyGitPreparationTrackedContents(source, tree, { indexFile: tempIndex, previousTreeOid: oldTree });
+        await verifyGitPreparationTrackedContents(target, snapshot.target.trackedContents.treeOid);
+        await options.authorize("final-ref");
         phase = "ref-transaction";
-        await updateRefs(source, hooks, snapshot, candidate.newSourceOid);
+        await updateRefs(source, hooks, snapshot, candidate.newSourceOid, () => {
+          assertHeld();
+          assertCurrentSync?.();
+        });
         phase = "install-index";
         await options.afterRef?.();
         await lock.writeFile(await readFile(tempIndex)); await lock.sync(); await lock.close(); lock = undefined;
@@ -364,39 +514,66 @@ export async function applyGitPreparation(options: GitPreparationApplyOptions): 
         await syncPinnedDir(source.gitDir);
         await options.afterIndexInstall?.();
         phase = "verify-repository";
-        // No success based on Git exit status alone: compare actual refs, tree, index,
-        // checkout status, marker state and completed children before recording outcome.
-        await revalidateGitProjectResources(sourceSelection); await revalidateGitProjectResources(targetSelection);
-        await noMarkers(source.gitDir); await noMarkers(target.gitDir);
-        await collisionCheck(source, hooks, oldTree, tree);
-        for (const repo of [source, target]) {
-          try { await lstat(join(repo.gitDir, "index.lock")); refuse(); }
-          catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-        }
-        const actual = (await runSource(undefined, "show-ref", "--verify", "--hash", snapshot.source.ref)).trim();
-        if (actual !== candidate.newSourceOid || (await runSource(undefined, "symbolic-ref", "--quiet", "HEAD")).trim() !== snapshot.source.ref ||
-            (await runSource(undefined, "rev-parse", "HEAD^{commit}")).trim() !== actual ||
-            (await runTarget("show-ref", "--verify", "--hash", snapshot.target.ref)).trim() !== snapshot.target.oid ||
-            (await runSource(undefined, "show-ref", "--verify", "--hash", snapshot.designatedMain.ref)).trim() !== snapshot.designatedMain.oid ||
-            (await runSource(undefined, "write-tree")).trim() !== tree ||
-            digest(await readFile(join(target.gitDir, "index"))) !== snapshot.target.indexDigest ||
-            (await runTarget("symbolic-ref", "--quiet", "HEAD")).trim() !== snapshot.target.ref ||
-            await runTarget("status", "--porcelain=v1", "-z", "--untracked-files=all") !== "" ||
-            (await runTarget("ls-files", "-v", "-z")).split("\0").some((row) => row && !row.startsWith("H ")) ||
-            await runSource(undefined, "status", "--porcelain=v1", "-z", "--untracked-files=all") !== "" ||
-            await runSource(undefined, "ls-files", "-u", "-z") !== "" ||
-            (await runSource(undefined, "ls-files", "-v", "-z")).split("\0").some((row) => row && !row.startsWith("H "))) refuse();
-        // This is measured state, not a completed claim: durable admission must
-        // still resolve. A failure resolving it leaves this record quarantined.
-        await ownedLock(index, lockIdentity);
+        // No success based on Git exit status alone. Recheck after the trusted
+        // history callback too; an intervening writer must not resolve admission.
+        const verifyRepository = async () => {
+          await revalidateGitProjectResources(sourceSelection); await revalidateGitProjectResources(targetSelection);
+          await assertMainSettings(sourceSelection, agentDir, snapshot, settingsRevision);
+          await safeConfig();
+          await noMarkers(source.gitDir); await noMarkers(target.gitDir);
+          await collisionCheck(source, hooks, oldTree, tree);
+          for (const repo of [source, target]) {
+            try { await lstat(join(repo.gitDir, "index.lock")); refuse(); }
+            catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+          }
+          const actual = (await runSource(undefined, "show-ref", "--verify", "--hash", snapshot.source.ref)).trim();
+          if (actual !== candidate.newSourceOid || (await runSource(undefined, "symbolic-ref", "--quiet", "HEAD")).trim() !== snapshot.source.ref ||
+              (await runSource(undefined, "rev-parse", "HEAD^{commit}")).trim() !== actual ||
+              (await runTarget("show-ref", "--verify", "--hash", snapshot.target.ref)).trim() !== snapshot.target.oid ||
+              (await runSource(undefined, "show-ref", "--verify", "--hash", snapshot.designatedMain.ref)).trim() !== snapshot.designatedMain.oid ||
+              (await runSource(undefined, "write-tree")).trim() !== tree ||
+              digest(await readFile(join(target.gitDir, "index"))) !== snapshot.target.indexDigest ||
+              (await runTarget("symbolic-ref", "--quiet", "HEAD")).trim() !== snapshot.target.ref ||
+              await runTarget("status", "--porcelain=v1", "-z", "--untracked-files=all") !== "" ||
+              (await runTarget("ls-files", "-v", "-z")).split("\0").some((row) => row && !row.startsWith("H ")) ||
+              await runSource(undefined, "status", "--porcelain=v1", "-z", "--untracked-files=all") !== "" ||
+              await runSource(undefined, "ls-files", "-u", "-z") !== "" ||
+              (await runSource(undefined, "ls-files", "-v", "-z")).split("\0").some((row) => row && !row.startsWith("H "))) refuse();
+          const sourceTrackedContents = await verifyGitPreparationTrackedContents(source, tree, { previousTreeOid: oldTree });
+          const targetTrackedContents = await verifyGitPreparationTrackedContents(target, snapshot.target.trackedContents.treeOid);
+          if (!lockIdentity) refuse();
+          await ownedLock(index, lockIdentity);
+          return { actual, sourceTrackedContents, targetTrackedContents };
+        };
+        const verified = await verifyRepository();
+        const { actual } = verified;
+        // This is measured state, not a completed claim: history and durable
+        // admission must still resolve. Any failure leaves quarantine.
+        verifiedResult = Object.freeze({ status: "prepared", oldSourceOid: snapshot.source.oid, newSourceOid: actual,
+          targetOid: snapshot.target.oid, treeOid: tree, recoveryPath });
+        const proof: GitPrepareOutcomeProof = Object.freeze({ version: 1, outcome: "completed",
+          beforeOid: snapshot.source.oid, afterOid: actual, resultTreeOid: tree });
         phase = "record-outcome";
-        await immutable(`${recoveryPath}.outcome`, { version: 1, status: "verified-pending-admission", beforeOid: snapshot.source.oid,
+        await immutable(`${recoveryPath}.outcome`, { version: 1, status: "verified-pending-admission", actionId,
+          intentId: admission.id, beforeOid: snapshot.source.oid,
           afterOid: actual, targetOid: snapshot.target.oid, resultTreeOid: tree });
+        completion = Object.freeze(Object.create(null)) as GitPreparationVerifiedCompletion;
+        const evidence = freezeEvidence({ stage: "verified-pending-admission" as const, actionId, intentId: admission.id,
+          result: verifiedResult, proof, source: structuredClone(sourceSelection), target: structuredClone(targetSelection), settingsRevision,
+          sourceTrackedContents: verified.sourceTrackedContents, targetTrackedContents: verified.targetTrackedContents });
+        completions().set(completion, evidence); // actual verification, never preview/snapshot
+        phase = "completion-callback";
+        await options.onCompleted?.(completion);
+        phase = "verify-after-completion";
+        await verifyRepository();
         phase = "resolve-admission";
-        admission.resolve({ version: 1, outcome: "completed", beforeOid: snapshot.source.oid, afterOid: actual, resultTreeOid: tree });
-        return { status: "prepared", oldSourceOid: snapshot.source.oid, newSourceOid: actual,
-          targetOid: snapshot.target.oid, treeOid: tree, recoveryPath };
+        admission.resolve(proof);
+        const completed = Object.freeze({ ...evidence, stage: "completed" as const });
+        completions().set(completion, completed);
+        completions().set(verifiedResult, completed);
+        return verifiedResult;
       } catch {
+        if (completion) completions().delete(completion); // no successor after failed history/admission
         if (started) {
           let lockRetained = false;
           if (installed) {
@@ -424,6 +601,8 @@ export async function applyGitPreparation(options: GitPreparationApplyOptions): 
           try {
             await immutable(`${recoveryPath}.partial`, { version: 1, status: "partial-state", phase,
               oldSourceOid: snapshot.source.oid, observedSourceOid, targetOid: snapshot.target.oid,
+              actionId, intentId: admission.id, recoveryRequired: true,
+              ...(verifiedResult ? { newSourceOid: verifiedResult.newSourceOid, treeOid: verifiedResult.treeOid } : {}),
               indexInstalled: installed, indexLock: lockRetained ? "owned-retained" : "unconfirmed" });
           } catch {
             // The original prepared evidence and unresolved intent still exist.
@@ -432,7 +611,8 @@ export async function applyGitPreparation(options: GitPreparationApplyOptions): 
           }
           if (!lockRetained) throw new Error(`Preparation ${id} requires manual recovery; index lock not retained; do not retry`);
           return { status: "partial-state", oldSourceOid: snapshot.source.oid,
-            observedSourceOid, targetOid: snapshot.target.oid, recoveryPath };
+            observedSourceOid, targetOid: snapshot.target.oid, recoveryPath, recoveryRequired: true,
+            ...(verifiedResult ? { newSourceOid: verifiedResult.newSourceOid, treeOid: verifiedResult.treeOid } : {}) };
         }
         throw new Error(`Preparation intent ${id} requires manual recovery; do not retry`);
       } finally {

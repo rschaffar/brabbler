@@ -24,6 +24,8 @@ import { claimGitWorkspaceTransition, failGitWorkspaceTransition, finishGitWorks
 import { acquireGitCheckoutGate, createGitCheckoutOperationGuard, isGitCheckoutGated, isReadOnlyCheckoutTool } from "./git-checkout-gate";
 import { listLocalBranchTips, listWorktrees } from "./worktree";
 import { samePath } from "./paths";
+import { beginGitWorkspacePlacement, createTrustedWorkspaceUsage, readPersistedWorkspaceSessions, type KnownInventory, type SessionUsage, type WorkspaceUsageSnapshot } from "./git-workspace-usage";
+import { readTerminalWorkspaceUsage } from "./terminal-manager";
 import { readSessionHeader } from "./session-reader";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
@@ -73,6 +75,8 @@ import { createSessionReferenceExtension } from "./session-reference-extension";
 import { normalizeAskUserAnswer } from "./ask-user";
 import { subscribeGitActionUpdates } from "./git-action-journal";
 import { GitActionDecisionEndedError } from "./git-action-controller";
+import { gitActionAttentionSummary, gitActionResponsePassesNativeGuard, projectGitActionUiCandidate } from "./rpc-manager.git-ui";
+import { advanceGitCheckProcessAuthorityRevision, registerGitCheckLiveAuthorityReader } from "./git-check-authority-fence";
 import { isBlockingExtensionUiRequest } from "./browser-notifications";
 import {
   appendClearedSessionToolSelection,
@@ -96,9 +100,21 @@ type AgentRunCompleteListener = (sessionId: string) => void;
 function attentionSummary(request: BlockingExtensionUiRequest): string {
   if (request.method === "custom") return "";
   if (request.method === "ask_user") return request.question.trim().replace(/\s+/g, " ").slice(0, 160);
-  if (request.method === "git_action" && request.candidate.kind === "preferences") return "Choose Git workflow preferences";
-  if (request.method === "git_action") return request.candidate.kind === "commit" ? "Review exact Git commit" : request.candidate.kind === "checks" ? "Approve Git checks" : request.candidate.kind === "integration" ? "Approve exact Git merge" : "Review local Git comparison";
+  if (request.method === "git_action") return gitActionAttentionSummary(request.candidate);
   return request.title.trim().replace(/\s+/g, " ").slice(0, 160);
+}
+
+/** Instrument the actual writer, not a hash of its eventual values. SDK
+ * extension APIs dispatch through these instance methods. */
+function fenceGitAuthorityWriter<Args extends unknown[], Result>(owner: object,
+  get: () => (...args: Args) => Result, set: (writer: (...args: Args) => Result) => void,
+  before: (...args: Args) => void): { verify(): void; restore(): void } | undefined {
+  const original = get();
+  if (typeof original !== "function") return;
+  const writer = (...args: Args): Result => { before(...args); return original.apply(owner, args); };
+  set(writer);
+  return { verify() { if (get() !== writer) throw new Error("Git authority writer instrumentation changed"); },
+    restore() { if (get() === writer) set(original); } };
 }
 
 type PendingUiResponse = {
@@ -312,6 +328,11 @@ export class AgentSessionWrapper {
   private sessionShutdownEmitted = false;
   private forceShutdownOnIdle = false;
   private _alive = true;
+  private gitAuthorityRevision = BigInt(0);
+  private readonly gitAuthorityInstance = randomUUID();
+  private readonly gitAuthorityWriters: Array<{ verify(): void; restore(): void }> = [];
+  private unregisterGitAuthorityReader?: () => void;
+  private gitAuthorityWritersKnown = false;
 
   constructor(
     public readonly inner: AgentSessionLike,
@@ -323,6 +344,32 @@ export class AgentSessionWrapper {
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
     this.checkoutGuardInstalled = options.checkoutGuardInstalled ?? false;
+    const manager = inner.sessionManager;
+    const before = () => this.noteGitCheckAuthorityMutation();
+    const writers = [
+      fenceGitAuthorityWriter(inner, () => inner.setActiveToolsByName, (writer) => { inner.setActiveToolsByName = writer; }, before),
+      ...(manager ? [fenceGitAuthorityWriter(manager, () => manager.appendCustomEntry, (writer) => { manager.appendCustomEntry = writer; },
+        (type) => { if (type !== "pi-web:git-action") before(); }),
+      fenceGitAuthorityWriter(manager, () => manager.branch, (writer) => { manager.branch = writer; }, before),
+      fenceGitAuthorityWriter(manager, () => manager.resetLeaf, (writer) => { manager.resetLeaf = writer; }, before),
+      fenceGitAuthorityWriter(manager, () => manager.branchWithSummary, (writer) => { manager.branchWithSummary = writer; }, before),
+      fenceGitAuthorityWriter(manager, () => manager.setSessionFile, (writer) => { manager.setSessionFile = writer; }, before),
+      fenceGitAuthorityWriter(manager, () => manager.newSession, (writer) => { manager.newSession = writer; }, before)] : []),
+    ];
+    this.gitAuthorityWritersKnown = !!manager && writers.length === 7 && writers.every((writer) => writer !== undefined);
+    this.gitAuthorityWriters.push(...writers.filter((writer) => writer !== undefined));
+    this.unregisterGitAuthorityReader = registerGitCheckLiveAuthorityReader(this, () => {
+      if (inner.sessionManager !== manager) throw new Error("Git authority owner manager changed");
+      return this.readGitCheckAuthorityRevisionSync();
+    });
+  }
+
+  /** Trusted bootstrap only: no role, grant or receipt is minted by this epoch. */
+  noteGitCheckAuthorityMutation(): void { this.gitAuthorityRevision += BigInt(1); }
+  readGitCheckAuthorityRevisionSync(): string {
+    if (!this._alive || !this.gitAuthorityWritersKnown) throw new Error("Live Git authority writer provider unavailable");
+    for (const writer of this.gitAuthorityWriters) writer.verify();
+    return `${this.gitAuthorityInstance}:${this.gitAuthorityRevision}`;
   }
 
   get sessionId(): string {
@@ -562,6 +609,12 @@ export class AgentSessionWrapper {
   }
 
   private async performGitWorkspaceTransition(transition: GitWorkspaceTransition): Promise<void> {
+    const finishPlacement = beginGitWorkspacePlacement(transition.destinationPath);
+    const finishSourcePlacement = (() => {
+      try { return beginGitWorkspacePlacement(this.cwd); }
+      catch (error) { finishPlacement(); throw error; }
+    })();
+    try {
     const sourceFile = this.sessionFile;
     const manager = this.inner.sessionManager;
     if (!this._alive || this.isRunning() || !manager.isPersisted() || !sourceFile || !existsSync(sourceFile)
@@ -627,6 +680,7 @@ export class AgentSessionWrapper {
       if (source) appendCompletedGitWorkspaceTransition(SessionManager.open(source, manager.getSessionDir()), transition,
         movedId === this.sessionId ? undefined : SessionManager.open(movedFile, manager.getSessionDir()));
     } catch { /* Receipt is authoritative even if transcript decoration fails. */ }
+    } finally { finishSourcePlacement(); finishPlacement(); }
   }
 
   beginExtensionBinding(): void {
@@ -836,6 +890,8 @@ export class AgentSessionWrapper {
       throw new Error(`Cannot ${type} while another session command is running`);
     }
 
+    const finishPlacement = ["fork", "fork_branch", "clone"].includes(type)
+      ? beginGitWorkspacePlacement(this.inner.sessionManager.getCwd()) : undefined;
     const tracksMutation = !allowedDuringReplacement;
     if (tracksMutation) this.activeMutatingCommands += 1;
 
@@ -1141,6 +1197,7 @@ export class AgentSessionWrapper {
       }
 
       case "navigate_tree": {
+        this.noteGitCheckAuthorityMutation();
         if (this.inner.isBashRunning) {
           throw new Error("Cannot navigate while a shell command is running");
         }
@@ -1258,6 +1315,7 @@ export class AgentSessionWrapper {
       }
 
       case "reload": {
+        this.noteGitCheckAuthorityMutation();
         if (this.extensionUiAbortController.signal.aborted) {
           this.extensionUiAbortController = new AbortController();
         }
@@ -1329,6 +1387,7 @@ export class AgentSessionWrapper {
           throw new Error(`Unsupported command: ${type}`);
       }
     } finally {
+      finishPlacement?.();
       if (tracksMutation) this.activeMutatingCommands = Math.max(0, this.activeMutatingCommands - 1);
     }
   }
@@ -1343,6 +1402,8 @@ export class AgentSessionWrapper {
     if (this.inner.isBashRunning) this.inner.abortBash();
     this.unsubscribe?.();
     this.unsubscribeGitActions?.();
+    this.unregisterGitAuthorityReader?.();
+    for (const writer of this.gitAuthorityWriters) writer.restore();
     for (const pending of this.pendingUiResponses.values()) pending.cancel();
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
     this.pendingUiResponses.clear();
@@ -1424,6 +1485,7 @@ export class AgentSessionWrapper {
     const request = this.pendingUiRequests.get(response.id) as ExtensionUiRequest | undefined;
     if (request?.method === "ask_user" && !("cancelled" in response)
       && (!("answer" in response) || !normalizeAskUserAnswer(response.answer, request))) return;
+    if (request?.method === "git_action" && !gitActionResponsePassesNativeGuard(request, response)) return;
     if (request?.method === "git_action" && request.candidate.kind === "preferences") {
       if ("cancelled" in response) {
         if (response.cancelled !== true || Object.keys(response).length !== 3) return;
@@ -1878,23 +1940,30 @@ export class AgentSessionWrapper {
       ),
       // Human Git decisions have no response deadline. Stop/teardown still
       // settle them; approval still goes through the native freshness checks.
-      gitPreferences: (candidate: Extract<GitActionCandidate, { kind: "preferences" }>, signal?: AbortSignal) => this.requestExtensionUi(
-        { method: "git_action", candidate },
-        null,
-        (response) => "preferences" in response
-          ? resolveAgentGitPreferenceChoice(response.preferences, candidate.targets, candidate.checks) : null,
-        undefined,
-        signal,
-      ),
-      gitAction: (candidate: GitActionCandidate, signal?: AbortSignal) => this.requestExtensionUi(
-        { method: "git_action", candidate },
-        false,
-        (response) => candidate.kind === "integration"
-          ? "approvePlanId" in response && response.approvePlanId === candidate.plan.planId
-          : "confirmed" in response && response.confirmed === true,
-        undefined,
-        signal,
-      ),
+      gitPreferences: (candidate: Extract<GitActionCandidate, { kind: "preferences" }>, signal?: AbortSignal) => {
+        if (candidate.kind !== "preferences") throw new Error("Git preferences candidate required");
+        return this.requestExtensionUi(
+          { method: "git_action", candidate },
+          null,
+          (response) => "preferences" in response
+            ? resolveAgentGitPreferenceChoice(response.preferences, candidate.targets, candidate.checks) : null,
+          undefined,
+          signal,
+        );
+      },
+      gitAction: (candidate: GitActionCandidate, signal?: AbortSignal) => {
+        if (candidate.kind === "preferences") throw new Error("Use the Git preferences question route");
+        const displayCandidate = projectGitActionUiCandidate(candidate);
+        return this.requestExtensionUi(
+          { method: "git_action", candidate: displayCandidate },
+          false,
+          (response) => displayCandidate.kind === "integration"
+            ? "approvePlanId" in response && response.approvePlanId === displayCandidate.plan.planId
+            : "confirmed" in response && response.confirmed === true,
+          undefined,
+          signal,
+        );
+      },
       notify: (message, type) => {
         this.emit({
           type: "extension_ui_request",
@@ -2002,11 +2071,13 @@ export class AgentSessionWrapper {
       newSession: async () => ({ cancelled: true }),
       fork: async () => ({ cancelled: true }),
       navigateTree: async (targetId, options) => {
+        this.noteGitCheckAuthorityMutation();
         const result = await this.inner.navigateTree(targetId, { summarize: options?.summarize });
         return { cancelled: result.cancelled };
       },
       switchSession: async () => ({ cancelled: true }),
       reload: async () => {
+        this.noteGitCheckAuthorityMutation();
         this.extensionStatuses.clear();
         this.resetExtensionWidgetsForReload();
         this.syncProjectTrust();
@@ -2145,6 +2216,46 @@ function trackStartingSession(cwd: string): () => void {
   };
 }
 
+/** Complete cleanup inventory: every persisted header plus live SDK managers,
+ * including transient/idle wrappers. Never derives absence from the UI list. */
+export function readRpcWorkspaceSessionUsage(sessionsDir = resolve(getAgentDir(), "sessions")): KnownInventory<SessionUsage> {
+  const persisted = readPersistedWorkspaceSessions(sessionsDir);
+  if (!persisted.known) return persisted;
+  try {
+    const entries = [...persisted.entries];
+    for (const wrapper of getRegistry().values()) {
+      const manager = wrapper.inner.sessionManager;
+      const header = manager.getHeader();
+      if (!header || header.type !== "session" || typeof header.id !== "string" || !header.id
+        || typeof header.cwd !== "string" || !header.cwd || header.id !== manager.getSessionId()
+        || header.cwd !== manager.getCwd()) return { known: false, entries: [] };
+      if (entries.length >= 10_000) return { known: false, entries: [] };
+      entries.push({ id: header.id, cwd: manager.getCwd() });
+    }
+    return { known: true, entries };
+  } catch { return { known: false, entries: [] }; }
+}
+
+/** Internal adapter only; no cleanup route or live policy grant. Check/other
+ * producer inventories MUST be supplied by trusted complete accounting. */
+export function createRpcWorkspaceCleanupUsage(readOtherUsage: () => Pick<WorkspaceUsageSnapshot, "checks" | "inflight">) {
+  return createTrustedWorkspaceUsage(() => {
+    const other = readOtherUsage();
+    // Also account for starts tracked by pre-reload RPC code. Do not reset any
+    // locks: an unlocatable existing start is unknown, never presumed stopped.
+    const starting = [...getStartingSessionCwds()];
+    const count = starting.reduce((total, [, n]) => total + n, 0);
+    const located = starting.every(([, n]) => Number.isSafeInteger(n) && n > 0) && count >= getLocks().size;
+    return {
+      ...other,
+      sessions: readRpcWorkspaceSessionUsage(),
+      terminals: readTerminalWorkspaceUsage(),
+      inflight: { known: other.inflight.known && located,
+        entries: [...other.inflight.entries, ...starting.map(([cwd]) => ({ cwd }))] },
+    };
+  });
+}
+
 export function getRpcSession(sessionId: string): AgentSessionWrapper | undefined {
   return getRegistry().get(sessionId);
 }
@@ -2177,6 +2288,7 @@ export async function setRpcSessionTools(
     if (readSubagentSessionResources(manager.getEntries() as unknown as SessionEntry[])) {
       throw new Error("Subagent tool selection is fixed by its profile");
     }
+    advanceGitCheckProcessAuthorityRevision("selection");
     if (toolNames === undefined) appendClearedSessionToolSelection(manager);
     else appendSessionToolSelection(manager, toolNames);
     invalidateSessionListCache();
@@ -2194,6 +2306,7 @@ export async function setRpcSessionTools(
   const crossesChatOnlyBoundary = toolNames === undefined
     || !hasCurrentResourcePolicy
     || existing.isChatOnly() !== (toolNames.length === 0);
+  advanceGitCheckProcessAuthorityRevision("selection");
   if (toolNames === undefined) appendClearedSessionToolSelection(existing.inner.sessionManager);
   else appendSessionToolSelection(existing.inner.sessionManager, toolNames);
   invalidateSessionListCache();
@@ -2459,6 +2572,11 @@ async function startRpcSessionInternal(
   const inflight = locks.get(sessionId);
   if (inflight) return inflight;
 
+  // Fence before SDK open/create (which can migrate/persist) and before defaults/resource awaits.
+  const placementCwd = sessionFile ? readSessionHeader(sessionFile)?.cwd : cwd;
+  if (!placementCwd) throw new Error("Cannot prove session placement cwd");
+  const finishPlacement = beginGitWorkspacePlacement(placementCwd);
+  try {
   let sessionManager: SessionManager;
   if (sessionFile) {
     sessionManager = SessionManager.open(sessionFile, undefined);
@@ -2467,6 +2585,7 @@ async function startRpcSessionInternal(
     sessionManager = SessionManager.create(cwd, undefined);
   }
   const sessionCwd = sessionManager.getCwd();
+  if (!samePath(sessionCwd, placementCwd)) throw new Error("Session placement changed during startup");
   // Existing sessions use only their saved entry; project defaults never retrofit them.
   // Explicit null on a new session is a persisted opt-out, not a missing option.
   // New subagents bypass this path: subagent-runtime creates their manager with
@@ -2558,6 +2677,10 @@ async function startRpcSessionInternal(
     // evicts an idle wrapper so the model no longer sees these tool schemas.
     const gitWorkflowActive = readManagedSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])?.optedOut !== true;
     const workspaceStartOwner: { current?: AgentSessionWrapper } = {};
+    const trustedGitRuntime = { readSelectionRevisionSync: () => {
+      if (!workspaceStartOwner.current) throw new Error("Live Git authority owner not ready");
+      return workspaceStartOwner.current.readGitCheckAuthorityRevisionSync();
+    } };
     const checkoutOwner: { current?: AgentSessionWrapper } = {};
     const checkoutGuard = createGitCheckoutOperationGuard({
       isBuiltinReadOnlyTool: (name) => checkoutOwner.current?.isBuiltinReadOnlyCheckoutTool(name) ?? false,
@@ -2610,8 +2733,8 @@ async function startRpcSessionInternal(
               createAskUserExtension(),
               ...(gitWorkflowActive ? [createGitWorkflowExtension(() => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[]),
                 () => loadGitWorkflowSettings(sessionCwd, sessionManager.getEntries() as unknown as SessionEntry[], undefined, sessionManager.getSessionId())),
-              createGitCommitExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[])),
-              createAgentGitWorkflowExtension(sessionCwd, undefined, sessionManager),
+              createGitCommitExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[]), trustedGitRuntime),
+              createAgentGitWorkflowExtension(sessionCwd, undefined, sessionManager, trustedGitRuntime),
               createGitWorkspaceStartExtension(sessionCwd, () => readSessionGitWorkflow(sessionManager.getEntries() as unknown as SessionEntry[]),
                 (transition) => {
                   if (!workspaceStartOwner.current) throw new Error("Session not ready");
@@ -2718,5 +2841,6 @@ async function startRpcSessionInternal(
   });
 
   locks.set(sessionId, starting);
-  return starting;
+  return await starting;
+  } finally { finishPlacement(); }
 }

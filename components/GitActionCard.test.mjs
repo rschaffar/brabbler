@@ -153,6 +153,185 @@ test("fast-forward history records the existing tip without inventing a merge ob
   assert.match(html, /Parents/);
 });
 
+const instance = { device: "1", inode: "2", birthtime: "3" };
+const physical = { gitDir: "/repo/.git", checkoutIdentity: instance, gitIdentity: instance, markerIdentity: instance };
+function nativeRecord(kind, mode = "create") {
+  const workspace = { mode, destinationPath: "/deleted/destination", baseBranch: "main", baseOid: oid("a"), branch: "feature/new", tipOid: oid("b"), treeOid: oid("d") };
+  const preparation = { oldSourceOid: oid("a"), newSourceOid: oid("b"), targetMainOid: oid("c"), resultTreeOid: oid("d"),
+    commitCount: 1, emptyRetention: "keep", source: physical, target: physical };
+  return { ...record, kind, decision: undefined, summary: { kind, repositoryRoot: "/deleted/source", projectRoot: "/deleted/project", sourceCheckoutRoot: "/deleted/source",
+    ...(kind === "workspace" ? { workspace } : { preparation, targetCheckoutRoot: "/deleted/target", featureBranch: "feature", targetBranch: "main" }) },
+    outcome: kind === "workspace" ? { kind, status: mode === "create" ? "created" : "attached", workspace: { mode, destinationPath: workspace.destinationPath, branch: workspace.branch, tipOid: workspace.tipOid, treeOid: oid("d") } }
+      : { kind, status: "prepared", preparation: { oldSourceOid: oid("a"), newSourceOid: oid("b"), targetMainOid: oid("c"), resultTreeOid: oid("d") } } };
+}
+
+test("workspace and preparation history truthfully label verified results without inventing human review", () => {
+  for (const [kind, mode, title] of [["workspace", "create", "Created worktree"], ["workspace", "attach", "Attached worktree"], ["preparation", "create", "Prepared history"]]) {
+    const native = nativeRecord(kind, mode);
+    for (const expanded of [false, true]) {
+      const html = render({ history: { record: native }, expanded, artifact: { record: native, candidate: native.summary } });
+      assert.ok(html.includes(title));
+      assert.match(html, /Captured project: \/deleted\/project/);
+      assert.doesNotMatch(html, /human|reviewed|Approve|Run these checks|Succeeded/);
+      for (const value of [oid("b"), oid("d")]) assert.ok(html.includes(value));
+      if (expanded) {
+        assert.match(html, /No immutable patch was captured/);
+        if (kind === "workspace") for (const value of ["Explicit destination", "Chosen local base", "Intended branch/tip", "Expected tracked tree", "feature/new"]) assert.ok(html.includes(value));
+        else for (const value of ["Target main", "retain empty commits", "Source physical instance", "Target physical instance"]) assert.ok(html.includes(value));
+      }
+    }
+  }
+  const prepared = nativeRecord("preparation");
+  const noOp = render({ history: { record: { ...prepared, outcome: { ...prepared.outcome, status: "already-prepared" } } } });
+  assert.match(noOp, /Already prepared \(no rewrite\)/);
+  assert.doesNotMatch(noOp, /Prepared history|human/);
+});
+
+test("new-kind pending/refused/partial records never synthesize approvals or claim completed effects", () => {
+  for (const kind of ["workspace", "preparation"]) {
+    const native = nativeRecord(kind);
+    for (const state of ["proposed", "awaiting-decision", "executing", "cancelled", "blocked", "expired", "recovery-required"]) {
+      const pending = { ...native, state, outcome: undefined, reason: state === "blocked" ? "Conflict/stale refusal before native operation." : undefined };
+      const html = render({ history: { record: pending }, liveRequest: live, onRespond: () => {} });
+      assert.doesNotMatch(html, /Created worktree|Attached worktree|Prepared history|Approve exact commit|Decline commit|human/);
+      if (state === "blocked") assert.match(html, /Conflict\/stale refusal before native operation/);
+      if (state === "cancelled" || state === "blocked" || state === "expired") assert.doesNotMatch(html, /manual recovery|Execution may have changed/);
+    }
+    const partial = render({ history: { record: { ...native, state: "recovery-required", outcome: { ...native.outcome, status: "partial-state" } } } });
+    assert.match(partial, /Completion is unconfirmed/);
+    assert.match(partial, /manual recovery; do not retry/);
+    assert.doesNotMatch(partial, /Created worktree|Attached worktree|Prepared history|Result tree:/);
+  }
+});
+
+test("only an actual matching live new-kind request renders simple approval controls; history remains read-only", () => {
+  for (const kind of ["workspace", "preparation"]) {
+    const native = nativeRecord(kind);
+    const candidate = { ...native.summary, actionId: id, resourceAttribution: { version: 2, commonDir: "/deleted/project/.git", commonIdentity: instance, projectIdentity: instance } };
+    if (kind === "preparation") candidate.preparation = { ...candidate.preparation, commitMapping: [] };
+    const request = { type: "extension_ui_request", method: "git_action", id: "actual-new-live", candidate };
+    const pending = { ...native, state: "awaiting-decision", outcome: undefined };
+    const props = { history: { record: pending }, liveRequest: request, onRespond: () => {} };
+    assert.match(render(props), /Approve exact (worktree creation|history preparation)/);
+    assert.doesNotMatch(render(props), /type="checkbox"|Captured candidate|I reviewed/);
+    assert.doesNotMatch(render({ ...props, onRespond: undefined }), /Approve exact/);
+    assert.doesNotMatch(render({ ...props, liveRequest: { ...request, candidate: { ...candidate, actionId: "other" } } }), /Approve exact/);
+    for (const state of ["succeeded", "executing", "cancelled", "expired", "recovery-required"]) {
+      assert.doesNotMatch(render({ ...props, history: { record: { ...pending, state } } }), /Approve exact/);
+    }
+  }
+});
+
+test("preparation mapping is lazy captured evidence only, retaining empty-commit labels", () => {
+  const native = nativeRecord("preparation");
+  const candidate = { ...native.summary, preparation: { ...native.summary.preparation,
+    commitMapping: [{ oldOid: oid("a"), newOid: oid("b"), oldTreeOid: oid("c"), newTreeOid: oid("d"), emptyAfterReplay: true }] } };
+  const html = render({ history: { record: native }, expanded: true, artifact: { record: native, candidate } });
+  assert.match(html, /Captured commit mapping/);
+  assert.match(html, /empty commit retained/);
+  assert.doesNotMatch(html, /Approve|live filesystem/);
+});
+
+test("workspace history explicitly retains measured parent-created facts, including partial recovery", () => {
+  const native = nativeRecord("workspace"), measured = { path: "/deleted/project-worktrees", identity: instance, mode: 448, ownerUid: 1000, ancestorPath: "/deleted", ancestorIdentity: instance };
+  const scoped = { ...native, state: "recovery-required", summary: { ...native.summary, workspace: { ...native.summary.workspace, parentCreation: { path: measured.path, expectedAbsent: true, mode: 448, ancestorPath: measured.ancestorPath, ancestorIdentity: instance } } },
+    outcome: { ...native.outcome, status: "partial-state", workspace: { ...native.outcome.workspace, parentCreated: true, knownParentCreation: measured } } };
+  const html = render({ history: { record: scoped }, expanded: true, artifact: { record: scoped, candidate: scoped.summary } });
+  assert.match(html, /Measured parent created: true/);
+  assert.match(html, /owner UID 1000/);
+  assert.match(html, /Additional expected-absent parent/);
+  assert.match(html, /manual recovery; do not retry/);
+  assert.doesNotMatch(html, /Created worktree|Approve exact/);
+  const unidentified = { ...scoped, outcome: { ...scoped.outcome, workspace: { ...scoped.outcome.workspace, knownParentCreation: undefined,
+    parentCreationAttempted: true, phase: "create-parent", addAttempted: false, observedBranchOid: null, destinationPresent: false } } };
+  const uncertain = render({ history: { record: unidentified } });
+  assert.match(uncertain, /physical identity unconfirmed/);
+  assert.match(uncertain, /Worktree add attempted: false/);
+  assert.match(uncertain, /Observed local branch: absent/);
+  assert.match(uncertain, /Destination present: false/);
+  assert.doesNotMatch(uncertain, /Created worktree|Measured parent created/);
+});
+
+function checkRecord(stage = "commit") {
+  const bound = { evidenceScope: stage === "commit" ? "working-workspace" : "clean-checkout", candidateTreeVerified: false, repositoryChecksWaived: false, sourceOid: oid("a"), sourceTreeOid: oid("b"), snapshotDigest: "1".repeat(64), policyDigest: "2".repeat(64), policyRevision: "source-policy", stage, requiredSavedIndexes: stage === "none" ? [] : [7] };
+  const actual = { actionId: id, sessionId: "old-owner", checkIndex: 7, stage, recipeDigest: "3".repeat(64), policyDigest: bound.policyDigest, snapshotDigest: bound.snapshotDigest, environmentDigest: "4".repeat(64), executionCwd: "/deleted/source", startedAt: 1000, finishedAt: 1500, unit: "pi-web-check-fixture.service", cgroupIdentity: "1:2", invocation: "f".repeat(32), exitStatus: 0, containmentComplete: true, timedOut: false, overflow: false, logDigest: "5".repeat(64), logBytes: 10, receipt: { id, sha256: "6".repeat(64), expiresAt: 2000 } };
+  return { ...record, kind: "checkout-verification", decision: undefined, summary: { kind: "checkout-verification", repositoryRoot: "/deleted/source", projectRoot: "/deleted/project", sourceCheckoutRoot: "/deleted/source", featureBranch: "feature",
+    checkoutVerification: { ...bound, source: physical, checks: [{ checkIndex: 7, recipe: { label: "Saved tests", argv: ["npm", "test"], requiredStage: stage }, recipeDigest: actual.recipeDigest, environmentDigest: actual.environmentDigest, executionCwd: actual.executionCwd }] } },
+    outcome: { kind: "checkout-verification", status: "passed", checkoutVerification: { ...bound, runs: [actual] } } };
+}
+function cleanupRecord() {
+  const cleanup = { sourcePath: "/deleted/source", targetPath: "/deleted/target", mainPath: "/deleted/main", branchRef: "refs/heads/feature", featureOid: oid("a"), targetOid: oid("c"), mainOid: oid("c"),
+    source: physical, target: physical, main: physical, ignoredCount: 2, ignoredDeletion: "exact-approval-required",
+    integration: { method: "merge", resultOid: oid("c"), resultTree: oid("d") }, provenance: { mode: "create", originalSourcePath: "/deleted/original" } };
+  return { ...record, kind: "cleanup", decision: "approved", summary: { kind: "cleanup", repositoryRoot: "/deleted/source", projectRoot: "/deleted/project", sourceCheckoutRoot: "/deleted/source", targetCheckoutRoot: "/deleted/target", featureBranch: "feature", targetBranch: "main", cleanup },
+    outcome: { kind: "cleanup", status: "partial-state", cleanup: { ...cleanup, effects: [{ kind: "worktree-removed", sourcePath: cleanup.sourcePath, featureOid: cleanup.featureOid }], observedFeatureOid: oid("a") } }, state: "recovery-required" };
+}
+
+test("distinct checkout history is target-free and labels actual receipt/unit/log metadata as working-workspace evidence only", () => {
+  const native = checkRecord(), html = render({ history: { record: native }, expanded: true, artifact: { record: native, candidate: native.summary } });
+  for (const value of ["Checkout verification", "Checks passed in working workspace", "candidateTreeVerified: false", "repositoryChecksWaived: false", "Actual saved index 7", "pi-web-check-fixture.service", "cgroup 1:2", "log", "captured receipt", "digest"]) assert.ok(html.includes(value), value);
+  assert.doesNotMatch(html, /Target checkout:|Target branch:|Approve|Run these saved checks|Comparison acknowledged by human/);
+  assert.match(html, /No log contents, live receipt, integration approval or human acknowledgement is restored/);
+  const manual = render({ history: { record: checkRecord("none") } });
+  assert.match(manual, /Manual-only optional receipts, not integration prerequisites/);
+  const missing = render({ history: { record: { ...native, outcome: undefined } } });
+  assert.match(missing, /Outcome unconfirmed/);
+  assert.doesNotMatch(missing, /Checks passed in working workspace/);
+  const commit = { ...record, summary: { ...record.summary, workingWorkspaceVerification: { evidenceScope: "working-workspace", candidateTreeVerified: false, repositoryChecksWaived: false, requiredSavedIndexes: [7], runs: native.outcome.checkoutVerification.runs } } };
+  assert.match(render({ history: { record: commit } }), /Commit check evidence: working-workspace/);
+});
+
+test("independent native v2 history labels clean source evidence without dirty-workspace or paired claims", () => {
+  const native = checkRecord("integration");
+  const html = render({ history: { record: native }, expanded: true, artifact: { record: native, candidate: native.summary } });
+  for (const value of ["Checks passed in selected clean checkout", "Evidence scope: clean-checkout", "native v2 clean-source checks only", "selected clean checkout (native v2)",
+    "candidateTreeVerified: false", "repositoryChecksWaived: false", "Actual saved index 7"]) assert.ok(html.includes(value), value);
+  assert.doesNotMatch(html, /Checks passed in working workspace|Target checkout:|Target branch:|Approve|Retry/);
+  assert.match(html, /not dirty working-workspace, paired checks or integration approval/);
+  const pending = render({ history: { record: { ...native, state: "executing" } } });
+  assert.match(pending, /settlement pending/);
+  assert.doesNotMatch(pending, /Checks passed in selected clean checkout|Checks passed in working workspace/);
+});
+
+test("presettlement check facts never present proposed receipt metadata as published passing evidence", () => {
+  const native = checkRecord();
+  const pending = render({ history: { record: { ...native, state: "executing" } } });
+  assert.match(pending, /Measured check result \(settlement pending\): passed/);
+  assert.match(pending, /Native settlement pending; proposed receipt metadata is not a published passing receipt/);
+  assert.match(pending, /exit 0/);
+  assert.doesNotMatch(pending, /Checks passed in working workspace|Outcome: passed|Approve|Retry/);
+  const recovery = render({ history: { record: { ...native, state: "recovery-required", outcome: { ...native.outcome, status: "partial-state" } } } });
+  assert.match(recovery, /Native settlement unconfirmed; receipt metadata is not proof of publication/);
+  assert.match(recovery, /exit 0/);
+  assert.doesNotMatch(recovery, /Checks passed in working workspace|Approve|Retry/);
+});
+
+test("cleanup history names each measured effect/known OID and partial recovery without authorizing deletion", () => {
+  const native = cleanupRecord();
+  const html = render({ history: { record: native }, expanded: true, artifact: { record: native, candidate: { ...native.summary, cleanup: { ...native.summary.cleanup, ignored: [{ path: "cache", kind: "directory", size: "12", ...instance }, { path: "cache/important", kind: "file", size: "12", ...instance }] } } } });
+  for (const value of ["Measured worktree/admin removal", "known source tip", oid("a"), "Observed recovery branch tip", "Surviving target", "Workspace provenance", "cache/important", "History never authorizes deletion"]) assert.ok(html.includes(value), value);
+  assert.match(html, /Partial cleanup requires manual recovery; this card cannot retry it/);
+  assert.doesNotMatch(html, /Cleaned up local workspace|Approve cleanup|Measured local branch deletion/);
+  const completed = { ...native, state: "succeeded", outcome: { ...native.outcome, status: "cleaned-up", cleanup: { ...native.outcome.cleanup, effects: [...native.outcome.cleanup.effects, { kind: "branch-deleted", branchRef: "refs/heads/feature", deletedOid: oid("a") }] } } };
+  assert.match(render({ history: { record: completed } }), /Measured local branch deletion/);
+  assert.doesNotMatch(render({ history: { record: { ...completed, outcome: undefined } } }), /Cleaned up local workspace/);
+  for (const kind of [checkRecord(), native]) for (const state of ["proposed", "awaiting-decision", "executing", "cancelled", "expired", "recovery-required"]) {
+    const historical = { ...kind, state, outcome: undefined };
+    assert.doesNotMatch(render({ history: { record: historical }, liveRequest: live, onRespond: () => {} }), /Run these saved checks|Approve cleanup|Approve exact commit/);
+  }
+});
+
+test("binary and unavailable immutable workspace patches never substitute live filesystem content", () => {
+  const native = nativeRecord("workspace");
+  const candidate = { ...native.summary, diff: { fromTreeOid: oid("a"), toTreeOid: oid("d"), patch: "diff --git a/image b/image\nBinary files a/image and b/image differ\n", hasBinaryChanges: true } };
+  const html = render({ history: { record: native }, expanded: true, artifact: { record: native, candidate } });
+  assert.match(html, /Binary changes are summarized/);
+  assert.match(html, /binary file contents were not captured as text/);
+  const missing = render({ history: { record: native }, expanded: true, artifact: { record: native, candidate: { ...native.summary, diffUnavailable: "Binary patch was not captured" } } });
+  assert.match(missing, /Binary patch was not captured/);
+  assert.match(missing, /No current worktree data is substituted/);
+});
+
 test("artifact request is gated on expansion; no focus theft, model calls or approval reconstruction", async () => {
   const source = await readFile(new URL("./GitActionCard.tsx", import.meta.url), "utf8");
   assert.match(source, /if \(!expanded \|\| !sessionId \|\| liveRequest\) return/);

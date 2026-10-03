@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { checkGitTaskBinding } from "./git-task-binding.mjs";
+import { checkRecipeControls, reviewCommitChecks } from "./git-policy-operations.mjs";
 
 /** Real scoped settings, local Git objects and a persisted chat; no model or mocked settings endpoint. */
 export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, cwd, targetWorktree, otherProject, checkContainmentSupported }) {
@@ -20,7 +21,7 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
   const observeRequest = (request) => {
     const path = new URL(request.url()).pathname;
     if (path === "/api/agent/new") creations.push(request.method());
-    if (request.method() !== "GET" && ["/api/git/commit", "/api/git/integration", "/api/worktrees", `/api/sessions/${sessionId}/move`].includes(path)) {
+    if (request.method() !== "GET" && ["/api/git/commit", "/api/git/integration", "/api/git/verification", "/api/git/cleanup", "/api/git/preparation", "/api/git/workspace", "/api/worktrees", `/api/sessions/${sessionId}/move`].includes(path)) {
       mutations.push({ path, body: request.postDataJSON() });
     }
   };
@@ -127,6 +128,8 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
   const screenshot = async (name) => { if (artifacts) await page.screenshot({ path: join(artifacts, name) }); };
 
   try {
+    // Only this runner's throwaway browser context; no persistent browser profile is touched.
+    await page.addInitScript(() => localStorage.setItem("pi-sound-enabled", "false"));
     await page.goto(`${base}/?session=${sessionId}`, { waitUntil: "load" });
     page.on("load", observeLoad);
     await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
@@ -290,6 +293,29 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await addCheck("Project fixture check");
     const projectRecipe = await save("project");
     assert.deepEqual(projectRecipe.project.checks, [{ label: "Project fixture check", argv: [process.execPath, "-e", "process.exit(0)"] }]);
+    await checkRecipeControls(page, { workflow, cwd, otherProject, chooseScope, expand, selectProject, save, closeWorkflow, home, readSettings });
+    // Saving cleanup preferences never invokes the separately authorized deletion operation.
+    await expand("cleanup");
+    assert.equal(await control("cleanup").inputValue(), "inherit");
+    assert.match(await workflow.locator("#workflow-stage-cleanup").innerText(), /Saving settings grants no cleanup permission and removes nothing[\s\S]*Never automatic or scheduled[\s\S]*Selected public cleanup is supported on eligible Linux paths[\s\S]*Unknown usage or native evidence fails closed/);
+    await control("cleanup").selectOption("worktree-and-branch");
+    await control("cleanupConfirmation").selectOption("none");
+    const cleanupEligible = await save("project");
+    assert.equal(cleanupEligible.project.cleanup, "worktree-and-branch");
+    assert.equal(cleanupEligible.project.cleanupConfirmation, "none");
+    assert.deepEqual(cleanupEligible.task, projectRecipe.task);
+    await control("cleanup").selectOption("retain");
+    const retained = await save("project");
+    assert.equal(retained.project.cleanup, "retain", "Retain is saved explicitly, not treated as inheritance");
+    assert.match(await workflow.locator('[aria-controls="workflow-stage-cleanup"]').innerText(), /Retain.*cleanup blocked/s);
+    assert.equal(await workflow.getByRole("button", { name: /^(Delete|Remove worktree|Clean up|Confirm cleanup)/ }).count(), 0);
+    await field("cleanup").getByRole("button", { name: "Use Global value", exact: true }).click();
+    await field("cleanupConfirmation").getByRole("button", { name: "Use Global value", exact: true }).click();
+    const cleanupReset = await save("project");
+    assert.equal(Object.hasOwn(cleanupReset.project, "cleanup"), false);
+    assert.equal(Object.hasOwn(cleanupReset.project, "cleanupConfirmation"), false);
+    assert.deepEqual(mutations, [], "Recipe/cleanup saves are preference-only, with no check or deletion dispatch");
+    await expand("checks");
     await workflow.getByRole("button", { name: "No checks at this scope", exact: true }).click();
     const projectSaved = await save("project");
     assert.equal(projectSaved.projectRoot, cwd);
@@ -570,7 +596,8 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await commitPanel.getByText(/^draft\.txt\s+\(/).waitFor();
     const source = commitPanel.getByLabel("Commit source");
     assert.equal(await source.inputValue(), "whole-file", "Whole working-tree files remain the default");
-    for (const checkbox of await commitPanel.getByRole("checkbox").all()) await checkbox.check();
+    await commitPanel.getByText("No verification recipes are defined (no-defined). This is not a waiver of project instructions.", { exact: true }).waitFor();
+    for (const checkbox of await commitPanel.locator("form").getByRole("checkbox").all()) await checkbox.check();
     await commitPanel.getByLabel("Commit message").fill("E2E manual commit");
     const before = git("rev-parse", "HEAD");
     const previewResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/commit"
@@ -655,6 +682,18 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     const expectedTree = expectedGit("write-tree");
     assert.notEqual(expectedTree, git("write-tree"), "The real index includes the unrelated staged entry");
 
+    // Source Project definitions are authoritative even without task adoption.
+    // This command reads the ACTUAL workspace fix; the selected index still has
+    // the old unstaged anchor. A pass must never be described as a staged-tree pass.
+    await home(); await chooseScope("project"); await expand("checks");
+    await addCheck("Read actual working workspace fix");
+    const commitRecipe = workflow.locator(".workflow-recipe").last();
+    await commitRecipe.getByLabel("Arguments · one literal argument per line", { exact: true }).fill(
+      "-e\nif(!require('node:fs').readFileSync('draft.txt','utf8').includes('Unstaged worktree hunk'))process.exit(1)");
+    await commitRecipe.getByLabel("Required stage · recipe prerequisite", { exact: true }).selectOption("commit");
+    const requiredSaved = await save("project");
+    assert.deepEqual(requiredSaved.task, applied.task, "Project prerequisite saves do not adopt or execute a task");
+    assert.equal(requiredSaved.project.checks[0].requiredStage, "commit");
     const stagedPanel = await openDetail("Review & commit", "Review & commit panel");
     const refreshedStatus = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/status"
       && new URL(response.url()).searchParams.get("cwd") === cwd);
@@ -667,8 +706,25 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     const stagedRow = stagedPanel.getByText(/^draft\.txt\s+\(/).locator("xpath=ancestor::li[1]");
     assert.match(await stagedRow.innerText(), /index M, worktree M/, "Same path has both staged and unstaged edits");
     await stagedRow.getByRole("checkbox").check();
-    assert.equal(await stagedPanel.getByRole("checkbox", { checked: true }).count(), 1, "Do not select the unrelated staged entry");
+    assert.equal(await stagedPanel.locator("form").getByRole("checkbox", { checked: true }).count(), 1, "Do not select the unrelated staged entry");
     await stagedPanel.getByLabel("Commit message").fill("E2E staged partial-hunk commit");
+    const stagedReceiptIds = await reviewCommitChecks(page, { panel: stagedPanel, sessionId, cwd, git, checkContainmentSupported,
+      changeSource: () => writeFileSync(join(cwd, "draft.txt"), workingDraft.replace("Unstaged worktree hunk", "Unstaged worktree hunk changed")),
+      restoreSource: () => writeFileSync(join(cwd, "draft.txt"), workingDraft) });
+    if (!checkContainmentSupported) {
+      // Never invent a passing receipt on an unsupported host. Real preview and
+      // decline were covered above; remove only this disposable fixture policy
+      // so the pre-existing staged commit acceptance still runs without checks.
+      await home(); await chooseScope("project"); await expand("checks");
+      await workflow.getByRole("button", { name: "No checks at this scope", exact: true }).click();
+      await save("project");
+      await openDetail("Review & commit", "Review & commit panel");
+      const reloaded = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/verification" && response.request().method() === "GET");
+      await stagedPanel.getByRole("button", { name: "Refresh changed files" }).click();
+      assert.equal((await reloaded).status(), 200);
+      await stagedPanel.getByText("No verification recipes are defined (no-defined). This is not a waiver of project instructions.", { exact: true }).waitFor();
+      await stagedRow.getByRole("checkbox").check();
+    }
     const indexBeforePreview = readFileSync(git("rev-parse", "--path-format=absolute", "--git-path", "index"));
     const stagedPreviewResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/commit"
       && response.request().postDataJSON()?.operation === "preview");
@@ -676,10 +732,14 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     const stagedHttp = await stagedPreviewResponse;
     assert.equal(stagedHttp.status(), 200, stagedHttp.status() === 200 ? "" : await stagedHttp.text());
     assert.deepEqual(stagedHttp.request().postDataJSON(), {
-      operation: "preview", sessionId, paths: ["draft.txt"], mode: "staged", message: "E2E staged partial-hunk commit",
+      operation: "preview", sessionId, paths: ["draft.txt"], mode: "staged", message: "E2E staged partial-hunk commit", receiptIds: stagedReceiptIds,
     });
     const stagedCandidate = await stagedHttp.json();
     assert.equal(stagedCandidate.preview.mode, "staged");
+    assert.deepEqual(stagedCandidate.verification.receiptIds, stagedReceiptIds);
+    assert.equal(stagedCandidate.verification.evidenceScope, "working-workspace");
+    assert.equal(stagedCandidate.verification.candidateTreeVerified, false, "Never promote a workspace pass to candidate-tree evidence");
+    assert.equal(stagedCandidate.verification.repositoryChecksWaived, false);
     assert.deepEqual(stagedCandidate.preview.paths, ["draft.txt"]);
     assert.equal(stagedCandidate.preview.head, headBeforeStaged);
     assert.equal(stagedCandidate.preview.tree, expectedTree);
@@ -706,6 +766,7 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     assert.equal(stagedConfirmed.status(), 200, stagedConfirmed.status() === 200 ? "" : await stagedConfirmed.text());
     const stagedApproval = stagedConfirmed.request().postDataJSON();
     assert.equal(stagedApproval.actionId, stagedCandidate.actionId);
+    assert.deepEqual(stagedApproval.receiptIds, stagedReceiptIds, "Final commit approval independently binds the actual evidence IDs");
     assert.equal(stagedApproval.message, "E2E staged partial-hunk commit");
     assert.deepEqual(stagedApproval.preview, stagedCandidate.preview, "Approval binds the exact staged candidate");
     const stagedResult = await stagedConfirmed.json();
@@ -745,6 +806,13 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     assert.equal(git("status", "--porcelain"), "", "Fixture cleanup leaves the new feature commit intact");
     assert.equal(git("rev-parse", "HEAD"), stagedCommit);
 
+    // Remove the new commit-stage fixture before exercising the unchanged paired
+    // FF/non-FF checks below. They must retain their legacy omitted-field recipe.
+    await home(); await chooseScope("project"); await expand("checks");
+    if (checkContainmentSupported) {
+      await workflow.getByRole("button", { name: "No checks at this scope", exact: true }).click();
+      await save("project");
+    }
     // Project-owned checks neither run nor grant approval on Save; the captured task must be explicitly updated first.
     await home();
     await chooseScope("project");
@@ -752,7 +820,8 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await addCheck("Fixture verification");
     const checksSaved = await save("project");
     assert.deepEqual(checksSaved.task, applied.task);
-    assert.equal(checksSaved.project.checks[0].label, "Fixture verification");
+    assert.deepEqual(checksSaved.project.checks, [{ label: "Fixture verification", argv: [process.execPath, "-e", "process.exit(0)"] }],
+      "Both legacy paired FF/non-FF flows retain an omitted-field recipe, not a relabelled working-workspace receipt");
     const checksApplied = await apply();
     assert.equal(checksApplied.task.settings.checks[0].label, "Fixture verification");
     assert.equal(mutations.filter((entry) => entry.path === "/api/git/integration").length, 0, "Saving/applying checks must not run them");
@@ -953,6 +1022,7 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await page.getByRole("button", { name: "Send", exact: true }).click();
     const question = page.getByRole("group", { name: "E2E browser question" });
     await question.waitFor();
+    const originalQuestion = await question.elementHandle();
     await openWorkflow();
     await workflow.getByText(/Session Save and Apply are unavailable/).waitFor();
     assert.match(await workflow.innerText(), /one new worktree only/);
@@ -969,6 +1039,27 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     }
     assert.equal(await task.getByRole("button", { name: "Apply saved settings to this task", exact: true }).isDisabled(), true);
     await selectProject(cwd);
+    // Keep the original server-owned AgentDialog question pending. Editing a
+    // Project draft must neither answer it nor remount focused recipe inputs.
+    await chooseScope("project"); await expand("checks");
+    const pendingRecipe = workflow.locator(".workflow-recipe").first();
+    if (!await pendingRecipe.evaluate((element) => element.open)) await pendingRecipe.locator("summary").click();
+    const pendingLabel = pendingRecipe.getByLabel("Label", { exact: true });
+    const pendingNode = await pendingLabel.elementHandle();
+    await pendingLabel.fill(""); await pendingLabel.focus();
+    await page.keyboard.type("Pending question preserves this draft");
+    assert.equal(await pendingNode.evaluate((node) => node.isConnected && document.activeElement === node), true);
+    assert.equal(await question.count(), 1, "Editing does not resolve the original question");
+    assert.equal(await originalQuestion.evaluate((node) => node.isConnected), true, "Workflow editing retains the original server question DOM");
+    await chooseScope("global"); await chooseScope("project"); await expand("checks");
+    if (!await pendingRecipe.evaluate((element) => element.open)) await pendingRecipe.locator("summary").click();
+    assert.equal(await pendingLabel.inputValue(), "Pending question preserves this draft");
+    await closeWorkflow(); await openWorkflow();
+    assert.equal(await pendingLabel.inputValue(), "Pending question preserves this draft");
+    await workflow.getByRole("button", { name: "Discard", exact: true }).click();
+    await pendingNode.dispose();
+    assert.equal(await originalQuestion.evaluate((node) => node.isConnected), true, "Scope/close navigation never replaces the pending question");
+    await originalQuestion.dispose();
     await chooseScope("session");
     const liveAuth = workflow.getByRole("region", { name: "Saved action authorization" });
     await liveAuth.locator("#workflow-auth-commit").selectOption("deny");

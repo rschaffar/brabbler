@@ -42,8 +42,10 @@ import { projectTrustReloadOptions } from "./project-trust";
 import { resolveShellTools } from "./powershell-settings";
 import { isBuiltInSubagentsEnabled, readSubagentSettings } from "./subagent-settings";
 import { SubagentQueue } from "./subagent-queue";
-import { addWorktree, currentLocalBranchTip, removeWorktree } from "./worktree";
+import { addWorktree, currentLocalBranchTip, proposedWorktreePath, removeWorktree } from "./worktree";
+import { gitProjectRootForCaller } from "./git-project-resources";
 import { randomUUID } from "node:crypto";
+import { beginGitWorkspacePlacement } from "./git-workspace-usage";
 
 interface HostSession {
   readonly inner: AgentSessionLike;
@@ -188,6 +190,10 @@ export function createSubagentController(
     if (!parent?.isAlive()) throw new Error("Parent session is no longer available");
     if (!parent.sessionFile) throw new Error("Parent session must be persisted before starting a subagent");
 
+    // Placement-only fence, before resources/native SDK setup. Does not grant
+    // worktree deletion or change the subagent's existing lifecycle/policy.
+    const finishParentPlacement = beginGitWorkspacePlacement(parent.cwd);
+    let finishChildPlacement: (() => void) | undefined;
     let isolatedWorktree: { path: string; branch: string } | undefined;
     try {
       const profile = resolveSubagentProfile(parent.cwd, request.profile);
@@ -197,14 +203,20 @@ export function createSubagentController(
       const isolation = profile.isolation === "off" ? undefined : request.isolation ?? profile.isolation;
       if (isolation === "worktree") {
         const { branch: baseBranch, oid: expectedBaseOid } = await currentLocalBranchTip(parent.cwd);
+        const branch = `pi-web-agent-${randomUUID()}`;
+        // Mark the planned cwd before native creation; no lease can slip into
+        // the new root between creation and SDK registration/failure cleanup.
+        const plannedCwd = proposedWorktreePath(await gitProjectRootForCaller(parent.cwd), branch);
+        finishChildPlacement = beginGitWorkspacePlacement(plannedCwd);
         isolatedWorktree = await addWorktree(parent.cwd, {
-          branch: `pi-web-agent-${randomUUID()}`,
+          branch,
           baseBranch,
           expectedBaseOid,
           mode: "create",
         });
       }
       const childCwd = isolatedWorktree?.path ?? parent.cwd;
+      finishChildPlacement ??= beginGitWorkspacePlacement(childCwd);
       const inheritContext = request.inheritContext ?? profile.inheritContext;
       const maxTurns = request.maxTurns ?? profile.maxTurns;
       if (maxTurns !== undefined && (!Number.isFinite(maxTurns) || maxTurns < 0)) {
@@ -483,7 +495,7 @@ export function createSubagentController(
         try { await removeWorktree(parent.cwd, isolatedWorktree.path); } catch { /* preserve setup failure and avoid force deletion */ }
       }
       throw error;
-    }
+    } finally { finishChildPlacement?.(); finishParentPlacement(); }
   }
 
   async function resume(request: ResumeSubagentRequest): Promise<SubagentExecution> {

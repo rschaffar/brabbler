@@ -24,8 +24,10 @@ const { beginGitOperationIntent, inspectGitOperationAdmission } = await jiti.imp
 const { beginGitAction, gitActionSink } = await jiti.import("../../../../lib/git-action-controller.ts");
 const { AgentSessionWrapper } = await jiti.import("../../../../lib/rpc-manager.ts");
 const { acquireGitCheckoutGate } = await jiti.import("../../../../lib/git-checkout-gate.ts");
+const { registerGitCheckLiveAuthorityReader } = await jiti.import("../../../../lib/git-check-authority-fence.ts");
 const { selectGitProjectResources } = await jiti.import("../../../../lib/git-project-resources.ts");
 const { readProjectAuthorization, saveProjectAuthorization } = await jiti.import("../../../../lib/git-project-authorization.ts");
+const { writeGitWorkflowSettingsDocument } = await jiti.import("../../../../lib/git-workflow-settings-store.ts");
 const git = promisify(execFile);
 after(async () => {
   const pending = globalThis[Symbol.for("pi-web:git-action-human:v1")]?.pending;
@@ -112,6 +114,35 @@ test("manual commit permits an active chat but rejects checkout mismatch and sta
   assert.equal((await git("git", ["-C", cwd, "rev-parse", "HEAD"])).stdout.trim(), result.commit);
 });
 
+test("zero-defined, default-integration and manual-only profiles commit without optional check execution permission", async (t) => {
+  for (const [name, stage] of [["zero-defined", null], ["default-integration", undefined], ["manual-only", "none"]]) {
+    for (const restriction of ["deny", "disabled"]) await t.test(`${name} / checks ${restriction}`, async (t) => {
+      const f = await fixture(t);
+      f.sm.appendCustomEntry("pi-web:tool-selection", { version: 1, tools: [] });
+      const marker = join(f.cwd, "must-not-execute");
+      const recipe = { label: "optional only", argv: [process.execPath, "-e", `require('node:fs').writeFileSync(${JSON.stringify(marker)},'wrong')`],
+        ...(stage ? { requiredStage: stage } : {}) };
+      writeGitWorkflowSettingsDocument({ version: 1, paused: false, global: {}, projects: { [f.cwd]: {
+        commits: "manual", checks: stage === null ? [] : [recipe], ...(restriction === "disabled" ? { checkConfirmation: "disabled" } : {}) } } }, agentDir);
+      if (restriction === "deny") {
+        const source = await selectGitProjectResources(f.cwd), status = await readProjectAuthorization(source, undefined, agentDir);
+        await saveProjectAuthorization(source, undefined, "project", "checks", "deny", status, agentDir);
+      }
+      await writeFile(join(f.cwd, "a"), "optional checks must not be run\n");
+      const response = await post(previewRequest(f.id));
+      assert.equal(response.status, 200, await response.clone().text());
+      const candidate = await response.json();
+      assert.equal(candidate.verification.status, stage === null ? "no-defined" : "no-required");
+      assert.deepEqual(candidate.verification.receiptIds, []); assert.equal(candidate.verification.repositoryChecksWaived, false);
+      assert.equal(candidate.verification.candidateTreeVerified, false);
+      const confirmed = await post(confirmRequest(f.id, candidate));
+      assert.equal(confirmed.status, 200, await confirmed.clone().text()); assert.equal((await confirmed.json()).status, "committed");
+      assert.equal(existsSync(marker), false, "discovery/commit must never execute an optional recipe");
+      assert.equal(anchors(f.sm).length, 1, "no check execution action or passing check evidence was manufactured");
+    });
+  }
+});
+
 test("browser staged candidate commits only selected index entries and authenticates the mode", async (t) => {
   const { cwd, id } = await fixture(t);
   await writeFile(join(cwd, "a"), "selected staged\n");
@@ -173,7 +204,10 @@ test("saved Project/Chat Deny blocks browser preview and live revocation blocks 
   await set("session", "inherit");
   assert.equal((await post(previewRequest(f.id))).status, 409, "project Deny resumes after removing the chat override");
   await set("project", "inherit");
-  assert.equal((await (await post(confirmRequest(f.id, candidate))).json()).status, "committed");
+  assert.equal((await post(confirmRequest(f.id, candidate))).status, 409, "changed-and-restored authority never revives an old exact preview");
+  assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), candidate.preview.head);
+  const renewed = await (await post(previewRequest(f.id))).json();
+  assert.equal((await (await post(confirmRequest(f.id, renewed))).json()).status, "committed");
 });
 
 test("another active session permits browser commit; a Git transaction blocks confirmation without consuming approval", async (t) => {
@@ -451,15 +485,18 @@ test("missing durable candidate prevents mutation, and post-apply recording fail
   const clean = await fixture(t);
   await writeFile(join(clean.cwd, "a"), "journal failure\n");
   const candidate = await (await post(previewRequest(clean.id))).json();
-  const off = subscribeGitActionUpdates(clean.id, ({ actionId }) => {
-    if (actionId !== candidate.actionId) return;
-    const file = join(agentDir, "pi-web/git-actions/v1", actionId, "record.json");
-    const record = JSON.parse(readFileSync(file, "utf8")).record;
-    if (record.state === "executing" && record.intended) writeFileSync(file, "injected journal failure");
-  });
+  // Fault actual POST-CAS recording, not the pre-CAS intent callback. The new
+  // durable-review guard correctly blocks journal corruption before effects.
+  const bin = await mkdtemp(join(tmpdir(), "pi-web-post-cas-journal-"));
+  t.after(() => rm(bin, { recursive: true, force: true }));
+  const realGit = (await git("which", ["git"])).stdout.trim(), wrapper = join(bin, "git");
+  const recordPath = join(agentDir, "pi-web/git-actions/v1", candidate.actionId, "record.json");
+  await writeFile(wrapper, `#!/bin/sh\ncase " $* " in *" update-ref "*) "${realGit}" "$@" || exit $?; printf '%s' 'injected journal failure' > "${recordPath}"; exit 0 ;; esac\nexec "${realGit}" "$@"\n`);
+  await chmod(wrapper, 0o755);
+  const oldPath = process.env.PATH; process.env.PATH = `${bin}:${oldPath}`;
   let response;
   try { response = await post(confirmRequest(clean.id, candidate)); }
-  finally { off(); }
+  finally { process.env.PATH = oldPath; }
   assert.equal(response.status, 200);
   const result = await response.json();
   assert.equal(result.status, "committed");
@@ -508,7 +545,10 @@ test("callback intent-write failure and late access revocation both prevent the 
       if (actionId !== candidate.actionId || injected) return;
       const record = JSON.parse(readFileSync(join(agentDir, "pi-web/git-actions/v1", actionId, "record.json"), "utf8")).record;
       if (record.state !== "executing") return;
-      if (fault === "journal" && !record.intended) {
+      // Execution is now first recorded with the native prepared intent. Fault
+      // the captured artifact at that actual callback, not a removed premature
+      // executing-without-intent UI bookkeeping phase.
+      if (fault === "journal" && record.intended) {
         writeFileSync(join(agentDir, "pi-web/git-actions/v1", actionId, "candidate.json"), "invalid candidate");
         injected = true;
       } else if (fault === "revocation" && record.intended) {
@@ -592,14 +632,18 @@ test("disk-ahead live manager and moved/replaced source file are refused at anch
     const file = f.sm.getSessionFile();
     const moved = `${file}.moved`;
     const source = await readFile(file, "utf8");
-    if (mode === "disk-ahead-live") globalThis.__piSessions = new Map([...(registry ?? []), [f.id, {
-      sessionId: f.id, sessionFile: file, cwd: f.cwd, isAlive: () => true, isRunning: () => false, inner: { sessionManager: f.sm },
-    }]]);
+    let authorityEpoch = 0;
+    if (mode === "disk-ahead-live") {
+      const live = { sessionId: f.id, sessionFile: file, cwd: f.cwd, isAlive: () => true, isRunning: () => false,
+        inner: { sessionManager: f.sm, getActiveToolNames: () => [] } };
+      registerGitCheckLiveAuthorityReader(live, () => String(authorityEpoch));
+      globalThis.__piSessions = new Map([...(registry ?? []), [f.id, live]]);
+    }
     let actionId;
     const off = subscribeGitActionUpdates(f.id, (event) => {
       if (event.revision !== 1) return;
       actionId = event.actionId;
-      if (mode === "disk-ahead-live") SessionManager.open(file).appendCustomEntry("test:external", { keep: true });
+      if (mode === "disk-ahead-live") { authorityEpoch++; SessionManager.open(file).appendCustomEntry("test:external", { keep: true }); }
       else {
         renameSync(file, moved);
         if (mode === "replaced") writeFileSync(file, source);

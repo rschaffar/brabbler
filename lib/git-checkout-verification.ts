@@ -12,13 +12,18 @@ import { normalizeGitCheckRecipe, selectGitCheckRecipesForStage, validateGitChec
 import { validateGitWorkflowSettings, type GitWorkflowSettings } from "./git-workflow-settings";
 import { selectCanonicalGitResources, revalidateGitProjectResources,
   type GitProjectResources, type GitResourceSelector } from "./git-project-resources";
-import { assertGitOperationAdmission, type GitSelectedCheckSnapshot } from "./git-operation-admission";
+import { assertGitOperationAdmission, inspectGitOperationAdmission, type GitSelectedCheckSnapshot,
+  type GitWorkingWorkspaceCheckSnapshot } from "./git-operation-admission";
 import { newGitCheckUnit, linuxSystemdBackend, type ContainmentBackend } from "./git-check-containment";
 import { gitCheckDigest as hash, gitCheckRunningCheckouts, superviseGitCheck,
   registerGitCheckReceiptEpoch, gitCheckReceiptEpochStatus, gitCheckSyncValue, readGitCheckAuthorityStamp,
   assertGitCheckSelectionSync, gitCheckSourceReadSync, gitCheckIndexBytesSync } from "./git-check-runner";
-import { GIT_ACTION_ID_PATTERN } from "./git-action-types";
+import { GIT_ACTION_ID_PATTERN, type GitActionCheckExecution } from "./git-action-types";
 import { samePath } from "./paths";
+import { captureGitWorkingWorkspaceContentManifest } from "./git-working-workspace-snapshot";
+import { readGitCommitProtectedBoundary } from "./git-commit";
+import type { GitCommitReceiptReader, GitCommitReceiptValidationOptions, GitCommitProtectedBoundary,
+  GitCommitSourcePolicy } from "./git-commit-verification";
 
 const exec = promisify(execFile);
 const MAX_TIME = 5 * 60_000;
@@ -39,16 +44,26 @@ export interface GitCheckoutVerificationCandidate {
   readonly selection: Readonly<GitProjectResources>;
   readonly checkIndex: number; readonly stage: GitCheckStage;
   readonly policyDigest: string; readonly policyRevision: string; readonly recipeDigest: string;
-  readonly snapshot: Readonly<GitSelectedCheckSnapshot>;
+  readonly snapshot: Readonly<GitSelectedCheckSnapshot | GitWorkingWorkspaceCheckSnapshot>;
 }
 /** One process-only success, not all-checks proof, integration authority or a persisted approval. */
-export interface GitCheckoutVerificationReceipt extends GitCheckoutVerificationCandidate {
-  readonly kind: "selected-checkout-verification"; readonly version: 2;
+interface GitCheckoutVerificationReceiptBase extends GitCheckoutVerificationCandidate {
+  readonly kind: "selected-checkout-verification";
   readonly id: string; readonly sessionId: string; readonly executionCwd: string;
   readonly snapshotDigest: string; readonly environmentDigest: string;
   readonly startedAt: number; readonly finishedAt: number; readonly expiresAt: number;
   readonly exitStatus: 0; readonly logDigest: string;
 }
+/** Existing clean-only integration/handoff/manual evidence, never upgraded. */
+export interface GitSelectedCheckoutVerificationReceipt extends GitCheckoutVerificationReceiptBase {
+  readonly version: 2; readonly snapshot: Readonly<GitSelectedCheckSnapshot>;
+}
+/** Real working workspace evidence, NOT the eventual staged/whole-file candidate. */
+export interface GitWorkingWorkspaceVerificationReceipt extends GitCheckoutVerificationReceiptBase {
+  readonly version: 3; readonly stage: "commit"; readonly snapshot: Readonly<GitWorkingWorkspaceCheckSnapshot>;
+  readonly evidenceScope: "working-workspace"; readonly candidateTreeVerified: false; readonly repositoryChecksWaived: false;
+}
+export type GitCheckoutVerificationReceipt = GitSelectedCheckoutVerificationReceipt | GitWorkingWorkspaceVerificationReceipt;
 export interface GitCheckoutVerificationOptions {
   sessionId: string; selector: GitResourceSelector; agentDir: string; checkIndex: number; stage: GitCheckStage;
   /** Saved selected-project policy, never model-provided recipe values or another chat's task. */
@@ -65,6 +80,11 @@ export interface GitCheckoutVerificationOptions {
    * synchronously by this engine. Missing/unknown/thenable stamps fail closed. */
   readAuthorityRevisionSync?: () => string;
   actionId?: string; signal?: AbortSignal; timeoutMs?: number;
+  /** Required in production; trusted bootstrap lifecycle, never model/request input. Await durable
+   * outcome persistence here. Throws retain original-unit admission quarantine.
+   * receipt metadata is proposed only: lookup remains unavailable until the
+   * callback, fresh authority/content fencing and native settlement all finish. */
+  onExecution?: (execution: GitActionCheckExecution) => void | Promise<void>;
   /** Only direct node:test fixtures. Never expose these fields to routes/tools. */
   testContainmentBackend?: ContainmentBackend; testRecoveryEvidence?: boolean;
   testBeforeReceiptRegistration?: () => Promise<void>;
@@ -81,15 +101,15 @@ export function selectGitCheckoutVerificationChecks(checks: unknown, stage: Excl
 export function lookupGitCheckoutVerificationReceipt(id: string): GitCheckoutVerificationReceipt | undefined {
   const receipt = receipts().get(id);
   if (receipt) {
-    if (Date.now() < receipt.finishedAt || Date.now() >= receipt.expiresAt) { receipts().delete(id); return; }
+    if (Date.now() < receipt.finishedAt || Date.now() >= receipt.expiresAt) { receipts().delete(id); workingBindings().delete(id); workingValidationFences().delete(id); return; }
     const status = gitCheckReceiptEpochStatus(id);
-    if (status === "stale") receipts().delete(id);
+    if (status === "stale") { receipts().delete(id); workingBindings().delete(id); workingValidationFences().delete(id); }
     if (status !== "current") return;
   }
   return receipt;
 }
 export function invalidateGitCheckoutVerificationReceiptsForCheckout(cwd: string): void {
-  for (const [id, receipt] of receipts()) if (samePath(receipt.selection.cwd, cwd)) receipts().delete(id);
+  for (const [id, receipt] of receipts()) if (samePath(receipt.selection.cwd, cwd)) { receipts().delete(id); workingBindings().delete(id); workingValidationFences().delete(id); }
 }
 
 async function git(selection: GitProjectResources, args: string[]): Promise<string> {
@@ -147,8 +167,9 @@ export interface GitCheckoutCheckBinding {
  * approval, trust bypass or receipt. Original selection and binding are supplied
  * by the live server owner, not reconstructed from a historical action ID. */
 export async function captureGitCheckoutCheckRecoverySnapshot(selection: GitProjectResources, binding: GitCheckoutCheckBinding,
-  requireClean = false): Promise<GitSelectedCheckSnapshot> {
+  requireClean = false): Promise<GitSelectedCheckSnapshot | GitWorkingWorkspaceCheckSnapshot> {
   const current = await selectCanonicalGitResources({ repositoryPath: selection.projectRoot, checkoutPath: selection.cwd });
+  if (binding.stage === "commit") return captureWorkingSnapshotSync(current, binding, requireClean);
   const recipe = normalizeGitCheckRecipe(binding.recipe);
   const cwd = await physicalCwd(current.cwd, recipe.cwd);
   // Status can otherwise execute configured clean filters outside supervision.
@@ -184,7 +205,8 @@ async function savedPolicy(options: GitCheckoutVerificationOptions, selection: G
   return policyValue(await options.getPolicy(selection));
 }
 /** Final post-await source, not an earlier async capture returned optimistically. */
-function captureSnapshotSync(selection: GitProjectResources, binding: GitCheckoutCheckBinding): GitSelectedCheckSnapshot {
+function captureSnapshotSync(selection: GitProjectResources, binding: GitCheckoutCheckBinding): GitSelectedCheckSnapshot | GitWorkingWorkspaceCheckSnapshot {
+  if (binding.stage === "commit") return captureWorkingSnapshotSync(selection, binding);
   assertGitCheckSelectionSync(selection);
   const recipe = normalizeGitCheckRecipe(binding.recipe);
   let cwd = selection.cwd;
@@ -216,6 +238,80 @@ function captureSnapshotSync(selection: GitProjectResources, binding: GitCheckou
     checkDigest: hash(JSON.stringify({ checkIndex: binding.checkIndex, recipe: binding.recipe })), cwdIdentity,
     environmentDigest: binding.environmentDigest, stageDigest: hash(binding.stage) };
 }
+function protectedProof(boundary: GitCommitProtectedBoundary | undefined, selection: GitProjectResources, agentDir?: string) {
+  if (!boundary) return;
+  if (!agentDir) refuse("stale");
+  const proof = gitCheckSyncValue(readGitCommitProtectedBoundary(boundary, selection, agentDir));
+  if (!proof || proof.preview.repositoryRoot !== selection.cwd || proof.preview.branch !== `refs/heads/${selection.branch}` ||
+    proof.indexPath !== path.join(selection.gitDir, "index") || proof.indexLockPath !== `${proof.indexPath}.lock`) refuse("stale");
+  return proof;
+}
+function captureWorkingSnapshotSync(selection: GitProjectResources, binding: GitCheckoutCheckBinding, requireSafe = true,
+  boundary?: GitCommitProtectedBoundary, agentDir?: string): GitWorkingWorkspaceCheckSnapshot {
+  assertGitCheckSelectionSync(selection);
+  const proof = protectedProof(boundary, selection, agentDir), recipe = normalizeGitCheckRecipe(binding.recipe);
+  if (binding.stage !== "commit" || recipe.requiredStage !== "commit") refuse("invalid-request");
+  let cwd = selection.cwd;
+  for (const part of recipe.cwd === "." ? [] : recipe.cwd.split("/")) {
+    cwd = path.join(cwd, part); const s = lstatSync(cwd);
+    if (!s.isDirectory() || s.isSymbolicLink() || !samePath(cwd, realpathSync(cwd))) refuse("stale");
+  }
+  const s = lstatSync(cwd, { bigint: true });
+  const cwdIdentity = hash(JSON.stringify({ cwd, device: String(s.dev), inode: String(s.ino), birthtime: String(s.birthtimeNs) }));
+  const read = (args: string[]) => gitCheckSourceReadSync(selection, args), config = read(["config", "--list", "--null"]);
+  if (config.split("\0").some((row) => /^(?:filter\.|remote\..*\.promisor\n|(?:core\.(?:sparsecheckout|splitindex)|index\.sparse)\n(?:true|1|yes|on))/i.test(row))) refuse();
+  const marker: string[] = [];
+  for (const dir of new Set([selection.gitDir, selection.commonDir])) for (const name of markers) {
+    const file = path.join(dir, name);
+    try {
+      const m = lstatSync(file);
+      if (file === proof?.indexLockPath) continue; // ONLY the native joint sealed invocation's real FD-owned lock
+      marker.push(`${dir}\0${name}\0${m.dev}:${m.ino}:${m.ctimeMs}`);
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  }
+  if (requireSafe && marker.length) refuse("stale");
+  const flags = read(["ls-files", "-v", "-z"]), debug = read(["ls-files", "--debug", "-z"]), stages = read(["ls-files", "--stage", "-z"]);
+  const flagRows = [...debug.matchAll(/\tflags: ([0-9a-f]+)\n/g)];
+  if (requireSafe && (flags.split("\0").some((entry) => entry && !entry.startsWith("H ")) ||
+    flagRows.length !== stages.split("\0").filter(Boolean).length || flagRows.some((m) => m[1] !== "0") ||
+    stages.split("\0").some((entry) => entry && !/^(?:100644|100755|120000) [a-f0-9]{40}(?:[a-f0-9]{24})? 0\t/.test(entry)))) refuse("stale");
+  const manifest = captureGitWorkingWorkspaceContentManifest(selection);
+  if (proof && proof.indexDigest !== manifest.indexDigest) refuse("stale");
+  // V3 status is scoped physical workspace state. Porcelain can enumerate an
+  // actual administrative Git dir inside the checkout under a non-.git name;
+  // never bind that excluded inventory back into working-workspace evidence.
+  const head = read(["rev-parse", "--verify", "HEAD^{commit}"]), tree = read(["rev-parse", "--verify", "HEAD^{tree}"]),
+    branch = read(["symbolic-ref", "--quiet", "HEAD"]), refs = read(["show-ref", "--head"]);
+  assertGitCheckSelectionSync(selection);
+  if (boundary) protectedProof(boundary, selection, agentDir);
+  if (manifest.version !== 2 || manifest.summary.coverage !== "tracked-index-head-union-and-nonignored-physical-workspace") refuse("unavailable");
+  const { coverage, ignoredCachesCovered, externalInputsCovered, paths, tracked, untracked, regularFiles, symlinks, absent, directories, totalBytes, indexBytes } = manifest.summary;
+  const workspaceSummary = { paths, tracked, untracked, regularFiles, symlinks, absent, directories, totalBytes, indexBytes };
+  return { version: 3, checkoutPath: hash(selection.cwd), checkoutIdentity: hash(JSON.stringify(selection.identities)),
+    resourceIdentity: hash(selection.commonDir + "\0" + JSON.stringify(selection.identities.common)),
+    branch: hash(branch.trim()), head: hash(head.trim()), tree: hash(tree.trim()),
+    index: hash(path.join(selection.gitDir, "index") + "\0" + manifest.indexDigest),
+    status: hash(JSON.stringify({ workspace: manifest.digest, flags, flagsDebug: hash(debug), config: hash(config), marker })), refs: hash(refs),
+    policyDigest: binding.policyDigest, policyRevision: hash(binding.policyRevision), recipeDigest: hash(JSON.stringify(binding.recipe)),
+    checkDigest: hash(JSON.stringify({ checkIndex: binding.checkIndex, recipe: binding.recipe })), cwdIdentity,
+    environmentDigest: binding.environmentDigest, stageDigest: hash(binding.stage), evidenceScope: "working-workspace",
+    candidateTreeVerified: false, repositoryChecksWaived: false, workspaceManifestVersion: manifest.version,
+    workspaceContentDigest: manifest.digest, workspaceIndexDigest: manifest.indexDigest, workspaceCoverage: coverage,
+    ignoredCachesCovered, externalInputsCovered, workspaceSummary: Object.freeze(workspaceSummary) };
+}
+function workingBindings(): Map<string, Readonly<GitCheckoutCheckBinding>> {
+  const state = globalThis as unknown as Record<symbol, Map<string, Readonly<GitCheckoutCheckBinding>>>;
+  return state[Symbol.for("pi-web:git-checkout-verification:working-bindings")] ??= new Map();
+}
+const nativeExecutions = new WeakMap<object, { digest: string; execution: Readonly<GitActionCheckExecution> }>();
+/** Read only the original native callback object or published receipt, never a
+ * clone, historical journal row, raw output, action ID or model-shaped object. */
+export function readGitCheckoutVerificationNativeExecution(value: unknown): Readonly<GitActionCheckExecution> | undefined {
+  if (!value || typeof value !== "object") return;
+  const measured = nativeExecutions.get(value);
+  if (!measured) return;
+  return measured.digest === hash(JSON.stringify(value)) ? measured.execution : undefined;
+}
 function freezeSelection(selection: GitProjectResources): GitProjectResources {
   for (const value of Object.values(selection.identities)) Object.freeze(value);
   Object.freeze(selection.identities);
@@ -233,6 +329,7 @@ export async function runGitCheckoutVerification(options: GitCheckoutVerificatio
       !Number.isInteger(options.checkIndex) || options.checkIndex < 0 || !["commit", "integration", "handoff", "none"].includes(options.stage) ||
       typeof options.getPolicy !== "function" || typeof options.isTrusted !== "function" ||
       typeof options.isSelectionAuthorized !== "function" || typeof options.isActorAuthorized !== "function" ||
+      (options.onExecution !== undefined || !process.env.NODE_TEST_CONTEXT) && typeof options.onExecution !== "function" ||
       !path.isAbsolute(options.agentDir) || options.actionId !== undefined && !GIT_ACTION_ID_PATTERN.test(options.actionId)) refuse("invalid-request");
     // Caller/callback mutation must not retarget an in-flight request.
     options = { ...options, selector: { ...options.selector } };
@@ -258,7 +355,7 @@ export async function runGitCheckoutVerification(options: GitCheckoutVerificatio
     const policyDigest = hash(JSON.stringify(policy.settings));
     const env = environment(normalized), envDigest = environmentDigest(env);
     const baseEnvironmentDigest = environmentDigest(sanitizeProjectCommandEnvironment(gitExecEnv()));
-    const cohort = hash(JSON.stringify({ kind: "selected-v2", sessionId: options.sessionId, policyDigest,
+    const cohort = hash(JSON.stringify({ kind: options.stage === "commit" ? "working-workspace-v3" : "selected-v2", sessionId: options.sessionId, policyDigest,
       policyRevision: policy.policyRevision, stage: options.stage, baseEnvironmentDigest }));
     const execution = await physicalCwd(cwd, normalized.cwd);
     const binding: GitCheckoutCheckBinding = { recipe, checkIndex: options.checkIndex, stage: options.stage,
@@ -331,14 +428,34 @@ export async function runGitCheckoutVerification(options: GitCheckoutVerificatio
         finally { polling = false; }
       })();
     }, 100);
+    const actionId = options.actionId ?? randomUUID();
+    const makeReceipt = (facts: { id: string; startedAt: number; finishedAt: number; logDigest: string }): GitCheckoutVerificationReceipt => {
+      const common = { ...candidate, kind: "selected-checkout-verification" as const, ...facts,
+        sessionId: options.sessionId, executionCwd: execution.cwd, snapshotDigest: hash(JSON.stringify(snapshot)),
+        environmentDigest: envDigest, expiresAt: facts.finishedAt + RECEIPT_MS, exitStatus: 0 as const };
+      return snapshot.version === 3 ? Object.freeze({ ...common, version: 3 as const, stage: "commit" as const, snapshot,
+        evidenceScope: "working-workspace" as const, candidateTreeVerified: false as const, repositoryChecksWaived: false as const }) :
+        Object.freeze({ ...common, version: 2 as const, snapshot });
+    };
+    let proposed: GitCheckoutVerificationReceipt | undefined;
+    let measured: Readonly<GitActionCheckExecution> | undefined;
     let result: Awaited<ReturnType<typeof superviseGitCheck>>;
     try {
       supervising = true;
-      result = await superviseGitCheck({ selection, agentDir: options.agentDir, actionId: options.actionId ?? randomUUID(),
+      result = await superviseGitCheck({ selection, agentDir: options.agentDir, actionId,
         unit, before: snapshot, cwd: execution.cwd, argv: normalized.argv, env, timeoutMs: timeout, signal: controller.signal,
         backend, testRecoveryEvidence: options.testRecoveryEvidence, revalidate, assertCurrentSync,
         captureAfter: () => captureGitCheckoutCheckRecoverySnapshot(selection, binding),
-        beforeResolve: async () => { clearInterval(timer); await pendingPoll; } });
+        beforeResolve: async () => { clearInterval(timer); await pendingPoll; },
+        onExecution: async (facts, id, passing) => {
+          if (passing) proposed = makeReceipt({ id, startedAt: facts.startedAt, finishedAt: facts.finishedAt, logDigest: facts.logDigest });
+          measured = Object.freeze({ ...facts, actionId, sessionId: options.sessionId, checkIndex: options.checkIndex, stage: options.stage,
+            recipeDigest: snapshot.recipeDigest, policyDigest, snapshotDigest: hash(JSON.stringify(snapshot)),
+            environmentDigest: envDigest, executionCwd: execution.cwd,
+            ...(proposed ? { receipt: Object.freeze({ id, sha256: hash(JSON.stringify(proposed)), expiresAt: proposed.expiresAt }) } : {}) });
+          nativeExecutions.set(measured, { digest: hash(JSON.stringify(measured)), execution: measured });
+          await options.onExecution?.(measured);
+        } });
     } finally {
       clearInterval(timer);
       options.signal?.removeEventListener("abort", abort);
@@ -348,11 +465,12 @@ export async function runGitCheckoutVerification(options: GitCheckoutVerificatio
     await options.testBeforeReceiptRegistration?.();
     assertCurrentSync();
     const { settlement, ...receiptResult } = result;
-    const receipt: GitCheckoutVerificationReceipt = Object.freeze({ ...candidate, kind: "selected-checkout-verification", version: 2,
-      ...receiptResult, sessionId: options.sessionId, executionCwd: execution.cwd, snapshotDigest: hash(JSON.stringify(snapshot)),
-      environmentDigest: envDigest, expiresAt: result.finishedAt + RECEIPT_MS, exitStatus: 0 });
+    if (!proposed || !measured || JSON.stringify(proposed) !== JSON.stringify(makeReceipt(receiptResult))) refuse("recovery-required");
+    const receipt = proposed;
     registerGitCheckReceiptEpoch(receipt.id, options.agentDir, selection.commonDir, { cohort, settlement, snapshot });
     receipts().set(receipt.id, receipt);
+    nativeExecutions.set(receipt, { digest: hash(JSON.stringify(receipt)), execution: measured });
+    if (receipt.version === 3) workingBindings().set(receipt.id, Object.freeze({ ...binding, recipe: structuredClone(recipe) }));
     return receipt;
   } catch (error) {
     if (error instanceof GitCheckoutVerificationError && !supervising) throw error;
@@ -398,3 +516,86 @@ export async function validateGitCheckoutVerificationReceipt(id: string, options
     return receipt;
   } catch { refuse("stale"); }
 }
+
+interface WorkingValidationFence {
+  options: GitCommitReceiptValidationOptions; sourceDigest: string; authorityStamp?: string;
+  binding: Readonly<GitCheckoutCheckBinding>;
+}
+function workingValidationFences(): Map<string, WorkingValidationFence[]> {
+  const state = globalThis as unknown as Record<symbol, Map<string, WorkingValidationFence[]>>;
+  return state[Symbol.for("pi-web:git-checkout-verification:working-validation-fences")] ??= new Map();
+}
+function sameWorkingContext(fence: WorkingValidationFence, options: GitCommitReceiptValidationOptions): boolean {
+  const old = fence.options;
+  return old.sessionId === options.sessionId && old.agentDir === options.agentDir && old.checkIndex === options.checkIndex &&
+    old.stage === options.stage && fence.sourceDigest === hash(JSON.stringify(options.source)) && old.sourceGetPolicy === options.sourceGetPolicy &&
+    old.isTrusted === options.isTrusted && old.isSelectionAuthorized === options.isSelectionAuthorized && old.isCheckAuthorized === options.isCheckAuthorized &&
+    old.readAuthorityRevisionSync === options.readAuthorityRevisionSync && old.protectedBoundary === options.protectedBoundary && old.signal === options.signal;
+}
+function workingReceipt(id: string, options: GitCommitReceiptValidationOptions): GitWorkingWorkspaceVerificationReceipt {
+  const r = lookupGitCheckoutVerificationReceipt(id);
+  if (!r || r.version !== 3 || r.snapshot.version !== 3 || r.evidenceScope !== "working-workspace" || r.candidateTreeVerified !== false ||
+    r.repositoryChecksWaived !== false || r.stage !== "commit" || options.stage !== "commit" || r.sessionId !== options.sessionId ||
+    r.checkIndex !== options.checkIndex || JSON.stringify(r.selection) !== JSON.stringify(options.source) || options.signal?.aborted) refuse("stale");
+  return r;
+}
+function commitPolicyBinding(input: GitCommitSourcePolicy, receipt: GitWorkingWorkspaceVerificationReceipt): Readonly<GitCheckoutCheckBinding> {
+  const policy = policyValue(input), saved = validateGitCheckRecipes(input.savedProjectSettings?.checks ?? []), recipe = saved[receipt.checkIndex];
+  if (!recipe || JSON.stringify(saved) !== JSON.stringify(policy.settings.checks) || normalizeGitCheckRecipe(recipe).requiredStage !== "commit" ||
+    policy.policyRevision !== receipt.policyRevision || hash(JSON.stringify(policy.settings)) !== receipt.policyDigest ||
+    hash(JSON.stringify(recipe)) !== receipt.recipeDigest) refuse("stale");
+  return { recipe, checkIndex: receipt.checkIndex, stage: "commit", policyDigest: receipt.policyDigest,
+    policyRevision: receipt.policyRevision, environmentDigest: receipt.environmentDigest };
+}
+function assertWorkingCurrentSync(id: string, options: GitCommitReceiptValidationOptions, fence: WorkingValidationFence): void {
+  const r = workingReceipt(id, options);
+  if (!sameWorkingContext(fence, options)) refuse("stale");
+  // No caller action-ID/admission bypass. Only the native joint invocation seal
+  // may allow its own reservation AND FD/path-bound index.lock at handoff.
+  if (options.protectedBoundary) protectedProof(options.protectedBoundary, r.selection, options.agentDir);
+  else if (!inspectGitOperationAdmission(options.agentDir, r.selection.commonDir).admitted) refuse("stale");
+  const snapshot = captureWorkingSnapshotSync(r.selection, fence.binding, true, options.protectedBoundary, options.agentDir);
+  if (hash(JSON.stringify(snapshot)) !== r.snapshotDigest) refuse("stale");
+  if (options.readAuthorityRevisionSync) {
+    if (readGitCheckAuthorityStamp(options.readAuthorityRevisionSync) !== fence.authorityStamp) refuse("stale");
+  } else {
+    if (gitCheckSyncValue(options.isCheckAuthorized(r)) !== true || gitCheckSyncValue(options.isSelectionAuthorized(r.selection)) !== true ||
+      gitCheckSyncValue(options.isTrusted(r.selection.projectRoot)) !== true) refuse("stale");
+    commitPolicyBinding(gitCheckSyncValue(options.sourceGetPolicy(r.selection)), r);
+  }
+  if (options.signal?.aborted || environmentDigest(environment(normalizeGitCheckRecipe(fence.binding.recipe))) !== r.environmentDigest ||
+    !lookupGitCheckoutVerificationReceipt(id)) refuse("stale");
+}
+/** Actual native v3 reader. No casts, v2 adapter, persisted receipts or raw lock
+ * exemption. Validation pins an immutable authority fence for each invocation;
+ * a later concurrent validate cannot replace its earlier revision baseline. */
+export const gitCommitWorkingWorkspaceReceiptReader: GitCommitReceiptReader = Object.freeze({
+  async validate(id: string, options: GitCommitReceiptValidationOptions): Promise<GitWorkingWorkspaceVerificationReceipt> {
+    try {
+      const r = workingReceipt(id, options), authorityStamp = options.readAuthorityRevisionSync ? readGitCheckAuthorityStamp(options.readAuthorityRevisionSync) : undefined;
+      if (!workingBindings().has(id)) refuse("stale"); // genuine native run, not a historical object/upgrade
+      await revalidateGitProjectResources(r.selection);
+      if (!await options.isSelectionAuthorized(r.selection) || !await options.isTrusted(r.selection.projectRoot)) refuse("denied");
+      const binding = commitPolicyBinding(await options.sourceGetPolicy(r.selection), r);
+      if (!await options.isCheckAuthorized(r) || !await options.isSelectionAuthorized(r.selection) || !await options.isTrusted(r.selection.projectRoot)) refuse("denied");
+      if (options.protectedBoundary) protectedProof(options.protectedBoundary, r.selection, options.agentDir);
+      else await assertGitOperationAdmission(r.selection, options.agentDir); // never an actionId exemption
+      const existing = workingValidationFences().get(id) ?? [];
+      let fence = existing.find((item) => sameWorkingContext(item, options));
+      if (fence && fence.authorityStamp !== authorityStamp) refuse("stale");
+      if (!fence) {
+        // Bound resource and callback identities, not a caller-mutable options object.
+        fence = { options: { ...options, source: r.selection }, sourceDigest: hash(JSON.stringify(r.selection)), authorityStamp, binding };
+        if (existing.length >= 64) refuse("unavailable");
+        workingValidationFences().set(id, [...existing, fence]);
+      }
+      assertWorkingCurrentSync(id, options, fence);
+      return r;
+    } catch { refuse("stale"); }
+  },
+  assertCurrentSync(id: string, options: GitCommitReceiptValidationOptions): void {
+    const fence = workingValidationFences().get(id)?.find((item) => sameWorkingContext(item, options));
+    if (!fence) refuse("stale");
+    assertWorkingCurrentSync(id, options, fence);
+  },
+});

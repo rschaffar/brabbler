@@ -14,6 +14,7 @@ import { withGitWorkflowSettingsLock } from "./git-workflow-settings-store";
 import { retireGitTaskBinding } from "./git-workflow-binding-store";
 import { advanceGitWorkflowWriteEpoch } from "./git-workflow-write-epoch";
 import type { SessionInfo } from "./types";
+import { beginGitWorkspacePlacement } from "./git-workspace-usage";
 
 export class SessionMoveConflict extends Error {}
 
@@ -53,15 +54,21 @@ function rewriteFile(content: string, cwd: string | null, relocated: Map<string,
 
 /** Serialize Pi Web relocations so overlapping families cannot stage stale copies. */
 export async function moveSessionFamily(id: string, cwd: string): Promise<{ movedIds: string[] }> {
+  // Mark the destination before waiting for the family/settings locks. A
+  // queued move is already an in-flight placement, not an idle checkout.
+  let finishPlacement: () => void;
+  try { finishPlacement = beginGitWorkspacePlacement(cwd); }
+  catch { throw new SessionMoveConflict("Workspace cleanup blocks session relocation"); }
   const previous = globalThis.__piSessionMoveLock ?? Promise.resolve();
   let release!: () => void;
   const turn = new Promise<void>((resolve) => { release = resolve; });
   const current = previous.then(() => turn);
   globalThis.__piSessionMoveLock = current;
-  await previous;
   try {
+    await previous;
     return await withGitWorkflowSettingsLock(getAgentDir(), () => moveSessionFamilyUnlocked(id, cwd));
   } finally {
+    finishPlacement();
     release();
     if (globalThis.__piSessionMoveLock === current) globalThis.__piSessionMoveLock = undefined;
   }
