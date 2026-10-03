@@ -156,7 +156,7 @@ test("recipe controls are Project-only and Global/Session never enable recipe de
   const data = fixture({ project: { checks: [{ label: "Scoped", argv: ["true"], cwd: ".", env: { CI: "1" }, requiredStage: "integration" }] } });
   const session = render({ data, scope: "session" }).match(/<div id="workflow-stage-checks"[\s\S]*?<\/section>/)[0];
   assert.match(session, /Checkout-relative directory · optional<input disabled=""/);
-  assert.match(session, /Required stage · recipe prerequisite<select disabled=""/);
+  assert.match(session, /Required stage · recipe prerequisite<select aria-label="Required stage · recipe prerequisite" disabled=""/);
   assert.match(session, /<fieldset disabled=""><legend>Literal environment overrides/);
   assert.match(session, /<button type="button" disabled="">Add check/);
   assert.match(session, /<button type="button" disabled="">No checks at this scope/);
