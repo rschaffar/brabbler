@@ -759,8 +759,10 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     assert.deepEqual(readFileSync(git("rev-parse", "--path-format=absolute", "--git-path", "index")), indexBeforePreview);
     assert.equal(readFileSync(join(cwd, "draft.txt"), "utf8"), workingDraft);
 
+    // Genuine native capture/apply took 31.4s on this host; wait for its real
+    // response without changing candidate, receipt or authorization expiry.
     const stagedConfirmResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/commit"
-      && response.request().postDataJSON()?.operation === "confirm");
+      && response.request().postDataJSON()?.operation === "confirm", { timeout: 120_000 });
     await stagedPreview.getByRole("button", { name: "Confirm commit" }).click();
     const stagedConfirmed = await stagedConfirmResponse;
     assert.equal(stagedConfirmed.status(), 200, stagedConfirmed.status() === 200 ? "" : await stagedConfirmed.text());
