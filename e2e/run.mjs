@@ -733,6 +733,27 @@ try {
       assert.equal(await mobileIdentity.locator(".mobile-session-project").textContent(), "project");
       assert.equal(await mobileIdentity.locator(".mobile-session-project").getAttribute("title"), project);
       assert.ok(await mobileIdentity.evaluate((element) => element.scrollWidth <= element.clientWidth), "Mobile identity must not overflow the viewport");
+      const topActions = page.locator(".top-bar-actions");
+      const sidebarToggle = page.getByRole("button", { name: "Show sidebar" });
+      const sidebarX = (await sidebarToggle.boundingBox()).x;
+      assert.equal(await topActions.evaluate((element) => getComputedStyle(element).scrollbarWidth), "none");
+      const scrolled = await topActions.evaluate((element) => {
+        const overflow = element.scrollWidth - element.clientWidth;
+        element.scrollTo({ left: overflow, behavior: "instant" });
+        return { overflow, scrollLeft: element.scrollLeft };
+      });
+      assert.ok(scrolled.overflow > 0 && scrolled.scrollLeft > 0, "Mobile actions must scroll horizontally");
+      assert.equal((await sidebarToggle.boundingBox()).x, sidebarX, "Sidebar toggle must stay pinned while scrolling");
+      assert.ok(await page.locator('[data-mobile-toolbar-file="true"]').isVisible(), "Trailing file control must be reachable");
+      for (const label of ["Workflow", "Git Explorer"]) {
+        const button = page.getByRole("button", { name: label, exact: true });
+        await button.scrollIntoViewIfNeeded();
+        assert.ok(await button.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const strip = element.closest(".top-bar-actions").getBoundingClientRect();
+          return rect.left >= strip.left && rect.right <= strip.right;
+        }), `${label} remains reachable in the scroll row`);
+      }
     } else {
       assert.equal(await mobileIdentity.count(), 0, "Desktop chat should not gain a mobile identity row");
     }
