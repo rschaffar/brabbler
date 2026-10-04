@@ -7,7 +7,6 @@ import { resolveSessionPath, readSessionHeader } from "@/lib/session-reader";
 import { listWorktrees, resolveProject } from "@/lib/worktree";
 import { samePath } from "@/lib/paths";
 import { projectIdentityKey } from "@/lib/project-identity";
-import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
 
 // POST /api/sessions/[id]/move  body: { cwd: string }
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -24,9 +23,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!source) return NextResponse.json({ error: "Session not found" }, { status: 404 });
     const header = readSessionHeader(source);
     if (!header?.cwd) return NextResponse.json({ error: "Session is not persisted" }, { status: 409 });
-    if (isGitCheckoutGated(header.cwd) || isGitCheckoutGated(cwd)) {
-      return NextResponse.json({ error: "Checkout is being integrated" }, { status: 409 });
-    }
     const [from, to] = await Promise.all([resolveProject(header.cwd), resolveProject(cwd)]);
     const sourceWorktrees = await listWorktrees(header.cwd).catch(() => []);
     const destinationWorktrees = await listWorktrees(cwd).catch(() => []);
@@ -43,9 +39,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         return NextResponse.json({ error: "Choose a registered worktree" }, { status: 409 });
       }
     }
-    const release = acquireGitCheckoutGate([header.cwd, cwd]);
-    try { return NextResponse.json({ ok: true, ...(await moveSessionFamily(id, cwd)) }); }
-    finally { release(); }
+    return NextResponse.json({ ok: true, ...(await moveSessionFamily(id, cwd)) });
   } catch (error) {
     if (error instanceof SessionMoveConflict) return NextResponse.json({ error: error.message }, { status: 409 });
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {

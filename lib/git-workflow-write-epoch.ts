@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { closeSync, fsyncSync, lstatSync, mkdirSync, openSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { writePrivateFileAtomicSync } from "./atomic-file";
+import { writeGitScopedAuthorityFile, type GitAuthorityScope } from "./git-scoped-authority";
 import { bindingFields, GitTaskBindingError, readBindingFile } from "./git-workflow-binding-io";
 
 export function syncGitWorkflowDirectory(dir: string): void {
@@ -61,9 +61,9 @@ export function readGitWorkflowWriteEpoch(agentDir: string): string {
   return data.epoch;
 }
 /** Caller holds the common settings lock. A failed write must not resurrect old previews. */
-export function advanceGitWorkflowWriteEpoch(agentDir: string): void {
+export function advanceGitWorkflowWriteEpoch(agentDir: string, scopes?: readonly GitAuthorityScope[]): void {
   readGitWorkflowWriteEpoch(agentDir); // Refuse corrupt/newer state rather than repairing it.
   const parent = gitWorkflowPrivateParent(agentDir, true)!;
-  writePrivateFileAtomicSync(join(parent, "git-workflow-write-epoch.json"), JSON.stringify({ version: 1, epoch: randomUUID() }));
+  writeGitScopedAuthorityFile(agentDir, join(parent, "git-workflow-write-epoch.json"), JSON.stringify({ version: 1, epoch: randomUUID() }), "settings", scopes);
   syncGitWorkflowDirectory(parent);
 }

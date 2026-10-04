@@ -4,12 +4,11 @@ import { NextResponse } from "next/server";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
 import { samePath } from "@/lib/paths";
 import { getRpcSession } from "@/lib/rpc-manager";
-import { isGitCheckoutGated } from "@/lib/git-checkout-gate";
 import { retireGitTaskBinding } from "@/lib/git-workflow-binding-store";
 import { gitTaskBindingRuntime } from "@/lib/git-workflow-binding-runtime";
 import { advanceGitWorkflowWriteEpoch } from "@/lib/git-workflow-write-epoch";
 import { validateGitWorkflowOverrides, validateGitWorkflowScopeOverrides } from "@/lib/git-workflow-settings";
-import { selectGitProjectResources, revalidateGitProjectResources, GitProjectResourceError } from "@/lib/git-project-resources";
+import { selectGitProjectResources, revalidateGitProjectResources, gitProjectRootForCaller, GitProjectResourceError } from "@/lib/git-project-resources";
 import { loadGitProjectSettings } from "@/lib/git-project-settings";
 import { appendGitProjectSessionSettings, readGitProjectSessionSettings } from "@/lib/git-project-session";
 import { managedGitPermissions } from "@/lib/git-workflow-permissions";
@@ -60,7 +59,6 @@ function sessionReason(t: Target): string | undefined {
   if (!t.manager || !t.file || !t.id) return "Select a persisted chat to edit session settings.";
   if (entriesOf(t).some((e) => e.type === "custom" && e.customType === "pi-web:subagent")) return "Subagent workflows are read-only.";
   if (t.live?.isRunning()) return "Stop the chat before changing its session settings.";
-  if (isGitCheckoutGated(t.cwd!) || t.sessionCwd && isGitCheckoutGated(t.sessionCwd)) return "Checkout is busy with a Git transaction.";
 }
 export async function responseFor(t: Target) {
   const result = t.selection ? await loadGitProjectSettings(t.selection, entriesOf(t), getAgentDir(), t.id)
@@ -152,7 +150,9 @@ export async function applyWorkflowSettings(input: Record<string, unknown>,
           const projects = readGitProjectSessionSettings(entriesOf(t));
           if (!projects.has(t.selection.projectRoot) && projects.size >= 256) throw new SettingsError("Too many project-scoped chat settings");
         }
-        advanceGitWorkflowWriteEpoch(getAgentDir());
+        advanceGitWorkflowWriteEpoch(getAgentDir(), [t.selection
+          ? { kind: "chat-project", sessionId: t.id!, projectRoot: t.selection.projectRoot }
+          : { kind: "session", sessionId: t.id! }]);
         if (t.selection) appendGitProjectSessionSettings(t.manager!, t.selection.projectRoot, overrides!);
         else {
           if (scope === "task") retireGitTaskBinding(t.id!, undefined, "settings-capture", getAgentDir());
@@ -171,7 +171,12 @@ export async function applyWorkflowSettings(input: Record<string, unknown>,
           // An explicit empty object is reset-to-inherit, not re-import old defaults.
           doc.projects[before.projectRoot] = overrides!;
         }
-        writeGitWorkflowSettingsDocument(doc);
+        let canonicalRoot: string | undefined;
+        if (scope === "project" && t.cwd) {
+          try { canonicalRoot = await gitProjectRootForCaller(t.cwd); } catch { /* ambiguous legacy write is global */ }
+        }
+        writeGitWorkflowSettingsDocument(doc, getAgentDir(), [scope === "project" && canonicalRoot === before.projectRoot
+          ? { kind: "project", projectRoot: canonicalRoot! } : { kind: "global" }]);
       }
       // A post-write status read can fail. Do not report an applied proposal as
       // an untouched stale candidate after the write has already completed.

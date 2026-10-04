@@ -58,8 +58,8 @@ export async function moveSessionFamily(id: string, cwd: string): Promise<{ move
   const turn = new Promise<void>((resolve) => { release = resolve; });
   const current = previous.then(() => turn);
   globalThis.__piSessionMoveLock = current;
-  await previous;
   try {
+    await previous;
     return await withGitWorkflowSettingsLock(getAgentDir(), () => moveSessionFamilyUnlocked(id, cwd));
   } finally {
     release();
@@ -145,7 +145,7 @@ async function moveSessionFamilyUnlocked(id: string, cwd: string): Promise<{ mov
   // Fence reviewed metadata before replacing any file, including repaired parent
   // references. A failed/rolled-back move never resurrects its old generation.
   try {
-    advanceGitWorkflowWriteEpoch(getAgentDir());
+    advanceGitWorkflowWriteEpoch(getAgentDir(), files.map((file) => ({ kind: "session", sessionId: file.id })));
     for (const file of files) retireGitTaskBinding(file.id, undefined, "session-move", getAgentDir());
   } catch { throw new SessionMoveConflict("Task bindings could not be invalidated; session was not moved."); }
   // Evict idle wrappers before touching their files: their managers retain the

@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   MAX_GIT_WORKFLOW_CHECKS, MAX_GIT_WORKFLOW_CHECK_ARGS, MAX_GIT_WORKFLOW_CHECK_LABEL,
   MAX_GIT_WORKFLOW_CHECK_EXECUTABLE, MAX_GIT_WORKFLOW_CHECK_ARG,
-  validateGitWorkflowPolicy, type GitWorkflowPolicy,
-} from "@/lib/git-workflow-policy";
+  validateGitWorkflowPolicy, type GitWorkflowPolicy, type GitWorkflowCheck,
+} from "@/lib/git-workflow-policy-contract";
 import { sendAgentCommand } from "@/lib/agent-client";
 
 type WorkflowResponse = {
@@ -20,9 +20,11 @@ type WorktreesResponse = {
   isGit: boolean; isTopLevel: boolean; currentWorktreePath: string | null;
   worktrees: Worktree[]; error?: string;
 };
-type CheckDraft = { label: string; executable: string; argumentsText: string };
+type CheckDraft = Omit<GitWorkflowCheck, "argv"> & { executable: string; argumentsText: string };
 type Draft = {
   checks: CheckDraft[];
+  /** Preserve an explicit empty list rather than converting it to absence on unrelated edits. */
+  checksPresent?: boolean;
   mode: "worktree" | "current";
   baseBranch: string;
   branch: string;
@@ -35,22 +37,25 @@ const emptyDraft: Draft = {
   mode: "current", baseBranch: "", branch: "", onCreate: "continue",
   commits: "manual", targetBranch: "", method: "merge", checks: [],
 };
-function toDraft(policy: GitWorkflowPolicy | null): Draft {
+export function toDraft(policy: GitWorkflowPolicy | null): Draft {
   if (!policy) return { ...emptyDraft, checks: [] };
   return {
     mode: policy.mode, baseBranch: policy.mode === "worktree" ? policy.baseBranch : "",
     branch: policy.mode === "current" ? policy.branch ?? "" : "",
     onCreate: policy.onCreate, commits: policy.commits,
     targetBranch: policy.integration?.targetBranch ?? "", method: policy.integration?.method ?? "merge",
-    checks: policy.checks?.map(({ label, argv }) => ({ label, executable: argv[0], argumentsText: argv.slice(1).join("\n") })) ?? [],
+    ...(Object.hasOwn(policy, "checks") ? { checksPresent: true } : {}),
+    checks: policy.checks?.map(({ argv, ...recipe }) => ({ ...recipe,
+      ...(Object.hasOwn(recipe, "env") ? { env: { ...recipe.env } } : {}),
+      executable: argv[0], argumentsText: argv.slice(1).join("\n") })) ?? [],
   };
 }
-function toPolicy(draft: Draft): GitWorkflowPolicy {
+export function toPolicy(draft: Draft): GitWorkflowPolicy {
   const common = {
     onCreate: draft.onCreate, commits: draft.commits,
     ...(draft.targetBranch.trim() ? { integration: { targetBranch: draft.targetBranch.trim(), method: draft.method } } : {}),
-    ...(draft.checks.length ? { checks: draft.checks.map(({ label, executable, argumentsText }) => ({
-      label, argv: [executable, ...(argumentsText === "" ? [] : argumentsText.split("\n"))],
+    ...(draft.checks.length || draft.checksPresent ? { checks: draft.checks.map(({ executable, argumentsText, ...recipe }) => ({
+      ...recipe, argv: [executable, ...(argumentsText === "" ? [] : argumentsText.split("\n"))],
     })) } : {}),
   };
   return validateGitWorkflowPolicy(draft.mode === "worktree"
@@ -204,7 +209,7 @@ export function GitWorkflowSettings({ cwd, sessionId, setNewChatOverride, busy, 
     } finally { moveInFlightRef.current = false; setForking(false); }
   }
   const update = <K extends keyof Draft>(key: K, next: Draft[K]) => setDraft((current) => ({ ...current, [key]: next }));
-  const updateCheck = (index: number, key: keyof CheckDraft, next: string) => setDraft((current) => ({
+  const updateCheck = (index: number, key: "label" | "executable" | "argumentsText", next: string) => setDraft((current) => ({
     ...current, checks: current.checks.map((check, i) => i === index ? { ...check, [key]: next } : check),
   }));
   async function put(scope: "project" | "session", policy: GitWorkflowPolicy | null) {
@@ -385,11 +390,12 @@ export function GitWorkflowSettings({ cwd, sessionId, setNewChatOverride, busy, 
             {showFields && <fieldset disabled={disabled} className="min-w-0 rounded border border-border p-2">
               <legend className="px-1 font-semibold">Verification checks (optional)</legend>
               <p className="mb-2 text-text-muted">No checks are configured by default. Saving does not run them. Checks run only after explicit selection in a separate workflow and can execute project code. Each line below is one literal argument; no shell quoting, expansion, or command string is parsed. Do not include URLs or credentials.</p>
+              <p className="mb-2 text-text-muted">Extended recipe directory, environment and required-stage fields are retained on edits, but their execution is not supported yet.</p>
               <div className="space-y-2">{draft.checks.map((check, index) => (
                 <div key={index} className="min-w-0 rounded border border-border p-2">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <span className="font-semibold">Check {index + 1}</span>
-                    <button type="button" className="text-accent underline disabled:opacity-50" onClick={() => setDraft((current) => ({ ...current, checks: current.checks.filter((_, i) => i !== index) }))}>Remove</button>
+                    <button type="button" className="text-accent underline disabled:opacity-50" onClick={() => setDraft((current) => ({ ...current, checksPresent: true, checks: current.checks.filter((_, i) => i !== index) }))}>Remove</button>
                   </div>
                   <div className="grid min-w-0 gap-2 sm:grid-cols-2">
                     <label className={labelClass}>Label
@@ -404,7 +410,7 @@ export function GitWorkflowSettings({ cwd, sessionId, setNewChatOverride, busy, 
                   </label>
                 </div>
               ))}</div>
-              <button type="button" disabled={disabled || draft.checks.length >= MAX_GIT_WORKFLOW_CHECKS} className="mt-2 rounded border border-border px-2 py-1 text-accent disabled:opacity-50" onClick={() => setDraft((current) => ({ ...current, checks: [...current.checks, { label: "", executable: "", argumentsText: "" }] }))}>Add check ({draft.checks.length}/{MAX_GIT_WORKFLOW_CHECKS})</button>
+              <button type="button" disabled={disabled || draft.checks.length >= MAX_GIT_WORKFLOW_CHECKS} className="mt-2 rounded border border-border px-2 py-1 text-accent disabled:opacity-50" onClick={() => setDraft((current) => ({ ...current, checksPresent: true, checks: [...current.checks, { label: "", executable: "", argumentsText: "" }] }))}>Add check ({draft.checks.length}/{MAX_GIT_WORKFLOW_CHECKS})</button>
             </fieldset>}
             <div className="flex flex-wrap items-center gap-3">
               <button type="submit" disabled={disabled} className="rounded bg-accent px-3 py-1.5 text-white disabled:opacity-50">{saving ? "Saving…" : sessionId ? "Save session policy" : choice === "project" ? "Save project default" : "Set new-chat override"}</button>

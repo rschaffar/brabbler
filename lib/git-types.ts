@@ -8,6 +8,8 @@ export type GitFileStatusKind =
 
 export interface GitFileStatus {
   filePath: string;
+  /** Source of an index rename; selecting this row in staged mode includes both entries. */
+  originalFilePath?: string;
   status: GitFileStatusKind;
   code: "M" | "A" | "D" | "R" | "U" | "C";
   indexStatus: string;

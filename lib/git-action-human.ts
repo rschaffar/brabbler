@@ -4,7 +4,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { beginGitAction, failGitAction, finishGitAction, gitActionSink, GitActionRecordingError, type GitActionHandle, type GitActionSink } from "./git-action-controller";
 import type { GitActionCandidateSnapshot, GitActionOutcome } from "./git-action-types";
 import type { GitCommitPreview } from "./git-commit";
-import type { IntegrationPlan } from "./git-integration";
+import type { IntegrationPlan, FastForwardIntegrationPlan } from "./git-integration";
 import { samePath } from "./paths";
 import { getRpcSession } from "./rpc-manager";
 import { readLatestSessionEntryId, readSessionHeader } from "./session-reader";
@@ -53,7 +53,7 @@ export function humanGitActionSink(scope: HumanGitScope): GitActionSink {
 
 type Commit = { kind: "commit"; preview: GitCommitPreview; message: string };
 type Integration = {
-  kind: "integration"; plan: IntegrationPlan; targetCwd: string; intended: GitActionOutcome;
+  kind: "integration"; plan: IntegrationPlan | FastForwardIntegrationPlan; targetCwd: string; intended: GitActionOutcome;
 };
 type NativeCandidate = Commit | Integration;
 interface Pending {

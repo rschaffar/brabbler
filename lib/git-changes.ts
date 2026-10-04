@@ -121,6 +121,8 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResponse> {
     const classified = classifyGitStatus(entry);
     return [{
       filePath,
+      ...(entry.indexStatus === "R" && entry.originalPath && isWithinPath(cwd, path.resolve(repositoryRoot, entry.originalPath))
+        ? { originalFilePath: path.resolve(repositoryRoot, entry.originalPath) } : {}),
       ...classified,
       indexStatus: entry.indexStatus,
       worktreeStatus: entry.worktreeStatus,

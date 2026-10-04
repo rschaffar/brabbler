@@ -114,23 +114,29 @@ export function createTerminal(cwd: string, cols: number, rows: number, id: stri
     cleanupTimer: null,
   };
   registry().set(id, record);
-  // Includes creations whose response or initial SSE connection never arrives.
-  scheduleCleanup(id, record);
-
-  pty.onData((data) => {
-    record.backlog = (record.backlog + data).slice(-MAX_BACKLOG);
-    record.offset += data.length;
-    emit(record, { type: "output", data, offset: record.offset });
-  });
-  pty.onExit(({ exitCode }) => {
-    if (record.cleanupTimer) clearTimeout(record.cleanupTimer);
-    record.cleanupTimer = null;
-    record.exited = true;
-    record.exitCode = exitCode;
-    emit(record, { type: "exit", exitCode });
+  try {
+    // Includes creations whose response or initial SSE connection never arrives.
     scheduleCleanup(id, record);
-  });
-  return id;
+    pty.onData((data) => {
+      record.backlog = (record.backlog + data).slice(-MAX_BACKLOG);
+      record.offset += data.length;
+      emit(record, { type: "output", data, offset: record.offset });
+    });
+    pty.onExit(({ exitCode }) => {
+      if (record.cleanupTimer) clearTimeout(record.cleanupTimer);
+      record.cleanupTimer = null;
+      record.exited = true;
+      record.exitCode = exitCode;
+      emit(record, { type: "exit", exitCode });
+      scheduleCleanup(id, record);
+    });
+    return id;
+  } catch (error) {
+    if (record.cleanupTimer) clearTimeout(record.cleanupTimer);
+    registry().delete(id);
+    try { pty.kill(); } catch { /* Preserve setup failure; only this owned PTY is reaped. */ }
+    throw error;
+  }
 }
 
 export function hasTerminal(id: string): boolean {

@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import lockfile from "proper-lockfile";
-import { writePrivateFileAtomicSync } from "./atomic-file";
+import { bindGitWorkflowPolicyRevision, captureGitScopedAuthorityRevision, readGitScopedAuthorityRevision, writeGitScopedAuthorityFile,
+  type GitAuthorityScope, type GitAuthoritySelection } from "./git-scoped-authority";
 import { advanceGitWorkflowWriteEpoch, gitWorkflowPrivateParent, readGitWorkflowWriteEpoch } from "./git-workflow-write-epoch";
 import { resolveProject } from "./worktree";
 import { getProjectGitWorkflow, gitWorkflowDefaultsPath } from "./git-workflow-store";
@@ -43,9 +44,9 @@ export function readGitWorkflowSettingsDocument(agentDir = getAgentDir()): GitWo
   }
   return { version: 1, paused: data.paused, global: validateGitWorkflowOverrides(data.global), projects };
 }
-export function writeGitWorkflowSettingsDocument(document: GitWorkflowSettingsDocument, agentDir = getAgentDir()): void {
-  advanceGitWorkflowWriteEpoch(agentDir);
-  writePrivateFileAtomicSync(gitWorkflowSettingsPath(agentDir), JSON.stringify(document, null, 2));
+export function writeGitWorkflowSettingsDocument(document: GitWorkflowSettingsDocument, agentDir = getAgentDir(), scopes?: readonly GitAuthorityScope[]): void {
+  advanceGitWorkflowWriteEpoch(agentDir, scopes);
+  writeGitScopedAuthorityFile(agentDir, gitWorkflowSettingsPath(agentDir), JSON.stringify(document, null, 2), "settings", scopes);
 }
 
 /** All writes, including session adoption, serialize against defaults/pause changes. */
@@ -72,8 +73,13 @@ export async function projectWorkflowOverrides(
 export async function loadGitWorkflowSettings(
   cwd?: string, entries: readonly SessionEntry[] = [], agentDir = getAgentDir(), sessionIdentity = "",
 ): Promise<GitWorkflowSettingsResponse> {
+  const originalAuthority = captureGitScopedAuthorityRevision(agentDir);
   const document = readGitWorkflowSettingsDocument(agentDir);
   const projectRoot = cwd ? (await resolveProject(cwd)).projectRoot : undefined;
+  // UI grouping can be a subdirectory or stale cache entry. Never use it as a
+  // narrow authority key. Unknown legacy destinations remain conservative.
+  let canonicalRoot: string | undefined;
+  if (cwd) { try { canonicalRoot = await gitProjectRootForCaller(cwd); } catch {} }
   const project = projectRoot ? await projectWorkflowOverrides(document, projectRoot, cwd!, agentDir) : {};
   const keyed = readGitProjectSessionSettings(entries);
   // Display grouping deliberately treats repo subdirectories as projects. Live
@@ -98,12 +104,18 @@ export async function loadGitWorkflowSettings(
   // must not make Global/Project saves or the safety pause perpetually stale.
   // Session append safety is separately checked against the live manager/stat.
   const revision = createHash("sha256").update(JSON.stringify({ document, projectRoot, project, cwd, sessionIdentity, session, task, optedOut, projectSessionRestrictions, writeEpoch: readGitWorkflowWriteEpoch(agentDir) })).digest("hex");
-  return {
+  const authorityScope: GitAuthoritySelection = { domains: ["settings"], sessionId: sessionIdentity || undefined,
+    projectRoots: canonicalRoot ? [canonicalRoot] : [], allScopes: !!cwd && !canonicalRoot };
+  const original = originalAuthority(authorityScope);
+  if (readGitScopedAuthorityRevision(agentDir, authorityScope) !== original) throw new Error("Workflow authority changed during settings read");
+  const policyRevision = createHash("sha256").update(JSON.stringify({ original, global: document.global, paused: document.paused,
+    projectRoot: canonicalRoot, project, sessionIdentity, session, task, optedOut, projectSessionRestrictions })).digest("hex");
+  return bindGitWorkflowPolicyRevision({
     revision, paused: document.paused, optedOut, ...(cwd ? { cwd } : {}), ...(projectRoot ? { projectRoot } : {}),
     global: document.global, project, session,
     ...(Object.keys(projectSessionRestrictions).length ? { projectSessionRestrictions } : {}),
     resolved: { global: resolveGitWorkflowSettings(document.global), project: resolveGitWorkflowSettings(document.global, project),
       session: resolveGitWorkflowSettings(document.global, project, session ?? {}) },
     task, sessionEditable: false,
-  };
+  } as GitWorkflowSettingsResponse, policyRevision);
 }

@@ -34,7 +34,6 @@ import type { SessionEntry } from "./types";
 import { buildSubagentPromptPlan } from "./subagent-prompt";
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
-import { createGitCheckoutOperationGuard } from "./git-checkout-gate";
 import { filterGitWorkflowContext } from "./git-workflow-context";
 import { createAskUserExtension, preferPiWebAskUserExtension } from "./ask-user-extension";
 import { appendSubagentInputFiles, loadSubagentInputFiles } from "./subagent-input";
@@ -52,8 +51,6 @@ interface HostSession {
   isAlive(): boolean;
   isRunning(): boolean;
   waitUntilReady(): Promise<void>;
-  isBuiltinReadOnlyCheckoutTool(name: unknown): boolean;
-  noteUserBashAdmission(): void;
   beginCheckoutPromptAdmission(): () => void;
 }
 
@@ -197,8 +194,9 @@ export function createSubagentController(
       const isolation = profile.isolation === "off" ? undefined : request.isolation ?? profile.isolation;
       if (isolation === "worktree") {
         const { branch: baseBranch, oid: expectedBaseOid } = await currentLocalBranchTip(parent.cwd);
+        const branch = `pi-web-agent-${randomUUID()}`;
         isolatedWorktree = await addWorktree(parent.cwd, {
-          branch: `pi-web-agent-${randomUUID()}`,
+          branch,
           baseBranch,
           expectedBaseOid,
           mode: "create",
@@ -235,13 +233,6 @@ export function createSubagentController(
       const { chatOnly, appendSystemPrompt, delegatedTask } = promptPlan;
       if (!chatOnly) initTheme();
       const guardOwner: { current?: HostSession } = {};
-      const checkoutGuard = createGitCheckoutOperationGuard({
-        isBuiltinReadOnlyTool: (name) => guardOwner.current?.isBuiltinReadOnlyCheckoutTool(name) ?? false,
-        onUserBash: () => {
-          if (!guardOwner.current) throw new Error("Checkout guard unavailable");
-          guardOwner.current.noteUserBashAdmission();
-        },
-      });
       const services = await createAgentSessionServices({
         cwd: childCwd,
         agentDir,
@@ -260,9 +251,7 @@ export function createSubagentController(
               }
             : {}),
           appendSystemPrompt,
-          // The checkout guard is mandatory even when user extensions are disabled.
           extensionFactories: [
-            checkoutGuard,
             ...(promptPlan.exactSystemPrompt !== undefined
               ? [createExactSystemPromptExtension(() => promptPlan.exactSystemPrompt)] : []),
             ...(profile.loadExtensions ? [createAskUserExtension()] : []),
@@ -330,7 +319,7 @@ export function createSubagentController(
         chatOnly,
       });
       guardOwner.current = dependencies.getSession(inner.sessionId);
-      if (!guardOwner.current) throw new Error("Subagent checkout guard unavailable");
+      if (!guardOwner.current) throw new Error("Subagent session unavailable");
 
       const initialRun: SubagentRunInfo = {
         sessionId: inner.sessionId,

@@ -83,7 +83,27 @@ try {
       const button = page.getByRole("button", { name: "Show sidebar", exact: true });
       if (await button.count()) await button.click();
     };
-    const showPanel = () => page.getByRole("button", { name: "Show file panel", exact: true }).click();
+    const visiblePanel = async () => {
+      // This button stays mounted and keeps its name when the main toggle changes.
+      const toggle = page.locator("#file-panel").getByRole("button", { name: "Hide file panel", exact: true, includeHidden: true });
+      await toggle.waitFor({ state: "attached" });
+      const expanded = await toggle.getAttribute("aria-expanded");
+      assert.ok(expanded === "true" || expanded === "false", "panel state is initialized");
+      if (expanded === "false") await page.getByRole("button", { name: "Show file panel", exact: true }).click();
+      await page.waitForFunction(() => {
+        const panel = document.getElementById("file-panel");
+        if (panel?.querySelector('button[aria-expanded]')?.getAttribute("aria-expanded") !== "true") return false;
+        const bounds = panel.getBoundingClientRect();
+        const header = panel.firstElementChild.getBoundingClientRect();
+        // Closed desktop panels retain full-width children; visibility alone
+        // does not establish that the tab bar is unclipped or onscreen.
+        return header.width > 0 && header.height > 0
+          && header.left >= Math.max(0, bounds.left) - 1
+          && header.right <= Math.min(innerWidth, bounds.right) + 1
+          && header.top >= Math.max(0, bounds.top) - 1
+          && header.bottom <= Math.min(innerHeight, bounds.bottom) + 1;
+      });
+    };
     const hidePanel = async () => {
       const button = page.locator("#file-panel").getByRole("button", { name: "Hide file panel", exact: true, includeHidden: true });
       if (await button.getAttribute("aria-expanded") === "true") await button.click();
@@ -118,7 +138,9 @@ try {
       await hidePanel();
       await showSidebar();
       await page.getByText("Terminal session two", { exact: true }).click();
-      await showPanel();
+      await page.getByText("Terminal session two message", { exact: true }).waitFor();
+      await visiblePanel();
+      await ready();
       await run("printf '\\nSESSION:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput(`SESSION:alive:${pid}`);
 
@@ -127,10 +149,17 @@ try {
       const savedTabs = await page.evaluate(() => JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs")));
       assert.ok(savedTabs.tabs.some((tab) => tab.id === savedTabs.activeId), "the active terminal is persisted before reload");
       await page.reload();
-      // Restoration is asynchronous. Do not toggle the initially closed panel
-      // before its saved open state has been applied (and accidentally close it).
-      await page.locator("#file-panel.right-panel-open").waitFor({ state: "visible" });
-      await page.getByRole("tab", { name: "Terminal: workspace-a", exact: true, selected: true }).waitFor({ state: "visible" });
+      // Terminal storage restores before the asynchronous sidebar/session load,
+      // which can close the panel again. Observe both restores before opening.
+      await page.getByText("Terminal session two message", { exact: true }).waitFor();
+      await page.waitForFunction((cwd) => {
+        const panel = [...document.querySelectorAll(".terminal-panel")].find((element) =>
+          element.querySelector(".terminal-panel-path > span:last-child")?.getAttribute("title") === cwd);
+        return Boolean(panel?.querySelector(".is-ready"))
+          && panel.querySelector('select[aria-label="Terminal font"]')?.value === "system";
+      }, workspace);
+      await visiblePanel();
+      await page.getByRole("tab", { name: "Terminal: workspace-a", exact: true }).click();
       await ready();
       assert.equal(await fontSelect.inputValue(), "system", "font choice survives page reload");
       await fontSelect.selectOption("nerd");
@@ -207,12 +236,33 @@ try {
       for (const name of ["workspace-a", "workspace-b"]) {
         await page.getByRole("button", { name: `Terminate terminal ${name}`, exact: true }).click();
       }
-      await page.locator(".terminal-panel").waitFor({ state: "detached" });
+      // Both asynchronous DELETEs can still be settling. A strict single-element
+      // locator rejects two remaining panels instead of waiting for all to close.
+      await page.waitForFunction(() => document.querySelectorAll(".terminal-panel").length === 0);
       for (const terminalId of created) assert.equal((await fetch(`${base}/api/terminal/${terminalId}`)).status, 404);
       assert.deepEqual(errors, []);
       console.log(`PASS ${viewport.width}: real shell, files, sessions, refresh, reconnect, restart, exit, close during creation, workspace isolation`);
     } catch (error) {
       await page.screenshot({ path: join(artifacts, `failure-${viewport.width}.png`), fullPage: true });
+      const hitTest = await page.evaluate(() => {
+        const describe = (element) => {
+          const style = getComputedStyle(element);
+          return {
+            tag: element.tagName, id: element.id, class: element.getAttribute("class"),
+            label: element.getAttribute("aria-label"), rect: element.getBoundingClientRect().toJSON(),
+            style: Object.fromEntries(["display", "position", "zIndex", "pointerEvents", "overflow", "flexDirection", "flexWrap"].map((key) => [key, style[key]])),
+            html: element.outerHTML.slice(0, 1500),
+          };
+        };
+        return [...document.querySelectorAll('button[aria-controls="file-panel"]')].map((button) => {
+          const rect = button.getBoundingClientRect();
+          const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+          const ancestors = [];
+          for (let element = button.parentElement; element; element = element.parentElement) ancestors.push(describe(element));
+          return { button: describe(button), point, stack: document.elementsFromPoint(point.x, point.y).map(describe), ancestors };
+        });
+      });
+      writeFileSync(join(artifacts, `failure-${viewport.width}-hit-test.json`), JSON.stringify(hitTest, null, 2));
       console.error(await page.locator("body").innerText());
       throw error;
     } finally {

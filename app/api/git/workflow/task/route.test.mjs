@@ -10,7 +10,8 @@ import { createJiti } from "jiti";
 import fs from "node:fs";
 import { bindingTestModule } from "../../../../../lib/git-workflow-binding-test-loader.mjs";
 const priorAgentDir = process.env.PI_CODING_AGENT_DIR;
-const agentDir = await realpath(await mkdtemp(join(tmpdir(), "pi-task-route-agent-")));
+const agentHome = await realpath(await mkdtemp(join(tmpdir(), "pi-task-route-agent-")));
+let agentDir = agentHome;
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true });
 const { GET, POST } = await jiti.import("./route.ts");
@@ -22,10 +23,10 @@ const { cacheSessionPath, invalidateSessionPathCache, invalidateSessionListCache
 const { appendManagedSessionGitWorkflow } = await jiti.import("../../../../../lib/git-workflow-session.ts");
 const { inheritSessionGitWorkflow } = await jiti.import("../../../../../lib/git-workflow-policy.ts");
 const { DEFAULT_GIT_WORKFLOW_SETTINGS } = await jiti.import("../../../../../lib/git-workflow-settings.ts");
-const { gitWorkflowSettingsPath, withGitWorkflowSettingsLock, readGitWorkflowSettingsDocument, writeGitWorkflowSettingsDocument } = await jiti.import("../../../../../lib/git-workflow-settings-store.ts");
+const { withGitWorkflowSettingsLock, readGitWorkflowSettingsDocument, writeGitWorkflowSettingsDocument } = await jiti.import("../../../../../lib/git-workflow-settings-store.ts");
 const { readGitTaskBinding } = await jiti.import("../../../../../lib/git-workflow-binding-store.ts");
 const { gitTaskBindingRuntime } = await jiti.import("../../../../../lib/git-workflow-binding-runtime.ts");
-const { acquireGitCheckoutGate } = await jiti.import("../../../../../lib/git-checkout-gate.ts");
+const { seedRetiredGitBookkeeping } = await import("../../../../../lib/retired-git-bookkeeping-fixture.mjs");
 const { moveSessionFamily } = await jiti.import("../../../../../lib/session-move.ts");
 const exec = promisify(execFile);
 const endpoint = "http://localhost/api/git/workflow/task";
@@ -35,8 +36,12 @@ const status = (sessionId) => GET(new Request(`${endpoint}?${new URLSearchParams
 const post = (body, code = 200) => POST(req(body)).then((response) => json(response, code));
 const settings = (sessionId) => settingsRoute.GET(new Request(`http://localhost/api/git/workflow/settings?${new URLSearchParams({ sessionId })}`)).then(json);
 const git = async (cwd, ...args) => (await exec("git", ["-C", cwd, ...args], { env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(agentDir, "no-git-config") } })).stdout.trim();
-beforeEach(async () => { await rm(gitWorkflowSettingsPath(), { force: true }); gitTaskBindingRuntime().previews.clear(); });
-after(async () => { if (priorAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = priorAgentDir; await rm(agentDir, { recursive: true, force: true }); });
+beforeEach(async () => {
+  agentDir = await mkdtemp(join(agentHome, "case-"));
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  gitTaskBindingRuntime().previews.clear();
+});
+after(async () => { if (priorAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = priorAgentDir; await rm(agentHome, { recursive: true, force: true }); });
 async function fixture(t) {
   const dir = await realpath(await mkdtemp(join(tmpdir(), "pi-task-route-repo-"))), cwd = join(dir, "repo");
   await git(dir, "init", "-qb", "feature", cwd);
@@ -200,17 +205,17 @@ test("concurrent confirms have one winner; replacing/cancelling/releasing a revi
   await post({ operation: "adopt", sessionId: f.id, previewId: cancelled.previewId }, 409);
   assert.equal((await status(f.id)).status.binding.generation, 2);
 });
-test("running sessions and checkout reservations block adoption; reservations never span the human review", async (t) => {
-  const f = await fixture(t), candidate = await preview(f), prior = globalThis.__piSessions;
-  const release = acquireGitCheckoutGate([f.cwd]);
-  try { await post({ operation: "adopt", sessionId: f.id, previewId: candidate.previewId }, 409); }
-  finally { release(); }
+test("own running session blocks adoption; retired bookkeeping does not block preview or adoption", async (t) => {
+  const f = await fixture(t), prior = globalThis.__piSessions;
+  const restore = seedRetiredGitBookkeeping([f.cwd]);
+  try { await adopt(f, await preview(f)); }
+  finally { restore(); }
   const next = await preview(f);
   globalThis.__piSessions = new Map([[f.id, { sessionFile: f.file, cwd: f.cwd, isAlive: () => true, isRunning: () => true, inner: { sessionManager: f.sm } }]]);
   try { await post({ operation: "adopt", sessionId: f.id, previewId: next.previewId }, 409); }
   finally { globalThis.__piSessions = prior; }
-  assert.equal(readGitTaskBinding(f.id).record, null);
-  const fresh = await preview(f); const available = acquireGitCheckoutGate([f.cwd]); available();
+  assert.equal(readGitTaskBinding(f.id).record.generation, 1);
+  const fresh = await preview(f);
   await adopt(f, fresh);
 });
 test("forks/copies and file replacement cannot inherit a private binding; restart preserves evidence but not previews", async (t) => {

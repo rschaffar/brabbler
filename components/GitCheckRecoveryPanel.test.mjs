@@ -9,152 +9,40 @@ import ts from "typescript";
 const source = await readFile(new URL("./GitCheckRecoveryPanel.tsx", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
 const filename = new URL("./GitCheckRecoveryPanel.tsx", import.meta.url).pathname;
-const oid = (n) => n.toString(16).padStart(40, "0");
-const preview = () => ({ eligible: true, actionId: "quarantined-action", revision: "exact-revision", unit: "pi-web-git-check-unit.service",
-  mode: "unchanged", original: { featureHead: oid(3), targetHead: oid(4),
-    featureHeadDigest: "a".repeat(64), targetHeadDigest: "b".repeat(64), refsDigest: "c".repeat(64) },
-  feature: { path: "/repo/worktrees/feature", branch: "feature/x", head: oid(1), status: [" M tracked.txt", "?? new.txt"] },
-  target: { path: "/repo", branch: "main", head: oid(2), status: ["No tracked changes"] },
-  containment: { emptyEvidence: "pinned-populated-zero", payload: "release-attempted" }, expiresAt: Date.now() + 60_000 });
+const mod = new Module(filename);
+mod.filename = filename;
+mod.require = createRequire(import.meta.url);
+mod._compile(compiled, filename);
+const { GitCheckRecoveryPanel } = mod.exports;
 
-function harness(onRecovered = () => {}, onRecoveringChange = () => {}) {
-  const states = [], refs = [];
-  let stateIndex = 0, refIndex = 0;
-  const mod = new Module(filename);
-  mod.filename = filename;
-  const realRequire = createRequire(import.meta.url);
-  mod.require = (id) => id === "react" ? {
-    ...React,
-    useState(initial) {
-      const i = stateIndex++;
-      if (!(i in states)) states[i] = typeof initial === "function" ? initial() : initial;
-      return [states[i], (next) => { states[i] = typeof next === "function" ? next(states[i]) : next; }];
-    },
-    useRef(initial) { const i = refIndex++; return refs[i] ??= { current: initial }; },
-    useEffect() {},
-  } : realRequire(id);
-  mod._compile(compiled, filename);
-  function tree() { stateIndex = 0; refIndex = 0; return mod.exports.GitCheckRecoveryPanel({ sessionId: "chat-id", onRecovered, onRecoveringChange }); }
-  function html() { return renderToStaticMarkup(tree()); }
-  function button(label) {
-    const walk = (node) => {
-      if (!node || typeof node !== "object") return null;
-      if (Array.isArray(node)) return node.map(walk).find(Boolean) ?? null;
-      if (typeof node.type === "function") return walk(node.type(node.props));
-      if (node.type === "button" && String(node.props.children).includes(label)) return node;
-      return walk(node.props?.children);
-    };
-    const match = walk(tree());
-    assert.ok(match, `missing button ${label}`);
-    return match;
-  }
-  function checkbox() {
-    const walk = (node) => {
-      if (!node || typeof node !== "object") return null;
-      if (Array.isArray(node)) return node.map(walk).find(Boolean) ?? null;
-      if (typeof node.type === "function") return walk(node.type(node.props));
-      if (node.type === "input" && node.props.type === "checkbox") return node;
-      return walk(node.props?.children);
-    };
-    const match = walk(tree());
-    assert.ok(match, "missing changed-state acknowledgement");
-    return match;
-  }
-  return { html, button, checkbox, valid: mod.exports.isCheckRecoveryPreview };
-}
-const settle = () => new Promise((resolve) => setImmediate(resolve));
-
-// Fetch and window are set per test; no DOM or live server is needed.
-test("recovery is opt-in and refuses incomplete identity snapshots", () => {
-  const ui = harness();
-  assert.match(ui.html(), /Load recovery review/);
-  assert.doesNotMatch(ui.html(), /Approve recovery|type="checkbox"/);
-  assert.equal(ui.valid(preview()), true);
-  for (const invalid of [{ ...preview(), revision: "" }, { ...preview(), target: { ...preview().target, status: "clean" } },
-    { ...preview(), mode: "unknown" }, { ...preview(), original: { ...preview().original, refsDigest: "bad" } },
-    { ...preview(), expiresAt: NaN }, { eligible: false, reason: "No safe candidate" }]) assert.equal(ui.valid(invalid), false);
+test("static nonblocking outcome note has no approval, rerun, merge or cleanup controls", () => {
+  const html = renderToStaticMarkup(React.createElement(GitCheckRecoveryPanel));
+  assert.match(html, /aria-label="Check outcome information"/);
+  assert.match(html, /Failed or uncertain checks produce no passing receipt/);
+  assert.match(html, /history does not block other invocations/);
+  assert.match(html, /no recovery approval is needed/);
+  assert.match(html, /recorded effects in action cards/);
+  assert.match(html, /current checkout files and processes/);
+  assert.match(html, /ignored files and effects outside the checkout/);
+  assert.match(html, /does not prove that descendants stopped or that changes are safe/);
+  assert.doesNotMatch(html, /<(?:button|input|form|a)\b|quarantine|Approve recovery|Load recovery|disabled=/i);
 });
 
-test("exact resource identities, status, unit and evidence precede single approval; success refreshes without receipts", async (t) => {
-  const calls = [], events = [], busy = [];
-  let refreshes = 0;
-  const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
-  t.after(() => { globalThis.fetch = oldFetch; globalThis.window = oldWindow; });
-  globalThis.window = { dispatchEvent: (event) => events.push(event) };
-  globalThis.fetch = async (url, options) => {
-    calls.push([url, options]);
-    return Response.json(url.includes("?") ? preview() : { recovered: true });
-  };
-  const ui = harness(() => refreshes++, (value) => busy.push(value));
-  ui.button("Load recovery review").props.onClick();
-  await settle();
-  const review = ui.html();
-  for (const text of ["/repo/worktrees/feature", "/repo", "feature/x", "main", oid(1), oid(2), " M tracked.txt", "?? new.txt",
-    "pi-web-git-check-unit.service", "pinned-populated-zero", "release-attempted", "ignored files", "non-Git", "quarantined-action", "exact-revision"])
-    assert.ok(review.includes(text), `missing ${text}`);
-  assert.equal((review.match(/>Approve recovery</g) ?? []).length, 1);
-  ui.button("Approve recovery").props.onClick();
-  await settle();
-  assert.deepEqual(JSON.parse(calls[1][1].body), { sessionId: "chat-id", actionId: "quarantined-action", revision: "exact-revision", acknowledged: true });
-  assert.deepEqual(busy, [true, false]);
-  assert.equal(refreshes, 1);
-  assert.equal(events.length, 1);
-  assert.equal(events[0].type, "pi-web:git-actions-changed");
-  assert.deepEqual(events[0].detail, { sessionId: "chat-id" });
-  assert.match(ui.html(), /no verification check has been rerun or receipt created/);
-  assert.doesNotMatch(ui.html(), /Approve recovery|Passed: receipt/);
-});
-
-test("moved-state approval requires separate acknowledgement and sends its exact mode", async (t) => {
+test("old or malformed metadata and callbacks cannot create authority, requests or effects", async (t) => {
+  const oldFetch = globalThis.fetch;
   const calls = [];
-  const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
-  t.after(() => { globalThis.fetch = oldFetch; globalThis.window = oldWindow; });
-  globalThis.window = { dispatchEvent() {} };
-  globalThis.fetch = async (url, options) => {
-    calls.push([url, options]);
-    return Response.json(url.includes("?") ? { ...preview(), mode: "moved" } : { recovered: true });
-  };
-  const ui = harness();
-  ui.button("Load recovery review").props.onClick(); await settle();
-  assert.match(ui.html(), /Repository changed since the failed check/);
-  assert.match(ui.html(), /Original feature HEAD SHA-256/);
-  assert.match(ui.html(), /Original feature commit/);
-  assert.match(ui.html(), new RegExp(oid(3)));
-  assert.equal(ui.button("Approve recovery").props.disabled, true);
-  ui.button("Approve recovery").props.onClick(); await settle();
-  assert.equal(calls.length, 1, "a click without drift review cannot POST");
-  ui.checkbox().props.onChange({ target: { checked: true } });
-  assert.equal(ui.button("Approve recovery").props.disabled, false);
-  ui.button("Approve recovery").props.onClick(); await settle();
-  assert.deepEqual(JSON.parse(calls[1][1].body), { sessionId: "chat-id", actionId: "quarantined-action",
-    revision: "exact-revision", acknowledged: true, reviewedMovement: true });
-});
-
-test("ineligible and expired previews never approve; a 409 clears stale authority without retrying", async (t) => {
-  const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
-  t.after(() => { globalThis.fetch = oldFetch; globalThis.window = oldWindow; });
-  let mode = "ineligible", posts = 0, refreshes = 0;
-  globalThis.window = { dispatchEvent() { throw new Error("no event expected"); } };
-  globalThis.fetch = async (url) => {
-    if (!url.includes("?")) { posts++; return Response.json({ error: "Recovery identities changed" }, { status: 409 }); }
-    return Response.json(mode === "ineligible" ? { eligible: false, reason: "Cannot prove empty containment" }
-      : mode === "expired" ? { ...preview(), expiresAt: Date.now() - 1 } : preview());
-  };
-  const ui = harness(() => refreshes++);
-  ui.button("Load recovery review").props.onClick(); await settle();
-  assert.match(ui.html(), /Cannot prove empty containment.*Investigate/);
-  assert.doesNotMatch(ui.html(), /Approve recovery/);
-  mode = "expired";
-  ui.button("Load recovery review").props.onClick(); await settle();
-  assert.match(ui.html(), /Recovery preview expired/);
-  assert.match(ui.html(), /disabled=""[^>]*>Approve recovery/);
-  ui.button("Approve recovery").props.onClick(); await settle();
-  assert.equal(posts, 0);
-  mode = "ready";
-  ui.button("Load recovery review").props.onClick(); await settle();
-  ui.button("Approve recovery").props.onClick(); await settle();
-  assert.equal(posts, 1);
-  assert.equal(refreshes, 0);
-  assert.doesNotMatch(ui.html(), /Approve recovery/);
-  assert.match(ui.html(), /Recovery identities changed.*Inspect both worktrees and refs.*Do not retry the check or merge automatically/);
+  globalThis.fetch = (...args) => { calls.push(args); throw new Error("No request expected"); };
+  t.after(() => { globalThis.fetch = oldFetch; });
+  const fail = () => { throw new Error("Retired callback invoked"); };
+  const baseline = renderToStaticMarkup(React.createElement(GitCheckRecoveryPanel));
+  for (const status of [null, { eligible: true, revision: "forged", expiresAt: Infinity },
+    { eligible: false, reason: "PRIVATE HISTORY" }, { admitted: true, processStopped: true }]) {
+    assert.equal(renderToStaticMarkup(React.createElement(GitCheckRecoveryPanel, {
+      sessionId: "old-chat", status, disabled: true, onRecovered: fail, onRecoveringChange: fail,
+    })), baseline);
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, []);
+  assert.doesNotMatch(source, /fetch\(|POST|useEffect|useState|useRef|setTimeout|onClick|dispatchEvent/);
+  assert.deepEqual(Object.keys(mod.exports), ["GitCheckRecoveryPanel"]);
 });

@@ -6,7 +6,8 @@ import type { ProjectAuthorizationAction, ProjectAuthorizationDecision, ProjectA
 
 const ACTIONS: { id: ProjectAuthorizationAction; label: string }[] = [
   { id: "workspace", label: "Worktree creation" }, { id: "commit", label: "Selected commits" },
-  { id: "checks", label: "Verification checks" }, { id: "integration", label: "Local integration" },
+  { id: "checks", label: "Verification checks" }, { id: "prepare", label: "Feature preparation onto project main" },
+  { id: "integration", label: "Local integration" }, { id: "cleanup", label: "Feature resource cleanup" },
 ];
 type Props = { visible: boolean; scope: ProjectAuthorizationScope; projectRoot?: string;
   sessionId?: string; settingsRevision: string };
@@ -59,8 +60,8 @@ export function GitProjectAuthorizations({ visible, scope, projectRoot, sessionI
   }
   return <section className="workflow-stage" aria-label="Saved action authorization">
     <div className="workflow-section-label"><h3>Saved action authorization</h3><span>{scope === "session" ? "This chat × project" : scope}</span></div>
-    <p className="workflow-muted">This is separate from workflow preferences. Allow is a standing authorization for an eligible future action, not approval of a candidate or permission to bypass project rules. Deny blocks managed execution; Inherit uses the parent scope. {scope === "global" && "Global Allow applies to eligible projects broadly."} This is not a shell sandbox.</p>
-    <p className="workflow-banner">Only selected-project whole-file commits can consume a saved Allow with separately saved confirmation: none and an explicit no-prompt request. Other actions keep their existing approval gates. Saved records are not candidate approvals; caller, resource and recovery checks still apply.</p>
+    <p className="workflow-muted">This is separate from workflow preferences. Allow is a saved authorization for eligible explicit requests for this action, not approval of a candidate or permission to bypass project rules. Deny restricts this managed action; Inherit uses the parent scope. Each action has an independent decision and confirmation preference. {scope === "global" && "Global Allow applies to eligible projects broadly."} This is not a shell sandbox.</p>
+    <p className="workflow-banner">All six saved-action selectors are configurable here; saving a decision starts no operation. Fresh eligible agent commits support an explicit confirmation:none request with separately saved commitConfirmation:none, fresh persisted ordinary-chat provenance, saved Allow and live guards. Manual human commit routes remain exact Ask. Selected public workspace/check/preparation/integration/cleanup paths are supported on eligible Linux hosts; a saved decision is not proof that a particular request is executable. On a supported Linux path, omitting confirmation still requires the action-specific saved Allow, its separately saved confirmation:none, an explicit request, live caller/resource/recovery guards, required native evidence and compliance with stricter instructions. Ask remains the default even with Allow. Preparation uses the saved Project main branch; cleanup Retain blocks deletion and resource eligibility is not a grant. No Automatic mode, scheduling, chained approvals or remote permission is enabled. Unknown session/terminal usage or native evidence fails closed. Unsupported platforms, branches or native states fail closed.</p>
     {!available ? <p className="workflow-muted">Select a canonical project{scope === "session" ? " and a saved ordinary chat" : ""} first.</p>
       : !current ? <p className="workflow-muted">{error ?? "Loading authorization decisions…"}</p>
         : <div className="workflow-editor">{ACTIONS.map(({ id, label }) => {
@@ -73,7 +74,7 @@ export function GitProjectAuthorizations({ visible, scope, projectRoot, sessionI
             <select id={`workflow-auth-${id}`} value={choice} disabled={!!saving || saved === "stale"}
               onChange={(event) => setDrafts((previous) => ({ ...previous, [key]: { ...previous[key], [id]: event.target.value as ProjectAuthorizationDecision } }))}>
               <option value="inherit">Inherit / no decision here</option><option value="deny">Deny managed action</option>
-              <option value="allow">Allow without repeated confirmation when supported</option>
+              <option value="allow">Allow eligible explicit action · confirmation remains separate</option>
             </select>
             {saved === "stale" && <p className="workflow-muted">This saved identity is stale. Inspect the chat or checkout before removing its decision. An inherited broader Allow may then apply.
               <button type="button" disabled={!!saving} onClick={() => void save(id, "inherit")}>Remove stale {label} decision</button></p>}

@@ -22,8 +22,8 @@ export interface GitWorkflowPermissions {
 
 // Keep unsupported modes visible without pretending that durable cards alone
 // make automation safe. This is capability information, never a grant.
-export const AUTOMATIC_COMMIT_UNAVAILABLE = "Confirmation-free commits are not implemented yet: scoped authorization and operation-level recovery admission are still required.";
-export const AUTOMATIC_WORKFLOW_UNAVAILABLE = "Confirmation-free execution is not implemented yet. Project selection and saved preferences are not execution permission.";
+export const AUTOMATIC_COMMIT_UNAVAILABLE = "Automatic commit mode is unsupported. Eligible managed Ask commits separately support explicit confirmation:none through scoped authorization and operation-level recovery admission and an independent live gate: fresh untouched persisted ordinary creation provenance, live commitConfirmation:none and fresh saved Allow. Saved Allow alone does not skip Ask; stricter repository/user instructions still apply.";
+export const AUTOMATIC_WORKFLOW_UNAVAILABLE = "Automatic workflow mode is unsupported; no full automatic workflow is enabled. Eligible managed Ask commits separately support explicit confirmation:none through an independent fresh-provenance, live-policy and saved-Allow gate. Saved Allow alone does not skip Ask or authorize other workflow actions; stricter repository/user instructions still apply.";
 export const PROJECT_GIT_WRITES_UNAVAILABLE = "This project-scoped managed action is unavailable. Status, read-only review and a separate bounded selected-project commit path are supported; no checkout is changed.";
 
 export function hasManagedGitMutationTools(tools: readonly string[]): boolean {
@@ -75,8 +75,11 @@ export function managedGitPermission(
     if (stage === "workspace" && !task.baseBranch) {
       return blocked("missing-worktree-base", "This task has no captured worktree base. For one create-only worktree the agent can propose an exact-approved local base; to use automatic chat continuation, Stop the run and Save/Apply the base in Workflow.");
     }
-    if ((stage === "integration" || stage === "checks") && (!task.targetBranch || task.method !== "merge" || !task.checks.length)) {
-      return blocked("missing-integration-setup", "This task needs a local non-FF merge target and ordered checks. Configure and apply them in Workflow.");
+    if (stage === "integration" && task.delivery !== "local") {
+      return blocked("delivery-no-local-integration", "This captured task does not authorize local integration.");
+    }
+    if ((stage === "integration" || stage === "checks") && (!task.targetBranch || !["merge", "ff"].includes(task.method) || !task.checks.length)) {
+      return blocked("missing-integration-setup", "This task needs a local FF/non-FF target and ordered checks. Configure and apply them in Workflow.");
     }
   }
   if (stage === "workspace" && actor === "agent" && state.task.kind !== "managed") {
@@ -112,6 +115,31 @@ export function selectedProjectCommitEligibility(
     return gitCommitModePermission("manual", actor);
   }
   // No preference (including confirmation:none) is execution authority.
+  return confirmation();
+}
+
+/** Future independently selected preparation availability. Neither this answer nor
+ * prepareConfirmation:none authorizes a history rewrite: the caller must still
+ * obtain a separate saved action grant or exact approval, then recheck before
+ * native apply. Captured task consent is intentionally not inherited. */
+export function selectedProjectPreparationEligibility(
+  state: GitWorkflowSettingsResponse, facts: GitWorkflowSessionFacts, actor: ManagedGitActor,
+): GitWorkflowPermission {
+  if (state.optedOut) return blocked("chat-opted-out", "Pi Web Git workflow is off for this chat.");
+  if (facts.subagent) return blocked("subagent", "Subagents cannot prepare Git history.");
+  if (state.sessionScope !== "project" || !state.selection?.projectRoot || !state.selection.cwd) {
+    return blocked("project-selection-required", "Select one canonical project and physical checkout for preparation.");
+  }
+  if (actor === "agent" && (!facts.tools || !hasManagedGitMutationTools(facts.tools))) {
+    return blocked(!facts.tools ? "unknown-tools" : "read-only", "Active coding mutation tools are required for agent preparation.");
+  }
+  if (state.paused) return blocked("paused", "All managed Git actions are paused.");
+  if (!state.resolved.session.values.enabled || state.projectSessionRestrictions?.enabled === false) {
+    return blocked("disabled", "Managed Git is disabled for this project/chat.");
+  }
+  const values = state.resolved.session.values;
+  if (!state.project.mainBranch) return blocked("missing-main", "Save a designated project main branch before preparation.");
+  if (values.prepareConfirmation === "disabled") return blocked("preparation-disabled", "Preparation is disabled for this project/chat.");
   return confirmation();
 }
 

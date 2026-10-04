@@ -3,7 +3,6 @@ import { existsSync } from "fs";
 import { addWorktree, findCurrentWorktreePath, listLocalBranchTips, listMergedWorktreeBranches, listWorktrees, removeWorktree, resolveProject } from "@/lib/worktree";
 import { allowFileRoot, getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
 import { projectIdentityKey } from "@/lib/project-identity";
-import { acquireGitCheckoutGate, isGitCheckoutGated } from "@/lib/git-checkout-gate";
 import { assertManagedGitAction, ManagedGitAccessError } from "@/lib/git-workflow-access";
 import { selectGitProjectResources } from "@/lib/git-project-resources";
 import { readProjectAuthorization } from "@/lib/git-project-authorization";
@@ -78,7 +77,6 @@ export async function POST(req: Request) {
     }
     const denied = await checkCwdAllowed(body.cwd);
     if (denied) return denied;
-    if (isGitCheckoutGated(body.cwd)) return NextResponse.json({ error: "Checkout is being integrated" }, { status: 409 });
     if (!existsSync(body.cwd)) {
       return NextResponse.json({ error: `Directory does not exist: ${body.cwd}` }, { status: 400 });
     }
@@ -92,23 +90,20 @@ export async function POST(req: Request) {
     if (body.mode === "attach" && typeof body.expectedTipOid !== "string") {
       return NextResponse.json({ error: "Full expected branch tip is required for attach" }, { status: 400 });
     }
-    const release = acquireGitCheckoutGate([body.cwd]);
-    try {
-      // Git accepts a subdirectory here, but workflow project identity does
-      // not. Never authorize /repo/subdir and then mutate /repo instead.
-      if (!(await resolveProject(body.cwd)).isTopLevel) return NextResponse.json({ error: "Git checkout root required" }, { status: 409 });
-      const authorize = async () => {
-        await assertManagedGitAction(body.cwd!, [], "workspace", "human");
-        const selection = await selectGitProjectResources(body.cwd!);
-        const authorization = await readProjectAuthorization(selection);
-        if (authorization.actions.workspace.effective === "deny") throw new ManagedGitAccessError("Project authorization denies worktree creation");
-      };
-      await authorize();
-      const result = await addWorktree(body.cwd, body.mode === "attach"
-        ? { branch: body.branch, baseBranch: body.baseBranch, expectedBaseOid: body.expectedBaseOid, mode: "attach", expectedTipOid: body.expectedTipOid!, beforeCreate: authorize }
-        : { branch: body.branch, baseBranch: body.baseBranch, expectedBaseOid: body.expectedBaseOid, mode: "create", beforeCreate: authorize });
-      return NextResponse.json(result);
-    } finally { release(); }
+    // Git accepts a subdirectory here, but workflow project identity does
+    // not. Never authorize /repo/subdir and then mutate /repo instead.
+    if (!(await resolveProject(body.cwd)).isTopLevel) return NextResponse.json({ error: "Git checkout root required" }, { status: 409 });
+    const authorize = async () => {
+      await assertManagedGitAction(body.cwd!, [], "workspace", "human");
+      const selection = await selectGitProjectResources(body.cwd!);
+      const authorization = await readProjectAuthorization(selection);
+      if (authorization.actions.workspace.effective === "deny") throw new ManagedGitAccessError("Project authorization denies worktree creation");
+    };
+    await authorize();
+    const result = await addWorktree(body.cwd, body.mode === "attach"
+      ? { branch: body.branch, baseBranch: body.baseBranch, expectedBaseOid: body.expectedBaseOid, mode: "attach", expectedTipOid: body.expectedTipOid!, beforeCreate: authorize }
+      : { branch: body.branch, baseBranch: body.baseBranch, expectedBaseOid: body.expectedBaseOid, mode: "create", beforeCreate: authorize });
+    return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: error instanceof ManagedGitAccessError ? 409 : 400 });
@@ -127,17 +122,10 @@ export async function DELETE(req: Request) {
     }
     const denied = await checkCwdAllowed(body.cwd);
     if (denied) return denied;
-    if (isGitCheckoutGated(body.cwd) || isGitCheckoutGated(body.path)) {
-      return NextResponse.json({ error: "Checkout is being integrated" }, { status: 409 });
-    }
-
-    const release = acquireGitCheckoutGate([body.cwd, body.path]);
-    try {
-      if (!(await resolveProject(body.cwd)).isTopLevel) return NextResponse.json({ error: "Git checkout root required" }, { status: 409 });
-      await assertManagedGitAction(body.cwd, [], "settings", "human");
-      await removeWorktree(body.cwd, body.path, body.force === true);
-      return NextResponse.json({ success: true });
-    } finally { release(); }
+    if (!(await resolveProject(body.cwd)).isTopLevel) return NextResponse.json({ error: "Git checkout root required" }, { status: 409 });
+    await assertManagedGitAction(body.cwd, [], "settings", "human");
+    await removeWorktree(body.cwd, body.path, body.force === true);
+    return NextResponse.json({ success: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // git refuses to remove dirty worktrees without --force; surface that so

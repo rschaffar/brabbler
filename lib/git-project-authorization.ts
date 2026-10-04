@@ -2,11 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
-import { writePrivateFileAtomicSync } from "./atomic-file";
+import { legacyGitWorkflowEpochIfUnchanged, readGitScopedAuthorityRevision, writeGitScopedAuthorityFile, type GitAuthorityScope, type GitAuthoritySelection } from "./git-scoped-authority";
 import { bindingFields, bindingPath, readBindingFile } from "./git-workflow-binding-io";
 import { loadGitProjectSettings } from "./git-project-settings";
 import { revalidateGitProjectResources, type GitProjectResources } from "./git-project-resources";
-import { gitWorkflowPrivateParent, readGitWorkflowWriteEpoch, syncGitWorkflowDirectory } from "./git-workflow-write-epoch";
+import { gitWorkflowPrivateParent, syncGitWorkflowDirectory } from "./git-workflow-write-epoch";
 import { readGitWorkflowSettingsDocument, withGitWorkflowSettingsLock } from "./git-workflow-settings-store";
 import { samePath } from "./paths";
 import { readSessionHeader } from "./session-reader";
@@ -14,7 +14,7 @@ import type { SessionEntry } from "./types";
 
 /** Standing decisions are metadata only. No operation gate may rely on this
  * module alone; recovery, candidate admission and dispatch are not complete. */
-export const PROJECT_AUTHORIZATION_ACTIONS = ["workspace", "commit", "checks", "integration"] as const;
+export const PROJECT_AUTHORIZATION_ACTIONS = ["workspace", "commit", "checks", "prepare", "integration", "cleanup"] as const;
 export type ProjectAuthorizationAction = typeof PROJECT_AUTHORIZATION_ACTIONS[number];
 export type ProjectAuthorizationScope = "global" | "project" | "session";
 export type ProjectAuthorizationDecision = "allow" | "deny" | "inherit";
@@ -24,7 +24,7 @@ type ProjectIdentity = { project: Identity; common: Identity };
 type RecordEntry = { scope: ProjectAuthorizationScope; action: ProjectAuthorizationAction; decision: "allow" | "deny";
   projectRoot?: string; projectIdentity?: ProjectIdentity; sessionId?: string; sessionFile?: string; sessionCwd?: string;
   sessionInstance?: string; sessionPolicy?: string };
-type Document = { version: 2; revision: string; grants: RecordEntry[] };
+type Document = { version: 3; revision: string; grants: RecordEntry[] };
 export type ProjectAuthorizationStatus = { revision: string; policyRevision: string; approvalToken: false;
   actions: Record<ProjectAuthorizationAction, { global: ProjectAuthorizationDecision; project: ProjectAuthorizationDecision | "stale";
     session: ProjectAuthorizationDecision | "stale"; effective: "allow" | "deny" | "none"; source: ProjectAuthorizationScope | "none" }> };
@@ -56,22 +56,26 @@ function validateProjectIdentity(value: unknown): ProjectIdentity {
 }
 function documentFromDisk(agentDir: string): Document {
   const parent = gitWorkflowPrivateParent(agentDir);
-  if (!parent) return { version: 2, revision: "none", grants: [] };
+  if (!parent) return { version: 3, revision: "none", grants: [] };
   let bytes: Buffer;
   try { bytes = readBindingFile(join(parent, "git-project-authorizations.json"), MAX_DOCUMENT_BYTES, true).bytes; }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 2, revision: "none", grants: [] };
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 3, revision: "none", grants: [] };
     throw error;
   }
   const data = bindingFields(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)), ["version", "revision", "grants"]);
+  // v2 records retain their exact actions/identity/revision; missing prepare and
+  // cleanup mean no decision, never an alias of commit. Reads do not migrate disk.
   // No legacy import: v1 session-only records are not standing scoped grants.
-  if (data.version !== 2 || typeof data.revision !== "string" || !REVISION.test(data.revision)
+  if ((data.version !== 2 && data.version !== 3) || typeof data.revision !== "string" || !REVISION.test(data.revision)
     || !Array.isArray(data.grants) || data.grants.length > MAX_GRANTS) throw new ProjectAuthorizationError("Unsupported project authorization document");
   const seen = new Set<string>();
   const grants = data.grants.map((item: unknown) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new ProjectAuthorizationError("Invalid authorization record");
     const raw = item as Record<string, unknown>;
-    if (!scopeIsValid(raw.scope) || !actionIsValid(raw.action) || (raw.decision !== "allow" && raw.decision !== "deny")) {
+    if (!scopeIsValid(raw.scope) || !actionIsValid(raw.action)
+      || data.version === 2 && (raw.action === "prepare" || raw.action === "cleanup")
+      || (raw.decision !== "allow" && raw.decision !== "deny")) {
       throw new ProjectAuthorizationError("Invalid authorization record");
     }
     const fields = raw.scope === "global" ? ["scope", "action", "decision"] : raw.scope === "project"
@@ -99,15 +103,15 @@ function documentFromDisk(agentDir: string): Document {
     seen.add(key);
     return row;
   });
-  return { version: 2, revision: data.revision, grants };
+  return { version: 3, revision: data.revision, grants };
 }
-function writeDocument(agentDir: string, grants: RecordEntry[]): void {
+function writeDocument(agentDir: string, grants: RecordEntry[], scope: GitAuthorityScope): void {
   if (grants.length > MAX_GRANTS) throw new ProjectAuthorizationError("Too many project authorizations");
   const parent = gitWorkflowPrivateParent(agentDir, true)!;
   documentFromDisk(agentDir); // Never overwrite a newer/corrupt schema.
-  const bytes = JSON.stringify({ version: 2, revision: randomUUID(), grants } satisfies Document);
+  const bytes = JSON.stringify({ version: 3, revision: randomUUID(), grants } satisfies Document);
   if (Buffer.byteLength(bytes) > MAX_DOCUMENT_BYTES) throw new ProjectAuthorizationError("Too many project authorizations");
-  writePrivateFileAtomicSync(join(parent, "git-project-authorizations.json"), bytes);
+  writeGitScopedAuthorityFile(agentDir, join(parent, "git-project-authorizations.json"), bytes, "grants", [scope]);
   syncGitWorkflowDirectory(parent);
 }
 function ownerInstance(owner: ProjectAuthorizationOwner): string {
@@ -121,7 +125,12 @@ function ownerInstance(owner: ProjectAuthorizationOwner): string {
   }
   return digest({ file: owner.sessionFile, cwd: owner.sessionCwd, dev: String(stat.dev), ino: String(stat.ino), birthtime: String(stat.birthtimeNs) });
 }
+function authorityScope(selection?: GitProjectResources, owner?: ProjectAuthorizationOwner): GitAuthoritySelection {
+  return { projectRoots: selection ? [selection.projectRoot] : [], sessionId: owner?.sessionId };
+}
 async function context(selection: GitProjectResources | undefined, owner: ProjectAuthorizationOwner | undefined, agentDir: string) {
+  const settingsScope: GitAuthoritySelection = { ...authorityScope(selection, owner), domains: ["settings"] };
+  const original = readGitScopedAuthorityRevision(agentDir, settingsScope);
   let instance: string | undefined;
   let entries: SessionEntry[] = [];
   if (owner) {
@@ -136,15 +145,18 @@ async function context(selection: GitProjectResources | undefined, owner: Projec
       throw new ProjectAuthorizationError("Subagents cannot receive project authorizations");
     }
   }
-  const epoch = readGitWorkflowWriteEpoch(agentDir);
   const settings = selection ? await loadGitProjectSettings(selection, entries, agentDir, owner?.sessionId)
     : undefined;
   const global = selection ? settings!.global : readGitWorkflowSettingsDocument(agentDir).global;
   const paused = selection ? settings!.paused : readGitWorkflowSettingsDocument(agentDir).paused;
-  const policyRevision = digest({ global, projectRoot: selection?.projectRoot, project: settings?.project,
-    sessionId: owner?.sessionId, session: settings?.session, paused, epoch });
+  const values = { global, projectRoot: selection?.projectRoot, project: settings?.project,
+    sessionId: owner?.sessionId, session: settings?.session, paused };
+  const policyRevision = digest({ ...values, settingsGeneration: original });
+  const legacyEpoch = legacyGitWorkflowEpochIfUnchanged(agentDir, settingsScope);
+  const legacyPolicyRevision = legacyEpoch === undefined ? undefined : digest({ ...values, epoch: legacyEpoch });
+  if (readGitScopedAuthorityRevision(agentDir, settingsScope) !== original) throw new ProjectAuthorizationError("Settings changed during authorization read");
   if (owner && ownerInstance(owner) !== instance) throw new ProjectAuthorizationError("Chat changed during authorization read");
-  return { instance, policyRevision, paused, enabled: selection ? (owner ? settings!.resolved.session.values.enabled : settings!.resolved.project.values.enabled)
+  return { instance, policyRevision, legacyPolicyRevision, settingsGeneration: original, paused, enabled: selection ? (owner ? settings!.resolved.session.values.enabled : settings!.resolved.project.values.enabled)
     : !paused && readGitWorkflowSettingsDocument(agentDir).global.enabled !== false };
 }
 function status(doc: Document, selection: GitProjectResources | undefined, owner: ProjectAuthorizationOwner | undefined,
@@ -157,7 +169,7 @@ function status(doc: Document, selection: GitProjectResources | undefined, owner
     const projectDecision = !project ? "inherit" : JSON.stringify(project.projectIdentity) !== JSON.stringify(projectIdentity(selection!)) ? "stale" : project.decision;
     const sessionDecision = !session ? "inherit" : JSON.stringify(session.projectIdentity) !== JSON.stringify(projectIdentity(selection!))
       || session.sessionFile !== owner!.sessionFile || !samePath(session.sessionCwd!, owner!.sessionCwd)
-      || session.sessionInstance !== current.instance || session.sessionPolicy !== current.policyRevision ? "stale" : session.decision;
+      || session.sessionInstance !== current.instance || session.sessionPolicy !== current.policyRevision && session.sessionPolicy !== current.legacyPolicyRevision ? "stale" : session.decision;
     const source: ProjectAuthorizationScope | "none" = sessionDecision !== "inherit" ? "session" : projectDecision !== "inherit" ? "project" : global ? "global" : "none";
     const chosen = source === "session" ? sessionDecision : source === "project" ? projectDecision : global?.decision ?? "none";
     return [action, { global: global?.decision ?? "inherit", project: projectDecision, session: sessionDecision,
@@ -172,10 +184,12 @@ function status(doc: Document, selection: GitProjectResources | undefined, owner
 /** Fresh document/settings reads on every check. No snapshot is execution authority. */
 export async function readProjectAuthorization(selection?: GitProjectResources, owner?: ProjectAuthorizationOwner,
   agentDir = getAgentDir()): Promise<ProjectAuthorizationStatus> {
+  const original = readGitScopedAuthorityRevision(agentDir, authorityScope(selection, owner));
   const current = await context(selection, owner, agentDir);
   const result = status(documentFromDisk(agentDir), selection, owner, current);
   if (selection) await revalidateGitProjectResources(selection);
   if (owner && ownerInstance(owner) !== current.instance) throw new ProjectAuthorizationError("Chat changed during authorization read");
+  if (readGitScopedAuthorityRevision(agentDir, authorityScope(selection, owner)) !== original) throw new ProjectAuthorizationError("Authority changed during authorization read");
   return result;
 }
 /** Only an explicit authenticated browser save should call this. Never invoke
@@ -207,7 +221,11 @@ export async function saveProjectAuthorization(selection: GitProjectResources | 
       throw new ProjectAuthorizationError("Project or chat changed during authorization save");
     }
     if (selection) await revalidateGitProjectResources(selection);
-    writeDocument(agentDir, grants);
+    if (readGitScopedAuthorityRevision(agentDir, { ...authorityScope(selection, owner), domains: ["settings"] }) !== latest.settingsGeneration ||
+      owner && ownerInstance(owner) !== latest.instance) throw new ProjectAuthorizationError("Authority changed during final authorization save");
+    writeDocument(agentDir, grants, scope === "global" ? { kind: "global" } : scope === "project"
+      ? { kind: "project", projectRoot: selection!.projectRoot }
+      : { kind: "chat-project", projectRoot: selection!.projectRoot, sessionId: owner!.sessionId });
     return status(documentFromDisk(agentDir), selection, owner, latest);
   });
 }

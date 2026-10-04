@@ -1,12 +1,25 @@
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createJiti } from "jiti";
+import { canonical, document } from "../lib/git-action-legacy-fixture.mjs";
+
+// Fixture-only historical bytes. Production has no v1 writer and cannot adopt
+// these records. Retain only our own seed for the later interruption fixture.
+const interruptions = new Map();
+function seedLegacyRecord(agentDir, record, candidate) {
+  const dir = join(agentDir, "pi-web", "git-actions", "v1", record.id);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  writeFileSync(join(dir, "candidate.json"), canonical({ version: 1, candidate }), { flag: "wx", mode: 0o600 });
+  const file = join(dir, "record.json");
+  writeFileSync(file, document(record), { flag: "wx", mode: 0o600 });
+  return file;
+}
 
 /** Evidence from a DIFFERENT process than the test server, never executable capabilities. */
 export async function seedGitActionHistory(agentDir, sessionId) {
   const jiti = createJiti(import.meta.url);
-  const { createGitAction, transitionGitAction } = await jiti.import("../lib/git-action-journal.ts");
+  const { createGitAction, transitionGitAction, releaseGitAction, captureGitActionRecord, advanceGitActionRecord } = await jiti.import("../lib/git-action-journal.ts");
   const retired = join(agentDir, "retired-history-workspace");
   mkdirSync(retired);
   const patch = [
@@ -20,19 +33,34 @@ export async function seedGitActionHistory(agentDir, sessionId) {
     paths: ["long.txt", "old-name.txt", "new-name.txt", "image.bin", "run.sh"], parentOid: "1".repeat(40), candidateTreeOid: "2".repeat(40),
     diff: { fromTreeOid: "3".repeat(40), toTreeOid: "2".repeat(40), patch, hasBinaryChanges: true } });
   const records = {};
-  for (const [name, state] of [["declined", "declined"], ["expired", "awaiting-decision"], ["interrupted", "executing"], ["missing", "declined"], ["oversized", "declined"]]) {
+  for (const name of ["declined", "expired", "interrupted", "missing", "oversized", "corrupt"]) {
     const snapshot = candidate(`E2E saved ${name} candidate`);
     if (name === "oversized") { delete snapshot.diff; snapshot.diffUnavailable = "Candidate patch exceeds the 1 MB capture limit"; }
-    let record = await createGitAction({ sessionId, source: "agent", candidate: snapshot }, agentDir);
-    record = await transitionGitAction(record.id, record.revision, { state: "awaiting-decision" }, agentDir);
-    // Publish the artificial interrupted action only after the normal Git
-    // browser flows run. Durable admission rightly refuses any checkout if a
-    // retired legacy journal's Git resource can no longer be identified.
-    if (state !== "awaiting-decision" && name !== "interrupted") record = await transitionGitAction(record.id, record.revision,
-      { state, decision: "declined" }, agentDir);
+    const input = { sessionId, source: "agent", candidate: snapshot };
+    let record;
+    if (["expired", "interrupted", "corrupt"].includes(name)) {
+      // Only deliberate legacy fixtures model persisted pre-restart requests.
+      // New active candidates are process-only and must never be resurrected.
+      const captured = captureGitActionRecord(input);
+      record = advanceGitActionRecord(captured.record, captured.candidate, { state: "awaiting-decision" });
+      if (name === "corrupt") record = advanceGitActionRecord(record, captured.candidate, { state: "declined", decision: "declined" });
+      const file = seedLegacyRecord(agentDir, record, captured.candidate);
+      if (name === "interrupted") interruptions.set(record.id, { agentDir, file, record, candidate: captured.candidate });
+    } else {
+      record = await createGitAction(input, agentDir);
+      const id = record.id;
+      try {
+        record = await transitionGitAction(id, record.revision, { state: "awaiting-decision" }, agentDir);
+        record = await transitionGitAction(id, record.revision, { state: "declined", decision: "declined" }, agentDir);
+        assert.equal(record.diagnostics, undefined, "fixture must persist before the server starts");
+      } finally { releaseGitAction(id, agentDir); }
+    }
     records[name] = record.id;
   }
-  rmSync(join(agentDir, "pi-web", "git-actions", "v1", records.missing, "candidate.json"));
+  rmSync(join(agentDir, "git-diagnostics-v2", `${records.missing}.artifact`));
+  // Corrupt legacy bytes stay read-only and do not poison the shared v2 inventory
+  // used by the subsequent browser flows (v2 corruption has isolated unit tests).
+  writeFileSync(join(agentDir, "pi-web", "git-actions", "v1", records.corrupt, "candidate.json"), "corrupt captured artifact");
   rmSync(retired, { recursive: true });
   const entries = Object.values(records).map((id, index) => ({ type: "custom", customType: "pi-web:git-action",
     id: `saved-card-${index}`, parentId: index ? `saved-card-${index - 1}` : "root", timestamp: new Date().toISOString(), data: { version: 1, actionId: id } }));
@@ -41,11 +69,16 @@ export async function seedGitActionHistory(agentDir, sessionId) {
 
 export async function interruptSeededGitAction(agentDir, id) {
   const jiti = createJiti(import.meta.url);
-  const { readGitAction, transitionGitAction } = await jiti.import("../lib/git-action-journal.ts");
-  const { record } = await readGitAction(id, {}, agentDir);
-  assert.equal(record?.state, "awaiting-decision");
-  await transitionGitAction(id, record.revision, { state: "executing", decision: "approved",
-    intended: { commit: "4".repeat(40), tree: "2".repeat(40), parents: ["1".repeat(40)], authorEmail: "e2e@example.invalid" } }, agentDir);
+  const { advanceGitActionRecord, readGitAction } = await jiti.import("../lib/git-action-journal.ts");
+  const own = interruptions.get(id);
+  assert.equal(own?.agentDir, agentDir, "only the original disposable legacy seed may be changed");
+  assert.equal((await readGitAction(id, {}, agentDir)).record?.state, "expired", "disk history is never a live request");
+  // Artificial historical interruption only: prepared IDs are NOT native success.
+  const record = advanceGitActionRecord(own.record, own.candidate, { state: "executing", decision: "approved",
+    intended: { commit: "4".repeat(40), tree: "2".repeat(40), parents: ["1".repeat(40)], authorEmail: "e2e@example.invalid" } });
+  writeFileSync(own.file, document(record));
+  interruptions.delete(id);
+  assert.equal((await readGitAction(id, {}, agentDir)).record?.state, "recovery-required");
 }
 
 export async function checkSavedGitActionHistory(page, { base, api, sessionId, records, artifacts }) {
@@ -117,8 +150,11 @@ export async function checkSavedGitActionHistory(page, { base, api, sessionId, r
     await detail.locator("summary").click();
     await detail.getByRole("region", { name: "Raw patch" }).waitFor();
   }
-  await card("missing").getByRole("button", { name: /^Captured candidate/ }).click();
-  await card("missing").getByText(/Captured artifact unavailable/).waitFor();
+  for (const name of ["missing", "corrupt"]) {
+    await card(name).getByRole("button", { name: /^Captured candidate/ }).click();
+    await card(name).getByText(/Captured artifact unavailable/).waitFor();
+    assert.equal(await card(name).getByRole("region", { name: /diff|patch/i }).count(), 0, "Unavailable/corrupt bytes must not render a reconstructed diff");
+  }
   await card("oversized").getByRole("button", { name: /^Captured candidate/ }).click();
   await card("oversized").getByText(/Candidate patch exceeds the 1 MB capture limit/).waitFor();
   assert.equal(await card("oversized").getByRole("region", { name: /diff|patch/i }).count(), 0, "Unavailable bytes must not appear as a partial diff");
@@ -127,5 +163,5 @@ export async function checkSavedGitActionHistory(page, { base, api, sessionId, r
   await card("expired").getByRole("heading", { name: /Expired/ }).waitFor();
   assert.equal(await page.getByRole("button", { name: /^(Approve|Confirm|Retry) (commit|merge|integration|action)/ }).count(), 0);
   await page.setViewportSize({ width: 1280, height: 800 });
-  console.log("PASS: captured multi-file history survives reload/workspace loss, restart expiry/recovery is read-only, missing artifacts explicit, desktop/mobile independent split scrolling");
+  console.log("PASS: captured multi-file history survives reload/workspace loss, restart expiry/recovery is read-only, missing/corrupt artifacts explicit, desktop/mobile independent split scrolling");
 }
