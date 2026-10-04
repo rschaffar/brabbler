@@ -25,6 +25,25 @@ test("compact durable card reports captured message, branch, time, actual result
   assert.doesNotMatch(html, /Approve exact commit|private/);
 });
 
+test("unavailable diagnostics do not relabel native outcomes or restore approval controls", () => {
+  const diagnostics = { status: "unavailable", reason: "storage-unavailable" };
+  const html = render({ history: { record: { ...record, outcome: { ...record.outcome, diagnostics } } } });
+  assert.match(html, /Succeeded/);
+  assert.match(html, /Outcome: committed/);
+  assert.match(html, /Some history or check output is unavailable/);
+  assert.doesNotMatch(html, /Execution may have changed|Approve exact commit|Retry/);
+  const failed = render({ history: { record: { ...record, state: "failed", outcome: { status: "failed", diagnostics } } } });
+  assert.match(failed, /Failed/);
+  assert.doesNotMatch(failed, /Succeeded/);
+  const check = checkRecord();
+  check.outcome.checkoutVerification.runs[0].diagnostics = diagnostics;
+  assert.match(render({ history: { record: check } }), /some diagnostics unavailable/);
+  const pending = render({ history: { record: { ...record, state: "awaiting-decision", outcome: undefined, diagnostics } }, liveRequest: live, onRespond: () => {} });
+  assert.match(pending, /Some history or check output is unavailable/);
+  assert.match(pending, /Approve exact commit/);
+  assert.match(pending, /Exact LIVE message/);
+});
+
 test("collapsed and expanded cards distinguish identical branches across projects and physical checkouts", () => {
   for (const project of ["/projects/alpha", "/projects/beta"]) {
     const source = `${project}-worktrees/feature`, target = `${project}-worktrees/target`;
@@ -106,10 +125,14 @@ test("every historical state is read-only, especially awaiting decision and inte
 test("only the matching CURRENT request and real responder render actionable controls", () => {
   const pending = { history: { record: { ...record, state: "awaiting-decision", outcome: undefined } } };
   assert.doesNotMatch(render({ ...pending, liveRequest: live }), /Approve exact commit/);
-  assert.doesNotMatch(render({ history: { record: null, unavailable: "corrupt" }, liveRequest: live, onRespond: () => {} }), /Approve exact commit/);
+  const missing = render({ history: { record: null, unavailable: "corrupt" }, liveRequest: live, onRespond: () => {} });
+  assert.match(missing, /Approve exact commit/);
+  assert.match(missing, /Exact LIVE message/);
+  assert.match(missing, /corrupt/);
   assert.doesNotMatch(render({ ...pending, liveRequest: { ...live, candidate: { ...live.candidate, actionId: "another" } }, onRespond: () => {} }), /Approve exact commit/);
   for (const state of ["succeeded", "executing", "expired", "cancelled", "recovery-required"]) {
-    assert.doesNotMatch(render({ history: { record: { ...record, state } }, liveRequest: live, onRespond: () => {} }), /Approve exact commit/);
+    assert.match(render({ history: { record: { ...record, state } }, liveRequest: live, onRespond: () => {} }), /Approve exact commit/);
+    assert.doesNotMatch(render({ history: { record: { ...record, state } }, onRespond: () => {} }), /Approve exact commit/);
   }
   const html = render({ ...pending, liveRequest: live, onRespond: () => {}, interactionBlocked: true });
   assert.equal((html.match(/Approve exact commit/g) ?? []).length, 1);
@@ -192,7 +215,7 @@ test("new-kind pending/refused/partial records never synthesize approvals or cla
     const native = nativeRecord(kind);
     for (const state of ["proposed", "awaiting-decision", "executing", "cancelled", "blocked", "expired", "recovery-required"]) {
       const pending = { ...native, state, outcome: undefined, reason: state === "blocked" ? "Conflict/stale refusal before native operation." : undefined };
-      const html = render({ history: { record: pending }, liveRequest: live, onRespond: () => {} });
+      const html = render({ history: { record: pending }, onRespond: () => {} });
       assert.doesNotMatch(html, /Created worktree|Attached worktree|Prepared history|Approve exact commit|Decline commit|human/);
       if (state === "blocked") assert.match(html, /Conflict\/stale refusal before native operation/);
       if (state === "cancelled" || state === "blocked" || state === "expired") assert.doesNotMatch(html, /manual recovery|Execution may have changed/);
@@ -217,7 +240,8 @@ test("only an actual matching live new-kind request renders simple approval cont
     assert.doesNotMatch(render({ ...props, onRespond: undefined }), /Approve exact/);
     assert.doesNotMatch(render({ ...props, liveRequest: { ...request, candidate: { ...candidate, actionId: "other" } } }), /Approve exact/);
     for (const state of ["succeeded", "executing", "cancelled", "expired", "recovery-required"]) {
-      assert.doesNotMatch(render({ ...props, history: { record: { ...pending, state } } }), /Approve exact/);
+      assert.match(render({ ...props, history: { record: { ...pending, state } } }), /Approve exact/);
+      assert.doesNotMatch(render({ ...props, liveRequest: null, history: { record: { ...pending, state } } }), /Approve exact/);
     }
   }
 });
@@ -317,7 +341,8 @@ test("cleanup history names each measured effect/known OID and partial recovery 
   assert.doesNotMatch(render({ history: { record: { ...completed, outcome: undefined } } }), /Cleaned up local workspace/);
   for (const kind of [checkRecord(), native]) for (const state of ["proposed", "awaiting-decision", "executing", "cancelled", "expired", "recovery-required"]) {
     const historical = { ...kind, state, outcome: undefined };
-    assert.doesNotMatch(render({ history: { record: historical }, liveRequest: live, onRespond: () => {} }), /Run these saved checks|Approve cleanup|Approve exact commit/);
+    assert.doesNotMatch(render({ history: { record: historical }, onRespond: () => {} }), /Run these saved checks|Approve cleanup|Approve exact commit/);
+    assert.match(render({ history: { record: historical }, liveRequest: live, onRespond: () => {} }), /Approve exact commit/);
   }
 });
 
@@ -332,9 +357,29 @@ test("binary and unavailable immutable workspace patches never substitute live f
   assert.match(missing, /No current worktree data is substituted/);
 });
 
+test("live native Ask can lazily show its exact captured patch without a stored history row", () => {
+  const pending = { ...nativeRecord("workspace"), state: "awaiting-decision", outcome: undefined };
+  const request = { type: "extension_ui_request", method: "git_action", id: "current-native-request", candidate: { ...pending.summary, actionId: id,
+    resourceAttribution: { version: 2, commonDir: "/deleted/project/.git", commonIdentity: instance, projectIdentity: instance } } };
+  const candidate = { ...pending.summary, diff: { fromTreeOid: oid("a"), toTreeOid: oid("d"), hasBinaryChanges: false,
+    patch: "diff --git a/exact b/exact\n--- a/exact\n+++ b/exact\n@@ -1 +1 @@\n-old\n+ONLY_CAPTURED_CONTENT\n" } };
+  const props = { history: { record: null, unavailable: "anchor unavailable" }, expanded: true, liveRequest: request, onRespond: () => {},
+    artifact: { record: pending, candidate } };
+  const html = render(props);
+  assert.match(html, /Hide captured patch/);
+  assert.match(html, /ONLY_CAPTURED_CONTENT/);
+  assert.match(html, /Approve exact worktree creation/);
+  assert.match(html, /anchor unavailable/);
+  const historical = render({ ...props, artifact: { record: { ...pending, state: "succeeded" }, candidate } });
+  assert.doesNotMatch(historical, /ONLY_CAPTURED_CONTENT/);
+  assert.match(historical, /Historical data cannot replace the live candidate/);
+  assert.match(historical, /Approve exact worktree creation/);
+  assert.doesNotMatch(render({ ...props, liveRequest: null }), /Approve exact/);
+});
+
 test("artifact request is gated on expansion; no focus theft, model calls or approval reconstruction", async () => {
   const source = await readFile(new URL("./GitActionCard.tsx", import.meta.url), "utf8");
-  assert.match(source, /if \(!expanded \|\| !sessionId \|\| liveRequest\) return/);
+  assert.match(source, /if \(!expanded \|\| !sessionId\) return/);
   assert.match(source, /readGitActionHistory\(sessionId, actionId, true, controller.signal\)/);
   const artifactRead = source.slice(source.indexOf("void readGitActionHistory"), source.indexOf("  return <div ref="));
   assert.doesNotMatch(artifactRead, /setHistory\(/, "slow artifact reads cannot restore live state");

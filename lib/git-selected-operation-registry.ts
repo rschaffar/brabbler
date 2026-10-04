@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { readGitPreparationCompletion } from "./git-preparation-apply";
-import { readSelectedIntegrationNativeProof, readSelectedIntegrationNativeTargetMove, type SelectedIntegrationPlan } from "./git-selected-integration";
+import { readSelectedIntegrationNativeProof } from "./git-selected-integration";
 import { readGitWorkspaceNativeProof } from "./git-workspace-operation";
-import { lookupGitCheckoutVerificationReceipt, type GitCheckoutVerificationReceipt } from "./git-checkout-verification";
+import { lookupGitCheckoutVerificationReceipt, readGitCheckoutVerificationNativeExecution, type GitCheckoutVerificationReceipt } from "./git-checkout-verification";
 import type { GitCleanupCompletedProof } from "./git-cleanup-operation";
 import type { ProjectAuthorizationOwner } from "./git-project-authorization";
 import type { GitProjectResources } from "./git-project-resources";
@@ -29,62 +29,54 @@ const sealedReceipts = new Map<string, { owner: ProjectAuthorizationOwner; recei
 
 /** Internal trusted runtime storage. No exported singleton writer, serialization,
  * action-ID lookup, or history-to-capability conversion. Sealing authenticates the
- * actual leaf identity again AFTER the caller's durable journal/admission barrier. */
+ * actual leaf identity independently of optional journal publication. */
 export function createGitSelectedOperationRegistry(owner: ProjectAuthorizationOwner, readers: {
   readCleanupProof(handle: object): GitCleanupCompletedProof | undefined;
   readRecoveryProof(handle: object): { before: SelectedCompletionEnvelope["before"]; after: SelectedCompletionEnvelope["after"] } | undefined;
   readPreparationNoEffect(handle: object): Extract<SelectedCompletionEnvelope["completion"], { operation: "prepare" }>["result"] | undefined;
 }) {
   const captures = new WeakMap<object, { candidate: SelectedNativeCandidate; payload: unknown }>();
+  const originalCandidates = new Map<string, { candidate: SelectedNativeCandidate; payload: unknown }>();
   const results = new WeakMap<object, { envelope: SelectedCompletionEnvelope; leaf: object; noEffect: boolean }>();
   const failures = new WeakMap<object, SelectedNativeFailure>();
-  function targetMove(cause: object, capture: object) {
-    const proof = readSelectedIntegrationNativeTargetMove(cause);
-    if (!proof) return;
-    const captured = captures.get(capture), payload = captured?.payload as {
-      plan?: SelectedIntegrationPlan; before?: SelectedCompletionEnvelope["before"]; executing?: { actionId: string };
-    } | undefined;
-    const candidate = captured?.candidate, plan = payload?.plan;
-    if (!candidate || candidate.operation !== "integrate" || !plan || !payload?.before || !payload.executing
-      || proof.kind !== "selected-integration-target-moved" || proof.code !== "target_moved"
-      || proof.planId !== plan.planId || proof.sessionId !== owner.sessionId || digest(proof.context) !== digest(plan.selectedContext)
-      || digest(proof.context.source) !== digest(candidate.source) || digest(proof.context.target) !== digest(candidate.target)
-      || proof.featureOid !== candidate.sourceOid || proof.previousTargetOid !== candidate.targetOid
-      || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(proof.observedTargetOid) || proof.observedTargetOid === proof.previousTargetOid
-      || proof.noEffect !== true || !proof.otherStateBefore || proof.otherStateBefore !== proof.otherStateAfter) {
-      throw new Error("Exact captured native pre-effect target movement required");
-    }
-    return { proof, candidate, before: payload.before, actionId: payload.executing.actionId };
-  }
   function authenticate(envelope: SelectedCompletionEnvelope, leaf: object, noEffect: boolean) {
     const c = envelope.completion;
+    const original = originalCandidates.get(envelope.candidateRevision), candidate = original?.candidate;
+    if (!candidate || candidate.operation !== c.operation) throw new Error("Original invocation capture required");
     if (c.operation === "prepare") {
       if (c.result.status === "already-prepared") {
         const actual = readers.readPreparationNoEffect(leaf);
         if (!noEffect || !actual || digest(actual) !== digest(c.result) || c.result.oldSourceOid !== c.result.newSourceOid) throw new Error("Actual native no-effect identity required");
       } else {
         const proof = readGitPreparationCompletion(leaf);
-        if (proof?.stage !== "completed" || proof.actionId !== envelope.actionId || digest(proof.result) !== digest(c.result)) {
+        if (proof?.stage !== "completed" || proof.actionId !== envelope.actionId || digest(proof.result) !== digest(c.result) ||
+          !candidate.invocationOwner || digest(proof.invocationOwner) !== digest(candidate.invocationOwner)) {
           throw new Error("Completed native preparation identity required");
         }
       }
     } else if (c.operation === "integrate") {
       const proof = readSelectedIntegrationNativeProof(leaf);
-      if (!proof || proof.admissionActionId !== envelope.actionId || digest(proof) !== digest(c.integration)) {
+      if (!proof || !candidate.invocationOwner || digest(proof.invocationOwner) !== digest(candidate.invocationOwner) || digest(proof) !== digest(c.integration)) {
         throw new Error("Native integration identity required");
       }
     } else if (c.operation === "workspace") {
       const proof = readGitWorkspaceNativeProof(leaf);
-      if (!proof || proof.actionId !== envelope.actionId || digest(proof) !== digest(c.proof)) throw new Error("Native workspace identity required");
+      if (!proof || proof.actionId !== envelope.actionId || digest(proof) !== digest(c.proof) ||
+        !candidate.invocationOwner || digest(proof.invocationOwner) !== digest(candidate.invocationOwner)) throw new Error("Native workspace identity required");
     } else if (c.operation === "verify") {
       const receipts = leaf as readonly GitCheckoutVerificationReceipt[];
-      if (!Array.isArray(receipts) || receipts.length !== c.receiptIds.length || receipts.some((r, i) =>
-        lookupGitCheckoutVerificationReceipt(c.receiptIds[i]) !== r || r.sessionId !== owner.sessionId || r.exitStatus !== 0)) {
+      const own = original?.payload as { receipts?: unknown; cohort?: object; executing?: { actionId: string } } | undefined;
+      if (!own?.cohort || own.receipts !== leaf || own.executing?.actionId !== envelope.actionId ||
+        !Array.isArray(receipts) || receipts.length !== c.receiptIds.length || receipts.some((r, i) =>
+        lookupGitCheckoutVerificationReceipt(c.receiptIds[i]) !== r || r.sessionId !== owner.sessionId || r.exitStatus !== 0 ||
+        readGitCheckoutVerificationNativeExecution(r)?.receipt?.id !== r.id ||
+        readGitCheckoutVerificationNativeExecution(r)?.actionId !== envelope.actionId)) {
         throw new Error("Actual completed native receipts required");
       }
     } else if (c.operation === "cleanup") {
       const proof = readers.readCleanupProof(leaf);
-      if (!proof || proof.actionId !== envelope.actionId || digest(proof) !== digest(c.proof)) throw new Error("Actual completed native cleanup required");
+      if (!proof || proof.actionId !== envelope.actionId || digest(proof) !== digest(c.proof) ||
+        !candidate.invocationOwner || digest(proof.removal.invocationOwner) !== digest(candidate.invocationOwner)) throw new Error("Actual completed native cleanup required");
     } else {
       const proof = readers.readRecoveryProof(c.recoveryHandle);
       if (leaf !== c.recoveryHandle || !proof || digest(proof.before) !== digest(envelope.before) || digest(proof.after) !== digest(envelope.after)) {
@@ -99,11 +91,16 @@ export function createGitSelectedOperationRegistry(owner: ProjectAuthorizationOw
       // Preserve opaque native/durable identities: JSON/copies are never handles.
       if (candidate.cleanup) captured.cleanup = { ...candidate.cleanup, ignoredNames: [...candidate.cleanup.ignoredNames] };
       captures.set(handle, { candidate: immutable(captured), payload });
+      originalCandidates.set(captured.revision, { candidate: captured, payload });
       return handle;
     },
     readCandidate(handle: object) { return captures.get(handle)?.candidate; },
     readCapture<T>(handle: object): T | undefined { return captures.get(handle)?.payload as T | undefined; },
-    retire(handle: object) { captures.delete(handle); },
+    retire(handle: object) {
+      const saved = captures.get(handle);
+      if (saved) originalCandidates.delete(saved.candidate.revision);
+      captures.delete(handle);
+    },
     completed(envelope: SelectedCompletionEnvelope, leaf: object, noEffect = false): object {
       authenticate(envelope, leaf, noEffect);
       const handle = Object.freeze(Object.create(null)) as object;
@@ -113,33 +110,14 @@ export function createGitSelectedOperationRegistry(owner: ProjectAuthorizationOw
       return handle;
     },
     readNativeCompletion(handle: object) { return results.get(handle)?.envelope; },
-    failure(cause: object, failure: SelectedNativeFailure, capture?: object) {
-      if (failure.kind === "target-moved") {
-        const actual = capture && targetMove(cause, capture);
-        if (!actual || failure.actionId !== actual.actionId || failure.candidateRevision !== actual.candidate.revision
-          || digest(failure.before) !== digest(actual.before)
-          || digest(failure.after) !== digest({ ...actual.before, targetOid: actual.proof.observedTargetOid })
-          || failure.otherStateBefore !== actual.proof.otherStateBefore || failure.otherStateAfter !== actual.proof.otherStateAfter || failure.noEffect !== true) {
-          throw new Error("Original native target movement failure identity required");
-        }
-      }
+    failure(cause: object, failure: SelectedNativeFailure) {
+      if (failure.kind !== "partial") throw new Error("Unsupported native failure; no retry provenance");
       failures.set(cause, immutable(structuredClone(failure)));
     },
-    integrationTargetMoved(cause: object, capture: object, actionId: string): boolean {
-      const actual = targetMove(cause, capture); if (!actual) return false;
-      if (actual.actionId !== actionId) throw new Error("Exact executing integration action required");
-      failures.set(cause, immutable(structuredClone({ kind: "target-moved", actionId,
-        candidateRevision: actual.candidate.revision, before: actual.before,
-        after: { ...actual.before, targetOid: actual.proof.observedTargetOid },
-        otherStateBefore: actual.proof.otherStateBefore, otherStateAfter: actual.proof.otherStateAfter, noEffect: true } satisfies SelectedNativeFailure)));
-      return true;
-    },
     readNativeFailure(cause: unknown) { return cause && typeof cause === "object" ? failures.get(cause) : undefined; },
-    async seal(handle: object, barrier: (envelope: SelectedCompletionEnvelope) => Promise<void>): Promise<object> {
+    async seal(handle: object): Promise<object> {
       const result = results.get(handle);
       if (!result) throw new Error("Actual native result required");
-      authenticate(result.envelope, result.leaf, result.noEffect);
-      await barrier(result.envelope);
       authenticate(result.envelope, result.leaf, result.noEffect);
       const token = Object.freeze(Object.create(null)) as object;
       sealed.set(token, { owner: immutable(structuredClone(owner)), envelope: result.envelope, nativeHandle: handle });
@@ -159,7 +137,8 @@ export function createGitSelectedOperationRegistry(owner: ProjectAuthorizationOw
     },
     readSealedReceipt(id: string) {
       const value = sealedReceipts.get(id);
-      return value && digest(value.owner) === digest(owner) && lookupGitCheckoutVerificationReceipt(id) === value.receipt ? value.receipt : undefined;
+      return value && digest(value.owner) === digest(owner) && lookupGitCheckoutVerificationReceipt(id) === value.receipt &&
+        readGitCheckoutVerificationNativeExecution(value.receipt)?.receipt?.id === id ? value.receipt : undefined;
     },
     readCreation(token: object) {
       const value = sealed.get(token);

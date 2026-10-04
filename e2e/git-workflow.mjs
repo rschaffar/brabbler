@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { checkGitTaskBinding } from "./git-task-binding.mjs";
-import { checkRecipeControls, reviewCommitChecks } from "./git-policy-operations.mjs";
+import { checkRecipeControls, reviewCommitChecks, runRequiredIntegrationChecks, checkRetiredRecovery, rejectMovedIntegrationTarget } from "./git-policy-operations.mjs";
 
 /** Real scoped settings, local Git objects and a persisted chat; no model or mocked settings endpoint. */
 export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, cwd, targetWorktree, otherProject, checkContainmentSupported }) {
@@ -820,9 +820,10 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     await chooseScope("project");
     await expand("checks");
     await addCheck("Fixture verification");
+    await addCheck("Second required verification");
     const checksSaved = await save("project");
     assert.deepEqual(checksSaved.task, applied.task);
-    assert.deepEqual(checksSaved.project.checks, [{ label: "Fixture verification", argv: [process.execPath, "-e", "process.exit(0)"] }],
+    assert.deepEqual(checksSaved.project.checks, ["Fixture verification", "Second required verification"].map(label => ({ label, argv: [process.execPath, "-e", "process.exit(0)"] })),
       "Both legacy paired FF/non-FF flows retain an omitted-field recipe, not a relabelled working-workspace receipt");
     const checksApplied = await apply();
     assert.equal(checksApplied.task.settings.checks[0].label, "Fixture verification");
@@ -843,9 +844,12 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
       assert.equal((await save("project")).project.method, "ff");
       assert.equal((await apply()).task.settings.method, "ff");
       await openDetail("Integration review", "Local integration review");
-      await review.getByRole("button", { name: "Run check 1" }).waitFor();
-      await review.getByRole("button", { name: "Run check 1" }).click();
-      await review.getByText(/Passed: receipt/).waitFor({ timeout: 90_000 });
+      await review.getByRole("button", { name: "Run required checks" }).waitFor();
+      await rejectMovedIntegrationTarget(page, { panel: review, sessionId,
+        advanceTarget: () => gitAt(targetWorktree, "reset", "--hard", featureTip),
+        restoreTarget: () => gitAt(targetWorktree, "reset", "--hard", originalTarget),
+        targetHead: () => gitAt(targetWorktree, "rev-parse", "HEAD") });
+      await runRequiredIntegrationChecks(page, { panel: review, sessionId });
       assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), originalTarget, "FF verification does not update target");
       const ffPlanResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/integration"
         && response.request().postDataJSON()?.operation === "plan");
@@ -906,57 +910,21 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     }
     await openDetail("Integration review", "Local integration review");
     await review.getByRole("button", { name: "Refresh review" }).click();
-    await review.getByRole("button", { name: "Run check 1" }).waitFor();
-    const quarantine = review.getByRole("region", { name: "Check quarantine recovery review" });
-    await quarantine.getByRole("button", { name: "Load recovery review" }).click();
-    await quarantine.getByText(/Recovery unavailable:/).waitFor();
-    assert.equal(await quarantine.getByRole("button", { name: "Approve recovery" }).count(), 0,
-      "No quarantined check must never offer a recovery approval");
-    // Exercise the browser's moved-state review without touching any durable
-    // check evidence. The real route and ledger are covered by OS-backed tests.
-    const reviewed = [];
-    const recoveryMock = (route) => {
-      if (route.request().method() === "POST") {
-        reviewed.push(route.request().postDataJSON());
-        return route.fulfill({ json: { recovered: true, actionId: "00000000-0000-4000-8000-000000000001" } });
-      }
-      return route.fulfill({ json: { eligible: true, mode: "moved",
-        actionId: "00000000-0000-4000-8000-000000000001", revision: "00000000-0000-4000-8000-000000000002",
-        unit: "pi-web-git-check-00000000-0000-4000-8000-000000000003.service",
-        original: { featureHead: "3".repeat(40), targetHead: "4".repeat(40),
-          featureHeadDigest: "a".repeat(64), targetHeadDigest: "b".repeat(64), refsDigest: "c".repeat(64) },
-        feature: { path: cwd, branch: "feature", head: git("rev-parse", "HEAD"), status: [] },
-        target: { path: targetWorktree, branch: "target", head: gitAt(targetWorktree, "rev-parse", "HEAD"), status: [] },
-        containment: { emptyEvidence: "verified-removed", payload: "release-attempted" }, expiresAt: Date.now() + 60_000 } });
-    };
-    await page.route("**/api/git/check-recovery*", recoveryMock);
-    try {
-      await quarantine.getByRole("button", { name: "Load recovery review" }).click();
-      await quarantine.getByText("Repository changed since the failed check").waitFor();
-      const approveRecovery = quarantine.getByRole("button", { name: "Approve recovery" });
-      assert.equal(await approveRecovery.isDisabled(), true, "drift needs separate acknowledgement");
-      await quarantine.getByRole("checkbox").check();
-      const mockApproval = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/check-recovery"
-        && response.request().method() === "POST");
-      await approveRecovery.click();
-      assert.equal((await mockApproval).status(), 200);
-      assert.deepEqual(reviewed, [{ sessionId, actionId: "00000000-0000-4000-8000-000000000001",
-        revision: "00000000-0000-4000-8000-000000000002", acknowledged: true, reviewedMovement: true }]);
-    } finally { await page.unroute("**/api/git/check-recovery*", recoveryMock); }
+    await review.getByRole("button", { name: "Run required checks" }).waitFor();
+    await checkRetiredRecovery(page, { panel: review, sessionId });
     const targetBeforeVerification = gitAt(targetWorktree, "rev-parse", "HEAD");
     assert.deepEqual((await api(`/api/git/integration?sessionId=${sessionId}`)).receipts, []);
     if (!checkContainmentSupported) {
       const refused = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/integration"
         && response.request().method() === "POST" && response.request().postDataJSON()?.operation === "verify");
-      await review.getByRole("button", { name: "Run check 1" }).click();
+      await review.getByRole("button", { name: "Run required checks" }).click();
       const denied = await refused;
       assert.equal(denied.status(), 409, "a host without verified containment must refuse checks");
       assert.deepEqual((await api(`/api/git/integration?sessionId=${sessionId}`)).receipts, []);
       assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), targetBeforeVerification);
       console.log("PASS: unavailable Linux check containment refuses verification before any integration");
     } else {
-    await review.getByRole("button", { name: "Run check 1" }).click();
-    await review.getByText(/Passed: receipt/).waitFor({ timeout: 90_000 }); // First systemd check can exceed Playwright's 30s default on a cold host.
+    await runRequiredIntegrationChecks(page, { panel: review, sessionId });
     assert.equal(gitAt(targetWorktree, "rev-parse", "HEAD"), targetBeforeVerification, "Verification must not integrate");
     const mergePlanResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/integration"
       && response.request().postDataJSON()?.operation === "plan");

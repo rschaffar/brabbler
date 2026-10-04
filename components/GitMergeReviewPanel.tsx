@@ -5,14 +5,20 @@ import { GitCheckRecoveryPanel } from "./GitCheckRecoveryPanel";
 import type { GitReview, GitReviewDiff, GitReviewSelection } from "@/lib/git-review";
 import type { LocalIntegrationPlan, LocalIntegrationResult } from "@/lib/git-integration";
 
-type ReceiptMetadata = { id: string; checkIndex: number; startedAt: number; finishedAt: number; logDigest: string };
+type ReceiptMetadata = { id: string; checkIndex: number; startedAt: number; finishedAt: number; logDigest: string;
+  batch?: { id: string; checkIndexes: number[] } };
+type DiagnosticResponse = { diagnostics?: { status: "unavailable"; reason: string }; recoveryWarning?: string };
+function diagnosticNotice(body: DiagnosticResponse): string | null {
+  return body.diagnostics?.status === "unavailable" || body.recoveryWarning
+    ? "Optional action history or output is unavailable. This warning does not change the reported check or native result." : null;
+}
 type IntegrationStatus = {
   review: GitReview;
   checks: { checkIndex: number; label: string }[];
   receipts: ReceiptMetadata[];
 };
 type Proposal = { actionId: string; plan: LocalIntegrationPlan };
-type IntegrationResponse = LocalIntegrationResult & { actionId: string; recoveryWarning?: string };
+type IntegrationResponse = LocalIntegrationResult & DiagnosticResponse & { actionId: string };
 
 export function proposalMatches(plan: LocalIntegrationPlan, review: GitReview, sessionId: string, receipts: ReceiptMetadata[]): boolean {
   return !!plan && !!plan.planId && plan.sessionId === sessionId && plan.expiresAt > Date.now() &&
@@ -29,12 +35,29 @@ function sameReview(left: GitReview, right: GitReview): boolean {
     left.mergeTreeOid === right.mergeTreeOid;
 }
 
-export function matchingReceipts(status: IntegrationStatus, review: GitReview): ReceiptMetadata[] | null {
-  if (!status.checks.length || !sameReview(status.review, review)) return null;
-  const matches = status.checks.map((check, index) => status.receipts.findLast((receipt) =>
-    check.checkIndex === index && receipt.checkIndex === index && receipt.finishedAt <= Date.now() &&
-    Date.now() - receipt.finishedAt < 15 * 60_000));
-  return matches.every((receipt) => receipt !== undefined) ? matches as ReceiptMetadata[] : null;
+/** Informational batch correlation cannot grant permission; the server still
+ * requires genuine original native cohort evidence. Never mix independent runs.
+ * Once this panel starts a run, pin its exact returned IDs (empty means failed or
+ * pending), including across explicit review refreshes: no older-batch fallback.
+ */
+export function matchingReceipts(status: IntegrationStatus, review: GitReview, ownReceiptIds: string[] | null = null): ReceiptMetadata[] | null {
+  if (!status.checks.length || !sameReview(status.review, review) ||
+    status.checks.some((check, index) => check.checkIndex !== index) ||
+    ownReceiptIds !== null && ownReceiptIds.length !== status.checks.length) return null;
+  const now = Date.now();
+  const current = status.receipts.filter((receipt) => typeof receipt.id === "string" && receipt.id.length > 0 &&
+    typeof receipt.batch?.id === "string" && receipt.batch.id.length > 0 && Array.isArray(receipt.batch.checkIndexes) &&
+    receipt.batch.checkIndexes.length === status.checks.length &&
+    receipt.batch.checkIndexes.every((index, position) => index === status.checks[position].checkIndex) &&
+    Number.isFinite(receipt.startedAt) && receipt.startedAt <= receipt.finishedAt && receipt.finishedAt <= now &&
+    now - receipt.finishedAt < 15 * 60_000 && (ownReceiptIds === null || ownReceiptIds[receipt.checkIndex] === receipt.id));
+  for (const last of [...current].sort((a, b) => b.finishedAt - a.finishedAt)) {
+    const siblings = current.filter((receipt) => receipt.batch!.id === last.batch!.id);
+    if (siblings.length !== status.checks.length || new Set(siblings.map((receipt) => receipt.id)).size !== siblings.length) continue;
+    const ordered = status.checks.map((check) => siblings.find((receipt) => receipt.checkIndex === check.checkIndex));
+    if (ordered.every((receipt) => receipt !== undefined)) return ordered as ReceiptMetadata[];
+  }
+  return null;
 }
 
 type Props = { sessionId: string; cwd: string };
@@ -62,7 +85,7 @@ function expectedTrees(review: GitReview, choice: Choice): { from: string; to: s
 async function bodyOrError<T>(response: Response, sessionId?: string): Promise<T> {
   const body = await response.json() as T & { error?: string; recoveryRequired?: boolean; recoveryWarning?: string };
   if (sessionId) window.dispatchEvent(new CustomEvent("pi-web:git-actions-changed", { detail: { sessionId } }));
-  if (!response.ok) throw Object.assign(new Error(body.recoveryWarning ?? body.error ?? `HTTP ${response.status}`),
+  if (!response.ok) throw Object.assign(new Error(body.error ?? `HTTP ${response.status}`),
     { status: response.status, recoveryRequired: body.recoveryRequired });
   return body;
 }
@@ -83,10 +106,9 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
   const [result, setResult] = useState<IntegrationResponse | null>(null);
   const [operation, setOperation] = useState<"verify" | "plan" | "confirm" | null>(null);
   const [blocked, setBlocked] = useState(false);
-  const [recoveryBusy, setRecoveryBusy] = useState(false);
-  const [recoveryAccepted, setRecoveryAccepted] = useState(false);
+  const [ownReceiptIds, setOwnReceiptIds] = useState<string[] | null>(null);
+  const [diagnosticWarning, setDiagnosticWarning] = useState<string | null>(null);
   const operationRef = useRef(false);
-  const recoveryInFlight = useRef(false);
   const request = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const integrationGeneration = useRef(0);
@@ -145,8 +167,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
   const trees = review && expectedTrees(review, choice);
 
   function refresh() {
-    if (operationRef.current || recoveryInFlight.current) return;
-    setRecoveryAccepted(false);
+    if (operationRef.current) return;
     reloadReview();
   }
 
@@ -169,36 +190,42 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
     setError(null);
   }
 
-  async function integrationAction(action: "verify" | "plan" | "confirm", checkIndex?: number) {
-    if (operationRef.current || recoveryInFlight.current || blocked || result || !review || !integration || !sameReview(integration.review, review)) return;
-    const receipts = matchingReceipts(integration, review);
+  async function integrationAction(action: "verify" | "plan" | "confirm") {
+    if (operationRef.current || blocked || result || !review || !integration || !sameReview(integration.review, review)) return;
+    const receipts = matchingReceipts(integration, review, ownReceiptIds);
     if (action === "plan" && !receipts) return;
     if (action === "confirm" && (!proposal?.actionId || !receipts || !proposalMatches(proposal.plan, review, sessionId, receipts))) return;
-    if (action === "verify" && (checkIndex === undefined || !integration.checks[checkIndex])) return;
+    if (action === "verify" && (!integration.checks.length || integration.checks.some((check, index) => check.checkIndex !== index))) return;
+    if (action === "verify") { setOwnReceiptIds([]); setIntegration({ ...integration, receipts: [] }); }
     operationRef.current = true;
     const version = ++integrationGeneration.current;
     setOperation(action);
     setIntegrationError(null);
+    setDiagnosticWarning(null);
     if (action !== "confirm") setProposal(null);
     try {
-      const payload = action === "verify" ? { sessionId, operation: "verify", checkIndex }
+      const payload = action === "verify" ? { sessionId, operation: "verify", checkIndexes: integration.checks.map((check) => check.checkIndex) }
         : action === "plan" ? { sessionId, operation: "plan", receiptIds: receipts!.map((receipt) => receipt.id) }
           : { sessionId, operation: "confirm", planId: proposal!.plan.planId, approvePlanId: proposal!.plan.planId, actionId: proposal!.actionId };
       const response = await fetch("/api/git/integration", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
       if (action === "verify") {
-        const body = await bodyOrError<{ receipt: ReceiptMetadata; recoveryWarning?: string }>(response, sessionId);
+        const body = await bodyOrError<{ receipts: ReceiptMetadata[]; actionIds: string[] } & DiagnosticResponse>(response, sessionId);
         if (version !== integrationGeneration.current) return;
-        if (body.recoveryWarning) { setIntegrationError(body.recoveryWarning); setBlocked(true); return; }
-        // Reload the server's matching receipts rather than trusting a locally cached result.
+        setDiagnosticWarning(diagnosticNotice(body));
+        // Re-read current evidence, but pin ONLY this explicit batch, not an
+        // earlier successful batch that happens to survive on the server.
+        const ids = Array.isArray(body.receipts) ? body.receipts.map((receipt) => receipt.id) : [];
         const latest = await bodyOrError<IntegrationStatus>(await fetch(`/api/git/integration?${new URLSearchParams({ sessionId })}`, { cache: "no-store" }));
         if (version !== integrationGeneration.current) return;
-        if (sameReview(latest.review, review) && body.receipt.id && latest.receipts.some((receipt) => receipt.id === body.receipt.id)) setIntegration(latest);
-        else throw new Error("Verification receipt no longer matches this checkout. Refresh before continuing.");
+        if (!matchingReceipts(latest, review, ids)) throw new Error("Verification batch no longer matches this checkout. Refresh before a new explicit check run.");
+        setOwnReceiptIds(ids);
+        setIntegration(latest);
       } else if (action === "plan") {
-        const body = await bodyOrError<{ plan: LocalIntegrationPlan; actionId: string }>(response, sessionId);
+        const body = await bodyOrError<{ plan: LocalIntegrationPlan; actionId: string } & DiagnosticResponse>(response, sessionId);
         if (version !== integrationGeneration.current) return;
+        setDiagnosticWarning(diagnosticNotice(body));
         const plan = body.plan;
         if (!proposalMatches(plan, review, sessionId, receipts!)) {
           throw new Error("Proposal identities or candidate patch do not match the review. Refresh before continuing.");
@@ -209,6 +236,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
         // Never hide a reported partial-state, even if the panel was closed while applying.
         if (body.status !== "integrated" && body.status !== "partial-state") throw new Error("Unexpected integration result; inspect both worktrees");
         setResult(body);
+        setDiagnosticWarning(diagnosticNotice(body));
         setProposal(null);
         setBlocked(true);
         setReview(null);
@@ -271,7 +299,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
     <div className="min-w-0 space-y-2">
       <p className="text-xs text-text-muted">Session checkout: <span className="break-all font-mono">{cwd}</span>. Branches are read from this persisted session and its local integration policy, not chosen here.</p>
       <p className="text-xs text-amber-500">Patches below are read-only comparisons of committed trees, not uncommitted checkout files. Verification, proposal and integration are separate explicit actions.</p>
-      <button type="button" disabled={operation !== null || recoveryBusy} onClick={refresh} className="min-h-8 text-xs text-accent hover:underline disabled:opacity-50">Refresh review</button>
+      <button type="button" disabled={operation !== null} onClick={refresh} className="min-h-8 text-xs text-accent hover:underline disabled:opacity-50">Refresh review</button>
       {loading && <p role="status">Loading local branches and commit identities…</p>}
       {error && <p role="alert" className="break-words text-red-400">{error}</p>}
       {!loading && review && <div className="min-w-0 space-y-2">
@@ -326,26 +354,26 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
         </div>}
       </div>}
       {integrationError && <p role="alert" className="break-words text-red-400">{integrationError}</p>}
-      {/* Remain available when integration GET fails (including quarantine 409) or review cannot load. */}
-      {recoveryAccepted && <p role="status">Recovery accepted. Review and receipts are being refreshed; no check was rerun and no passing receipt was created.</p>}
-      <GitCheckRecoveryPanel key={`${sessionId}:${revision}`} sessionId={sessionId} disabled={operation !== null}
-        onRecoveringChange={(busy) => { recoveryInFlight.current = busy; setRecoveryBusy(busy); }}
-        onRecovered={() => { setRecoveryAccepted(true); if (!operationRef.current) reloadReview(); }} />
+      {diagnosticWarning && <p role="status" className="break-words text-amber-500">{diagnosticWarning}</p>}
+      {/* Informational even when review/status is unavailable; never an admission gate. */}
+      <GitCheckRecoveryPanel />
       {integration && <div className="space-y-2 rounded border border-border p-2" aria-label="Local verification and integration">
         <strong>Local verification and integration</strong>
         {!review || !sameReview(integration.review, review) ? <p className="text-xs text-amber-500">Integration review identities differ or are unavailable. Refresh before verification.</p> : <>
           <p className="text-xs text-amber-500">Checks execute saved local commands and may change files. A passing check is not approval. Only an ordinary local merge is supported; no cleanup, fetch or push.</p>
           {integration.checks.length === 0 ? <p>No saved verification checks; proposal unavailable.</p> : <ol className="space-y-2">
             {integration.checks.map((check, index) => {
-              const matching = integration.receipts.findLast((item) => item.checkIndex === index && item.finishedAt <= Date.now() && Date.now() - item.finishedAt < 15 * 60_000);
+              const matching = matchingReceipts(integration, review, ownReceiptIds)?.[index];
               return <li key={index} className="rounded border border-border p-2 text-xs">
                 <p>Check {index + 1}: {check.label}</p>
                 {matching ? <p className="break-all font-mono">Passed: receipt {matching.id}; check index {matching.checkIndex}; finished {new Date(matching.finishedAt).toLocaleString()}; log digest {matching.logDigest}</p> : <p>No matching passing receipt for the current review.</p>}
-                <button type="button" disabled={!review || blocked || !!result || operation !== null || recoveryBusy} onClick={() => void integrationAction("verify", index)} className="min-h-8 rounded border border-border px-2 text-accent disabled:opacity-50">{operation === "verify" ? "Verifying…" : `Run check ${index + 1}`}</button>
               </li>;
             })}
           </ol>}
-          <button type="button" disabled={!matchingReceipts(integration, review) || blocked || !!result || operation !== null || recoveryBusy}
+          <p className="text-xs text-text-muted">All required checks run together in saved order. Independent runs cannot be combined. Extended recipes are unsupported by this legacy paired integration path; no required check is waived.</p>
+          <button type="button" disabled={!integration.checks.length || blocked || !!result || operation !== null}
+            onClick={() => void integrationAction("verify")} className="min-h-8 rounded border border-border px-3 text-accent disabled:opacity-50">{operation === "verify" ? "Running required checks…" : "Run required checks"}</button>
+          <button type="button" disabled={!matchingReceipts(integration, review, ownReceiptIds) || blocked || !!result || operation !== null}
             onClick={() => void integrationAction("plan")} className="min-h-8 rounded border border-border px-3 text-accent disabled:opacity-50">{operation === "plan" ? "Preparing…" : "Prepare exact integration proposal"}</button>
         </>}
       </div>}
@@ -376,7 +404,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
           {proposal.plan.diff.hasBinaryChanges && <p className="text-amber-500">Binary changes are included but contents are not displayed.</p>}
           {proposal.plan.diff.patch ? <pre className="max-h-80 min-w-0 overflow-auto whitespace-pre-wrap break-all rounded border border-border bg-bg p-2 font-mono text-text">{proposal.plan.diff.patch}</pre> : <p>No text changes in the candidate.</p>}
         </div>
-        <button type="button" disabled={operation !== null || recoveryBusy || blocked || !proposal.actionId || !review || !integration || !matchingReceipts(integration, review) || Date.now() >= proposal.plan.expiresAt} onClick={() => void integrationAction("confirm")}
+        <button type="button" disabled={operation !== null || blocked || !proposal.actionId || !review || !integration || !matchingReceipts(integration, review, ownReceiptIds) || Date.now() >= proposal.plan.expiresAt} onClick={() => void integrationAction("confirm")}
           className="min-h-8 rounded border border-amber-500 px-3 font-medium text-text disabled:opacity-50">{operation === "confirm" ? "Integrating…" : `Confirm exact plan ${proposal.plan.planId}`}</button>
       </div>}
       {result && <div role="status" className="space-y-1 rounded border border-amber-500 p-2 text-xs">
@@ -384,8 +412,7 @@ export function GitMergeReviewPanel({ sessionId, cwd }: Props) {
         <p className="break-all font-mono">Target: {result.targetBranch}; {"method" in result
           ? `${result.status === "integrated" ? "fast-forwarded to existing feature tip" : "intended fast-forward (ref update unproven)"}: ${result.featureOid}`
           : `${result.status === "integrated" ? "merge commit" : "intended merge commit (ref update unproven)"}: ${result.mergeOid}`}</p>
-        {result.status === "partial-state" && <p className="break-all text-amber-500">{result.reason} Recovery record: {result.recoveryPath}. Inspect both worktrees, refs and index before any further action. Do not retry blindly.</p>}
-        {result.recoveryWarning && <p role="alert" className="text-amber-500">{result.recoveryWarning}</p>}
+        {result.status === "partial-state" && <p className="break-all text-amber-500">{result.reason}{result.recoveryPath ? ` Diagnostic record: ${result.recoveryPath}.` : ""} Inspect both worktrees, refs and index before any further action. Do not retry blindly.</p>}
       </div>}
     </div>
   </section>;

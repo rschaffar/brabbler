@@ -1,19 +1,16 @@
-// Server-only callback adapter. Never install from route JSON, saved grants or history.
+// Internal native state checks and optional diagnostics. No application reservations.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { assertGitOperationAdmission, beginSupervisedGitOperationIntent,
-  type GitOperationReservation } from "./git-operation-admission";
 import { gitExecEnv } from "./git-exec";
 import { parseBoundedGitWorktreePaths, type GitProjectResources } from "./git-project-resources";
-import { readGitWorkspaceNativeProof, type GitWorkspaceAdmission, type GitWorkspaceCompletedProof, type GitWorkspaceEvidence,
-  type GitWorkspaceFailureEvidence } from "./git-workspace-operation";
+import type { GitWorkspaceAdmission, GitWorkspaceEvidence, GitWorkspaceKnownParentCreation } from "./git-workspace-operation";
 import { validLocalBranchName } from "./git-workflow-policy";
 
 export const admissionHash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 export const admissionEqual = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-export function admissionRefuse(): never { throw new Error("Native Git admission requires manual recovery; do not retry."); }
+export function admissionRefuse(): never { throw new Error("Native Git state changed or is unsupported."); }
 export function admissionKeys(value: unknown, names: readonly string[]): value is Record<string, unknown> {
   return !!value && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype &&
     Object.keys(value).length === names.length && names.every((name) => Object.hasOwn(value, name));
@@ -86,6 +83,10 @@ export function admissionAbsent(file: string): void {
 const markers = ["MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer", "BISECT_START",
   "AUTO_MERGE", "MERGE_AUTOSTASH", "REBASE_HEAD", "ORIG_HEAD.lock", "index.lock", "HEAD.lock", "config.lock", "packed-refs.lock"];
 export function admissionSafeFiles(r: GitProjectResources): void {
+  for (const file of ["config", "packed-refs"]) {
+    try { admissionBytes(path.join(r.commonDir, file), 2 * 1024 * 1024); }
+    catch (error) { if (file === "config" || (error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  }
   for (const dir of new Set([r.gitDir, r.commonDir])) {
     for (const file of ["info/attributes", "info/grafts", "shallow", "config.worktree"]) admissionAbsent(path.join(dir, file));
     if (fs.readdirSync(dir).some((name) => name.startsWith("sharedindex."))) admissionRefuse();
@@ -96,9 +97,11 @@ export function admissionSafeFiles(r: GitProjectResources): void {
       if (names.length > 10000 || names.some((name) => !name.endsWith(".sample"))) admissionRefuse();
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   }
+  if (admissionGit(r, "for-each-ref", "--format=%(refname)", "refs/replace").trim()) admissionRefuse();
 }
 export function admissionClean(r: GitProjectResources, oid: string, tree: string): void {
-  for (const dir of new Set([r.gitDir, r.commonDir])) for (const marker of markers) admissionAbsent(path.join(dir, marker));
+  for (const marker of markers) admissionAbsent(path.join(r.gitDir, marker));
+  for (const marker of ["config.lock", "packed-refs.lock"]) admissionAbsent(path.join(r.commonDir, marker));
   if (admissionGit(r, "symbolic-ref", "--quiet", "HEAD").trim() !== `refs/heads/${r.branch}` ||
     admissionGit(r, "rev-parse", "HEAD^{commit}").trim() !== oid || admissionGit(r, "rev-parse", "HEAD^{tree}").trim() !== tree ||
     admissionGit(r, "status", "--porcelain=v1", "-z", "--untracked-files=all") !== "" ||
@@ -136,8 +139,6 @@ export function admissionTracked(r: GitProjectResources, oid: string, workspace:
     [dir, dirs.get(dir), String(fs.lstatSync(path.join(r.cwd, dir), { bigint: true }).mode)]), ...files]));
 }
 function workspaceSnapshot(r: GitProjectResources, s: GitWorkspaceEvidence["sourceSnapshot"]): void {
-  // Check the captured safe configuration before commands such as status can
-  // consult attributes/filters. A late authority callback is not a config waiver.
   if (admissionHash(admissionGit(r, "config", "--list", "--null")) !== s.configDigest) admissionRefuse();
   admissionSafeFiles(r);
   const tree = admissionGit(r, "rev-parse", `${s.oid}^{tree}`).trim();
@@ -148,134 +149,63 @@ function workspaceSnapshot(r: GitProjectResources, s: GitWorkspaceEvidence["sour
     admissionTracked(r, s.oid, true) !== s.trackedFilesDigest) admissionRefuse();
   admissionClean(r, s.oid, tree);
 }
-function expectedWorkspace(e: GitWorkspaceEvidence) {
-  const rows = admissionRows(e.registrations), added = `worktree ${e.request.destinationPath}\0HEAD ${e.resultOid}\0branch refs/heads/${e.request.branch}`;
-  const refs = e.refs.trimEnd().split("\n").filter(Boolean);
-  if (e.request.mode === "create") refs.push(`refs/heads/${e.request.branch}\0${e.resultOid}\0`);
-  return { rows: [...rows, added].sort(), refs: refs.sort() };
-}
-function workspaceDestinationEntries(r: GitProjectResources, oid: string): void {
-  const children = new Map<string, Set<string>>([["", new Set([".git"])]]);
-  for (const row of admissionGit(r, "ls-tree", "-r", "-z", `${oid}^{tree}`).split("\0").filter(Boolean)) {
-    let parent = "";
-    for (const part of row.slice(row.indexOf("\t") + 1).split("/")) {
-      const entries = children.get(parent) ?? new Set<string>(); entries.add(part); children.set(parent, entries);
-      parent = parent ? `${parent}/${part}` : part;
-    }
-  }
-  for (const [relative, expected] of children) {
-    const dir = path.join(r.cwd, relative), seen = fs.readdirSync(dir);
-    if (seen.length !== expected.size || seen.some((name) => !expected.has(name))) admissionRefuse();
-    for (const name of seen) {
-      const child = relative ? `${relative}/${name}` : name, s = fs.lstatSync(path.join(r.cwd, child));
-      if (s.isSymbolicLink() || (children.has(child) ? !s.isDirectory() : !s.isFile())) admissionRefuse();
-    }
-  }
-}
-function verifyWorkspace(e: GitWorkspaceEvidence, p: GitWorkspaceCompletedProof,
-  originalCheckouts: ReturnType<typeof admissionInventory>["checkouts"]) {
-  if (!admissionKeys(p, ["version", "outcome", "actionId", "mode", "destination", "sourceOid", "baseOid", "branchRef", "resultOid", "treeOid",
-    "sourceIndexDigest", "destinationIndexDigest", "sourceTrackedFilesDigest", "destinationTrackedFilesDigest", "configDigest", "refsDigest",
-    "registrationsDigest", "backlinkDigest", "status", ...(p?.knownParentCreation ? ["knownParentCreation"] : [])]) || p.version !== 1 || p.outcome !== "completed" || p.actionId !== e.actionId ||
-    p.mode !== e.request.mode || p.sourceOid !== e.sourceSnapshot.oid || p.baseOid !== e.request.expectedBaseOid ||
-    p.branchRef !== `refs/heads/${e.request.branch}` || p.resultOid !== e.resultOid || p.treeOid !== e.treeOid || p.status !== "clean") admissionRefuse();
-  const d = p.destination;
-  if (d.cwd !== e.request.destinationPath || d.branch !== e.request.branch || d.projectRoot !== e.source.projectRoot ||
-    d.commonDir !== e.source.commonDir || path.dirname(d.gitDir) !== path.join(d.commonDir, "worktrees") ||
-    !admissionEqual(d.identities.common, e.source.identities.common) || !admissionEqual(d.identities.project, e.source.identities.project)) admissionRefuse();
+/** Final native boundary check. No external callback, ledger or busy inventory. */
+export function assertGitWorkspaceNativeStateSync(e: GitWorkspaceEvidence, parent?: GitWorkspaceKnownParentCreation): void {
+  if (e.version !== 2) admissionRefuse();
   workspaceSnapshot(e.source, e.sourceSnapshot);
   if (e.baseCheckout && e.baseSnapshot) workspaceSnapshot(e.baseCheckout, e.baseSnapshot);
+  admissionAbsent(e.request.destinationPath);
   if (e.parentCreation) {
-    const plan = e.parentCreation, known = p.knownParentCreation;
-    if (!known || !admissionKeys(known, ["path", "identity", "mode", "ownerUid", "ancestorPath", "ancestorIdentity"]) ||
-      known.path !== plan.path || known.ancestorPath !== plan.ancestorPath || known.mode !== 0o700 || known.mode !== plan.mode ||
-      known.ownerUid !== process.geteuid?.() || !admissionEqual(known.ancestorIdentity, plan.ancestorIdentity)) admissionRefuse();
-    admissionPhysical(plan.ancestorPath, plan.ancestorIdentity); admissionPhysical(plan.path, known.identity);
-    const s = fs.lstatSync(plan.path);
-    if ((s.mode & 0o7777) !== known.mode || s.uid !== known.ownerUid) admissionRefuse();
+    const p = e.parentCreation;
+    admissionPhysical(p.ancestorPath, p.ancestorIdentity);
+    if (!parent) admissionAbsent(p.path);
+    else {
+      if (parent.path !== p.path || parent.mode !== p.mode || parent.ownerUid !== process.geteuid?.() ||
+        parent.ancestorPath !== p.ancestorPath || !admissionEqual(parent.ancestorIdentity, p.ancestorIdentity)) admissionRefuse();
+      admissionPhysical(p.path, parent.identity);
+      const s = fs.lstatSync(p.path);
+      if ((s.mode & 0o7777) !== parent.mode || s.uid !== parent.ownerUid) admissionRefuse();
+    }
   } else {
-    if (!e.parentIdentity || p.knownParentCreation) admissionRefuse();
+    if (!e.parentIdentity || parent) admissionRefuse();
     admissionPhysical(path.dirname(e.request.destinationPath), e.parentIdentity);
   }
-  admissionClean(d, e.resultOid, e.treeOid); workspaceDestinationEntries(d, e.resultOid);
-  const current = admissionInventory(e.source), expected = expectedWorkspace(e);
-  const survivingCheckouts = { ...current.checkouts }; delete survivingCheckouts[d.cwd];
-  if (!admissionEqual(survivingCheckouts, originalCheckouts)) admissionRefuse();
-  if (!admissionEqual(admissionRows(current.registrations).sort(), expected.rows) ||
-    !admissionEqual(current.refs.trimEnd().split("\n").filter(Boolean).sort(), expected.refs) ||
-    admissionGit(e.source, "show-ref", "--verify", "--hash", `refs/heads/${e.request.baseBranch}`).trim() !== e.request.expectedBaseOid ||
-    p.sourceIndexDigest !== e.sourceSnapshot.indexDigest || p.sourceTrackedFilesDigest !== e.sourceSnapshot.trackedFilesDigest ||
-    p.destinationIndexDigest !== admissionHash(admissionBytes(path.join(d.gitDir, "index"))) ||
-    p.destinationTrackedFilesDigest !== admissionTracked(d, e.resultOid, true) || p.configDigest !== e.sourceSnapshot.configDigest ||
-    p.configDigest !== admissionHash(admissionGit(d, "config", "--list", "--null")) || p.refsDigest !== admissionHash(current.refs) ||
-    p.registrationsDigest !== admissionHash(current.registrations) || p.backlinkDigest !== admissionHash(admissionBytes(path.join(d.gitDir, "gitdir")))) admissionRefuse();
-  return current;
-}
-export interface GitWorkspaceAdmissionOptions {
-  agentDir: string;
-  /** The coordinator must create/anchor its journal with THIS native-generated ID. */
-  onIntent(evidence: Readonly<GitWorkspaceEvidence>): Promise<void>;
-  /** Runs before release; rejection keeps both completed artifact and quarantine. */
-  onCompleted(proof: Readonly<GitWorkspaceCompletedProof>): Promise<void>;
-  onFailure?(facts: Readonly<GitWorkspaceFailureEvidence>): Promise<void>;
-}
-export function createGitWorkspaceAdmission(options: GitWorkspaceAdmissionOptions): GitWorkspaceAdmission {
-  return {
-    async assertAdmission(source, destination, parentCreation) {
-      admissionAbsent(destination);
-      if (parentCreation) {
-        if (parentCreation.path !== path.dirname(destination) || parentCreation.path !== `${source.projectRoot}-worktrees` ||
-          parentCreation.expectedAbsent !== true || parentCreation.mode !== 0o700 ||
-          parentCreation.ancestorPath !== path.dirname(source.projectRoot)) admissionRefuse();
-        admissionAbsent(parentCreation.path); admissionPhysical(parentCreation.ancestorPath, parentCreation.ancestorIdentity);
+  const selected = new Set([e.source.branch, e.request.baseBranch, e.request.branch].map((b) => `refs/heads/${b}`));
+  const overlap = (a: string, b: string) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+  const refs = admissionGit(e.source, "for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)", "refs");
+  if (refs.split("\n").length > 1001 || refs.split("\n").filter((row) => selected.has(row.split("\0")[0])).sort().join("\n") + "\n" !== e.refs) admissionRefuse();
+  const registrations = admissionGit(e.source, "worktree", "list", "--porcelain", "-z");
+  const relevant = admissionRows(registrations).filter((row) => {
+    const fields = row.split("\0"), cwd = fields[0].slice(9);
+    return fields.some((f) => f.startsWith("branch ") && selected.has(f.slice(7))) ||
+      overlap(cwd, e.request.destinationPath) || overlap(cwd, e.request.sourceCheckoutPath);
+  }).sort().join("\0\0") + "\0\0";
+  if (relevant !== e.registrations) admissionRefuse();
+  for (const branch of selected) {
+    for (const prefix of ["", "logs/"]) {
+      const file = path.join(e.source.commonDir, prefix + branch);
+      let dir = path.dirname(file);
+      while (dir !== e.source.commonDir) {
+        try { admissionPhysical(dir, admissionIdentity(dir)); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+        dir = path.dirname(dir);
       }
-      await assertGitOperationAdmission(source, options.agentDir);
-    },
-    async beginIntent(input) {
-      const e = structuredClone(input), initial = admissionInventory(e.source);
-      if (initial.refs !== e.refs || initial.registrations !== e.registrations) admissionRefuse();
-      admissionAbsent(e.request.destinationPath); workspaceSnapshot(e.source, e.sourceSnapshot);
-      const op: GitOperationReservation = await beginSupervisedGitOperationIntent(e.source, e.actionId, "workspace", options.agentDir);
-      op.recordNativeEvidence("binding", { evidence: e, checkouts: initial.checkouts });
-      await options.onIntent(structuredClone(e));
-      let measured: GitWorkspaceCompletedProof | undefined, token: import("./git-operation-admission").GitNativeEvidenceSeal | undefined;
-      const transition = (proof: GitWorkspaceCompletedProof) => {
-        // A structurally valid payload and matching Git state do not establish
-        // that THIS native verifier issued the result. Require private identity.
-        const native = readGitWorkspaceNativeProof(proof);
-        if (!native || !admissionEqual(native, proof)) admissionRefuse();
-        if (measured) { if (!admissionEqual(measured, proof)) admissionRefuse(); verifyWorkspace(e, proof, initial.checkouts); return; }
-        verifyWorkspace(e, proof, initial.checkouts);
-        // Publication precedes the inventory allowance change, never the reverse.
-        token = op.recordNativeEvidence("completed", proof);
-        measured = structuredClone(proof);
-      };
-      const assertOwned = (proof?: GitWorkspaceCompletedProof) => {
-        if (proof) transition(proof);
-        op.assertOwned();
-        if (measured) verifyWorkspace(e, measured, initial.checkouts);
-        else {
-          workspaceSnapshot(e.source, e.sourceSnapshot);
-          if (e.baseCheckout && e.baseSnapshot) workspaceSnapshot(e.baseCheckout, e.baseSnapshot);
-          if (e.parentIdentity) admissionPhysical(path.dirname(e.request.destinationPath), e.parentIdentity);
-          if (e.parentCreation) admissionPhysical(e.parentCreation.ancestorPath, e.parentCreation.ancestorIdentity);
-          if (!admissionEqual(admissionInventory(e.source), initial)) admissionRefuse();
-          admissionAbsent(e.request.destinationPath);
-        }
-      };
-      return {
-        assertOwned,
-        async completed(proof) {
-          transition(proof); assertOwned();
-          await options.onCompleted(structuredClone(measured!));
-          assertOwned(); op.resolveNativeOutcome(token!);
-        },
-        async recordFailure(failure) {
-          if (failure.version !== 1 || failure.actionId !== e.actionId || failure.recoveryRequired !== true) admissionRefuse();
-          op.recordNativeEvidence("failure", structuredClone(failure));
-          await options.onFailure?.(structuredClone(failure));
-        },
-      };
-    },
-  };
+      admissionAbsent(`${file}.lock`);
+      try {
+        const data = admissionBytes(file);
+        if (!prefix && data.toString().startsWith("ref:")) admissionRefuse();
+        if (!prefix && e.request.mode === "create" && branch === `refs/heads/${e.request.branch}`) admissionRefuse();
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    }
+  }
+  const worktrees = path.join(e.source.commonDir, "worktrees");
+  try { admissionPhysical(worktrees, admissionIdentity(worktrees)); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+}
+export interface GitWorkspaceAdmissionOptions extends GitWorkspaceAdmission {
+  /** Retained only as a diagnostics location; never consulted for authorization. */
+  agentDir?: string;
+}
+export function createGitWorkspaceAdmission(options: GitWorkspaceAdmissionOptions = {}): GitWorkspaceAdmission {
+  return { onIntent: options.onIntent, onCompleted: options.onCompleted, onFailure: options.onFailure };
 }

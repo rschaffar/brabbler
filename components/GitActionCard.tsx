@@ -39,7 +39,8 @@ function actionStateLabel(record: GitActionRecord): string {
 export function GitActionCard({ actionId, timestamp, sessionId }: { actionId: string; timestamp?: number; sessionId?: string }) {
   const context = useGitActionContext();
   const currentSessionId = context?.sessionId ?? sessionId;
-  return <MountedGitActionCard key={`${currentSessionId}:${actionId}`} actionId={actionId} timestamp={timestamp} sessionId={currentSessionId} />;
+  const requestId = matchingLiveGitRequest(context?.liveRequest, actionId)?.id ?? "history";
+  return <MountedGitActionCard key={`${currentSessionId}:${actionId}:${requestId}`} actionId={actionId} timestamp={timestamp} sessionId={currentSessionId} />;
 }
 
 function MountedGitActionCard({ actionId, timestamp, sessionId }: { actionId: string; timestamp?: number; sessionId?: string | null }) {
@@ -50,8 +51,9 @@ function MountedGitActionCard({ actionId, timestamp, sessionId }: { actionId: st
   const [expanded, setExpanded] = useState(false);
   const [artifact, setArtifact] = useState<GitActionHistoryResponse | null>(null);
   const [artifactError, setArtifactError] = useState<string | null>(null);
-  const liveRequest = history?.record === null || history?.record && context?.liveRequest?.candidate.kind !== history.record.kind
-    ? null : matchingLiveGitRequest(context?.liveRequest, actionId, history?.record?.state);
+  // Current server pending request owns its exact question. Optional/corrupt or
+  // terminal history cannot create OR suppress that live request.
+  const liveRequest = matchingLiveGitRequest(context?.liveRequest, actionId);
   useLayoutEffect(() => registerAnchor?.(actionId), [registerAnchor, actionId]);
   useEffect(() => {
     if (!sessionId) return;
@@ -61,9 +63,10 @@ function MountedGitActionCard({ actionId, timestamp, sessionId }: { actionId: st
     }, setError);
   }, [sessionId, actionId]);
   useEffect(() => {
-    if (!expanded || !sessionId || liveRequest) return;
+    if (!expanded || !sessionId) return;
     const controller = new AbortController();
     setArtifactError(null);
+    setArtifact(null);
     void readGitActionHistory(sessionId, actionId, true, controller.signal).then((next) => {
       if (controller.signal.aborted) return;
       // Metadata polling owns state. A slower artifact read must not restore
@@ -92,8 +95,7 @@ export function GitActionCardView({ actionId, timestamp, history, error, expande
   const titleId = useId();
   const detailId = useId();
   const record = history?.record;
-  const request = record === null || record && liveRequest?.candidate.kind !== record.kind
-    ? null : matchingLiveGitRequest(liveRequest, actionId, record?.state);
+  const request = matchingLiveGitRequest(liveRequest, actionId);
   const live = request && onRespond;
   const summary = record?.summary;
   const time = record?.updatedAt ?? timestamp;
@@ -114,12 +116,23 @@ export function GitActionCardView({ actionId, timestamp, history, error, expande
       {summary?.workingWorkspaceVerification && <p className="text-xs">Commit check evidence: working-workspace · candidateTreeVerified: false · repositoryChecksWaived: false · required saved indexes: {summary.workingWorkspaceVerification.requiredSavedIndexes.join(", ") || "none"}</p>}
       {record?.intended && <PreparedOutcome intended={record.intended} />}
       {record && <ActionOutcome record={record} />}
+      {(record?.diagnostics?.status === "unavailable" || record?.outcome?.diagnostics?.status === "unavailable") && <p role="status" className="text-xs text-amber-500">Some history or check output is unavailable. This does not change the recorded Git outcome.</p>}
       {record?.reason && <p className="break-words text-xs">{record.reason}</p>}
       {record?.state === "recovery-required" && <p className="text-xs">Execution may have changed Git state. Inspect before any new action; this card cannot retry it.</p>}
       {!live && record && ["proposed", "awaiting-decision"].includes(record.state) && <p className="text-xs text-text-muted">Historical status only. No live approval request is attached.</p>}
       {error && <p role="status" className="break-words text-xs">{error}</p>}
       {!record && <p role="status" className="text-xs text-text-muted">{history ? history.unavailable || "Action record unavailable. Captured history has not been replaced with current Git data." : error ? "Action record unavailable." : "Loading action history…"}</p>}
     </header>
+    {live && (request.candidate.kind === "workspace" || request.candidate.kind === "preparation") && <div className="border-t border-border px-4 py-2">
+      <button type="button" aria-expanded={expanded} aria-controls={detailId} onClick={onToggle} className="text-xs text-accent">{expanded ? "Hide captured patch" : "Show captured patch"}</button>
+      {expanded && <div id={detailId} className="mt-2">
+        {artifactError || artifact?.unavailable ? <p role="status">Captured patch unavailable: {artifactError || artifact?.unavailable}. No current checkout data is substituted.</p>
+          : !artifact ? <p role="status">Loading captured patch…</p>
+          : artifact.record?.id === actionId && artifact.record.kind === request.candidate.kind && ["proposed", "awaiting-decision"].includes(artifact.record.state) && artifact.candidate?.diff
+            ? <MultiFileGitDiff patch={artifact.candidate.diff.patch} hasBinaryChanges={artifact.candidate.diff.hasBinaryChanges} before={artifact.candidate.diff.fromTreeOid} after={artifact.candidate.diff.toTreeOid} />
+            : <p role="status">No current captured patch is available. Historical data cannot replace the live candidate.</p>}
+      </div>}
+    </div>}
     {live ? <div inert={interactionBlocked} className="px-3"><GitActionDialog key={request.id} request={request} onRespond={onRespond} /></div> : record && <>
       <button type="button" aria-expanded={expanded} aria-controls={detailId} onClick={onToggle} className="w-full border-t border-border px-4 py-2 text-left text-xs text-accent hover:bg-bg-hover">
         {expanded ? "Hide captured candidate" : `Captured candidate${summary?.paths ? ` · ${summary.paths.length} file${summary.paths.length === 1 ? "" : "s"}` : ""}`}
@@ -232,7 +245,8 @@ function CapturedCheckRuns({ runs }: { runs: GitActionCheckExecution[] }) {
     {runs.map((run) => <p key={run.checkIndex}>Actual saved index {run.checkIndex} · unit {run.unit} · exit {run.exitStatus ?? "unknown"} · containment complete {String(run.containmentComplete)}
       {run.cgroupIdentity && ` · cgroup ${run.cgroupIdentity}`}{run.launcherIdentity && ` · original launcher instance ${run.launcherIdentity}`}{run.invocation && ` · invocation ${run.invocation}`}{run.payload && ` · payload ${run.payload}`}
       {` · started ${run.startedAt} · finished ${run.finishedAt} · log ${run.logDigest} (${run.logBytes} bytes)`}
-      {run.receipt && ` · captured receipt ${run.receipt.id} · digest ${run.receipt.sha256} · expires ${run.receipt.expiresAt}`}</p>)}
+      {run.receipt && ` · captured receipt ${run.receipt.id} · digest ${run.receipt.sha256} · expires ${run.receipt.expiresAt}`}
+      {run.diagnostics?.status === "unavailable" && <span className="text-amber-500"> · some diagnostics unavailable</span>}</p>)}
     <p>Captured process/log/receipt metadata only. No log contents, live receipt, integration approval or human acknowledgement is restored.</p>
   </div>;
 }

@@ -6,7 +6,8 @@ import { access, lstat, mkdir, open, opendir, realpath, type FileHandle } from "
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify, types } from "node:util";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "./file-access";
-import { acquireGitCheckoutGate } from "./git-checkout-gate";
+import { captureGitMutationAuthority, type GitMutationInvocation, type GitMutationInvocationAuthority } from "./git-mutation-invocation";
+import { assertGitWorkspaceNativeStateSync } from "./git-workspace-admission";
 import { gitExecEnv } from "./git-exec";
 import { parseBoundedGitWorktreePaths, revalidateGitProjectResources, selectCanonicalGitResources,
   type GitProjectResources } from "./git-project-resources";
@@ -60,7 +61,7 @@ export type GitWorkspaceRequest = {
 } & ({ mode: "create" } | { mode: "attach"; expectedTipOid: string });
 export class GitWorkspaceOperationError extends Error {
   constructor(readonly code: "invalid-selection" | "unsafe" | "stale" | "access-denied" | "recovery-required",
-    message: string, readonly actionId?: string) { super(message); this.name = "GitWorkspaceOperationError"; }
+    message: string, readonly actionId?: string, readonly facts?: GitWorkspaceFailureEvidence) { super(message); this.name = "GitWorkspaceOperationError"; }
 }
 function refuse(code: GitWorkspaceOperationError["code"] = "unsafe"): never {
   throw new GitWorkspaceOperationError(code, "Workspace operation refused; inspect the explicit resources.");
@@ -128,10 +129,6 @@ function bindCurrentSync(options: { assertCurrentSync(): void }): () => void {
   // an action/candidate payload. Runtime binds its live closure inside authorize.
   return () => syncVoid(Reflect.apply(assertion, options, []));
 }
-function assertOwnedSync(intent: GitWorkspaceIntent, proof?: GitWorkspaceCompletedProof): void {
-  if (types.isAsyncFunction(intent.assertOwned)) refuse("invalid-selection");
-  syncVoid(intent.assertOwned(proof));
-}
 async function names(dir: string): Promise<string[]> {
   const output: string[] = [];
   const fd = await opendir(dir);
@@ -171,9 +168,8 @@ async function safeConfig(repo: Repo): Promise<string> {
   return hash(config);
 }
 async function noMarkers(repo: Repo): Promise<void> {
-  for (const dir of new Set([repo.gitDir, repo.commonDir])) {
-    for (const marker of markers) await absent(join(dir, marker));
-  }
+  for (const marker of markers) await absent(join(repo.gitDir, marker));
+  for (const marker of ["config.lock", "packed-refs.lock"]) await absent(join(repo.commonDir, marker));
 }
 async function safeTree(repo: Repo, oid: string): Promise<string> {
   if ((await git(repo, ["cat-file", "-t", oid])).trim() !== "commit") refuse();
@@ -277,12 +273,18 @@ async function checkout(repo: Repo, selection: GitProjectResources): Promise<Che
     indexIdentity: identity(await lstat(join(repo.gitDir, "index"), { bigint: true })),
     headIdentity: identity(await lstat(join(repo.gitDir, "HEAD"), { bigint: true })), trackedFilesDigest };
 }
-async function inventory(repo: Repo): Promise<{ refs: string; registrations: string }> {
+async function inventory(repo: Repo, request: GitWorkspaceRequest, sourceBranch: string): Promise<{ refs: string; registrations: string }> {
   const refs = await git(repo, ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)", "refs"]);
   if (refs.split("\n").length > 1001) refuse();
   const registrations = await git(repo, ["worktree", "list", "--porcelain", "-z"]);
   parseBoundedGitWorktreePaths(Buffer.from(registrations));
-  return { refs, registrations };
+  const selected = new Set([sourceBranch, request.baseBranch, request.branch].map((b) => `refs/heads/${b}`));
+  return { refs: refs.split("\n").filter((row) => selected.has(row.split("\0")[0])).sort().join("\n") + "\n",
+    registrations: registrations.slice(0, -2).split("\0\0").filter((row) => {
+      const fields = row.split("\0"), path = fields[0].slice(9);
+      return fields.some((f) => f.startsWith("branch ") && selected.has(f.slice(7))) ||
+        overlaps(path, request.destinationPath) || overlaps(path, request.sourceCheckoutPath);
+    }).sort().join("\0\0") + "\0\0" };
 }
 /** Validate the namespaces native add may write, including dangling loose
  * symrefs omitted by for-each-ref. This is bounded path inspection, not a lock
@@ -372,7 +374,7 @@ export interface GitWorkspaceCandidate {
   readonly parentCreation?: Readonly<GitWorkspaceParentCreation>;
 }
 export interface GitWorkspaceEvidence {
-  version: 1;
+  version: 2;
   actionId: string;
   request: GitWorkspaceRequest;
   source: GitProjectResources;
@@ -388,12 +390,12 @@ export interface GitWorkspaceEvidence {
   resultOid: string;
   treeOid: string;
 }
-/** Parent must add a workspace intent kind and validate/persist this proof;
- * do not adapt it to preparation or proof-free resolve(). No engine-owned ledger. */
+/** Native historical facts. Publication and record availability confer no authority. */
 export interface GitWorkspaceCompletedProof {
   version: 1;
   outcome: "completed";
   actionId: string;
+  invocationOwner: GitMutationInvocationAuthority["owner"];
   mode: "create" | "attach";
   destination: GitProjectResources;
   sourceOid: string;
@@ -418,6 +420,8 @@ export interface GitWorkspaceFailureEvidence {
   actionId: string;
   phase: "intent" | "before-add" | "create-parent" | "after-parent" | "add" | "verify" | "completed-record";
   addAttempted: boolean;
+  /** Positive native child acknowledgement, independent of diagnostic storage. */
+  addExit: 0 | null;
   parentCreationAttempted?: boolean;
   parentCreated?: boolean;
   knownParentCreation?: GitWorkspaceKnownParentCreation;
@@ -425,27 +429,18 @@ export interface GitWorkspaceFailureEvidence {
   destinationPresent: boolean | null;
   recoveryRequired: true;
 }
-export interface GitWorkspaceIntent {
-  /** Before effects, undefined requires original inventory. After native verification,
-   * the exact proof identity allows ONLY its expected registration/ref addition;
-   * adapter MUST authenticate it with readGitWorkspaceNativeProof, never JSON.
-   * Publish verified evidence before changing the reservation's expected inventory. */
-  assertOwned(proof?: GitWorkspaceCompletedProof): void;
-  /** Mandatory measured proof; persist it before releasing quarantine. */
-  completed(proof: GitWorkspaceCompletedProof): Promise<void>;
-  /** Immutable evidence only. Must NOT release, rollback, delete or schedule retry. */
-  recordFailure(evidence: GitWorkspaceFailureEvidence): Promise<void>;
-}
+/** Optional diagnostics, never execution authority or settlement requirements. */
 export interface GitWorkspaceAdmission {
-  /** Include canonical/common identity, all registered aliases and absent destination.
-   * Unknown writers, surviving checks, historical uncertainty and namespace overlap deny. */
-  assertAdmission(source: GitProjectResources, destinationPath: string, parentCreation?: GitWorkspaceParentCreation): Promise<void>;
-  /** Persist exact evidence and exclusive intent BEFORE returning, including on crash.
-   * Own assertion permits only this operation's expected registration/ref addition. */
-  beginIntent(evidence: GitWorkspaceEvidence): Promise<GitWorkspaceIntent>;
+  onIntent?(evidence: Readonly<GitWorkspaceEvidence>): Promise<void>;
+  onCompleted?(proof: Readonly<GitWorkspaceCompletedProof>): Promise<void>;
+  onFailure?(evidence: Readonly<GitWorkspaceFailureEvidence>): Promise<void>;
 }
-type Saved = { evidence: GitWorkspaceEvidence; issuedAt: number; admission: GitWorkspaceAdmission; candidate: string };
+type Saved = { evidence: GitWorkspaceEvidence; issuedAt: number; admission: GitWorkspaceAdmission; candidate: string;
+  invocation: GitMutationInvocation };
 const issued = new WeakMap<GitWorkspaceCandidate, Saved>();
+// Keep original identity independently of the ready-to-apply map. Retirement is
+// idempotent after decline/apply, and never erases measured native result facts.
+const candidateInvocations = new WeakMap<object, GitMutationInvocation>();
 const nativeProofs = new WeakMap<object, Readonly<GitWorkspaceCompletedProof>>();
 function freeze<T>(value: T): T {
   if (value && typeof value === "object") {
@@ -460,6 +455,15 @@ function freeze<T>(value: T): T {
  * these facts readable through the original object, never replayable execution. */
 export function readGitWorkspaceNativeProof(handle: unknown): Readonly<GitWorkspaceCompletedProof> | undefined {
   return handle && typeof handle === "object" ? nativeProofs.get(handle) : undefined;
+}
+/** Retire only this original candidate's invocation. No native IO, authority
+ * reconstruction or current-state checks. Unknown/copies/IDs cannot retire it. */
+export function retireGitWorkspaceCandidate(originalCandidate: unknown): void {
+  const invocation = originalCandidate && typeof originalCandidate === "object"
+    ? candidateInvocations.get(originalCandidate) : undefined;
+  if (!invocation) refuse("stale");
+  invocation.retire();
+  issued.delete(originalCandidate as GitWorkspaceCandidate);
 }
 async function pinned<T>(selection: GitProjectResources, action: (repo: Repo) => Promise<T>): Promise<T> {
   if (process.platform !== "linux") refuse();
@@ -486,7 +490,7 @@ async function assertExact(e: GitWorkspaceEvidence, repo: Repo, duringPreflight?
   if (measuredParent) await knownParent(e, measuredParent);
   if (JSON.stringify(await destinationPermission(e.request)) !== JSON.stringify(expectedParent) ||
       JSON.stringify(await checkout(repo, e.source)) !== JSON.stringify(e.sourceSnapshot) ||
-      JSON.stringify(await inventory(repo)) !== JSON.stringify({ refs: e.refs, registrations: e.registrations }) ||
+      JSON.stringify(await inventory(repo, e.request, e.source.branch)) !== JSON.stringify({ refs: e.refs, registrations: e.registrations }) ||
       await safeTree(repo, e.resultOid) !== e.treeOid) refuse("stale");
   if (e.baseCheckout) await pinned(e.baseCheckout, async (base) => {
     if (JSON.stringify(await checkout(base, e.baseCheckout!)) !== JSON.stringify(e.baseSnapshot)) refuse("stale");
@@ -494,25 +498,25 @@ async function assertExact(e: GitWorkspaceEvidence, repo: Repo, duringPreflight?
 }
 /** Capture is independently callable/repeatable; not an approval. admission is a
  * trusted parent closure, never an external request field. */
-export async function captureGitWorkspaceOperation(request: GitWorkspaceRequest, admission: GitWorkspaceAdmission): Promise<GitWorkspaceCandidate> {
-  if (!request || !admission || typeof admission.assertAdmission !== "function" || typeof admission.beginIntent !== "function" ||
+export async function captureGitWorkspaceOperation(request: GitWorkspaceRequest, admission: GitWorkspaceAdmission,
+  nativeAuthority?: GitMutationInvocationAuthority): Promise<GitWorkspaceCandidate> {
+  const authority = captureGitMutationAuthority(nativeAuthority);
+  if (!request || !admission ||
       !["create", "attach"].includes(request.mode) || !validLocalBranchName(request.branch) || !validLocalBranchName(request.baseBranch) ||
       !OID.test(request.expectedBaseOid) || request.mode === "attach" && !OID.test(request.expectedTipOid)) refuse("invalid-selection");
   for (const path of [request.repositoryPath, request.sourceCheckoutPath, request.destinationPath]) pathInput(path);
   request = structuredClone(request);
   const source = await selectCanonicalGitResources({ repositoryPath: request.repositoryPath, checkoutPath: request.sourceCheckoutPath });
-  const release = acquireGitCheckoutGate([...new Set([source.projectRoot, source.cwd, dirname(request.destinationPath), request.destinationPath])]);
-  try {
-    return await pinned(source, async (repo) => {
+  return await pinned(source, async (repo) => {
       const parentFacts = await destinationPermission(request);
       const namespacePath = parentFacts.parentCreation?.ancestorPath ?? dirname(request.destinationPath);
       const namespaceIdentity = parentFacts.parentCreation?.ancestorIdentity ?? parentFacts.parentIdentity;
       const namespace = await open(namespacePath, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
       try {
         if (JSON.stringify(identity(await namespace.stat({ bigint: true }))) !== JSON.stringify(namespaceIdentity)) refuse("stale");
-        await admission.assertAdmission(structuredClone(source), request.destinationPath, structuredClone(parentFacts.parentCreation));
+        authority.assertOriginalSync();
         await safeNamespace(repo, request, source.branch);
-        const sourceSnapshot = await checkout(repo, source), current = await inventory(repo);
+        const sourceSnapshot = await checkout(repo, source), current = await inventory(repo, request, source.branch);
         const refRows = current.refs.trimEnd().split("\n").map((row) => row.split("\0"));
         const baseOid = refRows.find(([ref]) => ref === `refs/heads/${request.baseBranch}`)?.[1];
         const tip = refRows.find(([ref]) => ref === `refs/heads/${request.branch}`)?.[1];
@@ -532,27 +536,28 @@ export async function captureGitWorkspaceOperation(request: GitWorkspaceRequest,
         await safeTree(repo, baseOid);
         const resultOid = request.mode === "create" ? baseOid : request.expectedTipOid;
         const treeOid = await safeTree(repo, resultOid);
-        const evidence: GitWorkspaceEvidence = { version: 1, actionId: randomUUID(), request, source, sourceSnapshot,
+        const evidence: GitWorkspaceEvidence = { version: 2, actionId: randomUUID(), request, source, sourceSnapshot,
           ...(baseCheckout ? { baseCheckout, baseSnapshot } : {}), ...parentFacts, ...current, resultOid, treeOid };
         await assertExact(evidence, repo);
-        await admission.assertAdmission(structuredClone(source), request.destinationPath, structuredClone(parentFacts.parentCreation));
+        authority.assertOriginalSync();
         if (JSON.stringify(await physical(namespacePath)) !== JSON.stringify(namespaceIdentity)) refuse("stale");
         const candidate = Object.freeze({ actionId: evidence.actionId, request: Object.freeze(structuredClone(request)),
           sourceOid: sourceSnapshot.oid, resultOid, treeOid,
           ...(parentFacts.parentCreation ? { parentCreation: Object.freeze({ ...structuredClone(parentFacts.parentCreation),
             ancestorIdentity: Object.freeze(structuredClone(parentFacts.parentCreation.ancestorIdentity)) }) } : {}) });
-        issued.set(candidate, { evidence: structuredClone(evidence), issuedAt: Date.now(), admission, candidate: JSON.stringify(candidate) });
+        const invocation = authority.bind({ kind: "workspace", source, candidateSha256: hash(JSON.stringify(candidate)) });
+        issued.set(candidate, { evidence: structuredClone(evidence), issuedAt: Date.now(), admission, candidate: JSON.stringify(candidate), invocation });
+        candidateInvocations.set(candidate, invocation);
         return candidate;
       } finally { await namespace.close(); }
     });
-  } finally { release(); }
 }
 export interface GitWorkspaceApplyOptions {
   candidate: GitWorkspaceCandidate;
   /** Parent owns actor capability, exact Ask/Allow scope, live revocation/pause,
    * policy revision and applicable rules; file-root access alone never suffices.
    * This is a live assertion, NOT a human wait: obtain any exact approval before
-   * apply, outside the checkout gate. */
+   * apply. There is no application checkout gate. */
   authorize(phase: "before-apply" | "before-add", candidate: GitWorkspaceCandidate): Promise<void>;
   /** Disposable node:test failure/race seams only; no request forwarding. */
   afterIntent?: () => void | Promise<void>;
@@ -563,19 +568,18 @@ export interface GitWorkspaceApplyOptions {
   afterAdd?: () => void | Promise<void>;
 }
 export type GitWorkspaceResult = { status: "created" | "attached"; actionId: string; path: string; branch: string; oid: string;
-  treeOid: string; knownParentCreation?: GitWorkspaceKnownParentCreation };
-/** One native attempt. Partial effects/uncertain final records remain quarantined.
+  treeOid: string; knownParentCreation?: GitWorkspaceKnownParentCreation; diagnostics: "recorded" | "unavailable" | "not-requested" };
+/** One native attempt. Partial/uncertain effects never quarantine another invocation.
  * Existing directories are descriptor-pinned for reads; a disclosed, single absent
  * conventional parent is exclusively created through its pinned ancestor after
- * durable intent/live authorization. It is never removed on failure. Native add uses physical
+ * original invocation/live authorization. It is never removed on failure. Native add uses physical
  * paths to write durable registration/backlinks, not ephemeral /proc paths. The
  * open parent and before/after identity checks narrow but CANNOT eliminate an
  * arbitrary external-writer or destination pathname race. This is not race-free
  * confinement, nor a sandbox for shell/file tools. Native add does not intentionally
  * write source/base files; verified snapshots cover tracked content and Git state,
  * NOT independent preservation of ignored/cache bytes. No copying/rollback/delete/retry. */
-/** Backward-compatible internal standalone entry. Selected/public runtime callers
- * must use applyGitWorkspaceOperationWithAuthority, not this compatibility API. */
+/** Both entries require the original capture-time native invocation authority. */
 export async function applyGitWorkspaceOperation(options: GitWorkspaceApplyOptions): Promise<GitWorkspaceResult> {
   return applyWorkspace(options);
 }
@@ -585,42 +589,56 @@ export async function applyGitWorkspaceOperation(options: GitWorkspaceApplyOptio
 export async function applyGitWorkspaceOperationWithAuthority(
   options: Parameters<typeof applyGitWorkspaceOperation>[0] & { assertCurrentSync(): void },
 ): Promise<GitWorkspaceResult> {
-  const currentSync = bindCurrentSync(options);
-  return applyWorkspace(options, currentSync);
+  // Validate the extra live guard inside apply so even a bad attempt retires the candidate.
+  return applyWorkspace(options, () => bindCurrentSync(options)());
 }
 async function applyWorkspace(options: GitWorkspaceApplyOptions, currentSync?: () => void): Promise<GitWorkspaceResult> {
-  if (!options || typeof options.authorize !== "function" ||
-      (options.afterIntent || options.duringFinalPreflight || options.afterParentCreate || options.duringParentLaunch ||
-        options.duringAddLaunch || options.afterAdd) && !process.env.NODE_TEST_CONTEXT) refuse("invalid-selection");
+  if (!options) refuse("invalid-selection");
   const saved = issued.get(options.candidate);
   if (!saved) refuse("stale");
   issued.delete(options.candidate);
-  if (Date.now() - saved.issuedAt > 300000 || JSON.stringify(options.candidate) !== saved.candidate) refuse("stale");
-  const e = saved.evidence, { request } = e;
-  const release = acquireGitCheckoutGate([...new Set([e.source.projectRoot, e.source.cwd,
-    ...(e.baseCheckout ? [e.baseCheckout.cwd] : []), dirname(request.destinationPath), request.destinationPath])]);
+  const e = saved.evidence, { request } = e, invocation = saved.invocation;
+  let consumed = false;
+  const effect = (parent?: GitWorkspaceKnownParentCreation) => {
+    currentSync?.();
+    if (consumed) invocation.assertCurrentSync();
+    else { invocation.consumeSync(); consumed = true; }
+    // All trusted guards have returned; re-read physical/ref state synchronously.
+    assertGitWorkspaceNativeStateSync(e, parent);
+  };
+  let diagnostics: GitWorkspaceResult["diagnostics"] = "not-requested";
+  const diagnostic = async (callback?: () => Promise<void>) => {
+    if (!callback) return;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([callback(), new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Diagnostics unavailable")), 1000);
+      })]);
+      if (diagnostics !== "unavailable") diagnostics = "recorded";
+    } catch { diagnostics = "unavailable"; }
+    finally { clearTimeout(timer); }
+  };
   try {
+    if (typeof options.authorize !== "function" ||
+        (options.afterIntent || options.duringFinalPreflight || options.afterParentCreate || options.duringParentLaunch ||
+          options.duringAddLaunch || options.afterAdd) && !process.env.NODE_TEST_CONTEXT) refuse("invalid-selection");
+    if (Date.now() - saved.issuedAt > 300000 || JSON.stringify(options.candidate) !== saved.candidate) refuse("stale");
     await options.authorize("before-apply", options.candidate);
-    currentSync?.(); // runtime closure is now bound; reject non-void/thenable assertions before intent
-    await saved.admission.assertAdmission(structuredClone(e.source), request.destinationPath, structuredClone(e.parentCreation));
+    currentSync?.(); invocation.assertCurrentSync();
     return await pinned(e.source, async (repo) => {
       const plan = e.parentCreation;
       const namespacePath = plan?.ancestorPath ?? dirname(request.destinationPath);
       const namespace = await open(namespacePath, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
       let parent: FileHandle | undefined = plan ? undefined : namespace;
       let measuredParent: GitWorkspaceKnownParentCreation | undefined;
-      let intent: GitWorkspaceIntent | undefined;
-      let phase: GitWorkspaceFailureEvidence["phase"] = "intent", attempted = false, intentStarted = false;
+      let phase: GitWorkspaceFailureEvidence["phase"] = "intent", attempted = false;
+      let addExit: 0 | null = null;
       let parentCreationAttempted = false, parentCreated = false;
       try {
         if (JSON.stringify(identity(await namespace.stat({ bigint: true }))) !==
             JSON.stringify(plan?.ancestorIdentity ?? e.parentIdentity)) refuse("stale");
         await assertExact(e, repo);
-        // A throwing begin may already have published intent: report recovery,
-        // never treat that exception as a safe retry or invent a resolution.
-        intentStarted = true;
-        intent = await saved.admission.beginIntent(structuredClone(e));
-        if (!intent || typeof intent.assertOwned !== "function" || typeof intent.completed !== "function" || typeof intent.recordFailure !== "function") refuse();
+        await diagnostic(saved.admission.onIntent && (() => saved.admission.onIntent!(freeze(structuredClone(e)))));
         phase = "before-add";
         await options.afterIntent?.();
         await assertExact(e, repo, options.duringFinalPreflight);
@@ -635,8 +653,7 @@ async function applyWorkspace(options: GitWorkspaceApplyOptions, currentSync?: (
           const mapped = join(`/proc/${process.pid}/fd/${namespace.fd}`, basename(plan.path));
           const creationOptions = { mode: plan.mode, recursive: false };
           if (options.duringParentLaunch) await options.duringParentLaunch();
-          assertOwnedSync(intent);
-          currentSync?.();
+          effect();
           phase = "create-parent"; parentCreationAttempted = true;
           const creation = mkdir(mapped, creationOptions); // synchronous launch, no await after the fence
           await creation;
@@ -664,49 +681,47 @@ async function applyWorkspace(options: GitWorkspaceApplyOptions, currentSync?: (
         // sibling mkdir, allowFileRoot side effect or mutable repository discovery.
         await git(e.source, ["worktree", "add", ...(request.mode === "create" ? ["--no-track", "-b", request.branch] : []),
           "--", request.destinationPath, request.mode === "create" ? e.resultOid : request.branch], false, () => {
-            assertOwnedSync(intent!);
-            currentSync?.();
+            effect(measuredParent);
             phase = "add"; attempted = true;
           }, options.duringAddLaunch);
+        addExit = 0;
         phase = "verify";
         await options.afterAdd?.();
         await knownParent(e, measuredParent);
         if (!parent || JSON.stringify(identity(await parent.stat({ bigint: true }))) !==
             JSON.stringify(measuredParent?.identity ?? e.parentIdentity)) refuse("stale");
         if (plan) await parent.sync();
-        const proof = freeze(await verify(e, repo, measuredParent));
-        // No awaited publication between independent verification and the private
-        // identity registration. Adapter may publish these verified facts before
-        // allowing ONLY the expected new inventory, not waive unresolved state.
-        nativeProofs.set(proof, freeze(structuredClone(proof)));
-        assertOwnedSync(intent, proof);
+        const proof = freeze(await verify(e, repo, invocation.binding.owner, measuredParent));
+        const measured = freeze(structuredClone(proof));
+        nativeProofs.set(proof, measured);
         phase = "completed-record";
-        await intent.completed(proof);
-        return { status: request.mode === "create" ? "created" : "attached", actionId: e.actionId,
-          path: request.destinationPath, branch: request.branch, oid: proof.resultOid, treeOid: proof.treeOid,
+        await diagnostic(saved.admission.onCompleted && (() => saved.admission.onCompleted!(proof)));
+        const result: GitWorkspaceResult = { status: request.mode === "create" ? "created" : "attached", actionId: e.actionId,
+          path: request.destinationPath, branch: request.branch, oid: proof.resultOid, treeOid: proof.treeOid, diagnostics,
           ...(measuredParent ? { knownParentCreation: structuredClone(measuredParent) } : {}) };
+        nativeProofs.set(result, measured);
+        return Object.freeze(result);
       } catch (error) {
-        if (intentStarted) {
+        let facts: GitWorkspaceFailureEvidence | undefined;
+        if (attempted || parentCreationAttempted) {
           let present: boolean | null = null;
           try { await lstat(request.destinationPath); present = true; }
           catch (cause) { if ((cause as NodeJS.ErrnoException).code === "ENOENT") present = false; }
           const observed = await git(repo, ["show-ref", "--verify", "--hash", `refs/heads/${request.branch}`]).then((s) => s.trim(), () => "");
-          try {
-            if (intent && typeof intent.recordFailure === "function") await intent.recordFailure({ version: 1,
-              actionId: e.actionId, phase, addAttempted: attempted, observedBranchOid: OID.test(observed) ? observed : null,
-              destinationPresent: present, recoveryRequired: true,
-              ...(plan ? { parentCreationAttempted, parentCreated,
-                ...(measuredParent ? { knownParentCreation: structuredClone(measuredParent) } : {}) } : {}) });
-          } catch { /* Original durable intent remains; never invent a release. */ }
-        } else throw error; // definite pre-intent refusal
-        throw new GitWorkspaceOperationError("recovery-required", `Workspace intent ${e.actionId} requires manual recovery; do not retry.`, e.actionId);
+          facts = { version: 1, actionId: e.actionId, phase, addAttempted: attempted, addExit,
+            observedBranchOid: OID.test(observed) ? observed : null, destinationPresent: present, recoveryRequired: true,
+            ...(plan ? { parentCreationAttempted, parentCreated,
+              ...(measuredParent ? { knownParentCreation: structuredClone(measuredParent) } : {}) } : {}) };
+          await diagnostic(saved.admission.onFailure && (() => saved.admission.onFailure!(freeze(structuredClone(facts!)))));
+        } else throw error; // definite no-effect refusal, no quarantine
+        throw new GitWorkspaceOperationError("recovery-required", `Workspace attempt ${e.actionId} has partial or uncertain effects; inspect before a new operation.`, e.actionId, freeze(facts));
       } finally {
         await Promise.allSettled([namespace, ...(parent && parent !== namespace ? [parent] : [])].map((fd) => fd.close()));
       }
     });
-  } finally { release(); }
+  } finally { invocation.retire(); }
 }
-async function verify(e: GitWorkspaceEvidence, repo: Repo,
+async function verify(e: GitWorkspaceEvidence, repo: Repo, invocationOwner: GitMutationInvocationAuthority["owner"],
   measuredParent?: GitWorkspaceKnownParentCreation): Promise<GitWorkspaceCompletedProof> {
   const r = e.request;
   await knownParent(e, measuredParent);
@@ -715,7 +730,7 @@ async function verify(e: GitWorkspaceEvidence, repo: Repo,
   if (e.baseCheckout) await pinned(e.baseCheckout, async (base) => {
     if (JSON.stringify(await checkout(base, e.baseCheckout!)) !== JSON.stringify(e.baseSnapshot)) refuse("stale");
   });
-  const now = await inventory(repo);
+  const now = await inventory(repo, e.request, e.source.branch);
   const expectedRefs = e.refs.trimEnd().split("\n").filter(Boolean);
   if (r.mode === "create") expectedRefs.push(`refs/heads/${r.branch}\0${e.resultOid}\0`);
   if (JSON.stringify(expectedRefs.sort()) !== JSON.stringify(now.refs.trimEnd().split("\n").filter(Boolean).sort())) refuse("stale");
@@ -757,10 +772,10 @@ async function verify(e: GitWorkspaceEvidence, repo: Repo,
         await git(destRepo, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"]) !== "" ||
         !samePath(await realpath(destination.cwd), destination.cwd) || marker !== (await bytes(join(destination.cwd, ".git"), 4096)).toString("utf8") ||
         !backlink.equals(await bytes(join(destRepo.gitDir, "gitdir"), 4096)) ||
-        JSON.stringify(await inventory(repo)) !== JSON.stringify(now) ||
+        JSON.stringify(await inventory(repo, e.request, e.source.branch)) !== JSON.stringify(now) ||
         JSON.stringify(await checkout(repo, e.source)) !== JSON.stringify(e.sourceSnapshot)) refuse("stale");
     await knownParent(e, measuredParent);
-    return { version: 1, outcome: "completed", actionId: e.actionId, mode: r.mode, destination,
+    return { version: 1, outcome: "completed", actionId: e.actionId, invocationOwner, mode: r.mode, destination,
       sourceOid: e.sourceSnapshot.oid, baseOid: r.expectedBaseOid, branchRef: actual.ref, resultOid: actual.oid, treeOid: e.treeOid,
       sourceIndexDigest: e.sourceSnapshot.indexDigest, destinationIndexDigest: actual.indexDigest,
       sourceTrackedFilesDigest: e.sourceSnapshot.trackedFilesDigest,

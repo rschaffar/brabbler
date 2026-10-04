@@ -35,6 +35,8 @@ test("review keeps diff read-only and requires explicit paths, message, preview,
   assert.match(panel, /new CustomEvent\("pi-web:git-actions-changed", \{ detail: \{ sessionId \} \}\)/);
   assert.match(panel, /body\.recoveryRequired/);
   assert.match(panel, /result\.recoveryWarning/);
+  assert.match(panel, /result\.diagnosticsUnavailable && !result\.recoveryWarning/);
+  assert.match(panel, /Commit created; some outcome diagnostics are unavailable\. Do not repeat this operation\./);
   assert.match(panel, /onClick=\{\(\) => void confirm\(\)\}/);
   assert.doesNotMatch(panel, /location\.reload|window\.location/);
 });

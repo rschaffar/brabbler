@@ -1,6 +1,6 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { constants, type BigIntStats } from "node:fs";
+import { constants, lstatSync, openSync, closeSync, fstatSync, readFileSync, readdirSync, realpathSync, type BigIntStats } from "node:fs";
 import { lstat, open, readdir, readlink, realpath, type FileHandle } from "node:fs/promises";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -10,6 +10,7 @@ import { selectCanonicalGitResources, revalidateGitProjectResources, withGitProj
   GitProjectResourceError, parseBoundedGitWorktreePaths, type GitProjectResources, type GitResourceSelector } from "./git-project-resources";
 import type { GitReviewRepository } from "./git-review";
 import { loadGitProjectSettings } from "./git-project-settings";
+import { gitWorkflowPolicyRevision } from "./git-scoped-authority";
 import { validLocalBranchName } from "./git-workflow-policy";
 import { samePath } from "./paths";
 
@@ -68,6 +69,8 @@ export interface GitPreparationRegistration {
   metadataDigest: string;
 }
 export interface GitPreparationSnapshot {
+  /** Version 2 scopes equality to selected resources; other refs are positive sharing probes only. */
+  dependencyVersion: 2;
   status: "already-prepared" | "needs-rebase";
   source: GitPreparationCheckout;
   target: GitPreparationCheckout;
@@ -579,8 +582,140 @@ async function ancestor(repo: BoundRepository, earlier: string, later: string): 
   try { await git(repo, "merge-base", "--is-ancestor", earlier, later); return true; }
   catch (error) { if (typeof error === "object" && error !== null && "code" in error && error.code === 1) return false; throw error; }
 }
+/** Final synchronous positive-sharing fence. No application lock and no all-ref
+ * epoch. Each invocation rereads bounded physical logs/registrations and rejects
+ * actual holders of its rewrite series; unrelated progress is not staleness.
+ * Native helper separately pins and verifies exact source/target/index state. */
+export function assertGitPreparationSharingSync(source: GitProjectResources, target: GitProjectResources,
+  snapshot: GitPreparationSnapshot): void {
+  if (snapshot.dependencyVersion !== 2 || snapshot.source.ref === snapshot.designatedMain.ref ||
+      snapshot.target.ref !== snapshot.designatedMain.ref) refuse("history", "Original protected-main dependencies required");
+  const deadline = performance.now() + 3000;
+  const run = (gitDir: string, args: string[]) => {
+    const timeout = Math.ceil(deadline - performance.now());
+    if (timeout <= 0) refuse("oversized", "Sharing inspection deadline exceeded");
+    return execFileSync("git", ["--no-optional-locks", `--git-dir=${gitDir}`, `--work-tree=${source.cwd}`,
+      "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.attributesFile=/dev/null", ...args], {
+      encoding: "utf8", timeout, maxBuffer: 1024 * 1024, stdio: ["ignore", "pipe", "pipe"],
+      env: { ...gitExecEnv(), GIT_COMMON_DIR: source.commonDir, GIT_NO_REPLACE_OBJECTS: "1", GIT_NO_LAZY_FETCH: "1", GIT_ALLOW_PROTOCOL: "" },
+    });
+  };
+  const read = (file: string, maximum = MAX_REFLOG_BYTES) => {
+    const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const before = fstatSync(fd, { bigint: true });
+      if (!before.isFile() || before.nlink !== BigInt(1) || before.size > BigInt(maximum)) refuse("oversized", "Nonordinary sharing metadata");
+      const bytes = readFileSync(fd), after = fstatSync(fd, { bigint: true }), named = lstatSync(file, { bigint: true });
+      if (!stableFile(before, after) || !stableFile(before, named) || BigInt(bytes.length) !== before.size) refuse("ref-moved", "Sharing metadata changed during read");
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } finally { closeSync(fd); }
+  };
+  for (const dir of new Set([source.gitDir, target.gitDir, source.commonDir])) {
+    try { lstatSync(join(dir, "info", "attributes")); refuse("unavailable", "Git attributes unsupported"); }
+    catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
+    try {
+      const hooks = join(dir, "hooks"), info = lstatSync(hooks), names = readdirSync(hooks);
+      if (!info.isDirectory() || info.isSymbolicLink() || names.length > 1000 || names.some((name) => !name.endsWith(".sample"))) refuse("unavailable", "Git hooks unsupported");
+    } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
+  }
+  for (const dir of new Set([source.gitDir, target.gitDir])) {
+    for (const record of run(dir, ["config", "--list", "--null"]).split("\0").filter(Boolean)) {
+      const split = record.indexOf("\n"), name = record.slice(0, split).toLowerCase(), value = record.slice(split + 1);
+      if (split < 0) refuse("unavailable", "Unknown configuration");
+      if (name === "core.hookspath" && value === "/dev/null" || name === "core.fsmonitor" && value === "false" ||
+          name === "commit.gpgsign" && value === "false" || name === "core.attributesfile" && value === "/dev/null" ||
+          name === "core.autocrlf" && (value === "false" || value === "input")) continue;
+      if (/^(filter\.|merge\.|diff\.|index\.|extensions\.|core\.(?:hookspath|fsmonitor|attributesfile|external|sparsecheckout|splitindex|worktree|ignorecase|protecthfs|protectntfs|eol|autocrlf|symlinks)|commit\.|i18n\.commitencoding)/.test(name)) refuse("unavailable", "Unsafe preparation configuration");
+    }
+  }
+  if (run(source.gitDir, ["show-ref", "--verify", "--hash", snapshot.designatedMain.ref]).trim() !== snapshot.designatedMain.oid) refuse("ref-moved", "Protected main changed");
+  const first = snapshot.rewriteSeries[0]?.oid;
+  if (!first) return;
+  const listing = run(source.gitDir, ["worktree", "list", "--porcelain", "-z"]);
+  const paths = parseBoundedGitWorktreePaths(Buffer.from(listing));
+  const rows = listing.slice(0, -2).split("\0\0");
+  const dirs = new Map<string, string>([[source.commonDir, "common"], [source.gitDir, "source"], [target.gitDir, "target"]]);
+  const tips = new Set<string>();
+  for (const [i, cwd] of paths.entries()) {
+    if (realpathSync(cwd) !== cwd) refuse("unavailable", "Nonphysical sharing checkout");
+    const fields = rows[i].split("\0"), head = oid(fields[1].slice(5));
+    if (!samePath(cwd, source.cwd)) tips.add(head);
+    let dir = source.commonDir;
+    if (!samePath(cwd, source.projectRoot)) {
+      const marker = read(join(cwd, ".git"), 4096), match = /^gitdir: ([^\r\n]+)\n?$/.exec(marker);
+      if (!match) refuse("unavailable", "Nonphysical sharing registration");
+      dir = resolve(cwd, match[1]);
+      if (dirname(dir) !== join(source.commonDir, "worktrees") || realpathSync(dir) !== dir ||
+          read(join(dir, "gitdir"), 4096).trim() !== join(cwd, ".git") ||
+          resolve(dir, read(join(dir, "commondir"), 4096).trim()) !== source.commonDir) refuse("unavailable", "Foreign sharing registration");
+    }
+    const headText = read(join(dir, "HEAD"), 4096);
+    if (headText !== (fields[2] === "detached" ? `${head}\n` : `ref: ${fields[2].slice(7)}\n`)) refuse("ref-moved", "Sharing HEAD changed");
+    if (!dirs.has(dir)) dirs.set(dir, cwd);
+  }
+  if (!paths.includes(source.cwd) || !paths.includes(target.cwd)) refuse("ref-moved", "Selected registration changed");
+  let files = 0, total = 0;
+  for (const [dir, label] of dirs) {
+    const refs = run(dir, ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(*objectname)%00%(objecttype)%00%(*objecttype)", "refs"]).trimEnd();
+    const records = refs ? refs.split("\n") : [];
+    if (records.length > MAX_REFS) refuse("oversized", "Too many sharing refs");
+    for (const row of records) {
+      const [ref, id, peeled, kind, peeledKind] = row.split("\0");
+      if (kind !== "commit" && !(kind === "tag" && peeledKind === "commit")) refuse("history", "Unsupported sharing ref");
+      if (ref !== snapshot.source.ref) tips.add(oid(peeled || id));
+    }
+    const scan = (name: string, relative: string, depth: number): void => {
+      if (depth > 10 || ++files > MAX_REFS * 4 || performance.now() >= deadline) refuse("oversized", "Sharing logs exceed bounds");
+      let stat;
+      try { stat = lstatSync(name); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return; throw e; }
+      if (stat.isDirectory() && !stat.isSymbolicLink()) {
+        for (const entry of readdirSync(name)) scan(join(name, entry), relative ? `${relative}/${entry}` : entry, depth + 1);
+        return;
+      }
+      const text = read(name); total += Buffer.byteLength(text);
+      if (total > MAX_TOTAL_REFLOG_BYTES) refuse("oversized", "Sharing logs exceed bounds");
+      if (relative === snapshot.source.ref || relative === "HEAD" && label === "source") return;
+      for (const row of text.split("\n").filter(Boolean)) {
+        const match = /^([a-f0-9]{40}|[a-f0-9]{64}) ([a-f0-9]{40}|[a-f0-9]{64}) [^\n]+$/.exec(row);
+        if (!match) refuse("history", "Unsupported sharing log");
+        for (const id of match.slice(1)) if (!/^0+$/.test(id)) tips.add(id);
+      }
+    };
+    scan(join(dir, "logs"), "", 0);
+  }
+  if (tips.size > MAX_REFLOG_OIDS) refuse("oversized", "Too many sharing tips");
+  for (const tip of tips) {
+    let shared = false;
+    try { run(source.gitDir, ["merge-base", "--is-ancestor", first, tip]); shared = true; }
+    catch (e) { if (!(e && typeof e === "object" && "status" in e && e.status === 1)) throw e; }
+    if (shared) refuse("shared", "Local ref, checkout or reflog holds rewrite commits");
+  }
+}
 function sameCheckout(a: GitPreparationCheckout, b: GitPreparationCheckout): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+/** Exact selected dependencies only. Inventories remain diagnostics and inputs to
+ * fresh positive sharing checks, never blanket all-ref/reflog epochs. */
+export function sameGitPreparationDependencies(a: GitPreparationSnapshot, b: GitPreparationSnapshot): boolean {
+  if (a?.dependencyVersion !== 2 || b?.dependencyVersion !== 2) return false;
+  const dependencies = (s: GitPreparationSnapshot) => ({ dependencyVersion: s.dependencyVersion,
+    status: s.status, source: s.source, target: s.target, designatedMain: s.designatedMain,
+    mergeBaseOid: s.mergeBaseOid, rewriteSeries: s.rewriteSeries, localSharedRefs: s.localSharedRefs,
+    registeredWorktrees: s.registeredWorktrees.filter((r) => samePath(r.cwd, s.source.cwd) || samePath(r.cwd, s.target.cwd)),
+    publication: s.publication });
+  return JSON.stringify(dependencies(a)) === JSON.stringify(dependencies(b));
+}
+async function assertUnshared(repo: BoundRepository, sourceCwd: string, sourceRef: string, first: string | undefined,
+  refs: GitPreparationRef[], registrations: GitPreparationRegistration[], logged: string[]): Promise<void> {
+  if (!first) return;
+  for (const ref of refs) {
+    if (ref.ref === sourceRef && ref.checkout === undefined) continue;
+    if (await ancestor(repo, first, ref.commitOid)) refuse("shared", "Local ref holds rewrite commits");
+  }
+  for (const registration of registrations) {
+    if (!samePath(registration.cwd, sourceCwd) && await ancestor(repo, first, registration.headOid)) refuse("shared", "Registered checkout HEAD holds rewrite commits");
+  }
+  for (const oid of logged) if (await ancestor(repo, first, oid)) refuse("shared", "Historical local ref/reflog tip includes rewrite commits");
 }
 /** Internal apply fence that remains usable while the source index.lock is owned.
  * No cleanliness inference or permission is made here. */
@@ -589,11 +724,13 @@ export async function revalidateGitPreparationInventory(source: GitProjectResour
   await withGitProjectReview(source, async (from) => withGitProjectReview(target, async (to) => {
     if (typeof from === "string" || typeof to === "string") refuse("unavailable", "Bound inventory required");
     await withWorktreeInventory(from, source, target, async (registrations, additional) => {
-      if (JSON.stringify(registrations) !== JSON.stringify(snapshot.registeredWorktrees) ||
-          JSON.stringify(await allRefs(from, to, additional)) !== JSON.stringify(snapshot.localRefs) ||
-          digest((await reflogs(from, to, snapshot.source.ref, additional)).snapshot) !== snapshot.localReflogDigest) {
-        refuse("ref-moved", "Local sharing inventory changed");
-      }
+      if (snapshot.dependencyVersion !== 2) refuse("ref-moved", "Fresh dependency version required");
+      const relevant = (rows: GitPreparationRegistration[]) => rows.filter((r) => samePath(r.cwd, source.cwd) || samePath(r.cwd, target.cwd));
+      if (JSON.stringify(relevant(registrations)) !== JSON.stringify(relevant(snapshot.registeredWorktrees)) ||
+          await refOid(from, snapshot.source.ref) !== snapshot.source.oid || await refOid(to, snapshot.target.ref) !== snapshot.target.oid ||
+          await refOid(from, snapshot.designatedMain.ref) !== snapshot.designatedMain.oid) refuse("ref-moved", "Relevant preparation resources changed");
+      await assertUnshared(from, source.cwd, snapshot.source.ref, snapshot.rewriteSeries[0]?.oid,
+        await allRefs(from, to, additional), registrations, (await reflogs(from, to, snapshot.source.ref, additional)).oids);
     });
   }));
 }
@@ -659,16 +796,18 @@ export async function preflightGitPreparation(request: GitPreparationRequest, ag
         if (!sameCheckout(from, await checkout(sourceRepo, source, from.oid)) ||
             !sameCheckout(to, await checkout(targetRepo, target, to.oid)) ||
             mainOid !== await refOid(sourceRepo, mainRef) ||
-            !await withWorktreeInventory(sourceRepo, source, target, async (current, extras) =>
-              JSON.stringify(worktrees) === JSON.stringify(current) &&
-              JSON.stringify(refs) === JSON.stringify(await allRefs(sourceRepo, targetRepo, extras)) &&
-              logs.snapshot === (await reflogs(sourceRepo, targetRepo, from.ref, extras)).snapshot)) refuse("ref-moved", "Repository changed during preflight");
+            !await withWorktreeInventory(sourceRepo, source, target, async (current, extras) => {
+              await assertUnshared(sourceRepo, source.cwd, from.ref, alreadyPrepared ? undefined : sourceSeries[0]?.oid,
+                await allRefs(sourceRepo, targetRepo, extras), current, (await reflogs(sourceRepo, targetRepo, from.ref, extras)).oids);
+              const relevant = (rows: GitPreparationRegistration[]) => rows.filter((r) => samePath(r.cwd, source.cwd) || samePath(r.cwd, target.cwd));
+              return JSON.stringify(relevant(worktrees)) === JSON.stringify(relevant(current));
+            })) refuse("ref-moved", "Relevant repository state changed during preflight");
         await checkRepository(sourceRepo);
         await checkRepository(targetRepo);
-        if (settings.revision !== (await loadGitProjectSettings(source, [], agentDir)).revision) refuse("selection-changed", "Project main designation/settings changed during preflight");
+        if (gitWorkflowPolicyRevision(settings) !== gitWorkflowPolicyRevision(await loadGitProjectSettings(source, [], agentDir))) refuse("selection-changed", "Project main designation/settings changed during preflight");
         await revalidateGitProjectResources(source);
         await revalidateGitProjectResources(target);
-        return { status: alreadyPrepared ? "already-prepared" : "needs-rebase", source: from, target: to,
+        return { dependencyVersion: 2, status: alreadyPrepared ? "already-prepared" : "needs-rebase", source: from, target: to,
           designatedMain: { ref: mainRef, oid: mainOid }, mergeBaseOid: base,
           rewriteSeries: alreadyPrepared ? [] : sourceSeries, localSharedRefs: shared, localRefs: refs,
           registeredWorktrees: worktrees, localReflogDigest: digest(logs.snapshot),

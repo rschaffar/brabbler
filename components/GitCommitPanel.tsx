@@ -16,7 +16,7 @@ type CommitCandidate = { actionId: string; expiresAt: number; preview: GitCommit
   | { candidateDiff?: never; candidateDiffUnavailable: string }
 );
 
-type CommitResponse = GitCommitResult & { actionId: string; recoveryWarning?: string };
+type CommitResponse = GitCommitResult & { actionId: string; recoveryWarning?: string; diagnosticsUnavailable?: boolean };
 type Props = { sessionId: string; cwd: string; busy: boolean };
 
 function sameCheckoutPath(left: string, right: string): boolean {
@@ -340,6 +340,7 @@ export function GitCommitPanel({ sessionId, cwd, busy }: Props) {
         <p className="break-all">Checkout: {resultCwd}</p>
         {result.status === "partial-success" && <p className="text-amber-500">{result.reason}. Inspect the checkout before further changes; do not retry blindly.</p>}
         {result.recoveryWarning && <p role="alert" className="text-amber-500">{result.recoveryWarning}</p>}
+        {result.diagnosticsUnavailable && !result.recoveryWarning && <p className="text-amber-500">Commit created; some outcome diagnostics are unavailable. Do not repeat this operation.</p>}
         <dl className="break-all font-mono"><dt>Commit ID</dt><dd>{result.commit}</dd><dt>Tree</dt><dd>{result.tree}</dd><dt>Parent(s)</dt><dd>{result.parents.join(", ") || "none"}</dd><dt>Author email</dt><dd>{result.authorEmail}</dd></dl>
       </div>}
     </div>

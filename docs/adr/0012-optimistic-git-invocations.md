@@ -2,11 +2,17 @@
 
 ## Status
 
-**Accepted direction, 2026-10-03; implementation in progress.** The user explicitly rejected persistent failed-check quarantine and then clarified the broader requirement: another session must not block Git work through activity, failure, uncertainty, history or application-level synchronization. The user accepts responsibility for avoiding conflicting edits in the same worktree. The requested implementation follows completion of the Phases 2–5 feature rebase.
+**Accepted decision, 2026-10-03; source connected, final acceptance pending.** The user explicitly rejected persistent failed-check quarantine and then clarified the broader requirement: another session must not block Git work through activity, failure, uncertainty, history or application-level synchronization. The user accepts responsibility for concurrent edits and deletion of a worktree still used by a session. The authorized implementation is connected after the Phases 2–5 feature rebase; this is not a paused design proposal or an installed-release claim.
 
 This supersedes the application reservations, repository-wide admission/quarantine, cross-invocation receipt fencing and placement leases in [ADR 0011](0011-policy-driven-git-tools.md), including its section 7. It does **not** supersede authorization, required checks, exact-candidate approval, physical identity validation, deliberate staging, method-specific integration, rebase result reentry or truthful outcomes. The [existing roadmap](../plans/2026-09-29_policy-driven-git-tools-plan.md) remains the sole execution plan.
 
-**Current versus intended behavior:** the rebased source still has those older gates. This record is not a claim that they have been removed. Native transaction and invocation foundations must precede removing any gate on which apply currently relies. No local integration, publication, deployment, live-settings change or feature-resource cleanup is approved here.
+**Runtime acceptance pending:** native prepared-ref/checked-out transactions, original invocation capabilities, scoped authority and selected/legacy/browser callers are connected. Original-caller cleanup transitions, explicit browser required-check batches, live artifact access and bounded retention have focused verification. Application gate/lease/admission APIs are retired, and fresh-use authority, raw physical-evidence and retention review fixes are connected. The settled full suite, final static checks, actual containment, browser/terminal and exact-tip acceptance remain pending, including the remaining ordered-member-start audit. The [guide](../git-workflow.md) owns the source contract and limits; the roadmap owns metrics and acceptance. No production build is expected during development. No installed-release, deployment, live-settings, integration, publication or feature-resource cleanup approval is implied.
+
+Required batches authenticate original private attempt/settlement/registration membership and the exact ordered required receipt set, never public cohort metadata. The browser runs one explicit required-check batch and does not fall back to old passes after current-batch failure; none never waives required checks. Legacy integration derives recipes only from captured task settings or validated saved preferences; `params.checks` can only exactly compare them. Saving preferences remains a separate explicit decision, and paired cwd/env/requiredStage refusal is unchanged.
+
+Own-checkout cleanup authenticates the original candidate/removal pair at the first native handoff before ordinary reads after disappearance, retaining the original caller/fence/scopes and current policy/trust. No new fence, fake caller or chat move is introduced. Anchorless workspace/preparation lazy reads require privately issued original RPC request/response and SDK-owner identity across root awaits; anchored history is a separate read-only path. Neither grants execution rights; human previews retain inline patches.
+
+Completed diagnostic retention is connected with 16 MiB record, 100 MiB log and 64 MiB artifact targets. Bounded aggregate-byte/entry accounting protects incoming correlation IDs and permits validated-prefix recovery from stable overshoots, not a global quota or Git gate. Legacy history remains read-only without live pruning, replay or recovery-release. Authenticated `/api/git/check-recovery` GET is diagnostic and POST returns 410; it creates no `cgroupRelease` grant. Unknown/active/uncertain spools remain untouched; unavailable original artifacts are never reconstructed from current checkout content. These source facts do not weaken the decision below or the repository's stronger lifecycle rules.
 
 ## Decision
 
@@ -32,7 +38,7 @@ No process-wide/session-wide checkout gate, common-directory reservation, resour
 
 ## Checked-out transactions, not just ref CAS
 
-The current native implementation modifies checkout files before its final ref CAS. Removing the application gate around that sequence is insufficient.
+The predecessor native implementation modified checkout files before its final ref CAS. Removing its application gate alone was insufficient; the shared replacement transaction below is implemented and connected to callers, with aggregate acceptance still pending.
 
 The replacement uses pinned physical repository/worktree administration and the original real target `index.lock` descriptor. It prepares an interactive native `update-ref --stdin` transaction which verifies the source and conditionally updates the target, using no-dereference semantics and exact expected OIDs. Git must acknowledge preparation and hold the relevant ref locks **before checkout files change**.
 

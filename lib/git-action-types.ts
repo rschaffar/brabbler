@@ -1,6 +1,7 @@
 import type { GitWorkflowCheck } from "./git-workflow-policy";
 import type { GitCheckRecipe, GitCheckStage } from "./git-check-recipe";
 import type { GitSelectedCheckSnapshot } from "./git-operation-admission";
+import type { GitSelectedCheckSnapshot as ScopedGitSelectedCheckSnapshot } from "./git-check-evidence";
 
 /** Plain SDK custom metadata, never a custom_message or provider message. */
 export const GIT_ACTION_ANCHOR_TYPE = "pi-web:git-action";
@@ -60,7 +61,13 @@ export interface GitActionPreparationSnapshot {
 export interface GitActionWorkingWorkspaceFlags {
   evidenceScope: "working-workspace"; candidateTreeVerified: false; repositoryChecksWaived: false;
 }
+/** Optional display warning, never execution evidence or an admission decision. */
+export interface GitActionDiagnosticWarning {
+  status: "unavailable";
+  reason: "storage-unavailable" | "retention-limited";
+}
 export interface GitActionCheckExecution {
+  diagnostics?: GitActionDiagnosticWarning;
   actionId: string; sessionId: string; checkIndex: number; stage: GitCheckStage;
   recipeDigest: string; policyDigest: string; snapshotDigest: string; environmentDigest: string;
   executionCwd: string; startedAt: number; finishedAt: number;
@@ -73,6 +80,9 @@ export interface GitActionCheckExecution {
   payload?: "release-attempted" | "prevented-before-write";
   exitStatus: number | null; containmentComplete: boolean; timedOut: boolean; overflow: boolean;
   logDigest: string; logBytes: number;
+  /** Optional completed-output retention correlation only; never a receipt,
+   * source path, containment proof or executable capability. UUIDv4. */
+  outputDiagnosticId?: string;
   /** Inert metadata, possibly proposed before native settlement/registration.
    * An executing outcome never claims a published or usable passing receipt. */
   receipt?: { id: string; sha256: string; expiresAt: number };
@@ -98,7 +108,7 @@ export interface GitActionCheckoutVerificationSnapshot extends GitActionCheckout
   /** v2 scope REQUIRES each original digest-only manifest, copied exactly.
    * v3 commit scope rejects these v2 manifests; no history reconstructs proof. */
   checks: { checkIndex: number; recipe: GitCheckRecipe; recipeDigest: string; environmentDigest: string; executionCwd: string;
-    snapshot?: GitSelectedCheckSnapshot }[];
+    snapshot?: GitSelectedCheckSnapshot | ScopedGitSelectedCheckSnapshot }[];
 }
 export interface GitActionCleanupIgnoredEntry {
   path: string; kind: "file" | "directory"; device: string; inode: string; birthtime: string;
@@ -173,6 +183,7 @@ export interface GitActionCandidateSnapshot {
   diffUnavailable?: string;
 }
 export interface GitActionOutcome {
+  diagnostics?: GitActionDiagnosticWarning;
   status?: string;
   /** New native results are kind-tagged; these facts are never execution authority. */
   kind?: "workspace" | "preparation" | "checkout-verification" | "cleanup";
@@ -222,6 +233,12 @@ export interface GitActionRecord {
   /** Prepared OIDs are not evidence that the ref/index update happened. */
   intended?: GitActionOutcome;
   outcome?: GitActionOutcome;
+  /** Optional diagnostics status; never changes native facts or grants approval. */
+  diagnostics?: GitActionDiagnosticWarning;
+}
+export interface GitActionDiagnosticReport {
+  diagnosticsUnavailable?: true;
+  diagnostics?: GitActionDiagnosticWarning;
 }
 export interface GitActionHistoryResponse {
   record: GitActionRecord | null;

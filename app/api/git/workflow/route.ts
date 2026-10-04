@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
 import { appendSessionGitWorkflow, readSessionGitWorkflow, validateGitWorkflowPolicy } from "@/lib/git-workflow-policy";
-import { isGitCheckoutGated } from "@/lib/git-checkout-gate";
 import { getProjectGitWorkflow, setProjectGitWorkflow } from "@/lib/git-workflow-store";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { invalidateSessionListCache, invalidateSessionManagerCache, readLatestSessionEntryId, readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
@@ -11,6 +10,7 @@ import { SUBAGENT_META_TYPE } from "@/lib/subagents";
 import { readManagedSessionGitWorkflow } from "@/lib/git-workflow-session";
 import { loadGitWorkflowSettings, readGitWorkflowSettingsDocument, withGitWorkflowSettingsLock } from "@/lib/git-workflow-settings-store";
 import { advanceGitWorkflowWriteEpoch } from "@/lib/git-workflow-write-epoch";
+import { gitProjectRootForCaller } from "@/lib/git-project-resources";
 import type { SessionEntry } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -115,7 +115,10 @@ async function writeLegacySettings(body: unknown) {
       if (current.projectRoot && Object.hasOwn(readGitWorkflowSettingsDocument().projects, current.projectRoot)) {
         return error("This project uses scoped Workflow settings; use the Workflow panel", 409);
       }
-      advanceGitWorkflowWriteEpoch(getAgentDir());
+      let canonicalRoot: string | undefined;
+      try { canonicalRoot = await gitProjectRootForCaller(checked.cwd!); } catch { /* ambiguous legacy write is global */ }
+      advanceGitWorkflowWriteEpoch(getAgentDir(), [canonicalRoot && canonicalRoot === current.projectRoot
+        ? { kind: "project", projectRoot: canonicalRoot } : { kind: "global" }]);
       await setProjectGitWorkflow(checked.cwd!, policy);
       return NextResponse.json({ ok: true, cwd: checked.cwd, project: policy });
     }
@@ -124,7 +127,6 @@ async function writeLegacySettings(body: unknown) {
     const target = await sessionTarget(input.sessionId);
     if (target.response) return target.response;
     const id = input.sessionId as string;
-    if (isGitCheckoutGated(target.cwd!)) return error("Checkout is busy with a Git transaction", 409);
     const live = getRpcSession(id);
     if (live?.isRunning()) return error("Stop the session before changing its workflow", 409);
     let before: ReturnType<typeof statSync>;
@@ -151,8 +153,8 @@ async function writeLegacySettings(body: unknown) {
     if (now.size !== before.size || now.mtimeMs !== before.mtimeMs || now.ino !== before.ino) {
       return error("Session was changed by another editor", 409);
     }
-    if (live?.isRunning() || isGitCheckoutGated(target.cwd!)) return error("Stop the session before changing its workflow or checkout", 409);
-    advanceGitWorkflowWriteEpoch(getAgentDir());
+    if (live?.isRunning()) return error("Stop the session before changing its workflow or checkout", 409);
+    advanceGitWorkflowWriteEpoch(getAgentDir(), [{ kind: "session", sessionId: id }]);
     appendSessionGitWorkflow(manager, policy);
     invalidateSessionManagerCache(target.file);
     invalidateSessionListCache();

@@ -9,13 +9,11 @@ import { selectGitCheckoutVerificationChecks, type GitCheckoutVerificationReceip
 import { normalizeGitCheckRecipe, type GitCheckRecipe, type GitCheckStage } from "./git-check-recipe";
 import type { ProjectAuthorizationOwner } from "./git-project-authorization";
 import type { GitProjectResources, GitResourceSelector } from "./git-project-resources";
-import type { GitWorkspaceRequest, GitWorkspaceResult, GitWorkspaceAdmission, GitWorkspaceCompletedProof,
+import type { GitWorkspaceRequest, GitWorkspaceResult, GitWorkspaceCompletedProof,
   GitWorkspaceParentCreation, GitWorkspaceKnownParentCreation, GitWorkspaceFailureEvidence } from "./git-workspace-operation";
 import type { GitPreparationApplyResult } from "./git-preparation-apply";
 import type { SelectedIntegrationResult, SelectedIntegrationNativeCompletion } from "./git-selected-integration";
-import type { GitCleanupCompletedProof, GitCleanupFailure, GitCleanupIntegration, GitCleanupCreatedWorkspace,
-  GitCleanupIntent, GitCleanupUsageLease, GitCleanupEvidence } from "./git-cleanup-operation";
-import type { GitOperationReservation } from "./git-operation-admission";
+import type { GitCleanupCompletedProof, GitCleanupFailure, GitCleanupIntegration, GitCleanupCreatedWorkspace } from "./git-cleanup-operation";
 import type { GitActionHandle } from "./git-action-controller";
 import type { GitActionCandidateSnapshot, GitActionCheckoutVerificationSnapshot } from "./git-action-types";
 
@@ -70,6 +68,7 @@ export interface SelectedNativeCandidate {
   sourceOid: string;
   targetOid?: string;
   policyRevision: string;
+  invocationOwner?: import("./git-mutation-invocation").GitMutationInvocationAuthority["owner"];
   history: GitActionCandidateSnapshot | SelectedCleanupHistory | SelectedCheckoutVerificationHistory;
   /** Workspace/cleanup captures already allocate their native action UUID. */
   actionId?: string;
@@ -104,13 +103,9 @@ export interface SelectedCompletionEnvelope {
 }
 export type SelectedNativeFailure = {
   kind: "partial"; actionId: string; candidateRevision: string; recoveryRequired: true;
+  nativeOutcome?: import("./git-native-checkout-transaction").NativeCheckoutOutcome;
   preparation?: Extract<GitPreparationApplyResult, { status: "partial-state" }>;
   integration?: SelectedIntegrationResult; cleanup?: GitCleanupFailure; workspace?: GitWorkspaceFailureEvidence;
-} | {
-  /** ONLY the leaf's typed, independently proven pre-effect target movement,
-   * with ALL other captured state unchanged. A string/error code is insufficient. */
-  kind: "target-moved"; actionId: string; candidateRevision: string; before: GitPreparationReentryState;
-  after: GitPreparationReentryState; otherStateBefore: string; otherStateAfter: string; noEffect: true;
 };
 
 export interface SelectedJournalActionHandle {
@@ -118,27 +113,16 @@ export interface SelectedJournalActionHandle {
   update: GitActionHandle["update"];
   release: GitActionHandle["release"];
 }
-/** Native admission factories are mandatory trusted implementations, not booleans.
- * Workspace/cleanup admission wrappers still need measured native-registry and
- * journal binding; unavailable ledger methods must refuse, never proof-free resolve.
- * Integration must correlate beginIntent's reservation actionId with this action.
- * Cleanup must retain ONE continuous usage lease through removal and ref CAS. */
+/** Private runtime projection. Native identity sealing is independent of optional
+ * diagnostic publication; this interface never acquires resource ownership. */
 export interface SelectedJournalAdmission {
   action: SelectedJournalActionHandle;
-  workspaceAdmission: GitWorkspaceAdmission;
-  beginIntegrationIntent(): Promise<GitOperationReservation>;
-  cleanup: {
-    acquireUsageLease(source: GitProjectResources, evidence: GitCleanupEvidence): Promise<GitCleanupUsageLease>;
-    assertAdmission(evidence: GitCleanupEvidence): Promise<void>;
-    beginIntent(evidence: GitCleanupEvidence): Promise<GitCleanupIntent>;
-  };
   /** Called by actual leaf completion callbacks/intent wrappers. Read the actual
    * native registry (including pending-admission preparation), persist measured
    * outcome via action wrappers, and NEVER publish ordering proof here. */
   recordNativeCompletion(handle: object): Promise<void>;
-  /** Finish/verify durable journal AND admission after native return. May use
-   * finishVerifiedNativeGitAction for workspace/preparation. No plain history,
-   * SDK result, progress event or proof-free resolve() qualifies. */
+  /** Fixed native readers authenticate ORIGINAL completed objects and their
+   * original invocation. Optional history is not a barrier or a proof reader. */
   sealCompletion(nativeHandle: object): Promise<object>;
   readDurableCompletion(seal: object): { stage: "completed"; actionId: string; nativeHandle: object; candidateRevision: string } | undefined;
   recordFailure(failure: SelectedNativeFailure | undefined, context: { executionStarted: boolean; code: string }): Promise<void>;
@@ -191,7 +175,7 @@ export interface SelectedNativeAdapter<K extends SelectedControllerOperation> {
   /** Resolve thrown objects/results by identity; no parsing of error strings. */
   readNativeFailure(cause: unknown): SelectedNativeFailure | undefined;
   /** Retire native plans/approvals, including a proven pre-effect target move. */
-  retire(handle: object): void;
+  retire(handle: object, completed?: boolean): void;
 }
 export interface SelectedSealedCleanupPrerequisites {
   integration: { handle: object; proof: GitCleanupIntegration };
@@ -211,7 +195,6 @@ export type SelectedNativeAdapters = { [K in SelectedControllerOperation]: Selec
    * v2 source-only checks. A clean v2 receipt never proves a working workspace,
    * and working evidence never claims staged candidate-tree verification. */
   assertReceipt(candidate: SelectedNativeCandidate, receipt: GitCheckoutVerificationReceipt): Promise<void>;
-  invalidateReceipts(source: GitProjectResources): void;
   /** Prove no active/uncertain launch, fresh native cleanliness, admission and
    * any necessary independent recovery; authenticate recoveryHandle by identity. */
   assertReconciliation(handle: object, envelope: SelectedCompletionEnvelope, previousLaunch?: GitPreparationReentryLaunch): Promise<void>;
@@ -223,7 +206,7 @@ export type SelectedNativeAdapters = { [K in SelectedControllerOperation]: Selec
  * not merely that this generation forgot its WeakMaps or that a tip moved.
  * Unknown includes unavailable/incomplete evidence; it is NOT independent. */
 export type SelectedPreparationOrderingRequirement = {
-  kind: "independent" | "required"; source: GitProjectResources; sourceOid: string; evidenceRevision: string;
+  kind: "independent"; source: GitProjectResources; sourceOid: string; evidenceRevision: string;
 } | { kind: "unknown" };
 export interface SelectedOperationControllerBootstrap {
   owner: ProjectAuthorizationOwner;
@@ -232,8 +215,8 @@ export interface SelectedOperationControllerBootstrap {
    * Caller need NOT be in Git: the live authorization helper's positively
    * verified non-Git caller union is supported without movement/task adoption.
    * Cleanup authorization uses the sealed integration's SURVIVING target, never
-   * rediscovery of the removed source. Native own-removal proof and the same
-   * continuous usage/admission lease remain separately mandatory. */
+   * rediscovery of the removed source. Original native own-removal proof and
+   * live unchanged owner/permission/physical target checks remain mandatory. */
   authorization: SelectedOperationReaders;
   native: SelectedNativeAdapters;
   journalAdmission: SelectedJournalAdmissionFactory;
@@ -250,19 +233,23 @@ export interface SelectedOperationControllerBootstrap {
   now?: () => number;
 }
 export interface SelectedOperationResult {
-  status: "completed" | "already-prepared" | "no-defined" | "no-required" | "blocked" | "recovery-required" | "target-moved";
+  status: "completed" | "already-prepared" | "no-defined" | "no-required" | "blocked" | "recovery-required";
   operation: SelectedControllerOperation;
   actionId?: string; code?: string;
   sourceOid?: string; targetOid?: string; resultOid?: string; treeOid?: string;
   scope?: { projectRoot: string; checkoutPath: string; branch: string };
   revisionDependency?: string;
   receiptIds?: readonly string[];
+  diagnosticsUnavailable?: true;
+  diagnostics?: import("./git-action-types").GitActionDiagnosticWarning;
   knownParentCreation?: GitWorkspaceKnownParentCreation;
   recoveryRequired?: true;
-  movement?: { count: number; limit: 3; returnToAgent: true };
   /** Actual measured partial checkpoints; never guidance to retry. */
   knownFacts?: { observedSourceOid?: string | null; newSourceOid?: string; treeOid?: string;
     checkoutAttempted?: boolean; refUpdateCompleted?: boolean; indexInstalled?: boolean; completionVerified?: boolean;
+    nativeStatus?: import("./git-native-checkout-transaction").NativeCheckoutOutcome["status"];
+    refPrepared?: boolean; refCommitSent?: boolean; refAcknowledged?: boolean; indexSynced?: boolean;
+    directorySyncFailed?: boolean; childReaped?: boolean;
     removeAttempted?: boolean; removalVerified?: boolean; removalRecorded?: boolean; branchDeleteAttempted?: boolean;
     branchDeleteVerified?: boolean; sourceAbsent?: boolean | null; featureRefAbsent?: boolean | null;
     parentCreationAttempted?: boolean; parentCreated?: boolean; knownParentCreation?: GitWorkspaceKnownParentCreation;
@@ -337,11 +324,8 @@ function state(candidate: SelectedNativeCandidate, owner: ProjectAuthorizationOw
     source: candidate.source, target: candidate.target, sourceOid: candidate.sourceOid, targetOid: candidate.targetOid };
 }
 type Chain = { operationId: string; receipts: string[]; dependency?: string; pending?: GitPreparationReentryLaunch;
-  state?: GitPreparationReentryState; reconciled?: boolean; recovery: boolean;
-  /** Private, generation-local NO-EFFECT classification, not approval/recovery
-   * authority. Only a NEW independent prepare may use it; history cannot restore
-   * it. Retain the operation scope and separately keyed real-user movement budget. */
-  targetMove?: { userEntry: string; after: GitPreparationReentryState } };
+  state?: GitPreparationReentryState; reconciled?: boolean; recovery: boolean; retiredBy?: string;
+};
 
 export function createGitSelectedOperationController(bootstrap: SelectedOperationControllerBootstrap) {
   requireFact(bootstrap && bootstrap.authorization && bootstrap.native && bootstrap.journalAdmission
@@ -357,7 +341,7 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
     requireFact(a && [a.capture, a.readCandidate, a.assertExact, a.execute, a.readNativeCompletion, a.readNativeFailure, a.retire]
       .every((f) => typeof f === "function"), "native-adapters-required");
   }
-  requireFact([bootstrap.native.readReceipt, bootstrap.native.assertReceipt, bootstrap.native.invalidateReceipts,
+  requireFact([bootstrap.native.readReceipt, bootstrap.native.assertReceipt,
     bootstrap.native.readCleanupPrerequisites, bootstrap.native.assertReconciliation].every((f) => typeof f === "function"), "native-adapters-required");
   const owner = Object.freeze(structuredClone(bootstrap.owner));
   requireFact(owner && [owner.sessionId, owner.sessionFile, owner.sessionCwd].every(text), "ordinary-owner-required");
@@ -367,8 +351,7 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
   const reconciliations = new WeakMap<object, GitPreparationReconciliationProof>();
   const ordering = createGitPreparationReentryController({ readPreparationResult: (h) => preparations.get(h),
     readVerificationResult: (h) => verifications.get(h), readReconciliationResult: (h) => reconciliations.get(h), now });
-  const fences = new Map<string, Chain>(), tokens = new Map<string, Chain>(), busy = new Set<string>();
-  const movements = new Map<string, number>();
+  const fences = new Map<string, Chain>(), tokens = new Map<string, Chain>();
   const integrations = new Map<string, { handle: object; proof: GitCleanupIntegration }>();
   const creations = new Map<string, { handle: object; proof: GitCleanupCreatedWorkspace }>();
   let disposed = false;
@@ -378,24 +361,23 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
     chain.receipts = [];
     chain.reconciled = false;
     chain.recovery = true;
-    chain.targetMove = undefined;
   }
   async function orderingRequirement(source: GitProjectResources) {
     const requirement = await bootstrap.readPreparationOrderingRequirement(owner, source);
-    requireFact(requirement && ["independent", "required", "unknown"].includes(requirement.kind), "ordering-state-unavailable");
+    requireFact(requirement && ["independent", "unknown"].includes(requirement.kind), "ordering-state-unavailable");
     if (requirement.kind !== "unknown") requireFact(same(requirement.source, source)
       && oid(requirement.sourceOid) && text(requirement.evidenceRevision), "ordering-state-unavailable");
     return requirement;
   }
   function publish(chain: Chain, dependency: string) {
     if (chain.dependency) tokens.delete(chain.dependency);
-    chain.dependency = dependency; chain.pending = undefined; chain.recovery = false; chain.targetMove = undefined; tokens.set(dependency, chain);
+    chain.dependency = dependency; chain.pending = undefined; chain.recovery = false; tokens.set(dependency, chain);
   }
   async function run<K extends SelectedControllerOperation>(operation: K, raw: SelectedControllerRequests[K]): Promise<SelectedOperationResult> {
     let key: string | undefined, candidateHandle: object | undefined, candidate: SelectedNativeCandidate | undefined;
-    let journal: SelectedJournalAdmission | undefined, executing = false, chain: Chain | undefined;
+    let journal: SelectedJournalAdmission | undefined, executing = false, finished = false, chain: Chain | undefined;
     let nativeResultHandle: object | undefined, actualCompletion: SelectedCompletionEnvelope | undefined;
-    let ownsBusy = false, consumed = false, movementKey: string | undefined, userEntry: string | undefined;
+    let consumed = false, userEntry: string | undefined;
     let operationId: string = randomUUID();
     const adapter = native[operation] as SelectedNativeAdapter<K>;
     const requestId = randomUUID();
@@ -405,14 +387,13 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
       const request = structuredClone(raw);
       const source = structuredClone(await readers.readResources(request.selector));
       key = sourceKey(owner, source);
-      requireFact(!busy.has(key), "operation-in-progress");
-      busy.add(key); ownsBusy = true;
       requireFact(fences.size < 128 || fences.has(key), "capacity");
       userEntry = await bootstrap.currentUserRequestId(owner);
       requireFact(text(userEntry), "current-user-request-required");
-      movementKey = digest([key, userEntry]);
-      requireFact((movements.get(movementKey) ?? 0) < 3, "contention-limit");
       chain = fences.get(key);
+      if (operation === "prepare" && chain?.recovery && chain.retiredBy && chain.retiredBy !== userEntry) {
+        fences.delete(key); chain = undefined;
+      }
       const dependent = operation === "verify" || operation === "integrate";
       const requirement = dependent || operation === "prepare" || operation === "reconcile" ? await orderingRequirement(source) : undefined;
       if (requirement && requirement.kind !== "independent" && !chain) {
@@ -420,16 +401,13 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
       }
       if (chain?.state && requirement && requirement.kind !== "unknown" && requirement.sourceOid !== chain.state.sourceOid
         && operation !== "reconcile") retire(chain);
-      // Historical/unknown state can only deny. A fresh completed live proof in
+      // Unknown CURRENT physical state can only deny. A fresh completed live proof in
       // THIS generation is the sole override, and only for its exact epoch.
       if (dependent && requirement?.kind === "unknown" && (!chain?.state || !chain.reconciled || chain.recovery))
         throw new Refused("ordering-state-unavailable");
       operationId = chain?.operationId ?? operationId;
-      const prepareAfterMove = operation === "prepare" && chain?.recovery === true && !!chain.targetMove
-        && requirement?.kind !== "unknown" && !!requirement
-        && same(chain.targetMove.after.source, source) && chain.targetMove.after.sourceOid === requirement.sourceOid;
-      // This is a fresh request/capture, never a replay or new scope to evade
-      // budgets. The old launch/target snapshot must not reach the new prepare.
+      // This is a fresh request/capture, never a replay. The old launch/target
+      // snapshot must not reach the new prepare.
       let cleanupIntegration = integrations.get(key), cleanupCreation = creations.get(key);
       if (operation === "cleanup") {
         if (!cleanupIntegration || !cleanupCreation) {
@@ -485,12 +463,12 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
         const token = (request as SelectedVerifyRequest | SelectedIntegrateRequest).revisionDependency;
         requireFact(!chain.recovery && token && tokens.get(token) === chain && chain.dependency === token, "revision-dependency-required");
       }
-      // A new prepare cannot fork an outstanding/uncertain rewrite. The narrow
-      // exception is an independent call after authenticated target movement;
+      // A new prepare cannot fork its own outstanding/uncertain rewrite.
+      // An independent explicit user request has already retired that local chain;
       // its native capture, live authority and actual rewrite are still required.
       // Ordinary no-op MUST NOT erase the fence or mint another dependency.
       const context: SelectedNativeCaptureContext = { owner, operationId, checks,
-        orderingState: !prepareAfterMove && chain?.state ? structuredClone(chain.state) : undefined,
+        orderingState: chain?.state ? structuredClone(chain.state) : undefined,
         receiptIds: operation === "integrate" ? [...((request as SelectedIntegrateRequest).receiptIds ?? [])] : [],
         ...(operation === "cleanup" ? { integrationHandle: cleanupIntegration!.handle, creatorHandle: cleanupCreation!.handle } : {}) };
       const captureInput = Object.fromEntries(["selector", ...requestKeys[operation]]
@@ -532,10 +510,7 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
       if (operation === "workspace") requireFact(same(candidate.parentCreation, candidate.history.workspace?.parentCreation), "native-parent-mismatch");
       if ((operation === "verify" || operation === "integrate") && chain?.state)
         requireFact(same(state(candidate, owner, operationId), chain.state), "ordering-state-changed");
-      if (operation === "prepare" && chain) requireFact(candidate.noEffect === "already-prepared"
-        || prepareAfterMove && chain.targetMove && same(candidate.source, chain.targetMove.after.source)
-          && candidate.sourceOid === chain.targetMove.after.sourceOid && same(candidate.target, chain.targetMove.after.target),
-      "reconciliation-required");
+      if (operation === "prepare" && chain) requireFact(candidate.noEffect === "already-prepared", "fresh-user-request-required");
       if (operation === "cleanup") requireFact(candidate.target && same(candidate.target, authorizationResources)
         && candidate.cleanup && candidate.cleanup.integrationHandle === cleanupIntegration!.handle
         && candidate.cleanup.creatorHandle === cleanupCreation!.handle
@@ -548,11 +523,8 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
       requireFact(journal?.action && text(journal.action.record.id) && journal.action.record.sessionId === owner.sessionId
         && journal.action.record.kind === candidate.history.kind
         && (!candidate.actionId || candidate.actionId === journal.action.record.id)
-        && journal.workspaceAdmission && journal.cleanup
         && [journal.action.update, journal.action.release, journal.recordNativeCompletion, journal.sealCompletion,
-          journal.readDurableCompletion, journal.recordFailure, journal.beginIntegrationIntent,
-          journal.workspaceAdmission.assertAdmission, journal.workspaceAdmission.beginIntent,
-          journal.cleanup.acquireUsageLease, journal.cleanup.assertAdmission, journal.cleanup.beginIntent]
+          journal.readDurableCompletion, journal.recordFailure]
           .every((f) => typeof f === "function"), "journal-admission-required");
       const actionId = journal.action.record.id;
       const forceIgnoredAsk = !!candidate.cleanup?.ignoredNames.length;
@@ -568,7 +540,6 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
         if (dependent) {
           const currentRequirement = await orderingRequirement(candidate!.source);
           requireFact(currentRequirement.kind !== "unknown" || chain?.state && chain.reconciled && !chain.recovery, "ordering-state-unavailable");
-          requireFact(currentRequirement.kind !== "required" || chain?.state && !chain.recovery, "revision-dependency-required");
           requireFact(currentRequirement.kind === "unknown" || currentRequirement.sourceOid === candidate!.sourceOid, "ordering-tip-changed");
         }
         const fresh = await revalidateSelectedOperationAuthorization(authRequest, evidence, readers);
@@ -584,16 +555,16 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
       await live(); // Post-human-wait, outside native gates.
       if ((operation === "verify" || operation === "integrate") && chain) {
         const token = (request as SelectedVerifyRequest | SelectedIntegrateRequest).revisionDependency;
-        consumed = true;
-        chain.pending = ordering.gate.consume({ stage: operation === "verify" ? "verify" : "integrate",
+        const launch = ordering.gate.consume({ stage: operation === "verify" ? "verify" : "integrate",
           revisionDependency: token, state: state(candidate, owner, chain.operationId), receiptIds: chain.receipts });
+        consumed = true; chain.pending = launch;
         tokens.delete(token!); chain.dependency = undefined;
       }
       const startedAt = now();
       await journal.action.update("executing", { decision: "approved" }); executing = true;
       await live();
       const nativeHandle = await adapter.execute(candidateHandle, { actionId, operationId, journalAdmission: journal,
-        authorize: live, onNativeCompleted: (h) => journal!.recordNativeCompletion(h), previousLaunch: prepareAfterMove ? undefined : chain?.pending });
+        authorize: live, onNativeCompleted: (h) => journal!.recordNativeCompletion(h), previousLaunch: chain?.pending });
       nativeResultHandle = nativeHandle;
       const nativeEnvelope = adapter.readNativeCompletion(nativeHandle);
       if (!nativeEnvelope) throw nativeHandle;
@@ -668,6 +639,7 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
           && c.result.status === (w.mode === "create" ? "created" : "attached")
           && c.result.oid === (w.mode === "create" ? w.expectedBaseOid : w.expectedTipOid)
           && c.proof.version === 1 && c.proof.outcome === "completed" && c.proof.status === "clean"
+          && candidate.invocationOwner && same(c.proof.invocationOwner, candidate.invocationOwner)
           && c.proof.sourceOid === candidate.sourceOid && c.proof.baseOid === w.expectedBaseOid
           && c.proof.branchRef === `refs/heads/${w.branch}` && c.proof.resultOid === c.result.oid
           && c.proof.treeOid === c.result.treeOid && oid(c.result.treeOid)
@@ -683,7 +655,7 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
         requireFact(c.result.result.status === "integrated" && c.result.nativeOutcome.completionVerified
           && c.integration.delivery === "selected-local" && ["ff", "merge"].includes(c.integration.method)
           && c.integration.actualFF === (c.integration.method === "ff")
-          && c.integration.admissionActionId === actionId && same(c.integration.feature, source)
+          && candidate.invocationOwner && same(c.integration.invocationOwner, candidate.invocationOwner) && same(c.integration.feature, source)
           && same(c.integration.target, candidate.target) && c.integration.featureOid === candidate.sourceOid
           && c.integration.previousTargetOid === candidate.targetOid && oid(c.integration.resultOid) && oid(c.integration.resultTree), "sealed-integration-required");
       }
@@ -722,7 +694,7 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
       } else if (completion.operation === "integrate") {
         integrations.set(key, { handle: seal, proof: completion.integration });
         result.resultOid = completion.integration.resultOid; result.treeOid = completion.integration.resultTree;
-        if (chain) retire(chain); // No successor, even though integration completed.
+        if (chain) { retire(chain); chain.retiredBy = userEntry; } // No successor.
       } else if (completion.operation === "workspace") {
         creations.set(sourceKey(owner, completion.creation.destination), { handle: seal, proof: completion.creation });
         result.resultOid = completion.result.oid; result.treeOid = completion.result.treeOid;
@@ -738,11 +710,11 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
         chain ??= { operationId, receipts: [], recovery: false }; fences.set(key, chain);
         chain.receipts = []; chain.state = envelope.after; chain.reconciled = true; publish(chain, published.revisionDependency);
         result.revisionDependency = published.revisionDependency;
-        native.invalidateReceipts(source);
       } else {
         requireFact(completion.proof.actionId === actionId, "sealed-cleanup-required");
         integrations.delete(key); creations.delete(key);
       }
+      finished = true;
       return result;
     } catch (cause) {
       let failure: SelectedNativeFailure | undefined;
@@ -750,14 +722,13 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
         failure = adapter.readNativeFailure(cause) ?? (nativeResultHandle ? adapter.readNativeFailure(nativeResultHandle) : undefined);
         // Authenticate the ORIGINAL handle first; snapshot only its deny-only
         // facts. A journal await must not retarget that private classification.
-        if (failure?.kind === "target-moved") failure = structuredClone(failure);
+        if (failure) failure = structuredClone(failure);
       } catch { failure = undefined; /* unknown is not safe */ }
-      if (key && executing && !chain) {
+      if (key && executing && !chain && !fences.has(key) && (operation === "prepare" || operation === "integrate")) {
         chain = { operationId, receipts: [], recovery: true }; fences.set(key, chain);
       }
-      if (chain && (executing || consumed)) retire(chain);
-      if (key && candidate && (executing || consumed)) native.invalidateReceipts(candidate.source);
-      if (journal) { try { await journal.recordFailure(failure?.kind === "target-moved" ? structuredClone(failure) : failure, { executionStarted: executing,
+      if (chain && (executing || consumed)) { retire(chain); chain.retiredBy = userEntry; }
+      if (journal) { try { await journal.recordFailure(failure, { executionStarted: executing,
         code: cause instanceof Refused ? cause.code : "operation-refused" }); } catch { /* preserve uncertainty */ } }
       const base: SelectedOperationResult = { operation, actionId: journal?.action.record.id,
         ...(candidate ? { sourceOid: candidate.sourceOid, targetOid: candidate.targetOid,
@@ -772,24 +743,17 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
         base.treeOid = actualCompletion.completion.integration.resultTree;
       }
       if (failure && candidate && failure.actionId === journal?.action.record.id && failure.candidateRevision === candidate.revision) {
-        if (failure.kind === "target-moved" && operation === "integrate" && failure.noEffect === true
-          && text(failure.otherStateBefore) && same(failure.otherStateBefore, failure.otherStateAfter)
-          && oid(failure.after.targetOid) && failure.before.targetOid !== failure.after.targetOid
-          && same({ ...failure.before, targetOid: failure.after.targetOid }, failure.after)
-          && same(failure.before, stateIfPaired(candidate, owner, operationId))) {
-          if (movementKey) {
-            const count = (movements.get(movementKey) ?? 0) + 1; movements.set(movementKey, count);
-            // retire() already erased dependencies/receipts. Store ONLY this
-            // authenticated physical no-effect scope; no old approval/launch is
-            // revived. A new real user entry gets its own budget key, not a reset
-            // of the original entry's counter or a restored historical proof.
-            if (chain && userEntry) chain.targetMove = { userEntry, after: structuredClone(failure.after) };
-            return { ...base, status: "target-moved", recoveryRequired: undefined, code: count >= 3 ? "contention-limit" : "target-moved",
-              movement: { count, limit: 3, returnToAgent: true } };
+        if (failure.kind === "partial") {
+          if (failure.nativeOutcome?.status === "no-checkout-effect") {
+            base.status = "blocked"; base.recoveryRequired = undefined; base.code = "stale-candidate-new-request-required";
           }
-        } else if (failure.kind === "partial") {
           const p = failure.preparation, i = failure.integration?.nativeOutcome, c = failure.cleanup, w = failure.workspace;
-          base.knownFacts = { ...(p ? { observedSourceOid: p.observedSourceOid, newSourceOid: p.newSourceOid, treeOid: p.treeOid } : {}),
+          base.knownFacts = { ...(failure.nativeOutcome ? { nativeStatus: failure.nativeOutcome.status,
+            checkoutAttempted: failure.nativeOutcome.checkoutAttempted, refPrepared: failure.nativeOutcome.refPrepared,
+            refCommitSent: failure.nativeOutcome.refCommitSent, refAcknowledged: failure.nativeOutcome.refAcknowledged,
+            refUpdateCompleted: failure.nativeOutcome.refAcknowledged, indexInstalled: failure.nativeOutcome.indexInstalled,
+            indexSynced: failure.nativeOutcome.indexSynced, directorySyncFailed: failure.nativeOutcome.directorySyncFailed,
+            childReaped: failure.nativeOutcome.childReaped, completionVerified: failure.nativeOutcome.status === "complete" } : {}), ...(p ? { observedSourceOid: p.observedSourceOid, newSourceOid: p.newSourceOid, treeOid: p.treeOid } : {}),
             ...(i ?? {}), ...(c ? { removeAttempted: c.removeAttempted, removalVerified: c.removalVerified, removalRecorded: c.removalRecorded,
               branchDeleteAttempted: c.branchDeleteAttempted, branchDeleteVerified: c.branchDeleteVerified,
               sourceAbsent: c.sourceAbsent, featureRefAbsent: c.featureRefAbsent } : {}),
@@ -799,11 +763,8 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
       }
       return base;
     } finally {
-      try { if (candidateHandle) adapter.retire(candidateHandle); }
-      finally {
-        try { journal?.action.release(); }
-        finally { if (key && ownsBusy) busy.delete(key); }
-      }
+      try { if (candidateHandle) adapter.retire(candidateHandle, finished); }
+      finally { journal?.action.release(); }
     }
   }
   return Object.freeze({
@@ -813,7 +774,7 @@ export function createGitSelectedOperationController(bootstrap: SelectedOperatio
     integrate: (request: SelectedIntegrateRequest) => run("integrate", request),
     cleanup: (request: SelectedCleanupRequest) => run("cleanup", request),
     reconcile: (request: SelectedReconcileRequest) => run("reconcile", request),
-    /** Invalidates this generation; cannot release durable quarantine or usage. */
+    /** Invalidates this generation's private handles, never another invocation. */
     dispose() { disposed = true; ordering.issuer.dispose(); tokens.clear(); fences.clear(); integrations.clear(); creations.clear(); },
   });
 }

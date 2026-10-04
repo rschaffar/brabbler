@@ -1,9 +1,11 @@
 // Server bootstrap adapter. A revision fence is NOT a grant or cached approval.
 import { createHash, randomUUID } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { dirname } from "node:path";
+import { createGitCheckCleanupTransition, gitFenceLogicalPermission } from "./git-check-cleanup-authority";
+import type { GitInvocationBinding } from "./git-invocation";
 import { readBindingFile } from "./git-workflow-binding-io";
-import { readGitWorkflowWriteEpoch } from "./git-workflow-write-epoch";
+import { gitWorkflowPolicyRevision, readGitScopedAuthorityRevision, type GitAuthorityScope } from "./git-scoped-authority";
 import { getAllowedFileRoots, getKnownAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "./file-access";
 import { getProjectTrustStatus } from "./project-trust";
 import { readHumanGitSessionManager, type HumanGitScope } from "./git-action-human";
@@ -20,19 +22,6 @@ import type { GitWorkflowSettingsResponse } from "./git-workflow-settings";
 import { lookupGitCheckoutVerificationReceipt, type GitWorkingWorkspaceVerificationReceipt } from "./git-checkout-verification";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-function savedFile(file: string) {
-  try {
-    const named = lstatSync(file);
-    if (!named.isFile() || named.isSymbolicLink()) throw new Error("ordinary authority file required");
-    if (!samePath(realpathSync(file), file)) throw new Error("physical authority file required");
-    const value = readBindingFile(file, 4 * 1024 * 1024);
-    // Include metadata: even an equal-value rewrite or change-and-restore fences a run.
-    return { fingerprint: value.fingerprint, digest: hash(value.bytes.toString("base64")) };
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return "absent";
-    throw cause;
-  }
-}
 type LiveAuthorityReader = () => string;
 interface LiveRegistration { read: LiveAuthorityReader; instance: string }
 const liveReaderKey = Symbol.for("pi-web:git-check-authority:live-readers");
@@ -58,8 +47,22 @@ function mutations(): Map<string, string> {
 /** Trusted selection/trust/config writers call BEFORE effect, even equal-value
  * writes. Complements persisted workflow write epochs and bounded external stat
  * fingerprints; cannot be invoked by HTTP/model payload fields. */
-export function advanceGitCheckProcessAuthorityRevision(domain: "selection" | "trust" | "configuration" | "caller"): void {
-  mutations().set(domain, randomUUID());
+export function advanceGitCheckProcessAuthorityRevision(domain: "selection" | "trust" | "configuration" | "caller", scope: GitAuthorityScope = { kind: "global" }): void {
+  mutations().set(JSON.stringify([domain, scope]), randomUUID());
+}
+function processRevision(sessionId: string, projectRoots: readonly string[] | undefined, checkouts: readonly string[], revisions: ReadonlyMap<string, string> = mutations()): string {
+  const ancestors = new Set<string>();
+  for (const cwd of checkouts) { let path = cwd; for (;;) { ancestors.add(path); if (dirname(path) === path) break; path = dirname(path); } }
+  return hash([...revisions].filter(([key]) => {
+    if (!projectRoots) return true; // Unmigrated trusted caller: conservative.
+    let scope: GitAuthorityScope;
+    try { scope = JSON.parse(key)[1]; } catch { return true; } // old global writer
+    if (!scope || scope.kind === "global") return true;
+    if (scope.kind === "session") return scope.sessionId === sessionId;
+    if (scope.kind === "project") return projectRoots.includes(scope.projectRoot);
+    if (scope.kind === "chat-project") return scope.sessionId === sessionId && projectRoots.includes(scope.projectRoot);
+    return scope.kind === "trust-path" && ancestors.has(scope.path);
+  }).sort(([a], [b]) => a.localeCompare(b)));
 }
 function syncRevision(read: LiveAuthorityReader): string {
   const revision: unknown = read();
@@ -76,14 +79,21 @@ function neutralOwnerAppend(value: unknown): boolean {
     ["message", "usage", "context_edit", "compaction", "model_change", "thinking_level_change", "session_info", "label"].includes(row.type ?? "");
 }
 interface OwnerObservation { fingerprint: string; contentDigest: string; size: number; revision: string }
-const ownerKey = Symbol.for("pi-web:git-check-authority:owners");
-function ownerObservations(): Map<string, OwnerObservation> {
-  const g = globalThis as unknown as Record<symbol, Map<string, OwnerObservation>>;
+const ownerKey = Symbol.for("pi-web:git-check-authority:owners:v2");
+function ownerObservations(): Map<string, WeakRef<{ current?: OwnerObservation }>> {
+  const g = globalThis as unknown as Record<symbol, Map<string, WeakRef<{ current?: OwnerObservation }>>>;
   return g[ownerKey] ??= new Map();
 }
-function ownerRevision(scope: HumanGitScope): string {
+function createOwnerRevisionReader(scope: HumanGitScope): () => string {
+  const observations = ownerObservations();
+  const observation = observations.get(scope.sessionFile)?.deref() ?? {};
+  observations.set(scope.sessionFile, new WeakRef(observation));
+  // Only dead weak keys may be pruned. Foreign observations cannot evict an
+  // invocation's pinned observation or reset shared original-owner history.
+  for (const [key, value] of observations) if (!value.deref()) observations.delete(key);
+  return () => {
   const current = readBindingFile(scope.sessionFile, 16 * 1024 * 1024);
-  const observations = ownerObservations(), previous = observations.get(scope.sessionFile);
+  const previous = observation.current;
   let revision = previous?.revision ?? randomUUID();
   if (previous && previous.fingerprint !== current.fingerprint) {
     // Only verified exact appends of ordinary history are neutral. Rewrites,
@@ -95,21 +105,57 @@ function ownerRevision(scope: HumanGitScope): string {
       });
     if (!ordinaryAppend) revision = randomUUID();
   }
-  if (!previous && observations.size >= 128) observations.delete(observations.keys().next().value!);
-  observations.delete(scope.sessionFile); // bounded LRU; eviction invalidates, never reopens, an old fence
-  observations.set(scope.sessionFile, { fingerprint: current.fingerprint, contentDigest: hash(current.bytes.toString("base64")), size: current.bytes.length, revision });
+  observation.current = { fingerprint: current.fingerprint, contentDigest: hash(current.bytes.toString("base64")), size: current.bytes.length, revision };
   return revision;
+  };
+}
+interface PermissionObservation { allowed: boolean; revision: string; changes: number }
+const allowedKey = Symbol.for("pi-web:git-check-authority:logical-roots:v3");
+function allowedObservations(): Map<string, PermissionObservation> {
+  const g = globalThis as unknown as Record<symbol, Map<string, PermissionObservation>>;
+  return g[allowedKey] ??= new Map();
+}
+function observePermission(cwd: string, roots: Set<string>): PermissionObservation {
+  const observations = allowedObservations(), allowed = gitFenceLogicalPermission(cwd, roots);
+  let previous = observations.get(cwd);
+  if (!previous || previous.allowed !== allowed) {
+    previous = { allowed, revision: randomUUID(), changes: previous ? previous.changes + 1 : 0 };
+    observations.set(cwd, previous);
+  }
+  return previous;
 }
 export interface GitCheckAuthorityFenceOptions {
   scope: HumanGitScope;
   agentDir: string;
+  /** Trusted original native owner, created BEFORE the first await. Opts into
+   * the authenticated cleanup transition; never accept this from a payload. */
+  invocationOwner?: GitInvocationBinding["owner"];
   /** Trusted bootstrap's exact physical source/target paths, never request cwd. */
   checkouts: readonly string[];
+  /** Canonical caller + selected repository roots. Omission is conservative
+   * compatibility, NOT scoped independence. Physical identities bind separately. */
+  projectRoots?: readonly string[];
   /** Optional live server selection state, NOT a captured/static approval. */
   readSelectionStateSync?: () => unknown;
   /** Mandatory alongside selection state. Must advance at actual writers,
    * including a change-and-restore in the final awaited authorization call. */
   readSelectionRevisionSync?: () => string;
+}
+const cleanupFences = new WeakMap<() => string, { bind(candidate: object): void; accept(candidate: object, proof: object): void }>();
+/** Bind the ORIGINAL native candidate before effect, without recapturing any
+ * original authority. Copies/metadata/IDs cannot bind. Trusted bootstrap only. */
+export function bindGitCheckCleanupCandidate(fence: () => string, originalCandidate: object): void {
+  const state = cleanupFences.get(fence);
+  if (!state) throw new Error("Original cleanup authority fence required");
+  state.bind(originalCandidate);
+}
+/** At native authorize('before-delete'), accept the ORIGINAL candidate/proof
+ * pair BEFORE ordinary fence reads. Exact absence persists, not a new baseline.
+ * Failed transitions terminally revoke this original fence. */
+export function acceptGitCheckCleanupRemoval(fence: () => string, originalCandidate: object, originalRemoval: object): void {
+  const state = cleanupFences.get(fence);
+  if (!state) throw new Error("Original cleanup authority fence required");
+  state.accept(originalCandidate, originalRemoval);
 }
 /** Covers saved settings/write epoch, grants, trust, own workflow/tool/opt-out
  * metadata and live allowed selection. No async callback is used as a final
@@ -119,7 +165,30 @@ export interface GitCheckAuthorityFenceOptions {
  * Bounded/unreadable/unknown state throws; callers must fail closed. */
 export function createGitCheckAuthorityFence(options: GitCheckAuthorityFenceOptions): () => string {
   const scope = { ...options.scope }, checkouts = [...options.checkouts], agentDir = options.agentDir;
-  return () => {
+  const projectRoots = options.projectRoots && [...options.projectRoots];
+  const ownerRevision = createOwnerRevisionReader(scope);
+  const originalProcesses = new Map(mutations());
+  const transition = options.invocationOwner && createGitCheckCleanupTransition(scope, checkouts, agentDir, options.invocationOwner);
+  const authorityScope = { projectRoots, sessionId: scope.sessionId, trustPaths: checkouts, allScopes: !projectRoots };
+  let previousPresence: string | undefined, presenceRevision: string | undefined;
+  const readAllowed = () => {
+    const roots = getKnownAllowedFileRoots();
+    const permissions = checkouts.map((cwd) => observePermission(cwd, roots));
+    const present = checkouts.map((cwd) => transition?.removed(cwd) || isExistingFilePathAllowed(cwd, roots));
+    const presence = JSON.stringify(present);
+    if (previousPresence !== undefined && previousPresence !== presence) presenceRevision = randomUUID();
+    previousPresence = presence;
+    const decisions = permissions.map((permission, i) => permission.allowed && present[i]);
+    // Cache population/expiry can change redundant coverings, not permission.
+    // Share per-path transition history across readers (including receipts),
+    // with no foreign eviction. Instrumented process writers independently
+    // fence supported unobserved round trips; observed deny/restore is monotonic.
+    const revisions = permissions.map((permission) => permission.revision);
+    return { decisions, revision: hash([revisions, presenceRevision]) };
+  };
+  const observe = () => {
+    const originalScoped = readGitScopedAuthorityRevision(agentDir, authorityScope);
+    const originalProcess = processRevision(scope.sessionId, projectRoots, checkouts);
     const file = lstatSync(scope.sessionFile, { bigint: true });
     if (file.size > BigInt(16 * 1024 * 1024)) throw new Error("bounded saved owner required");
     const manager = readHumanGitSessionManager(scope);
@@ -132,7 +201,7 @@ export function createGitCheckAuthorityFence(options: GitCheckAuthorityFenceOpti
     const tools = active ? active.inner.getActiveToolNames() : undefined;
     const entries = manager.getEntries().filter((entry) => entry.type === "custom" && entry.customType !== "pi-web:git-action");
     if (entries.length > 4096 || Buffer.byteLength(JSON.stringify(entries)) > 4 * 1024 * 1024) throw new Error("bounded authority state required");
-    const roots = getKnownAllowedFileRoots();
+    const allowed = readAllowed();
     if (options.readSelectionStateSync && !options.readSelectionRevisionSync) throw new Error("monotonic selection adapter required");
     const selectionRevision = options.readSelectionRevisionSync ? syncRevision(options.readSelectionRevisionSync) : undefined;
     const selectionState = options.readSelectionStateSync?.();
@@ -142,21 +211,56 @@ export function createGitCheckAuthorityFence(options: GitCheckAuthorityFenceOpti
     if (Buffer.byteLength(JSON.stringify(selectionState ?? null)) > 4 * 1024 * 1024) throw new Error("bounded selection state required");
     const stamp = hash({ scope, owner: { dev: String(file.dev), ino: String(file.ino), birthtime: String(file.birthtimeNs) },
       header: manager.getHeader(), entries, tools,
-      liveRevision, liveInstance: registration?.instance, ownerRevision: ownerRevision(scope),
-      processRevisions: [...mutations()].sort(([a], [b]) => a.localeCompare(b)), epoch: readGitWorkflowWriteEpoch(agentDir),
-      files: ["pi-web/git-workflow-settings.json", "pi-web/git-workflow-defaults.json", "pi-web/git-project-authorizations.json", "trust.json"]
-        .map((name) => savedFile(join(agentDir, name))),
-      roots: [...roots].filter((root) => checkouts.some((cwd) => isFilePathAllowed(cwd, new Set([root])))).sort(), checkouts: checkouts.map((cwd) => ({ cwd,
-        allowed: isFilePathAllowed(cwd, roots) && isExistingFilePathAllowed(cwd, roots), trust: getProjectTrustStatus(cwd, agentDir) })), selectionState, selectionRevision });
+      liveRevision, liveInstance: registration?.instance, ownerRevision: ownerRevision(),
+      processRevisions: originalProcess, scopedAuthority: originalScoped,
+      allowedRevision: allowed.revision, checkouts: checkouts.map((cwd, i) => ({ cwd,
+        allowed: allowed.decisions[i], trust: transition ? transition.trust(cwd) : getProjectTrustStatus(cwd, agentDir) })), selectionState, selectionRevision });
     // A trusted getter/serialization may itself cross an instrumented writer.
     // Never return the pre-read revision after a change-and-restore inside this
     // final synchronous observation, or after current wrapper replacement.
     const current = getRpcSession(scope.sessionId);
     if ((current?.isAlive() ? current : undefined) !== active ||
       registration && syncRevision(registration.read) !== liveRevision ||
-      options.readSelectionRevisionSync && syncRevision(options.readSelectionRevisionSync) !== selectionRevision) throw new Error("authority changed during synchronous observation");
+      options.readSelectionRevisionSync && syncRevision(options.readSelectionRevisionSync) !== selectionRevision ||
+      readGitScopedAuthorityRevision(agentDir, authorityScope) !== originalScoped ||
+      processRevision(scope.sessionId, projectRoots, checkouts) !== originalProcess ||
+      readAllowed().revision !== allowed.revision) throw new Error("authority changed during synchronous observation");
     return stamp;
   };
+  let baseline: string | undefined;
+  let originalPermissions: Map<string, PermissionObservation> | undefined;
+  const read = () => {
+    try {
+      transition?.assertCurrent();
+      const stamp = observe();
+      transition?.assertCurrent();
+      if (transition) {
+        const selected = transition.selection(), roots = getKnownAllowedFileRoots();
+        for (const cwd of selected.trustPaths) {
+          const current = observePermission(cwd, roots), original = originalPermissions?.get(cwd);
+          // Later native discovery projects ORIGINAL observations. A scope
+          // first observed since capture is safe only with zero transitions;
+          // the helper independently requires its original root permission.
+          if (originalPermissions && (original ? current.revision !== original.revision : current.changes !== 0))
+            throw new Error("Original cleanup root authority changed");
+        }
+        if (processRevision(scope.sessionId, selected.projectRoots, selected.trustPaths, originalProcesses) !==
+          processRevision(scope.sessionId, selected.projectRoots, selected.trustPaths) || baseline !== undefined && stamp !== baseline)
+          throw new Error("Original cleanup authority changed");
+      }
+      return stamp;
+    } catch (error) { transition?.revoke(); throw error; }
+  };
+  if (transition) {
+    // Capture NOW, not when discovery completes or a proof arrives.
+    baseline = read();
+    originalPermissions = new Map(allowedObservations());
+    cleanupFences.set(read, {
+      bind(candidate) { try { read(); transition.bind(candidate); read(); } catch (error) { transition.revoke(); throw error; } },
+      accept(candidate, proof) { try { transition.accept(candidate, proof); read(); } catch (error) { transition.revoke(); throw error; } },
+    });
+  }
+  return read;
 }
 
 const receiptBindingKey = Symbol.for("pi-web:human-check-receipt-authority:v1");
@@ -164,9 +268,9 @@ function receiptBindings(): WeakMap<object, { scope: HumanGitScope; revision: st
   const g = globalThis as unknown as Record<symbol, WeakMap<object, { scope: HumanGitScope; revision: string }>>;
   return g[receiptBindingKey] ??= new WeakMap();
 }
-/** Call ONLY after actual native success, positive admission settlement and
- * durable typed human outcome recording. IDs/receipt-shaped objects from JSON
- * cannot register: require the live engine's exact opaque receipt object. */
+/** Bind only the live engine's authentic returned receipt object. IDs, JSON
+ * copies and receipt-shaped objects cannot register. This records the original
+ * authority fence, not admission, durable-record permission or a new grant. */
 export function bindHumanGitCheckReceiptAuthority(scope: HumanGitScope, receipt: GitWorkingWorkspaceVerificationReceipt, revision: string): void {
   readHumanGitSessionManager(scope);
   if (lookupGitCheckoutVerificationReceipt(receipt.id) !== receipt || receipt.version !== 3 || receipt.stage !== "commit" ||
@@ -195,7 +299,7 @@ export function createHumanGitCommitVerificationContext(scope: HumanGitScope, re
   } {
   const bound = { ...scope }, bootstrap = structuredClone(source);
   if (!samePath(bootstrap.cwd, bound.cwd)) throw new Error("saved physical source required");
-  const readAuthorityRevisionSync = createGitCheckAuthorityFence({ scope: bound, agentDir, checkouts: [...new Set([bound.cwd, bootstrap.projectRoot])] });
+  const readAuthorityRevisionSync = createGitCheckAuthorityFence({ scope: bound, agentDir, checkouts: [...new Set([bound.cwd, bootstrap.projectRoot])], projectRoots: [bootstrap.projectRoot] });
   const discover = async (source: Readonly<GitProjectResources>) => {
     if (!samePath(source.cwd, bound.cwd) || JSON.stringify(source) !== JSON.stringify(bootstrap)) throw new Error("saved native source required");
     const entries = readHumanGitSessionManager(bound).getEntries() as SessionEntry[];
@@ -226,7 +330,7 @@ export function createHumanGitCommitVerificationContext(scope: HumanGitScope, re
     isCheckExecutionAuthorized: async (source) => { await authorizeChecks(source); return true; },
     sourceGetPolicy: async (source) => {
       const state = await discover(source);
-      return { policyRevision: state.revision, settings: { ...state.resolved.session.values,
+      return { policyRevision: gitWorkflowPolicyRevision(state), settings: { ...state.resolved.session.values,
         checks: sourceRecipes(state) }, savedProjectSettings: state.project };
     },
     isSelectionAuthorized: async (source) => { await discover(source); return true; },

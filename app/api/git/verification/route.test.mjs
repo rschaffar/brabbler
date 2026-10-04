@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -79,9 +79,11 @@ const backend = {
 export const runGitCheckoutVerification = (options: Parameters<typeof run>[0]) => run({ ...options, testContainmentBackend: backend,
   testRecoveryEvidence: true, onExecution: async execution => {
     const hook = globalThis[Symbol.for("pi-web:test-human-check-recording")];
-    await hook?.("before", execution, options); await options.onExecution(execution); await hook?.("after", execution, options);
+    await hook?.("before", execution, options); await options.onExecution?.(execution); await hook?.("after", execution, options);
   } });`);
-const jiti = createJiti(import.meta.url, { alias: { "@/lib/git-checkout-verification": shim, "@": process.cwd() }, moduleCache: false });
+// Process-private WeakMaps must belong to ONE actual native module instance;
+// disabling module caching made commit import an empty second receipt authority.
+const jiti = createJiti(import.meta.url, { alias: { "@/lib/git-checkout-verification": shim, "@": process.cwd() }, moduleCache: true });
 const { GET, POST } = await jiti.import("./route.ts");
 const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
@@ -89,7 +91,6 @@ const { cacheSessionPath, invalidateSessionPathCache } = await jiti.import("../.
 const { readGitWorkflowSettingsDocument, writeGitWorkflowSettingsDocument } = await jiti.import("../../../../lib/git-workflow-settings-store.ts");
 const native = await jiti.import(real);
 const { readGitAction } = await jiti.import("../../../../lib/git-action-journal.ts");
-const { inspectGitOperationAdmission, readUnresolvedGitCheckRecovery } = await jiti.import("../../../../lib/git-operation-admission.ts");
 const { selectGitProjectResources } = await jiti.import("../../../../lib/git-project-resources.ts");
 const { readProjectAuthorization, saveProjectAuthorization } = await jiti.import("../../../../lib/git-project-authorization.ts");
 const { POST: commitPOST } = await jiti.import("../commit/route.ts");
@@ -102,7 +103,7 @@ const post = (body, signal) => POST(new Request("http://localhost/api/git/verifi
 const op = (id, operation, extra = {}) => ({ sessionId: id, operation, ...extra });
 const consent = (f, preview, operation) => op(f.id, operation, { previewId: preview.previewId, revision: preview.revision });
 after(async () => {
-  for (const item of globalThis[Symbol.for("pi-web:human-commit-checks:v1")]?.pending.values() ?? []) { clearTimeout(item.timer); item.controller?.abort(); item.actions.forEach(({ handle }) => handle.release()); }
+  for (const item of globalThis[Symbol.for("pi-web:human-commit-checks:v2")]?.pending.values() ?? []) { clearTimeout(item.timer); item.controller?.abort(); item.actions.forEach(({ handle }) => handle?.release()); }
   for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   await rm(home, { recursive: true, force: true });
 });
@@ -214,49 +215,60 @@ test("historical inherited commit prerequisites refuse explicitly; integration-o
   const body = await ok(await get(f.id)); assert.equal(body.status, "no-required"); assert.deepEqual(body.checks, []); assert.equal(body.repositoryChecksWaived, false);
 });
 
-test("actual measured facts are durably journalled before native settlement; no callback metadata is a published receipt", async (t) => {
+test("measured callback facts are diagnostic only; only actual postpublication identity carries a receipt", async (t) => {
   const f = await fixture(t), preview = await ok(await post(op(f.id, "preview", { checkIndexes: [1] })));
   let before = false, after = false;
   globalThis[hookKey] = async (phase, execution, options) => {
-    const admission = inspectGitOperationAdmission(options.agentDir, join(f.cwd, ".git"));
-    assert.equal(admission.admitted, false); assert.ok(admission.actionIds.includes(preview.actionId));
-    assert.equal(native.lookupGitCheckoutVerificationReceipt(execution.receipt.id), undefined);
+    assert.equal(options.cohort !== undefined, true, "explicit original batch");
+    assert.equal(execution.receipt, undefined);
+    assert.equal(native.readGitCheckoutVerificationNativeExecution(structuredClone(execution)), undefined);
     const { record } = await readGitAction(preview.actionId);
     assert.equal(record.state, "executing");
     if (phase === "before") { before = true; assert.equal(record.outcome, undefined); }
-    else { after = true; assert.deepEqual(record.outcome.checkoutVerification.runs, [execution]); }
+    else { after = true; assert.equal(record.outcome, undefined, "prepublication measurements are not a completed run"); }
   };
   let response;
   try { response = await post(consent(f, preview, "run")); } finally { delete globalThis[hookKey]; }
   const result = await ok(response); assert.equal(before, true); assert.equal(after, true);
-  assert.equal(inspectGitOperationAdmission(agentDir, join(f.cwd, ".git")).admitted, true);
   assert.equal((await readGitAction(preview.actionId)).record.state, "succeeded");
-  assert.equal(native.lookupGitCheckoutVerificationReceipt(result.receipts[0].id)?.version, 3);
+  const receipt = native.lookupGitCheckoutVerificationReceipt(result.receipts[0].id);
+  assert.equal(receipt?.version, 3);
+  assert.equal(native.readGitCheckoutVerificationNativeExecution(receipt).receipt.id, receipt.id);
 });
 
-test("presettlement journal I/O failure preserves original measured unit/receipt IDs, no passing receipt and unresolved admission", async (t) => {
-  const f = await fixture(t), preview = await ok(await post(op(f.id, "preview", { checkIndexes: [1] })));
-  const path = join(agentDir, "pi-web/git-actions/v1", preview.actionId, "record.json");
-  let measured, original;
-  globalThis[hookKey] = async (phase, execution) => {
-    if (phase === "before") { measured = structuredClone(execution); original = await readFile(path); await writeFile(path, "corrupt fixture journal"); }
-  };
-  let response;
-  try { response = await post(consent(f, preview, "run")); }
-  finally { delete globalThis[hookKey]; }
-  assert.equal(response.status, 409); const body = await response.json(); assert.equal(body.recoveryRequired, true);
-  assert.deepEqual(body.knownRuns, [measured]); assert.equal(body.receipts, undefined);
-  assert.equal(native.lookupGitCheckoutVerificationReceipt(measured.receipt.id), undefined);
-  assert.equal(inspectGitOperationAdmission(agentDir, join(f.cwd, ".git")).admitted, false, "corrupt journal evidence cannot admit anything");
-  await writeFile(path, original);
-  const admission = inspectGitOperationAdmission(agentDir, join(f.cwd, ".git"));
-  assert.equal(admission.admitted, false); assert.ok(admission.actionIds.includes(preview.actionId));
-  assert.equal(readUnresolvedGitCheckRecovery(agentDir, join(f.cwd, ".git")).unit, measured.unit);
-  assert.equal((await readGitAction(preview.actionId)).record.state, "recovery-required");
-  assert.equal((await get(f.id)).status, 409);
+test("unavailable callback/journal diagnostics preserve genuine successful receipts despite malformed old ledger", async (t) => {
+  for (const failure of ["journal", "callback"]) await t.test(failure, async (t) => {
+    const f = await fixture(t), preview = await ok(await post(op(f.id, "preview", { checkIndexes: [1] })));
+    const path = join(agentDir, "git-diagnostics-v2"), backup = path + "-fixture-backup";
+    let measured, blocked = false;
+    globalThis[hookKey] = async (phase, execution) => {
+      if (phase === "before") {
+        measured = execution; assert.equal(execution.receipt, undefined);
+        if (failure === "journal") { await rename(path, backup); await writeFile(path, "blocked fixture diagnostics"); blocked = true; }
+        else throw new Error("optional callback unavailable");
+      }
+    };
+    let response;
+    try { response = await post(consent(f, preview, "run")); } finally {
+      delete globalThis[hookKey]; if (blocked) { await rm(path); await rename(backup, path); }
+    }
+    const body = await ok(response); assert.equal(body.status, "passed"); assert.equal(body.recoveryRequired, undefined);
+    assert.deepEqual(body.diagnostics, { status: "unavailable", reason: "storage-unavailable" });
+    assert.equal(native.readGitCheckoutVerificationNativeExecution(measured).receipt, undefined);
+    const receipt = native.lookupGitCheckoutVerificationReceipt(body.receipts[0].id);
+    assert.equal(native.readGitCheckoutVerificationNativeExecution(receipt).receipt.id, receipt.id);
+    assert.equal((await get(f.id)).status, 200);
+    assert.equal((await post(op(f.id, "status", { receiptIds: [receipt.id] }))).status, 200);
+    if (failure === "journal") {
+      const legacy = join(agentDir, "pi-web/git-actions/v1", preview.actionId); await mkdir(legacy, { recursive: true });
+      await writeFile(join(legacy, "record.json"), "malformed legacy history");
+      assert.equal((await post(op(f.id, "status", { receiptIds: [receipt.id] }))).status, 200);
+      assert.equal(await readFile(join(legacy, "record.json"), "utf8"), "malformed legacy history", "legacy history remains inert and untouched");
+    }
+  });
 });
 
-test("source authority change-and-restore during durable callback fences publication and keeps original-unit quarantine", async (t) => {
+test("source authority change-and-restore after awaited callback still fences receipt publication, without quarantine", async (t) => {
   const f = await fixture(t), preview = await ok(await post(op(f.id, "preview", { checkIndexes: [1] })));
   globalThis[hookKey] = async (phase) => {
     if (phase === "after") {
@@ -266,10 +278,94 @@ test("source authority change-and-restore during durable callback fences publica
   };
   let response;
   try { response = await post(consent(f, preview, "run")); } finally { delete globalThis[hookKey]; }
-  assert.equal(response.status, 409); const body = await response.json(); assert.equal(body.recoveryRequired, true);
-  assert.equal(body.knownRuns.length, 1); assert.equal(native.lookupGitCheckoutVerificationReceipt(body.knownRuns[0].receipt.id), undefined);
-  assert.equal(inspectGitOperationAdmission(agentDir, join(f.cwd, ".git")).admitted, false);
-  assert.equal((await readGitAction(preview.actionId)).record.state, "recovery-required");
+  assert.equal(response.status, 409); const body = await response.json(); assert.equal(body.recoveryRequired, undefined);
+  assert.equal(body.knownRuns.length, 1); assert.equal(body.knownRuns[0].receipt, undefined);
+  assert.deepEqual((await ok(await get(f.id))).receipts, []);
+  assert.equal((await readGitAction(preview.actionId)).record.state, "failed");
+});
+
+test("initial history creation failure is optional after real candidate capture; native receipt still gates a later commit", async t => {
+  const f = await fixture(t); await writeFile(join(f.cwd, "a"), "checked without initial history\n");
+  const blocked = join(agentDir, "git-diagnostics-v2");
+  await writeFile(blocked, "disposable diagnostic storage failure");
+  let result;
+  try {
+    const preview = await ok(await post(op(f.id, "preview", { checkIndexes: [1] })));
+    assert.equal(preview.diagnostics.status, "unavailable");
+    result = await ok(await post(consent(f, preview, "run")));
+    assert.equal(result.status, "passed"); assert.equal(result.diagnostics.status, "unavailable");
+  } finally { await rm(blocked); }
+  const receiptIds = result.receipts.map(r => r.id);
+  assert.equal((await post(op(f.id, "status", { receiptIds }))).status, 200);
+  const candidate = await ok(await commit({ sessionId: f.id, operation: "preview", paths: ["a"], message: "real required check", receiptIds }));
+  const completed = await ok(await commit({ sessionId: f.id, operation: "confirm", actionId: candidate.actionId, preview: candidate.preview, message: "real required check", receiptIds }));
+  assert.equal(completed.status, "committed");
+});
+
+test("original authority survives unrelated project writes but never own change-and-restore during human wait", async (t) => {
+  const f = await fixture(t), preview = await ok(await post(op(f.id, "preview", { checkIndexes: [1] })));
+  const original = readGitWorkflowSettingsDocument(agentDir);
+  const unrelated = join(home, "unrelated-project");
+  writeGitWorkflowSettingsDocument({ ...original, projects: { ...original.projects, [unrelated]: { commits: "manual" } } }, agentDir,
+    [{ kind: "project", projectRoot: unrelated }]);
+  assert.equal((await post(consent(f, preview, "run"))).status, 200, "unrelated canonical project is not an authority dependency");
+  const second = await ok(await post(op(f.id, "preview", { checkIndexes: [1] })));
+  const current = readGitWorkflowSettingsDocument(agentDir);
+  writeGitWorkflowSettingsDocument({ ...current, projects: { ...current.projects, [f.cwd]: { ...current.projects[f.cwd], checkConfirmation: "disabled" } } }, agentDir,
+    [{ kind: "project", projectRoot: f.cwd }]);
+  writeGitWorkflowSettingsDocument(current, agentDir, [{ kind: "project", projectRoot: f.cwd }]);
+  assert.equal((await post(consent(f, second, "run"))).status, 409);
+  assert.deepEqual((await ok(await get(f.id))).receipts, []);
+});
+
+test("explicit sibling batch owns one cohort; a failed member retires only that batch", async (t) => {
+  const f = await fixture(t), doc = readGitWorkflowSettingsDocument(agentDir);
+  doc.projects[f.cwd].checks.push({ label: "second commit", argv: [process.execPath, "-e", "process.exit(0)"], requiredStage: "commit" });
+  writeGitWorkflowSettingsDocument(doc, agentDir);
+  const preview = await ok(await post(op(f.id, "preview", { checkIndexes: [1, 4] })));
+  const cohorts = [];
+  globalThis[hookKey] = async (phase, execution, options) => { if (phase === "before") cohorts.push(options.cohort); };
+  let response;
+  try { response = await post(consent(f, preview, "run")); } finally { delete globalThis[hookKey]; }
+  const result = await ok(response); assert.equal(result.receipts.length, 2); assert.equal(cohorts.length, 2); assert.equal(cohorts[0], cohorts[1]);
+  assert.equal((await post(op(f.id, "status", { receiptIds: result.receipts.map(r => r.id) }))).status, 200);
+  doc.projects[f.cwd].checks[4].argv = [process.execPath, "-e", "process.exit(1)"];
+  writeGitWorkflowSettingsDocument(doc, agentDir, [{ kind: "project", projectRoot: f.cwd }]);
+  const failed = await ok(await post(op(f.id, "preview", { checkIndexes: [1, 4] })));
+  assert.equal((await post(consent(f, failed, "run"))).status, 409);
+  assert.deepEqual((await ok(await get(f.id))).receipts, [], "earlier sibling of failed cohort is not usable");
+});
+
+test("persisted A/B concurrent own checks: A failure and corrupt history never veto B receipt or required commit", async (t) => {
+  const a = await fixture(t), bCwd = join(home, "parallel-" + a.id);
+  await git(a.cwd, "worktree", "add", "-qb", "parallel", bCwd); allowFileRoot(bCwd);
+  const sm = SessionManager.create(bCwd);
+  sm.appendMessage({ role: "user", content: "independent B", timestamp: Date.now() });
+  sm.appendMessage({ role: "assistant", content: [{ type: "text", text: "fixture" }], timestamp: Date.now() });
+  sm.appendCustomEntry("pi-web:tool-selection", { version: 1, toolNames: [] });
+  const b = { cwd: bCwd, sm, id: sm.getSessionId() }; cacheSessionPath(b.id, sm.getSessionFile());
+  t.after(() => invalidateSessionPathCache(b.id));
+  const doc = readGitWorkflowSettingsDocument(agentDir);
+  doc.projects[a.cwd].checks[1].argv = [process.execPath, "-e", `process.exit(process.cwd() === ${JSON.stringify(a.cwd)} ? 1 : 0)`];
+  writeGitWorkflowSettingsDocument(doc, agentDir);
+  await writeFile(join(b.cwd, "a"), "independent B change\n");
+  const previews = await Promise.all([a, b].map(f => post(op(f.id, "preview", { checkIndexes: [1] })).then(ok)));
+  let entered = 0, release;
+  const barrier = new Promise(resolve => { release = resolve; });
+  const timeout = setTimeout(release, 60_000);
+  globalThis[hookKey] = async (phase) => { if (phase === "before") { if (++entered === 2) release(); await barrier; } };
+  let responses;
+  try { responses = await Promise.all([a, b].map((f, index) => post(consent(f, previews[index], "run")))); }
+  finally { clearTimeout(timeout); delete globalThis[hookKey]; }
+  assert.equal(entered, 2, "both actual invocations executed concurrently");
+  assert.equal(responses[0].status, 409); const success = await ok(responses[1]);
+  const legacy = join(agentDir, "pi-web/git-actions/v1", previews[0].actionId); await mkdir(legacy, { recursive: true });
+  await writeFile(join(legacy, "record.json"), "malformed old A history");
+  const receiptIds = success.receipts.map(r => r.id);
+  assert.equal((await post(op(b.id, "status", { receiptIds }))).status, 200);
+  const candidate = await ok(await commit({ sessionId: b.id, operation: "preview", paths: ["a"], message: "independent B", receiptIds }));
+  const result = await ok(await commit({ sessionId: b.id, operation: "confirm", actionId: candidate.actionId, preview: candidate.preview, message: "independent B", receiptIds }));
+  assert.equal(result.status, "committed"); assert.equal(await git(b.cwd, "show", "HEAD:a"), "independent B change");
 });
 
 test("genuine human required receipts gate staged commit confirmation while preserving unrelated index entries and unstaged hunks", async (t) => {

@@ -34,7 +34,6 @@ import type { SessionEntry } from "./types";
 import { buildSubagentPromptPlan } from "./subagent-prompt";
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
-import { createGitCheckoutOperationGuard } from "./git-checkout-gate";
 import { filterGitWorkflowContext } from "./git-workflow-context";
 import { createAskUserExtension, preferPiWebAskUserExtension } from "./ask-user-extension";
 import { appendSubagentInputFiles, loadSubagentInputFiles } from "./subagent-input";
@@ -42,10 +41,8 @@ import { projectTrustReloadOptions } from "./project-trust";
 import { resolveShellTools } from "./powershell-settings";
 import { isBuiltInSubagentsEnabled, readSubagentSettings } from "./subagent-settings";
 import { SubagentQueue } from "./subagent-queue";
-import { addWorktree, currentLocalBranchTip, proposedWorktreePath, removeWorktree } from "./worktree";
-import { gitProjectRootForCaller } from "./git-project-resources";
+import { addWorktree, currentLocalBranchTip, removeWorktree } from "./worktree";
 import { randomUUID } from "node:crypto";
-import { beginGitWorkspacePlacement } from "./git-workspace-usage";
 
 interface HostSession {
   readonly inner: AgentSessionLike;
@@ -54,8 +51,6 @@ interface HostSession {
   isAlive(): boolean;
   isRunning(): boolean;
   waitUntilReady(): Promise<void>;
-  isBuiltinReadOnlyCheckoutTool(name: unknown): boolean;
-  noteUserBashAdmission(): void;
   beginCheckoutPromptAdmission(): () => void;
 }
 
@@ -190,10 +185,6 @@ export function createSubagentController(
     if (!parent?.isAlive()) throw new Error("Parent session is no longer available");
     if (!parent.sessionFile) throw new Error("Parent session must be persisted before starting a subagent");
 
-    // Placement-only fence, before resources/native SDK setup. Does not grant
-    // worktree deletion or change the subagent's existing lifecycle/policy.
-    const finishParentPlacement = beginGitWorkspacePlacement(parent.cwd);
-    let finishChildPlacement: (() => void) | undefined;
     let isolatedWorktree: { path: string; branch: string } | undefined;
     try {
       const profile = resolveSubagentProfile(parent.cwd, request.profile);
@@ -204,10 +195,6 @@ export function createSubagentController(
       if (isolation === "worktree") {
         const { branch: baseBranch, oid: expectedBaseOid } = await currentLocalBranchTip(parent.cwd);
         const branch = `pi-web-agent-${randomUUID()}`;
-        // Mark the planned cwd before native creation; no lease can slip into
-        // the new root between creation and SDK registration/failure cleanup.
-        const plannedCwd = proposedWorktreePath(await gitProjectRootForCaller(parent.cwd), branch);
-        finishChildPlacement = beginGitWorkspacePlacement(plannedCwd);
         isolatedWorktree = await addWorktree(parent.cwd, {
           branch,
           baseBranch,
@@ -216,7 +203,6 @@ export function createSubagentController(
         });
       }
       const childCwd = isolatedWorktree?.path ?? parent.cwd;
-      finishChildPlacement ??= beginGitWorkspacePlacement(childCwd);
       const inheritContext = request.inheritContext ?? profile.inheritContext;
       const maxTurns = request.maxTurns ?? profile.maxTurns;
       if (maxTurns !== undefined && (!Number.isFinite(maxTurns) || maxTurns < 0)) {
@@ -247,13 +233,6 @@ export function createSubagentController(
       const { chatOnly, appendSystemPrompt, delegatedTask } = promptPlan;
       if (!chatOnly) initTheme();
       const guardOwner: { current?: HostSession } = {};
-      const checkoutGuard = createGitCheckoutOperationGuard({
-        isBuiltinReadOnlyTool: (name) => guardOwner.current?.isBuiltinReadOnlyCheckoutTool(name) ?? false,
-        onUserBash: () => {
-          if (!guardOwner.current) throw new Error("Checkout guard unavailable");
-          guardOwner.current.noteUserBashAdmission();
-        },
-      });
       const services = await createAgentSessionServices({
         cwd: childCwd,
         agentDir,
@@ -272,9 +251,7 @@ export function createSubagentController(
               }
             : {}),
           appendSystemPrompt,
-          // The checkout guard is mandatory even when user extensions are disabled.
           extensionFactories: [
-            checkoutGuard,
             ...(promptPlan.exactSystemPrompt !== undefined
               ? [createExactSystemPromptExtension(() => promptPlan.exactSystemPrompt)] : []),
             ...(profile.loadExtensions ? [createAskUserExtension()] : []),
@@ -342,7 +319,7 @@ export function createSubagentController(
         chatOnly,
       });
       guardOwner.current = dependencies.getSession(inner.sessionId);
-      if (!guardOwner.current) throw new Error("Subagent checkout guard unavailable");
+      if (!guardOwner.current) throw new Error("Subagent session unavailable");
 
       const initialRun: SubagentRunInfo = {
         sessionId: inner.sessionId,
@@ -495,7 +472,7 @@ export function createSubagentController(
         try { await removeWorktree(parent.cwd, isolatedWorktree.path); } catch { /* preserve setup failure and avoid force deletion */ }
       }
       throw error;
-    } finally { finishChildPlacement?.(); finishParentPlacement(); }
+    }
   }
 
   async function resume(request: ResumeSubagentRequest): Promise<SubagentExecution> {

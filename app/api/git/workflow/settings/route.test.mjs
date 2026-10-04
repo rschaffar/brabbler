@@ -8,7 +8,8 @@ import test, { after, beforeEach } from "node:test";
 import { createJiti } from "jiti";
 
 const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-const agentDir = await mkdtemp(join(tmpdir(), "pi-web-workflow-settings-route-agent-"));
+const agentHome = await mkdtemp(join(tmpdir(), "pi-web-workflow-settings-route-agent-"));
+let agentDir = agentHome;
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true, moduleCache: false });
 const { GET, PUT } = await jiti.import("./route.ts");
@@ -19,8 +20,8 @@ const { GIT_WORKFLOW_TYPE, appendSessionGitWorkflow, readSessionGitWorkflow } = 
 const { workflowTaskFromEntries, readManagedSessionGitWorkflow } = await jiti.import("../../../../../lib/git-workflow-session.ts");
 const { DEFAULT_GIT_WORKFLOW_SETTINGS } = await jiti.import("../../../../../lib/git-workflow-settings.ts");
 const { gitWorkflowSettingsPath, readGitWorkflowSettingsDocument } = await jiti.import("../../../../../lib/git-workflow-settings-store.ts");
-const { gitWorkflowDefaultsPath, setProjectGitWorkflow } = await jiti.import("../../../../../lib/git-workflow-store.ts");
-const { acquireGitCheckoutGate } = await jiti.import("../../../../../lib/git-checkout-gate.ts");
+const { setProjectGitWorkflow } = await jiti.import("../../../../../lib/git-workflow-store.ts");
+const { seedRetiredGitBookkeeping } = await import("../../../../../lib/retired-git-bookkeeping-fixture.mjs");
 const exec = promisify(execFile);
 const git = async (cwd, ...args) => (await exec("git", ["-C", cwd, ...args], {
   env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(agentDir, "no-git-config") },
@@ -46,13 +47,15 @@ const bytes = async (file) => readFile(file, "utf8").catch((error) => {
 });
 
 beforeEach(async () => {
-  await rm(gitWorkflowSettingsPath(), { force: true });
-  await rm(gitWorkflowDefaultsPath(), { force: true });
+  // Fresh authority incarnation per test; deleting only the settings document
+  // is an unaccounted rewrite, not a legitimate reset of the monotonic ledger.
+  agentDir = await mkdtemp(join(agentHome, "case-"));
+  process.env.PI_CODING_AGENT_DIR = agentDir;
 });
 after(async () => {
   if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
   else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-  await rm(agentDir, { recursive: true, force: true });
+  await rm(agentHome, { recursive: true, force: true });
 });
 
 async function fixture(t, linked = false) {
@@ -405,7 +408,7 @@ test("future session authority and a v1 downgrade after adoption block reads and
   }
 });
 
-test("running chats and busy checkouts expose read-only session state and block override/apply", async (t) => {
+test("own running chat blocks override/apply but retired bookkeeping does not", async (t) => {
   const f = await fixture(t);
   const previous = globalThis.__piSessions;
   const live = { sessionFile: f.file, isAlive: () => true, isRunning: () => true, inner: { sessionManager: f.sm, getActiveToolNames: () => ["read", "edit"] } };
@@ -422,16 +425,15 @@ test("running chats and busy checkouts expose read-only session state and block 
   await save("global", {}, { overrides: { enabled: false } });
   assert.equal(await readFile(f.file, "utf8"), original);
   live.isRunning = () => false;
-  const release = acquireGitCheckoutGate([f.cwd]);
+  const restore = seedRetiredGitBookkeeping([f.cwd]);
   try {
-    const busy = await state(f.query);
-    assert.equal(busy.sessionEditable, false);
-    assert.match(busy.sessionReason, /busy/i);
+    assert.equal((await state(f.query)).sessionEditable, true);
     for (const operation of [{ scope: "session", overrides: {} }, { scope: "task" }]) {
-      await json(await put({ ...operation, ...f.query, revision: busy.revision }), 409);
+      const current = await state(f.query);
+      await json(await put({ ...operation, ...f.query, revision: current.revision }));
     }
-    assert.equal(await readFile(f.file, "utf8"), original);
-  } finally { release(); }
+    assert.notEqual(await readFile(f.file, "utf8"), original);
+  } finally { restore(); }
   assert.equal((await state(f.query)).sessionEditable, true);
 });
 
@@ -593,19 +595,19 @@ test("project-scoped revisions cannot save to a different project and cannot cap
   assert.equal(noChat.projectRoot, b.repo);
 });
 
-test("explicit project access never borrows the caller root, and caller/selected checkout gates still apply", async (t) => {
+test("explicit project access never borrows caller roots; retired caller/selected bookkeeping does not block settings", async (t) => {
   const a = await fixture(t), b = await fixture(t);
   const outside = await mkdtemp(join(tmpdir(), "pi-project-denied-"));
   t.after(() => rm(outside, { recursive: true, force: true }));
   await json(await get({ sessionId: a.id, projectPath: outside }), 403);
   const query = { sessionId: a.id, projectPath: b.cwd };
   for (const cwd of [a.cwd, b.cwd]) {
-    const release = acquireGitCheckoutGate([cwd]);
+    const restore = seedRetiredGitBookkeeping([cwd]);
     try {
-      const busy = await state(query);
-      assert.equal(busy.sessionEditable, false);
-      await json(await put({ scope: "session", ...query, revision: busy.revision, overrides: {} }), 409);
-    } finally { release(); }
+      const current = await state(query);
+      assert.equal(current.sessionEditable, true);
+      await json(await put({ scope: "session", ...query, revision: current.revision, overrides: {} }));
+    } finally { restore(); }
   }
   assert.equal((await state(query)).sessionEditable, true);
 });

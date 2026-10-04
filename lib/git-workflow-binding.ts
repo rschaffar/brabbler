@@ -7,10 +7,9 @@ import { promisify } from "node:util";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "./file-access";
 import { readHumanGitSessionManager, type HumanGitScope } from "./git-action-human";
-import { getRpcSession, hasBusyRpcSessionForCwd } from "./rpc-manager";
+import { getRpcSession } from "./rpc-manager";
 import { readSessionHeader, resolveSessionPath } from "./session-reader";
 import { gitExecEnv } from "./git-exec";
-import { withGitCheckoutGate } from "./git-checkout-gate";
 import { selectGitWorkspace } from "./git-workspace-selector";
 import { GIT_WORKFLOW_TYPE, validLocalBranchName } from "./git-workflow-policy";
 import { loadGitWorkflowSettings, withGitWorkflowSettingsLock } from "./git-workflow-settings-store";
@@ -150,10 +149,9 @@ export interface GitTaskBindingInput {
 export async function previewGitTaskBinding(input: GitTaskBindingInput, agentDir = getAgentDir()): Promise<GitTaskBindingPreview> {
   const ctx = await context(input.sessionId, true);
   const selected = await captureGitBindingWorkspace(ctx.owner.cwd, input.workspaceBranch);
-  return withGitWorkflowSettingsLock(agentDir, async () => withGitCheckoutGate([ctx.owner.cwd, selected.root], async () => {
+  return withGitWorkflowSettingsLock(agentDir, async () => {
     const workspace = await captureGitBindingWorkspace(ctx.owner.cwd, input.workspaceBranch);
     if (bindingDigest(workspace) !== bindingDigest(selected)) throw new GitTaskBindingError("Workspace changed before preview. Review again.");
-    if (hasBusyRpcSessionForCwd(ctx.owner.cwd) || hasBusyRpcSessionForCwd(workspace.root)) throw new GitTaskBindingError("Stop sessions in the selected checkouts before reviewing a task binding.");
     const stored = readGitTaskBinding(input.sessionId, agentDir);
     if (stored.revision !== input.revision) throw new GitTaskBindingError("Task binding changed elsewhere. Reload its status.");
     const fresh = await context(input.sessionId, true);
@@ -174,16 +172,15 @@ export async function previewGitTaskBinding(input: GitTaskBindingInput, agentDir
     const previewId = randomUUID();
     runtime.previews.set(previewId, { sessionId: input.sessionId, revision: stored.revision, settingsRevision: settings.revision, headOid, snapshot: structuredClone(snapshot) });
     return { previewId, snapshot };
-  }));
+  });
 }
 export async function confirmGitTaskBinding(sessionId: string, previewId: string, agentDir = getAgentDir()): Promise<GitTaskBindingResponse> {
   const pending = gitTaskBindingRuntime().previews.get(previewId);
   if (!pending || pending.sessionId !== sessionId) throw new GitTaskBindingError("Task review is unavailable or was replaced. Prepare a new preview.");
   // Consume before awaits. Failed/ambiguous responses must be reconciled by GET, never retried blindly.
   gitTaskBindingRuntime().previews.delete(previewId);
-  await withGitWorkflowSettingsLock(agentDir, async () => withGitCheckoutGate([pending.snapshot.owner.cwd, pending.snapshot.workspace.root], async () => {
+  await withGitWorkflowSettingsLock(agentDir, async () => {
     const ctx = await context(sessionId, true);
-    if (hasBusyRpcSessionForCwd(ctx.owner.cwd) || hasBusyRpcSessionForCwd(pending.snapshot.workspace.root)) throw new GitTaskBindingError("Stop sessions in the selected checkouts before adopting a task binding.");
     const settings = await loadGitWorkflowSettings(ctx.owner.cwd, ctx.entries, agentDir, sessionId);
     const workspace = await captureGitBindingWorkspace(ctx.owner.cwd, pending.snapshot.workspace.branch);
     const task = taskCapture(ctx);
@@ -203,7 +200,7 @@ export async function confirmGitTaskBinding(sessionId: string, previewId: string
       targets: gitRuleSourceDocuments(sources).filter((item) => !samePath(item.path, item.realPath)).map(({ path, realPath }) => ({ path, realPath })) });
     if (finalSources.digest !== pending.snapshot.sources.digest) throw new GitTaskBindingError("Instruction sources changed before adoption. Preview again.");
     adoptGitTaskBinding(pending.snapshot, pending.revision, agentDir);
-  }));
+  });
   return getGitTaskBinding(sessionId, agentDir);
 }
 export async function releaseGitTaskBinding(sessionId: string, revision: string, agentDir = getAgentDir()): Promise<GitTaskBindingResponse> {

@@ -118,6 +118,82 @@ export async function checkRecipeControls(page, { workflow, cwd, otherProject, c
   console.log("PASS: real Project recipe cwd/stage/literal env controls, lossless omission, invalid draft navigation and stable typing focus");
 }
 
+export async function runRequiredIntegrationChecks(page, { panel, sessionId, checkIndexes = [0, 1] }) {
+  const response = page.waitForResponse(http => new URL(http.url()).pathname === "/api/git/integration"
+    && http.request().method() === "POST" && http.request().postDataJSON()?.operation === "verify", { timeout: 180_000 });
+  await panel.getByRole("button", { name: "Run required checks", exact: true }).click();
+  const http = await response;
+  assert.equal(http.status(), 200, await http.text());
+  assert.deepEqual(http.request().postDataJSON(), { sessionId, operation: "verify", checkIndexes });
+  const body = await http.json();
+  assert.equal(body.receipts.length, checkIndexes.length);
+  assert.equal(body.actionIds.length, checkIndexes.length);
+  assert.deepEqual(body.receipts.map(r => r.checkIndex), checkIndexes);
+  for (const receipt of body.receipts) {
+    assert.deepEqual(receipt.batch, body.receipts[0].batch, "real returned siblings share original-cohort display metadata");
+    assert.deepEqual(receipt.batch.checkIndexes, checkIndexes);
+    await panel.getByText(`Passed: receipt ${receipt.id};`, { exact: false }).waitFor();
+  }
+  assert.equal(await panel.getByRole("button", { name: "Prepare exact integration proposal", exact: true }).isEnabled(), true,
+    "optional diagnostics warnings must not block genuine successful batch evidence");
+  if (body.diagnostics) await panel.getByText(/Optional action history or output is unavailable/).waitFor();
+  return body;
+}
+
+export async function checkRetiredRecovery(page, { panel, sessionId }) {
+  const requests = [], observe = request => { if (new URL(request.url()).pathname === "/api/git/check-recovery") requests.push(request.method()); };
+  page.on("request", observe);
+  try {
+    const information = panel.getByRole("region", { name: "Check outcome information" });
+    await information.getByText(/Failed or uncertain checks produce no passing receipt/).waitFor();
+    assert.match(await information.innerText(), /history does not block other invocations/);
+    assert.equal(await information.locator("button,input,form").count(), 0, "no approval, release, rerun or cleanup controls");
+    await panel.getByRole("button", { name: "Refresh review", exact: true }).click();
+    await panel.getByRole("button", { name: "Run required checks", exact: true }).waitFor();
+    assert.deepEqual(requests, [], "static information never requests recovery on mount/refresh");
+    const endpoint = new URL("/api/git/check-recovery", page.url());
+    const get = await page.request.get(`${endpoint}?sessionId=${encodeURIComponent(sessionId)}`);
+    assert.equal(get.status(), 200); const info = await get.json();
+    assert.deepEqual(Object.keys(info).sort(), ["diagnosticOnly", "reason", "retired"]);
+    assert.equal(info.diagnosticOnly, true); assert.equal(info.retired, true);
+    const post = await page.request.post(endpoint.href, { data: { sessionId,
+      actionId: "00000000-0000-4000-8000-000000000001", revision: "00000000-0000-4000-8000-000000000002", acknowledged: true } });
+    assert.equal(post.status(), 410); assert.deepEqual(await post.json(), info);
+  } finally { page.off("request", observe); }
+}
+
+/** A separately approved stale attempt fails once. Fixture movement/restoration
+ * is explicit test setup, never application retry, rebasing or approval transfer.
+ */
+export async function rejectMovedIntegrationTarget(page, { panel, sessionId, advanceTarget, restoreTarget, targetHead }) {
+  await runRequiredIntegrationChecks(page, { panel, sessionId });
+  const planned = page.waitForResponse(http => new URL(http.url()).pathname === "/api/git/integration"
+    && http.request().method() === "POST" && http.request().postDataJSON()?.operation === "plan");
+  await panel.getByRole("button", { name: "Prepare exact integration proposal", exact: true }).click();
+  const prepared = await planned; assert.equal(prepared.status(), 200, await prepared.text());
+  const original = await prepared.json();
+  const calls = [], observe = request => {
+    if (new URL(request.url()).pathname === "/api/git/integration" && request.method() === "POST") calls.push(request.postDataJSON());
+  };
+  advanceTarget(); const moved = targetHead();
+  page.on("request", observe);
+  try {
+    const confirmed = page.waitForResponse(http => new URL(http.url()).pathname === "/api/git/integration"
+      && http.request().method() === "POST" && http.request().postDataJSON()?.operation === "confirm");
+    await panel.getByRole("button", { name: /^Confirm exact plan/ }).click();
+    const refused = await confirmed;
+    assert.equal(refused.status(), 409, "moved target must not trigger rebaseline or automatic retry");
+    assert.equal(refused.request().postDataJSON().planId, original.plan.planId);
+    await panel.getByRole("alert").filter({ hasText: /stale|revoked|contended|inspect/i }).waitFor();
+    assert.equal(targetHead(), moved, "failed original attempt cannot rewrite the concurrent target");
+    assert.equal(await panel.getByRole("button", { name: /^Confirm exact plan/ }).count(), 0);
+    assert.deepEqual(calls.map(call => call.operation), ["confirm"], "no automatic plan, check or confirm after stale failure");
+  } finally { page.off("request", observe); restoreTarget(); }
+  // Start another explicit invocation, never reuse the original approval.
+  await panel.getByRole("button", { name: "Refresh review", exact: true }).click();
+  await panel.getByRole("button", { name: "Run required checks", exact: true }).waitFor();
+}
+
 export async function reviewCommitChecks(page, { panel, sessionId, cwd, git, checkContainmentSupported, changeSource, restoreSource }) {
   const endpoint = "/api/git/verification";
   const responseFor = (operation) => page.waitForResponse((response) => new URL(response.url()).pathname === endpoint

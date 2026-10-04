@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import fs, { existsSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { createHash, randomUUID } from "node:crypto";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -14,17 +15,14 @@ let agentDir = join(home, "agent");
 await mkdir(agentDir);
 const original = Object.fromEntries(["HOME", "XDG_CONFIG_HOME", "PI_CODING_AGENT_DIR"].map((key) => [key, process.env[key]]));
 Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: join(home, ".config"), PI_CODING_AGENT_DIR: agentDir });
-const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true, moduleCache: false });
+const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true, moduleCache: true });
 const { POST } = await jiti.import("./route.ts");
-const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
+const { SessionManager, SettingsManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
 const { cacheSessionPath, invalidateSessionPathCache, invalidateSessionListCache } = await jiti.import("../../../../lib/session-reader.ts");
-const { readGitAction, subscribeGitActionUpdates, transitionGitAction, releaseGitAction } = await jiti.import("../../../../lib/git-action-journal.ts");
-const { beginGitOperationIntent, inspectGitOperationAdmission } = await jiti.import("../../../../lib/git-operation-admission.ts");
+const { readGitAction, readLiveGitAction, createGitAction, subscribeGitActionUpdates, transitionGitAction, releaseGitAction } = await jiti.import("../../../../lib/git-action-journal.ts");
 const { beginGitAction, gitActionSink } = await jiti.import("../../../../lib/git-action-controller.ts");
 const { AgentSessionWrapper } = await jiti.import("../../../../lib/rpc-manager.ts");
-const { acquireGitCheckoutGate } = await jiti.import("../../../../lib/git-checkout-gate.ts");
-const { registerGitCheckLiveAuthorityReader } = await jiti.import("../../../../lib/git-check-authority-fence.ts");
 const { selectGitProjectResources } = await jiti.import("../../../../lib/git-project-resources.ts");
 const { readProjectAuthorization, saveProjectAuthorization } = await jiti.import("../../../../lib/git-project-authorization.ts");
 const { writeGitWorkflowSettingsDocument } = await jiti.import("../../../../lib/git-workflow-settings-store.ts");
@@ -43,8 +41,7 @@ const history = (id) => readGitAction(id, { includeArtifact: true });
 const entries = (sm) => SessionManager.open(sm.getSessionFile()).getEntries();
 const anchors = (sm) => entries(sm).filter((e) => e.type === "custom" && e.customType === "pi-web:git-action");
 async function fixture(t, sharedAgent = false) {
-  // Each disposable repository also owns its journal/ledger. A corrupt old
-  // journal is deliberately a global blocker when its resource cannot be read.
+  // Each disposable repository owns its journal/ledger; no live data touched.
   if (!sharedAgent) agentDir = await mkdtemp(join(home, "agent-fixture-"));
   process.env.PI_CODING_AGENT_DIR = agentDir;
   const dir = await mkdtemp(join(tmpdir(), "pi-web-commit-route-"));
@@ -70,12 +67,58 @@ test("missing session, invalid cwd input and unauthorized persisted checkout", a
   assert.equal((await post({ ...previewRequest(id), cwd })).status, 400);
   const old = globalThis.__piAllowedRootsCache;
   globalThis.__piAllowedRootsCache = { roots: new Set([agentDir]), expiresAt: Date.now() + 10000 };
-  const actions = () => readdir(join(agentDir, "pi-web/git-actions/v1")).catch(() => []);
+  const actions = () => Promise.all(["pi-web/git-actions/v1", "git-diagnostics-v2"].map((relative) =>
+    readdir(join(agentDir, relative)).then((names) => names.sort()).catch((error) => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    })));
   const before = await actions();
   try { assert.equal((await post(previewRequest(id))).status, 403); }
   finally { globalThis.__piAllowedRootsCache = old; }
   assert.deepEqual(await actions(), before);
 });
+test("initial optional namespace or real anchor failure preserves the full browser preview and native commit with notice", async (t) => {
+  for (const fault of ["namespace", "anchor"]) await t.test(fault, async (t) => {
+    const f = await fixture(t);
+    await writeFile(join(f.cwd, "a"), "exact preview without optional history\n");
+    const before = (await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim();
+    const index = await readFile(join(f.cwd, ".git/index"));
+    let attempts = 0, mock;
+    if (fault === "namespace") await writeFile(join(agentDir, "git-diagnostics-v2"), "not a directory");
+    else {
+      const append = fs.appendFileSync;
+      mock = t.mock.method(fs, "appendFileSync", (file, data, ...args) => {
+        if (file === f.sm.getSessionFile() && String(data).includes("pi-web:git-action")) {
+          attempts++; throw Object.assign(new Error("private anchor storage failure"), { code: "ENOSPC" });
+        }
+        return append(file, data, ...args);
+      });
+      syncBuiltinESMExports();
+    }
+    let candidate;
+    try {
+      const preview = await post(previewRequest(f.id));
+      assert.equal(preview.status, 200, await preview.clone().text()); candidate = await preview.json();
+    } finally { mock?.mock.restore(); syncBuiltinESMExports(); }
+    assert.equal(candidate.preview.head, before); assert.match(candidate.candidateDiff.patch, /\+exact preview without optional history/);
+    assert.equal(candidate.candidateDiff.toTreeOid, candidate.preview.tree);
+    assert.equal(candidate.diagnosticsUnavailable, true);
+    assert.deepEqual(candidate.diagnostics, { status: "unavailable", reason: "storage-unavailable" });
+    assert.match(candidate.diagnosticWarning, /preview captured; diagnostics unavailable/i);
+    assert.equal(candidate.recoveryRequired, undefined);
+    assert.deepEqual(await readFile(join(f.cwd, ".git/index")), index);
+    if (fault === "anchor") { assert.equal(attempts, 1); assert.equal(anchors(f.sm).length, 0); }
+    const response = await post(confirmRequest(f.id, candidate));
+    assert.equal(response.status, 200, await response.clone().text()); const result = await response.json();
+    assert.equal(result.status, "committed"); assert.equal(result.diagnosticsUnavailable, true);
+    assert.equal(result.diagnostics.reason, "storage-unavailable", "storage failure outranks any retention omission");
+    assert.equal(result.recoveryRequired, undefined); assert.doesNotMatch(JSON.stringify(result), /uncertain|refresh|retry|ENOSPC|private anchor/);
+    assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), result.commit);
+    assert.equal(result.tree, candidate.preview.tree); assert.deepEqual(result.parents, [before]);
+    assert.equal((await post(confirmRequest(f.id, candidate))).status, 409);
+  });
+});
+
 test("manual commit permits an active chat but rejects checkout mismatch and stale preview", async (t) => {
   const { cwd, id } = await fixture(t);
   const previous = globalThis.__piSessions;
@@ -210,7 +253,7 @@ test("saved Project/Chat Deny blocks browser preview and live revocation blocks 
   assert.equal((await (await post(confirmRequest(f.id, renewed))).json()).status, "committed");
 });
 
-test("another active session permits browser commit; a Git transaction blocks confirmation without consuming approval", async (t) => {
+test("another active session does not veto an exact browser commit, consumed once", async (t) => {
   const f = await fixture(t);
   const previous = globalThis.__piSessions;
   let emit;
@@ -229,15 +272,13 @@ test("another active session permits browser commit; a Git transaction blocks co
   assert.equal(candidateResponse.status, 200, await candidateResponse.clone().text());
   const candidate = await candidateResponse.json();
   emit({ type: "tool_execution_start", toolCallId: "unsafe", toolName: "edit" });
-  const release = acquireGitCheckoutGate([f.cwd]);
-  try { assert.equal((await post(confirmRequest(f.id, candidate))).status, 409); }
-  finally { release(); }
-  assert.equal((await history(candidate.actionId)).record.state, "awaiting-decision", "A concurrent transaction must not consume approval");
   assert.equal((await (await post(confirmRequest(f.id, candidate))).json()).status, "committed");
+  assert.equal((await history(candidate.actionId)).record.state, "succeeded");
+  assert.equal((await post(confirmRequest(f.id, candidate))).status, 409, "the same exact candidate is consumed once");
   emit({ type: "tool_execution_end", toolCallId: "unsafe" });
 });
 
-test("an unresolved check child quarantines the physical resource across browser sessions without touching HEAD", async (t) => {
+test("another unresolved check ledger does not veto an eligible commit; own stale native candidate still rejects", async (t) => {
   const f = await fixture(t);
   await writeFile(join(f.cwd, "a"), "uncommitted\n");
   const second = SessionManager.create(f.cwd);
@@ -248,34 +289,156 @@ test("an unresolved check child quarantines the physical resource across browser
   const a = await (await post(previewRequest(f.id))).json();
   const b = await (await post(previewRequest(second.getSessionId()))).json();
   const resource = realpathSync(join(f.cwd, ".git"));
-  const orphan = beginGitOperationIntent(agentDir, resource, randomUUID(), "checks",
-    `pi-web-git-check-${randomUUID()}.service`);
-  const before = (await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim();
-  for (const [id, candidate] of [[f.id, a], [second.getSessionId(), b]]) {
-    const response = await post(confirmRequest(id, candidate));
-    assert.equal(response.status, 409);
-    assert.equal((await response.json()).recoveryRequired, true);
-    assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), before);
-  }
-  assert.deepEqual(inspectGitOperationAdmission(agentDir, resource).actionIds, [orphan.actionId]);
-  assert.equal(inspectGitOperationAdmission(agentDir, resource).reason, "unresolved");
-  // A check intent without a real invocation/proof must not be cleared just to
-  // continue a fixture. Its private test directory is removed by test teardown.
+  const legacy = join(agentDir, "pi-web/git-operation-admission/v1", createHash("sha256").update(resource).digest("hex"));
+  await mkdir(legacy, { recursive: true, mode: 0o700 });
+  const oldFile = join(legacy, `${randomUUID()}.json`), oldBytes = JSON.stringify({ state: "unresolved", kind: "checks", service: "old-service" });
+  await writeFile(oldFile, oldBytes, { mode: 0o600 });
+  const first = await post(confirmRequest(f.id, a));
+  assert.equal(first.status, 200, await first.clone().text());
+  const result = await first.json();
+  assert.equal(result.status, "committed");
+  const stale = await post(confirmRequest(second.getSessionId(), b));
+  assert.equal(stale.status, 409, "the other old HEAD candidate cannot reuse its approval on the new HEAD");
+  assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), result.commit);
+  assert.equal(await readFile(oldFile, "utf8"), oldBytes, "inert legacy data is neither a veto nor rewritten");
 
 });
 
-test("old journal-only executing history is not cleared by a fresh candidate", async (t) => {
+test("released old executing diagnostics cannot veto or authorize a fresh candidate", async (t) => {
   const f = await fixture(t);
   await writeFile(join(f.cwd, "a"), "uncommitted\n");
-  const old = await (await post(previewRequest(f.id))).json();
-  const record = (await history(old.actionId)).record;
-  await transitionGitAction(old.actionId, record.revision, { state: "executing", decision: "approved" });
-  releaseGitAction(old.actionId); // simulate a prior process exiting without a ledger
+  const original = await (await post(previewRequest(f.id))).json();
+  const snapshot = readLiveGitAction(f.id, original.actionId, { includeArtifact: true }).candidate;
+  // Explicit legacy low-level history fixture: never a native invocation proof.
+  const old = await createGitAction({ sessionId: f.id, source: "human", candidate: snapshot });
+  await transitionGitAction(old.id, old.revision, { state: "executing", decision: "approved" });
+  releaseGitAction(old.id); // simulate a prior process exiting without a ledger
   const next = await (await post(previewRequest(f.id))).json();
   const response = await post(confirmRequest(f.id, next));
-  assert.equal(response.status, 409);
-  assert.equal((await response.json()).recoveryRequired, true);
-  assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), next.preview.head);
+  assert.equal(response.status, 200, await response.clone().text());
+  const result = await response.json();
+  assert.equal(result.status, "committed");
+  assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), result.commit);
+  assert.equal((await history(old.id)).record, null, "released unfinished display is not reconstructed as native evidence");
+});
+
+test("malformed legacy ledger cannot veto an otherwise eligible browser commit", async (t) => {
+  const f = await fixture(t);
+  const common = realpathSync(join(f.cwd, ".git"));
+  const ledger = join(agentDir, "pi-web/git-operation-admission/v1", createHash("sha256").update(common).digest("hex"));
+  await mkdir(ledger, { recursive: true, mode: 0o700 });
+  await writeFile(join(ledger, `${randomUUID()}.json`), "not a ledger", { mode: 0o600 });
+  await writeFile(join(f.cwd, "a"), "eligible despite malformed unrelated history\n");
+  const preview = await post(previewRequest(f.id));
+  assert.equal(preview.status, 200, await preview.clone().text());
+  const candidate = await preview.json();
+  const response = await post(confirmRequest(f.id, candidate));
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.equal((await response.json()).status, "committed");
+});
+
+test("first allowed-roots await cannot rebaseline real wrapper authority for preview or confirmation", async (t) => {
+  const f = await fixture(t), previousSessions = globalThis.__piSessions;
+  let tools = ["read", "edit"];
+  const inner = { sessionId: f.id, sessionFile: f.sm.getSessionFile(), sessionManager: f.sm,
+    settingsManager: SettingsManager.create(f.cwd, agentDir), getActiveToolNames: () => tools,
+    setActiveToolsByName: (names) => { tools = [...names]; }, dispose() {}, agent: { state: {} } };
+  const wrapper = new AgentSessionWrapper(inner, { checkoutGuardInstalled: true });
+  globalThis.__piSessions = new Map([[f.id, wrapper]]);
+  const hookKey = Symbol.for("pi-web:test-commit-first-roots-await");
+  const previousHook = globalThis[hookKey];
+  const shim = join(agentDir, "commit-first-roots-await.ts");
+  const realAccess = new URL("../../../../lib/file-access.ts", import.meta.url).pathname;
+  // Intercept only the route's awaited roots lookup. All root validation and
+  // authority readers remain real; no guard or revision is replaced.
+  await writeFile(shim, `export * from ${JSON.stringify(realAccess)};
+import { getAllowedFileRoots as read } from ${JSON.stringify(realAccess)};
+export async function getAllowedFileRoots() {
+  const roots = await read();
+  await globalThis[Symbol.for("pi-web:test-commit-first-roots-await")]?.();
+  return roots;
+}
+`);
+  const injectedJiti = createJiti(import.meta.url, { alias: { "@/lib/file-access": shim, "@": process.cwd() }, interopDefault: true, moduleCache: false });
+  try {
+    const { POST: injectedPOST } = await injectedJiti.import("./route.ts");
+    const request = (body) => injectedPOST(new Request("http://localhost/api/git/commit", { method: "POST", body: JSON.stringify(body) }));
+    await writeFile(join(f.cwd, "a"), "original preview authority\n");
+    const head = (await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim();
+    const index = await readFile(join(f.cwd, ".git/index"));
+    let calls = 0, mutations = 0;
+    const injectFirst = () => {
+      calls = 0;
+      globalThis[hookKey] = async () => {
+        if (++calls !== 1) return;
+        const before = wrapper.readGitCheckAuthorityRevisionSync();
+        inner.setActiveToolsByName(["read"]);
+        await Promise.resolve();
+        inner.setActiveToolsByName(["read", "edit"]);
+        assert.notEqual(wrapper.readGitCheckAuthorityRevisionSync(), before);
+        mutations++;
+      };
+    };
+    const unchanged = async () => {
+      assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), head);
+      assert.deepEqual(await readFile(join(f.cwd, ".git/index")), index);
+      assert.equal(existsSync(join(f.cwd, ".git/index.lock")), false);
+    };
+    injectFirst();
+    const refusedPreview = await request(previewRequest(f.id));
+    assert.equal(mutations, 1, "the first route roots await used the real monotonic writer");
+    assert.equal(refusedPreview.status, 409, await refusedPreview.clone().text());
+    assert.equal(anchors(f.sm).length, 0, "a revoked request must not publish a new preview");
+    await unchanged();
+
+    delete globalThis[hookKey];
+    const previewResponse = await request(previewRequest(f.id));
+    assert.equal(previewResponse.status, 200, await previewResponse.clone().text());
+    const candidate = await previewResponse.json();
+    injectFirst();
+    const refusedConfirm = await request(confirmRequest(f.id, candidate));
+    assert.equal(mutations, 2);
+    assert.equal(refusedConfirm.status, 409, await refusedConfirm.clone().text());
+    await unchanged();
+    delete globalThis[hookKey];
+    assert.equal((await request(confirmRequest(f.id, candidate))).status, 409, "restored values cannot revive the original preview");
+    await unchanged();
+  } finally {
+    if (previousHook === undefined) delete globalThis[hookKey]; else globalThis[hookKey] = previousHook;
+    wrapper.destroy(); globalThis.__piSessions = previousSessions;
+  }
+});
+
+test("real mutable wrapper change-and-restore during human wait or awaited intent revokes the ORIGINAL authority", async (t) => {
+  for (const phase of ["human-wait", "native-intent"]) {
+    const f = await fixture(t), previous = globalThis.__piSessions;
+    let tools = ["read", "edit"];
+    const inner = { sessionId: f.id, sessionFile: f.sm.getSessionFile(), sessionManager: f.sm,
+      settingsManager: SettingsManager.create(f.cwd, agentDir), getActiveToolNames: () => tools, setActiveToolsByName: (names) => { tools = [...names]; },
+      dispose() {}, agent: { state: {} } };
+    const wrapper = new AgentSessionWrapper(inner, { checkoutGuardInstalled: true });
+    globalThis.__piSessions = new Map([[f.id, wrapper]]);
+    let off;
+    try {
+      await writeFile(join(f.cwd, "a"), `original ${phase}\n`);
+      const response = await post(previewRequest(f.id));
+      assert.equal(response.status, 200, await response.clone().text());
+      const candidate = await response.json();
+      const changeAndRestore = () => { inner.setActiveToolsByName(["read"]); inner.setActiveToolsByName(["read", "edit"]); };
+      if (phase === "human-wait") changeAndRestore();
+      else off = subscribeGitActionUpdates(f.id, ({ actionId }) => {
+        if (actionId !== candidate.actionId) return;
+        const record = readLiveGitAction(f.id, actionId)?.record;
+        if (record?.state === "executing") changeAndRestore();
+      });
+      const refused = await post(confirmRequest(f.id, candidate));
+      assert.equal(refused.status, 409, await refused.clone().text());
+      assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), candidate.preview.head);
+      off?.(); off = undefined;
+      const fresh = await (await post(previewRequest(f.id))).json();
+      assert.equal((await (await post(confirmRequest(f.id, fresh))).json()).status, "committed");
+    } finally { off?.(); wrapper.destroy(); globalThis.__piSessions = previous; }
+  }
 });
 
 test("operation preflight has a safe actionable diagnostic without leaking arbitrary Git policy keys", async (t) => {
@@ -303,8 +466,8 @@ test("a late operation marker after durable intent records a definite blocked ma
   let injected = false;
   const off = subscribeGitActionUpdates(f.id, ({ actionId }) => {
     if (actionId !== candidate.actionId || injected) return;
-    const record = JSON.parse(readFileSync(join(agentDir, "pi-web/git-actions/v1", actionId, "record.json"), "utf8")).record;
-    if (!record.intended?.commit) return;
+    const record = readLiveGitAction(f.id, actionId)?.record;
+    if (!record?.intended?.commit) return;
     injected = true;
     writeFileSync(join(f.cwd, ".git", "MERGE_HEAD"), `${candidate.preview.head}\n`);
   });
@@ -444,7 +607,8 @@ test("expired association cannot be revived even with an otherwise authentic nat
   Date.now = () => candidate.expiresAt + 1;
   try { assert.equal((await post(confirmRequest(f.id, candidate))).status, 409); }
   finally { Date.now = now; }
-  assert.equal((await history(candidate.actionId)).record.state, "expired");
+  const expired = await history(candidate.actionId);
+  assert.ok(!expired.record || expired.record.state === "expired", "released optional history cannot revive approval");
   assert.equal((await post(confirmRequest(f.id, candidate))).status, 409);
   assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), candidate.preview.head);
 });
@@ -457,10 +621,17 @@ test("callback journals intended identity before ref CAS; cancellation after tha
   let observed;
   const off = subscribeGitActionUpdates(f.id, ({ actionId }) => {
     if (actionId !== candidate.actionId) return;
-    const record = JSON.parse(readFileSync(join(agentDir, "pi-web/git-actions/v1", actionId, "record.json"), "utf8")).record;
-    if (record.state === "executing" && record.intended) { observed = record.intended; controller.abort(); }
+    const record = readLiveGitAction(f.id, actionId)?.record;
+    if (record?.state === "executing" && record.intended) { observed = record.intended; controller.abort(new Error("PRIVATE_CANCEL_REASON")); }
   });
-  try { assert.equal((await post(confirmRequest(f.id, candidate), controller.signal)).status, 409); }
+  try {
+    const response = await post(confirmRequest(f.id, candidate), controller.signal);
+    assert.equal(response.status, 409);
+    const result = await response.json();
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE_CANCEL_REASON|uncertain/);
+    assert.equal(result.error, "Commit cancelled; no commit was made");
+    assert.equal(result.recoveryRequired, undefined);
+  }
   finally { off(); }
   assert.ok(observed.commit);
   assert.equal(observed.tree, candidate.preview.tree);
@@ -470,28 +641,73 @@ test("callback journals intended identity before ref CAS; cancellation after tha
   assert.equal((await post(confirmRequest(f.id, candidate))).status, 409);
 });
 
-test("missing durable candidate prevents mutation, and post-apply recording failure preserves actual result with recovery warning", async (t) => {
+test("optional final recording storage failure reports native success and a warning without retry or quarantine", async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.cwd, "a"), "native success despite optional storage failure\n");
+  const candidate = await (await post(previewRequest(f.id))).json();
+  const actionDir = join(agentDir, "git-diagnostics-v2");
+  const savedDir = `${actionDir}.storage-fault`;
+  const bin = await mkdtemp(join(tmpdir(), "pi-web-commit-recording-fault-"));
+  t.after(() => rm(bin, { recursive: true, force: true }));
+  const realGit = (await git("which", ["git"])).stdout.trim();
+  // Real ENOTDIR in record(), AFTER successful native CAS, not a mocked
+  // success/error receipt. The original diagnostic directory is restored only
+  // after the HTTP response; no native effect or proof is reconstructed.
+  await writeFile(join(bin, "git"), `#!/bin/sh\ncase " $* " in *" update-ref "*) "${realGit}" "$@" || exit $?; mv "${actionDir}" "${savedDir}" && printf '%s' 'unavailable diagnostic storage' > "${actionDir}"; exit $? ;; esac\nexec "${realGit}" "$@"\n`);
+  await chmod(join(bin, "git"), 0o755);
+  const oldPath = process.env.PATH; process.env.PATH = `${bin}:${oldPath}`;
+  let response;
+  try { response = await post(confirmRequest(f.id, candidate)); }
+  finally {
+    process.env.PATH = oldPath;
+    if (existsSync(savedDir)) { await rm(actionDir, { force: true }); await rename(savedDir, actionDir); }
+  }
+  assert.equal(response.status, 200, await response.clone().text());
+  const result = await response.json();
+  assert.equal(result.status, "committed"); assert.equal(result.diagnosticsUnavailable, true);
+  assert.match(result.recoveryWarning, /diagnostics unavailable.*do not repeat/i);
+  assert.equal(result.recoveryRequired, undefined, "missing diagnostics are not native uncertainty or quarantine");
+  assert.doesNotMatch(JSON.stringify(result), /refresh|retry|ENOTDIR|storage-fault/);
+  assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), result.commit);
+  assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD^{tree}"])).stdout.trim(), candidate.preview.tree);
+  assert.deepEqual(result.parents, [candidate.preview.head]);
+  assert.equal((await history(candidate.actionId)).record, null, "lost optional output is not reconstructed from current Git state");
+  assert.deepEqual(result.diagnostics, { status: "unavailable", reason: "storage-unavailable" });
+  assert.equal(existsSync(join(f.cwd, ".git/index.lock")), false);
+  assert.equal(existsSync(join(agentDir, "pi-web/git-operation-admission")), false);
+  assert.equal((await post(confirmRequest(f.id, candidate))).status, 409, "never repeat the consumed invocation");
+  await writeFile(join(f.cwd, "a"), "new independently approved candidate\n");
+  const next = await (await post(previewRequest(f.id))).json();
+  const nextResult = await (await post(confirmRequest(f.id, next))).json();
+  assert.equal(nextResult.status, "committed"); assert.equal(nextResult.diagnosticsUnavailable, undefined);
+});
+
+test("missing optional candidate diagnostics and post-apply recording failure preserve actual native success", async (t) => {
   const f = await fixture(t);
   await writeFile(join(f.cwd, "a"), "journal failure\n");
+  await writeFile(join(agentDir, "git-diagnostics-v2"), "optional namespace unavailable");
   const unavailable = await (await post(previewRequest(f.id))).json();
-  await rm(join(agentDir, "pi-web/git-actions/v1", unavailable.actionId, "candidate.json"));
+  assert.equal(unavailable.diagnosticsUnavailable, true);
+  assert.deepEqual(unavailable.diagnostics, { status: "unavailable", reason: "storage-unavailable" });
+  assert.match(unavailable.candidateDiff.patch, /\+journal failure/);
+  const confirmed = await post(confirmRequest(f.id, unavailable));
+  assert.equal(confirmed.status, 200, await confirmed.clone().text());
+  const measured = await confirmed.json();
+  assert.equal(measured.status, "committed");
+  assert.equal(measured.recoveryRequired, undefined);
+  assert.equal(measured.diagnosticsUnavailable, true);
+  assert.match(measured.recoveryWarning, /do not repeat/i);
+  assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), measured.commit);
   assert.equal((await post(confirmRequest(f.id, unavailable))).status, 409);
-  assert.equal((await history(unavailable.actionId)).record.state, "expired", "an unapproved preview cannot move a ref");
-  assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), unavailable.preview.head);
-  // A fresh independently captured approval may proceed: the expired old
-  // preview was never an executing operation and cannot be replayed.
-  const reviewed = await (await post(previewRequest(f.id))).json();
-  assert.equal((await post(confirmRequest(f.id, reviewed))).status, 200);
   const clean = await fixture(t);
   await writeFile(join(clean.cwd, "a"), "journal failure\n");
   const candidate = await (await post(previewRequest(clean.id))).json();
-  // Fault actual POST-CAS recording, not the pre-CAS intent callback. The new
-  // durable-review guard correctly blocks journal corruption before effects.
+  // Fault actual POST-CAS recording: the outcome must still be native success.
   const bin = await mkdtemp(join(tmpdir(), "pi-web-post-cas-journal-"));
   t.after(() => rm(bin, { recursive: true, force: true }));
   const realGit = (await git("which", ["git"])).stdout.trim(), wrapper = join(bin, "git");
-  const recordPath = join(agentDir, "pi-web/git-actions/v1", candidate.actionId, "record.json");
-  await writeFile(wrapper, `#!/bin/sh\ncase " $* " in *" update-ref "*) "${realGit}" "$@" || exit $?; printf '%s' 'injected journal failure' > "${recordPath}"; exit 0 ;; esac\nexec "${realGit}" "$@"\n`);
+  const recordPath = join(agentDir, "git-diagnostics-v2");
+  await writeFile(wrapper, `#!/bin/sh\ncase " $* " in *" update-ref "*) "${realGit}" "$@" || exit $?; mv "${recordPath}" "${recordPath}.unavailable"; printf '%s' 'injected journal failure' > "${recordPath}"; exit 0 ;; esac\nexec "${realGit}" "$@"\n`);
   await chmod(wrapper, 0o755);
   const oldPath = process.env.PATH; process.env.PATH = `${bin}:${oldPath}`;
   let response;
@@ -501,7 +717,8 @@ test("missing durable candidate prevents mutation, and post-apply recording fail
   const result = await response.json();
   assert.equal(result.status, "committed");
   assert.equal(result.actionId, candidate.actionId);
-  assert.equal(result.recoveryRequired, true);
+  assert.equal(result.recoveryRequired, undefined);
+  assert.equal(result.diagnosticsUnavailable, true);
   assert.match(result.recoveryWarning, /do not repeat/i);
   assert.doesNotMatch(JSON.stringify(result), /refresh|no mutation|injected journal failure/i);
   assert.equal((await git("git", ["-C", clean.cwd, "rev-parse", "HEAD"])).stdout.trim(), result.commit);
@@ -534,7 +751,7 @@ test("native post-ref partial success is recovery-required with actual OIDs, nev
   assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), result.commit);
 });
 
-test("callback intent-write failure and late access revocation both prevent the ref CAS", async (t) => {
+test("optional intent diagnostics failure permits CAS but late access revocation prevents it", async (t) => {
   for (const fault of ["journal", "revocation"]) {
     const f = await fixture(t);
     await writeFile(join(f.cwd, "a"), `${fault}\n`);
@@ -543,24 +760,34 @@ test("callback intent-write failure and late access revocation both prevent the 
     let injected = false;
     const off = subscribeGitActionUpdates(f.id, ({ actionId }) => {
       if (actionId !== candidate.actionId || injected) return;
-      const record = JSON.parse(readFileSync(join(agentDir, "pi-web/git-actions/v1", actionId, "record.json"), "utf8")).record;
-      if (record.state !== "executing") return;
+      const record = readLiveGitAction(f.id, actionId)?.record;
+      if (record?.state !== "executing") return;
       // Execution is now first recorded with the native prepared intent. Fault
       // the captured artifact at that actual callback, not a removed premature
       // executing-without-intent UI bookkeeping phase.
       if (fault === "journal" && record.intended) {
-        writeFileSync(join(agentDir, "pi-web/git-actions/v1", actionId, "candidate.json"), "invalid candidate");
+        const root = join(agentDir, "git-diagnostics-v2");
+        renameSync(root, `${root}.unavailable`); writeFileSync(root, "unavailable diagnostic namespace");
         injected = true;
       } else if (fault === "revocation" && record.intended) {
         globalThis.__piAllowedRootsCache = { roots: new Set([agentDir]), expiresAt: Date.now() + 10000 };
         injected = true;
       }
     });
-    try { assert.equal((await post(confirmRequest(f.id, candidate))).status, 409); }
+    let response;
+    try { response = await post(confirmRequest(f.id, candidate)); }
     finally { off(); globalThis.__piAllowedRootsCache = roots; }
     assert.equal(injected, true);
-    assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), candidate.preview.head);
-    if (fault === "revocation") assert.equal((await history(candidate.actionId)).record.state, "blocked");
+    const result = await response.json();
+    const head = (await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim();
+    if (fault === "revocation") {
+      assert.equal(response.status, 409); assert.equal(head, candidate.preview.head);
+      assert.equal((await history(candidate.actionId)).record.state, "blocked");
+    } else {
+      assert.equal(response.status, 200); assert.equal(result.status, "committed"); assert.equal(head, result.commit);
+      assert.equal(result.recoveryRequired, undefined); assert.equal(result.diagnosticsUnavailable, true);
+      assert.match(result.recoveryWarning, /do not repeat/i);
+    }
   }
 });
 
@@ -590,7 +817,19 @@ test("unknown error after the ref boundary reports uncertain execution with inte
   assert.equal((await history(candidate.actionId)).record.state, "recovery-required");
 });
 
-test("anchor resolves the latest disk parent or newly-created live manager after awaited artifact work", async (t) => {
+async function duringInitialDiagnosticProbe(t, mutate, run) {
+  const mkdir = fs.mkdirSync; let injected = false;
+  const mock = t.mock.method(fs, "mkdirSync", (dir, ...args) => {
+    const result = mkdir(dir, ...args);
+    if (!injected && String(dir).endsWith("/git-diagnostics-v2")) { injected = true; mutate(); }
+    return result;
+  });
+  syncBuiltinESMExports();
+  try { const result = await run(); assert.equal(injected, true); return result; }
+  finally { mock.mock.restore(); syncBuiltinESMExports(); }
+}
+
+test("anchor follows ordinary transcript progress, but a replacement live owner cannot refresh commit authority", async (t) => {
   const registry = globalThis.__piSessions;
   t.after(() => { globalThis.__piSessions = registry; });
   for (const mode of ["disk", "new-live-wrapper"]) {
@@ -599,25 +838,22 @@ test("anchor resolves the latest disk parent or newly-created live manager after
     await writeFile(join(f.cwd, "a"), "fresh anchor parent\n");
     let latest;
     let expectedParent;
-    const off = subscribeGitActionUpdates(f.id, ({ revision }) => {
-      if (revision !== 1 || latest) return;
+    const response = await duringInitialDiagnosticProbe(t, () => {
       latest = SessionManager.open(f.sm.getSessionFile());
-      latest.appendCustomEntry("test:concurrent-metadata", { mode });
+      latest.appendMessage({ role: "user", content: "ordinary concurrent transcript", timestamp: Date.now() });
       expectedParent = latest.getLeafId();
       if (mode === "new-live-wrapper") globalThis.__piSessions = new Map([...(registry ?? []), [f.id, {
         sessionId: f.id, sessionFile: f.sm.getSessionFile(), cwd: f.cwd, isAlive: () => true, isRunning: () => false,
         inner: { sessionManager: latest },
       }]]);
-    });
-    let response;
-    try { response = await post(previewRequest(f.id)); }
-    finally { off(); }
-    assert.equal(response.status, 200, await response.clone().text());
+    }, () => post(previewRequest(f.id)));
+    assert.equal(response.status, mode === "disk" ? 200 : 409, await response.clone().text());
     const candidate = await response.json();
     const [anchor] = anchors(f.sm);
-    assert.equal(anchor.data.actionId, candidate.actionId);
+    if (mode === "disk") assert.equal(anchor.data.actionId, candidate.actionId);
+    else assert.equal(candidate.actionId, undefined, "unknown replacement wrapper cannot publish a fresh authority baseline");
     assert.equal(anchor.parentId, expectedParent, "append must not branch from the pre-artifact manager's parent");
-    assert.equal(entries(f.sm).filter((e) => e.customType === "test:concurrent-metadata").length, 1);
+    assert.equal(entries(f.sm).filter((e) => e.type === "message" && e.message.content === "ordinary concurrent transcript").length, 1);
     if (mode === "new-live-wrapper") assert.equal(latest.getLeafId(), anchor.id, "the live SDK manager receives the anchor too");
   }
 });
@@ -629,32 +865,34 @@ test("disk-ahead live manager and moved/replaced source file are refused at anch
     globalThis.__piSessions = registry;
     const f = await fixture(t);
     await writeFile(join(f.cwd, "a"), "do not recreate source\n");
+    const head = (await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim();
+    const index = await readFile(join(f.cwd, ".git/index"));
     const file = f.sm.getSessionFile();
     const moved = `${file}.moved`;
     const source = await readFile(file, "utf8");
-    let authorityEpoch = 0;
     if (mode === "disk-ahead-live") {
-      const live = { sessionId: f.id, sessionFile: file, cwd: f.cwd, isAlive: () => true, isRunning: () => false,
-        inner: { sessionManager: f.sm, getActiveToolNames: () => [] } };
-      registerGitCheckLiveAuthorityReader(live, () => String(authorityEpoch));
+      let tools = ["read", "edit"];
+      const inner = { sessionId: f.id, sessionFile: file, sessionManager: f.sm,
+        settingsManager: SettingsManager.create(f.cwd, agentDir), getActiveToolNames: () => tools,
+        setActiveToolsByName: names => { tools = [...names]; }, dispose() {}, agent: { state: {} } };
+      const live = new AgentSessionWrapper(inner, { checkoutGuardInstalled: true });
+      t.after(() => live.destroy());
       globalThis.__piSessions = new Map([...(registry ?? []), [f.id, live]]);
     }
     let actionId;
-    const off = subscribeGitActionUpdates(f.id, (event) => {
-      if (event.revision !== 1) return;
-      actionId = event.actionId;
-      if (mode === "disk-ahead-live") { authorityEpoch++; SessionManager.open(file).appendCustomEntry("test:external", { keep: true }); }
-      else {
-        renameSync(file, moved);
-        if (mode === "replaced") writeFileSync(file, source);
-      }
-    });
+    const off = subscribeGitActionUpdates(f.id, event => { actionId = event.actionId; });
     let response;
-    try { response = await post(previewRequest(f.id)); }
-    finally { off(); }
+    try {
+      response = await duringInitialDiagnosticProbe(t, () => {
+        if (mode === "disk-ahead-live") SessionManager.open(file).appendCustomEntry("test:external", { keep: true });
+        else { renameSync(file, moved); if (mode === "replaced") writeFileSync(file, source); }
+      }, () => post(previewRequest(f.id)));
+    } finally { off(); }
     assert.equal(response.status, 409);
-    assert.ok(actionId, "fault injected after durable artifact creation, before anchor append");
-    assert.equal((await history(actionId)).record.state, "blocked");
+    assert.ok(actionId, "fault injected after exact live capture, before anchor append");
+    assert.notEqual((await history(actionId)).record?.state, "succeeded", "optional anchor warning never grants authority");
+    assert.equal((await git("git", ["-C", f.cwd, "rev-parse", "HEAD"])).stdout.trim(), head);
+    assert.deepEqual(await readFile(join(f.cwd, ".git/index")), index);
     if (mode === "moved") {
       assert.equal(existsSync(file), false, "SDK must not recreate a removed source file");
       assert.equal(await readFile(moved, "utf8"), source);

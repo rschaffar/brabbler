@@ -1,10 +1,8 @@
 // Common server-only commit prerequisite. Working workspace, NEVER candidate-tree tests.
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { gitCommitWorkingWorkspaceReceiptReader } from "./git-checkout-verification";
 import { gitCheckSyncValue } from "./git-check-runner";
-import { gitWorkflowDefaultsPath } from "./git-workflow-store";
-import { readGitWorkflowWriteEpoch } from "./git-workflow-write-epoch";
+import { captureGitScopedAuthorityRevision, readGitScopedAuthorityRevision } from "./git-scoped-authority";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { selectGitProjectResources, revalidateGitProjectResources, type GitProjectResources } from "./git-project-resources";
 import { readGitWorkflowSettingsDocument, projectWorkflowOverrides } from "./git-workflow-settings-store";
@@ -25,6 +23,8 @@ export class GitCommitVerificationError extends Error {
 }
 function refuse(code: GitCommitVerificationError["code"]): never { throw new GitCommitVerificationError(code); }
 export interface GitCommitSourcePolicy {
+  /** Trusted bootstrap uses gitWorkflowPolicyRevision(actual loaded state),
+   * never the whole-document editor CAS revision. */
   policyRevision: string;
   settings: GitWorkflowSettings;
   /** Actual independently read SAVED canonical source Project, not caller A/task/target. */
@@ -54,6 +54,8 @@ export interface GitCommitReceiptValidationOptions {
   protectedBoundary?: GitCommitProtectedBoundary;
 }
 export interface GitCommitReceiptReader {
+  /** Fixed native private membership, not metadata. Empty arrays are not a bypass. */
+  assertBatchCurrentSync(receiptIds: readonly string[], requiredIndexes: readonly number[]): void;
   /** Native lookup + cohort/current epoch + exact v3 source/policy/authority validation. */
   validate(id: string, options: GitCommitReceiptValidationOptions): Promise<GitCommitWorkingWorkspaceReceipt>;
   /** Repeat current epoch/cohort/expiry, source snapshot and synchronous authority
@@ -93,14 +95,15 @@ const evidence = new WeakMap<GitCommitVerificationHandle, Evidence>();
 function nativeReader(context: GitCommitVerificationContext): GitCommitReceiptReader {
   if (context.testReceiptReader && process.env.NODE_TEST_CONTEXT) return context.testReceiptReader;
   const reader: GitCommitReceiptReader = gitCommitWorkingWorkspaceReceiptReader;
-  if (!reader || typeof reader.validate !== "function" || typeof reader.assertCurrentSync !== "function") refuse("unavailable");
+  if (!reader || typeof reader.validate !== "function" || typeof reader.assertCurrentSync !== "function" ||
+    typeof reader.assertBatchCurrentSync !== "function") refuse("unavailable");
   return reader;
 }
-function discoveryRevision(agentDir: string): string {
-  let legacy: string | null = null;
-  try { legacy = digest(readFileSync(gitWorkflowDefaultsPath(agentDir))); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  return digest([readGitWorkflowSettingsDocument(agentDir), legacy, readGitWorkflowWriteEpoch(agentDir)]);
+function discoveryScope(source: GitProjectResources, context?: GitCommitVerificationContext) {
+  return { domains: ["settings"] as const, projectRoots: [source.projectRoot], sessionId: context?.sessionId };
+}
+function discoveryRevision(e: Pick<Evidence, "agentDir" | "source" | "context">): string {
+  return readGitScopedAuthorityRevision(e.agentDir, discoveryScope(e.source, e.context));
 }
 function sourceProfile(policy: GitCommitSourcePolicy, projectChecksDigest: string): void {
   if (!policy || !policy.policyRevision || !policy.settings || !policy.savedProjectSettings) refuse("stale");
@@ -186,13 +189,18 @@ function assertAuthoritySync(e: Evidence): void {
   }
   if (c.signal?.aborted) refuse("stale");
 }
+function assertBatchCurrentSync(e: Evidence): void {
+  if (!e.summary.checkIndexes.length) return; // only independently discovered zero-required path
+  try { syncAuthorityValue(e.reader!.assertBatchCurrentSync(e.summary.receiptIds, e.summary.checkIndexes)); }
+  catch { refuse("stale"); }
+}
 async function validateEvidence(e: Evidence, protectedBoundary?: GitCommitProtectedBoundary): Promise<void> {
+  assertBatchCurrentSync(e);
   const stamp = authorityRevision(e);
-  if (e.authorityRevision !== undefined && stamp !== e.authorityRevision) refuse("stale");
-  e.authorityRevision = stamp;
+  if (stamp !== e.authorityRevision) refuse("stale");
   await revalidateGitProjectResources(e.source);
   const actual = await sourceChecks(e.source, e.agentDir, e.context);
-  if (actual.checksDigest !== e.checksDigest || actual.projectChecksDigest !== e.projectChecksDigest || discoveryRevision(e.agentDir) !== e.discoveryRevision) refuse("stale");
+  if (actual.checksDigest !== e.checksDigest || actual.projectChecksDigest !== e.projectChecksDigest || discoveryRevision(e) !== e.discoveryRevision) refuse("stale");
   if (actual.policy) {
     if (e.policyDigest !== undefined && (settingsDigest(actual.policy.settings) !== e.policyDigest || actual.policy.policyRevision !== e.policyRevision)) refuse("stale");
     e.policyDigest = settingsDigest(actual.policy.settings); e.policyRevision = actual.policy.policyRevision;
@@ -222,7 +230,8 @@ async function validateEvidence(e: Evidence, protectedBoundary?: GitCommitProtec
     e.reader!.assertCurrentSync(e.ids.get(index)!, optionsFor(e, index, protectedBoundary));
   }
   assertAuthoritySync(e);
-  if (discoveryRevision(e.agentDir) !== e.discoveryRevision) refuse("stale");
+  if (discoveryRevision(e) !== e.discoveryRevision) refuse("stale");
+  assertBatchCurrentSync(e); // all callbacks/awaits precede the final membership fence
 }
 /** Discover canonical SOURCE policy even when old callers omit new context.
  * Must run BEFORE prepareGitCommit/common capture, not just on new call paths. */
@@ -231,40 +240,34 @@ export async function captureGitCommitVerification(cwd: string, context?: GitCom
 }> {
   if (context?.testReceiptReader && !process.env.NODE_TEST_CONTEXT) refuse("unavailable");
   context = context ? { ...context, receiptIds: Array.isArray(context.receiptIds) ? [...context.receiptIds] : context.receiptIds } : undefined;
+  const agentDir = context?.agentDir ?? getAgentDir();
+  const originalDiscovery = captureGitScopedAuthorityRevision(agentDir);
+  const originalAuthority = context?.readAuthorityRevisionSync ? syncAuthorityValue(context.readAuthorityRevisionSync()) : undefined;
   const source = await selectGitProjectResources(cwd);
   for (const identity of Object.values(source.identities)) Object.freeze(identity);
   Object.freeze(source.identities); Object.freeze(source);
-  const agentDir = context?.agentDir ?? getAgentDir();
-  const revision = discoveryRevision(agentDir);
+  const revision = originalDiscovery(discoveryScope(source, context));
   const actual = await sourceChecks(source, agentDir, context);
-  if (discoveryRevision(agentDir) !== revision) refuse("stale");
+  if (discoveryRevision({ agentDir, source, context }) !== revision ||
+    (context?.readAuthorityRevisionSync ? syncAuthorityValue(context.readAuthorityRevisionSync()) : undefined) !== originalAuthority) refuse("stale");
   const required = selectGitCheckRecipesForStage(actual.checks, "commit").map(({ checkIndex }) => checkIndex);
   if (required.length && (!context || !context.sessionId || !context.agentDir || typeof context.sourceGetPolicy !== "function" ||
       typeof context.isTrusted !== "function" || typeof context.isSelectionAuthorized !== "function" || typeof context.isCheckAuthorized !== "function")) refuse("missing-context");
   const ids = context?.receiptIds ?? [];
   if (!Array.isArray(ids) || ids.length > MAX_GIT_WORKFLOW_CHECKS || new Set(ids).size !== ids.length ||
       ids.some((id) => typeof id !== "string" || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id))) refuse("missing-receipts");
-  if (required.length && ids.length !== required.length) refuse("missing-receipts");
+  if (ids.length !== required.length) refuse("missing-receipts");
   const summary: GitCommitVerificationSummary = Object.freeze({ status: !actual.checks.length ? "no-defined" : !required.length ? "no-required" : "required",
     checkIndexes: Object.freeze(required), receiptIds: Object.freeze(required.length ? [...ids] : []), evidenceScope: "working-workspace",
     candidateTreeVerified: false, repositoryChecksWaived: false });
-  const e: Evidence = { source, agentDir, discoveryRevision: revision,
+  const e: Evidence = { source, agentDir, discoveryRevision: revision, authorityRevision: originalAuthority,
+    policyDigest: actual.policy ? settingsDigest(actual.policy.settings) : undefined, policyRevision: actual.policy?.policyRevision,
     context: context ? { ...context, receiptIds: [...ids] } : undefined, checksDigest: actual.checksDigest, projectChecksDigest: actual.projectChecksDigest,
     summary, ids: new Map(), receipts: new Map(), reader: required.length ? nativeReader(context!) : undefined };
-  // IDs need not be in saved-index order. Native validation selects the exact
-  // original saved index, never filtered-array numbering.
-  const unused = new Set(ids);
-  for (const index of required) {
-    let matched: string | undefined;
-    for (const id of unused) {
-      try {
-        const r = await e.reader!.validate(id, optionsFor(e, index));
-        validateReceipt(r, e, id, index); matched = id; break;
-      } catch { /* exact native match or fail closed below */ }
-    }
-    if (!matched) refuse("stale");
-    e.ids.set(index, matched); unused.delete(matched);
-  }
+  // Exact ordered required batch: never search another batch/history for a
+  // missing member, reorder caller IDs, or trust public metadata associations.
+  assertBatchCurrentSync(e);
+  for (let i = 0; i < required.length; i++) e.ids.set(required[i], ids[i]);
   await validateEvidence(e);
   const handle = Object.freeze(Object.create(null)) as GitCommitVerificationHandle;
   evidence.set(handle, e);
@@ -288,7 +291,7 @@ export async function revalidateGitCommitVerification(handle: GitCommitVerificat
   }
   await validateEvidence(e, protectedBoundary);
   return () => {
-    if (e.context?.signal?.aborted || e.binding !== binding(preview, message) || discoveryRevision(e.agentDir) !== e.discoveryRevision) refuse("stale");
+    if (e.context?.signal?.aborted || e.binding !== binding(preview, message) || discoveryRevision(e) !== e.discoveryRevision) refuse("stale");
     if (protectedBoundary) {
       const b = readGitCommitProtectedBoundary(protectedBoundary, e.source, e.agentDir);
       if (!b || binding(b.preview, b.message) !== e.binding) refuse("stale");
@@ -300,5 +303,6 @@ export async function revalidateGitCommitVerification(handle: GitCommitVerificat
     }
     if (e.summary.checkIndexes.length) assertAuthoritySync(e);
     else assertSourcePolicySync(e);
+    assertBatchCurrentSync(e);
   };
 }

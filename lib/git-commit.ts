@@ -1,11 +1,12 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
-import { promises as fs, constants, closeSync, openSync, fstatSync, lstatSync, readFileSync, realpathSync } from "node:fs";
+import fsSync, { promises as fs, constants, closeSync, openSync, fstatSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { gitExecEnv } from "./git-exec";
-import { readGitOperationReservationOwner, type GitOperationReservation, type GitOperationReservationOwner } from "./git-operation-admission";
+import { readGitOperationInvocationOwner, type GitOperationInvocation, type GitOperationInvocationOwner } from "./git-operation-admission";
+import { assertGitInvocationCurrentSync, consumeGitInvocationSync, type GitInvocationBinding, type GitInvocationHandle } from "./git-invocation";
 import type { GitProjectResources } from "./git-project-resources";
 import { samePath, toNativePath } from "./paths";
 
@@ -288,6 +289,8 @@ declare const nativeBoundaryBrand: unique symbol;
 /** Invocation-only capability, minted from our open FD, never a JSON/path exemption. */
 export type GitCommitNativeBoundaryHandle = Readonly<{ [nativeBoundaryBrand]: true }>;
 export interface GitCommitNativeBoundary {
+  readonly dependencyVersion: 2;
+  readonly relevantRefs: readonly string[];
   readonly preview: Readonly<GitCommitPreview>;
   readonly message: string;
   readonly indexPath: string;
@@ -301,37 +304,58 @@ declare const protectedBoundaryBrand: unique symbol;
 export interface GitCommitProtectedBoundary {
   readonly [protectedBoundaryBrand]: true;
   readonly ownedLock: GitCommitNativeBoundaryHandle;
-  readonly reservation: GitOperationReservation;
+  readonly reservation: GitOperationInvocation;
+  readonly invocation: GitInvocationHandle;
 }
 const protectedBoundaries = new WeakMap<GitCommitProtectedBoundary, {
-  owner: GitOperationReservationOwner; sourceDigest: string; agentDir: string;
+  owner: GitOperationInvocationOwner; sourceDigest: string; agentDir: string; binding: GitInvocationBinding;
 }>();
-/** Mint only from the ledger's authentic issued commit owner AND our active FD.
- * Other-kind/source/ledger, copies and resolved reservations cannot mint proof. */
-export function captureGitCommitProtectedBoundary(ownedLock: GitCommitNativeBoundaryHandle, reservation: GitOperationReservation,
-  source: Readonly<GitProjectResources>, agentDir?: string): GitCommitProtectedBoundary {
-  const owner = readGitOperationReservationOwner(reservation), b = readGitCommitNativeBoundary(ownedLock);
+/** Versioned exact binding; descriptive data, never an authority substitute. */
+export function gitCommitInvocationBinding(source: GitProjectResources, preview: GitCommitPreview, message: string,
+  owner: GitInvocationBinding["owner"]): GitInvocationBinding {
+  return { kind: "commit", source: structuredClone(source), owner: { ...owner }, candidateSha256: hash(JSON.stringify({
+    version: 1, kind: "exact-commit", repositoryRoot: preview.repositoryRoot, branch: preview.branch, head: preview.head,
+    mode: preview.mode, paths: [...preview.paths], tree: preview.tree, reviewToken: preview.reviewToken, message,
+  })) };
+}
+export interface GitCommitSupervision {
+  readonly operation: GitOperationInvocation;
+  readonly invocation: GitInvocationHandle;
+  readonly binding: GitInvocationBinding;
+}
+/** Joint proof: actual native FD, original private lifecycle AND authorization
+ * invocation. No action-ID, disk-slot or sole-unresolved-action exemptions. */
+export function captureGitCommitProtectedBoundary(ownedLock: GitCommitNativeBoundaryHandle, reservation: GitOperationInvocation,
+  source: Readonly<GitProjectResources>, invocation: GitInvocationHandle, binding: GitInvocationBinding, agentDir?: string): GitCommitProtectedBoundary {
+  const owner = readGitOperationInvocationOwner(reservation), b = readGitCommitNativeBoundary(ownedLock);
   if (!owner || owner.kind !== "commit" || !owner.agentDir || agentDir !== undefined && owner.agentDir !== agentDir ||
       JSON.stringify(owner.selection) !== JSON.stringify(source) || !b || b.preview.repositoryRoot !== source.cwd ||
       b.preview.branch !== `refs/heads/${source.branch}` || b.indexPath !== path.join(source.gitDir, "index")) {
-    throw new GitCommitOperationError("Git commit protected boundary has no authentic live source reservation.");
+    throw new GitCommitOperationError("Git commit protected boundary has no authentic live source owner.");
   }
-  const boundary = Object.freeze({ ownedLock, reservation }) as GitCommitProtectedBoundary;
-  protectedBoundaries.set(boundary, { owner, sourceDigest: hash(JSON.stringify(source)), agentDir: owner.agentDir });
+  const native = nativeInvocations.get(ownedLock);
+  if (!native?.supervision || native.supervision.operation !== reservation || native.supervision.invocation !== invocation)
+    throw new GitCommitOperationError("Git commit boundary belongs to a different invocation.");
+  const expected = gitCommitInvocationBinding(source, b.preview as GitCommitPreview, b.message, binding.owner);
+  assertGitInvocationCurrentSync(invocation, expected);
+  if (JSON.stringify(expected) !== JSON.stringify(binding)) throw new GitCommitOperationError("Git commit invocation binding differs.");
+  const boundary = Object.freeze({ ownedLock, reservation, invocation }) as GitCommitProtectedBoundary;
+  protectedBoundaries.set(boundary, { owner, sourceDigest: hash(JSON.stringify(source)), agentDir: owner.agentDir, binding: expected });
   return boundary;
 }
-/** Checker-only read: identity-issued joint seal; repeat actual ledger ownership,
+/** Checker-only read: identity-issued joint seal; repeat actual private ownership,
  * original source/index/refs and open FD/path identity now, without an await. */
 export function readGitCommitProtectedBoundary(boundary: GitCommitProtectedBoundary, source: Readonly<GitProjectResources>,
   agentDir: string): GitCommitNativeBoundary | undefined {
   const saved = protectedBoundaries.get(boundary);
   if (!saved || saved.agentDir !== agentDir || saved.sourceDigest !== hash(JSON.stringify(source))) return;
-  const owner = readGitOperationReservationOwner(boundary.reservation);
+  const owner = readGitOperationInvocationOwner(boundary.reservation);
   if (!owner || owner !== saved.owner || owner.kind !== "commit" || owner.agentDir !== agentDir ||
       JSON.stringify(owner.selection) !== JSON.stringify(source)) return;
   const b = readGitCommitNativeBoundary(boundary.ownedLock);
   if (!b || b.preview.repositoryRoot !== source.cwd || b.preview.branch !== `refs/heads/${source.branch}` ||
       b.indexPath !== path.join(source.gitDir, "index")) return;
+  try { assertGitInvocationCurrentSync(boundary.invocation, saved.binding); } catch { return; }
   return b;
 }
 interface NativeInvocation {
@@ -340,6 +364,33 @@ interface NativeInvocation {
   refs: string;
   indexIdentity: string;
   markerIdentity: string;
+  supervision?: GitCommitSupervision;
+}
+const nativeCompletions = new WeakMap<object, { invocation: GitInvocationHandle; facts: Readonly<GitCommitResult> }>();
+/** Immutable native facts remain readable after retirement. Neither copies nor
+ * another invocation can claim them, and reading never reopens authorization. */
+export function readGitCommitNativeCompletion(value: unknown, invocation: GitInvocationHandle): Readonly<GitCommitResult> | undefined {
+  if (!value || typeof value !== "object") return;
+  const saved = nativeCompletions.get(value);
+  return saved?.invocation === invocation ? saved.facts : undefined;
+}
+function nativeCompletion(result: GitCommitResult, supervision?: GitCommitSupervision): GitCommitResult {
+  Object.freeze(result.parents); Object.freeze(result);
+  if (supervision) nativeCompletions.set(result, { invocation: supervision.invocation, facts: result });
+  return result;
+}
+function assertCommitSupervision(supervision: GitCommitSupervision, preview: GitCommitPreview, message: string, consume = false): void {
+  const owner = readGitOperationInvocationOwner(supervision.operation);
+  if (!owner || owner.kind !== "commit" || preview.repositoryRoot !== owner.selection.cwd || preview.branch !== `refs/heads/${owner.selection.branch}`)
+    throw new GitCommitOperationError("Git commit requires its original live physical owner.");
+  const expected = gitCommitInvocationBinding(owner.selection, preview, message, supervision.binding.owner);
+  if (JSON.stringify(expected) !== JSON.stringify(supervision.binding)) throw new GitCommitOperationError("Git commit invocation binding differs.");
+  if (consume) consumeGitInvocationSync(supervision.invocation, expected);
+  else assertGitInvocationCurrentSync(supervision.invocation, expected);
+  // The trusted synchronous guard may observe (or cause) a replacement. Fence
+  // physical ownership again after it, not just before entering caller code.
+  if (readGitOperationInvocationOwner(supervision.operation) !== owner)
+    throw new GitCommitOperationError("Git commit physical owner changed during authority validation.");
 }
 const nativeInvocations = new WeakMap<GitCommitNativeBoundaryHandle, NativeInvocation>();
 function gitSync(cwd: string, args: string[]): string {
@@ -382,7 +433,7 @@ export function readGitCommitNativeBoundary(handle: GitCommitNativeBoundaryHandl
     if (!fd.isFile() || !named.isFile() || named.isSymbolicLink() || fd.nlink !== BigInt(1) ||
         String(fd.dev) !== b.lockDevice || String(fd.ino) !== b.lockInode || fd.dev !== named.dev || fd.ino !== named.ino ||
         originalIndexDigestSync(b.indexPath, invocation.indexIdentity) !== b.indexDigest ||
-        gitSync(b.preview.repositoryRoot, ["show-ref", "--head"]) !== invocation.refs ||
+        gitSync(b.preview.repositoryRoot, ["show-ref", "--verify", b.preview.branch]) !== invocation.refs ||
         gitSync(b.preview.repositoryRoot, ["symbolic-ref", "--quiet", "HEAD"]).trim() !== b.preview.branch) return;
     return b;
   } catch { return; }
@@ -392,7 +443,14 @@ export function readGitCommitNativeBoundary(handle: GitCommitNativeBoundaryHandl
 export async function confirmGitCommit(preview: GitCommitPreview, message: string,
   beforeRefUpdate?: (intended: { commit: string; tree: string; parents: string[]; authorEmail: string },
     ownedLock: GitCommitNativeBoundaryHandle) => Promise<void | (() => void)>,
+  supervision?: GitCommitSupervision,
 ): Promise<GitCommitResult> {
+  // Optional only for the low-level native API. The public exact adapter always
+  // requires genuine caller/session authority; there is no synthesized fallback.
+  if (supervision) {
+    supervision = Object.freeze({ ...supervision, binding: structuredClone(supervision.binding) });
+    assertCommitSupervision(supervision, preview, message);
+  }
   if (!message.trim() || message.includes("\0")) fail("invalid commit message");
   const paths = [...preview.paths];
   Object.freeze(paths);
@@ -410,24 +468,28 @@ export async function confirmGitCommit(preview: GitCommitPreview, message: strin
     if (!s.isDirectory() || s.isSymbolicLink() || await fs.realpath(p) !== p) fail("physical checkout changed");
     return { path: p, device: String(s.dev), inode: String(s.ino), birthtime: String(s.birthtimeNs) };
   }));
-  const refs = await git(cwd, ["show-ref", "--head"]);
+  // Only this branch is a dependency. An unrelated feature ref is not authority
+  // over this invocation (binding is explicit in the private boundary version).
+  const refs = await git(cwd, ["show-ref", "--verify", preview.branch]);
   const indexStat = await fs.lstat(first.state.indexPath, { bigint: true });
   const markerStat = await fs.lstat(path.join(cwd, ".git"), { bigint: true });
   if (markerStat.isSymbolicLink() || !markerStat.isDirectory() && !markerStat.isFile()) fail("physical checkout marker required");
   const indexIdentity = `${indexStat.dev}:${indexStat.ino}:${indexStat.birthtimeNs}`;
   const markerIdentity = `${markerStat.dev}:${markerStat.ino}:${markerStat.birthtimeNs}:${markerStat.isFile() ? hash(await fs.readFile(path.join(cwd, ".git"))) : "directory"}`;
   const lockPath = `${first.state.indexPath}.lock`;
+  if (supervision) assertCommitSupervision(supervision, preview, message, true);
   const lock = await fs.open(lockPath, "wx", 0o600).catch(() => fail("index locked"));
   const ownedLock = Object.freeze(Object.create(null)) as GitCommitNativeBoundaryHandle;
   let invocation: NativeInvocation | undefined;
   let committed: string | null = null;
+  let casStarted = false;
   let authorEmail = "";
   let installed = false;
   let lockIdentity: Awaited<ReturnType<typeof lock.stat>> | undefined;
   try {
     lockIdentity = await lock.stat();
-    invocation = { active: true, fd: lock.fd, identities, refs, indexIdentity, markerIdentity, boundary: Object.freeze({
-      preview, message,
+    invocation = { active: true, fd: lock.fd, identities, refs, indexIdentity, markerIdentity, supervision, boundary: Object.freeze({
+      preview, message, dependencyVersion: 2, relevantRefs: Object.freeze([preview.branch]),
       indexPath: first.state.indexPath, indexLockPath: lockPath, indexDigest: first.state.indexHash,
       lockDevice: String(lockIdentity.dev), lockInode: String(lockIdentity.ino),
     }) };
@@ -442,8 +504,8 @@ export async function confirmGitCommit(preview: GitCommitPreview, message: strin
     const committer = identity((await git(cwd, ["var", "GIT_COMMITTER_IDENT"])).trim());
     const commit = (await git(cwd, ["commit-tree", latest.preview.tree, "-p", preview.head, "-m", message])).trim();
     await verifyCommit(cwd, commit, latest.preview.tree, preview.head, message, author, committer);
-    // Persist prepared identity BEFORE the ref mutation. A failed journal write
-    // leaves only an unreachable object, never a silently unrecorded commit.
+    // The callback separates optional recording from essential authority and
+    // evidence orchestration. Recording is not native completion.
     const postguard = await beforeRefUpdate?.({ commit, tree: latest.preview.tree, parents: [preview.head], authorEmail }, ownedLock);
     await assertCheckout(cwd, preview.branch, preview.head);
     const beforeRef = await fs.lstat(lockPath);
@@ -466,6 +528,7 @@ export async function confirmGitCommit(preview: GitCommitPreview, message: strin
         fail("native authority guard must be synchronous");
       }
     }
+    if (supervision) assertCommitSupervision(supervision, preview, message);
     // The returned guard is trusted but may itself observe a synchronous external
     // change. Recheck the native FD/source/ref proof and operation markers after
     // it too; a final callback can never grant a raw lock or marker exemption.
@@ -481,23 +544,41 @@ export async function confirmGitCommit(preview: GitCommitPreview, message: strin
     }
     // No await between final synchronous authority/source fence and starting CAS.
     // update-ref is an atomic compare-and-swap. External writers can still race.
-    await git(cwd, ["update-ref", preview.branch, commit, preview.head]);
+    casStarted = true;
+    await git(cwd, ["update-ref", "--no-deref", preview.branch, commit, preview.head]);
     committed = commit;
     invocation.active = false;
     await assertCheckout(cwd, preview.branch, commit);
+    if (supervision) assertCommitSupervision(supervision, preview, message);
     await lock.writeFile(latest.index);
     await lock.sync();
     await assertCheckout(cwd, preview.branch, commit);
-    await lock.close();
-    const current = await fs.lstat(lockPath);
-    if (current.dev !== lockIdentity.dev || current.ino !== lockIdentity.ino) fail("index lock ownership lost");
-    await fs.rename(lockPath, first.state.indexPath);
+    if (supervision) assertCommitSupervision(supervision, preview, message);
+    // CAS does not protect the original index from an uncoordinated writer
+    // during the awaited write/fsync above. Require its ORIGINAL identity and
+    // bytes again, including continued presence, before replacing it. Refusal
+    // preserves the foreign index (or absence) and reports the acknowledged CAS
+    // as partial success. The pre-CAS native boundary is no longer current here.
+    if (originalIndexDigestSync(first.state.indexPath, indexIdentity) !== first.state.indexHash)
+      fail("original index changed before installation");
+    // Keep the real descriptor open through installation. No callback or await
+    // between this final index/lock fence and the rename syscall. An external
+    // writer can still race the last syscalls; this is not a filesystem sandbox.
+    const held = fstatSync(lock.fd), current = lstatSync(lockPath);
+    if (!current.isFile() || current.isSymbolicLink() || held.nlink !== 1 ||
+      current.dev !== lockIdentity.dev || current.ino !== lockIdentity.ino || held.dev !== current.dev || held.ino !== current.ino)
+      fail("index lock ownership lost");
+    fsSync.renameSync(lockPath, first.state.indexPath);
     installed = true;
     await assertCheckout(cwd, preview.branch, commit);
-    return { status: "committed", commit, tree: preview.tree, parents: [preview.head], authorEmail };
+    return nativeCompletion({ status: "committed", commit, tree: preview.tree, parents: [preview.head], authorEmail }, supervision);
   } catch (error) {
-    if (committed) return { status: "partial-success", commit: committed, tree: preview.tree,
-      parents: [preview.head], authorEmail, reason: "Commit created, but checkout finalization failed" };
+    if (committed) return nativeCompletion({ status: "partial-success", commit: committed, tree: preview.tree,
+      parents: [preview.head], authorEmail, reason: "Commit created, but checkout finalization failed" }, supervision);
+    // Once CAS was started, a failed/lost acknowledgement is NOT proof of no
+    // effect. Before it, a guard refusal can honestly report no ref/index update.
+    if (!casStarted && !(error instanceof GitCommitOperationError))
+      throw new GitCommitOperationError(error instanceof Error ? error.message : "Git commit refused before ref update", { cause: error });
     throw error;
   } finally {
     if (invocation) invocation.active = false;

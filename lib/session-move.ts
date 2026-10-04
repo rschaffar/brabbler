@@ -14,7 +14,6 @@ import { withGitWorkflowSettingsLock } from "./git-workflow-settings-store";
 import { retireGitTaskBinding } from "./git-workflow-binding-store";
 import { advanceGitWorkflowWriteEpoch } from "./git-workflow-write-epoch";
 import type { SessionInfo } from "./types";
-import { beginGitWorkspacePlacement } from "./git-workspace-usage";
 
 export class SessionMoveConflict extends Error {}
 
@@ -54,11 +53,6 @@ function rewriteFile(content: string, cwd: string | null, relocated: Map<string,
 
 /** Serialize Pi Web relocations so overlapping families cannot stage stale copies. */
 export async function moveSessionFamily(id: string, cwd: string): Promise<{ movedIds: string[] }> {
-  // Mark the destination before waiting for the family/settings locks. A
-  // queued move is already an in-flight placement, not an idle checkout.
-  let finishPlacement: () => void;
-  try { finishPlacement = beginGitWorkspacePlacement(cwd); }
-  catch { throw new SessionMoveConflict("Workspace cleanup blocks session relocation"); }
   const previous = globalThis.__piSessionMoveLock ?? Promise.resolve();
   let release!: () => void;
   const turn = new Promise<void>((resolve) => { release = resolve; });
@@ -68,7 +62,6 @@ export async function moveSessionFamily(id: string, cwd: string): Promise<{ move
     await previous;
     return await withGitWorkflowSettingsLock(getAgentDir(), () => moveSessionFamilyUnlocked(id, cwd));
   } finally {
-    finishPlacement();
     release();
     if (globalThis.__piSessionMoveLock === current) globalThis.__piSessionMoveLock = undefined;
   }
@@ -152,7 +145,7 @@ async function moveSessionFamilyUnlocked(id: string, cwd: string): Promise<{ mov
   // Fence reviewed metadata before replacing any file, including repaired parent
   // references. A failed/rolled-back move never resurrects its old generation.
   try {
-    advanceGitWorkflowWriteEpoch(getAgentDir());
+    advanceGitWorkflowWriteEpoch(getAgentDir(), files.map((file) => ({ kind: "session", sessionId: file.id })));
     for (const file of files) retireGitTaskBinding(file.id, undefined, "session-move", getAgentDir());
   } catch { throw new SessionMoveConflict("Task bindings could not be invalidated; session was not moved."); }
   // Evict idle wrappers before touching their files: their managers retain the

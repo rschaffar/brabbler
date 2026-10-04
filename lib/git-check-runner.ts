@@ -5,142 +5,112 @@ import { gitExecEnv } from "./git-exec";
 import path from "node:path";
 import { samePath } from "./paths";
 import { runContainedGitCheck, pinGitCheckCwd, linuxSystemdBackend, consumeLiveContainedGitCheckSuccess,
-  readContainedGitCheckExecutionFacts, type GitContainedCheckExecutionFacts,
-  type ContainedCheckResult, type ContainmentBackend } from "./git-check-containment";
-import { beginSupervisedGitOperationIntent, assertGitCheckRecoverySnapshotCapacity, readGitCheckAttemptState,
-  gitCheckSnapshotCohortDigest, readUnresolvedGitCheckRecovery, readGitCheckRecoveryEvidence,
-  type GitOperationReservation, type GitCheckAttemptState, type GitCheckSnapshot } from "./git-operation-admission";
+  readContainedGitCheckExecutionFacts, type GitContainedCheckExecutionFacts, type ContainmentBackend } from "./git-check-containment";
+import type { GitCheckSnapshot } from "./git-check-evidence";
 import type { GitProjectResources } from "./git-project-resources";
+import { appendFinalizedGitDiagnosticOutput } from "./git-diagnostic-retention";
 
-const runningKey = Symbol.for("pi-web:git-check-runner:running");
-/** Shared with the paired API. Preserve an existing legacy hot-reload set too. */
-export function gitCheckRunningCheckouts(): Set<string> {
-  const state = globalThis as unknown as Record<symbol, unknown>;
-  const legacy = state[Symbol.for("pi-web:git-verification:successful-receipts")] as { running?: Set<string> } | undefined;
-  return (state[runningKey] ??= legacy?.running ?? new Set<string>()) as Set<string>;
-}
 export const gitCheckDigest = (value: string | Buffer): string => createHash("sha256").update(value).digest("hex");
-const receiptEpochKey = Symbol.for("pi-web:git-check-runner:receipt-epochs");
-type AttemptBoundary = { resourceInstance: string; attempts: GitCheckAttemptState["attempts"] };
-type ReceiptEpoch = { agentDir: string; commonDir: string; cohort: string; snapshotCohort: string; state: AttemptBoundary };
-function resourceInstance(commonDir: string): string {
-  const s = lstatSync(commonDir, { bigint: true });
-  if (!s.isDirectory() || s.isSymbolicLink() || !samePath(commonDir, realpathSync(commonDir))) throw new Error("physical check resource required");
-  return gitCheckDigest(JSON.stringify({ commonDir, device: String(s.dev), inode: String(s.ino), birthtime: String(s.birthtimeNs) }));
+export type GitCheckDiagnostics = Readonly<{ status: "unavailable"; reason: "storage-unavailable" | "retention-limited" }>;
+/** Original process-local batch handle, not a grant or result. Each declared
+ * recipe enters once, in declaration order, after its predecessor is published.
+ * Independent runs, even in one session, use new handles and may overlap. */
+export interface GitCheckCohort { readonly kind: "git-check-cohort" }
+export interface GitCheckReceiptCohortMetadata { readonly id: string; readonly checkIndexes: readonly number[] }
+type Cohort = { metadata: Readonly<GitCheckReceiptCohortMetadata>; indexes: Set<number>; started: Set<number>;
+  registered: Map<number, string>; retired: boolean; binding?: string };
+const cohorts = new WeakMap<GitCheckCohort, Cohort>();
+export function createGitCheckCohort(checkIndexes: readonly number[]): GitCheckCohort {
+  if (!Array.isArray(checkIndexes) || !checkIndexes.length || checkIndexes.length > 64 ||
+    new Set(checkIndexes).size !== checkIndexes.length || checkIndexes.some((i) => !Number.isSafeInteger(i) || i < 0)) throw new Error("exact batch indexes required");
+  const handle: GitCheckCohort = Object.freeze({ kind: "git-check-cohort" });
+  cohorts.set(handle, { metadata: Object.freeze({ id: randomUUID(), checkIndexes: Object.freeze([...checkIndexes]) }),
+    indexes: new Set(checkIndexes), started: new Set(), registered: new Map(), retired: false });
+  return handle;
 }
-/** Capture the attempt epoch under the live owner BEFORE startup/payload. Even
- * a foreign attempt during a long run must not enter a late completion baseline. */
-export interface GitCheckAttemptBoundary { readonly kind: "live-check-attempt" }
-const attemptBoundaries = new WeakMap<GitCheckAttemptBoundary, { agentDir: string; commonDir: string; attemptId: string;
-  unit: string; snapshotCohort: string; state: AttemptBoundary }>();
-export function captureLiveGitCheckAttemptBoundary(reservation: GitOperationReservation, agentDir: string,
-  commonDir: string, before: GitCheckSnapshot): GitCheckAttemptBoundary {
-  reservation.assertOwned();
-  const evidence = readUnresolvedGitCheckRecovery(agentDir, commonDir), state = readGitCheckAttemptState(agentDir, commonDir);
-  if (evidence.id !== reservation.id || evidence.actionId !== reservation.actionId || JSON.stringify(evidence.before) !== JSON.stringify(before) ||
-    !state.attempts.find((item) => item.id === reservation.id)?.pending) throw new Error("live pending check boundary required");
-  const token: GitCheckAttemptBoundary = Object.freeze({ kind: "live-check-attempt" });
-  attemptBoundaries.set(token, { agentDir, commonDir, attemptId: reservation.id, unit: evidence.unit,
-    snapshotCohort: gitCheckSnapshotCohortDigest(before), state: { resourceInstance: resourceInstance(commonDir), attempts: state.attempts } });
-  return token;
+export function retireGitCheckCohort(handle: GitCheckCohort): void {
+  const state = cohorts.get(handle);
+  if (!state) throw new Error("original check cohort required");
+  state.retired = true;
 }
-/** Opaque process capability, minted only from the live result under its owner.
- * Boundary includes prior history BEFORE the attempt, never later foreign attempts. */
+export interface GitCheckAttempt { readonly kind: "git-check-attempt" }
+const attempts = new WeakMap<GitCheckAttempt, { cohort: GitCheckCohort; checkIndex: number; phase: "ready" | "running" | "settled" }>();
+/** Trusted leaf entry only, never a public request capability. */
+export function beginGitCheckAttempt(cohort: GitCheckCohort, checkIndex: number): GitCheckAttempt {
+  const state = cohorts.get(cohort);
+  // registered is the private publication prefix, not an exit-status counter.
+  // Refuse (never queue) a reverse/premature member without consuming its slot
+  // or retiring a valid in-flight predecessor. No other cohort participates.
+  if (!state || state.retired || !state.indexes.has(checkIndex) || state.started.has(checkIndex) ||
+    state.started.size !== state.registered.size || [...state.indexes][state.registered.size] !== checkIndex)
+    throw new Error("fresh original batch member required");
+  state.started.add(checkIndex);
+  const attempt: GitCheckAttempt = Object.freeze({ kind: "git-check-attempt" });
+  attempts.set(attempt, { cohort, checkIndex, phase: "ready" });
+  return attempt;
+}
+function assertAttempt(attempt: GitCheckAttempt): Cohort {
+  const member = attempts.get(attempt), state = member && cohorts.get(member.cohort);
+  if (!member || member.phase !== "running" || !state || state.retired) throw new Error("live original check member required");
+  return state;
+}
 export interface GitCheckSettlementAttestation { readonly kind: "live-check-settlement" }
-const settlements = new WeakMap<GitCheckSettlementAttestation, { agentDir: string; commonDir: string; attemptId: string;
-  snapshotCohort: string; state: AttemptBoundary }>();
-export function settleLiveGitCheck(options: { reservation: GitOperationReservation; result: ContainedCheckResult;
-  agentDir: string; commonDir: string; before: GitCheckSnapshot; after: GitCheckSnapshot;
-  attempt: GitCheckAttemptBoundary }): GitCheckSettlementAttestation {
-  const { reservation, result, agentDir, commonDir, before, after } = options;
-  reservation.assertOwned();
-  if (!consumeLiveContainedGitCheckSuccess(result) || JSON.stringify(before) !== JSON.stringify(after)) throw new Error("live equal-snapshot success required");
-  const evidence = readUnresolvedGitCheckRecovery(agentDir, commonDir), snapshotCohort = gitCheckSnapshotCohortDigest(before);
-  if (evidence.id !== reservation.id || evidence.actionId !== reservation.actionId || evidence.unit !== result.unit ||
-    JSON.stringify(evidence.before) !== JSON.stringify(before)) throw new Error("live original owner required");
-  const boundary = attemptBoundaries.get(options.attempt);
-  attemptBoundaries.delete(options.attempt);
-  if (!boundary || boundary.attemptId !== reservation.id || boundary.unit !== result.unit || boundary.snapshotCohort !== snapshotCohort ||
-    !samePath(boundary.agentDir, agentDir) || !samePath(boundary.commonDir, commonDir) ||
-    boundary.state.resourceInstance !== resourceInstance(commonDir)) throw new Error("original live attempt boundary required");
-  const instance = boundary.state.resourceInstance;
-  reservation.resolve();
-  // OS suspension can occur inside resolve too. Normalize ONLY this owner's
-  // positively closed record; NEVER absorb foreign records observed afterwards.
-  const closed = readGitCheckAttemptState(agentDir, commonDir).attempts.find((item) => item.id === reservation.id);
-  if (!closed?.successful || closed.cohortDigest !== snapshotCohort || instance !== resourceInstance(commonDir)) throw new Error("positive closed owner required");
-  const token: GitCheckSettlementAttestation = Object.freeze({ kind: "live-check-settlement" });
-  settlements.set(token, { agentDir, commonDir, attemptId: reservation.id, snapshotCohort,
-    state: { resourceInstance: instance, attempts: Object.freeze(boundary.state.attempts.map((item) => item.id === reservation.id ? closed : item)) } });
-  return token;
-}
-function receiptEpochs(): Map<string, ReceiptEpoch> {
-  const global = globalThis as unknown as Record<symbol, Map<string, ReceiptEpoch> | undefined>;
-  return global[receiptEpochKey] ??= new Map();
-}
-function laterAttempts(receipt: ReceiptEpoch, current: GitCheckAttemptState): GitCheckAttemptState["attempts"] | undefined {
-  const previous = new Map(receipt.state.attempts.map((item) => [item.id, item.digest]));
-  const now = new Map(current.attempts.map((item) => [item.id, item.digest]));
-  if (receipt.state.resourceInstance !== resourceInstance(receipt.commonDir) || [...previous].some(([id, digest]) => now.get(id) !== digest)) return;
-  return current.attempts.filter((item) => !previous.has(item.id));
-}
-/** Permanently fence existing process capabilities on failure/uncertainty.
- * Durable failed/recovered attempts independently prevent later resurrection,
- * even when no lookup happened while quarantined or a module was reloaded. */
-export function fenceGitCheckReceiptCohort(agentDir: string, commonDir: string): void {
-  for (const [id, item] of receiptEpochs()) if (samePath(item.agentDir, agentDir) && samePath(item.commonDir, commonDir)) receiptEpochs().delete(id);
-}
-/** Only a positively settled live owner may advance a successful sibling cohort.
- * Preserve original receipt IDs, outputs and finish/expiry times; never mint a
- * pass from release/recovery. Different source/policy/session/engine/environment
- * or any intervening failed/unknown/recovered attempt fences the old cohort. */
+const settlements = new WeakMap<GitCheckSettlementAttestation, { id: string; cohort: GitCheckCohort; checkIndex: number;
+  snapshot: string; agentDir: string; commonDir: string }>();
+const receiptEpochs = new Map<string, { cohort: GitCheckCohort; checkIndex: number }>();
+/** No foreign history, filesystem ledger or resource-wide epoch participates. */
 export function registerGitCheckReceiptEpoch(id: string, agentDir: string, commonDir: string,
-  binding: { cohort: string; settlement: GitCheckSettlementAttestation; snapshot: GitCheckSnapshot }): void {
+  binding: { cohort: GitCheckCohort; settlement: GitCheckSettlementAttestation; snapshot: GitCheckSnapshot }): void {
   const attested = settlements.get(binding.settlement);
-  settlements.delete(binding.settlement); // one registration, never a reusable historical pass
-  const current = readGitCheckAttemptState(agentDir, commonDir), snapshotCohort = gitCheckSnapshotCohortDigest(binding.snapshot);
-  if (!attested || !samePath(attested.agentDir, agentDir) || !samePath(attested.commonDir, commonDir) ||
-    attested.snapshotCohort !== snapshotCohort) throw new Error("live owned settlement attestation required");
-  const candidate: ReceiptEpoch = { agentDir, commonDir, cohort: binding.cohort, snapshotCohort, state: attested.state };
-  const changes = laterAttempts(candidate, current);
-  if (!changes || changes.some((item) => !item.pending && (!item.successful || item.cohortDigest !== snapshotCohort)))
-    throw new Error("foreign failed, recovered or unknown attempt after settlement boundary");
-  for (const item of changes.filter((item) => item.pending)) {
-    const evidence = readGitCheckRecoveryEvidence(agentDir, commonDir, item.id);
-    if (evidence.outcome && (evidence.outcome.status !== 0 || evidence.outcome.timedOut || evidence.outcome.overflow ||
-      !evidence.outcome.containmentComplete)) throw new Error("foreign unsuccessful attempt after settlement boundary");
-  }
-  // Pending foreign attempts HIDE the capability without becoming its baseline.
-  // Only positively completed same-source siblings may advance it.
-  const state: AttemptBoundary = changes.some((item) => item.pending) ? attested.state :
-    { resourceInstance: attested.state.resourceInstance, attempts: current.attempts };
-  for (const [oldId, prior] of receiptEpochs()) {
-    if (!samePath(prior.agentDir, agentDir) || !samePath(prior.commonDir, commonDir)) continue;
-    const later = laterAttempts(prior, { epoch: current.epoch, attempts: state.attempts });
-    if (prior.cohort === binding.cohort && prior.snapshotCohort === snapshotCohort && later &&
-      later.every((item) => item.successful && item.cohortDigest === snapshotCohort)) prior.state = state;
-    else receiptEpochs().delete(oldId);
-  }
-  receiptEpochs().set(id, { agentDir, commonDir, cohort: binding.cohort, snapshotCohort, state });
+  settlements.delete(binding.settlement);
+  const state = cohorts.get(binding.cohort);
+  if (!attested || attested.id !== id || attested.cohort !== binding.cohort || !state || state.retired ||
+    !state.started.has(attested.checkIndex) || state.started.size !== state.registered.size + 1 ||
+    [...state.indexes][state.registered.size] !== attested.checkIndex || state.registered.has(attested.checkIndex) ||
+    attested.agentDir !== agentDir || attested.commonDir !== commonDir || attested.snapshot !== JSON.stringify(binding.snapshot) || receiptEpochs.has(id))
+    throw new Error("original live successful settlement required");
+  state.registered.set(attested.checkIndex, id);
+  receiptEpochs.set(id, { cohort: binding.cohort, checkIndex: attested.checkIndex });
 }
-export function gitCheckReceiptEpochStatus(id: string): "current" | "pending" | "stale" {
-  const receipt = receiptEpochs().get(id);
-  if (!receipt) return "stale";
-  try {
-    const current = readGitCheckAttemptState(receipt.agentDir, receipt.commonDir);
-    const later = laterAttempts(receipt, current);
-    if (later && !later.length) return "current";
-    // Hidden while a sibling runs; only its positive live registration above
-    // can reopen the original receipts. Inspection itself never advances them.
-    if (later?.length && later.every((item) => item.pending || item.successful && item.cohortDigest === receipt.snapshotCohort)) return "pending";
-  } catch { /* unknown/corrupt evidence permanently fences this capability */ }
-  receiptEpochs().delete(id);
+export function gitCheckReceiptEpochStatus(id: string): "current" | "stale" {
+  const member = receiptEpochs.get(id);
+  if (member && cohorts.get(member.cohort)?.retired === false) return "current";
+  receiptEpochs.delete(id);
   return "stale";
 }
 export function isGitCheckReceiptEpochCurrent(id: string): boolean { return gitCheckReceiptEpochStatus(id) === "current"; }
+/** Inert UI correlation from actual private receipt membership only. Does not
+ * validate source, expiry, owner or authority: first use the leaf's authenticated
+ * lookup in the caller's own session. No history/copy/cohort ID can join a batch,
+ * restore a receipt, or authorize an operation through this reader. */
+export function readGitCheckReceiptCohortMetadata(id: string): Readonly<GitCheckReceiptCohortMetadata> | undefined {
+  const member = receiptEpochs.get(id), state = member && cohorts.get(member.cohort);
+  return state && !state.retired ? state.metadata : undefined;
+}
+/** Necessary required-set proof, NOT authorization or fresh source/owner/expiry
+ * validation. Exactly one original privately registered batch, in ascending saved
+ * index order, with each predecessor published before the next member entered.
+ * Every declared required member must be published. Optional supersets,
+ * partial/reordered declarations, mixed independent runs and empty bypasses fail.
+ * This reader neither retires batches nor reconstructs membership from metadata. */
+export function assertGitCheckReceiptBatchCurrent(receiptIds: readonly string[], requiredIndexes: readonly number[]): void {
+  const refuse = (): never => { throw new Error("original complete ordered check batch required"); };
+  if (!Array.isArray(receiptIds) || !Array.isArray(requiredIndexes) || !requiredIndexes.length || requiredIndexes.length > 64 ||
+    receiptIds.length !== requiredIndexes.length) return refuse();
+  receiptIds = [...receiptIds]; requiredIndexes = [...requiredIndexes];
+  if (new Set(receiptIds).size !== receiptIds.length || receiptIds.some(id => typeof id !== "string") ||
+    requiredIndexes.some((index, i) => !Number.isSafeInteger(index) || index < 0 || i > 0 && index <= requiredIndexes[i - 1])) return refuse();
+  const first = receiptEpochs.get(receiptIds[0]), state = first && cohorts.get(first.cohort);
+  if (!first || !state || state.retired || state.indexes.size !== requiredIndexes.length ||
+    state.registered.size !== requiredIndexes.length || [...state.indexes].some((index, i) => index !== requiredIndexes[i])) return refuse();
+  for (let i = 0; i < requiredIndexes.length; i++) {
+    const member = receiptEpochs.get(receiptIds[i]);
+    if (!member || member.cohort !== first.cohort || member.checkIndex !== requiredIndexes[i] ||
+      state.registered.get(requiredIndexes[i]) !== receiptIds[i]) refuse();
+  }
+}
 
-/** Reject thenables: an async authority callback is NOT a synchronous fence.
- * Async callers must supply the trusted revision adapter documented by each engine. */
+/** Reject thenables: resolved async authorization is not a synchronous fence. */
 export function gitCheckSyncValue<T>(value: T | Promise<T>): T {
   if (value && typeof (value as Promise<T>).then === "function") {
     void Promise.resolve(value).catch(() => {});
@@ -153,8 +123,6 @@ export function readGitCheckAuthorityStamp(read: () => string): string {
   if (typeof stamp !== "string" || !stamp || stamp.length > 4096) throw new Error("known synchronous authority revision required");
   return gitCheckDigest(stamp);
 }
-/** Bounded read-only source capture with NO awaits. Physical selection/marker
- * identity is checked before and after Git reads; mutable paths are never trusted. */
 export function assertGitCheckSelectionSync(selection: GitProjectResources): void {
   for (const [dir, expected] of [[selection.cwd, selection.identities.checkout], [selection.projectRoot, selection.identities.project],
     [selection.commonDir, selection.identities.common], [selection.gitDir, selection.identities.git]] as const) {
@@ -189,112 +157,102 @@ export function gitCheckIndexBytesSync(file: string): Buffer {
   } finally { closeSync(fd); }
 }
 
-/** Private bounded output only; never include output or OS errors in public results. */
-export async function saveGitCheckPrivateLog(agentDir: string, id: string, output: Buffer): Promise<void> {
-  if (!path.isAbsolute(agentDir)) throw new Error("absolute agent directory required");
-  await fs.mkdir(agentDir, { recursive: true, mode: 0o700 });
-  if (!samePath(agentDir, await fs.realpath(agentDir))) throw new Error("physical agent directory required");
-  const parent = path.join(agentDir, "pi-web");
-  await fs.mkdir(parent, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
-    if (error.code !== "EEXIST") throw error;
-  });
-  if (!(await fs.lstat(parent)).isDirectory() || !samePath(parent, await fs.realpath(parent))) throw new Error("physical log parent required");
-  const logs = path.join(parent, "git-verification-logs");
-  await fs.mkdir(logs, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
-    if (error.code !== "EEXIST") throw error;
-  });
-  const stat = await fs.lstat(logs);
-  if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0) throw new Error("private log directory required");
-  await fs.writeFile(path.join(logs, `${id}.log`), output, { flag: "wx", mode: 0o600 });
-}
-
-/** Small snapshot-agnostic supervisor; no GitReview, grant, target or receipt.
- * Failed/aborted/uncertain attempts NEVER resolve their durable original-unit intent.
- * Caller probes availability/admission and captures a baseline before calling.
- * No automatic recovery, unit substitution, reset or retry. */
+/** No reservation/admission/history dependency. Each invocation owns exactly
+ * one containment attempt; only its authentic one-shot measured result passes. */
 export async function superviseGitCheck(options: {
   selection: GitProjectResources; agentDir: string; actionId: string; unit: string;
+  attempt: GitCheckAttempt; cohortBinding: string;
   before: GitCheckSnapshot; cwd: string; argv: readonly string[]; env: NodeJS.ProcessEnv;
   timeoutMs: number; signal?: AbortSignal; backend: ContainmentBackend; testRecoveryEvidence?: boolean;
-  /** Revalidate live authority/selection and return the current exact snapshot. */
   revalidate: () => Promise<GitCheckSnapshot>;
-  /** Final source + authority fence, synchronous and mandatory at write/settle. */
   assertCurrentSync: () => void;
-  /** Capture even a dirty post-state without requiring live authorization. */
   captureAfter: () => Promise<GitCheckSnapshot>;
-  /** Drain live-revocation probes before the synchronous successful settlement. */
   beforeResolve?: () => Promise<void>;
-  /** Trusted durable lifecycle. Actual measured terminal facts only; the ID is
-   * proposed private evidence, NOT a published receipt. Throws retain quarantine. */
-  onExecution?: (facts: Readonly<GitContainedCheckExecutionFacts>, id: string, passing: boolean) => Promise<void>;
-}): Promise<{ id: string; settlement: GitCheckSettlementAttestation; startedAt: number; finishedAt: number; logDigest: string }> {
-  const { before, selection, backend } = options;
+  onExecution?: (facts: Readonly<GitContainedCheckExecutionFacts>, id: string, passing: boolean, diagnostics?: GitCheckDiagnostics,
+    outputDiagnosticId?: string) => Promise<void>;
+}): Promise<{ id: string; settlement: GitCheckSettlementAttestation; startedAt: number; finishedAt: number; logDigest: string;
+  diagnostics?: GitCheckDiagnostics; outputDiagnosticId?: string }> {
+  const { before, selection, backend, attempt } = options;
+  const member = attempts.get(attempt);
+  if (!member || member.phase !== "ready") throw new Error("fresh original invocation required");
+  member.phase = "running"; // one entry, before ANY await; copied/reentrant attempts cannot launch twice
+  const state = assertAttempt(attempt);
   const same = (snapshot: GitCheckSnapshot) => JSON.stringify(before) === JSON.stringify(snapshot);
-  assertGitCheckRecoverySnapshotCapacity(selection.commonDir, options.actionId, options.unit, before);
-  if (!same(await options.revalidate()) || options.signal?.aborted) throw new Error("check changed before intent");
-  const reservation = await beginSupervisedGitOperationIntent(selection, options.actionId, "checks", options.agentDir, options.unit);
-  let settled = false;
+  const retireOnAbort = () => { state.retired = true; };
+  options.signal?.addEventListener("abort", retireOnAbort, { once: true });
   try {
-  // Persist the baseline BEFORE any further asynchronous validation; if that
-  // validation fails, restart can still inspect the original intended state.
-  reservation.recordCheckBefore(before);
-  const attempt = captureLiveGitCheckAttemptBoundary(reservation, options.agentDir, selection.commonDir, before);
-  if (!same(await options.revalidate()) || options.signal?.aborted) throw new Error("check changed before launch; recovery required");
-  reservation.assertOwned();
-  const cwdPin = await pinGitCheckCwd(options.cwd);
-  let result: Awaited<ReturnType<typeof runContainedGitCheck>>;
-  try {
-    if (before.version === 1 ? JSON.stringify(cwdPin.instance) !== JSON.stringify(selection.identities.checkout) :
-      cwdPin.identityDigest !== before.cwdIdentity) throw new Error("physical check cwd changed");
-    result = await runContainedGitCheck({ cwd: options.cwd, argv: options.argv, env: options.env,
-      timeoutMs: options.timeoutMs, unit: options.unit, signal: options.signal }, backend, { cwdPin,
-      beforeRelease: async () => {
-        if (!same(await options.revalidate()) || options.signal?.aborted) throw new Error("check changed at payload release");
-        reservation.assertOwned();
-      }, assertBeforeReleaseSync: () => {
-        reservation.assertOwned();
-        if (typeof options.assertCurrentSync !== "function" || gitCheckSyncValue(options.assertCurrentSync()) !== undefined)
-          throw new Error("synchronous source/authority fence required");
-      } });
-  } finally { await cwdPin.close(); }
-  const facts = readContainedGitCheckExecutionFacts(result);
-  if (!facts) throw new Error("actual protocol measurement required");
-  const { startedAt, finishedAt, logDigest } = facts, id = randomUUID();
-  let notified = false;
-  const notify = async (passing: boolean) => {
-    notified = true; // callback failure must never invoke a second/reentrant success
-    await options.onExecution?.(facts, id, passing);
-  };
-  try {
+    if (before.dependencyVersion !== 2 || !before.relevantRefs.length)
+      throw new Error("exact original batch binding required");
+    const source = Object.fromEntries(Object.entries(before).filter(([key]) =>
+      !["recipeDigest", "checkDigest", "cwdIdentity", "environmentDigest"].includes(key)));
+    const binding = JSON.stringify([options.cohortBinding, source]);
+    if (state.binding !== undefined && state.binding !== binding) throw new Error("original batch source changed");
+    state.binding = binding;
+    const assertCurrent = () => {
+      assertAttempt(attempt);
+      if (options.signal?.aborted || gitCheckSyncValue(options.assertCurrentSync()) !== undefined) throw new Error("check changed");
+    };
+    if (!same(await options.revalidate())) throw new Error("check changed before launch");
+    assertCurrent();
+    const cwdPin = await pinGitCheckCwd(options.cwd);
+    let result: Awaited<ReturnType<typeof runContainedGitCheck>>;
+    try {
+      if (before.version === 1 ? JSON.stringify(cwdPin.instance) !== JSON.stringify(selection.identities.checkout) :
+        cwdPin.identityDigest !== before.cwdIdentity) throw new Error("physical check cwd changed");
+      result = await runContainedGitCheck({ cwd: options.cwd, argv: options.argv, env: options.env,
+        timeoutMs: options.timeoutMs, unit: options.unit, signal: options.signal }, backend, { cwdPin,
+        beforeRelease: async () => {
+          if (!same(await options.revalidate())) throw new Error("check changed at payload release");
+          assertCurrent();
+        }, assertBeforeReleaseSync: assertCurrent });
+    } finally { await cwdPin.close(); }
+    const facts = readContainedGitCheckExecutionFacts(result);
+    if (!facts) throw new Error("actual protocol measurement required");
+    // Consume actual one-shot native success BEFORE optional output/history I/O.
+    // This private boolean is never supplied by a diagnostic callback. It alone
+    // is insufficient for publication: original source/authority/cohort fences
+    // still follow every await below.
+    const nativeSuccess = consumeLiveContainedGitCheckSuccess(result);
+    if (!nativeSuccess) state.retired = true; // terminal failure cannot await optional diagnostics before retirement
+    const { startedAt, finishedAt, logDigest } = facts, id = randomUUID();
+    // Only finalized, positively stopped output may enter completed retention.
+    // Unknown cleanup keeps its existing raw evidence entirely outside retention.
+    const completedOutput = facts.containmentComplete || result.cleanupProof?.terminal && result.cleanupProof.empty ? Buffer.from(result.log) : undefined;
+    let diagnostics: GitCheckDiagnostics | undefined, outputDiagnosticId: string | undefined;
+    const storageUnavailable = Object.freeze({ status: "unavailable" as const, reason: "storage-unavailable" as const });
+    if (completedOutput) {
+      try {
+        // Creation failure is optional too. The retention adapter pins/checks
+        // the explicit private agent root and one stable application namespace.
+        await fs.mkdir(options.agentDir, { recursive: true, mode: 0o700 });
+        const report = appendFinalizedGitDiagnosticOutput(options.agentDir, {
+          kind: before.version === 1 ? "checks" : "checkout-verification",
+          nativeOutcome: nativeSuccess ? "succeeded" : options.signal?.aborted ? "cancelled" :
+            facts.payload === "prevented-before-write" ? "rejected" : "failed",
+          completedAt: finishedAt, durationMs: Math.max(0, finishedAt - startedAt), exitCode: facts.exitStatus,
+        }, completedOutput);
+        diagnostics = report.diagnostics ? Object.freeze({ ...report.diagnostics }) : undefined;
+        if (report.log === "stored") outputDiagnosticId = report.id;
+      } catch { diagnostics = storageUnavailable; }
+    } else diagnostics = storageUnavailable;
     let post: GitCheckSnapshot | undefined;
-    try { post = await options.captureAfter(); } catch { /* retain intent */ }
-    if (post && result.cleanupProof && (backend === linuxSystemdBackend || options.testRecoveryEvidence)) {
-      reservation.recordCheckAfter(post, result.cleanupProof, { status: result.status, timedOut: result.timedOut,
-        overflow: result.overflow, containmentComplete: result.containmentComplete,
-        logDigest, finishedAt }, backend === linuxSystemdBackend ? "linux-systemd" : "node-test-simulated");
-    }
-    await saveGitCheckPrivateLog(options.agentDir, id, result.log);
-    if (options.signal?.aborted || result.status !== 0 || result.timedOut || result.overflow || !result.containmentComplete ||
-      !post || !same(post) || (backend === linuxSystemdBackend && !result.cleanupProof)) {
-      throw new Error("check failed or changed; recovery required");
-    }
+    try { post = await options.captureAfter(); } catch { /* not successful source evidence */ }
+    const passing = nativeSuccess && !options.signal?.aborted && result.status === 0 && !result.timedOut && !result.overflow &&
+      result.containmentComplete && !!post && same(post) && (backend !== linuxSystemdBackend || !!result.cleanupProof);
+    if (!passing) state.retired = true;
+    // Measurement is diagnostic, NOT a published receipt. Throwing storage alone
+    // does not alter native success; any callback mutation still fails the fence.
+    try { await options.onExecution?.(facts, id, passing, diagnostics, outputDiagnosticId); } catch { diagnostics = storageUnavailable; }
+    if (!passing) throw new Error("check failed or source/containment changed");
     await options.beforeResolve?.();
-    let fresh = await options.revalidate();
-    if (options.signal?.aborted || !same(fresh)) throw new Error("check changed; recovery required");
-    if (typeof options.assertCurrentSync !== "function" || gitCheckSyncValue(options.assertCurrentSync()) !== undefined)
-      throw new Error("synchronous settlement fence required");
-    // Durable journal FIRST, then revalidate after its await, then seal admission.
-    // No passing receipt exists at any point inside the callback.
-    await notify(true);
-    if (options.onExecution) fresh = await options.revalidate();
-    if (options.signal?.aborted || !same(fresh) || gitCheckSyncValue(options.assertCurrentSync()) !== undefined)
-      throw new Error("check changed during durable recording; recovery required");
-    const settlement = settleLiveGitCheck({ reservation, result, agentDir: options.agentDir, commonDir: selection.commonDir, before, after: fresh, attempt });
-    settled = true;
-    return { id, settlement, startedAt, finishedAt, logDigest };
-  } catch (cause) {
-    if (!notified) await notify(false);
-    throw cause;
-  }
-  } finally { if (!settled) fenceGitCheckReceiptCohort(options.agentDir, selection.commonDir); }
+    if (!same(await options.revalidate())) throw new Error("check changed after diagnostics");
+    assertCurrent();
+    member.phase = "settled";
+    const settlement: GitCheckSettlementAttestation = Object.freeze({ kind: "live-check-settlement" });
+    settlements.set(settlement, { id, cohort: member.cohort, checkIndex: member.checkIndex,
+      snapshot: JSON.stringify(before), agentDir: options.agentDir, commonDir: selection.commonDir });
+    return { id, settlement, startedAt, finishedAt, logDigest,
+      ...(diagnostics ? { diagnostics } : {}), ...(outputDiagnosticId ? { outputDiagnosticId } : {}) };
+  } catch (error) { state.retired = true; throw error; }
+  finally { options.signal?.removeEventListener("abort", retireOnAbort); }
 }

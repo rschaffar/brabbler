@@ -1,61 +1,56 @@
 import { lstatSync, realpathSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import { bindingDigest, readBindingFile } from "./git-workflow-binding-io";
-import { getAllowedFileRoots, getKnownAllowedFileRoots, isExistingFilePathAllowed } from "./file-access";
+import { getAllowedFileRoots, getKnownAllowedFileRoots, isFilePathAllowed, isExistingFilePathAllowed } from "./file-access";
 import { gitExecEnv } from "./git-exec";
 import { managedGitSessionFacts } from "./git-workflow-access";
-import { loadGitWorkflowSettings, readGitWorkflowSettingsDocument, gitWorkflowSettingsPath } from "./git-workflow-settings-store";
+import { loadGitWorkflowSettings } from "./git-workflow-settings-store";
+import { captureGitScopedAuthorityRevision, readGitScopedAuthorityRevision, gitWorkflowPolicyRevision } from "./git-scoped-authority";
+import type { GitMutationInvocationAuthority } from "./git-mutation-invocation";
 import { resolveGitWorkflowSettings, validateGitWorkflowSettings } from "./git-workflow-settings";
 import { readManagedSessionGitWorkflow, workflowTaskFromEntries } from "./git-workflow-session";
 import { readGitProjectSessionSettings } from "./git-project-session";
-import { readGitWorkflowWriteEpoch } from "./git-workflow-write-epoch";
 import { loadGitProjectSettings } from "./git-project-settings";
-import { readProjectAuthorization, projectAuthorizationPath, type ProjectAuthorizationOwner } from "./git-project-authorization";
+import { readProjectAuthorization, type ProjectAuthorizationOwner } from "./git-project-authorization";
 import { getProjectTrustStatus } from "./project-trust";
 import { selectCanonicalGitResources, selectGitProjectResources, revalidateGitProjectResources,
   withGitProjectReview, type GitProjectResources, type GitResourceSelector } from "./git-project-resources";
-import { prepareGitPreparationApply, applyGitPreparation, readGitPreparationCompletion, type GitPreparedApply } from "./git-preparation-apply";
-import { preflightGitPreparation } from "./git-preparation";
+import { prepareGitPreparationApply, applyGitPreparation, readGitPreparationNativeOutcome, retireGitPreparedApply, type GitPreparedApply } from "./git-preparation-apply";
+import { preflightGitPreparation, sameGitPreparationDependencies } from "./git-preparation";
+import { readGitIntegrationNativeOutcome } from "./git-integration";
 import { prepareSelectedIntegration, confirmSelectedIntegration, readSelectedIntegrationNativeProof,
-  type SelectedIntegrationPlan } from "./git-selected-integration";
+  retireSelectedIntegrationPlan, type SelectedIntegrationPlan } from "./git-selected-integration";
 import { getGitTreeDiff, reviewGitBranches, getGitReviewDiff, type GitReview, type GitReviewDiff } from "./git-review";
-import { withGitCheckoutGate } from "./git-checkout-gate";
 import { lookupGitCheckoutVerificationReceipt, runGitCheckoutVerification, validateGitCheckoutVerificationReceipt, GitCheckoutVerificationError,
   readGitCheckoutVerificationNativeExecution,
-  captureGitCheckoutCheckRecoverySnapshot, invalidateGitCheckoutVerificationReceiptsForCheckout,
+  captureGitCheckoutCheckRecoverySnapshot,
   type GitCheckoutVerificationReceipt, type GitCheckoutCheckBinding } from "./git-checkout-verification";
-import { createGitCheckAuthorityFence } from "./git-check-authority-fence";
-import { gitCheckDigest, gitCheckRunningCheckouts } from "./git-check-runner";
+import { createGitCheckAuthorityFence, bindGitCheckCleanupCandidate, acceptGitCheckCleanupRemoval } from "./git-check-authority-fence";
+import { readGitCleanupCallerPolicy, readGitCleanupCallerAuthorization, type GitCleanupCallerScope } from "./git-selected-cleanup-caller-policy";
+import { createGitCheckCohort, retireGitCheckCohort, type GitCheckCohort, gitCheckDigest } from "./git-check-runner";
 import { normalizeGitCheckRecipe, selectGitCheckRecipesForStage, validateGitCheckRecipes } from "./git-check-recipe";
 import { sanitizeProjectCommandEnvironment } from "./project-command-env";
 import * as workspaceNative from "./git-workspace-operation";
 import * as preparationNative from "./git-preparation-apply";
-import { captureGitWorkspaceOperation, applyGitWorkspaceOperation, readGitWorkspaceNativeProof,
-  type GitWorkspaceCandidate, type GitWorkspaceCompletedProof, type GitWorkspaceAdmission } from "./git-workspace-operation";
-import { createGitWorkspaceAdmission } from "./git-workspace-admission";
-import { createGitCleanupAdmission } from "./git-cleanup-admission";
+import { captureGitWorkspaceOperation, applyGitWorkspaceOperation, readGitWorkspaceNativeProof, retireGitWorkspaceCandidate,
+  GitWorkspaceOperationError, type GitWorkspaceCandidate, type GitWorkspaceCompletedProof } from "./git-workspace-operation";
 import * as cleanupNative from "./git-cleanup-operation";
 import * as checkoutNative from "./git-checkout-verification";
-import { createGitCleanupEngine, GitCleanupOperationError, type GitCleanupCandidate, type GitCleanupCompletedProof,
-  type GitCleanupRemovalProof, type GitCleanupEvidence, type GitCleanupFailure, type GitCleanupDurableAck } from "./git-cleanup-operation";
-import { createTrustedWorkspaceUsage, GitWorkspaceUsageError } from "./git-workspace-usage";
-import { readRpcWorkspaceSessionUsage, getRpcSession } from "./rpc-manager";
-import { readTerminalWorkspaceUsage } from "./terminal-manager";
-import { basename } from "node:path";
+import { createGitCleanupEngine, GitCleanupOperationError, readGitCleanupCandidateEvidence, readGitCleanupRemovalAuthority,
+  readGitCleanupNativeProof as readNativeCleanupProof, type GitCleanupCandidate, type GitCleanupCompletedProof,
+  type GitCleanupRemovalProof, type GitCleanupEvidence, type GitCleanupFailure } from "./git-cleanup-operation";
+import { getRpcSession } from "./rpc-manager";
 import { captureSelectedOperationAuthorization } from "./git-selected-operation-authorization";
 import type { GitCommitVerificationContext } from "./git-commit-verification";
-import { assertGitOperationAdmission, beginSupervisedGitOperationIntent, inspectGitOperationAdmission,
-  readGitOperationReservationOwner, type GitOperationReservation } from "./git-operation-admission";
 import { beginGitAction, beginGitActionWithId, gitActionSink, gitActionAttribution, snapshotGitPreparationAction,
-  snapshotGitWorkspaceAction, snapshotGitCheckoutVerificationAction, snapshotGitCleanupAction, recordVerifiedCleanupRemoval,
-  finishVerifiedNativeGitAction, finishGitAction, failGitAction } from "./git-action-controller";
-import { readGitAction } from "./git-action-journal";
-import { GIT_ACTION_ID_PATTERN, type GitActionOutcome, type GitActionNativeOutcome, type GitActionCandidateSnapshot, type GitActionCheckExecution } from "./git-action-types";
+  snapshotGitWorkspaceAction, snapshotGitCheckoutVerificationAction, snapshotGitCleanupAction, gitActionDiagnosticReport,
+  failGitAction } from "./git-action-controller";
+import { type GitActionOutcome, type GitActionCandidateSnapshot, type GitActionCheckExecution } from "./git-action-types";
 import { createGitSelectedOperationRegistry } from "./git-selected-operation-registry";
 import { createGitSelectedOperationController, type SelectedControllerOperation, type SelectedControllerRequests,
   type SelectedNativeAdapter, type SelectedNativeCandidate, type SelectedNativeExecution, type SelectedCompletionEnvelope,
@@ -76,7 +71,7 @@ class RuntimeRefusal extends Error { constructor(readonly code: string) { super(
 export function readGitSelectedRuntimeRefusal(cause: unknown): string | undefined {
   return cause instanceof RuntimeRefusal ? cause.code : undefined;
 }
-const refusalContext = new AsyncLocalStorage<{ code?: string }>();
+const refusalContext = new AsyncLocalStorage<{ code?: string; diagnostics?: import("./git-action-types").GitActionDiagnosticWarning }>();
 function refuse(code: string): never { const context = refusalContext.getStore(); if (context) context.code = code; throw new RuntimeRefusal(code); }
 function physical(path: string) {
   const s = lstatSync(path, { bigint: true });
@@ -149,9 +144,9 @@ function persisted(context: GitSelectedOperationRuntimeContext, owner: ProjectAu
   return { identity: file.identity, header, entries, disk };
 }
 
-/** Deny-only restart observation. Inspect durable managed preparation artifacts
- * and native recovery records independently of this generation's WeakMaps.
- * No historical action can issue a revisionDependency or grant. */
+/** Current native observation only. Historical failures/corruption neither
+ * authorize nor veto a new invocation. Exact own preparation reentry remains
+ * in the controller's private chain, never reconstructed from journal rows. */
 export async function readSelectedRuntimePreparationOrdering(source: GitProjectResources, agentDir = getAgentDir()): Promise<SelectedPreparationOrderingRequirement> {
   try {
     await revalidateGitProjectResources(source);
@@ -163,41 +158,8 @@ export async function readSelectedRuntimePreparationOrdering(source: GitProjectR
         "rev-parse", "HEAD^{commit}"], { encoding: "utf8", env: { ...gitExecEnv(), GIT_COMMON_DIR: repo.commonDir }, timeout: 15000, maxBuffer: 4096 })).stdout.trim();
     });
     if (!oid(tip)) return { kind: "unknown" };
-    let required = false;
-    const evidence: unknown[] = [];
-    const directory = async (parts: string[]) => {
-      let path = agentDir; physical(path);
-      for (const part of parts) { path = join(path, part); if (absent(path)) return []; physical(path); }
-      return await readdir(path);
-    };
-    const history = join(agentDir, "pi-web", "git-actions", "v1");
-    for (const id of await directory(["pi-web", "git-actions", "v1"])) {
-      if (!GIT_ACTION_ID_PATTERN.test(id)) return { kind: "unknown" };
-      physical(join(history, id));
-      const action = await readGitAction(id, { includeArtifact: true }, agentDir);
-      if (!action.record || action.unavailable || !action.candidate) return { kind: "unknown" };
-      const c = action.candidate, attribution = c.resourceAttribution;
-      if (c.kind !== "preparation") continue;
-      if (!attribution || !c.preparation) return { kind: "unknown" };
-      if (same(attribution.commonIdentity, source.identities.common) && same(attribution.projectIdentity, source.identities.project) &&
-        same(c.preparation.source.checkoutIdentity, source.identities.checkout)) {
-        evidence.push([id, action.record.state, c.preparation, action.record.outcome]);
-        if (c.preparation.oldSourceOid !== c.preparation.newSourceOid && ["executing", "recovery-required", "succeeded"].includes(action.record.state)) required = true;
-      }
-    }
-    const recovery = join(agentDir, "pi-web", "git-preparation-recovery", "v1");
-    for (const name of await directory(["pi-web", "git-preparation-recovery", "v1"])) {
-      if (/^hooks-[a-f0-9-]+$/.test(name)) { physical(join(recovery, name)); continue; }
-      if (!/^[a-f0-9-]+\.(json|index)(\.(outcome|partial))?$/.test(name)) return { kind: "unknown" };
-      if (!name.endsWith(".json")) continue;
-      const data = JSON.parse(readBindingFile(join(recovery, name), 1024 * 1024, true).bytes.toString("utf8"));
-      if (data?.version !== 1 || !data.source?.identities || !data.candidate) return { kind: "unknown" };
-      if (same(data.source.identities.checkout, source.identities.checkout) && same(data.source.identities.common, source.identities.common)) {
-        required = true; evidence.push([name, data.actionId, data.candidate.oldSourceOid, data.candidate.newSourceOid]);
-      }
-    }
     await revalidateGitProjectResources(source);
-    return { kind: required ? "required" : "independent", source, sourceOid: tip, evidenceRevision: digest(evidence) };
+    return { kind: "independent", source, sourceOid: tip, evidenceRevision: digest([source, tip, agentDir]) };
   } catch { return { kind: "unknown" }; }
 }
 
@@ -211,20 +173,18 @@ export const SELECTED_RUNTIME_BLOCKERS = Object.freeze({
   reconcile: "independent-consumed-launch-recovery-reader-unavailable",
 });
 
-type Capture = { candidate: SelectedNativeCandidate; prepared?: GitPreparedApply; plan?: SelectedIntegrationPlan;
-  workspace?: GitWorkspaceCandidate; workspaceProof?: GitWorkspaceCompletedProof; workspaceAdmission?: GitWorkspaceAdmission;
+type Capture = { candidate: SelectedNativeCandidate; retired?: boolean; prepared?: GitPreparedApply; plan?: SelectedIntegrationPlan;
+  workspace?: GitWorkspaceCandidate; workspaceProof?: GitWorkspaceCompletedProof;
   cleanupEngine?: ReturnType<typeof createGitCleanupEngine>; cleanupCandidate?: GitCleanupCandidate; cleanupEvidence?: GitCleanupEvidence;
   cleanupProof?: GitCleanupCompletedProof; removal?: GitCleanupRemovalProof; cleanupFailure?: GitCleanupFailure;
-  cleanupAdapters?: import("./git-selected-operation-controller").SelectedJournalAdmission["cleanup"];
   checks?: { binding: GitCheckoutCheckBinding; snapshot: Awaited<ReturnType<typeof captureGitCheckoutCheckRecoverySnapshot>>; executionCwd: string }[];
   reconcileSnapshot?: Awaited<ReturnType<typeof preflightGitPreparation>>; reconciliationReview?: GitReview; reconciliationDiff?: GitReviewDiff;
-  workspaceFailure?: { cause: object; facts: import("./git-workspace-operation").GitWorkspaceFailureEvidence };
   exactApproval?: boolean;
-  usageToken?: object;
+  cohort?: GitCheckCohort;
   receipts?: GitCheckoutVerificationReceipt[];
   runs?: Readonly<GitActionCheckExecution>[];
   authorityGuard?: () => void;
-  before?: GitPreparationReentryState; executing?: SelectedNativeExecution; executingStarted: boolean };
+  before?: GitPreparationReentryState; executing?: SelectedNativeExecution; executionAuthorized?: boolean; executingStarted: boolean };
 
 export function createGitSelectedOperationRuntime(context: GitSelectedOperationRuntimeContext) {
   const agentDir = context.agentDir ?? getAgentDir();
@@ -235,15 +195,14 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
   const instance = persisted(context, owner).identity;
   const cleanupProofs = new WeakMap<object, GitCleanupCompletedProof>();
   const recoveryProofs = new WeakMap<object, { before: GitPreparationReentryState; after: GitPreparationReentryState; previousLaunch?: GitPreparationReentryLaunch }>();
-  // Original native rows retained only after the invocation RETURNS. Storage
-  // grants nothing: the independent reader requires durable history/admission
-  // and containment anew on EVERY use; rows are never adopted from history.
+  // Original native rows retained only after the invocation RETURNS. The fixed
+  // reader requires actual original containment facts anew on every use; history
+  // neither authorizes nor vetoes a new invocation.
   const consumedChecks = new WeakMap<GitPreparationReentryLaunch, Capture>();
   const noEffectProofs = new WeakMap<object, Extract<SelectedCompletionEnvelope["completion"], { operation: "prepare" }>["result"]>();
   const registry = createGitSelectedOperationRegistry(owner, { readCleanupProof: (h) => cleanupProofs.get(h), readRecoveryProof: (h) => recoveryProofs.get(h),
     readPreparationNoEffect: (h) => noEffectProofs.get(h) });
   const captures = new Map<string, Capture>();
-  const activateActions = new Map<string, () => Promise<void>>();
   const readOwner = () => persisted(context, owner, instance);
   const trusted = (r: Readonly<GitProjectResources>) => getProjectTrustStatus(r.projectRoot, agentDir).trusted && getProjectTrustStatus(r.cwd, agentDir).trusted;
   const writerRevision = () => {
@@ -253,19 +212,90 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
     if (revision !== undefined && (typeof revision !== "string" || !revision || revision.length > 512 || /[\x00-\x1f\x7f]/.test(revision))) refuse("known-monotonic-authority-required");
     return revision;
   };
+  // Capture the ORIGINAL complete scoped map and own loaded authority before
+  // discovery. Later canonical selections narrow that map, never rebaseline it.
+  const invocationScope = new AsyncLocalStorage<ReturnType<typeof originalInvocation>>();
+  function originalInvocation() {
+    readOwner();
+    const original = captureGitScopedAuthorityRevision(agentDir), generation = randomUUID();
+    const invocationOwner = { sessionId: owner.sessionId, sessionFile: owner.sessionFile, generation };
+    const ownFence = createGitCheckAuthorityFence({ scope: { sessionId: owner.sessionId, sessionFile: owner.sessionFile, cwd: owner.sessionCwd },
+      agentDir, invocationOwner, projectRoots: [], checkouts: [owner.sessionCwd],
+      readSelectionStateSync: () => context.effectiveTools(), readSelectionRevisionSync: () => {
+        const revision = writerRevision(); if (!revision) refuse("live-monotonic-authority-provider-unavailable"); return revision;
+      } });
+    const baseline = ownFence();
+    const resources = new Map<string, GitProjectResources>();
+    let callerCurrent: SelectedOperationCurrent | undefined, cleanupCandidate: object | undefined, cleanupRemoval: object | undefined;
+    const removedCallerScope = (): GitCleanupCallerScope | undefined => {
+      if (!cleanupCandidate || !cleanupRemoval) return;
+      const authority = readGitCleanupRemovalAuthority(cleanupCandidate, cleanupRemoval);
+      if (!authority || !same(authority.binding.owner, invocationOwner)) refuse("original-cleanup-removal-association-required");
+      if (callerCurrent?.kind !== "git" || !same(callerCurrent.resources, authority.binding.source)) return;
+      return { candidate: cleanupCandidate, removal: cleanupRemoval, caller: authority.binding.source, owner, invocationOwner };
+    };
+    const assertOriginal = () => {
+      readOwner();
+      const selection = { sessionId: owner.sessionId, projectRoots: [...new Set([...resources.values()].map((r) => r.projectRoot))],
+        trustPaths: [...new Set([owner.sessionCwd, ...[...resources.values()].flatMap((r) => [r.projectRoot, r.cwd])])] };
+      if (ownFence() !== baseline) refuse("original-caller-authority-revoked");
+      if (original(selection) !== readGitScopedAuthorityRevision(agentDir, selection)) refuse("original-scoped-authority-revoked");
+      const roots = getKnownAllowedFileRoots();
+      for (const r of resources.values()) if (!isFilePathAllowed(r.projectRoot, roots) || !isFilePathAllowed(r.cwd, roots) || !trusted(r))
+        refuse("selected-root-or-trust-revoked");
+      // Native leaves own physical presence/identity, including cleanup's exact
+      // removal transition. This is the independent LIVE authority check only.
+    };
+    const readCurrent = async (): Promise<SelectedOperationCurrent> => {
+      // Preserve the ORIGINAL classification. Genuine own removal changes its
+      // physical presence, not the saved/header cwd, project scope or caller.
+      if (removedCallerScope()) { assertOriginal(); return structuredClone(callerCurrent!); }
+      const observed = await readSelectedRuntimeCurrent(owner.sessionCwd);
+      if (callerCurrent && !same(callerCurrent, observed)) refuse("caller-classification-changed");
+      callerCurrent ??= structuredClone(observed);
+      assertOriginal(); return structuredClone(callerCurrent);
+    };
+    return { generation, baseline, assertOriginal, readCurrent, removedCallerScope,
+      add(r: GitProjectResources) { resources.set(r.cwd, r); assertOriginal(); },
+      bindCleanup(candidate: object) {
+        if (!callerCurrent || cleanupCandidate) refuse("original-cleanup-caller-required");
+        bindGitCheckCleanupCandidate(ownFence, candidate); cleanupCandidate = candidate; assertOriginal();
+      },
+      acceptCleanup(candidate: object, removal: object) {
+        if (candidate !== cleanupCandidate) refuse("original-cleanup-candidate-required");
+        // MUST precede every ordinary authority read after native removal.
+        acceptGitCheckCleanupRemoval(ownFence, candidate, removal);
+        cleanupRemoval = removal; assertOriginal();
+      } };
+  }
+  const bootstrapInvocation = originalInvocation();
+  const invocation = () => invocationScope.getStore() ?? bootstrapInvocation;
+  const operationPolicy = (p: Awaited<ReturnType<typeof loadGitProjectSettings>>) => ({ ...p, revision: gitWorkflowPolicyRevision(p) });
+  const scopedAuthorization = async (r: GitProjectResources) => {
+    readOwner(); invocation().add(r);
+    const removed = invocation().removedCallerScope();
+    const status = removed && same(removed.caller, r) ? await readGitCleanupCallerAuthorization(removed, agentDir)
+      : await readProjectAuthorization(r, owner, agentDir);
+    invocation().assertOriginal();
+    return { ...status, revision: readGitScopedAuthorityRevision(agentDir, { sessionId: owner.sessionId, projectRoots: [r.projectRoot], domains: ["grants"] }) };
+  };
   const readers: SelectedOperationReaders = {
-    readResources: selectCanonicalGitResources,
+    async readResources(selector) { const r = await selectCanonicalGitResources(selector); invocation().add(r); return r; },
     async readCaller() {
       const originalWriterRevision = writerRevision();
       const saved = readOwner(), tools = context.effectiveTools();
       if (!tools || !Array.isArray(tools)) refuse("effective-tools-required");
-      const facts = managedGitSessionFacts(saved.entries, tools), current = await readSelectedRuntimeCurrent(owner.sessionCwd);
-      const chat = await loadGitWorkflowSettings(undefined, saved.entries, agentDir, owner.sessionId);
+      const facts = managedGitSessionFacts(saved.entries, tools), current = await invocation().readCurrent();
+      if (current.kind === "git") invocation().add(current.resources as GitProjectResources);
+      invocation().assertOriginal();
+      const chat = operationPolicy(await loadGitWorkflowSettings(undefined, saved.entries, agentDir, owner.sessionId));
       // Legacy explicit opt-out remains a negative restriction, never task consent.
       if (chat.task.kind === "legacy" && chat.task.policy === null) chat.optedOut = true;
       let policy = chat;
       if (current.kind === "git") {
-        const canonical = await loadGitProjectSettings(current.resources as GitProjectResources, saved.entries, agentDir, owner.sessionId);
+        const removed = invocation().removedCallerScope();
+        const canonical = operationPolicy(removed ? await readGitCleanupCallerPolicy(removed, saved.entries, agentDir)
+          : await loadGitProjectSettings(current.resources as GitProjectResources, saved.entries, agentDir, owner.sessionId));
         policy = { ...canonical, task: chat.task, session: chat.session, optedOut: chat.optedOut,
           revision: digest([canonical.revision, chat.revision]), resolved: { ...canonical.resolved,
             session: resolveGitWorkflowSettings(canonical.global, canonical.project, chat.session ?? {}) } };
@@ -275,47 +305,47 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
       return { persisted: true, current, facts, policy,
         revision: digest([saved.identity, saved.header, current, facts, policy.revision, originalWriterRevision]) } as SelectedOperationCaller;
     },
-    async readPolicy(r) { return loadGitProjectSettings(r, readOwner().entries, agentDir, owner.sessionId); },
-    async readAuthorization(r) { readOwner(); return readProjectAuthorization(r, owner, agentDir); },
+    async readPolicy(r) {
+      invocation().add(r); const entries = readOwner().entries, removed = invocation().removedCallerScope();
+      const p = removed && same(removed.caller, r) ? await readGitCleanupCallerPolicy(removed, entries, agentDir)
+        : await loadGitProjectSettings(r, entries, agentDir, owner.sessionId);
+      invocation().assertOriginal(); return operationPolicy(p);
+    },
+    readAuthorization: scopedAuthorization,
     revalidateResources: revalidateGitProjectResources,
-    async readCurrentPolicy(r) { return loadGitProjectSettings(r as GitProjectResources, readOwner().entries, agentDir, owner.sessionId); },
-    async readCurrentAuthorization(r) { readOwner(); return readProjectAuthorization(r as GitProjectResources, owner, agentDir); },
-    async revalidateCurrent(current) { readOwner(); if (!same(current, await readSelectedRuntimeCurrent(owner.sessionCwd))) refuse("caller-classification-changed"); },
+    async readCurrentPolicy(r) { return readers.readPolicy(r as GitProjectResources, owner); },
+    async readCurrentAuthorization(r) { return scopedAuthorization(r as GitProjectResources); },
+    async revalidateCurrent(current) { readOwner(); if (!same(current, await invocation().readCurrent())) refuse("caller-classification-changed"); },
   };
-  // A final synchronous comparison for integration's post-await guard. This is
-  // not the monotonic all-revocations checker provider; checks remain refused.
-  function syncAuthority(resources: readonly GitProjectResources[]) {
-    const caller = readOwner();
-    const fileState = (path: string) => {
-      if (absent(path)) return "absent";
-      const f = readBindingFile(path, 4 * 1024 * 1024, true); return [f.identity, f.fingerprint, digest(f.bytes.toString("base64"))];
-    };
-    return digest([caller.identity, caller.header, readManagedSessionGitWorkflow(caller.entries), workflowTaskFromEntries(caller.entries),
-      [...readGitProjectSessionSettings(caller.entries)], managedGitSessionFacts(caller.entries, context.effectiveTools()),
-      readGitWorkflowWriteEpoch(agentDir), fileState(gitWorkflowSettingsPath(agentDir)), fileState(projectAuthorizationPath(agentDir)),
-      readGitWorkflowSettingsDocument(agentDir), getKnownAllowedFileRoots(), resources.map((r) => [trusted(r), physical(r.cwd), physical(r.projectRoot), physical(r.gitDir), physical(r.commonDir)])]);
-  }
   const register = (saved: Capture) => {
+    saved.candidate.revision = digest([saved.candidate.revision, invocation().generation]);
+    saved.candidate.invocationOwner ??= { sessionId: owner.sessionId, sessionFile: owner.sessionFile, generation: invocation().generation };
     if (saved.candidate.operation === "workspace" || saved.candidate.operation === "prepare" || saved.candidate.operation === "reconcile") {
       saved.authorityGuard ??= captureAuthorityGuard(saved.candidate.source, ...(saved.candidate.target ? [saved.candidate.target] : []));
     }
     captures.set(saved.candidate.revision, saved);
-    if (saved.candidate.operation !== "cleanup") {
-      saved.usageToken = {}; selectedUsage().set(saved.usageToken, [saved.candidate.source.cwd, ...(saved.candidate.target ? [saved.candidate.target.cwd] : [])]);
-    }
     return registry.capture(saved.candidate, saved);
   };
   const authorityFence = (resources: readonly GitProjectResources[]) => {
-    const savedFence = createGitCheckAuthorityFence({
-      scope: { sessionId: owner.sessionId, sessionFile: owner.sessionFile, cwd: owner.sessionCwd }, agentDir,
-      checkouts: [...new Set(resources.flatMap((r) => [r.projectRoot, r.cwd]))],
-    });
-    return () => {
-      if (!context.readSelectionRevisionSync && !getRpcSession(owner.sessionId)?.isAlive()) refuse("live-monotonic-authority-provider-unavailable");
-      const revision = context.readSelectionRevisionSync?.();
-      if (context.readSelectionRevisionSync && (typeof revision !== "string" || !revision || revision.length > 512 || /[\x00-\x1f\x7f]/.test(revision))) refuse("known-monotonic-authority-required");
-      return digest([savedFence(), syncAuthority(resources), revision]);
-    };
+    const original = invocation(); resources.forEach((r) => original.add(r));
+    return () => { original.assertOriginal(); return original.baseline; };
+  };
+  const mutationAuthority = (source: GitProjectResources, target: GitProjectResources | undefined, bridge: { saved?: Capture }): GitMutationInvocationAuthority => {
+    const original = invocation(), readAuthorityRevisionSync = authorityFence([source, ...(target ? [target] : [])]);
+    let exactBinding: string | undefined;
+    return { owner: { sessionId: owner.sessionId, sessionFile: owner.sessionFile, generation: original.generation }, readAuthorityRevisionSync,
+      assertCurrentSync(binding) {
+        readAuthorityRevisionSync();
+        if (!same(binding.owner, { sessionId: owner.sessionId, sessionFile: owner.sessionFile, generation: original.generation }) ||
+          !same(binding.source, source) || !same(binding.target, target)) refuse("native-invocation-binding-mismatch");
+        const current = digest(binding);
+        if (exactBinding && exactBinding !== current) refuse("native-invocation-binding-mismatch");
+        exactBinding ??= current;
+        // Capture-time native reads are not effect approval. At apply the
+        // controller has independently checked exact Ask or explicit saved Allow.
+        if (bridge.saved && (bridge.saved.retired || !bridge.saved.executing || !bridge.saved.executionAuthorized))
+          refuse("native-effect-authorization-required");
+      } };
   };
   const captureAuthorityGuard = (source: GitProjectResources, ...additional: GitProjectResources[]) => {
     const fence = authorityFence([source, ...additional]), expected = fence();
@@ -348,19 +378,20 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
     if (!same(saved.candidate.source, source) || !same(saved.candidate.target, target)) refuse("consumed-check-resources-changed");
     if (saved.runs.some((row) => readGitCheckoutVerificationNativeExecution(row) !== row ||
       row.actionId !== execution.actionId || row.sessionId !== owner.sessionId || !row.containmentComplete || row.timedOut || row.overflow)) refuse("consumed-check-containment-not-proven");
-    const durable = await readGitAction(execution.actionId, { includeArtifact: true }, agentDir);
-    if (durable.unavailable || !durable.record || durable.record.state !== "failed" || durable.record.sessionId !== owner.sessionId ||
-      !same(durable.candidate, saved.candidate.history) || !same(durable.record.outcome?.checkoutVerification?.runs, saved.runs)) refuse("independent-consumed-check-history-required");
     readOwner();
-    try { await assertGitOperationAdmission(source, agentDir); await assertGitOperationAdmission(target, agentDir); }
-    catch { refuse("consumed-check-independent-admission-required"); }
+    await revalidateGitProjectResources(source); await revalidateGitProjectResources(target);
   };
   const base = {
     readCandidate: registry.readCandidate, readNativeCompletion: registry.readNativeCompletion,
     readNativeFailure: registry.readNativeFailure,
-    retire(handle: object) { const saved = registry.readCapture<Capture>(handle); if (saved) {
-      captures.delete(saved.candidate.revision); if (saved.executing) activateActions.delete(saved.executing.actionId);
-      if (saved.usageToken) selectedUsage().delete(saved.usageToken);
+    retire(handle: object, completed = false) { const saved = registry.readCapture<Capture>(handle); if (saved) {
+      saved.retired = true;
+      captures.delete(saved.candidate.revision);
+      if (saved.cohort && !completed) retireGitCheckCohort(saved.cohort);
+      if (saved.prepared) retireGitPreparedApply(saved.prepared);
+      if (saved.plan) retireSelectedIntegrationPlan(saved.plan);
+      if (saved.workspace) retireGitWorkspaceCandidate(saved.workspace);
+      if (saved.cleanupCandidate) saved.cleanupEngine!.retire(saved.cleanupCandidate);
     } registry.retire(handle); },
     async assertExact(handle: object) {
       const saved = registry.readCapture<Capture>(handle); if (!saved) refuse("native-capture-retired");
@@ -373,7 +404,7 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
       // After launch the native engine owns the ONLY permitted progress (owned
       // index lock/read-tree/ref CAS). It independently validates the exact
       // original inventory and its measured progress before each callback.
-      if (!saved.executingStarted && saved.prepared && !same(saved.prepared.snapshot,
+      if (!saved.executingStarted && saved.prepared && !sameGitPreparationDependencies(saved.prepared.snapshot,
         await preflightGitPreparation({ source: selector(saved.candidate.source), target: selector(saved.candidate.target!) }, agentDir))) refuse("native-capture-stale");
     },
   };
@@ -382,36 +413,20 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
       requireLeaf(workspaceNative, "applyGitWorkspaceOperationWithAuthority", SELECTED_RUNTIME_BLOCKERS.workspace);
       const source = await readers.readResources(request.selector), policy = await readers.readPolicy(source, owner);
       const authorityGuard = captureAuthorityGuard(source);
-      const bridge: { saved?: Capture; proof?: GitWorkspaceCompletedProof } = {};
-      const admission = createGitWorkspaceAdmission({ agentDir,
-        async onIntent(e) {
-          const execution = bridge.saved?.executing;
-          if (!execution || e.actionId !== execution.actionId || !same(e.request, bridge.saved?.workspace?.request)) refuse("native-intent-correlation-required");
-          await activateActions.get(execution.actionId)?.();
-        },
-        async onCompleted(proof) {
-          if (!bridge.proof || !same(bridge.proof, proof) || !readGitWorkspaceNativeProof(bridge.proof)) refuse("actual-native-workspace-proof-required");
-          await bridge.saved!.executing!.onNativeCompleted(bridge.proof);
-        },
-        async onFailure(facts) {
-          const execution = bridge.saved?.executing;
-          if (execution) { const cause = new RuntimeRefusal("workspace-partial-state");
-            registry.failure(cause, { kind: "partial", actionId: execution.actionId, candidateRevision: bridge.saved!.candidate.revision, recoveryRequired: true, workspace: facts });
-            bridge.saved!.workspaceFailure = { cause, facts }; }
-        },
-      });
-      const wrapped: GitWorkspaceAdmission = { assertAdmission: admission.assertAdmission,
-        async beginIntent(e) { const intent = await admission.beginIntent(e); return { ...intent,
-          async completed(proof) { bridge.proof = proof; if (bridge.saved) bridge.saved.workspaceProof = proof; await intent.completed(proof); } }; } };
-      const native = await captureGitWorkspaceOperation(request.workspace, wrapped);
+      const bridge: { saved?: Capture } = {};
+      const nativeAuthority = mutationAuthority(source, undefined, bridge);
+      const native = await captureGitWorkspaceOperation(request.workspace, {}, nativeAuthority);
+      try {
       const candidate: SelectedNativeCandidate = { operation: "workspace", source, sourceOid: native.sourceOid,
         actionId: native.actionId, policyRevision: policy.revision, history: snapshotGitWorkspaceAction(source, native),
         revision: digest([source, native, policy.revision]), ...(native.parentCreation ? { parentCreation: native.parentCreation } : {}) };
-      bridge.saved = { candidate, workspace: native, workspaceAdmission: wrapped, authorityGuard, executingStarted: false };
+      bridge.saved = { candidate, workspace: native, authorityGuard, executingStarted: false };
       return register(bridge.saved);
+      } catch (error) { retireGitWorkspaceCandidate(native); throw error; }
     },
     async execute(handle, execution) {
       const saved = registry.readCapture<Capture>(handle); if (!saved?.workspace) refuse("native-workspace-capture-required");
+      await execution.authorize(); saved.executionAuthorized = true;
       saved.executing = execution; saved.executingStarted = true;
       let result;
       const guard = saved.authorityGuard;
@@ -420,12 +435,13 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
       try { result = await apply({ candidate: saved.workspace,
         authorize: async () => { if (!guard) refuse("mandatory-native-authority-guard-required"); guard(); await execution.authorize(); guard(); },
         assertCurrentSync() { if (!guard) refuse("mandatory-native-authority-guard-required"); guard(); } }); }
-      catch (cause) { if (cause && typeof cause === "object" && saved.workspaceFailure) registry.failure(cause, {
-        kind: "partial", actionId: execution.actionId, candidateRevision: saved.candidate.revision, recoveryRequired: true, workspace: saved.workspaceFailure.facts }); throw cause; }
-      const proof = saved.workspaceProof; if (!proof || !readGitWorkspaceNativeProof(proof)) refuse("actual-native-workspace-proof-required");
+      catch (cause) { if (cause instanceof GitWorkspaceOperationError && cause.facts) registry.failure(cause, {
+        kind: "partial", actionId: execution.actionId, candidateRevision: saved.candidate.revision, recoveryRequired: true, workspace: cause.facts }); throw cause; }
+      const proof = readGitWorkspaceNativeProof(result); if (!proof) refuse("actual-native-workspace-proof-required");
+      saved.workspaceProof = proof;
       return registry.completed({ stage: "completed", actionId: execution.actionId, candidateRevision: saved.candidate.revision,
         completedAt: performance.now(), completion: { operation: "workspace", result, proof,
-          creation: { mode: proof.mode, destination: proof.destination, originalSource: saved.candidate.source, branchRef: proof.branchRef } } }, proof);
+          creation: { mode: proof.mode, destination: proof.destination, originalSource: saved.candidate.source, branchRef: proof.branchRef } } }, result);
     },
   };
   const verification: SelectedNativeAdapter<"verify"> = { ...base,
@@ -457,7 +473,7 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
       const candidate: SelectedNativeCandidate = { operation: "verify", source, sourceOid: head, policyRevision: policy.revision,
         checks: c.checks, history: snapshotGitCheckoutVerificationAction(source, details), revision: digest([source, rows, policy.revision]),
         ...(c.orderingState ? { target: c.orderingState.target, targetOid: c.orderingState.targetOid } : {}) };
-      return register({ candidate, checks: rows, receipts: [], runs: [], before: c.orderingState, executingStarted: false });
+      return register({ candidate, checks: rows, cohort: createGitCheckCohort(c.checks.checkIndexes), receipts: [], runs: [], before: c.orderingState, executingStarted: false });
     },
     async execute(handle, execution) {
       const saved = registry.readCapture<Capture>(handle); if (!saved?.checks || !saved.receipts) refuse("native-check-capture-required");
@@ -465,18 +481,24 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
       try { for (const row of saved.checks) {
         await execution.authorize();
         const receipt = await runGitCheckoutVerification({ ...checkOptions(saved.candidate.source, row.binding.checkIndex, row.binding.stage, execution),
-          onExecution: async (handle) => {
+          cohort: saved.cohort,
+          onExecution: (handle) => {
+            // Optional prepublication facts. They can explain failure, never
+            // finish a passing batch or establish a receipt.
             const measured = readGitCheckoutVerificationNativeExecution(handle);
-            if (!measured || measured !== handle || measured.actionId !== execution.actionId || measured.sessionId !== owner.sessionId ||
-              measured.checkIndex !== row.binding.checkIndex || measured.stage !== row.binding.stage || measured.recipeDigest !== row.snapshot.recipeDigest ||
-              measured.snapshotDigest !== gitCheckDigest(JSON.stringify(row.snapshot)) || measured.environmentDigest !== row.binding.environmentDigest ||
-              measured.policyDigest !== row.binding.policyDigest || measured.executionCwd !== row.executionCwd) refuse("actual-bound-native-check-execution-required");
-            saved.runs!.push(measured);
-            await execution.onNativeCompleted(handle);
+            if (measured) saved.runs!.push(measured);
           } });
-        if (!saved.runs!.some((run) => run.receipt?.id === receipt.id && readGitCheckoutVerificationNativeExecution(receipt) === run)) refuse("journalled-native-receipt-required");
+        const measured = readGitCheckoutVerificationNativeExecution(receipt);
+        if (!measured || measured.actionId !== execution.actionId || measured.sessionId !== owner.sessionId ||
+          measured.checkIndex !== row.binding.checkIndex || measured.stage !== row.binding.stage || measured.recipeDigest !== row.snapshot.recipeDigest ||
+          measured.snapshotDigest !== gitCheckDigest(JSON.stringify(row.snapshot)) || measured.environmentDigest !== row.binding.environmentDigest ||
+          measured.policyDigest !== row.binding.policyDigest || measured.executionCwd !== row.executionCwd ||
+          measured.receipt?.id !== receipt.id || measured.exitStatus !== 0 || !measured.containmentComplete || measured.timedOut || measured.overflow)
+          refuse("actual-published-native-receipt-required");
+        saved.runs = [...saved.runs!.filter((r) => r.checkIndex !== measured.checkIndex), measured];
         saved.receipts.push(receipt);
       } } catch (cause) {
+        if (saved.cohort) retireGitCheckCohort(saved.cohort);
         if (cause instanceof GitCheckoutVerificationError) refusalContext.getStore()!.code = `selected-check-${cause.code}`;
         if (execution.previousLaunch && saved.runs?.length) {
           consumedChecks.set(execution.previousLaunch, saved);
@@ -498,31 +520,37 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
       const policy = await readers.readPolicy(source, owner);
       if (target.branch !== policy.project.mainBranch || target.branch !== policy.resolved.session.values.mainBranch) refuse("project-main-target-required");
       const authorityGuard = captureAuthorityGuard(source, target);
-      const prepared = await prepareGitPreparationApply({ source: request.selector, target: request.target }, agentDir);
+      const bridge: { saved?: Capture } = {};
+      const nativeAuthority = mutationAuthority(source, target, bridge);
+      const prepared = await prepareGitPreparationApply({ source: request.selector, target: request.target }, agentDir, nativeAuthority);
+      try {
       const resultTree = prepared.candidate.comparison.commits.at(-1)?.newTreeOid ?? await treeOid(source, prepared.candidate.newSourceOid);
       const diff = await withGitProjectReview(source, (repo) => getGitTreeDiff(repo,
         prepared.candidate.comparison.commits.at(-1)?.oldTreeOid ?? resultTree, resultTree));
       const candidate: SelectedNativeCandidate = { operation: "prepare", source, target, sourceOid: prepared.snapshot.source.oid,
-        targetOid: prepared.snapshot.target.oid, policyRevision: policy.revision,
+        targetOid: prepared.snapshot.target.oid, policyRevision: policy.revision, invocationOwner: nativeAuthority.owner,
         history: snapshotGitPreparationAction(source, target, prepared.candidate, resultTree, diff),
         revision: digest([prepared, source, target, policy.revision]), ...(prepared.snapshot.status === "already-prepared" ? { noEffect: "already-prepared" } : {}) };
       const before = paired(candidate, owner, captureContext.operationId);
-      return register({ candidate, prepared, before, authorityGuard, executingStarted: false });
+      bridge.saved = { candidate, prepared, before, authorityGuard, executingStarted: false };
+      return register(bridge.saved);
+      } catch (error) { retireGitPreparedApply(prepared); throw error; }
     },
     async execute(handle, execution) {
       const saved = registry.readCapture<Capture>(handle); if (!saved?.prepared || !saved.before) refuse("native-capture-required");
+      await execution.authorize(); saved.executionAuthorized = true;
       saved.executing = execution; saved.executingStarted = true;
       const guard = saved.authorityGuard;
       const apply = requireLeaf<(options: Parameters<typeof applyGitPreparation>[0] & { assertCurrentSync(): void }) => ReturnType<typeof applyGitPreparation>>(
         preparationNative, "applyGitPreparationWithAuthority", SELECTED_RUNTIME_BLOCKERS.prepare);
       const result = await apply({ prepared: saved.prepared, actionId: execution.actionId,
-        authorize: async () => { if (!guard) refuse("mandatory-native-authority-guard-required"); guard(); await execution.authorize(); guard(); },
-        assertCurrentSync() { if (!guard) refuse("mandatory-native-authority-guard-required"); guard(); },
-        onIntent: async (reservation) => {
-          const held = readGitOperationReservationOwner(reservation);
-          if (!held || held.kind !== "prepare" || held.actionId !== execution.actionId || held.agentDir !== agentDir || !same(held.selection, saved.candidate.source)) refuse("held-preparation-admission-required");
-          await activateActions.get(execution.actionId)?.();
-        }, onCompleted: execution.onNativeCompleted });
+        authorize: async () => { if (!guard) refuse("mandatory-native-authority-guard-required"); guard(); await execution.authorize(); guard(); saved.executionAuthorized = true; },
+        assertCurrentSync() { if (!guard) refuse("mandatory-native-authority-guard-required"); guard(); } }).catch((cause: unknown) => {
+          const facts = readGitPreparationNativeOutcome(cause);
+          if (facts && cause && typeof cause === "object") registry.failure(cause, { kind: "partial", actionId: execution.actionId,
+            candidateRevision: saved.candidate.revision, recoveryRequired: true, nativeOutcome: facts });
+          throw cause;
+        });
       if (result.status === "partial-state") {
         registry.failure(result, { kind: "partial", actionId: execution.actionId, candidateRevision: saved.candidate.revision, recoveryRequired: true, preparation: result });
         throw result;
@@ -534,7 +562,6 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
       const completed = registry.completed(envelope, result, result.status === "already-prepared");
       // No-op has no rewrite callback; independently exact native return is now
       // journalled, without issuing an ordering successor.
-      if (result.status === "already-prepared") await execution.onNativeCompleted(completed);
       return completed;
     },
   };
@@ -546,9 +573,10 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
       const requiredChecks = selectGitCheckRecipesForStage(policy.resolved.session.values.checks, "integration");
       if (requiredChecks.length && !captureContext.receiptIds.length) refuse("required-receipts-missing");
       const bridge: { saved?: Capture } = {};
-      const readAuthorityRevisionSync = authorityFence([source, target]);
+      const nativeAuthority = mutationAuthority(source, target, bridge);
+      const readAuthorityRevisionSync = nativeAuthority.readAuthorityRevisionSync;
       const originalAuthorityRevision = readAuthorityRevisionSync();
-      const plan = await prepareSelectedIntegration({ sessionId: owner.sessionId, agentDir, source, target,
+      const plan = await prepareSelectedIntegration({ sessionId: owner.sessionId, agentDir, source, target, nativeAuthority,
         receiptIds: captureContext.receiptIds,
         getPolicy: async (r) => { const p = await savedSourceCheckPolicy(r as GitProjectResources);
           return { policyRevision: p.revision, settings: validateGitWorkflowSettings(p.resolved.session.values), savedProjectSettings: p.project }; },
@@ -559,7 +587,7 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
             receipt.sessionId === owner.sessionId && receipt.stage === r.stage && receipt.checkIndex === r.checkIndex &&
             receipt.policyRevision === r.policyRevision && receipt.policyDigest === r.policyDigest && receipt.recipeDigest === r.recipeDigest &&
             same(receipt.selection, r.selection) && same(receipt.snapshot, r.snapshot));
-          if (!receipt) refuse("durably-sealed-check-receipt-required");
+          if (!receipt) refuse("authentic-sealed-check-receipt-required");
           await checkAuthority(source); return true;
         },
         readAuthorityRevisionSync,
@@ -568,51 +596,40 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
             bridge.saved?.plan && candidate.planId !== bridge.saved.plan.planId) refuse("native-authorization-binding-mismatch");
           const stamp = originalAuthorityRevision, binding = digest(candidate);
           if (readAuthorityRevisionSync() !== stamp) refuse("authority-revoked");
-          if (bridge.saved?.executing) await bridge.saved.executing.authorize();
+          if (bridge.saved?.executing) { await bridge.saved.executing.authorize(); bridge.saved.executionAuthorized = true; }
           else { readOwner(); if (!trusted(source) || !trusted(target)) refuse("untrusted-project"); }
           return () => {
             if (digest(candidate) !== binding || readAuthorityRevisionSync() !== stamp) refuse("authority-revoked");
           };
         },
-      }).catch((cause: unknown) => {
-        // Fixed native diagnostic -> fixed metadata code, never echo stderr.
-        if (cause instanceof Error && cause.message === "Git integration unavailable: admission history changed") refuse("native-integration-admission-history-changed");
-        throw cause;
       });
+      try {
       const candidate: SelectedNativeCandidate = { operation: "integrate", source, target,
-        sourceOid: plan.review.featureOid, targetOid: plan.review.targetOid, policyRevision: policy.revision,
+        sourceOid: plan.review.featureOid, targetOid: plan.review.targetOid, policyRevision: policy.revision, invocationOwner: nativeAuthority.owner,
         revision: digest([plan, source, target, policy.revision]), history: { kind: "integration", repositoryRoot: source.cwd,
           ...gitActionAttribution(source, target), featureBranch: source.branch, targetBranch: target.branch,
           featureOid: plan.review.featureOid, targetOid: plan.review.targetOid, integrationMethod: "method" in plan ? "ff" : "merge",
           ...("method" in plan ? {} : { mergeOid: plan.mergeOid, message: plan.message }), checks: [], diff: plan.diff } };
       bridge.saved = { candidate, plan, before: paired(candidate, owner, captureContext.operationId), executingStarted: false };
       return register(bridge.saved);
+      } catch (error) { retireSelectedIntegrationPlan(plan); throw error; }
     },
     async execute(handle, execution) {
       const saved = registry.readCapture<Capture>(handle); if (!saved?.plan) refuse("native-capture-required");
       saved.executing = execution; saved.executingStarted = true;
-      const result = await confirmSelectedIntegration(saved.plan.planId, saved.plan.planId, owner.sessionId, execution.journalAdmission.beginIntegrationIntent)
-        .catch((cause: unknown) => {
-          if (cause && typeof cause === "object") {
-            // Only the original native WeakMap-issued pre-effect proof may
-            // retire this approval as target movement. Unknown/mismatched
-            // errors keep the controller's conservative recovery disposition.
-            try { registry.integrationTargetMoved(cause, handle, execution.actionId); } catch { /* preserve original uncertainty */ }
-          }
-          throw cause;
-        });
+      await execution.authorize(); saved.executionAuthorized = true;
+      const result = await confirmSelectedIntegration(saved.plan.planId, saved.plan.planId, owner.sessionId).catch((cause: unknown) => {
+        const facts = readGitIntegrationNativeOutcome(cause);
+        if (facts && cause && typeof cause === "object") registry.failure(cause, { kind: "partial", actionId: execution.actionId,
+          candidateRevision: saved.candidate.revision, recoveryRequired: true, nativeOutcome: facts });
+        throw cause;
+      });
       if (result.result.status !== "integrated" || !result.nativeHandle) {
         registry.failure(result, { kind: "partial", actionId: execution.actionId, candidateRevision: saved.candidate.revision, recoveryRequired: true, integration: result });
         throw result;
       }
       const proof = readSelectedIntegrationNativeProof(result.nativeHandle); if (!proof) refuse("native-integration-proof-required");
       const completedAt = performance.now();
-      try { await execution.onNativeCompleted(result.nativeHandle); }
-      catch (cause) {
-        if (cause && typeof cause === "object") registry.failure(cause, { kind: "partial", actionId: execution.actionId,
-          candidateRevision: saved.candidate.revision, recoveryRequired: true, integration: result });
-        throw cause;
-      }
       return registry.completed({ stage: "completed", actionId: execution.actionId, candidateRevision: saved.candidate.revision,
         completedAt, before: saved.before, completion: { operation: "integrate", result, integration: proof } }, result.nativeHandle);
     },
@@ -627,31 +644,22 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
       if (!integrationProof || !creationProof) refuse("sealed-cleanup-prerequisites-required");
       if (!same(creationProof.destination, integrationProof.feature)) refuse("creation-integration-resource-seal-mismatch");
       const source = integrationProof.feature, target = integrationProof.target, policy = await readers.readPolicy(target, owner);
-      const bridge: { saved?: Capture; evidence?: GitCleanupEvidence; proof?: GitCleanupCompletedProof } = {};
-      const removalAcks = new WeakMap<object, GitCleanupDurableAck<GitCleanupRemovalProof>>();
-      const admission = createGitCleanupAdmission({ agentDir, readNativeProof: readNativeCleanupProof,
-        async onIntent(e) {
-          if (!bridge.saved?.executing || e.actionId !== bridge.saved.executing.actionId || !same(e, bridge.saved.cleanupEvidence)) refuse("native-cleanup-intent-correlation-required");
-          await activateActions.get(e.actionId)?.();
-        },
-        async onRemoval(proof) {
-          if (!bridge.saved?.removal || !same(proof, bridge.saved.removal)) refuse("actual-native-removal-required");
-          await bridge.saved.executing!.onNativeCompleted(bridge.saved.removal);
-        },
-        async onCompleted(proof) {
-          if (!bridge.proof || !same(bridge.proof, proof)) refuse("actual-native-cleanup-completion-required");
-          await bridge.saved!.executing!.onNativeCompleted(bridge.proof);
-        },
-        async onFailure(facts) { if (bridge.saved?.executing) bridge.saved.cleanupFailure = facts; },
-      });
-      const usage = createTrustedWorkspaceUsage(() => readHostWorkspaceUsage(bridge.saved?.usageToken), admission.readRecordedRemoval);
-      // Both guards originate BEFORE any effect. Removal changes which exact
-      // physical selection survives, never the original authority revision.
-      const sourceGuard = captureAuthorityGuard(source, target);
-      const survivingGuard = captureAuthorityGuard(target);
-      const assertGuard = () => (bridge.saved?.removal ? survivingGuard : sourceGuard)();
+      const bridge: { saved?: Capture } = {};
+      // Source deletion is a native, explicitly proved transition, not a new
+      // policy baseline or a diagnostic callback acknowledgement.
+      const nativeAuthority = mutationAuthority(source, target, bridge);
+      const assertGuard = () => {
+        nativeAuthority.readAuthorityRevisionSync();
+        const removed = bridge.saved?.removal;
+        if (removed) {
+          const facts = readNativeCleanupProof(removed);
+          if (!facts || facts.kind !== "removed" || !same(facts.invocationOwner, nativeAuthority.owner) ||
+            !same(facts.sourceIdentity, source.identities.checkout) || facts.sourcePath !== source.cwd || facts.adminPath !== source.gitDir ||
+            !absent(source.cwd) || !absent(source.gitDir)) refuse("own-native-removal-required");
+        }
+      };
       const adapters: Parameters<typeof createGitCleanupEngine>[0] & { assertCurrentSync(): void } = {
-        assertCurrentSync: assertGuard,
+        nativeAuthority, assertCurrentSync: assertGuard,
         readCompletedIntegration: registry.readIntegration,
         readCreatedWorkspace(handle) {
           const creation = registry.readCreation(handle);
@@ -665,72 +673,67 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
           const main = (await readers.readPolicy(target, owner)).project.mainBranch;
           if (!main) refuse("saved-project-main-required");
           const selected = await selectGitProjectResources(target.projectRoot, main);
+          invocation().add(selected);
           const roots = await getAllowedFileRoots();
           if (!same(selected.identities.project, target.identities.project) || !same(selected.identities.common, target.identities.common) ||
             !isExistingFilePathAllowed(selected.cwd, roots) || !trusted(selected)) refuse("designated-main-unavailable");
           return selected;
         },
-        async acquireUsageLease(resources, evidence) {
-          const marker = resources.identities.marker;
-          if (!marker || !("changed" in marker) || !("size" in marker)) refuse("native-marker-identity-required");
-          const lease = usage.acquireLease(resources.cwd, resources.identities.checkout, { actionId: evidence.actionId,
-            featureOid: evidence.integration.featureOid, adminPath: resources.gitDir, adminIdentity: resources.identities.git,
-            markerIdentity: { ...marker, changed: String(marker.changed), size: String(marker.size) }, adminInventoryHash: evidence.inventory.admins[basename(resources.gitDir)] });
-          return { assertIdle: () => lease.assertUnused(), release: () => lease.release(),
-            acknowledgeRemoval(proof) { const ack = removalAcks.get(proof); if (!ack) refuse("sealed-issued-removal-ack-required"); lease.acknowledgeRemoval(ack); } };
-        },
-        async assertAdmission(evidence) {
-          bridge.evidence = structuredClone(evidence);
-          await admission.assertAdmission(evidence);
-        },
-        async beginIntent(evidence) {
-          const intent = await admission.beginIntent(evidence);
-          return { ...intent,
-            async recordRemoval(proof) {
-              if (bridge.saved) bridge.saved.removal = proof;
-              const ack = await intent.recordRemoval(proof); removalAcks.set(proof, ack); return ack;
-            },
-            async completed(proof) { bridge.proof = proof; if (bridge.saved) bridge.saved.cleanupProof = proof;
-              const native = readNativeCleanupProof(proof); if (!native || native.kind !== "completed") refuse("actual-native-cleanup-proof-required");
-              cleanupProofs.set(proof, native); return intent.completed(proof); },
-          };
-        },
-        async authorize(phase) {
-          readOwner(); const resources = phase === "before-delete" || bridge.saved?.removal ? target : source;
+        async authorize(phase, candidate, removal) {
+          if (phase === "before-delete") {
+            if (!bridge.saved || !candidate || candidate !== bridge.saved.cleanupCandidate || !removal) refuse("own-native-removal-required");
+            // Accept the privately associated original proof before readOwner,
+            // policy discovery or ANY normal read of the transitioning fence.
+            invocation().acceptCleanup(candidate, removal);
+            const facts = readNativeCleanupProof(removal);
+            if (!facts || facts.kind !== "removed" ||
+              facts.actionId !== candidate.actionId || facts.featureOid !== integrationProof.featureOid ||
+              !same(facts.invocationOwner, nativeAuthority.owner) || !same(facts.sourceIdentity, source.identities.checkout) ||
+              facts.sourcePath !== source.cwd || facts.adminPath !== source.gitDir || !absent(source.cwd) || !absent(source.gitDir)) refuse("own-native-removal-required");
+            bridge.saved.removal = removal;
+          }
+          readOwner();
+          const resources = bridge.saved?.removal ? target : source;
           await revalidateGitProjectResources(resources); if (!trusted(target)) refuse("untrusted-project");
-          if (bridge.saved?.executing) { assertGuard(); await bridge.saved.executing.authorize(); assertGuard(); }
+          if (bridge.saved?.executing) { assertGuard(); await bridge.saved.executing.authorize(); assertGuard(); bridge.saved.executionAuthorized = true; }
         },
       };
       const engine = createEngine(adapters);
       const native = await engine.capture({ integrationHandle: c.integrationHandle, creatorHandle: c.creatorHandle, ignoredNames: request.ignoredNames });
-      if (!bridge.evidence) refuse("actual-native-cleanup-evidence-required");
+      try {
+      invocation().bindCleanup(native);
+      const evidence = readGitCleanupCandidateEvidence(native);
+      if (!evidence || evidence.actionId !== native.actionId || !same(evidence.integration, integrationProof)) refuse("actual-native-cleanup-evidence-required");
       const candidate: SelectedNativeCandidate = { operation: "cleanup", source, target, sourceOid: native.featureOid,
-        targetOid: integrationProof.resultOid, actionId: native.actionId, policyRevision: policy.revision,
-        history: snapshotGitCleanupAction(source, target, { featureOid: native.featureOid, targetOid: bridge.evidence.target.oid,
-          mainOid: bridge.evidence.mainSnapshot.oid, sourcePath: source.cwd, branchRef: native.featureRef, targetPath: target.cwd, mainPath: bridge.evidence.main.cwd,
-          source: capturedCheckout(source), target: capturedCheckout(target), main: capturedCheckout(bridge.evidence.main),
+        targetOid: evidence.target.oid, actionId: native.actionId, policyRevision: policy.revision,
+        history: snapshotGitCleanupAction(source, target, { featureOid: native.featureOid, targetOid: evidence.target.oid,
+          mainOid: evidence.mainSnapshot.oid, sourcePath: source.cwd, branchRef: native.featureRef, targetPath: target.cwd, mainPath: evidence.main.cwd,
+          source: capturedCheckout(source), target: capturedCheckout(target), main: capturedCheckout(evidence.main),
           integration: { completedAt: integrationProof.completedAt, delivery: integrationProof.delivery, method: integrationProof.method,
             actualFF: integrationProof.actualFF, featureOid: integrationProof.featureOid, previousTargetOid: integrationProof.previousTargetOid,
             resultOid: integrationProof.resultOid, resultTree: integrationProof.resultTree, parents: [...integrationProof.parents] }, provenance: { mode: "create", originalSourcePath: creationProof.originalSource.cwd,
             originalSource: capturedCheckout(creationProof.originalSource), branchRef: creationProof.branchRef },
           ignoredCount: native.ignored.length, ignoredDeletion: native.ignored.length ? "exact-approval-required" : "none", ignored: [...native.ignored] }),
         cleanup: { integrationHandle: c.integrationHandle, creatorHandle: c.creatorHandle,
-          ignoredNames: native.ignored.map((row) => row.path) }, revision: digest([native, bridge.evidence, policy.revision]) };
-      bridge.saved = { candidate, cleanupEngine: engine, cleanupCandidate: native, cleanupEvidence: bridge.evidence, executingStarted: false,
-        cleanupAdapters: { acquireUsageLease: adapters.acquireUsageLease, assertAdmission: adapters.assertAdmission, beginIntent: adapters.beginIntent } };
+          ignoredNames: native.ignored.map((row) => row.path) }, revision: digest([native, evidence, policy.revision]) };
+      bridge.saved = { candidate, cleanupEngine: engine, cleanupCandidate: native, cleanupEvidence: structuredClone(evidence), executingStarted: false };
       return register(bridge.saved);
+      } catch (error) { engine.retire(native); throw error; }
     },
     async execute(handle, execution) {
       const saved = registry.readCapture<Capture>(handle); if (!saved?.cleanupEngine || !saved.cleanupCandidate) refuse("native-cleanup-capture-required");
+      await execution.authorize(); saved.executionAuthorized = true;
       saved.executing = execution; saved.executingStarted = true;
       try {
         const { proof } = await saved.cleanupEngine.apply(saved.cleanupCandidate);
+        const facts = readNativeCleanupProof(proof);
+        if (!facts || facts.kind !== "completed" || !same(facts.removal.invocationOwner, saved.candidate.invocationOwner)) refuse("own-native-cleanup-completion-required");
+        cleanupProofs.set(proof, facts);
         const completed = registry.completed({ stage: "completed", actionId: execution.actionId, candidateRevision: saved.candidate.revision,
           completedAt: performance.now(), completion: { operation: "cleanup", proof } }, proof);
         return completed;
       } catch (cause) {
         const refusal = refusalContext.getStore()!;
-        if (!refusal.code && cause instanceof GitWorkspaceUsageError) refusal.code = `cleanup-usage-${cause.code}`;
         if (!refusal.code && cause instanceof GitCleanupOperationError) refusal.code = `cleanup-${cause.code}`;
         if (cause && typeof cause === "object") {
           const failure = cause instanceof GitCleanupOperationError ? cause.facts : saved.cleanupFailure;
@@ -747,9 +750,8 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
       const policy = await readers.readPolicy(source, owner);
       const authorityGuard = captureAuthorityGuard(source, target);
       const snapshot = await preflightGitPreparation({ source: selector(source), target: selector(target) }, agentDir);
-      // Only a positively clean, admitted, already prepared native paired state
-      // can reconcile ordering. Unresolved leaf recovery remains quarantined.
-      if (snapshot.status !== "already-prepared") refuse("native-clean-admitted-reconciliation-required");
+      // Read-only reconciliation cannot invent a rewrite or repair uncertainty.
+      if (snapshot.status !== "already-prepared") refuse("native-clean-reconciliation-required");
       const review = await withGitProjectReview(source, (repo) => reviewGitBranches(repo, source.branch!, target.branch!));
       if (review.featureOid !== snapshot.source.oid || review.targetOid !== snapshot.target.oid) refuse("native-reconciliation-ref-changed");
       const diff = await withGitProjectReview(source, (repo) => getGitReviewDiff(repo, review, { kind: "merge" }));
@@ -765,144 +767,99 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
       if (execution.previousLaunch) await assertConsumedCheck(execution.previousLaunch, saved.candidate.source, saved.candidate.target!);
       saved.executing = execution;
       const before = saved.before, target = saved.candidate.target;
-      return withGitCheckoutGate([saved.candidate.source.cwd, target.cwd], async () => {
       const guard = saved.authorityGuard;
       if (!guard) refuse("mandatory-native-authority-guard-required");
       guard(); await execution.authorize(); guard();
       const snapshot = await preflightGitPreparation({ source: selector(saved.candidate.source), target: selector(target) }, agentDir);
-      if (!same(snapshot, saved.reconcileSnapshot) || snapshot.status !== "already-prepared") refuse("native-reconciliation-state-changed");
-      await assertGitOperationAdmission(saved.candidate.source, agentDir);
-      await assertGitOperationAdmission(target, agentDir);
+      if (!sameGitPreparationDependencies(snapshot, saved.reconcileSnapshot) || snapshot.status !== "already-prepared") refuse("native-reconciliation-state-changed");
       await execution.authorize(); guard();
       if (execution.previousLaunch) await assertConsumedCheck(execution.previousLaunch, saved.candidate.source, target);
       guard();
       const recoveryHandle = Object.freeze({}); recoveryProofs.set(recoveryHandle, { before, after: before, previousLaunch: execution.previousLaunch });
-      const completedAt = performance.now(); await execution.onNativeCompleted(recoveryHandle);
+      const completedAt = performance.now();
       return registry.completed({ stage: "completed", actionId: execution.actionId, candidateRevision: saved.candidate.revision,
         completedAt, before: saved.before, after: saved.before,
         completion: { operation: "reconcile", disposition: execution.previousLaunch ? "recovered" : "revalidated", recoveryHandle } }, recoveryHandle);
-      });
     },
   };
+  // Migrated leaves own native transactions. History is optional diagnostics,
+  // never an execution reservation or a success-proof reader.
+  async function beginInvocationDiagnostics(candidate: Readonly<SelectedNativeCandidate>, sink: ReturnType<typeof gitActionSink>) {
+    // Controller validates in-memory candidates before its own narrowly caught
+    // storage/anchor failures. Do not suppress candidate-validation failures.
+    const action = candidate.actionId ? await beginGitActionWithId(candidate.actionId, sink, "agent", candidate.history, agentDir)
+      : await beginGitAction(sink, "agent", candidate.history, agentDir);
+    const warning = () => { const current = refusalContext.getStore(), report = gitActionDiagnosticReport(action); if (current && report.diagnostics) current.diagnostics = report.diagnostics; };
+    warning();
+    const record = action.record;
+    const optional = async (write: () => Promise<unknown>) => { await write(); warning(); };
+    return {
+      action: { record, async update(...args: Parameters<NonNullable<typeof action>["update"]>) {
+        const [state, details] = args;
+        const intended: GitActionOutcome | undefined = state === "executing" && candidate.history.checkoutVerification ? {
+          kind: "checkout-verification", checkoutVerification: { ...verificationBinding(candidate.history.checkoutVerification), runs: [] } } :
+          state === "executing" && candidate.operation === "cleanup" ? { kind: "cleanup", cleanup: { ...cleanupBinding(captures.get(candidate.revision)!.cleanupEvidence!), effects: [] } } : undefined;
+        if (action) await optional(() => action!.update(state, { ...details, ...(intended ? { intended } : {}) }));
+      }, release() { action.release(); warning(); } },
+      async recordNativeCompletion() { refuse("postpublication-native-result-required"); },
+      async sealCompletion(handle: object) {
+        // Fixed private readers authenticate the actual original object before
+        // any optional write. No caller-supplied proof callback participates.
+        const envelope = registry.readNativeCompletion(handle);
+        if (!envelope || envelope.actionId !== record.id || envelope.candidateRevision !== candidate.revision) refuse("own-native-completion-required");
+        const seal = await registry.seal(handle);
+        if (action) {
+          const completion = envelope.completion;
+          let outcome: GitActionOutcome;
+          if (completion.operation === "verify") {
+            const runs = completion.receiptIds.map((id) => {
+              const receipt = registry.readSealedReceipt(id), facts = receipt && readGitCheckoutVerificationNativeExecution(receipt);
+              if (!facts?.receipt || facts.actionId !== record.id) refuse("own-published-native-receipt-required");
+              return structuredClone(facts);
+            });
+            outcome = { kind: "checkout-verification", status: "passed", checkoutVerification: {
+              ...verificationBinding(candidate.history.checkoutVerification!), runs } };
+          } else if (completion.operation === "prepare") {
+            const r = completion.result;
+            outcome = { kind: "preparation", status: r.status, preparation: { oldSourceOid: r.oldSourceOid, newSourceOid: r.newSourceOid,
+              targetMainOid: r.targetOid, resultTreeOid: r.status === "prepared" ? r.treeOid : candidate.history.preparation!.resultTreeOid } };
+          } else if (completion.operation === "integrate") {
+            const p = completion.integration;
+            outcome = { status: "integrated", mergeOid: p.resultOid, tree: p.resultTree, parents: [...p.parents],
+              featureOid: p.featureOid, targetOid: p.previousTargetOid, targetBranch: p.target.branch };
+          } else if (completion.operation === "workspace") {
+            const p = completion.proof;
+            outcome = { kind: "workspace", status: p.mode === "create" ? "created" : "attached", workspace: {
+              mode: p.mode, destinationPath: p.destination.cwd, branch: p.destination.branch!, tipOid: p.resultOid, treeOid: p.treeOid,
+              ...(p.knownParentCreation ? { parentCreated: true, knownParentCreation: p.knownParentCreation } : {}) } };
+          } else if (completion.operation === "cleanup") {
+            const p = completion.proof, removal = p.removal, saved = captures.get(candidate.revision);
+            if (!saved?.cleanupEvidence) refuse("native-cleanup-capture-required");
+            outcome = { kind: "cleanup", status: "cleaned-up", cleanup: { ...cleanupBinding(saved.cleanupEvidence), effects: [
+              { kind: "worktree-removed", sourcePath: removal.sourcePath, sourceIdentity: removal.sourceIdentity,
+                adminPath: removal.adminPath, featureOid: removal.featureOid, exit: 0, sourceAbsent: true, adminAbsent: true,
+                beforeInventoryDigest: digest(removal.before), afterInventoryDigest: digest(removal.after) },
+              { kind: "branch-deleted", branchRef: p.deletedRef, deletedOid: p.deletedOid, transactionExit: 0, finalInventoryDigest: digest(p.finalInventory) }],
+              nativeHeadReflogMayHaveChanged: p.nativeHeadReflogMayHaveChanged,
+              ...(candidate.cleanup?.ignoredNames.length && saved.exactApproval ? { ignoredDataDeletionApproved: true } : {}) } };
+          } else if (completion.operation === "reconcile") outcome = { status: "reviewed" };
+          else return refuse("migrated-native-completion-required");
+          await optional(() => action!.update("succeeded", { outcome }));
+        }
+        return seal;
+      },
+      readDurableCompletion: registry.readDurableCompletion,
+      async recordFailure(failure: import("./git-selected-operation-controller").SelectedNativeFailure | undefined, execution: { executionStarted: boolean }) {
+        if (action) await optional(() => failGitAction(action!, failure?.kind === "partial" && failure.nativeOutcome?.status === "no-checkout-effect" ? false : execution.executionStarted));
+      },
+    };
+  }
   const journalAdmission: SelectedJournalAdmissionFactory = {
     async begin(boundOwner, candidate) {
       readOwner(); if (!same(boundOwner, owner)) refuse("durable-journal-owner-mismatch");
       const saved = captures.get(candidate.revision); if (!saved) refuse("private-native-capture-required");
       const sink = gitActionSink(m, context.appendEntry);
-      const action = candidate.actionId ? await beginGitActionWithId(candidate.actionId, sink, "agent", candidate.history, agentDir)
-        : await beginGitAction(sink, "agent", candidate.history);
-      let reservation: GitOperationReservation | undefined;
-      let measured: { actionId: string; outcome: GitActionOutcome } | undefined;
-      const outcomes = new WeakMap<object, { actionId: string; outcome: GitActionNativeOutcome }>();
-      const intended: GitActionOutcome | undefined = candidate.history.checkoutVerification ? { kind: "checkout-verification",
-        checkoutVerification: { ...verificationBinding(candidate.history.checkoutVerification), runs: [] } } : candidate.operation === "cleanup" ? {
-          kind: "cleanup", cleanup: { ...cleanupBinding(saved.cleanupEvidence!), effects: [] } } : undefined;
-      let executingRequested = false;
-      // The model/controller cannot exempt an executing history record by ID.
-      // Persist it only after the real native owner has issued its held intent.
-      const activate = async () => {
-        if (!executingRequested) refuse("native-launch-before-approval");
-        if (action.record.state !== "executing") await action.update("executing", { ...(intended && !action.record.intended ? { intended } : {}),
-          ...(saved.exactApproval ? { decision: "approved" as const } : {
-            reason: candidate.noEffect || candidate.operation === "reconcile" ? "Read-only native observation; no mutation approval." : "Live selected saved Allow; no exact-candidate prompt requested." }) });
-      };
-      activateActions.set(action.record.id, activate);
-      const unavailable = () => refuse("adapter-not-valid-for-this-operation");
-      return {
-        action: { ...action, get record() { return action.record; }, async update(state, details) {
-          if (state === "executing") { executingRequested = true; return; }
-          return action.update(state, details);
-        } },
-        workspaceAdmission: saved.workspaceAdmission ?? { assertAdmission: unavailable, beginIntent: unavailable },
-        cleanup: saved.cleanupAdapters ?? { acquireUsageLease: unavailable, assertAdmission: unavailable, beginIntent: unavailable },
-        async beginIntegrationIntent() {
-          reservation = await beginSupervisedGitOperationIntent(candidate.source, action.record.id, "integration", agentDir);
-          const held = readGitOperationReservationOwner(reservation);
-          if (!held || held.actionId !== action.record.id || held.kind !== "integration" || held.agentDir !== agentDir || !same(held.selection, candidate.source)) refuse("admission-correlation-mismatch");
-          await activate(); return reservation;
-        },
-        async recordNativeCompletion(handle) {
-          const pending = readGitPreparationCompletion(handle), envelope = registry.readNativeCompletion(handle);
-          const workspaceProof = readGitWorkspaceNativeProof(handle), integrationProof = readSelectedIntegrationNativeProof(handle);
-          const cleanupProof = readNativeCleanupProof(handle);
-          await activate();
-          if (pending && pending.actionId === action.record.id && pending.stage === "verified-pending-admission") {
-            measured = { actionId: pending.actionId, outcome: { kind: "preparation", status: "prepared",
-              preparation: { oldSourceOid: pending.result.oldSourceOid, newSourceOid: pending.result.newSourceOid,
-                targetMainOid: pending.result.targetOid, resultTreeOid: pending.result.treeOid } } };
-            outcomes.set(handle, { actionId: pending.actionId, outcome: measured.outcome as GitActionNativeOutcome });
-            await finishVerifiedNativeGitAction(action, handle, (h) => outcomes.get(h));
-          } else if (envelope?.actionId === action.record.id && envelope.completion.operation === "prepare" && envelope.completion.result.status === "already-prepared") {
-            const r = envelope.completion.result;
-            measured = { actionId: action.record.id, outcome: { kind: "preparation", status: "already-prepared",
-              preparation: { oldSourceOid: r.oldSourceOid, newSourceOid: r.newSourceOid, targetMainOid: r.targetOid,
-                resultTreeOid: (candidate.history as GitActionCandidateSnapshot).preparation!.resultTreeOid } } };
-            outcomes.set(handle, { actionId: action.record.id, outcome: measured.outcome as GitActionNativeOutcome });
-            await finishVerifiedNativeGitAction(action, handle, (h) => outcomes.get(h));
-          } else if (workspaceProof?.actionId === action.record.id && handle === saved.workspaceProof && same(workspaceProof, handle)) {
-            measured = { actionId: action.record.id, outcome: { kind: "workspace", status: workspaceProof.mode === "create" ? "created" : "attached",
-              workspace: { mode: workspaceProof.mode, destinationPath: workspaceProof.destination.cwd, branch: workspaceProof.destination.branch!,
-                tipOid: workspaceProof.resultOid, treeOid: workspaceProof.treeOid,
-                ...(workspaceProof.knownParentCreation ? { parentCreated: true, knownParentCreation: workspaceProof.knownParentCreation } : {}) } } };
-            outcomes.set(handle, { actionId: action.record.id, outcome: measured.outcome as GitActionNativeOutcome });
-            await finishVerifiedNativeGitAction(action, handle, (h) => outcomes.get(h));
-          } else if (integrationProof?.admissionActionId === action.record.id && same(integrationProof.feature, candidate.source) && same(integrationProof.target, candidate.target)) {
-            if (!reservation || !readGitOperationReservationOwner(reservation)) refuse("held-integration-admission-required");
-            measured = { actionId: action.record.id, outcome: { status: "integrated", mergeOid: integrationProof.resultOid,
-              tree: integrationProof.resultTree, parents: [...integrationProof.parents], featureOid: integrationProof.featureOid,
-              targetOid: integrationProof.previousTargetOid, targetBranch: integrationProof.target.branch } };
-            await finishGitAction(action, measured.outcome);
-            reservation.assertOwned(); reservation.resolve();
-          } else if (cleanupProof?.actionId === action.record.id && (handle === saved.removal || handle === saved.cleanupProof)) {
-            const removal = cleanupProof.kind === "removed" ? cleanupProof : cleanupProof.removal;
-            const effects: NonNullable<GitActionOutcome["cleanup"]>["effects"] = [{ kind: "worktree-removed", sourcePath: removal.sourcePath,
-              sourceIdentity: removal.sourceIdentity, adminPath: removal.adminPath, featureOid: removal.featureOid, exit: 0, sourceAbsent: true, adminAbsent: true,
-              beforeInventoryDigest: digest(removal.before), afterInventoryDigest: digest(removal.after) }];
-            if (cleanupProof.kind === "completed") effects.push({ kind: "branch-deleted", branchRef: cleanupProof.deletedRef,
-              deletedOid: cleanupProof.deletedOid, transactionExit: 0, finalInventoryDigest: digest(cleanupProof.finalInventory) });
-            const outcome: GitActionNativeOutcome = { kind: "cleanup", status: cleanupProof.kind === "removed" ? "worktree-removed" : "cleaned-up",
-              cleanup: { ...cleanupBinding(saved.cleanupEvidence!), effects,
-                ...(cleanupProof.kind === "completed" ? { nativeHeadReflogMayHaveChanged: cleanupProof.nativeHeadReflogMayHaveChanged } : {}),
-                ...(saved.candidate.cleanup?.ignoredNames.length && saved.exactApproval ? { ignoredDataDeletionApproved: true } : {}) } };
-            outcomes.set(handle, { actionId: action.record.id, outcome });
-            if (cleanupProof.kind === "removed") await recordVerifiedCleanupRemoval(action, handle, (h) => outcomes.get(h));
-            else { measured = { actionId: action.record.id, outcome }; await finishVerifiedNativeGitAction(action, handle, (h) => outcomes.get(h)); }
-          } else if (saved.runs?.includes(handle as GitActionCheckExecution) && readGitCheckoutVerificationNativeExecution(handle) === handle) {
-            const runs = saved.runs.map((r) => structuredClone(r)), last = runs.at(-1)!;
-            const failed = last.exitStatus !== 0 || !last.receipt || !last.containmentComplete || last.timedOut || last.overflow;
-            const final = failed || runs.length === saved.checks!.length;
-            // Each row is genuinely terminal/passing. The journal STATE stays
-            // executing for an incomplete batch; no operation seal is issued.
-            const status = !last.containmentComplete ? "partial-state" : failed ? "failed" : "passed";
-            const outcome: GitActionOutcome = { kind: "checkout-verification", status, checkoutVerification: {
-              ...verificationBinding(candidate.history.checkoutVerification!), runs } };
-            measured = { actionId: action.record.id, outcome };
-            if (final) { outcomes.set(handle, { actionId: action.record.id, outcome: outcome as GitActionNativeOutcome });
-              await finishVerifiedNativeGitAction(action, handle, (h) => outcomes.get(h));
-            } else await action.update("executing", { outcome });
-          } else if (recoveryProofs.has(handle) && candidate.operation === "reconcile") {
-            measured = { actionId: action.record.id, outcome: { status: "reviewed" } }; await finishGitAction(action, measured.outcome);
-          } else refuse("actual-native-completion-required");
-        },
-        async sealCompletion(handle) {
-          return registry.seal(handle, async (envelope) => {
-            const durable = await readGitAction(action.record.id, { includeArtifact: true }, agentDir);
-            if (!measured || durable.unavailable || !durable.record || !durable.candidate || durable.record.sessionId !== owner.sessionId ||
-              durable.record.state !== "succeeded" || !same(durable.record.outcome, measured.outcome) || envelope.candidateRevision !== candidate.revision ||
-              !same(durable.candidate, candidate.history) || !inspectGitOperationAdmission(agentDir, candidate.source.commonDir).admitted) refuse("durable-completion-unconfirmed");
-            readOwner();
-            await assertGitOperationAdmission(candidate.operation === "cleanup" ? candidate.target! : candidate.source, agentDir);
-          });
-        },
-        readDurableCompletion: registry.readDurableCompletion,
-        async recordFailure(failure, execution) {
-          const p = failure?.kind === "partial" ? failure.preparation : undefined;
-          if (p) await finishGitAction(action, { kind: "preparation", status: "partial-state", preparation: {
-            oldSourceOid: p.oldSourceOid, newSourceOid: p.newSourceOid ?? p.observedSourceOid ?? p.oldSourceOid,
-            targetMainOid: p.targetOid, resultTreeOid: p.treeOid ?? (candidate.history as GitActionCandidateSnapshot).preparation!.resultTreeOid } }, true);
-          else await failGitAction(action, failure?.kind === "target-moved" && failure.noEffect === true ? false : execution.executionStarted);
-        },
-      };
+      return beginInvocationDiagnostics(candidate, sink);
     },
   };
   const controller = createGitSelectedOperationController({ owner, authorization: readers,
@@ -913,13 +870,10 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
       async assertReceipt(candidate, receipt) {
         await validateGitCheckoutVerificationReceipt(receipt.id, checkOptions(candidate.source, receipt.checkIndex, receipt.stage));
       },
-      invalidateReceipts: (source) => invalidateGitCheckoutVerificationReceiptsForCheckout(source.cwd),
       async assertReconciliation(handle, envelope, previousLaunch) {
         const facts = recoveryProofs.get(handle);
         if (!facts || facts.previousLaunch !== previousLaunch || !same(facts.before, envelope.before) || !same(facts.after, envelope.after)) refuse("independent-reconciliation-proof-required");
         if (previousLaunch) await assertConsumedCheck(previousLaunch, facts.after.source as GitProjectResources, facts.after.target as GitProjectResources);
-        await assertGitOperationAdmission(facts.after.source as GitProjectResources, agentDir);
-        await assertGitOperationAdmission(facts.after.target as GitProjectResources, agentDir);
         await checkAuthority(facts.after.source as GitProjectResources);
       } }, journalAdmission,
     isTrusted: async (r) => trusted(r),
@@ -934,7 +888,7 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
     async approveExact(input) {
       readOwner(); const c = input.candidate;
       const askExact = async (candidate: GitActionCandidate) => {
-        const approved = await context.ask(candidate) === true;
+        const approved = await context.ask(structuredClone(candidate)) === true;
         if (approved) { const saved = captures.get(c.revision); if (!saved) refuse("private-native-capture-required"); saved.exactApproval = true; }
         return approved;
       };
@@ -972,11 +926,19 @@ export function createGitSelectedOperationRuntime(context: GitSelectedOperationR
     },
   });
   return Object.freeze({
+    /** Trusted dispatch wraps discovery too: original capture is synchronous. */
+    withInvocation<T>(callback: () => Promise<T>): Promise<T> {
+      return invocationScope.run(originalInvocation(), callback);
+    },
     async run<K extends SelectedControllerOperation>(operation: K, request: SelectedControllerRequests[K]): Promise<SelectedOperationResult> {
       return refusalContext.run({}, async () => { try {
+        const original = invocationScope.getStore() ?? originalInvocation();
+        return await invocationScope.run(original, async () => {
         readOwner();
         const result = await (controller[operation] as (r: SelectedControllerRequests[K]) => Promise<SelectedOperationResult>)(request);
-        return result.code === "operation-refused" && refusalContext.getStore()?.code ? { ...result, code: refusalContext.getStore()!.code } : result;
+        return { ...result, ...(result.code === "operation-refused" && refusalContext.getStore()?.code ? { code: refusalContext.getStore()!.code } : {}),
+          ...(refusalContext.getStore()?.diagnostics ? { diagnosticsUnavailable: true as const, diagnostics: refusalContext.getStore()!.diagnostics } : {}) };
+        });
       } catch (cause) { return { operation, status: "blocked", code: cause instanceof RuntimeRefusal ? cause.code : "trusted-bootstrap-unavailable" }; } });
     },
     captureAuthorityGuard,
@@ -1015,29 +977,10 @@ function capturedCheckout(r: GitProjectResources) {
   if (!r.identities.marker) refuse("physical-git-marker-required");
   return { gitDir: r.gitDir, checkoutIdentity: r.identities.checkout, gitIdentity: r.identities.git, markerIdentity: r.identities.marker };
 }
-function selectedUsage(): Map<object, readonly string[]> {
-  const state = globalThis as unknown as Record<symbol, unknown>, key = Symbol.for("pi-web:selected-operations:checkout-usage");
-  return (state[key] ??= new Map<object, readonly string[]>()) as Map<object, readonly string[]>;
-}
-/** Authoritative host producers, not the UI list. Preserve even pre-reload RPC
- * starts and refuse unlocatable locks; native placement fences remain additional. */
-function readHostWorkspaceUsage(excludedOwnCapture?: object): import("./git-workspace-usage").WorkspaceUsageSnapshot {
-  const starts = [...(globalThis.__piStartingSessionCwds ?? new Map<string, number>())];
-  const count = starts.reduce((sum, [, n]) => sum + n, 0);
-  const located = starts.length <= 10_000 && starts.every(([, n]) => Number.isSafeInteger(n) && n > 0) && count >= (globalThis.__piStartLocks?.size ?? 0);
-  const checks = [...gitCheckRunningCheckouts()], own = [...selectedUsage()].filter(([token]) => token !== excludedOwnCapture).flatMap(([, paths]) => paths);
-  return { sessions: readRpcWorkspaceSessionUsage(), terminals: readTerminalWorkspaceUsage(),
-    checks: { known: checks.length <= 10_000, entries: checks.map((cwd) => ({ id: cwd, cwd, stopped: false })) },
-    inflight: { known: located && own.length <= 10_000, entries: [...own, ...starts.map(([cwd]) => cwd)].map((cwd) => ({ cwd })) } };
-}
 function requireLeaf<T = (...args: never[]) => unknown>(module: object, name: string, code: string): T {
   const implementation = Reflect.get(module, name);
   if (typeof implementation !== "function") refuse(code);
   return implementation as T;
-}
-function readNativeCleanupProof(handle: unknown): Readonly<GitCleanupRemovalProof | GitCleanupCompletedProof> | undefined {
-  const reader = Reflect.get(cleanupNative, "readGitCleanupNativeProof");
-  return typeof reader === "function" ? reader(handle) : undefined;
 }
 function verificationBinding(c: NonNullable<GitActionCandidateSnapshot["checkoutVerification"]>) {
   return { evidenceScope: c.evidenceScope, candidateTreeVerified: c.candidateTreeVerified, repositoryChecksWaived: c.repositoryChecksWaived,

@@ -2,7 +2,8 @@ import { readFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import lockfile from "proper-lockfile";
-import { writePrivateFileAtomicSync } from "./atomic-file";
+import { writeGitScopedAuthorityFile, type GitAuthorityScope } from "./git-scoped-authority";
+import { gitProjectRootForCaller } from "./git-project-resources";
 import { appendSessionGitWorkflow, validateGitWorkflowPolicy, type GitWorkflowPolicy } from "./git-workflow-policy";
 import { resolveProject } from "./worktree";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
@@ -48,6 +49,11 @@ export async function setProjectGitWorkflow(
 ): Promise<void> {
   const checked = policy === null ? null : validateGitWorkflowPolicy(policy);
   const { projectRoot } = await resolveProject(cwd);
+  let scopes: GitAuthorityScope[] = [{ kind: "global" }];
+  try {
+    const canonical = await gitProjectRootForCaller(cwd);
+    if (canonical === projectRoot) scopes = [{ kind: "project", projectRoot: canonical }];
+  } catch { /* Ambiguous legacy defaults are a genuine global mutation. */ }
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   // Lock a stable pathname, not the inode replaced by atomic rename. Read inside lock.
   const release = await lockfile.lock(path, {
@@ -59,7 +65,7 @@ export async function setProjectGitWorkflow(
     const file = readFile(path);
     if (checked === null) delete file.projects[projectRoot];
     else file.projects[projectRoot] = checked;
-    writePrivateFileAtomicSync(path, JSON.stringify(file, null, 2));
+    writeGitScopedAuthorityFile(dirname(dirname(path)), path, JSON.stringify(file, null, 2), "settings", scopes);
   } finally {
     await release();
   }

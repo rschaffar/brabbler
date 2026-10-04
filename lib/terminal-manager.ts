@@ -2,7 +2,6 @@ import { randomUUID } from "crypto";
 import { homedir } from "os";
 import type { IPty } from "node-pty";
 import { samePath } from "./paths";
-import { beginGitWorkspacePlacement, type KnownInventory, type TerminalUsage } from "./git-workspace-usage";
 
 export type TerminalEvent =
   | { type: "output"; data: string; offset: number; reset?: boolean }
@@ -78,10 +77,6 @@ export function createTerminal(cwd: string, cols: number, rows: number, id: stri
     if (!samePath(existing.cwd, cwd)) throw new Error("Terminal belongs to a different workspace");
     return id;
   }
-  // Reuse is not a placement. Preserve its workspace identity refusal before
-  // consulting cleanup usage; fence only an actually new native spawn.
-  const finishPlacement = beginGitWorkspacePlacement(cwd || homedir());
-  try {
   let spawn: typeof import("node-pty").spawn;
   try {
     // Load inside creation so native module failures reach the API's JSON error handler.
@@ -119,32 +114,29 @@ export function createTerminal(cwd: string, cols: number, rows: number, id: stri
     cleanupTimer: null,
   };
   registry().set(id, record);
-  // Includes creations whose response or initial SSE connection never arrives.
-  scheduleCleanup(id, record);
-
-  pty.onData((data) => {
-    record.backlog = (record.backlog + data).slice(-MAX_BACKLOG);
-    record.offset += data.length;
-    emit(record, { type: "output", data, offset: record.offset });
-  });
-  pty.onExit(({ exitCode }) => {
-    if (record.cleanupTimer) clearTimeout(record.cleanupTimer);
-    record.cleanupTimer = null;
-    record.exited = true;
-    record.exitCode = exitCode;
-    emit(record, { type: "exit", exitCode });
+  try {
+    // Includes creations whose response or initial SSE connection never arrives.
     scheduleCleanup(id, record);
-  });
-  return id;
-  } finally { finishPlacement(); }
-}
-
-/** Launch cwd/exited events and a registry that forgets closed shells cannot
- * prove current shell cwd, descendants, containment, or surviving children.
- * Fail closed even for an empty registry until a trusted backend is available.
- * Never inspect cmdline, environment or credentials to manufacture proof. */
-export function readTerminalWorkspaceUsage(): KnownInventory<TerminalUsage> {
-  return { known: false, entries: [] };
+    pty.onData((data) => {
+      record.backlog = (record.backlog + data).slice(-MAX_BACKLOG);
+      record.offset += data.length;
+      emit(record, { type: "output", data, offset: record.offset });
+    });
+    pty.onExit(({ exitCode }) => {
+      if (record.cleanupTimer) clearTimeout(record.cleanupTimer);
+      record.cleanupTimer = null;
+      record.exited = true;
+      record.exitCode = exitCode;
+      emit(record, { type: "exit", exitCode });
+      scheduleCleanup(id, record);
+    });
+    return id;
+  } catch (error) {
+    if (record.cleanupTimer) clearTimeout(record.cleanupTimer);
+    registry().delete(id);
+    try { pty.kill(); } catch { /* Preserve setup failure; only this owned PTY is reaped. */ }
+    throw error;
+  }
 }
 
 export function hasTerminal(id: string): boolean {

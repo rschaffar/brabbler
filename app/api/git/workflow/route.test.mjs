@@ -12,6 +12,7 @@ const agentDir = await mkdtemp(join(tmpdir(), "pi-web-workflow-route-agent-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true, moduleCache: false });
 const { GET, PUT } = await jiti.import("./route.ts");
+const { seedRetiredGitBookkeeping } = await import("../../../../lib/retired-git-bookkeeping-fixture.mjs");
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
 const { cacheSessionPath, invalidateSessionPathCache, invalidateSessionListCache } = await jiti.import("../../../../lib/session-reader.ts");
 const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
@@ -49,8 +50,9 @@ async function fixture(t) {
   return { dir, cwd, id, file, sm };
 }
 
-test("project default and saved snapshot are independent; null is an explicit opt-out", async (t) => {
+test("legacy defaults and saved snapshots remain independently writable despite retired bookkeeping; null is opt-out", async (t) => {
   const { cwd, id, file } = await fixture(t);
+  t.after(seedRetiredGitBookkeeping([cwd]));
   assert.equal((await get(cwd)).status, 200);
   assert.equal((await (await get(cwd, id)).json()).sessionSnapshotPresent, false);
   assert.equal((await put({ scope: "project", cwd, policy: first })).status, 200);

@@ -5,7 +5,7 @@ import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { gitExecEnv } from "./git-exec";
-import { preflightGitPreparation, GitPreparationError, type GitPreparationSnapshot } from "./git-preparation";
+import { preflightGitPreparation, sameGitPreparationDependencies, GitPreparationError, type GitPreparationSnapshot } from "./git-preparation";
 import { selectCanonicalGitResources, withGitProjectReview } from "./git-project-resources";
 import type { GitReviewRepository } from "./git-review";
 
@@ -173,7 +173,7 @@ export async function planGitPreparationCandidate(snapshot: GitPreparationSnapsh
       workspaceBranch: snapshot.source.branch }, target: { repositoryPath: snapshot.target.projectRoot,
       checkoutPath: snapshot.target.cwd, workspaceBranch: snapshot.target.branch } };
     const fresh = async () => preflightGitPreparation(request, agentDir);
-    const matches = (candidate: GitPreparationSnapshot) => JSON.stringify(candidate) === JSON.stringify(snapshot);
+    const matches = (candidate: GitPreparationSnapshot) => sameGitPreparationDependencies(candidate, snapshot);
     const before = await fresh();
     if (!matches(before)) block("ref-moved", "Preparation preflight is stale or not server-authenticated");
     const result = (commits: GitPreparationCandidate["comparison"]["commits"], tip: string): GitPreparationCandidate => ({
