@@ -236,12 +236,33 @@ try {
       for (const name of ["workspace-a", "workspace-b"]) {
         await page.getByRole("button", { name: `Terminate terminal ${name}`, exact: true }).click();
       }
-      await page.locator(".terminal-panel").waitFor({ state: "detached" });
+      // Both asynchronous DELETEs can still be settling. A strict single-element
+      // locator rejects two remaining panels instead of waiting for all to close.
+      await page.waitForFunction(() => document.querySelectorAll(".terminal-panel").length === 0);
       for (const terminalId of created) assert.equal((await fetch(`${base}/api/terminal/${terminalId}`)).status, 404);
       assert.deepEqual(errors, []);
       console.log(`PASS ${viewport.width}: real shell, files, sessions, refresh, reconnect, restart, exit, close during creation, workspace isolation`);
     } catch (error) {
       await page.screenshot({ path: join(artifacts, `failure-${viewport.width}.png`), fullPage: true });
+      const hitTest = await page.evaluate(() => {
+        const describe = (element) => {
+          const style = getComputedStyle(element);
+          return {
+            tag: element.tagName, id: element.id, class: element.getAttribute("class"),
+            label: element.getAttribute("aria-label"), rect: element.getBoundingClientRect().toJSON(),
+            style: Object.fromEntries(["display", "position", "zIndex", "pointerEvents", "overflow", "flexDirection", "flexWrap"].map((key) => [key, style[key]])),
+            html: element.outerHTML.slice(0, 1500),
+          };
+        };
+        return [...document.querySelectorAll('button[aria-controls="file-panel"]')].map((button) => {
+          const rect = button.getBoundingClientRect();
+          const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+          const ancestors = [];
+          for (let element = button.parentElement; element; element = element.parentElement) ancestors.push(describe(element));
+          return { button: describe(button), point, stack: document.elementsFromPoint(point.x, point.y).map(describe), ancestors };
+        });
+      });
+      writeFileSync(join(artifacts, `failure-${viewport.width}-hit-test.json`), JSON.stringify(hitTest, null, 2));
       console.error(await page.locator("body").innerText());
       throw error;
     } finally {

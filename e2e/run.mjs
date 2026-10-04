@@ -21,6 +21,7 @@ import { checkMessageTimestamps } from "./message-timestamps.mjs";
 import { checkGitWorkflow } from "./git-workflow.mjs";
 import { checkSettingsProposalCard } from "./git-settings-proposals.mjs";
 import { consumeExpectedTaskConflict } from "./git-task-binding.mjs";
+import { consumeExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
 import { seedGitActionHistory, interruptSeededGitAction, checkSavedGitActionHistory } from "./git-action-history.mjs";
@@ -302,14 +303,14 @@ try {
     let busyIntegrationReads = 0;
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (event) => {
-      if (event.type() !== "error" || consumeExpectedTaskConflict(page, event)) return;
+      if (event.type() !== "error" || consumeExpectedTaskConflict(page, event) || consumeExpectedBrowserConflict(page, event)) return;
       // The review panel polls while the fixture's ask_user holds this chat busy.
       // Consume only a corroborated GET 409 from that read-only integration endpoint.
       if (busyIntegrationReads > 0 && event.text() === "Failed to load resource: the server responded with a status of 409 (Conflict)"
-        && new URL(event.location().url).pathname === "/api/git/integration") {
+        && event.location().url === `${base}/api/git/integration?sessionId=${GIT}`) {
         busyIntegrationReads--; return;
       }
-      errors.push(event.text());
+      errors.push(`${event.text()} [${event.location().url.slice(0, 512)}]`);
     });
     page.on("response", (response) => {
       if (response.status() === 409 && new URL(response.url()).pathname === "/api/git/integration"
@@ -492,10 +493,10 @@ try {
     let busyIntegrationReads = 0;
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (event) => {
-      if (event.type() !== "error" || consumeExpectedTaskConflict(page, event)) return;
+      if (event.type() !== "error" || consumeExpectedTaskConflict(page, event) || consumeExpectedBrowserConflict(page, event)) return;
       // A read-only review poll can conflict with the fixture's pending question.
       if (busyIntegrationReads > 0 && event.text() === "Failed to load resource: the server responded with a status of 409 (Conflict)"
-        && new URL(event.location().url).pathname === "/api/git/integration") {
+        && event.location().url === `${base}/api/git/integration?sessionId=${GIT}`) {
         busyIntegrationReads--; return;
       }
       errors.push(event.text());

@@ -763,6 +763,10 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     // response without changing candidate, receipt or authorization expiry.
     const stagedConfirmResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/git/commit"
       && response.request().postDataJSON()?.operation === "confirm", { timeout: 120_000 });
+    // Confirm refreshes requirements asynchronously. Finish that real read
+    // before fixture cleanup changes the source or the saved check definitions.
+    const stagedRequirementsResponse = stagedConfirmResponse.then(() => page.waitForResponse((response) =>
+      response.url() === `${base}/api/git/verification?sessionId=${sessionId}` && response.request().method() === "GET"));
     await stagedPreview.getByRole("button", { name: "Confirm commit" }).click();
     const stagedConfirmed = await stagedConfirmResponse;
     assert.equal(stagedConfirmed.status(), 200, stagedConfirmed.status() === 200 ? "" : await stagedConfirmed.text());
@@ -793,6 +797,12 @@ export async function checkGitWorkflow(page, { base, api, artifacts, sessionId, 
     assert.match(git("diff", "--", "draft.txt"), /Unstaged worktree hunk/);
     assert.doesNotMatch(git("diff", "--", "draft.txt"), /Selected staged hunk/);
     await stagedPanel.getByText("Last commit created").waitFor();
+    const stagedRequirements = await stagedRequirementsResponse;
+    assert.equal(stagedRequirements.status(), 200, await stagedRequirements.text());
+    assert.deepEqual((await stagedRequirements.json()).receipts, [], "The old workspace receipts do not survive the commit");
+    // Return to settings before closing so the next fixture opens directly on
+    // workflow home, rather than briefly displaying the old commit detail.
+    await home();
     await closeWorkflow();
     const stagedCard = page.locator(`[data-git-action-id="${stagedCandidate.actionId}"]`);
     await stagedCard.getByRole("heading", { name: /Commit.*Succeeded/ }).waitFor();

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { withExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
 
 // These helpers use the real private E2E server and saved Project settings.
 // No successful receipts, staged trees, journal records or policy grants are mocked.
@@ -178,16 +179,32 @@ export async function rejectMovedIntegrationTarget(page, { panel, sessionId, adv
   advanceTarget(); const moved = targetHead();
   page.on("request", observe);
   try {
-    const confirmed = page.waitForResponse(http => new URL(http.url()).pathname === "/api/git/integration"
-      && http.request().method() === "POST" && http.request().postDataJSON()?.operation === "confirm");
-    await panel.getByRole("button", { name: /^Confirm exact plan/ }).click();
-    const refused = await confirmed;
-    assert.equal(refused.status(), 409, "moved target must not trigger rebaseline or automatic retry");
-    assert.equal(refused.request().postDataJSON().planId, original.plan.planId);
-    await panel.getByRole("alert").filter({ hasText: /stale|revoked|contended|inspect/i }).waitFor();
-    assert.equal(targetHead(), moved, "failed original attempt cannot rewrite the concurrent target");
-    assert.equal(await panel.getByRole("button", { name: /^Confirm exact plan/ }).count(), 0);
-    assert.deepEqual(calls.map(call => call.operation), ["confirm"], "no automatic plan, check or confirm after stale failure");
+    const url = new URL("/api/git/integration", page.url()).href;
+    await withExpectedBrowserConflict(page, {
+      scenario: "rejectMovedIntegrationTarget", url, method: "POST",
+      body: { sessionId, operation: "confirm", planId: original.plan.planId,
+        approvePlanId: original.plan.planId, actionId: original.actionId },
+    }, async () => {
+      const confirmed = page.waitForResponse(http => http.url() === url
+        && http.request().method() === "POST" && http.request().postDataJSON()?.operation === "confirm");
+      await panel.getByRole("button", { name: /^Confirm exact plan/ }).click();
+      const refused = await confirmed;
+      assert.equal(refused.status(), 409, "moved target must not trigger rebaseline or automatic retry");
+      assert.equal(refused.request().postDataJSON().planId, original.plan.planId);
+      const body = await refused.json();
+      assert.equal(body.actionId, original.actionId);
+      assert.match(body.error, /original candidate is stale, revoked or contended\. No automatic retry/);
+      assert.deepEqual(body.nativeOutcome, {
+        status: "no-checkout-effect", checkoutAttempted: false, refPrepared: false,
+        refCommitSent: false, refAcknowledged: false, indexInstalled: false,
+        indexSynced: false, directorySyncFailed: false, childReaped: true,
+      });
+      await panel.getByRole("alert").filter({ hasText: /stale|revoked|contended|inspect/i }).waitFor();
+      assert.equal(targetHead(), moved, "failed original attempt cannot rewrite the concurrent target");
+      assert.equal(await panel.getByRole("button", { name: /^Confirm exact plan/ }).count(), 0);
+      assert.deepEqual(calls.map(call => call.operation), ["confirm"], "no automatic plan, check or confirm after stale failure");
+      return refused;
+    });
   } finally { page.off("request", observe); restoreTarget(); }
   // Start another explicit invocation, never reuse the original approval.
   await panel.getByRole("button", { name: "Refresh review", exact: true }).click();

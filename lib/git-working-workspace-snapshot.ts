@@ -42,7 +42,8 @@ export interface GitWorkingWorkspaceContentManifest {
 }
 const identity = (s: BigIntStats) => `${s.dev}:${s.ino}:${s.birthtimeNs}`;
 const stamp = (s: BigIntStats) => `${identity(s)}:${s.mode}:${s.nlink}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
-const directoryStamp = (s: BigIntStats) => `${identity(s)}:${s.mode}:${s.mtimeNs}:${s.ctimeNs}`;
+const directoryIdentity = (s: BigIntStats) => `${identity(s)}:${s.mode}`;
+const directoryStamp = (s: BigIntStats) => `${directoryIdentity(s)}:${s.mtimeNs}:${s.ctimeNs}`;
 const sha = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
 const inside = (root: string, file: string) => file === root || file.startsWith(`${root}/`);
 function absent(file: string): BigIntStats | undefined {
@@ -101,9 +102,10 @@ export function captureGitWorkingWorkspaceContentManifest(
   const checkPins = () => {
     for (const p of pins.values()) {
       const named = absent(p.named), fdState = fs.fstatSync(p.fd, { bigint: true });
-      // /tmp and other distant ancestors are identity-bound, not a claim that
-      // unrelated siblings anywhere on the filesystem remain unchanged.
-      const fingerprint = p.watchChanges ? directoryStamp : identity;
+      // Only inventoried checkout directories bind their contents' timestamps.
+      // Ancestors and administration-only roots bind original names, instances
+      // and modes, not unrelated sibling entries or another checkout's locks.
+      const fingerprint = p.watchChanges ? directoryStamp : directoryIdentity;
       if (!named || !named.isDirectory() || fingerprint(named) !== fingerprint(p.before) ||
         fingerprint(fdState) !== fingerprint(p.before)) refuse("changed");
     }
@@ -119,16 +121,21 @@ export function captureGitWorkingWorkspaceContentManifest(
     const fd = fs.openSync(named, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     const p = { fd, named, before, proc: `/proc/${process.pid}/fd/${fd}`, watchChanges };
     pins.set(key, p);
-    if (directoryStamp(fs.fstatSync(fd, { bigint: true })) !== directoryStamp(before)) refuse("changed");
+    const opened = fs.fstatSync(fd, { bigint: true });
+    // Every handoff retains the original directory instance and mode. Only
+    // inventoried directories watch timestamps; later promotion still compares
+    // against this original `before` stamp, never a recaptured baseline.
+    if (identity(opened) !== identity(before) || opened.mode !== before.mode ||
+      watchChanges && directoryStamp(opened) !== directoryStamp(before)) refuse("changed");
     return p;
   };
-  const pinAbsolute = (absolute: string, expected: { device: string; inode: string; birthtime: string }) => {
+  const pinAbsolute = (absolute: string, expected: { device: string; inode: string; birthtime: string }, watchChanges = false) => {
     if (!path.isAbsolute(absolute) || path.resolve(absolute) !== absolute || absolute.includes("\0")) refuse("unsupported");
-    let key = "/", parent = pinChild(key, key), previous = parent;
+    let key = "/", parent = pinChild(key, key);
     for (const part of absolute.split("/").filter(Boolean)) {
-      key = path.join(key, part); previous = parent; parent = pinChild(key, `${parent.proc}/${part}`);
+      key = path.join(key, part); parent = pinChild(key, `${parent.proc}/${part}`);
     }
-    parent.watchChanges = previous.watchChanges = true;
+    parent.watchChanges ||= watchChanges;
     if (identity(parent.before) !== `${expected.device}:${expected.inode}:${expected.birthtime}`) refuse("changed");
     return parent;
   };
@@ -193,7 +200,7 @@ export function captureGitWorkingWorkspaceContentManifest(
     }
   };
   try {
-    const checkout = pinAbsolute(selection.cwd, selection.identities.checkout);
+    const checkout = pinAbsolute(selection.cwd, selection.identities.checkout, true);
     const gitDir = pinAbsolute(selection.gitDir, selection.identities.git);
     const common = pinAbsolute(selection.commonDir, selection.identities.common);
     const adminRoots = [selection.gitDir, selection.commonDir];
