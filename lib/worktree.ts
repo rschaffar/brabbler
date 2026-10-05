@@ -44,9 +44,43 @@ export type AddWorktreeOptions = {
   branch: string;
   baseBranch: string;
   expectedBaseOid: string;
-  /** Optional caller-owned live admission recheck after asynchronous Git preflight, immediately before creation. */
+  /** Optional live asynchronous policy recheck. Not a final mutation fence. */
   beforeCreate?: () => Promise<void>;
+  /** Trusted original caller fence, retained across every await. Never JSON.
+   * Called without yielding before mkdir and inside Git's dispatch boundary. */
+  assertCurrentSync?: () => void;
 } & ({ mode: "create" } | { mode: "attach"; expectedTipOid: string });
+
+export interface RemoveWorktreeOptions {
+  beforeRemove?: () => Promise<void>;
+  /** Same original synchronous fence contract as addWorktree. */
+  assertCurrentSync?: () => void;
+}
+export interface WorktreeMutationEffects {
+  operation: "add" | "remove";
+  parentPath?: string;
+  parentCreationAttempted: boolean;
+  /** true: mkdir acknowledged; null: attempt threw (unknown); false: not attempted. */
+  parentCreated: boolean | null;
+  /** Dispatch attempted, NOT proof that Git changed or did not change anything. */
+  gitDispatchAttempted: boolean;
+}
+/** An error after an effect boundary must not imply an unchanged checkout.
+ * No rollback/retry is attempted. Ordinary error messages remain compatible. */
+export class WorktreeMutationError extends Error {
+  readonly effects: Readonly<WorktreeMutationEffects>;
+  constructor(message: string, effects: WorktreeMutationEffects) {
+    super(message);
+    this.effects = Object.freeze({ ...effects });
+  }
+}
+function assertSynchronousGuard(guard: (() => void) | undefined): void {
+  const result: unknown = guard?.();
+  if (result !== undefined) {
+    void Promise.resolve(result).catch(() => {});
+    throw new Error("Worktree mutation requires a synchronous void postguard");
+  }
+}
 
 declare global {
   var __piProjectCache: Map<string, { info: ProjectInfo; expiresAt: number }> | undefined;
@@ -67,14 +101,22 @@ export function invalidateProjectCache(): void {
   globalThis.__piProjectRefresh?.clear();
 }
 
-async function git(cwd: string, args: string[], timeoutMs = 10_000): Promise<string> {
-  const { stdout } = await execFileAsync("git", ["-C", cwd, ...args], {
+async function git(cwd: string, args: string[], timeoutMs = 10_000,
+  mutation?: { assertCurrentSync: () => void; dispatchAttempted: () => void }): Promise<string> {
+  const argv = ["--no-optional-locks", "-C", cwd, ...args];
+  const options = {
     timeout: timeoutMs,
     maxBuffer: 1024 * 1024,
-    // Pin the message locale so error-text matching (e.g. the dirty-worktree
-    // detection in the DELETE route) works regardless of system language.
+    // Preflight status must not refresh/write an index. Required mutation locks
+    // still work; no optional-lock disabling is used as mutation authorization.
+    // Pin the locale for the DELETE route's dirty-worktree diagnostic.
     env: gitExecEnv(),
-  });
+  };
+  // Environment/options construction can call instrumented getters. Guard AFTER
+  // it, with no await between this original assertion and actual child dispatch.
+  mutation?.assertCurrentSync();
+  mutation?.dispatchAttempted();
+  const { stdout } = await execFileAsync("git", argv, options);
   return stdout.trim();
 }
 
@@ -296,6 +338,17 @@ function pathEntryExists(path: string): boolean {
   }
 }
 
+function pinPathInstance(file: string): () => void {
+  const observe = () => {
+    const s = lstatSync(file, { bigint: true });
+    return JSON.stringify({ real: realpathSync(file), dev: String(s.dev), ino: String(s.ino), birthtime: String(s.birthtimeNs),
+      directory: s.isDirectory(), file: s.isFile(), symlink: s.isSymbolicLink(),
+      ...(s.isFile() || s.isSymbolicLink() ? { size: String(s.size), changed: String(s.ctimeNs) } : {}) });
+  };
+  const original = observe();
+  return () => { if (observe() !== original) throw new Error(`Worktree physical path changed: ${file}`); };
+}
+
 function sanitizeBranchForDir(branch: string): string {
   return branch.replace(/[\/\\:*?"<>|\s]+/g, "-").replace(/^-+|-+$/g, "");
 }
@@ -309,8 +362,13 @@ export function proposedWorktreePath(repoRoot: string, branch: string): string {
 // explicitly at runtime instead of silently creating from an implicit base.
 export async function addWorktree(cwd: string, options: AddWorktreeOptions | string): Promise<{ path: string; branch: string }> {
   if (!options || typeof options !== "object") throw new Error("Explicit local base branch and expected HEAD are required");
-  const { branch, baseBranch, expectedBaseOid, mode } = options;
+  // Retain the actual callbacks/inputs before any await; do not re-read a mutable
+  // options object at a later effect boundary.
+  options = { ...options };
+  const { branch, baseBranch, expectedBaseOid, mode, beforeCreate, assertCurrentSync } = options;
+  const assertSource = pinPathInstance(cwd);
   const repoRoot = await getRepoRoot(cwd);
+  const assertRepo = pinPathInstance(repoRoot);
   const checkBranch = async (name: unknown, label: string): Promise<string> => {
     if (typeof name !== "string" || !name || name !== name.trim() || name.startsWith("-")) {
       throw new Error(`${label} is required and must be a valid branch name`);
@@ -370,25 +428,47 @@ export async function addWorktree(cwd: string, options: AddWorktreeOptions | str
   if (await git(repoRoot, ["rev-parse", "--verify", `refs/heads/${base}^{commit}`]) !== expectedBaseOid.toLowerCase()) {
     throw new Error(`Stale local base branch: ${base} moved`);
   }
-  await options.beforeCreate?.();
-  if (pathEntryExists(worktreePath)) throw new Error(`Directory already exists: ${worktreePath}`);
-  if (pathEntryExists(baseDir)) {
-    const parent = lstatSync(baseDir);
-    if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error(`Invalid worktree directory: ${baseDir}`);
-  } else mkdirSync(baseDir);
+  const assertExistingParent = pathEntryExists(baseDir) ? pinPathInstance(baseDir) : undefined;
+  await beforeCreate?.();
+  // Complete attach's late tip read BEFORE the first filesystem effect. A
+  // revoked original during this await must not even leave a parent directory.
+  if (mode === "attach" && await git(repoRoot, ["rev-parse", "--verify", `refs/heads/${target}^{commit}`]) !== options.expectedTipOid.toLowerCase()) {
+    throw new Error(`Stale branch tip: ${target} moved`);
+  }
+  let assertParent = assertExistingParent;
+  const assertMutation = () => {
+    // The owner callback may run live getters. Check captured physical paths
+    // AFTER it, not only before it; never let that callback replace our target.
+    assertSynchronousGuard(assertCurrentSync);
+    assertSource(); assertRepo();
+    if (pathEntryExists(worktreePath)) throw new Error(`Directory already exists: ${worktreePath}`);
+    if (assertParent) assertParent();
+    else if (pathEntryExists(baseDir)) throw new Error(`Worktree parent changed: ${baseDir}`);
+    if (pathEntryExists(baseDir)) {
+      const parent = lstatSync(baseDir);
+      if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error(`Invalid worktree directory: ${baseDir}`);
+    }
+  };
+  const effects: WorktreeMutationEffects = { operation: "add", parentPath: baseDir,
+    parentCreationAttempted: false, parentCreated: false, gitDispatchAttempted: false };
   try {
+    assertMutation();
+    if (!assertParent) {
+      effects.parentCreationAttempted = true;
+      effects.parentCreated = null;
+      mkdirSync(baseDir); // No yield after the original guard above.
+      effects.parentCreated = true;
+      assertParent = pinPathInstance(baseDir); // Own known effect, not a new policy baseline.
+    }
     // Large repos (30k+ files) can take minutes to checkout.
     const WORKTREE_TIMEOUT = 5 * 60_000;
-    if (mode === "attach") {
-      if (await git(repoRoot, ["rev-parse", "--verify", `refs/heads/${target}^{commit}`]) !== options.expectedTipOid.toLowerCase()) {
-        throw new Error(`Stale branch tip: ${target} moved`);
-      }
-      await git(repoRoot, ["worktree", "add", "--", worktreePath, target], WORKTREE_TIMEOUT);
-    } else {
-      await git(repoRoot, ["worktree", "add", "-b", target, "--", worktreePath, expectedBaseOid], WORKTREE_TIMEOUT);
-    }
+    const args = mode === "attach" ? ["worktree", "add", "--", worktreePath, target]
+      : ["worktree", "add", "-b", target, "--", worktreePath, expectedBaseOid];
+    await git(repoRoot, args, WORKTREE_TIMEOUT, { assertCurrentSync: assertMutation,
+      dispatchAttempted: () => { effects.gitDispatchAttempted = true; } });
   } catch (error) {
-    throw new Error(extractGitError(error));
+    if (effects.parentCreationAttempted || effects.gitDispatchAttempted) throw new WorktreeMutationError(extractGitError(error), effects);
+    throw error;
   }
 
   allowFileRoot(worktreePath);
@@ -396,17 +476,27 @@ export async function addWorktree(cwd: string, options: AddWorktreeOptions | str
   return { path: worktreePath, branch: target };
 }
 
-export async function removeWorktree(cwd: string, worktreePath: string, force = false): Promise<void> {
+export async function removeWorktree(cwd: string, worktreePath: string, force = false, options: RemoveWorktreeOptions = {}): Promise<void> {
+  const { beforeRemove, assertCurrentSync } = options;
+  const assertSource = pinPathInstance(cwd), assertTarget = pinPathInstance(worktreePath);
+  const assertMarker = pinPathInstance(join(worktreePath, ".git"));
   const worktrees = await listWorktrees(cwd);
   const target = findWorktreeByPath(worktrees, worktreePath);
   if (!target) throw new Error(`Not a worktree of this repository: ${worktreePath}`);
   if (target.isMain) throw new Error("Cannot remove the main worktree");
 
+  await beforeRemove?.();
+  const effects: WorktreeMutationEffects = { operation: "remove", parentCreationAttempted: false, parentCreated: false, gitDispatchAttempted: false };
   try {
-    await git(cwd, ["worktree", "remove", ...(force ? ["--force"] : []), target.path]);
+    await git(cwd, ["worktree", "remove", ...(force ? ["--force"] : []), target.path], 10_000, {
+      assertCurrentSync: () => { assertSynchronousGuard(assertCurrentSync); assertSource(); assertTarget(); assertMarker(); },
+      dispatchAttempted: () => { effects.gitDispatchAttempted = true; },
+    });
   } catch (error) {
-    throw new Error(extractGitError(error));
+    if (effects.gitDispatchAttempted) throw new WorktreeMutationError(extractGitError(error), effects);
+    throw error;
   }
+  // Do not reinterpret revocation AFTER a successful effect as a failed delete.
   invalidateProjectCache();
 }
 

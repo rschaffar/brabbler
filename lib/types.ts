@@ -1,6 +1,5 @@
 // Types mirrored from pi-mono coding-agent session-manager
 import type { AskUserAnswer, AskUserQuestion } from "./ask-user";
-import type { GitActionCandidateSnapshot, GitActionPreparationSnapshot, GitActionWorkspaceSnapshot } from "./git-action-types";
 
 export interface SessionHeader {
   type: "session";
@@ -133,29 +132,6 @@ export interface SystemMessage {
 /** Any message a `message` entry can store, including transcript system messages. */
 export type SessionMessage = AgentMessage | SystemMessage;
 
-/** Transient server-projected exact Ask data. No native handles, receipts,
- * tokens or patch bytes. actionId is a read-only anchor, never approval authority. */
-export type GitNativeActionCandidate = Required<Pick<GitActionCandidateSnapshot,
-  "repositoryRoot" | "projectRoot" | "sourceCheckoutRoot" | "resourceAttribution">> & { actionId: string } & (
-  | { kind: "workspace"; workspace: GitActionWorkspaceSnapshot }
-  | { kind: "preparation"; featureBranch: string; targetBranch: string; targetCheckoutRoot: string;
-      preparation: GitActionPreparationSnapshot & { commitMapping: NonNullable<GitActionPreparationSnapshot["commitMapping"]> } }
-  | { kind: "checkout-verification"; featureBranch: string;
-      checkoutVerification: NonNullable<GitActionCandidateSnapshot["checkoutVerification"]> }
-  | { kind: "cleanup"; featureBranch: string; targetBranch: string; targetCheckoutRoot: string;
-      cleanup: NonNullable<GitActionCandidateSnapshot["cleanup"]> & { ignored: NonNullable<NonNullable<GitActionCandidateSnapshot["cleanup"]>["ignored"]> } }
-);
-
-export type GitActionCandidate = (
-  | { kind: "preferences"; featureBranch: string; targets: string[]; checks: import("./git-workflow-policy").GitWorkflowCheck[]; current?: import("./agent-git-preferences").AgentGitPreferences }
-  | { kind: "commit"; preview: import("./git-commit").GitCommitPreview; message: string; diff: import("./git-review").GitReviewDiff;
-      workingWorkspaceVerification?: GitActionCandidateSnapshot["workingWorkspaceVerification"] }
-  | { kind: "review"; featureCwd: string; review: import("./git-review").GitReview; selection: import("./git-review").GitReviewSelection; diff: import("./git-review").GitReviewDiff }
-  | { kind: "checks"; featureCwd: string; targetCwd: string; targetBranch: string; featureBranch: string; checks: import("./git-workflow-policy").GitWorkflowCheck[] }
-  | { kind: "integration"; featureCwd: string; targetCwd: string; plan: import("./git-integration").IntegrationPlan | import("./git-integration").FastForwardIntegrationPlan; receipts: import("./git-verification").VerificationReceipt[] }
-  | GitNativeActionCandidate
-) & { /** Read-only history identity, not an approval capability. */ actionId?: string };
-
 export type ExtensionUiRequest =
   | {
       type: "extension_ui_request";
@@ -194,7 +170,6 @@ export type ExtensionUiRequest =
       expiresAt?: number;
     }
   | ({ type: "extension_ui_request"; id: string; method: "ask_user"; timeout?: number; expiresAt?: number } & AskUserQuestion)
-  | { type: "extension_ui_request"; id: string; method: "git_action"; candidate: GitActionCandidate; timeout?: number; expiresAt?: number }
   | {
       type: "extension_ui_request";
       id: string;
@@ -239,7 +214,7 @@ export type ExtensionUiRequest =
 
 export type BlockingExtensionUiRequest = Extract<
   ExtensionUiRequest,
-  { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "git_action" | "custom" }
+  { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "custom" }
 >;
 
 /** Lightweight, read-only attention metadata from Pi Web's live wrappers. */
@@ -258,8 +233,6 @@ export interface SessionCompletion {
 export type ExtensionUiResponse =
   | { type: "extension_ui_response"; id: string; value: string }
   | { type: "extension_ui_response"; id: string; confirmed: boolean }
-  | { type: "extension_ui_response"; id: string; approvePlanId: string }
-  | { type: "extension_ui_response"; id: string; preferences: import("./agent-git-preferences").AgentGitPreferenceChoice }
   | { type: "extension_ui_response"; id: string; cancelled: true }
   | { type: "extension_ui_response"; id: string; answer: AskUserAnswer };
 

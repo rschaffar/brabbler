@@ -1,6 +1,10 @@
 # 0010 — An integrated, permission-aware Git workflow
 
+> Historical decision: superseded by [ADR 0014](0014-remove-managed-git-workflow.md). Managed Workflow is removed; this document does not define current runtime behavior.
+
 ## Status
+
+**Further supersession, 2026-10-04:** [ADR 0013](0013-live-git-settings.md) retires captured-task settings/status/Apply/adoption, early preference writers and automatic workspace-triggered chat transitions. New invocations use live scoped settings and explicit resources; settings-proposal Apply/Dismiss and manual Move/Fork remain. [ADR 0012](0012-optimistic-git-invocations.md) supersedes application admission/quarantine and history as authority. Preserve the body below as historical rationale, not current setup instructions. [The guide](../git-workflow.md) describes Phase 7 source under acceptance, not installed/release validation.
 
 **Partially superseded on 2026-09-29 by [ADR 0011 — Project policies and agent-driven Git operations](0011-policy-driven-git-tools.md).** Read that record for the current intended experience. The user rejected mandatory session/task-workspace binding and relocation in favor of reusable project policies and explicitly scoped operations from any chat, including multi-project work. The agent—not a host start/finish coordinator—handles repeated preparation, semantic assessment and verification against a moving integration target.
 

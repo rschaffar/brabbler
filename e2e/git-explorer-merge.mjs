@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 
-/** The workflow fixture has just merged into target; inspect that merge as history, not as an action. */
+/** Create an explicit disposable merge fixture, then inspect its history. */
 export async function checkIntegratedGitGraph(page, targetWorktree) {
+  execFileSync("git", ["-C", targetWorktree, "-c", "core.hooksPath=/dev/null", "merge", "--no-gpg-sign", "--no-ff", "feature", "-m", "E2E merge fixture"], { encoding: "utf8" });
   const oid = execFileSync("git", ["-C", targetWorktree, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
   if (await showSidebar.isVisible()) await showSidebar.click();

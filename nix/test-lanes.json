@@ -1,0 +1,952 @@
+{
+  "version": 1,
+  "policy": "Explicit reviewed parallel allowlist; new/unreviewed files warn and run exclusively, never disappear. F and N share a resource-limited pool (default request eight, configurable 1\u201332); E drains that pool. No directory/name inference. Original deadlines, assertions and host opt-in skips remain unchanged.",
+  "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. The requested eight-worker default still requires native execution acceptance with unchanged deadlines. Re-review when resource/fixture behavior changes.",
+  "files": [
+    {
+      "path": "components/file-tab-state.test.mjs",
+      "lane": "F",
+      "reason": "Read test and file-tab-state.ts: immutable in-memory tab transformations; type-only imports, no browser/IO."
+    },
+    {
+      "path": "lib/node-cli.test.mjs",
+      "lane": "F",
+      "reason": "Read test and node-cli.ts: injected fileExists and argv construction only; does not launch npm/npx or use network."
+    },
+    {
+      "path": "lib/quoted-selection.test.mjs",
+      "lane": "F",
+      "reason": "Read test and quoted-selection.ts: Jiti-loaded pure string transformation, no imports/effects."
+    },
+    {
+      "path": "lib/session-timing.test.mjs",
+      "lane": "F",
+      "reason": "Read test and session-timing.ts: synthetic timestamps/in-memory entries, no real waits or SDK state."
+    },
+    {
+      "path": "lib/git-exec.test.mjs",
+      "lane": "F",
+      "reason": "Read test and git-exec.ts: environment-object sanitation only, no actual Git invocation."
+    },
+    {
+      "path": "lib/activity-review-server.test.mjs",
+      "lane": "N",
+      "reason": "Owned private persistent-state contention; per-file private agent/home prevents cross-worker reuse."
+    },
+    {
+      "path": "lib/http-dispatcher.test.mjs",
+      "lane": "N",
+      "reason": "Private ephemeral loopback port 0 and intentional invalid-host failures; no shared server/outbound credentials. Sandbox loopback remains a capability risk."
+    },
+    {
+      "path": "lib/terminal-manager.test.mjs",
+      "lane": "E",
+      "reason": "Original whole file remains INCLUDED: real node-pty/shell creation as well as fakes. No new skip; PTY/shell sandbox failures must fail. Separate e2e terminal SCRIPT is opt-in."
+    },
+    {
+      "path": "lib/model-catalog-refresh.integration.test.mjs",
+      "lane": "E",
+      "reason": "Incomplete offline audit: stubs pi.dev but deletes PI_OFFLINE and delegates unmatched fetch; included conservatively, no credentials supplied, Nix sandbox enforces external-network boundary."
+    },
+    {
+      "path": "lib/plugin-updates.test.mjs",
+      "lane": "E",
+      "reason": "Known offline-contract failures must remain visible; included exclusive, no network enablement or skip workaround."
+    },
+    {
+      "path": "lib/test-runner.test.mjs",
+      "lane": "E",
+      "reason": "Runner-only mechanics deliberately launch tiny two-worker subprocesses, exercise SIGINT/TERM and mutate sentinel env/umask; exclusive avoids nested pool oversubscription. No SDK/native proof."
+    },
+    {
+      "path": "app/api/agent/events-route.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "app/api/files/stream-route.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "app/api/files/watch-route.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/AgentSessionPanel.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/AgentsConfig.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/AppShell.auto-name.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/AppShell.file-viewer-state.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/AppShell.mobile-toolbar.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/AppShell.tab-session.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/ArchivedSessionNotice.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/ChatInput.mobile-thinking-menu.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/ChatInput.streaming-thinking.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/ChatWindow.extension-request.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/ChatWindow.notices.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/ChatWindow.process-details.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/ChatWindow.quoted-branch.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/ChatWindow.scroll-to-latest.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/ImagePreview.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/MobilePwaLayout.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/SessionSidebar.file-search.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/SessionSidebar.project-identity.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/SessionSidebar.worktree.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/SettingsPanel.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/SettingsUi.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "components/ToolDefinitionsPanel.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "hooks/model-scope-startup.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "hooks/model-switching.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "hooks/useAgentSession.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "hooks/useResizablePanel.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+    },
+    {
+      "path": "app/api/agent/new/route.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "app/api/sessions/context-route.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "app/api/sessions/detail-route.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/ActivityOverview.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/AnsiText.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/AppShell.terminal.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/AppShell.workspace-memory.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/BranchNavigator.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/ChatAppearance.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/ChatInput.dormancy.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/ChatInput.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/ChatMinimap.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/CommittedPatchDiff.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/EnabledModelsSection.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/ExtensionStatusBar.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/ExtensionWidgets.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/FileViewer.state.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/FileViewer.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/GitExplorer.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/MarkdownBody.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/MermaidBlock.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/MessageView.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/ModelsConfig.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/SessionSidebar.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/SkillsConfig.dormancy.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/TerminalPanel.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/TurnWrittenFiles.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "components/session-catalog-helpers.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "hooks/model-loading.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "hooks/useViewportHeight.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "public/sw.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+    },
+    {
+      "path": "app/api/activity/review/route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "app/api/cwd/validate/route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "app/api/git/explorer/route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "app/api/models-config/route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "app/api/plugins/route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "app/api/sessions/[id]/export/route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "app/api/sessions/move-route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "app/api/sessions/title-language/route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "app/api/sessions/title-model/route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "app/api/starred-sessions/route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "app/api/subagents/profiles/route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "app/api/subagents/runtime-route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "app/api/subagents/settings/route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "app/api/worktrees/route.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
+    },
+    {
+      "path": "lib/activity.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/activity-review.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/ansi.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/app-update.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/apply-patch.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/chat-lazy-load.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/chat-only.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/chat-scroll-position.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/compaction-summary.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/file-explorer-state.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/file-fuzzy.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/file-links.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/file-paths.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/file-types.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/file-viewer-state.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/frontmatter.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/image-attachments.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/initial-navigation.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/login-destination.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/message-display.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/model-catalog.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/normalize.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/oauth-url.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/panel-layout.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/project-groups.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/project-identity.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/prompt-recovery.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/provider-usage-limits.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/session-family.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/session-file-references.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/session-path.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/session-tool-selection.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/session-tree.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/settings-navigation.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/slash-display.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/starred-sessions.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/subagent-prompt.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/tab-session.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/terminal-input.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/tool-call-expansion.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/tool-execution-progress.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/tool-presets.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/turn-written-files.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/workspace-memory.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed in-memory strings/state/display projections and implementation helpers; no native work or timed provider execution."
+    },
+    {
+      "path": "lib/agent-client.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/agent-event-wire.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/ask-user.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/auth-throttle.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/bounded-form-data.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/browser-notifications.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/bulk-session-actions.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/clipboard.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/custom-ui-terminal.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/extension-widgets.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/json-response.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/models-cache.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/session-row-context-menu.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/session-view-cache.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/thinking-expansion-preference.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/tool-preset-preference.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/web-push.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/web-auth-proxy.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+    },
+    {
+      "path": "lib/atomic-file.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed small private filesystem/settings fixtures and helper boundaries; mutations and fs mocks remain file-process-local; no subprocess work."
+    },
+    {
+      "path": "lib/bash-output.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed small private filesystem/settings fixtures and helper boundaries; mutations and fs mocks remain file-process-local; no subprocess work."
+    },
+    {
+      "path": "lib/file-dirent.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed small private filesystem/settings fixtures and helper boundaries; mutations and fs mocks remain file-process-local; no subprocess work."
+    },
+    {
+      "path": "lib/file-edit.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed small private filesystem/settings fixtures and helper boundaries; mutations and fs mocks remain file-process-local; no subprocess work."
+    },
+    {
+      "path": "lib/file-upload.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed small private filesystem/settings fixtures and helper boundaries; mutations and fs mocks remain file-process-local; no subprocess work."
+    },
+    {
+      "path": "lib/paths.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed small private filesystem/settings fixtures and helper boundaries; mutations and fs mocks remain file-process-local; no subprocess work."
+    },
+    {
+      "path": "lib/powershell-settings.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed small private filesystem/settings fixtures and helper boundaries; mutations and fs mocks remain file-process-local; no subprocess work."
+    },
+    {
+      "path": "lib/skill-lock.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed small private filesystem/settings fixtures and helper boundaries; mutations and fs mocks remain file-process-local; no subprocess work."
+    },
+    {
+      "path": "lib/subagent-input.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed small private filesystem/settings fixtures and helper boundaries; mutations and fs mocks remain file-process-local; no subprocess work."
+    },
+    {
+      "path": "lib/subagent-settings.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed small private filesystem/settings fixtures and helper boundaries; mutations and fs mocks remain file-process-local; no subprocess work."
+    },
+    {
+      "path": "lib/text-preview.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed small private filesystem/settings fixtures and helper boundaries; mutations and fs mocks remain file-process-local; no subprocess work."
+    },
+    {
+      "path": "lib/model-scope.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed SDK-backed conversion/local parsing or fake-agent title stream; private files where used, no real model or 5-second check flow."
+    },
+    {
+      "path": "lib/session-liveness.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed SDK-backed conversion/local parsing or fake-agent title stream; private files where used, no real model or 5-second check flow."
+    },
+    {
+      "path": "lib/session-reader-latest-entry.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed SDK-backed conversion/local parsing or fake-agent title stream; private files where used, no real model or 5-second check flow."
+    },
+    {
+      "path": "lib/session-reader.pagination.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed SDK-backed conversion/local parsing or fake-agent title stream; private files where used, no real model or 5-second check flow."
+    },
+    {
+      "path": "lib/session-stats.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed SDK-backed conversion/local parsing or fake-agent title stream; private files where used, no real model or 5-second check flow."
+    },
+    {
+      "path": "lib/session-title.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed SDK-backed conversion/local parsing or fake-agent title stream; private files where used, no real model or 5-second check flow."
+    },
+    {
+      "path": "lib/next-config.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed configuration/argument/security helpers on supplied data; no server startup, network or CLI execution."
+    },
+    {
+      "path": "lib/next-config-esm.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed configuration/argument/security helpers on supplied data; no server startup, network or CLI execution."
+    },
+    {
+      "path": "lib/node-version.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed configuration/argument/security helpers on supplied data; no server startup, network or CLI execution."
+    },
+    {
+      "path": "lib/pi-web-node-args.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed configuration/argument/security helpers on supplied data; no server startup, network or CLI execution."
+    },
+    {
+      "path": "lib/request-security.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed configuration/argument/security helpers on supplied data; no server startup, network or CLI execution."
+    },
+    {
+      "path": "lib/web-auth.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed configuration/argument/security helpers on supplied data; no server startup, network or CLI execution."
+    },
+    {
+      "path": "lib/worktree.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed disposable FS/Git/SDK-profile/session operations or terminating CLI help subprocesses; private environment before imports, no model/provider startup or shared listener; existing bounds unchanged."
+    },
+    {
+      "path": "lib/pi-web-options.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed disposable FS/Git/SDK-profile/session operations or terminating CLI help subprocesses; private environment before imports, no model/provider startup or shared listener; existing bounds unchanged."
+    },
+    {
+      "path": "lib/models-config-store.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed disposable FS/Git/SDK-profile/session operations or terminating CLI help subprocesses; private environment before imports, no model/provider startup or shared listener; existing bounds unchanged."
+    },
+    {
+      "path": "lib/session-list-scanner.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed disposable FS/Git/SDK-profile/session operations or terminating CLI help subprocesses; private environment before imports, no model/provider startup or shared listener; existing bounds unchanged."
+    },
+    {
+      "path": "lib/session-reference.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed disposable FS/Git/SDK-profile/session operations or terminating CLI help subprocesses; private environment before imports, no model/provider startup or shared listener; existing bounds unchanged."
+    },
+    {
+      "path": "lib/skill-frontmatter.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed disposable FS/Git/SDK-profile/session operations or terminating CLI help subprocesses; private environment before imports, no model/provider startup or shared listener; existing bounds unchanged."
+    },
+    {
+      "path": "lib/subagents.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed disposable FS/Git/SDK-profile/session operations or terminating CLI help subprocesses; private environment before imports, no model/provider startup or shared listener; existing bounds unchanged."
+    },
+    {
+      "path": "lib/git-changes.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/controlled registry/context or small private file tests; process-local mocks and synthetic clocks, no native checks/model execution. SDK in-memory context is not provider startup."
+    },
+    {
+      "path": "lib/git-graph-layout.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure/controlled registry/context or small private file tests; process-local mocks and synthetic clocks, no native checks/model execution. SDK in-memory context is not provider startup."
+    },
+    {
+      "path": "lib/git-explorer.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed whole-file private Git/SDK-owner/settings/descriptor fixtures and local fault injection; no provider startup or 5-second SDK flow. Preserve authentic native assertions and unchanged 15/30-second command/case bounds."
+    },
+    {
+      "path": "app/api/web-auth/route.test.mjs",
+      "lane": "E",
+      "reason": "Actual unmocked one-second throttle window; keep isolated from other file jobs."
+    },
+    {
+      "path": "app/api/sessions/runtime-route.test.mjs",
+      "lane": "E",
+      "reason": "Host /tmp/PID-derived path dependencies bypass private TMPDIR; conservative exclusive hold (not a privacy guarantee)."
+    },
+    {
+      "path": "lib/agent-event-connection.test.mjs",
+      "lane": "E",
+      "reason": "Real short reconnect/readiness/expiry/polling/shutdown timers or bounded scan deadline; retain conservative exclusive scheduling."
+    },
+    {
+      "path": "lib/agent-event-stream.test.mjs",
+      "lane": "E",
+      "reason": "Real short reconnect/readiness/expiry/polling/shutdown timers or bounded scan deadline; retain conservative exclusive scheduling."
+    },
+    {
+      "path": "lib/process-lifecycle.test.mjs",
+      "lane": "E",
+      "reason": "Real short reconnect/readiness/expiry/polling/shutdown timers or bounded scan deadline; retain conservative exclusive scheduling."
+    },
+    {
+      "path": "lib/rpc-manager-extension-ui.test.mjs",
+      "lane": "E",
+      "reason": "Real short reconnect/readiness/expiry/polling/shutdown timers or bounded scan deadline; retain conservative exclusive scheduling."
+    },
+    {
+      "path": "lib/session-reader.test.mjs",
+      "lane": "E",
+      "reason": "Real short reconnect/readiness/expiry/polling/shutdown timers or bounded scan deadline; retain conservative exclusive scheduling."
+    },
+    {
+      "path": "lib/session-search.test.mjs",
+      "lane": "E",
+      "reason": "Real short reconnect/readiness/expiry/polling/shutdown timers or bounded scan deadline; retain conservative exclusive scheduling."
+    },
+    {
+      "path": "lib/subagent-runtime.test.mjs",
+      "lane": "E",
+      "reason": "Real busy-parent notification waits; partial runtime/timing review, no parallel claim."
+    }
+  ]
+}

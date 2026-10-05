@@ -16,6 +16,36 @@ function elementBlock() {
   return source.slice(buttonStart, buttonEnd);
 }
 
+test("does not let a top sentinel paginate over a pending saved reading anchor", async () => {
+  const start = source.indexOf("(entries) => {", source.indexOf("// IntersectionObserver on the sentinel"));
+  const end = source.indexOf("\n      },\n      { root: container", start);
+  assert.ok(start >= 0 && end > start);
+  const callbackSource = source.slice(start, end) + "\n      }";
+  const loadingOlderRef = { current: false };
+  const pendingScrollRestoreRef = { current: { anchorEntryId: "saved" } };
+  const prevScrollDistanceRef = { current: null };
+  const calls = [];
+  const callback = new Function(
+    "loadingOlderRef", "pendingScrollRestoreRef", "hasEarlierMessages", "historyCursor", "session",
+    "sessionIdRef", "prevScrollDistanceRef", "captureScrollDistance", "container", "loadContext", "activeLeafId",
+    `return (${callbackSource});`,
+  )(loadingOlderRef, pendingScrollRestoreRef, true, "older", { id: "chat" }, { current: "chat" },
+    prevScrollDistanceRef, (height, top) => height - top, { scrollHeight: 1000, scrollTop: 120 },
+    (...args) => { calls.push(args); return Promise.resolve(); }, "leaf");
+
+  callback([{ isIntersecting: true }]);
+  assert.deepEqual(calls, []);
+  assert.equal(prevScrollDistanceRef.current, null);
+  assert.equal(loadingOlderRef.current, false);
+
+  pendingScrollRestoreRef.current = null;
+  callback([{ isIntersecting: true }]);
+  assert.deepEqual(calls, [["chat", "leaf", "older"]]);
+  assert.equal(prevScrollDistanceRef.current, 880);
+  await Promise.resolve();
+  assert.equal(loadingOlderRef.current, false);
+});
+
 test("shows the scroll-to-latest button only when the viewport is detached from the tail", () => {
   assert.match(
     source,

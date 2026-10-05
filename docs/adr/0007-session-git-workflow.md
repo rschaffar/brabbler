@@ -1,6 +1,10 @@
 # 0007 — Session-scoped Git workflow preferences and bounded local Git review
 
+> Historical decision: superseded by [ADR 0014](0014-remove-managed-git-workflow.md). Managed Workflow is removed; this document does not define current runtime behavior.
+
 ## Status
+
+**Superseded settings/transition contract, 2026-10-04:** [ADR 0013](0013-live-git-settings.md) replaces captured session defaults, task Apply/adoption, early preference writers and automatic Git-triggered continuation with live Global → canonical Project → Chat × Project settings and explicit operation resources. [ADR 0012](0012-optimistic-git-invocations.md) supersedes application admission/quarantine. The body below is historical; [the maintained guide](../git-workflow.md) describes Phase 7 source under acceptance, not installed/release validation. Exact authorization, checks and native safeguards remain.
 
 Accepted for session preferences, worktree continuation, guarded commits, read-only Git comparisons, explicit verification, and separately approved local merge.
 

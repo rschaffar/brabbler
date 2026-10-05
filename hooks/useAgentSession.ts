@@ -13,10 +13,7 @@ import type {
   UserMessage,
 } from "@/lib/types";
 import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
-import type { GitWorkflowPolicy } from "@/lib/git-workflow-policy";
 import { normalizeToolCalls } from "@/lib/normalize";
-import { alignEntryIds, GIT_ACTION_UPDATE_EVENT, isGitActionUpdate, mergeGitActionTail, projectGitActionUpdate, type GitActionInvalidation, type UiTranscript } from "@/lib/git-action-ui";
-import { watchGitActionsChanged } from "./git-action-history";
 import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
 import {
   deleteSessionViewSnapshot,
@@ -109,7 +106,13 @@ function normalizeQueuedMessages(q?: { steering?: string[]; followUp?: string[] 
   return { steering: q?.steering ?? [], followUp: q?.followUp ?? [] };
 }
 
-type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "git_action" }>;
+interface UiTranscript { messages: AgentMessage[]; entryIds: string[] }
+/** Empty IDs represent not-yet-persisted live messages, not navigation targets. */
+function alignEntryIds(messages: AgentMessage[], entryIds: string[]): string[] {
+  return Array.from({ length: messages.length }, (_, index) => entryIds[index] ?? "");
+}
+
+type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" | "ask_user" }>;
 type ExtensionUiCustomRequest = Extract<ExtensionUiRequest, { method: "custom" }>;
 export type NoticeType = "info" | "success" | "warning" | "error";
 
@@ -406,14 +409,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const newSessionPromotedRef = useRef(false);
   const newSessionModelOverrideRef = useRef<SelectedModel | null>(null);
   const newSessionAccountsRef = useRef<Record<string, string> | null>(null);
-  // Only explicit new-chat choices are sent. Undefined lets the server snapshot
-  // the project default; null deliberately opts out of that default.
-  const newSessionGitWorkflowRef = useRef<GitWorkflowPolicy | null | undefined>(undefined);
-  const setNewSessionGitWorkflow = useCallback((policy: GitWorkflowPolicy | null | undefined): boolean => {
-    if (!isNew || sessionIdRef.current || ensuringNewSessionRef.current) return false;
-    newSessionGitWorkflowRef.current = policy;
-    return true;
-  }, [isNew]);
   const thinkingLevelOverrideRef = useRef<ConcreteThinkingLevel | null>(null);
   const thinkingLevelPinsRef = useRef<Record<string, string>>({});
   const defaultThinkingLevelRef = useRef<ConcreteThinkingLevel | null>(null);
@@ -602,10 +597,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         && cached?.revision === d.snapshotRevision
         && cached.entryIds.length >= (d.context.entryIds ?? []).length,
       );
-      if (shouldApply && !revisionUnchanged) {
-        const merged = mergeGitActionTail({ messages: messagesRef.current, entryIds: entryIdsRef.current }, d.context);
-        if (merged) d.context = { ...d.context, ...merged, oldestEntryId: historyCursorRef.current, hasMore: hasEarlierMessagesRef.current };
-      }
       const persistedMessages = revisionUnchanged ? messagesRef.current : d.context.messages;
       setData(revisionUnchanged
         ? {
@@ -720,12 +711,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return await flight;
   }, [setToolPresetState, syncLiveModel, setMessages, setEntryIds]);
 
-  useEffect(() => watchGitActionsChanged(() => ({
-    sessionId: sessionHookMountedRef.current ? sessionIdRef.current : null,
-    busy: agentRunningRef.current || bashRunningRef.current || rpcPromptPendingRef.current || sdkAgentActiveRef.current || loadFlightsRef.current.size > 0 || pendingHistoryReadsRef.current > 0,
-    revision: transcriptRevisionRef.current,
-  }), (sid, shouldApply) => loadSession(sid, false, false, undefined, shouldApply)), [loadSession]);
-
   const loadContext = useCallback(async (sid: string, leafId: string | null, before?: string | null, options?: { tail?: number; signal?: AbortSignal }) => {
     transcriptRevisionRef.current += 1;
     pendingHistoryReadsRef.current += 1;
@@ -832,7 +817,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         body: JSON.stringify({
           cwd: newSessionCwd,
           type: "ensure_session",
-          ...(newSessionGitWorkflowRef.current !== undefined ? { gitWorkflow: newSessionGitWorkflowRef.current } : {}),
           ...(newSessionAccountsRef.current ? { accounts: newSessionAccountsRef.current } : {}),
           ...(toolNames !== undefined ? { toolNames } : {}),
           ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
@@ -994,7 +978,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const respondToExtensionUi = useCallback(async (
     request: ExtensionUiDialogRequest,
-    response: { value: string } | { confirmed: boolean } | { approvePlanId: string } | { preferences: import("@/lib/agent-git-preferences").AgentGitPreferenceChoice } | { cancelled: true } | { answer: import("@/lib/ask-user").AskUserAnswer },
+    response: { value: string } | { confirmed: boolean } | { approvePlanId: string } | { cancelled: true } | { answer: import("@/lib/ask-user").AskUserAnswer },
   ) => {
     const sid = sessionIdRef.current;
     setExtensionDialog((current) => current?.id === request.id ? null : current);
@@ -1046,7 +1030,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "input":
       case "editor":
       case "ask_user":
-      case "git_action":
         setExtensionDialog(request);
         break;
       case "notify": {
@@ -1319,16 +1302,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const handleAgentEvent = useCallback((event: AgentEvent) => {
     switch (event.type) {
-      case "git_action_update": {
-        if (!sessionHookMountedRef.current || !sessionIdRef.current || !isGitActionUpdate(event)) break;
-        // A journal update is not agent activity: never start/end a stream or
-        // resurrect a settled run. Revisions only invalidate mounted cards.
-        if (event.entryId) setTranscript((current) => projectGitActionUpdate(current, event));
-        window.dispatchEvent(new CustomEvent<GitActionInvalidation>(GIT_ACTION_UPDATE_EVENT, {
-          detail: { sessionId: sessionIdRef.current, actionId: event.actionId, revision: event.revision },
-        }));
-        break;
-      }
       case "connected": {
         dispatch({ type: "end" });
         if (event.isStreaming === true) {
@@ -1585,7 +1558,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setExtensionDialog((current) => current?.id === event.id ? null : current);
         break;
     }
-  }, [addNotice, cancelEventStreamGrace, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel, setMessages, setTranscript]);
+  }, [addNotice, cancelEventStreamGrace, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel, setMessages]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -2560,7 +2533,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     isAutoThinkingSelection: isNew && newSessionThinkingLevel === null,
     agentPhase,
     isNew,
-    setNewSessionGitWorkflow,
     promptAnchorActive,
     showScrollToBottom,
     // Refs

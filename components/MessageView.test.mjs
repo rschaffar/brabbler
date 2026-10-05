@@ -82,14 +82,6 @@ test("preserves the existing user message timestamp", () => {
   assert.ok(html.includes(expectedTime));
 });
 
-test("projects a Git anchor as a durable card without rendering model-facing content", () => {
-  const id = "12345678-1234-1234-1234-123456789abc";
-  const html = renderMessage({ role: "custom", customType: "pi-web:git-action", content: "", display: true, details: { actionId: id }, timestamp: 1000 }, { sessionId: "current-chat" });
-  assert.match(html, new RegExp(`data-git-action-id="${id}"`));
-  assert.match(html, /Loading action history/);
-  assert.doesNotMatch(html, /Approve|Fork|Edit from here/);
-});
-
 test("updates a reused message when its written files change", () => {
   const props = { message: { role: "assistant", content: [] } };
   assert.equal(MessageView.compare(props, props), true);

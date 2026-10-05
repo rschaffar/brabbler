@@ -34,7 +34,6 @@ import type { SessionEntry } from "./types";
 import { buildSubagentPromptPlan } from "./subagent-prompt";
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
-import { filterGitWorkflowContext } from "./git-workflow-context";
 import { createAskUserExtension, preferPiWebAskUserExtension } from "./ask-user-extension";
 import { appendSubagentInputFiles, loadSubagentInputFiles } from "./subagent-input";
 import { projectTrustReloadOptions } from "./project-trust";
@@ -155,7 +154,7 @@ function parseSubagentModel(runtime: ModelRuntime, value: string | undefined) {
 
 /** Filter legacy synthetic reminders before flattening/truncating inherited context. */
 export function parentContextText(parent: Pick<HostSession, "inner">): string {
-  const messages = filterGitWorkflowContext(parent.inner.sessionManager.buildSessionContext().messages);
+  const messages = parent.inner.sessionManager.buildSessionContext().messages;
   const serialized = JSON.stringify(messages);
   if (serialized.length <= SUBAGENT_CONTEXT_LIMIT) return serialized;
   return `${serialized.slice(0, SUBAGENT_CONTEXT_LIMIT)}\n[Parent context truncated]`;

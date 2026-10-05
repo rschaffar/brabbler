@@ -16,19 +16,6 @@ export const extensionSource = `export default function (pi) {
       ctx.ui.notify("E2E " + mode + " result: " + String(result));
     },
   });
-  pi.registerCommand("e2e-git-wait", {
-    handler: async (_mode, ctx) => {
-      // Exercise the real Git UI lifecycle only; never execute a Git operation/check.
-      try {
-        const approved = await ctx.ui.gitAction({ kind: "checks", featureCwd: ctx.cwd, targetCwd: ctx.cwd,
-          featureBranch: "fixture", targetBranch: "fixture-target",
-          checks: [{ label: "E2E simulated approval only (no command runs)", argv: ["node", "--version"] }] });
-        ctx.ui.notify("E2E Git decision: " + String(approved));
-      } catch {
-        ctx.ui.notify("E2E Git decision: interrupted");
-      }
-    },
-  });
   pi.registerCommand("e2e-ask-user", {
     handler: async (mode, ctx) => {
       const question = {

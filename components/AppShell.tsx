@@ -12,7 +12,6 @@ import { getActivitySections, type ActivityStatus } from "@/lib/activity";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { FileViewer } from "./FileViewer";
 import { GitExplorerPanel } from "./GitExplorerPanel";
-import { GitWorkflowHome, type WorkflowChatStatus, type WorkflowDetail } from "./GitWorkflowHome";
 import { TabBar, type Tab } from "./TabBar";
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
@@ -129,7 +128,6 @@ export function AppShell() {
   }, [playDoneSound, soundEnabledRef]);
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   const [sessionCatalog, setSessionCatalog] = useState<SessionInfo[]>([]);
-  const pendingMovedCheckoutRef = useRef<{ id: string; cwd: string } | null>(null);
   const handleSessionsChange = useCallback((sessions: SessionInfo[]) => {
     setSessionCatalog(sessions);
     // The sidebar hydrates metadata after the selected session has already
@@ -139,10 +137,6 @@ export function AppShell() {
       if (!current) return current;
       const refreshed = sessions.find((session) => session.id === current.id);
       if (!refreshed) return current;
-      const moved = pendingMovedCheckoutRef.current;
-      if (moved?.id === current.id) {
-        if (refreshed.cwd !== moved.cwd) return current; // older in-flight sidebar scan
-      }
       return mergeCatalogRow(current, refreshed);
     });
   }, []);
@@ -382,25 +376,6 @@ export function AppShell() {
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  const [workflowOpen, setWorkflowOpen] = useState(false);
-  const [workflowDetail, setWorkflowDetail] = useState<{ view: WorkflowDetail; sessionId: string; cwd: string } | null>(null);
-  const [workflowChatStatus, setWorkflowChatStatus] = useState<WorkflowChatStatus | null>(null);
-  const [gitControlsHost, setGitControlsHost] = useState<HTMLDivElement | null>(null);
-  const closeWorkflow = useCallback(() => setWorkflowOpen(false), []);
-  const openWorkflow = useCallback(() => {
-    setActiveTopPanel(null);
-    closeOverview();
-    setRightPanelOpen(false);
-    if (isMobile || window.innerWidth < 1400) setSidebarOpen(false);
-    setWorkflowOpen(true);
-  }, [closeOverview, isMobile]);
-  const configureWorkflow = useCallback(() => {
-    setWorkflowDetail(null);
-    openWorkflow();
-  }, [openWorkflow]);
-  const handleWorkflowDetailChange = useCallback((view: WorkflowDetail | null) => {
-    setWorkflowDetail(view && selectedSession ? { view, sessionId: selectedSession.id, cwd: selectedSession.cwd } : null);
-  }, [selectedSession]);
 
   useEffect(() => {
     if (!sessionHasBranches) {
@@ -768,7 +743,6 @@ export function AppShell() {
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false, entryId?: string, blockIndex?: number) => {
     setSearchTarget(entryId ? { sessionId: session.id, entryId, blockIndex } : null);
     // Ignore an older sidebar row for a just-moved session, even on re-click.
-    if (pendingMovedCheckoutRef.current?.id === session.id && pendingMovedCheckoutRef.current.cwd !== session.cwd) return;
     invalidateWorkspaceRestore();
     const activeDraftKey = activeNewSessionDraftKeyRef.current;
     const activeDraftCwd = newSessionCwd ?? (selectedSession === null ? activeCwd : null);
@@ -863,7 +837,7 @@ export function AppShell() {
         const full = d?.sessions.find((s) => s.id === sessionId);
         if (!full) return;
         setSelectedSession((prev) => (
-          prev?.id === sessionId && (pendingMovedCheckoutRef.current?.id !== sessionId || full.cwd === pendingMovedCheckoutRef.current.cwd)
+          prev?.id === sessionId
             ? { ...prev, ...full, transient: full.transient ?? false }
             : prev
         ));
@@ -984,7 +958,7 @@ export function AppShell() {
       body: request.method === "custom"
         ? translate("i18n.extensionInputNeeded")
         : request.method === "ask_user" ? request.question
-        : request.method === "git_action" ? "Git candidate needs review" : request.title,
+        : request.title,
       tag: `pi-extension-ui:${request.id}`,
     });
   }, [deliverSessionNotification, selectedSession, translate]);
@@ -1028,59 +1002,6 @@ export function AppShell() {
   const handleExplorerRefresh = useCallback(() => {
     setExplorerRefreshKey((k) => k + 1);
   }, []);
-
-  const handleSessionMoved = useCallback(async (sessionId: string, cwd: string) => {
-    // The move has already succeeded. Refresh authoritative metadata before
-    // remounting so the same session id reloads its history from its new cwd.
-    let info: SessionInfo | null = null;
-    try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
-      if (response.ok) {
-        const body = await response.json() as { info?: SessionInfo };
-        if (body.info?.id === sessionId && body.info.cwd === cwd) info = body.info;
-      }
-    } catch { /* The sidebar refresh can still hydrate the moved row. */ }
-    const movedInfo = info;
-    pendingMovedCheckoutRef.current = { id: sessionId, cwd };
-    setSelectedSession((current) => current?.id === sessionId
-      ? { ...current, ...movedInfo, cwd, transient: false }
-      : current);
-    if (activeSessionIdRef.current === sessionId) {
-      setBranchTree([]);
-      setBranchActiveLeafId(null);
-      branchLeafChangeFnRef.current = null;
-      setSystemPrompt(null);
-      setSystemTools(null);
-      setSystemInfoLoading(false);
-      setSessionKey((key) => key + 1);
-    }
-    setRefreshKey((key) => key + 1);
-    setExplorerRefreshKey((key) => key + 1);
-  }, []);
-
-  const handleSessionForkedToWorktree = useCallback((newSessionId: string, cwd: string) => {
-    invalidateWorkspaceRestore();
-    activeNewSessionDraftKeyRef.current = null;
-    // The clone was moved before selection; never render it with the source cwd.
-    // Guard against an older sidebar scan overwriting the moved checkout.
-    pendingMovedCheckoutRef.current = { id: newSessionId, cwd };
-    setSelectedSession((source) => ({
-      ...(source ?? { created: "", modified: "", messageCount: 0, firstMessage: "" }),
-      id: newSessionId, cwd, path: "", transient: false,
-    }));
-    setNewSessionCwd(null);
-    setBranchTree([]);
-    setBranchActiveLeafId(null);
-    branchLeafChangeFnRef.current = null;
-    setSystemPrompt(null);
-    setSystemTools(null);
-    setSystemInfoLoading(false);
-    setSessionKey((key) => key + 1);
-    setRefreshKey((key) => key + 1);
-    setExplorerRefreshKey((key) => key + 1);
-    hydrateSelectedSession(newSessionId);
-    router.replace(`?session=${encodeURIComponent(newSessionId)}`, { scroll: false });
-  }, [invalidateWorkspaceRestore, hydrateSelectedSession, router]);
 
   const handleSessionForked = useCallback((newSessionId: string) => {
     invalidateWorkspaceRestore();
@@ -1228,9 +1149,6 @@ export function AppShell() {
   }, [newSessionDraftKey]);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   // A sidebar checkout selection must never retarget a chat action detail.
-  const gitControlsPanel = workflowDetail && workflowDetail.sessionId === selectedSession?.id && workflowDetail.cwd === selectedSession.cwd
-    ? workflowDetail.view : null;
-  const activeWorkflowStatus = workflowChatStatus?.sessionId === selectedSession?.id ? workflowChatStatus : null;
   useEffect(() => {
     if (!isMobile || !topBarActionsRef.current) return;
     const strip = topBarActionsRef.current;
@@ -2164,14 +2082,6 @@ export function AppShell() {
               <path d="M6 6v12M6 15c0-4 3-8 10-8" />
             </svg>
           </button>
-          <button type="button" aria-label="Workflow" title="Workflow"
-            aria-controls="workflow-panel" aria-expanded={workflowOpen} aria-pressed={workflowOpen}
-            onClick={workflowOpen ? closeWorkflow : openWorkflow}
-            style={{ height: TOP_BAR_ICON_BUTTON_SIZE, padding: "0 12px", flexShrink: 0,
-              border: 0, borderRight: "1px solid var(--border)", cursor: "pointer", fontSize: 13,
-              background: workflowOpen ? "var(--bg-selected)" : "none", color: "var(--text)" }}>
-            Workflow
-          </button>
           {showChat && selectedSession?.relation?.kind === "subagent" && (
             <span role="img" aria-label={translate("activity.subagent")} title={translate("activity.subagent")}
               style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, borderRight: "1px solid var(--border)", color: "var(--accent)" }}>
@@ -2465,15 +2375,6 @@ export function AppShell() {
 
         {/* Chat content */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex" }}>
-          {/* Mounted even without a chat and while hidden: owns identity-keyed configuration drafts. */}
-          <GitWorkflowHome
-            visible={workflowOpen} onClose={closeWorkflow}
-            cwd={selectedSession?.cwd ?? effectiveNewSessionCwd ?? activeCwd}
-            session={selectedSession}
-            busy={Boolean(activeWorkflowStatus?.busy || selectedSession && runningSessionIds.has(selectedSession.id))}
-            attention={Boolean(activeWorkflowStatus?.attention)}
-            detail={gitControlsPanel} onDetailChange={handleWorkflowDetailChange} onDetailHost={setGitControlsHost}
-          />
           {activeOverview === "activity" && (
             <ActivityOverview
               sessions={sessionsWithSelection}
@@ -2506,7 +2407,7 @@ export function AppShell() {
           {activeOverview === "git" && <div id="git-explorer-panel" className="git-explorer-host">
             <GitExplorerPanel key={activeCwd ?? "no-worktree"} cwd={activeCwd} onClose={closeOverview} />
           </div>}
-          <div inert={Boolean((activeOverview && isMobile && overviewMobileList) || (workflowOpen && isMobile))} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
+          <div inert={Boolean(activeOverview && isMobile && overviewMobileList)} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
           {showChat ? (
             <ChatWindow
               key={sessionKey}
@@ -2527,13 +2428,6 @@ export function AppShell() {
               onAttentionNeeded={handleAttentionNeeded}
               onSessionCreated={handleSessionCreated}
               onSessionForked={handleSessionForked}
-              onSessionMoved={handleSessionMoved}
-              onSessionForkedToWorktree={handleSessionForkedToWorktree}
-              gitControlsPanel={gitControlsPanel}
-              gitControlsHost={gitControlsHost}
-              workflowOpen={workflowOpen}
-              onOpenWorkflow={configureWorkflow}
-              onWorkflowStatusChange={setWorkflowChatStatus}
               modelsRefreshKey={modelsRefreshKey}
               chatInputRef={chatInputRef}
               onBranchDataChange={handleBranchDataChange}
