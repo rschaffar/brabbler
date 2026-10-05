@@ -183,11 +183,12 @@ function childPids(pid) {
 }
 
 function* procPids() {
-  const directory = fs.opendirSync('/proc');
-  try {
-    let entry;
-    while ((entry = directory.readSync())) if (/^\d+$/.test(entry.name)) yield Number(entry.name);
-  } finally { directory.closeSync(); }
+  // Names only: Dirent conversion can lstat a DT_UNKNOWN PID after it exits and
+  // abort the whole iterator. Individual identity reads already handle vanished
+  // PIDs; real directory failures still propagate and refuse settlement.
+  // The caller's candidate/owned limits still bound identity reads, not this
+  // kernel directory-name allocation (and never promise an atomic host snapshot).
+  for (const name of fs.readdirSync('/proc')) if (/^\d+$/.test(name)) yield Number(name);
 }
 
 // Bounded live observations, not a host process registry. Sampling follows only authenticated
