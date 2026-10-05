@@ -2494,7 +2494,9 @@ export function AppShell() {
             <StarredOverview
               sessions={sessionsWithSelection}
               runningIds={runningSessionIds}
+              queuedIds={queuedSessionIds}
               attention={activityAttention}
+              reviewIds={reviewSessionIds}
               selectedId={selectedSession?.id ?? null}
               onSelect={handleActivitySelectSession}
               onClose={closeOverview}

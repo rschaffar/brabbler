@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 export async function checkActivityOverview(page, width, { base, api, post, waitingSessionId, selectedSessionId, otherSessionId, artifacts, seedInterruptedRun }) {
   const mobile = width <= 640;
+  const dotColor = (row) => row.locator(".activity-item-top .activity-dot")
+    .evaluate((dot) => getComputedStyle(dot).backgroundColor);
   await page.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /^Activity/ }).waitFor();
   await page.getByText("Active branch answer", { exact: true }).waitFor();
@@ -62,6 +64,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   const starredOverview = page.getByRole("region", { name: "Starred" });
   const starredBranch = starredOverview.locator(".activity-starred-item").filter({ hasText: "Branch root" });
   await starredBranch.getByRole("button", { name: /Branch root/ }).waitFor();
+  assert.equal(await starredBranch.locator(".activity-dot").count(), 0, "idle stars have no activity dot");
   // Simulate a live registry snapshot to verify that Starred tracks the same
   // visible-tab running poll as Activity, without starting a model request.
   await page.route("**/api/agent/running", async (route) => {
@@ -73,8 +76,15 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   });
   await starredBranch.getByText("Working", { exact: true }).waitFor({ timeout: 15000 });
   assert.match(await starredBranch.locator(".activity-item").getAttribute("aria-label"), /Working/);
+  const workingColor = await dotColor(starredBranch);
+  await page.getByRole("button", { name: /^Activity/ }).click();
+  const working = page.getByRole("region", { name: "Activity" }).locator(".activity-item-working").filter({ hasText: "Branch root" });
+  await working.waitFor();
+  assert.equal(workingColor, await dotColor(working), "Starred and Activity use the same working dot");
+  await page.getByRole("button", { name: "Starred", exact: true }).click();
   await page.unroute("**/api/agent/running");
   await starredBranch.getByText("Working", { exact: true }).waitFor({ state: "hidden", timeout: 15000 });
+  assert.equal(await starredBranch.locator(".activity-dot").count(), 0, "the dot clears when the live run ends without a completion");
   await post("/api/starred-sessions", { op: "set", id: otherSessionId, starred: true });
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await starredOverview.getByRole("button", { name: /Other workspace task/ }).waitFor();
@@ -120,16 +130,18 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
     .filter({ hasText: "Render **E2E markdown**" });
   await starredNeeds.getByText("Needs you").waitFor();
   assert.match(await starredNeeds.locator(".activity-item").getAttribute("aria-label"), /Needs you/);
+  const needsColor = await dotColor(starredNeeds);
   await page.getByRole("button", { name: /Activity.*1 awaiting input/ }).click();
   const overview = page.getByRole("region", { name: "Activity" });
   await overview.getByRole("heading", { name: /Needs you/ }).waitFor();
   const card = overview.locator(".activity-item-needs-you").filter({ hasText: "E2E browser question" });
   await card.waitFor();
+  assert.equal(needsColor, await dotColor(card), "Starred and Activity use the same needs-you dot");
   assert.equal(await overview.getByText("E2E browser question").count(), 1);
   assert.match(await card.getAttribute("aria-label"), /project.*E2E browser question/);
   await page.screenshot({ path: join(artifacts, `activity-${width}.png`) });
   await card.click();
-  const question = page.getByRole("dialog", { name: "E2E browser question" });
+  const question = page.getByRole("group", { name: "E2E browser question" });
   await question.waitFor();
   if (mobile) {
     await overview.waitFor({ state: "hidden" });
@@ -148,6 +160,19 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await overview.locator(".activity-item-needs-you").waitFor({ state: "hidden" });
   await page.getByRole("button", { name: "Starred", exact: true }).click();
   await starredNeeds.getByText("Needs you").waitFor({ state: "hidden" });
+  await starredNeeds.getByText("Ready to review", { exact: true }).waitFor({ timeout: 15000 });
+  assert.match(await starredNeeds.locator(".activity-item").getAttribute("aria-label"), /Ready to review/);
+  const readyColor = await dotColor(starredNeeds);
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  const waitingReady = overview.locator(".activity-item-ready").filter({ hasText: "Render **E2E markdown**" });
+  await waitingReady.waitFor();
+  assert.equal(readyColor, await dotColor(waitingReady), "Starred and Activity use the same ready-to-review dot");
+  await overview.getByRole("button", { name: "Mark Render **E2E markdown** as read", exact: true }).click();
+  await waitingReady.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Starred", exact: true }).click();
+  await starredNeeds.getByText("Ready to review", { exact: true }).waitFor({ state: "hidden" });
+  assert.equal(await starredNeeds.locator(".activity-dot").count(), 0, "review acknowledgement clears the green dot");
+  await starredNeeds.locator(".activity-star").waitFor();
   await starredNeeds.getByRole("button", { name: "Unstar session" }).click();
   await page.getByRole("button", { name: "Activity", exact: true }).click();
   const snapshot = await api("/api/agent/running");

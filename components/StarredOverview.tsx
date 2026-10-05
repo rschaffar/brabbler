@@ -3,25 +3,31 @@
 import { useMemo, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useStarredSessions } from "@/hooks/useStarredSessions";
-import { activityProjectName, activitySessionName, liveSessionActivityStatus } from "@/lib/activity";
+import { activityProjectName, activitySessionName, getActivitySections } from "@/lib/activity";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import type { SessionAttention, SessionInfo } from "@/lib/types";
 
 interface Props {
   sessions: SessionInfo[];
   runningIds: ReadonlySet<string>;
+  queuedIds: ReadonlySet<string>;
   attention: readonly SessionAttention[];
+  reviewIds: ReadonlySet<string>;
   selectedId: string | null;
   onSelect: (session: SessionInfo) => void;
   onClose: () => void;
   hidden?: boolean;
 }
 
-export function StarredOverview({ sessions, runningIds, attention, selectedId, onSelect, onClose, hidden = false }: Props) {
+export function StarredOverview({ sessions, runningIds, queuedIds, attention, reviewIds, selectedId, onSelect, onClose, hidden = false }: Props) {
   const { t } = useI18n();
   const { starredIds, toggleStarred } = useStarredSessions();
   const [projectFilter, setProjectFilter] = useState("");
-  const attentionById = useMemo(() => new Map(attention.map((request) => [request.sessionId, request])), [attention]);
+  const statusById = useMemo(() => {
+    const sections = getActivitySections(sessions, runningIds, attention, reviewIds, null, queuedIds);
+    return new Map([...sections["needs-you"], ...sections.working, ...sections.ready]
+      .map((item) => [item.session.id, item.status]));
+  }, [sessions, runningIds, queuedIds, attention, reviewIds]);
   const projects = useMemo(() => {
     const keys = new Map<string, string>();
     for (const session of sessions) {
@@ -62,18 +68,18 @@ export function StarredOverview({ sessions, runningIds, attention, selectedId, o
             <div role="list" className="activity-items">
               {starredSessions.map((session) => {
                 const label = activitySessionName(session);
-                const status = liveSessionActivityStatus(session.id, runningIds, attentionById);
-                const statusLabel = status === "needs-you" ? t("activity.needsYou") : status === "working" ? t("activity.working") : null;
+                const status = statusById.get(session.id);
+                const statusLabel = status === "needs-you" ? t("activity.needsYou") : status === "working" ? t("activity.working") : status === "ready" ? t("activity.ready") : null;
                 return <div role="listitem" key={session.id} className="activity-starred-item">
-                  <button type="button" className={`activity-item${selectedId === session.id ? " activity-selected" : ""}`} onClick={() => onSelect(session)} aria-label={`${label} · ${activityProjectName(session)}${statusLabel ? ` · ${statusLabel}` : ""} · ${t("activity.open")}`}>
+                  <button type="button" className={`activity-item${status ? ` activity-item-${status}` : ""}${selectedId === session.id ? " activity-selected" : ""}`} onClick={() => onSelect(session)} aria-label={`${label} · ${activityProjectName(session)}${statusLabel ? ` · ${statusLabel}` : ""} · ${t("activity.open")}`}>
                     <span className="activity-item-top">
-                      <span className="activity-star" aria-hidden="true">★</span>
+                      {status ? <span className="activity-dot" aria-hidden="true" /> : <span className="activity-star" aria-hidden="true">★</span>}
                       <span className="activity-item-title" title={label}>{label}</span>
                       <span className="activity-item-action">{t("activity.open")}</span>
                     </span>
                     <span className="activity-item-meta" title={session.projectRoot ?? session.cwd}>{activityProjectName(session)}</span>
                     {status && <span className={`activity-starred-status activity-item-${status}`}>
-                      <span className="activity-dot" aria-hidden="true" />{statusLabel}
+                      {statusLabel}
                     </span>}
                   </button>
                   <button type="button" className="activity-unstar" onClick={() => toggleStarred(session.id)} aria-label={t("sidebar.unstarSession")} title={t("sidebar.unstarSession")}>×</button>
