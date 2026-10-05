@@ -80,7 +80,9 @@ Each session still remembers the working directory it was created with. That mea
 - A session started in the main checkout continues to use the main checkout.
 - If a worktree has been removed, old sessions from it stay visible under the project so you can still find the history.
 
-Use the session row’s **Move to project…** action for explicit relocation. Stop running sessions first. This moves the session and its subagents, not checkout files; independent forks remain in place with repaired parent references.
+Use the session row’s **Move to project…** action for explicit relocation. Choose a **Destination project**, then a **Worktree/directory** showing its branch and path. The current project remains available for moves between its registered checkouts; only the exact current directory is disabled. Projects without worktrees offer their directory directly, and **Browse another folder…** accepts another existing directory, including non-Git directories. Selection only proposes a destination: it does not switch the sidebar checkout or relocate anything until you press **Move**.
+
+Stop running sessions first. This moves the session and its subagents, not checkout files; independent forks remain in place with repaired parent references.
 
 ## Troubleshooting
 

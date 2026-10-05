@@ -19,6 +19,7 @@ import { checkMessageTimestamps } from "./message-timestamps.mjs";
 import { consumeExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
+import { checkSessionMovePicker } from "./session-move.mjs";
 
 // Test-process isolation only: the disposable child server inherits private file
 // creation from startup. Never repair SDK files or change umask inside a hook.
@@ -47,6 +48,7 @@ const otherProject = join(agentDir, "other-project");
 const sessionDir = join(agentDir, "sessions", "e2e");
 mkdirSync(project);
 mkdirSync(otherProject);
+mkdirSync(join(project, "browse-only"));
 const previewFile = join(project, "preview.html");
 const editableFile = join(project, "editable.txt");
 writeFileSync(previewFile, filePanelFixture);
@@ -611,21 +613,9 @@ try {
     }
     if (process.env.E2E_MOVE_ONLY === "1") {
       const moveId = viewport.width <= 600 ? ARCHIVE : APPEND;
-      await page.goto(`${base}/?session=${moveId}`, { waitUntil: "domcontentloaded" });
-      const row = page.locator(`[data-session-id="${moveId}"]`);
-      if (viewport.width <= 600) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
-      await row.scrollIntoViewIfNeeded();
-      if (viewport.width <= 600) await row.getByRole("button", { name: "Session actions", exact: true }).click();
-      else await row.hover();
-      await row.getByRole("button", { name: "Move to project…", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "Move to project…" });
-      await dialog.getByLabel("Destination project").selectOption(otherProject);
-      await dialog.getByRole("button", { name: "Move", exact: true }).click();
-      await dialog.waitFor({ state: "detached" });
-      await row.waitFor({ state: "detached" });
-      assert.equal((await api("/api/sessions?force=1")).sessions.find((session) => session.id === moveId)?.cwd, otherProject);
+      await checkSessionMovePicker(page, { base, api, sessionId: moveId, project, otherProject, gitProject, targetWorktree, mobile: viewport.width <= 600 });
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
-      console.log(`PASS: ${viewport.width}px session move via project picker`);
+      console.log(`PASS: ${viewport.width}px session move picker worktrees, exclusion, Browse, failure and stale responses`);
       await context.tracing.stop();
       await context.close();
       context = undefined;
