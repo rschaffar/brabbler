@@ -19,15 +19,6 @@ import { AnsiText } from "./AnsiText";
 import { AskUserDialog } from "./AskUserDialog";
 import { ContextReloadNotice } from "./ContextReloadNotice";
 import { ArchivedSessionNotice } from "./ArchivedSessionNotice";
-import { GitWorkspaceContinuation } from "./GitWorkspaceContinuation";
-import type { WorkflowChatStatus, WorkflowDetail } from "./GitWorkflowHome";
-import { GitCommitPanel } from "./GitCommitPanel";
-import { GitMergeReviewPanel } from "./GitMergeReviewPanel";
-import { GitActionDialog } from "./GitActionDialog";
-import { GitActionLiveFallback, GitActionProvider } from "./GitActionContext";
-import { gitActionId } from "@/lib/git-action-ui";
-import { shouldFollowWorkspaceTransition } from "@/lib/git-workspace-transition-follow";
-import { gitSettingsProposalId } from "@/lib/git-settings-proposal-ui";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -63,13 +54,6 @@ interface Props {
   onAttentionNeeded?: (request: BlockingExtensionUiRequest) => void;
   onSessionCreated?: (session: SessionInfo, sourceDraftKey: string) => void;
   onSessionForked?: (newSessionId: string) => void;
-  onSessionMoved?: (sessionId: string, cwd: string) => Promise<void>;
-  onSessionForkedToWorktree?: (sessionId: string, cwd: string) => void;
-  gitControlsPanel?: WorkflowDetail | null;
-  gitControlsHost?: HTMLElement | null;
-  workflowOpen?: boolean;
-  onOpenWorkflow?: () => void;
-  onWorkflowStatusChange?: (status: WorkflowChatStatus) => void;
   modelsRefreshKey?: number;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => void;
@@ -187,7 +171,7 @@ function hasFinalAssistantAnswer(message: AgentMessage): boolean {
 
 // Durable cards are standalone anchors, never hidden in collapsed process details.
 function isMessageGroupAnchor(message: AgentMessage): boolean {
-  return isOrdinaryMessageGroupAnchor(message) || gitActionId(message) !== null || gitSettingsProposalId(message) !== null;
+  return isOrdinaryMessageGroupAnchor(message);
 }
 
 function findFinalAssistantIndex(messages: AgentMessage[], userIdx: number, endIdx: number): number {
@@ -270,7 +254,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, archivedRootSessionId, archiveActionBusy, onSessionRestored, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionMoved, onSessionForkedToWorktree, gitControlsPanel = null, gitControlsHost, workflowOpen = false, onOpenWorkflow, onWorkflowStatusChange, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, archivedRootSessionId, archiveActionBusy, onSessionRestored, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
@@ -329,67 +313,6 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     deferInitialScroll: Boolean(pendingScrollRestore),
   });
   const sessionBusy = agentRunning || bashRunning;
-  const [workspaceTransitionNotice, setWorkspaceTransitionNotice] = useState<string | null>(null);
-  // Request arrival updates attention only; it never closes Workflow or changes its view.
-  const [visitedGitDetails, setVisitedGitDetails] = useState<WorkflowDetail[]>([]);
-  useEffect(() => {
-    if (gitControlsPanel) setVisitedGitDetails((current) => current.includes(gitControlsPanel) ? current : [...current, gitControlsPanel]);
-  }, [gitControlsPanel]);
-  const handledWorkspaceTransitionRef = useRef<string | null>(null);
-  const workspaceCallbacksRef = useRef({ onSessionMoved, onSessionForkedToWorktree });
-  workspaceCallbacksRef.current = { onSessionMoved, onSessionForkedToWorktree };
-  // The server owns the one-shot post-run transition. This poll only follows
-  // its durable result; reconnecting or reloading a tab never triggers a move.
-  useEffect(() => {
-    // Pi-created session IDs are UUIDs. Imported/fixture sessions can have
-    // different IDs and cannot own an agent-created workspace receipt.
-    if (!session?.id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session.id)
-      || session.relation?.kind === "subagent") return;
-    const id = session.id;
-    let stopped = false;
-    let polling = false;
-    setWorkspaceTransitionNotice(null);
-    handledWorkspaceTransitionRef.current = null;
-    const poll = async () => {
-      if (stopped || polling || document.hidden) return;
-      polling = true;
-      try {
-        const response = await fetch(`/api/git/workspace-transition?${new URLSearchParams({ sessionId: id })}`, { cache: "no-store" });
-        if (!response.ok) return;
-        const body = await response.json() as { transition: {
-          nonce: string; status: "pending" | "claimed" | "succeeded" | "manual-recovery";
-          action: "continue" | "fork"; destinationPath: string; newSessionId?: string; reason?: string;
-        } | null };
-        const transition = body.transition;
-        if (stopped || !transition || handledWorkspaceTransitionRef.current === transition.nonce) return;
-        if (transition.status === "manual-recovery") {
-          handledWorkspaceTransitionRef.current = transition.nonce;
-          setWorkspaceTransitionNotice(`Workspace transition needs manual recovery. The worktree was retained at ${transition.destinationPath}${transition.newSessionId ? ` (fork ${transition.newSessionId} retained)` : ""}. Inspect the session and worktree before continuing.`);
-        } else if (transition.status === "succeeded") {
-          handledWorkspaceTransitionRef.current = transition.nonce;
-          // A continue receipt survives the move and every later page load.
-          // Following it again remounts this chat and starts the poll again.
-          if (!shouldFollowWorkspaceTransition(transition, session.cwd)) return;
-          try {
-            if (transition.action === "fork" && transition.newSessionId) {
-              workspaceCallbacksRef.current.onSessionForkedToWorktree?.(transition.newSessionId, transition.destinationPath);
-            } else if (transition.action === "continue") {
-              await workspaceCallbacksRef.current.onSessionMoved?.(id, transition.destinationPath);
-            } else throw new Error("Missing fork session ID");
-            if (!stopped) setWorkspaceTransitionNotice(null);
-          } catch {
-            if (!stopped) setWorkspaceTransitionNotice(`Workspace moved to ${transition.destinationPath}, but the view could not follow it. Refresh the session list; do not repeat the transition.`);
-          }
-        }
-      } catch { /* Status is advisory; a network failure never retries a server operation. */ }
-      finally { polling = false; }
-    };
-    void poll();
-    const interval = window.setInterval(() => void poll(), 3000);
-    const onVisibility = () => { if (!document.hidden) void poll(); };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => { stopped = true; window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisibility); };
-  }, [session?.id, session?.cwd, session?.relation?.kind]);
   const [quotedSelection, setQuotedSelection] = useState<{
     text: string;
     top: number;
@@ -399,11 +322,6 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   const [quoteInputOpen, setQuoteInputOpen] = useState(false);
   const [quoteSubmitting, setQuoteSubmitting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
-  const workflowBusy = sessionBusy || streamState.isStreaming || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning);
-  const workflowAttention = Boolean(extensionDialog || extensionCustomUi);
-  useEffect(() => {
-    onWorkflowStatusChange?.({ sessionId: session?.id ?? null, busy: workflowBusy, attention: workflowAttention });
-  }, [session?.id, workflowBusy, workflowAttention, onWorkflowStatusChange]);
   const quotePopoverRef = useRef<HTMLDivElement | null>(null);
   const quoteChatInputRef = useRef<ChatInputHandle | null>(null);
   const closeQuotedSelection = useCallback(() => {
@@ -571,8 +489,8 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   // earlier output. Bring only the card into view (not the whole transcript).
   const questionId = extensionDialog?.id;
   useEffect(() => {
-    if (questionId && !workflowOpen) questionCardRef.current?.scrollIntoView({ block: "nearest" });
-  }, [questionId, workflowOpen]);
+    if (questionId) questionCardRef.current?.scrollIntoView({ block: "nearest" });
+  }, [questionId]);
   const prevScrollDistanceRef = useRef<number | null>(null);
   const loadingOlderRef = useRef(false);
   const restoreStartedRef = useRef(false);
@@ -1097,23 +1015,6 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         <NoticeShelf notices={notices} floating onPauseChange={setNoticePaused} />
       </div>
 
-      {gitControlsHost && session && !session.transient && session.relation?.kind !== "subagent" && createPortal(<>
-          <div hidden={gitControlsPanel !== "commit"}>{visitedGitDetails.includes("commit") &&
-            <GitCommitPanel key={`commit:${session.id}:${session.cwd}`} sessionId={session.id} cwd={session.cwd}
-              busy={sessionBusy || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)} />}</div>
-          <div hidden={gitControlsPanel !== "merge"}>{visitedGitDetails.includes("merge") &&
-            <GitMergeReviewPanel key={`merge:${session.id}:${session.cwd}`} sessionId={session.id} cwd={session.cwd} />}</div>
-          <div hidden={gitControlsPanel !== "workspace"}>{visitedGitDetails.includes("workspace") && <GitWorkspaceContinuation
-            key={`workspace:${session.id}:${session.cwd}`}
-            cwd={session.cwd}
-            sessionId={session.id}
-            transient={session?.transient}
-            onSessionMoved={onSessionMoved}
-            onSessionForkedToWorktree={onSessionForkedToWorktree}
-            assistantLeafId={activeLeafId && messages[entryIds.indexOf(activeLeafId)]?.role === "assistant" ? activeLeafId : null}
-            busy={sessionBusy || streamState.isStreaming || isCompacting || modelSwitching || Boolean(forkingEntryId) || quoteSubmitting || Boolean(sessionRunning)}
-          />}</div>
-        </>, gitControlsHost)}
       <ArchivedSessionNotice key={archivedRootSessionId ?? "none"} rootSessionId={archivedRootSessionId}
         busy={sessionBusy || isCompacting || archiveActionBusy} onRestored={onSessionRestored} />
       <ContextReloadNotice sessionId={session?.id ?? null} busy={sessionBusy || isCompacting} />
@@ -1125,7 +1026,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       )}
       <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
         {extensionCustomUi && (
-          <div inert={workflowOpen}><ExtensionCustomPanel key={extensionCustomUi.id} request={extensionCustomUi} onInput={sendExtensionCustomInput} /></div>
+          <ExtensionCustomPanel key={extensionCustomUi.id} request={extensionCustomUi} onInput={sendExtensionCustomInput} />
         )}
         {!isEmptyNew && <>
         <div
@@ -1138,9 +1039,6 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           style={{ visibility: pendingScrollRestore ? "hidden" : undefined }}
         >
           <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
-            <GitActionProvider key={session?.id ?? sessionIdRef.current ?? "new"} sessionId={session?.id ?? sessionIdRef.current}
-              liveRequest={extensionDialog?.method === "git_action" ? extensionDialog : null} onRespond={respondToExtensionUi}
-              interactionBlocked={workflowOpen} questionCardRef={questionCardRef}>
             <div ref={messageContentRef} onPointerUp={captureQuotedSelection} style={{ width: "100%", minWidth: 0, maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
             {(() => {
               let lastUserIdx = -1;
@@ -1356,27 +1254,14 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
             )}
 
             {extensionDialog && (
-              <GitActionLiveFallback>
-              <div ref={questionCardRef} inert={workflowOpen} className="my-4 min-w-0 scroll-mt-4">
+              <div ref={questionCardRef} className="my-4 min-w-0 scroll-mt-4">
                 {extensionDialog.method === "ask_user"
                   ? <AskUserDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
-                  : extensionDialog.method === "git_action"
-                    ? extensionDialog.candidate.kind === "preferences"
-                      ? <section role="group" aria-label="Configure workflow" className="rounded border border-border bg-bg-panel p-4 text-sm text-text">
-                          <p>All workflow settings now live in Workflow. Dismiss this legacy preference request to configure them there, then explicitly apply saved settings to this task. No operation is approved or continued by opening the panel.</p>
-                          <button type="button" className="mt-3 rounded border border-border px-3 py-2 text-accent" onClick={() => {
-                            respondToExtensionUi(extensionDialog, { cancelled: true });
-                            onOpenWorkflow?.();
-                          }}>Dismiss request &amp; open Workflow</button>
-                        </section>
-                      : <GitActionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
-                    : <ExtensionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />}
+                  : <ExtensionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />}
               </div>
-              </GitActionLiveFallback>
             )}
             <div ref={promptAnchorSpacerRef} aria-hidden="true" />
             </div>
-            </GitActionProvider>
           </div>
         </div>
         {isMobile || pendingScrollRestore ? null : (
@@ -1470,7 +1355,6 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         document.body,
       )}
 
-      {workspaceTransitionNotice && <p role="alert" className="mx-auto max-w-full px-4 text-xs text-amber-500">{workspaceTransitionNotice}</p>}
       <div className="relative shrink-0">
         {!isEmptyNew && (
           <div

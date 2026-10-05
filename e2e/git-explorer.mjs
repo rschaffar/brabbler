@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 
-/** Visual history tracks the selected checkout and branch, never the open chat's integration target. */
+/** Visual history tracks the selected checkout and branch, independently of the open chat. */
 export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorktree }) {
   const checkoutHead = execFileSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   await page.goto(`${base}/?session=${sessionId}`, { waitUntil: "domcontentloaded" });
-  await page.getByText("Ready to review Git workflow", { exact: true }).waitFor();
+  await page.getByText("Ready to browse Git history", { exact: true }).waitFor();
   const gitButton = page.getByRole("button", { name: "Git Explorer", exact: true });
   const initialViewport = page.viewportSize();
   const sidebarWasOpen = await page.locator("#session-sidebar").isVisible();
@@ -95,13 +95,13 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   const detailBounds = await detail.boundingBox();
   assert.ok(graphBounds && detailBounds && graphBounds.x + graphBounds.width <= detailBounds.x + 2,
     `Graph and commit detail should be adjacent in one panel: ${JSON.stringify({ graphBounds, detailBounds })}`);
-  assert.ok(await page.getByText("Ready to review Git workflow", { exact: true }).isVisible(), "Chat stays beside Git view");
+  assert.ok(await page.getByText("Ready to browse Git history", { exact: true }).isVisible(), "Chat stays beside Git view");
   await page.setViewportSize({ width: 900, height: 800 });
   await explorer.getByRole("button", { name: "Back to commits" }).click();
   await graph.waitFor({ state: "visible" });
   await graph.getByRole("button", { name: /second feature/ }).click();
   await detail.waitFor({ state: "visible" });
-  assert.ok(await page.getByText("Ready to review Git workflow", { exact: true }).isVisible(),
+  assert.ok(await page.getByText("Ready to browse Git history", { exact: true }).isVisible(),
     "Intermediate widths keep chat beside the single-column Git panel");
   await page.setViewportSize({ width: 1280, height: 800 });
 
@@ -135,7 +135,7 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await detail.getByRole("region", { name: "Side-by-side diff" }).getByText("Base fixture", { exact: true }).waitFor();
   await page.unroute("**/api/git/explorer?*", delayOldHistory);
   await page.getByRole("button", { name: "New", exact: true }).click();
-  assert.equal(await page.getByText("Ready to review Git workflow", { exact: true }).count(), 0,
+  assert.equal(await page.getByText("Ready to browse Git history", { exact: true }).count(), 0,
     "Git Explorer works without an open session");
 
   const viewport = page.viewportSize();

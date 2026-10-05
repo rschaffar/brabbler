@@ -28,10 +28,10 @@ test("keeps the sidebar toggle fixed and puts all mobile actions in a swipeable 
   const strip = source.indexOf('ref={topBarActionsRef}');
   const activity = source.indexOf('className="activity-top-button"', strip);
   const gitExplorer = source.indexOf('aria-label="Git Explorer"', strip);
-  const workflow = source.indexOf('aria-label="Workflow"', strip);
+  assert.doesNotMatch(source, /aria-label="Workflow"/);
   const toolbar = source.indexOf('data-mobile-toolbar="true"', strip);
   const stripEnd = source.indexOf("</div>\n          {isMobile && sessionHasBranches", toolbar);
-  assert.ok(sidebar >= 0 && sidebar < strip && strip < activity && activity < gitExplorer && gitExplorer < workflow && workflow < toolbar && toolbar < stripEnd);
+  assert.ok(sidebar >= 0 && sidebar < strip && strip < activity && activity < gitExplorer && gitExplorer < toolbar && toolbar < stripEnd);
   assert.match(source.slice(toolbar, stripEnd), /renderChatToolbarActions\(true\)[\s\S]*renderSessionStatsButton\(true\)[\s\S]*renderMainFileToggle\(true\)/);
   assert.match(styles, /\.top-bar-actions \{ display: contents; \}/);
   assert.match(styles, /@media \(max-width: 640px\) \{\s*\.top-bar-actions \{[\s\S]*?overflow-x: auto;[\s\S]*?scrollbar-width: none;/);

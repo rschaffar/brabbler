@@ -2109,9 +2109,6 @@ span.token.table {
   .git-explorer-detail > section { flex: 1; min-height: 0; }
   .git-explorer-back { display: block; flex: none; padding: 8px 16px; border: 0; border-bottom: 1px solid var(--border); background: var(--bg-panel); color: var(--accent); text-align: left; cursor: pointer; }
 }
-.git-controls-body { flex: 1; min-height: 0; min-width: 0; overflow-y: auto; }
-.git-panel-content { min-width: 0; padding: 12px 16px 20px; }
-.git-controls-body pre { max-width: 100%; }
 .activity-header, .activity-filter { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; }
 .activity-header { border-bottom: 1px solid var(--border); }
 .activity-header h1 { margin: 0 0 3px; font-size: 16px; font-weight: 650; }

@@ -9,38 +9,39 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { createJiti } from "jiti";
 import { checkFilePanel, checkEditableFile, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
-import { checkGitDecisionWaiting } from "./git-action-wait.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
-import { checkGitWorkflow } from "./git-workflow.mjs";
-import { checkSettingsProposalCard } from "./git-settings-proposals.mjs";
-import { consumeExpectedTaskConflict } from "./git-task-binding.mjs";
 import { consumeExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
-import { seedGitActionHistory, interruptSeededGitAction, checkSavedGitActionHistory } from "./git-action-history.mjs";
 
+// Test-process isolation only: the disposable child server inherits private file
+// creation from startup. Never repair SDK files or change umask inside a hook.
+process.umask(0o077);
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const mode = process.env.E2E_SERVER_MODE || "dev";
-const { newGitCheckUnit, assertGitCheckContainmentAvailable } = await createJiti(import.meta.url).import("../lib/git-check-containment.ts");
-const checkContainmentSupported = await assertGitCheckContainmentAvailable(newGitCheckUnit()).then(() => true, () => false);
-assert.ok(mode === "dev" || mode === "start", "E2E_SERVER_MODE must be dev or start");
-assert.ok(mode !== "dev" || !existsSync(join(root, ".next/dev/lock")), "Use a checkout without an active dev server");
+assert.ok(!process.env.E2E_SERVER_MODE || process.env.E2E_SERVER_MODE === "dev", "This runner launches only its own Turbopack dev server; no installed runtime or next start");
+assert.ok(!existsSync(join(root, ".next/dev/lock")), "Use this checkout only without an active dev server");
 const artifacts = join(root, "test-results/e2e");
 mkdirSync(artifacts, { recursive: true });
 const agentDir = mkdtempSync(join(tmpdir(), "pi-web-e2e-"));
-// Guarded commits/merges read a real Git identity, but never the operator's HOME/config.
+// Retain private HOME/config for other fixture consumers. Git identity is set
+// locally in each owned repository below: the external isolation forwarder
+// forces GIT_CONFIG_GLOBAL=/dev/null even after production strips GIT_*.
 const home = join(agentDir, "home");
 mkdirSync(home);
 writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = E2E\n\temail = e2e@example.invalid\n[commit]\n\tgpgsign = false\n");
 const fixtureEnv = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config"),
+  XDG_DATA_HOME: join(home, ".local/share"), XDG_STATE_HOME: join(home, ".local/state"),
+  XDG_CACHE_HOME: join(home, ".cache"), XDG_RUNTIME_DIR: join(home, "runtime"),
+  PI_CODING_AGENT_DIR: agentDir,
   GIT_CONFIG_GLOBAL: join(home, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" };
+for (const key of ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR"]) mkdirSync(fixtureEnv[key], { recursive: true, mode: 0o700 });
+Object.assign(process.env, fixtureEnv); // All fixture helpers share disposable storage.
 const project = join(agentDir, "project");
 const otherProject = join(agentDir, "other-project");
 const sessionDir = join(agentDir, "sessions", "e2e");
@@ -60,12 +61,7 @@ const APPEND = "e2e-external-append-session";
 const ARCHIVE = "e2e-archive-session";
 const BULK = ["e2e-bulk-desktop-a", "e2e-bulk-desktop-b", "e2e-bulk-mobile-a", "e2e-bulk-mobile-b"];
 const OTHER = "e2e-other-project";
-const GIT = "e2e-git-workflow";
-// A real UUID lets this saved-history chat also exercise durable workspace receipts.
-const GIT_HISTORY = "0fca1683-cb89-4e3a-90ba-9f01bd3f7e09";
-const PROPOSAL = "e2e-git-settings-proposal";
-const PROPOSAL_ID = "12345678-1234-4234-8234-123456789abc";
-let gitHistory;
+const GIT = "e2e-git-explorer";
 const gitProject = join(agentDir, "git-project");
 const targetWorktree = join(agentDir, "git-target-worktree");
 const text = (i) => `E2E message ${String(i).padStart(4, "0")}`;
@@ -181,16 +177,6 @@ try {
     message("reply", "root", "assistant", "E2E wrapper reply"),
   ]);
   writeSession(ARCHIVE, [message("root", null, "user", "E2E archive fixture")]);
-  const proposalResult = message("proposal-result", "proposal-call", "toolResult", [{ type: "text", text: "Proposal ready for review." }]);
-  Object.assign(proposalResult.message, { toolCallId: "proposal-tool", toolName: "git_workflow_propose_settings", isError: false,
-    details: { proposalId: PROPOSAL_ID } });
-  writeSession(PROPOSAL, [
-    message("proposal-user", null, "user", "Please propose a settings change"),
-    message("proposal-call", "proposal-user", "assistant", [{ type: "toolCall", id: "proposal-tool", name: "git_workflow_propose_settings",
-      arguments: { scope: "project", repositoryPath: gitProject, changes: [{ field: "enabled", value: false }] } }]),
-    proposalResult,
-    message("proposal-answer", "proposal-result", "assistant", "Review and apply the proposal in chat."),
-  ], gitProject);
   for (const id of BULK) writeSession(id, [message("root", null, "user", `E2E bulk ${id}`)]);
   writeSession(OTHER, [
     message("root", null, "user", "Other workspace task"),
@@ -199,6 +185,11 @@ try {
   {
     const otherGit = (...args) => execFileSync("git", ["-C", otherProject, ...args], { encoding: "utf8", env: fixtureEnv }).trim();
     otherGit("init", "-qb", "other-main");
+    // Beta fixture only, before any seed commit or selected-source capture.
+    otherGit("config", "--local", "user.name", "E2E");
+    otherGit("config", "--local", "user.email", "e2e@example.invalid");
+    otherGit("config", "--local", "commit.gpgsign", "false");
+    otherGit("config", "--local", "tag.gpgsign", "false");
     otherGit("commit", "--allow-empty", "-qm", "Other project fixture");
   }
   {
@@ -208,12 +199,21 @@ try {
     }).trim();
     const commit = (subject) => git("-c", "user.name=E2E", "-c", "user.email=e2e@example.invalid", "commit", "-m", subject);
     git("init", "-b", "target");
+    // Alpha fixture only, before commits/tags/candidates. Its linked target
+    // shares this common local config; no identity comes from global config.
+    git("config", "--local", "user.name", "E2E");
+    git("config", "--local", "user.email", "e2e@example.invalid");
+    git("config", "--local", "commit.gpgsign", "false");
+    git("config", "--local", "tag.gpgsign", "false");
     git("config", "core.autocrlf", "false");
     writeFileSync(join(gitProject, "base.txt"), "Base fixture\n");
-    git("add", "base.txt"); commit("base fixture");
+    mkdirSync(join(gitProject, "checks"));
+    writeFileSync(join(gitProject, "checks", "fixture.txt"), "Tracked modern check working directory\n");
+    git("add", "base.txt", "checks/fixture.txt"); commit("base fixture");
     git("switch", "-c", "feature");
     writeFileSync(join(gitProject, "first.txt"), "First feature patch\n");
     git("add", "first.txt"); commit("first feature");
+    git("branch", "comparison-base"); // Read-only comparison branch; deliberately no checkout.
     writeFileSync(join(gitProject, "second.txt"), "Second feature patch\n");
     writeFileSync(join(gitProject, "base.txt"), "Revised base fixture\n");
     git("add", "second.txt", "base.txt"); commit("second feature");
@@ -223,26 +223,9 @@ try {
     writeFileSync(join(gitProject, "draft.txt"), "Manual commit fixture\n");
     writeFileSync(join(gitProject, "second-draft.txt"), "Second captured commit file\n");
     git("worktree", "add", targetWorktree, "target");
-    writeSession(GIT, [message("root", null, "user", "E2E Git workflow conversation"),
-      message("answer", "root", "assistant", "Ready to review Git workflow")], gitProject);
-    gitHistory = await seedGitActionHistory(agentDir, GIT_HISTORY);
-    writeSession(GIT_HISTORY, [message("root", null, "user", "Earlier Git decisions"), ...gitHistory.entries,
-      { type: "compaction", id: "saved-compaction", parentId: gitHistory.entries.at(-1).id, timestamp,
-        summary: "Keep the short task context, not private patches.", firstKeptEntryId: "saved-compaction", tokensBefore: 100 },
-      message("answer", "saved-compaction", "assistant", "Saved Git action history fixture")], gitProject);
-    // This session already reached its destination. The durable continue
-    // receipt must remain readable without remounting its saved Git cards.
-    const { recordGitWorkspaceTransition, claimGitWorkspaceTransition, finishGitWorkspaceTransition } =
-      await createJiti(import.meta.url).import("../lib/git-workspace-transition.ts");
-    const receiptRoot = join(agentDir, "pi-web", "git-workspace-transitions", "v1");
-    mkdirSync(receiptRoot, { recursive: true, mode: 0o700 });
-    const nonce = "fa014c1f-043b-46e3-b0f9-37f5d03a420a";
-    recordGitWorkspaceTransition(GIT_HISTORY, {
-      version: 1, originCwd: project, destinationPath: gitProject, branch: "feature",
-      baseOid: "a".repeat(40), featureTip: "a".repeat(40), onCreate: "continue", createdAt: timestamp, nonce,
-    }, receiptRoot);
-    assert.equal(claimGitWorkspaceTransition(GIT_HISTORY, nonce, receiptRoot), true);
-    finishGitWorkspaceTransition(GIT_HISTORY, nonce, gitProject, receiptRoot);
+    writeSession(GIT, [message("root", null, "user", "E2E Git browsing conversation"),
+      message("answer", "root", "assistant", "Ready to browse Git history")], gitProject);
+
   }
 
   const probe = createServer();
@@ -251,9 +234,9 @@ try {
   const port = probe.address().port;
   await new Promise((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
   const base = `http://127.0.0.1:${port}`;
-  server = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), mode, "-H", "127.0.0.1", "-p", String(port)], {
+  server = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "dev", "--turbopack", "-H", "127.0.0.1", "-p", String(port)], {
     cwd: root,
-    env: { ...fixtureEnv, NODE_ENV: mode === "dev" ? "development" : "production",
+    env: { ...fixtureEnv, NODE_ENV: "development",
       PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -286,51 +269,14 @@ try {
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, GIT_HISTORY, PROPOSAL, ...BULK].sort());
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK].sort());
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
     await delay(250);
   }
 
-  if (process.env.E2E_GIT_WORKFLOW_ONLY === "1") {
-    browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    context = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: "en-US" });
-    await context.tracing.start({ screenshots: true, snapshots: true });
-    page = await context.newPage();
-    page.setDefaultTimeout(30_000);
-    const errors = [];
-    let busyIntegrationReads = 0;
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (event) => {
-      if (event.type() !== "error" || consumeExpectedTaskConflict(page, event) || consumeExpectedBrowserConflict(page, event)) return;
-      // The review panel polls while the fixture's ask_user holds this chat busy.
-      // Consume only a corroborated GET 409 from that read-only integration endpoint.
-      if (busyIntegrationReads > 0 && event.text() === "Failed to load resource: the server responded with a status of 409 (Conflict)"
-        && event.location().url === `${base}/api/git/integration?sessionId=${GIT}`) {
-        busyIntegrationReads--; return;
-      }
-      errors.push(`${event.text()} [${event.location().url.slice(0, 512)}]`);
-    });
-    page.on("response", (response) => {
-      if (response.status() === 409 && new URL(response.url()).pathname === "/api/git/integration"
-        && response.request().method() === "GET" && new URL(response.url()).searchParams.get("sessionId") === GIT) busyIntegrationReads++;
-      if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
-    });
-    await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
-    await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree, otherProject, checkContainmentSupported });
-    if (checkContainmentSupported) await checkIntegratedGitGraph(page, targetWorktree);
-    await checkSettingsProposalCard(page, { base, sessionId: PROPOSAL, proposalId: PROPOSAL_ID, projectRoot: gitProject });
-    await interruptSeededGitAction(agentDir, gitHistory.records.interrupted);
-    await checkSavedGitActionHistory(page, { base, api, sessionId: GIT_HISTORY, records: gitHistory.records, artifacts });
-    await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
-    await checkGitDecisionWaiting(page, { base, width: page.viewportSize().width });
-    assert.deepEqual(errors, [], "Git workflow browser errors");
-    await context.tracing.stop();
-    await context.close();
-    context = undefined;
-    page = undefined;
-  } else if (process.env.E2E_TIMESTAMPS_ONLY === "1") {
+  if (process.env.E2E_TIMESTAMPS_ONLY === "1") {
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
     for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
       context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
@@ -490,22 +436,14 @@ try {
     page.setDefaultTimeout(30_000);
     const errors = [];
     const olderResponses = [];
-    let busyIntegrationReads = 0;
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (event) => {
-      if (event.type() !== "error" || consumeExpectedTaskConflict(page, event) || consumeExpectedBrowserConflict(page, event)) return;
-      // A read-only review poll can conflict with the fixture's pending question.
-      if (busyIntegrationReads > 0 && event.text() === "Failed to load resource: the server responded with a status of 409 (Conflict)"
-        && event.location().url === `${base}/api/git/integration?sessionId=${GIT}`) {
-        busyIntegrationReads--; return;
-      }
+      if (event.type() !== "error" || consumeExpectedBrowserConflict(page, event)) return;
       errors.push(event.text());
     });
     page.on("response", (response) => {
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
       const url = new URL(response.url());
-      if (response.status() === 409 && url.pathname === "/api/git/integration"
-        && response.request().method() === "GET" && url.searchParams.get("sessionId") === GIT) busyIntegrationReads++;
       if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
     });
     if (process.env.E2E_FILE_EDIT_ONLY === "1") {
@@ -695,11 +633,9 @@ try {
       continue;
     }
     if (viewport.width === 1280) {
+      assert.equal(await page.getByRole("button", { name: "Workflow", exact: true }).count(), 0, "Managed Workflow controls must be absent");
       await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
-      await checkGitWorkflow(page, { base, api, artifacts, sessionId: GIT, cwd: gitProject, targetWorktree, otherProject, checkContainmentSupported });
-      if (checkContainmentSupported) await checkIntegratedGitGraph(page, targetWorktree);
-      await interruptSeededGitAction(agentDir, gitHistory.records.interrupted);
-      await checkSavedGitActionHistory(page, { base, api, sessionId: GIT_HISTORY, records: gitHistory.records, artifacts });
+      await checkIntegratedGitGraph(page, targetWorktree);
     }
     // Use a separate tab: a deliberate full-page reload must not alter the
     // reading-position and session-history fixtures exercised below.
@@ -746,7 +682,7 @@ try {
       assert.ok(scrolled.overflow > 0 && scrolled.scrollLeft > 0, "Mobile actions must scroll horizontally");
       assert.equal((await sidebarToggle.boundingBox()).x, sidebarX, "Sidebar toggle must stay pinned while scrolling");
       assert.ok(await page.locator('[data-mobile-toolbar-file="true"]').isVisible(), "Trailing file control must be reachable");
-      for (const label of ["Workflow", "Git Explorer"]) {
+      for (const label of ["Git Explorer"]) {
         const button = page.getByRole("button", { name: label, exact: true });
         await button.scrollIntoViewIfNeeded();
         assert.ok(await button.evaluate((element) => {
@@ -953,7 +889,6 @@ try {
     await checkFilePanel(page, previewFile);
     await checkEditableFile(page, editableFile);
     await checkExtensionDialogs(page, artifacts, viewport.width);
-    await checkGitDecisionWaiting(page, { base, width: viewport.width });
     await checkAskUserDialog(page, viewport.width);
     if (viewport.width <= 600) {
       await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });

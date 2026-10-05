@@ -1,4 +1,4 @@
-import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { existsSync, linkSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -10,9 +10,6 @@ import {
 import { sessionPathKey } from "./session-path";
 import { SUBAGENT_META_TYPE } from "./subagents";
 import { getQueuedSubagentSessionIds } from "./subagent-runtime";
-import { withGitWorkflowSettingsLock } from "./git-workflow-settings-store";
-import { retireGitTaskBinding } from "./git-workflow-binding-store";
-import { advanceGitWorkflowWriteEpoch } from "./git-workflow-write-epoch";
 import type { SessionInfo } from "./types";
 
 export class SessionMoveConflict extends Error {}
@@ -60,7 +57,7 @@ export async function moveSessionFamily(id: string, cwd: string): Promise<{ move
   globalThis.__piSessionMoveLock = current;
   try {
     await previous;
-    return await withGitWorkflowSettingsLock(getAgentDir(), () => moveSessionFamilyUnlocked(id, cwd));
+    return await moveSessionFamilyUnlocked(id, cwd);
   } finally {
     release();
     if (globalThis.__piSessionMoveLock === current) globalThis.__piSessionMoveLock = undefined;
@@ -142,12 +139,6 @@ async function moveSessionFamilyUnlocked(id: string, cwd: string): Promise<{ mov
   if (getQueuedSubagentSessionIds().some((queuedId) => movedIds.has(queuedId))) {
     throw new SessionMoveConflict("Wait for queued subagents to finish before moving");
   }
-  // Fence reviewed metadata before replacing any file, including repaired parent
-  // references. A failed/rolled-back move never resurrects its old generation.
-  try {
-    advanceGitWorkflowWriteEpoch(getAgentDir(), files.map((file) => ({ kind: "session", sessionId: file.id })));
-    for (const file of files) retireGitTaskBinding(file.id, undefined, "session-move", getAgentDir());
-  } catch { throw new SessionMoveConflict("Task bindings could not be invalidated; session was not moved."); }
   // Evict idle wrappers before touching their files: their managers retain the
   // old path and could otherwise append to a stale or moved transcript.
   for (const file of files) await getRpcSession(file.id)?.shutdown();
@@ -175,6 +166,9 @@ async function moveSessionFamilyUnlocked(id: string, cwd: string): Promise<{ mov
       installed.push(file);
       unlinkSync(file.stage);
     }
+    for (const file of stages) {
+      if (readFileSync(file.target, "utf8") !== file.rewritten) throw new SessionMoveConflict("Installed session changed during move");
+    }
   } catch (error) {
     const recoveryErrors: unknown[] = [];
     for (const file of installed.reverse()) {
@@ -186,6 +180,8 @@ async function moveSessionFamilyUnlocked(id: string, cwd: string): Promise<{ mov
     for (const stage of staged) if (existsSync(stage)) {
       try { unlinkSync(stage); } catch (cause) { recoveryErrors.push(cause); }
     }
+    for (const file of files) { invalidateSessionManagerCache(file.source); invalidateSessionManagerCache(file.target); }
+    invalidateSessionListCache();
     if (recoveryErrors.length) throw new AggregateError([error, ...recoveryErrors], "Move failed; recovery files may remain");
     throw error;
   }
