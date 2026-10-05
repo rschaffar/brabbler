@@ -663,7 +663,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         // No older history loaded yet: fetch the previous page from the server
         // and prepend it (loadContext handles prepend + scroll anchoring).
         // Skip while a page is already loading or nothing older exists.
-        if (loadingOlderRef.current) return;
+        // Restoring a saved anchor owns pagination until its layout is settled.
+        // A sentinel observed at the initial top must not overwrite that anchor.
+        if (loadingOlderRef.current || pendingScrollRestoreRef.current) return;
         if (!hasEarlierMessages) return;
         const oldestId = historyCursor;
         if (!oldestId) return;

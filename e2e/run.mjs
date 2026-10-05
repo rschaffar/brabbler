@@ -827,11 +827,18 @@ try {
         element.getBoundingClientRect().top - element.closest(".overflow-y-auto").getBoundingClientRect().top
       ));
       const positionForReading = async (target) => {
-        await target.evaluate((element) => {
+        const offset = await target.evaluate(async (element) => {
+          // A response/attached row can precede pagination's post-layout anchoring.
+          // Establish a real visible reading position, not an off-screen snapshot.
+          const layout = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          await layout();
           const scroll = element.closest(".overflow-y-auto");
           scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 120;
+          await layout();
+          return element.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
         });
-        return readingOffset(target);
+        assert.ok(Math.abs(offset - 120) < 5, `Reading fixture must settle at its visible anchor, got ${offset}`);
+        return offset;
       };
       await selectSession(text(0), "e4999");
       const olderPage = page.waitForResponse((response) => response.url().includes(`/api/sessions/${LONG}/context?`));
