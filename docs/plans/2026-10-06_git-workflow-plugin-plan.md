@@ -28,9 +28,9 @@ without cancellation; pending questions cancel on disable/Stop/teardown.
 
 ## Plan
 
-- [ ] Add registry/schema, explicit overrides/reset/origins and private persistence; verify focused core tests.
-- [ ] Add generic text/Markdown/supplied-patch/action cards to existing pending request transport; test validation, reconnect, cancellation and restart non-replay.
-- [ ] Add Git tools and Settings → Plugins control, exact previews, required checks and revalidation; test deny/ask/allow, resources, stale state, conflicts and staging preservation separately.
+- [x] Add registry/schema, explicit overrides/reset/origins and private persistence; verify focused core tests.
+- [x] Add generic text/Markdown/supplied-patch/action cards to existing pending request transport; test validation, reconnect, cancellation and restart non-replay.
+- [x] Add Git tools and Settings → Plugins control, exact previews, required checks and revalidation; test deny/ask/allow, resources, stale state, conflicts and staging preservation separately.
 - [ ] Document commands and CI selection; run required common checks and affected browser acceptance, review feature commits and report exact unintegrated candidate.
 
 ## Risks / Recovery
@@ -42,6 +42,30 @@ rollback. Conflicted rebase/merge state remains visible for explicit resolution;
 no reset or hidden recovery. Disable prevents new execution but does not kill a
 native write already in progress. Settings live outside Git, with no legacy-data
 migration. Terminal integrations are not changed.
+
+## Verification checkpoint
+
+- Foundation/card checks passed (17 cases); separate Git + real Pi lifecycle
+  selection passed (15 cases). Typecheck and lint passed in the offline Nix shell.
+- `nix develop --offline --no-write-lock-file -c node nix/test-offline.mjs`:
+  231/231 files, 1,499/1,499 cases, exporter/typegen/typecheck/lint passed.
+  First attempt failed the new route fixture's absent Host header (1,053 passes,
+  one failure, 54 unstarted); corrected the fixture, not API protection.
+- Credential-free, eight-CPU-affinity `npm test` passed; final count and exact
+  candidate verification will be reported at handoff.
+- Plugin-only `npm run test:e2e` passed desktop/mobile (`/tmp/pi-plugin-browser8.log`).
+  Earlier attempts exposed delayed checkbox state (fixed with optimistic UI plus
+  error rollback) and fixture issues: incorrect Stop label, mobile navigation,
+  repeated content across viewports and hidden mobile Stop controls. Fixed
+  fixtures use real controls/composer Escape and actual server settlement checks;
+  no force clicks, reduced assertions or increased deadlines.
+- Full core browser acceptance failed its existing reading-position restoration
+  assertion at e2e/run.mjs:860 (`/tmp/pi-plugin-core-browser.log`). A pristine
+  local-base copy passed (`/tmp/pi-plugin-base-browser.log`); that alone cannot
+  attribute the failure. Read-only investigation found concrete stale observer
+  and incomplete prepend-anchoring races. A bounded shared-UI regression repair
+  and deterministic tests remain part of final acceptance; no runner redesign.
+- No production build, integration, publication, deployment or feature cleanup.
 
 ## Completion Checklist
 

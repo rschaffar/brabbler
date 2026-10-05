@@ -38,6 +38,8 @@ export interface PluginCard {
   text?: string;
   markdown?: string;
   patch?: string;
+  patchBefore?: string;
+  patchAfter?: string;
   actions: Array<{ id: string; label: string }>;
 }
 export interface PluginUiContext {

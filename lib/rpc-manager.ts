@@ -55,6 +55,7 @@ import { haveContextFilesChanged } from "./context-file-changes";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createAskUserExtension, preferPiWebAskUserExtension, type AskUserUiContext } from "./ask-user-extension";
 import { createSessionReferenceExtension } from "./session-reference-extension";
+import { bundledPluginExtensions } from "./plugins/registry";
 import { validatePluginCard, validPluginAction } from "./plugins/ui";
 import type { PluginUiContext } from "./plugins/types";
 import { normalizeAskUserAnswer } from "./ask-user";
@@ -2285,6 +2286,7 @@ async function startRpcSessionInternal(
                 isBuiltInSubagentsEnabled,
               ),
               createAskUserExtension(),
+              ...bundledPluginExtensions(sessionCwd),
             ],
             extensionsOverride: (base) => preferUserBashExtension(preferPiWebAskUserExtension(preferPiWebSubagentExtension(base))),
           },

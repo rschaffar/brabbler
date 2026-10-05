@@ -25,7 +25,7 @@ ROOT_FILES = frozenset({
     'postcss.config.mjs', 'tailwind.config.ts', 'instrumentation.ts',
     'instrumentation-node.ts', 'proxy.ts',
 })
-ROOT_TREES = ('app', 'components', 'hooks', 'lib', 'public', 'e2e', 'bin',
+ROOT_TREES = ('app', 'components', 'hooks', 'lib', 'plugins', 'public', 'e2e', 'bin',
               'nix', 'docs', '.github')
 # Admit ONLY this maintained subtree, not other agent/private configuration.
 MAINTAINED_TREE = ('.agents', 'skills', 'writing-plans')
