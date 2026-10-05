@@ -59,11 +59,11 @@ test("every persisted session row copies its deep link without selecting the row
   assert.match(sessionItemSource, /\{!session\.transient && !bulkSelecting && \([\s\S]*?onClick=\{handleCopyLink\}/);
 });
 
-test("move action confirms a different project and includes touch rows", () => {
+test("move action keeps explicit confirmation and includes touch rows", () => {
   assert.match(sessionItemSource, /onMove\?\.\(\)/);
   assert.match(sessionItemSource, /disabled=\{isRunning\}[\s\S]*?sidebar\.moveSession/);
-  assert.match(source, /<DirectoryPicker[\s\S]*?setMoveDestination\(path\)/);
-  assert.match(source, /recentProjects\.filter\(\(project\) => project\.key !== movingSession\.projectKey\)/);
+  assert.match(source, /<SessionMoveDestinationPicker projects=\{recentProjects\} currentCwd=\{movingSession\.cwd\}/);
+  assert.match(source, /disabled=\{moveBusy \|\| !moveDestination\}/);
   assert.match(source, /\/move`, \{[\s\S]*?method: "POST"/);
   assert.match(source, /data\.movedIds\?\.includes\(selectedSessionId\)/);
 });

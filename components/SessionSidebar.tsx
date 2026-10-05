@@ -22,6 +22,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { DirectoryPicker } from "./DirectoryPicker";
+import { SessionMoveDestinationPicker } from "./SessionMoveDestinationPicker";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import { SessionSearch } from "./SessionSearch";
 import { SubagentIcon } from "./SubagentIcon";
@@ -1199,9 +1200,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   const [movingSession, setMovingSession] = useState<SessionInfo | null>(null);
   const [moveDestination, setMoveDestination] = useState("");
-  const [moveBrowsing, setMoveBrowsing] = useState(false);
   const [moveBusy, setMoveBusy] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const proposeMoveDestination = useCallback((path: string) => {
+    setMoveDestination(path);
+    setMoveError(null);
+  }, []);
 
   const confirmMove = useCallback(async () => {
     if (!movingSession || !moveDestination || moveBusy) return;
@@ -1377,24 +1381,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         "--sidebar-session-pane-height": `${sessionPaneResizer.width}px`,
       } as CSSProperties}
     >
-      {moveBrowsing && (
-        <DirectoryPicker
-          initialPath={moveDestination || movingSession?.cwd}
-          onCancel={() => setMoveBrowsing(false)}
-          onSelect={(path) => { setMoveDestination(path); setMoveError(null); setMoveBrowsing(false); }}
-        />
-      )}
-      {movingSession && !moveBrowsing && (
+      {movingSession && (
         <div role="presentation" onClick={() => { if (!moveBusy) setMovingSession(null); }} style={{ position: "fixed", inset: 0, zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)" }}>
           <div role="dialog" aria-modal="true" aria-label={t("sidebar.moveSession")} onClick={(event) => event.stopPropagation()} style={{ width: 440, maxWidth: "calc(100vw - 24px)", background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10, padding: 20, display: "grid", gap: 12 }}>
             <strong>{t("sidebar.moveSession")}</strong>
             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("sidebar.moveSessionHint")}</div>
-            <label style={{ fontSize: 12 }} htmlFor="move-session-project">{t("sidebar.moveDestination")}</label>
-            <select id="move-session-project" value={recentProjects.some((project) => project.root === moveDestination) ? moveDestination : ""} onChange={(event) => { setMoveDestination(event.target.value); setMoveError(null); }} style={{ width: "100%", padding: 8, color: "var(--text)", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6 }}>
-              <option value="">{t("sidebar.chooseProject")}</option>
-              {recentProjects.filter((project) => project.key !== movingSession.projectKey).map((project) => <option key={project.key} value={project.root}>{project.root}</option>)}
-            </select>
-            <button type="button" onClick={() => setMoveBrowsing(true)} style={{ textAlign: "left", color: "var(--accent)", background: "none", border: 0, cursor: "pointer" }}>{t("sidebar.browseProject")}</button>
+            <SessionMoveDestinationPicker projects={recentProjects} currentCwd={movingSession.cwd} destination={moveDestination} onChange={proposeMoveDestination} disabled={moveBusy} />
             {moveDestination && <div style={{ fontSize: 11, overflowWrap: "anywhere" }}>{moveDestination}</div>}
             {moveError && <div role="alert" style={{ color: "#ef4444", fontSize: 12 }}>{moveError}</div>}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
