@@ -31,7 +31,7 @@ without cancellation; pending questions cancel on disable/Stop/teardown.
 - [x] Add registry/schema, explicit overrides/reset/origins and private persistence; verify focused core tests.
 - [x] Add generic text/Markdown/supplied-patch/action cards to existing pending request transport; test validation, reconnect, cancellation and restart non-replay.
 - [x] Add Git tools and Settings → Plugins control, exact previews, required checks and revalidation; test deny/ask/allow, resources, stale state, conflicts and staging preservation separately.
-- [ ] Document commands and CI selection; run required common checks and affected browser acceptance, review feature commits and report exact unintegrated candidate.
+- [x] Document commands and CI selection; run required common checks and affected browser acceptance, review feature commits and prepare the unintegrated candidate.
 
 ## Risks / Recovery
 
@@ -64,11 +64,43 @@ migration. Terminal integrations are not changed.
   local-base copy passed (`/tmp/pi-plugin-base-browser.log`); that alone cannot
   attribute the failure. Read-only investigation found concrete stale observer
   and incomplete prepend-anchoring races. A bounded shared-UI regression repair
-  and deterministic tests remain part of final acceptance; no runner redesign.
+  and deterministic tests were added in separate commit `66337e8`; the original
+  assertion/deadline remain. Both subsequent full core browser runs passed;
+  no runner redesign.
 - No production build, integration, publication, deployment or feature cleanup.
 
 ## Completion Checklist
 
-- [ ] All-disabled Pi Web and ordinary tools remain usable without Git guidance.
-- [ ] Required tests/typecheck/lint and browser acceptance results are reported honestly.
-- [ ] Reviewable commits, exact candidate and known gaps are presented; feature resources retained pending separate approvals.
+- [x] All-disabled Pi Web and ordinary tools remain usable without Git guidance.
+- [x] Required tests/typecheck/lint and browser acceptance results are reported honestly.
+- [x] Reviewable commits and exact code candidate are verified; final plan-only
+  handoff gets a narrow unchanged-input/documentation check. Feature resources
+  remain for separate integration, publication, deployment and cleanup approvals.
+
+## Final acceptance / handoff
+
+Code candidate **66337e8fe69b62fb3b453d4f863f6b7aafb3cd6d** is prepared on
+unchanged local rst-main **6a0678d12da2b40cbdd6f2f2560add8215aa4e8b** (no rebase
+needed). Current behavior, commands and limitations live in
+`docs/git-workflow-plugin.md`, README/AGENTS and the testing guides.
+
+Exact-code lifecycle verification passed:
+
+| Command/selection | Result | Receipt prefix |
+| --- | --- | --- |
+| `nix develop --offline --no-write-lock-file -c node nix/test-offline.mjs` | 231 files / 1,500 cases; exporter/typegen/typecheck/lint passed; no unstarted/uncertain/surviving files | `a36a9101` |
+| Credential-free eight-CPU `npm test`, separate `plugins/**/*.test.mjs`, `tsc --noEmit`, `npm run lint` | 1,501 core and 15 plugin cases; all passed | `8fe6c0f6` |
+| Credential-free `npm run test:e2e` | Full desktop/mobile core acceptance passed | `2fadf1df` |
+| Same command with `E2E_GIT_WORKFLOW_PLUGIN_ONLY=1` | Desktop/mobile plugin acceptance passed | `05aff7bc` |
+
+Logs/receipts are retained under the common Git directory's external lifecycle
+`git-workflow/`, not application plugin authority. No terminal integration changed;
+terminal-specific browser acceptance is not applicable to this delta. No build,
+integration, publication, deployment or feature-resource cleanup occurred.
+The archived handoff is the only later documentation delta; application acceptance
+belongs to the code candidate above, not a claim that full suites ran on that later tip.
+
+Known limitations: unborn repositories, sparse/hidden-index and clean-filter states
+are refused; checks run in disclosed checkout locations rather than exported
+candidate/merged trees; external writers can race final validation. These are
+explicit in the maintained guide, not deferred orchestration obligations.
