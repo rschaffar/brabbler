@@ -17,6 +17,7 @@ import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { AnsiText } from "./AnsiText";
 import { AskUserDialog } from "./AskUserDialog";
+import { PluginCard } from "./plugin-ui/PluginCard";
 import { ContextReloadNotice } from "./ContextReloadNotice";
 import { ArchivedSessionNotice } from "./ArchivedSessionNotice";
 import { useI18n } from "@/hooks/useI18n";
@@ -665,7 +666,13 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         // Skip while a page is already loading or nothing older exists.
         // Restoring a saved anchor owns pagination until its layout is settled.
         // A sentinel observed at the initial top must not overwrite that anchor.
-        if (loadingOlderRef.current || pendingScrollRestoreRef.current) return;
+        if (loadingOlderRef.current || pendingScrollRestoreRef.current || prevScrollDistanceRef.current !== null) return;
+        // Observer entries describe an earlier layout. A restored viewport can
+        // already be away from the top when a queued intersecting entry arrives.
+        if (!sentinel.isConnected) return;
+        const sentinelBounds = sentinel.getBoundingClientRect();
+        const viewportBounds = container.getBoundingClientRect();
+        if (sentinelBounds.bottom < viewportBounds.top || sentinelBounds.top > viewportBounds.bottom) return;
         if (!hasEarlierMessages) return;
         const oldestId = historyCursor;
         if (!oldestId) return;
@@ -673,7 +680,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         if (!sid) return;
         loadingOlderRef.current = true;
         prevScrollDistanceRef.current = captureScrollDistance(container.scrollHeight, container.scrollTop);
-        void loadContext(sid, activeLeafId, oldestId).finally(() => {
+        void loadContext(sid, activeLeafId, oldestId).then((context) => {
+          if (!context) prevScrollDistanceRef.current = null;
+        }).finally(() => {
           loadingOlderRef.current = false;
         });
       },
@@ -689,15 +698,15 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     setVisibleCount((current) => Math.max(current, messages.length));
   }, [messages.length]);
 
-  // After visibleCount increases (more messages prepended), restore the
-  // scroll position so the viewport doesn't jump.
-  useEffect(() => {
-    if (prevScrollDistanceRef.current == null) return;
+  // Anchor only after the prepend is rendered, including prepends within an
+  // already-expanded budget. Until then its distance also blocks pagination.
+  useLayoutEffect(() => {
+    if (prevScrollDistanceRef.current == null || visibleCount < messages.length) return;
     const container = scrollContainerRef.current;
     if (!container) return;
     container.scrollTop = restoreScrollTop(container.scrollHeight, prevScrollDistanceRef.current);
     prevScrollDistanceRef.current = null;
-  }, [visibleCount, scrollContainerRef]);
+  }, [visibleCount, messages.length, scrollContainerRef]);
   // Push session stats up to AppShell for the top bar.
   // Compare scalar fields to avoid loops from new object identity each render.
   const statsKey = sessionStats
@@ -1259,7 +1268,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
               <div ref={questionCardRef} className="my-4 min-w-0 scroll-mt-4">
                 {extensionDialog.method === "ask_user"
                   ? <AskUserDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
-                  : <ExtensionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />}
+                  : extensionDialog.method === "plugin_card"
+                    ? <PluginCard key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
+                    : <ExtensionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />}
               </div>
             )}
             <div ref={promptAnchorSpacerRef} aria-hidden="true" />

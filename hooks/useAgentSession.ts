@@ -112,7 +112,7 @@ function alignEntryIds(messages: AgentMessage[], entryIds: string[]): string[] {
   return Array.from({ length: messages.length }, (_, index) => entryIds[index] ?? "");
 }
 
-type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" | "ask_user" }>;
+type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "plugin_card" }>;
 type ExtensionUiCustomRequest = Extract<ExtensionUiRequest, { method: "custom" }>;
 export type NoticeType = "info" | "success" | "warning" | "error";
 
@@ -978,7 +978,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const respondToExtensionUi = useCallback(async (
     request: ExtensionUiDialogRequest,
-    response: { value: string } | { confirmed: boolean } | { approvePlanId: string } | { cancelled: true } | { answer: import("@/lib/ask-user").AskUserAnswer },
+    response: { value: string } | { confirmed: boolean } | { action: string } | { cancelled: true } | { answer: import("@/lib/ask-user").AskUserAnswer },
   ) => {
     const sid = sessionIdRef.current;
     setExtensionDialog((current) => current?.id === request.id ? null : current);
@@ -1030,6 +1030,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "input":
       case "editor":
       case "ask_user":
+      case "plugin_card":
         setExtensionDialog(request);
         break;
       case "notify": {

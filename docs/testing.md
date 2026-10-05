@@ -16,8 +16,10 @@ nix develop -c node nix/test-offline.mjs --help
 
 Use focused checks while fixing defects, then a full run at a stable checkpoint.
 Source writers must pause during export. A selected-file pass is not full-suite
-acceptance. Current results and historical failures live in the
-[current removal checklist](plans/2026-09-29_policy-driven-git-tools-plan.md).
+acceptance. Bundled-plugin Git integration tests remain separate; the
+[Git plugin guide](git-workflow-plugin.md#verification) owns their commands and
+CI selection. The [removal checklist](plans/2026-09-29_policy-driven-git-tools-plan.md)
+retains historical removal results.
 
 The ordinary contributor baseline remains:
 
@@ -40,7 +42,8 @@ Supported systems: x86_64-linux and aarch64-linux. The Git-filtered shell keeps
 its manifest-only dependency definition in tracked `flake.nix`; the launcher
 reads the current working filesystem after shell entry. It exports an explicit
 source/name allowlist, including untracked source helpers, while excluding Git,
-dependencies, `.next` and reviewed private/ignored paths. Symlinks/special files
+dependencies, `.next` and reviewed private/ignored paths. `plugins/` source is
+included for static checks, without adding its integration tests to core discovery. Symlinks/special files
 refuse. This is not a secret-content detector: review files admitted to source
 paths and never pass the populated checkout to `path:.`.
 

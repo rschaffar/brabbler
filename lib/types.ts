@@ -133,6 +133,7 @@ export interface SystemMessage {
 export type SessionMessage = AgentMessage | SystemMessage;
 
 export type ExtensionUiRequest =
+  | ({ type: "extension_ui_request"; id: string; method: "plugin_card"; pluginId: string } & import("./plugins/types").PluginCard)
   | {
       type: "extension_ui_request";
       id: string;
@@ -214,7 +215,7 @@ export type ExtensionUiRequest =
 
 export type BlockingExtensionUiRequest = Extract<
   ExtensionUiRequest,
-  { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "custom" }
+  { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "custom" | "plugin_card" }
 >;
 
 /** Lightweight, read-only attention metadata from Pi Web's live wrappers. */
@@ -231,6 +232,7 @@ export interface SessionCompletion {
 }
 
 export type ExtensionUiResponse =
+  | { type: "extension_ui_response"; id: string; action: string }
   | { type: "extension_ui_response"; id: string; value: string }
   | { type: "extension_ui_response"; id: string; confirmed: boolean }
   | { type: "extension_ui_response"; id: string; cancelled: true }

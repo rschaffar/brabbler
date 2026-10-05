@@ -25,13 +25,16 @@ test("does not let a top sentinel paginate over a pending saved reading anchor",
   const pendingScrollRestoreRef = { current: { anchorEntryId: "saved" } };
   const prevScrollDistanceRef = { current: null };
   const calls = [];
+  let sentinelTop = 0;
+  const sentinel = { isConnected: true, getBoundingClientRect: () => ({ top: sentinelTop, bottom: sentinelTop + 1 }) };
+  const container = { scrollHeight: 1000, scrollTop: 120, getBoundingClientRect: () => ({ top: 0, bottom: 600 }) };
   const callback = new Function(
     "loadingOlderRef", "pendingScrollRestoreRef", "hasEarlierMessages", "historyCursor", "session",
-    "sessionIdRef", "prevScrollDistanceRef", "captureScrollDistance", "container", "loadContext", "activeLeafId",
+    "sessionIdRef", "prevScrollDistanceRef", "captureScrollDistance", "container", "loadContext", "activeLeafId", "sentinel",
     `return (${callbackSource});`,
   )(loadingOlderRef, pendingScrollRestoreRef, true, "older", { id: "chat" }, { current: "chat" },
-    prevScrollDistanceRef, (height, top) => height - top, { scrollHeight: 1000, scrollTop: 120 },
-    (...args) => { calls.push(args); return Promise.resolve(); }, "leaf");
+    prevScrollDistanceRef, (height, top) => height - top, container,
+    (...args) => { calls.push(args); return Promise.resolve({ messages: [] }); }, "leaf", sentinel);
 
   callback([{ isIntersecting: true }]);
   assert.deepEqual(calls, []);
@@ -39,11 +42,38 @@ test("does not let a top sentinel paginate over a pending saved reading anchor",
   assert.equal(loadingOlderRef.current, false);
 
   pendingScrollRestoreRef.current = null;
+  sentinelTop = -100; // The queued observation predates the restored viewport.
+  callback([{ isIntersecting: true }]);
+  assert.deepEqual(calls, []);
+  sentinelTop = 0;
   callback([{ isIntersecting: true }]);
   assert.deepEqual(calls, [["chat", "leaf", "older"]]);
   assert.equal(prevScrollDistanceRef.current, 880);
-  await Promise.resolve();
+  await new Promise(setImmediate);
   assert.equal(loadingOlderRef.current, false);
+  callback([{ isIntersecting: true }]); // Response resolved, prepend not anchored yet.
+  assert.equal(calls.length, 1);
+  assert.equal(prevScrollDistanceRef.current, 880);
+});
+
+test("anchors committed prepends within an expanded budget and waits for sliced-window reveal", () => {
+  const marker = source.indexOf("// Anchor only after the prepend is rendered");
+  const start = source.indexOf("useLayoutEffect(() => {", marker);
+  const end = source.indexOf("\n  }, [visibleCount, messages.length, scrollContainerRef]);", start);
+  assert.ok(marker >= 0 && start > marker && end > start);
+  const body = source.slice(start + "useLayoutEffect(() => {".length, end);
+  const previous = { current: 880 };
+  const container = { scrollHeight: 2000, scrollTop: 120 };
+  const anchor = new Function("prevScrollDistanceRef", "visibleCount", "messages", "scrollContainerRef", "restoreScrollTop", body);
+  const invoke = (budget, count) => anchor(previous, budget, { length: count }, { current: container }, (height, distance) => height - distance);
+  invoke(50, 100);
+  assert.equal(previous.current, 880); assert.equal(container.scrollTop, 120);
+  invoke(100, 100);
+  assert.equal(previous.current, null); assert.equal(container.scrollTop, 1120);
+  // Saved-position restoration intentionally leaves a budget larger than history.
+  previous.current = 880; container.scrollHeight = 2500;
+  invoke(200, 150);
+  assert.equal(previous.current, null); assert.equal(container.scrollTop, 1620);
 });
 
 test("shows the scroll-to-latest button only when the viewport is detached from the tail", () => {

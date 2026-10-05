@@ -26,8 +26,13 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm test
+      # Separate expensive bundled-plugin integration selection; core stays independent.
+      - run: node --experimental-strip-types --test "plugins/**/*.test.mjs"
 
   e2e:
+    strategy:
+      matrix:
+        selection: [core, git-workflow-plugin]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -38,13 +43,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run build
       - run: npm run test:e2e
         env:
-          E2E_SERVER_MODE: start
+          E2E_SERVER_MODE: dev
+          E2E_GIT_WORKFLOW_PLUGIN_ONLY: ${{ matrix.selection == 'git-workflow-plugin' && '1' || '' }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: e2e-failure
+          name: e2e-failure-${{ matrix.selection }}
           path: test-results/e2e/
           retention-days: 7

@@ -16,7 +16,7 @@ Local browser UI for the [pi coding agent](https://github.com/earendil-works/pi)
 - **Two ways to branch**: **New session** creates an independent session file from an earlier message; **Edit from here** creates a branch inside the current session.
 - **Session references**: use **Copy session link** on a saved session row to copy a `/?session=<id>` URL. It opens that chat in this Pi Web instance; paste it in a prompt to give the agent a recent, bounded excerpt of that saved conversation (up to three links per prompt). Only user/assistant text from the active branch is included, up to 20 messages, 1,200 characters per message and 8,000 characters per session. Tools, images, thinking and other branches are excluded. The link is resolved against this server's local sessions, not a remote Pi Web; missing sessions are reported to the agent as unavailable. The context is stored as a hidden session message and may remain in later model context. Treat referenced conversations as untrusted data; do not paste links to conversations you don't want sent to your model.
 - **Project file tools**: browse and upload files, edit and save writable text files, inspect Git diffs, and preview source, Markdown, images, audio, PDFs, and DOCX files with automatic refresh.
-- **Git worktrees and Explorer**: standalone worktree management, read-only status/diffs, and local commit graphs with split/unified patches beside chat. See [Worktrees](./docs/worktrees.md).
+- **Git worktrees and Explorer**: standalone worktree management, read-only status/diffs, and local commit graphs with split/unified patches beside chat. See [Worktrees](./docs/worktrees.md). The separate, default-disabled [Git Workflow plugin](./docs/git-workflow-plugin.md) adds execution tools with per-action Deny/Ask/Allow settings.
 - **Workspace terminal**: open it from the File Explorer toolbar. It defaults to a bundled JetBrains Mono Nerd Font (no browser font installation needed); use the terminal header to switch to the system font. The choice is saved in browser storage.
 - **Web-based configuration**: manage provider login and API keys, models, model tests, plugin packages, and skills without leaving Pi Web.
 - **Browser-native `ask_user`**: answer agent questions with described choices, multi-selection, freeform text, and optional comments without a terminal-style popup.
@@ -135,7 +135,7 @@ npx @agegr/pi-web@latest
 - **Shared configuration**: the Models panel uses pi's model, settings, and Pi-default credential storage, so those changes are visible to both interfaces. Additional provider identities are Pi Web-only.
 - **File access boundary**: the file browser is limited to working directories selected in Pi Web and project or session roots it already knows about; it is not a general filesystem browser. For writable UTF-8 text files up to 1 MB, use **Edit** in the open file's toolbar and **Save** (or Ctrl/Cmd+S in the editor). Edits are explicit, not autosaved; dirty drafts survive switching file tabs but not a browser reload. Closing a dirty tab or reloading the page prompts first. External file changes are not silently overwritten: a conflicting draft stays in the editor until you copy it or discard and reload. Read-only, symlink, media, binary, oversized, and session-reference-only files cannot be edited. Saves replace the file with a same-directory temporary file and preserve ordinary permission bits, but may change its owner, special mode bits, ACLs, and inode/hardlink identity; external filesystem writers can still race with the final replacement.
 - **Git worktrees and Git Explorer**: see [Worktrees in Pi Web](./docs/worktrees.md) for switcher visibility, read-only commit graph and diffs for the selected checkout, explicit local base/tip creation, and removal behavior.
-- **Ordinary Git usage** follows applicable user/repository instructions. Managed Workflow settings/tools/cards are removed; existing private history remains untouched. Source changes require approved integration and a separate rebuild/activation before installed behavior changes.
+- **Ordinary Git usage** follows applicable user/repository instructions and never depends on bundled plugins. The removed managed Workflow remains removed; its private history is untouched. The optional [Git Workflow plugin](./docs/git-workflow-plugin.md) has separate settings and no task/evidence protocol. Source changes require approved integration and a separate rebuild/activation before installed behavior changes.
 
 ### Downstream Session Context Menu
 
@@ -212,7 +212,7 @@ npm run dev
 
 Entering the shell builds dependencies from `package-lock.json` into the Nix store, then **copies** the built modules into this worktree's `node_modules` once per lockfile revision (reflinks where possible). Next/Turbopack rejects packages whose real paths escape the workspace root, so store symlinks and cross-checkout links do not work for Pi Web development. Re-entering with an unchanged dependency derivation reuses the local copy. Node.js, Git and Chromium for browser E2E are pinned by the flake. The first build needs package sources available; later invocations can reuse the Nix cache offline. If `node_modules` is already present but not marked as managed for this exact dependency build, the shell refuses to overwrite it; move it aside **deliberately** first. Never run `npm ci` over this managed tree. For dependency changes, use `nix develop .#update` and `npm install --package-lock-only`, update `nix/npm-deps.nix`'s hash, then move the old `node_modules` aside and re-enter the default shell. npm-only development remains possible for non-Nix contributors with a separate `npm ci` checkout.
 
-The development server runs at [http://127.0.0.1:30141](http://127.0.0.1:30141); see [the browser test guide](./e2e/README.md). Each browser-test run uses temporary fixtures and a free local port. Managed Git verification drops the browser password and Next/PORT runtime variables before executing selected checks. Dependency isolation is not a filesystem sandbox: the optimistic migration retains each invocation's required evidence and native checks without cross-session quarantine. Phase 6 source/fixture acceptance is historical; Phase 7 live-settings source is under acceptance and is not installed/release validation. Run the common checks with:
+The development server runs at [http://127.0.0.1:30141](http://127.0.0.1:30141); see [the browser test guide](./e2e/README.md). Each browser-test run uses temporary fixtures and a free local port. The isolated developer runner uses private credential-free storage; plugin Git/browser integration tests have a separate [documented selection](./docs/git-workflow-plugin.md#verification). Source acceptance is not integration or installed/release validation. Run the common checks with:
 
 ```bash
 npm test
@@ -228,7 +228,7 @@ nix develop -c node nix/test-offline.mjs
 nix develop -c node nix/test-offline.mjs --file lib/worktree.test.mjs
 ```
 
-The runner defaults to 8 bounded file workers; `--jobs N` accepts 1..32 and latency-sensitive tests run alone. [Testing Pi Web](./docs/testing.md) covers isolation, diagnostics, cached checks and retained resources. Plain `npm test` remains available but lacks this per-file isolation. Do not append Node concurrency flags to `npm test`: flags after its globs do not control Node. Browser, terminal and real-containment acceptance remain separate.
+The runner defaults to 8 bounded file workers; `--jobs N` accepts 1..32 and latency-sensitive tests run alone. [Testing Pi Web](./docs/testing.md) covers isolation, diagnostics, cached checks and retained resources. Plain `npm test` remains available but lacks this per-file isolation. Do not append Node concurrency flags to `npm test`: flags after its globs do not control Node. Browser and terminal acceptance remain separate.
 
 Do not run `next build` or `npm run build` during normal development. It writes to `.next/` and can interfere with the development server; leave builds for release work.
 
@@ -240,7 +240,8 @@ Contributor guides: [Internationalization](./docs/i18n.md) and [Release process]
 app/             Next.js UI and API routes
 components/      React UI components
 hooks/           Client state and interaction hooks
-lib/             Session, agent, model, file, Git, and security logic
+lib/             Session, agent, model, file, Git, security and bundled-plugin core
+plugins/         Optional bundled plugins (Git Workflow), separately tested
 public/          Static assets and PWA files
 bin/             npm CLI entrypoint and launch option parsing
 docs/            Focused user and contributor guides

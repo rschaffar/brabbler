@@ -20,6 +20,7 @@ import { consumeExpectedBrowserConflict } from "./expected-browser-conflict.mjs"
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
 import { checkSessionMovePicker } from "./session-move.mjs";
+import { checkGitWorkflowPlugin, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
 
 // Test-process isolation only: the disposable child server inherits private file
 // creation from startup. Never repair SDK files or change umask inside a hook.
@@ -98,6 +99,7 @@ try {
   // Seed before startup so the first catalogue scan sees every fixture.
   mkdirSync(join(agentDir, "extensions"));
   writeFileSync(join(agentDir, "extensions", "e2e-dialog.js"), extensionSource);
+  if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") writeFileSync(join(agentDir, "extensions", "e2e-git-plugin.js"), gitPluginFixtureSource(root));
   // Simulate the recognized external package so the browser owns ask_user exactly once.
   mkdirSync(join(agentDir, "extensions", "pi-ask-user"));
   writeFileSync(join(agentDir, "extensions", "pi-ask-user", "index.js"), `export default function (pi) {
@@ -278,7 +280,19 @@ try {
     await delay(250);
   }
 
-  if (process.env.E2E_TIMESTAMPS_ONLY === "1") {
+  if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") {
+    browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
+      page = await context.newPage();
+      const errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      page.on("response", (response) => { if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`); });
+      await checkGitWorkflowPlugin(page, base, gitProject, GIT, artifacts, viewport.width);
+      assert.deepEqual(errors, [], "Plugin browser/server errors");
+      await context.close(); context = undefined; page = undefined;
+    }
+  } else if (process.env.E2E_TIMESTAMPS_ONLY === "1") {
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
     for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
       context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { PluginPackageInfo, PluginStandaloneExtensionInfo, PluginUpdateResult, PluginsResponse } from "@/lib/api-types";
 import { useI18n } from "@/hooks/useI18n";
+import { BundledPluginSettings, BundledPluginSidebar } from "./plugin-ui/BundledPluginSettings";
 import {
   getLastSettingsSelection,
   setLastSettingsSelection,
@@ -709,8 +710,8 @@ export function PluginsConfig({
       const next = (await res.json()) as PluginsResponse & { error?: string };
       if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
       setData(next);
-      setAddMode((current) => (next.packages.length === 0 && next.standaloneExtensions.length === 0) || current);
       setSelected((current) => {
+        if (current?.startsWith("bundled:")) return current;
         if (current && (
           next.packages.some((pkg) => packageKey(pkg) === current)
           || next.standaloneExtensions.some((extension) => extensionKey(extension) === current)
@@ -921,6 +922,7 @@ export function PluginsConfig({
         <ConfigSplitView>
           <ConfigSidebar>
             <ConfigSidebarList>
+              <BundledPluginSidebar cwd={cwd} selected={addMode ? null : selected} onSelect={(key) => { setSelected(key); setAddMode(false); }} />
               {loading ? (
                 <div className="config-sidebar-message">
                   Loading...
@@ -1024,6 +1026,8 @@ export function PluginsConfig({
                 onScopeChange={setInstallScope}
                 onInstall={installPlugin}
               />
+            ) : selected?.startsWith("bundled:") ? (
+              <BundledPluginSettings key={selected} cwd={cwd} id={selected.slice(8)} />
             ) : loading ? null : selectedExtension ? (
               <StandaloneExtensionDetail extension={selectedExtension} />
             ) : selectedPackage ? (

@@ -6,7 +6,11 @@ nix develop -c npm run test:terminal
 ```
 
 Focused browser switches: `E2E_ASK_USER_ONLY=1`, `E2E_ACTIVITY_ONLY=1`,
-`E2E_TIMESTAMPS_ONLY=1`, `E2E_MOVE_ONLY=1` (destination picker at desktop/mobile sizes). The managed Workflow browser/containment suites are
+`E2E_TIMESTAMPS_ONLY=1`, `E2E_MOVE_ONLY=1` (destination picker at desktop/mobile sizes),
+`E2E_GIT_WORKFLOW_PLUGIN_ONLY=1` (optional bundled plugin settings, approval,
+reconnect, disable and Stop at desktop/mobile sizes). The plugin-only selection
+uses a fixture command delegating to the real server implementation, no model;
+real Pi tool-registration lifecycle is also tested separately in `plugins/`. The managed Workflow browser/containment suites are
 removed, not skipped acceptance requirements.
 
 Run at a stable source checkpoint, separately from heavy unit/SDK validation.

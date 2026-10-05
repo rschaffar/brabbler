@@ -55,6 +55,9 @@ import { haveContextFilesChanged } from "./context-file-changes";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createAskUserExtension, preferPiWebAskUserExtension, type AskUserUiContext } from "./ask-user-extension";
 import { createSessionReferenceExtension } from "./session-reference-extension";
+import { bundledPluginExtensions } from "./plugins/registry";
+import { validatePluginCard, validPluginAction } from "./plugins/ui";
+import type { PluginUiContext } from "./plugins/types";
 import { normalizeAskUserAnswer } from "./ask-user";
 import { isBlockingExtensionUiRequest } from "./browser-notifications";
 import {
@@ -225,7 +228,7 @@ export function withExtensionTools(session: AgentSessionLike, toolNames: string[
 
   const codingToolNames = new Set(CODING_TOOL_NAMES);
   const selectedToolNames = resolveShellTools(toolNames, session.settingsManager.getDefaultTools());
-  const extensionToolNames = session.getAllTools().map((t) => t.name)
+  const extensionToolNames = session.getAllTools().filter((t) => t.exposure !== "hidden").map((t) => t.name)
     .filter((name) => !codingToolNames.has(name));
   return [...new Set([...selectedToolNames, ...extensionToolNames])];
 }
@@ -1176,6 +1179,8 @@ export class AgentSessionWrapper {
     const request = this.pendingUiRequests.get(response.id) as ExtensionUiRequest | undefined;
     if (request?.method === "ask_user" && !("cancelled" in response)
       && (!("answer" in response) || !normalizeAskUserAnswer(response.answer, request))) return;
+    if (request?.method === "plugin_card" && !("cancelled" in response)
+      && (!("action" in response) || !validPluginAction(request, response.action))) return;
     pending.resolve(response);
   }
 
@@ -1579,8 +1584,16 @@ export class AgentSessionWrapper {
     });
   }
 
-  private createExtensionUiContext(): ExtensionUiContextLike & AskUserUiContext {
+  private createExtensionUiContext(): ExtensionUiContextLike & AskUserUiContext & PluginUiContext {
     return {
+      pluginCard: (pluginId, card, signal) => {
+        validatePluginCard(card);
+        return this.requestExtensionUi(
+          { method: "plugin_card", pluginId, ...card }, null,
+          (response) => "action" in response && validPluginAction(card, response.action) ? response.action : null,
+          undefined, signal,
+        );
+      },
       select: (title, options, opts) => this.requestExtensionUi(
         { method: "select", title, options, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
         undefined,
@@ -2273,6 +2286,7 @@ async function startRpcSessionInternal(
                 isBuiltInSubagentsEnabled,
               ),
               createAskUserExtension(),
+              ...bundledPluginExtensions(sessionCwd),
             ],
             extensionsOverride: (base) => preferUserBashExtension(preferPiWebAskUserExtension(preferPiWebSubagentExtension(base))),
           },
