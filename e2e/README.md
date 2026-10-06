@@ -7,8 +7,9 @@ nix develop -c npm run test:terminal
 
 Focused browser switches: `E2E_ASK_USER_ONLY=1`, `E2E_ACTIVITY_ONLY=1`,
 `E2E_TIMESTAMPS_ONLY=1`, `E2E_MOVE_ONLY=1` (destination picker at desktop/mobile sizes),
-`E2E_GIT_WORKFLOW_PLUGIN_ONLY=1` (optional bundled plugin settings, approval,
-reconnect, disable and Stop at desktop/mobile sizes). The plugin-only selection
+`E2E_GIT_WORKFLOW_PLUGIN_ONLY=1` (optional bundled plugin settings, all six
+operation approval layouts, multi-file diff/collapse controls, reconnect,
+cancellation, disable and Stop at desktop/mobile sizes). The plugin-only selection
 uses a fixture command delegating to the real server implementation, no model;
 real Pi tool-registration lifecycle is also tested separately in `plugins/`. The managed Workflow browser/containment suites are
 removed, not skipped acceptance requirements.
@@ -28,7 +29,11 @@ The general suite covers session pagination/branches, rendering/scrolling,
 sidebar/navigation, files/editing, archive/restore/delete, ordinary inline
 extension questions, browser-native `ask_user`, Activity, provider-account
 controls, and independent Git Explorer. It checks the absence of Workflow
-controls. OAuth/SSE account responses are mocked; no provider credentials are
+controls. Git Explorer coverage verifies first-file expansion, lazy per-file
+patch reads and cache reuse, a shared split/unified/raw toolbar and first-parent
+merge inspection. Question fixtures verify the shared bounded card body and fixed
+footer as well as keyboard/draft/cancellation/expiry contracts.
+OAuth/SSE account responses are mocked; no provider credentials are
 used. Slash commands exercise ordinary session/UI paths without a live model.
 Terminal checks execute a real local shell at desktop/mobile sizes and cover
 fonts, reconnect/restart, exit, close-during-creation and workspace isolation.

@@ -82,8 +82,14 @@ attributes (including LFS) are refused: even status/preview could otherwise run
 project commands before approval. Preview uses an ephemeral index and may add
 unreachable Git objects, but never stages working files. The supplied rebase/merge
 patch shows feature changes since the merge base, **not** a predicted result.
-Multiple-file/oversized interactive patches fall back to the complete raw patch;
-bounded-read failures refuse rather than silently truncating approval data.
+Approval patches appear as stacked collapsible file diffs, with the first file
+expanded, change types/counts, Expand all / Collapse all and one shared
+side-by-side/unified/raw control. Collapsed diffs are not mounted; other expanded
+files render when scrolled near view. Binary and metadata-only changes remain
+explicit; oversized individual diffs fall back to their complete raw file patch.
+The complete supplied raw patch is always available, and unsupported multi-file
+framing falls back to it without omitting files. Bounded-read failures refuse
+rather than silently truncating approval data.
 
 Current permissions, relevant settings, checkout/ref/index/file state are checked
 again after approval, between checks and immediately before the native effect.
@@ -98,8 +104,20 @@ observed HEAD/status/worktrees, with no rollback, hidden retry or cleanup.
 
 `lib/plugins/registry.ts` is the static server composition root; dependencies point
 from bundled plugins to core. Core chat/session code knows only generic plugin
-extensions and cards. `components/plugin-ui/` presents text, Markdown, supplied
-patches and action buttons. Presentation is not model-facing tool content.
+extensions and cards. `components/plugin-ui/` presents text, Markdown, bounded generic structured fields
+and sections, supplied patches and action buttons. The Git plugin supplies its
+operation summaries; core never interprets a text dump or embeds Git permission
+logic. Presentation is not model-facing tool content.
+
+Approvals share the compact blocking-card shell with browser questions and
+ordinary extension select/confirm/input/editor requests: bounded body scrolling,
+fixed action footer and collapse/expand preserving local state. Git cards show
+checkout/branch and operation-specific fields, the exact commit message, required
+checks, visible operation notes and the whole-operation approval scope. Full refs,
+candidate tree and native arguments are under Technical details. Cancel cancels
+the pending request; Reject answers its declared reject action. The prominent
+operation-specific action approves the entire candidate and listed checks, never
+just an expanded file. Worktree approvals use the same layout without patches.
 
 Cards use the existing per-session pending-dialog maps and `extension_ui_response`
 transport. Only an action declared by the matching live request can resolve it.

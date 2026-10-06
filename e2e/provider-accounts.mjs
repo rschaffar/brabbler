@@ -146,11 +146,14 @@ export async function checkProviderAccountAuthorization(page, { base, sessionId,
     await page.unroute("**/api/provider-usage/query", usageRoute);
     // Start the independent Pi-default settings flow from a fresh page.
     await page.reload({ waitUntil: "domcontentloaded" });
-    // Next's development indicator overlaps the sidebar footer in headless mode;
-    // dispatch the native button click without that dev-only pointer overlay.
-    await page.getByRole("button", { name: "Models", exact: true }).first().evaluate((button) => button.click());
+    // Wait for the client-owned account control after reload, then use the real
+    // Settings navigation. A DOM-only click can run before hydration, and the
+    // development indicator overlaps the Models shortcut in the sidebar footer.
+    await page.getByRole("button", { name: /^Account for/ }).waitFor();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
     const settings = page.getByRole("dialog", { name: "Settings" });
     await settings.waitFor();
+    await settings.getByRole("button", { name: "Models", exact: true }).click();
     await settings.getByRole("button", { name: "Add provider" }).click();
     await page.getByRole("button", { name: `${providerName} OAuth` }).click();
     await settings.getByRole("button", { name: "Login", exact: true }).click();

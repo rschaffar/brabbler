@@ -4,6 +4,8 @@ import test from "node:test";
 
 const source = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 const askUserSource = await readFile(new URL("./AskUserDialog.tsx", import.meta.url), "utf8");
+const shellSource = await readFile(new URL("./BlockingCard.tsx", import.meta.url), "utf8");
+const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const dialogSource = source.slice(source.indexOf("function ExtensionDialog"), source.indexOf("type ExtensionCustomRequest"));
 const customSource = source.slice(source.indexOf("function ExtensionCustomPanel"));
 
@@ -12,14 +14,15 @@ test("renders every blocking question inline at the live tail of the chat scroll
   assert.match(source, /questionCardRef\.current\?\.scrollIntoView\(\{ block: "nearest" \}\)/);
   assert.doesNotMatch(dialogSource, /position: "absolute"|pointerEvents: "none"|aria-modal/);
   assert.doesNotMatch(askUserSource, /position: "absolute"|pointerEvents: "none"|aria-modal/);
-  assert.match(dialogSource, /role="group"/);
-  assert.match(askUserSource, /role="group"/);
+  assert.match(dialogSource, /<BlockingCard title=\{request.title\}/);
+  assert.match(askUserSource, /<BlockingCard title=\{request.question\}/);
+  assert.match(shellSource, /role="group" aria-label=\{title\} aria-labelledby=\{titleId\}/);
   assert.match(customSource, /position: "absolute"[\s\S]*?inset: 0/);
 });
 
 test("keeps collapse and cancel available inside the cards", () => {
   assert.match(dialogSource, /setCollapsed\(true\)/);
-  assert.match(dialogSource, /chat\.extensionCollapse/);
+  assert.match(shellSource, /chat\.extensionCollapse/);
   assert.match(dialogSource, /chat\.cancel/);
   assert.match(askUserSource, /setCollapsed\(true\)/);
   assert.match(askUserSource, /chat\.cancel/);
@@ -32,6 +35,9 @@ test("preserves extension question markdown and keyboard navigation", () => {
   assert.match(dialogSource, /<MarkdownBody>\{request\.message\}<\/MarkdownBody>/);
   assert.match(dialogSource, /role="button"[\s\S]*?data-extension-option[\s\S]*?<div inert>[\s\S]*?<MarkdownBody>\{option\}<\/MarkdownBody>/);
   assert.match(dialogSource, /ref=\{index === 0 \? focusFirstOption : undefined\}/);
-  assert.match(dialogSource, /whiteSpace: "pre-wrap", overflowWrap: "anywhere" \}\}>\{request\.title\}/);
-  assert.match(dialogSource, /maxHeight: "50%", overflowY: "auto"/);
+  assert.match(shellSource, /id=\{titleId\} className="blocking-card-title">\{title\}/);
+  assert.match(css, /\.blocking-card-title[^\n]*white-space: pre-wrap; overflow-wrap: anywhere/);
+  assert.match(css, /\.blocking-card-header[^\n]*max-height: min\(180px, 22dvh\); overflow-y: auto/);
+  assert.match(css, /\.blocking-card-body[^\n]*min-height: 0; overflow-y: auto/);
+  assert.match(css, /\.blocking-card-footer[^\n]*flex-shrink: 0/);
 });

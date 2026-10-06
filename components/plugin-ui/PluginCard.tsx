@@ -1,27 +1,57 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import type { ExtensionUiRequest } from "@/lib/types";
+import type { PluginCardField, PluginCardSection } from "@/lib/plugins/types";
+import { useI18n } from "@/hooks/useI18n";
 import { MarkdownBody } from "../MarkdownBody";
-import { CommittedPatchDiff } from "../CommittedPatchDiff";
+import { BlockingCard } from "../BlockingCard";
+import { SuppliedPatchStack } from "../GitPatchStack";
 
 type Request = Extract<ExtensionUiRequest, { method: "plugin_card" }>;
+function Fields({ fields }: { fields: PluginCardField[] }) {
+  return <dl className="blocking-card-fields">{fields.map((field, index) => <Fragment key={index}>
+    <dt>{field.label}</dt><dd className={field.code ? "blocking-card-code" : undefined}>{field.value}</dd>
+  </Fragment>)}</dl>;
+}
+function Section({ section }: { section: PluginCardSection }) {
+  const content = <>{section.text && <p className={section.code ? "blocking-card-code" : "whitespace-pre-wrap break-words text-xs"}>{section.text}</p>}
+    {section.fields && <Fields fields={section.fields} />}</>;
+  return section.collapsible ? <details className="min-w-0 text-xs">
+    <summary className="blocking-card-section-title cursor-pointer">{section.title}</summary>{content}
+  </details> : <section aria-label={section.title} className={section.notice ? "blocking-card-notice" : "min-w-0"}>
+    <h3 className="blocking-card-section-title">{section.title}</h3>{content}
+  </section>;
+}
 /** Reusable presentation only. Buttons answer a live session request, never execute. */
 export function PluginCard({ request, onRespond }: {
   request: Request;
   onRespond: (request: Request, response: { action: string } | { cancelled: true }) => void;
 }) {
+  const { t } = useI18n();
   const [sent, setSent] = useState(false);
-  const respond = (response: { action: string } | { cancelled: true }) => { setSent(true); onRespond(request, response); };
-  return <section aria-label={request.title} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); respond({ cancelled: true }); } }} className="min-w-0 rounded-lg border border-border bg-bg-panel p-3 text-sm text-text">
-    <h3 className="mb-2 font-semibold">{request.title}</h3>
-    {request.text && <pre className="max-h-[40vh] overflow-auto whitespace-pre-wrap break-words font-mono text-xs">{request.text}</pre>}
-    {request.markdown && <MarkdownBody>{request.markdown}</MarkdownBody>}
-    {request.patch && <CommittedPatchDiff patch={request.patch} hasBinaryChanges={/GIT binary patch|Binary files /.test(request.patch)} before={request.patchBefore ?? "Current"} after={request.patchAfter ?? "Proposed"} independentScroll />}
-    <div className="mt-3 flex flex-wrap gap-2">
-      {request.actions.map((action) => <button key={action.id} type="button" disabled={sent}
-        className="rounded border border-border px-3 py-2 hover:bg-bg-hover disabled:opacity-50" onClick={() => respond({ action: action.id })}>{action.label}</button>)}
-      <button type="button" autoFocus disabled={sent} className="rounded border border-border px-3 py-2 hover:bg-bg-hover" onClick={() => respond({ cancelled: true })}>Dismiss</button>
-    </div>
-  </section>;
+  const sentRef = useRef(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const respond = (response: { action: string } | { cancelled: true }) => {
+    if (sentRef.current) return;
+    sentRef.current = true; setSent(true); onRespond(request, response);
+  };
+  return <div onKeyDown={(event) => {
+    if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); respond({ cancelled: true }); }
+  }}>
+    <BlockingCard title={request.title} label={request.subtitle ?? t("chat.extensionRequest")} collapsed={collapsed}
+      onCollapse={() => setCollapsed(true)} onExpand={() => setCollapsed(false)} footer={<>
+        {request.scope && <p className="blocking-card-scope">{request.scope}</p>}
+        <button type="button" autoFocus disabled={sent} className="mr-auto" onClick={() => respond({ cancelled: true })}>{t("chat.cancel")}</button>
+        {request.actions.map((action) => <button key={action.id} type="button" disabled={sent} data-primary={action.primary || undefined}
+          onClick={() => respond({ action: action.id })}>{action.label}</button>)}
+      </>}>
+      {request.fields && <Fields fields={request.fields} />}
+      {request.text && <pre className="blocking-card-code">{request.text}</pre>}
+      {request.markdown && <MarkdownBody>{request.markdown}</MarkdownBody>}
+      {request.sections?.filter((section) => !section.collapsible).map((section, index) => <Section key={index} section={section} />)}
+      {request.patch && <SuppliedPatchStack patch={request.patch} before={request.patchBefore ?? "Current"} after={request.patchAfter ?? "Proposed"} />}
+      {request.sections?.filter((section) => section.collapsible).map((section, index) => <Section key={index} section={section} />)}
+    </BlockingCard>
+  </div>;
 }

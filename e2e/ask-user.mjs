@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { checkBlockingCard } from "./blocking-card.mjs";
 
 export async function checkAskUserDialog(page, width) {
   const commands = [];
@@ -14,6 +15,7 @@ export async function checkAskUserDialog(page, width) {
     await page.getByRole("button", { name: "Send", exact: true }).click();
     const card = page.getByRole("group", { name: "E2E browser question" });
     await card.waitFor();
+    await checkBlockingCard(card);
     assert.equal(await card.locator("xpath=ancestor::div[contains(@class, 'overflow-y-auto')]").count() > 0, true, "Question card belongs to the chat scroller");
     return card;
   };
@@ -27,7 +29,9 @@ export async function checkAskUserDialog(page, width) {
     await single.getByText("Second", { exact: true }).click();
     await single.getByRole("textbox", { name: "Optional comment" }).fill("More context");
     await single.getByRole("button", { name: "Collapse" }).click();
-    await page.getByRole("button", { name: /Awaiting response.*E2E browser question/ }).click();
+    await page.waitForFunction(() => document.activeElement?.classList.contains("blocking-card-collapsed"));
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.activeElement?.tagName === "TEXTAREA" && document.activeElement.closest(".blocking-card"));
     assert.equal(await single.getByRole("textbox", { name: "Optional comment" }).inputValue(), "More context");
     await single.getByRole("button", { name: "Submit" }).click();
     await finish({ kind: "selection", selections: ["Second"], comment: "More context" });
@@ -47,6 +51,7 @@ export async function checkAskUserDialog(page, width) {
     assert.equal(await longContext.getByText(/More background/).isVisible(), false, "Long context starts collapsed");
     await longContext.getByText("Context", { exact: true }).click();
     await longContext.getByText(/More background/).waitFor({ state: "visible" });
+    await checkBlockingCard(longContext);
     await longContext.getByRole("button", { name: "Cancel" }).click();
     await finish(null);
 

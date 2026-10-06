@@ -1,16 +1,30 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
+import { checkBlockingCard } from "./blocking-card.mjs";
 
 /** Fixture-only command delegates to the production plugin implementation, no model. */
 export function gitPluginFixtureSource(root) {
   return `import { writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { executeGitOperation } from ${JSON.stringify(join(root, "plugins/git-workflow/server.ts"))};
 export default function (pi) {
   pi.registerCommand("e2e-git-plugin", { handler: async (mode, ctx) => {
-    writeFileSync(join(ctx.cwd, "draft.txt"), "Plugin whole-file candidate " + mode + "\\n");
-    const result = await executeGitOperation(ctx.cwd, { action: "commit", checkout: ctx.cwd, mode: "files", files: ["draft.txt"], message: "Plugin browser commit " + mode }, ctx.ui);
+    let operation;
+    if (mode.startsWith("preview-")) {
+      const action = mode.split("-")[1];
+      const targetCheckout = execFileSync("git", ["-C", ctx.cwd, "worktree", "list", "--porcelain"], { encoding: "utf8" }).split("\\n\\n").find((record) => record.includes("branch refs/heads/target")).split("\\n")[0].slice(9);
+      operation = action === "rebase" || action === "merge"
+        ? { action, checkout: action === "merge" ? targetCheckout : ctx.cwd, featureBranch: "feature" }
+        : action === "removeWorktree" ? { action, checkout: ctx.cwd, path: targetCheckout }
+        : { action, checkout: ctx.cwd, branch: action === "attachWorktree" ? "comparison-base" : "preview-new", baseBranch: action === "attachWorktree" ? "comparison-base" : "target", path: join(ctx.cwd + "-worktrees", "preview-new") };
+    } else {
+      writeFileSync(join(ctx.cwd, "draft.txt"), "Plugin whole-file candidate " + mode + "\\n");
+      writeFileSync(join(ctx.cwd, "second-draft.txt"), "Second plugin candidate " + mode + "\\n");
+      operation = { action: "commit", checkout: ctx.cwd, mode: "files", files: ["draft.txt", "second-draft.txt"], message: "Plugin browser commit " + mode };
+    }
+    const result = await executeGitOperation(ctx.cwd, operation, ctx.ui);
     ctx.ui.notify("Git plugin fixture " + mode + ": " + (result.isError ? "refused" : "completed"));
   } });
 }`;
@@ -51,10 +65,10 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   if (width <= 600) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
   assert.ok((await command({ type: "get_tools" })).some((tool) => tool.name === "git_commit" && tool.active));
 
-  const start = async (mode) => {
+  const start = async (mode, title = "Git commit") => {
     const input = page.locator("textarea").last(); await input.fill(`/e2e-git-plugin ${mode}-${width}`);
     await page.getByRole("button", { name: "Send", exact: true }).click();
-    const card = page.getByRole("region", { name: "Git commit", exact: true }); await card.waitFor(); return card;
+    const card = page.getByRole("group", { name: title, exact: true }); await card.waitFor(); await checkBlockingCard(card); return card;
   };
   const finish = async (mode, result) => {
     await page.getByText(`Git plugin fixture ${mode}-${width}: ${result}`, { exact: true }).waitFor();
@@ -70,11 +84,47 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
 
   card = await start("reconnect");
   await page.reload({ waitUntil: "domcontentloaded" });
-  card = page.getByRole("region", { name: "Git commit", exact: true }); await card.waitFor();
+  card = page.getByRole("group", { name: "Git commit", exact: true }); await card.waitFor();
   await card.getByText(/Plugin browser commit reconnect/).first().waitFor();
+  const first = card.getByRole("region", { name: "File changes: draft.txt", exact: true });
+  const second = card.getByRole("region", { name: "File changes: second-draft.txt", exact: true });
+  await first.getByRole("region", { name: "Side-by-side diff" }).waitFor();
+  assert.equal(await second.getByRole("button").getAttribute("aria-expanded"), "false");
+  assert.equal(await card.getByRole("group", { name: "Patch view" }).count(), 1);
+  await second.getByRole("button").click();
+  await second.getByRole("region", { name: "Side-by-side diff" }).waitFor();
+  await card.getByRole("button", { name: "Unified", exact: true }).click();
+  await first.getByRole("region", { name: "Unified diff" }).waitFor();
+  await second.getByRole("region", { name: "Unified diff" }).waitFor();
+  await card.getByRole("button", { name: "Collapse all", exact: true }).click();
+  assert.equal(await card.getByRole("region", { name: "Unified diff" }).count(), 0);
+  await card.getByRole("button", { name: "Expand all", exact: true }).click();
+  await first.getByRole("region", { name: "Unified diff" }).waitFor();
+  await card.getByRole("button", { name: "Collapse", exact: true }).click();
+  await page.getByRole("button", { name: /Awaiting response.*Git commit/ }).click();
+  await first.getByRole("region", { name: "Unified diff" }).waitFor();
+  await card.getByRole("button", { name: "Side by side", exact: true }).click();
+  await checkBlockingCard(card);
   await page.screenshot({ path: join(artifacts, `git-plugin-approval-${width}.png`) });
-  await card.getByRole("button", { name: "Approve operation and checks", exact: true }).click();
+  await card.getByRole("button", { name: "Approve commit", exact: true }).click();
   await finish("reconnect", "completed"); assert.notEqual(tip(), before);
+
+  await patch({ targetBranch: "target" });
+  for (const [action, title] of [["rebase", "Git rebase"], ["merge", "Git merge"], ["createWorktree", "Create Git worktree"], ["attachWorktree", "Attach Git worktree"], ["removeWorktree", "Remove Git worktree"]]) {
+    card = await start(`preview-${action}`, title);
+    if (action === "rebase" || action === "merge") {
+      await card.getByText("feature → target", { exact: true }).waitFor();
+      await card.getByRole("region", { name: "Operation notes", exact: true }).getByText(/not a predicted rebase\/merge result/).waitFor();
+      await card.getByRole("group", { name: "Patch view" }).waitFor();
+    } else assert.equal(await card.getByRole("group", { name: "Patch view" }).count(), 0);
+    await card.getByRole("button", { name: "Reject", exact: true }).click();
+    await finish(`preview-${action}`, "refused");
+  }
+  card = await start("cancel");
+  const beforeCancel = tip();
+  await card.getByRole("button", { name: "Cancel", exact: true }).focus();
+  await page.keyboard.press("Escape");
+  await finish("cancel", "refused"); assert.equal(tip(), beforeCancel);
 
   card = await start("disable");
   await patch({ enabled: false }); await card.waitFor({ state: "hidden" });
@@ -89,6 +139,6 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   assert.equal(tip(), beforeStop);
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("textarea").last().waitFor();
-  assert.equal(await page.getByRole("region", { name: "Git commit", exact: true }).count(), 0);
-  console.log(`PASS: ${width}px optional plugin settings, live toggle, approval, rejection, reconnect and Stop`);
+  assert.equal(await page.getByRole("group", { name: "Git commit", exact: true }).count(), 0);
+  console.log(`PASS: ${width}px all Git approval layouts, multi-file diffs, toggle, rejection, reconnect and Stop`);
 }
