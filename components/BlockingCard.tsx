@@ -4,11 +4,13 @@ import { useId, useLayoutEffect, useRef, type FocusEvent, type FormEventHandler,
 import { useI18n } from "@/hooks/useI18n";
 
 /** Presentation only. Each caller still owns its response and cancellation contract. */
-export function BlockingCard({ title, label, meta, collapsed = false, onCollapse, onExpand, children, footer, onSubmit }: {
+export function BlockingCard({ title, label, meta, collapsed = false, collapsedLabel, retainBodyWhenCollapsed = true, onCollapse, onExpand, children, footer, onSubmit }: {
   title: string;
   label?: string;
   meta?: ReactNode;
   collapsed?: boolean;
+  collapsedLabel?: string;
+  retainBodyWhenCollapsed?: boolean;
   onCollapse?: () => void;
   onExpand?: () => void;
   children: ReactNode;
@@ -29,7 +31,9 @@ export function BlockingCard({ title, label, meta, collapsed = false, onCollapse
     if (previous && rootRef.current?.contains(previous) && previous.getClientRects().length && !previous.matches(":disabled")) {
       previous.focus({ preventScroll: true });
     } else {
-      rootRef.current?.querySelector<HTMLElement>("[data-extension-option], input:not(:disabled), textarea:not(:disabled), footer button:not(:disabled)")?.focus({ preventScroll: true });
+      const target = rootRef.current?.querySelector<HTMLElement>("[data-extension-option], input:not(:disabled), textarea:not(:disabled), footer button:not(:disabled)")
+        ?? rootRef.current?.querySelector<HTMLElement>(".blocking-card-collapse");
+      target?.focus({ preventScroll: true });
     }
   }, [collapsed]);
   const rememberFocus = (event: FocusEvent<HTMLElement>) => {
@@ -37,7 +41,7 @@ export function BlockingCard({ title, label, meta, collapsed = false, onCollapse
     if (!target.closest(".blocking-card-header")) lastFocusedRef.current = target;
   };
   const collapsedTrigger = collapsed && <button ref={triggerRef} type="button" className="blocking-card-collapsed" aria-expanded={false} onClick={onExpand}>
-    <span className="blocking-card-label">{t("chat.extensionPending")}</span>
+    <span className="blocking-card-label">{collapsedLabel ?? t("chat.extensionPending")}</span>
     <span className="blocking-card-summary">{title}</span>
     {meta}
     <span>{t("chat.extensionExpand")}</span>
@@ -52,10 +56,10 @@ export function BlockingCard({ title, label, meta, collapsed = false, onCollapse
       {onCollapse && <button type="button" className="blocking-card-collapse" aria-expanded={true}
         aria-label={t("chat.extensionCollapse")} title={t("chat.extensionCollapse")} onClick={onCollapse}>−</button>}
     </header>
-    <div className="blocking-card-body">{children}</div>
+    <div className="blocking-card-body">{(!collapsed || retainBodyWhenCollapsed) && children}</div>
     <footer className="blocking-card-footer">{footer}</footer>
   </>;
-  // Keep form drafts and nested file expansion/view state while collapsed.
+  // Live forms retain drafts and nested diff state; receipts opt out to unmount their bodies.
   return <>{collapsedTrigger}{onSubmit
     ? <form ref={(element) => { rootRef.current = element; }} onFocusCapture={rememberFocus} hidden={collapsed} role="group" aria-label={title} aria-labelledby={titleId} className="blocking-card" onSubmit={onSubmit}>{content}</form>
     : <section ref={(element) => { rootRef.current = element; }} onFocusCapture={rememberFocus} hidden={collapsed} role="group" aria-label={title} aria-labelledby={titleId} className="blocking-card">{content}</section>}</>;

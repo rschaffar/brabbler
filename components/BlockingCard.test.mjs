@@ -5,6 +5,7 @@ import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
+import { createJiti } from "jiti";
 const require = createRequire(import.meta.url);
 async function component(name, dependencies = {}) {
   const filename = new URL(name, import.meta.url).pathname;
@@ -16,7 +17,7 @@ async function component(name, dependencies = {}) {
   return mod.exports;
 }
 const shell = await component("./BlockingCard.tsx");
-const { PluginCard } = await component("./plugin-ui/PluginCard.tsx", {
+const { PluginCard, PluginCardContent } = await component("./plugin-ui/PluginCard.tsx", {
   "../BlockingCard": shell,
   "../MarkdownBody": { MarkdownBody: ({ children }) => React.createElement("p", {}, children) },
   "../GitPatchStack": { SuppliedPatchStack: () => React.createElement("div", {}, "stack") },
@@ -51,4 +52,62 @@ test("generic plugin cards display exact structured values, warnings, checks and
   assert.match(html, /Approve the entire candidate/);
   assert.match(html, /data-primary="true"[^>]*>Approve commit/);
   assert.doesNotMatch(html, /<script>/);
+});
+
+test("historical shell uses outcome labels and does not mount expensive collapsed bodies", () => {
+  let mounted = 0;
+  const Content = () => { mounted += 1; return React.createElement("div", {}, "diff renderer"); };
+  const html = renderToStaticMarkup(React.createElement(shell.BlockingCard, {
+    title: "Approval", collapsed: true, collapsedLabel: "Answered", retainBodyWhenCollapsed: false,
+    onExpand() {}, footer: React.createElement("p", {}, "Decision only"),
+  }, React.createElement(Content)));
+  assert.match(html, /Answered/);
+  assert.doesNotMatch(html, /chat.extensionPending|diff renderer/);
+  assert.equal(mounted, 0);
+});
+
+const jiti = createJiti(import.meta.url);
+const receiptHelpers = await jiti.import("../lib/interaction-receipts.ts");
+const receiptDependencies = {
+  "@/lib/interaction-receipts": receiptHelpers,
+  "./BlockingCard": shell,
+  "./MarkdownBody": { MarkdownBody: ({ children }) => React.createElement("p", {}, children) },
+  "./plugin-ui/PluginCard": { PluginCardContent },
+};
+const { InteractionReceiptCard } = await component("./InteractionReceiptCard.tsx", receiptDependencies);
+const { InteractionReceiptCard: ExpandedReceipt } = await component("./InteractionReceiptCard.tsx", {
+  ...receiptDependencies, react: { ...React, useState: () => [false, () => {}] },
+});
+test("receipt cards default collapsed; expanded approvals retain scope and patches without actionable controls", () => {
+  const receipt = { version: 1, outcome: "answered", response: { action: "approve" }, request: {
+    type: "extension_ui_request", id: "receipt", method: "plugin_card", pluginId: "example", title: "Commit",
+    text: "Exact message", patch: "exact patch", scope: "Entire candidate", subtitle: "Approval required",
+    actions: [{ id: "approve", label: "Approve commit", primary: true }],
+  } };
+  const collapsed = renderToStaticMarkup(React.createElement(InteractionReceiptCard, { receipt }));
+  assert.match(collapsed, /data-interaction-receipt="receipt"/);
+  assert.match(collapsed, /aria-expanded="false"/);
+  assert.doesNotMatch(collapsed, /Exact message|stack|chat.extensionPending/);
+  const expanded = renderToStaticMarkup(React.createElement(ExpandedReceipt, { receipt }));
+  assert.match(expanded, /Exact message/);
+  assert.match(expanded, /stack/);
+  assert.match(expanded, /Entire candidate/);
+  assert.match(expanded, /Approval required/);
+  assert.match(expanded, /chat.receiptDecisionOnly/);
+  assert.doesNotMatch(expanded, /<form|<input|<textarea|type="submit"|data-primary|>chat.cancel</);
+  assert.equal((expanded.match(/<button/g) ?? []).length, 1, "only collapse can act on the historical card");
+});
+test("expanded question receipts preserve context, described choices and the normalized answer read-only", () => {
+  const receipt = { version: 1, outcome: "answered", response: { answer: {
+    kind: "selection", selections: ["Second"], comment: "Explanation",
+  } }, request: { type: "extension_ui_request", id: "question", method: "ask_user", question: "Which?",
+    context: "Background", options: [{ title: "First", description: "First details" }, { title: "Second", description: "Second details" }],
+    allowMultiple: false, allowFreeform: true, allowComment: true, contextExpanded: false } };
+  const html = renderToStaticMarkup(React.createElement(ExpandedReceipt, { receipt }));
+  assert.match(html, /Background/);
+  assert.match(html, /Second — Explanation/);
+  assert.match(html, /First details/);
+  assert.match(html, /Second details/);
+  assert.match(html, /data-selected="true"/);
+  assert.doesNotMatch(html, /<form|<input|<textarea|type="submit"|chat.extensionPending/);
 });

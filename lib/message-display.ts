@@ -9,11 +9,12 @@ export function getThinkingPreview(thinking: string): string {
 }
 
 export function isMessageGroupAnchor(message: { role?: AgentMessage["role"]; customType?: string }): boolean {
-  // A background subagent completion starts a new displayed turn, same as a
-  // user message or compaction summary. Other custom messages stay inside the turn.
+  // Durable receipts and subagent completions must remain independently visible,
+  // not disappear inside a turn's collapsed process details.
   return message.role === "user"
     || (message.role === "custom" && (
       message.customType === "compaction"
+      || message.customType === "pi-web:interaction-receipt"
       || message.customType === "pi-web:subagent-notification"
     ));
 }

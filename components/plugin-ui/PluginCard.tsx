@@ -23,6 +23,18 @@ function Section({ section }: { section: PluginCardSection }) {
     <h3 className="blocking-card-section-title">{section.title}</h3>{content}
   </section>;
 }
+/** Identical supplied fields and patches for live approvals and historical receipts. */
+export function PluginCardContent({ request }: { request: Request }) {
+  return <>
+    {request.fields && <Fields fields={request.fields} />}
+    {request.text && <pre className="blocking-card-code">{request.text}</pre>}
+    {request.markdown && <MarkdownBody>{request.markdown}</MarkdownBody>}
+    {request.sections?.filter((section) => !section.collapsible).map((section, index) => <Section key={index} section={section} />)}
+    {request.patch && <SuppliedPatchStack patch={request.patch} before={request.patchBefore ?? "Current"} after={request.patchAfter ?? "Proposed"} />}
+    {request.sections?.filter((section) => section.collapsible).map((section, index) => <Section key={index} section={section} />)}
+  </>;
+}
+
 /** Reusable presentation only. Buttons answer a live session request, never execute. */
 export function PluginCard({ request, onRespond }: {
   request: Request;
@@ -46,12 +58,7 @@ export function PluginCard({ request, onRespond }: {
         {request.actions.map((action) => <button key={action.id} type="button" disabled={sent} data-primary={action.primary || undefined}
           onClick={() => respond({ action: action.id })}>{action.label}</button>)}
       </>}>
-      {request.fields && <Fields fields={request.fields} />}
-      {request.text && <pre className="blocking-card-code">{request.text}</pre>}
-      {request.markdown && <MarkdownBody>{request.markdown}</MarkdownBody>}
-      {request.sections?.filter((section) => !section.collapsible).map((section, index) => <Section key={index} section={section} />)}
-      {request.patch && <SuppliedPatchStack patch={request.patch} before={request.patchBefore ?? "Current"} after={request.patchAfter ?? "Proposed"} />}
-      {request.sections?.filter((section) => section.collapsible).map((section, index) => <Section key={index} section={section} />)}
+      <PluginCardContent request={request} />
     </BlockingCard>
   </div>;
 }

@@ -24,7 +24,10 @@ export async function checkAskUserDialog(page, width) {
     await page.getByRole("button", { name: "Stop agent", exact: true }).waitFor({ state: "hidden" });
   };
   try {
-    const single = await start("single");
+    await start("single");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const single = page.getByRole("group", { name: "E2E browser question" });
+    await single.waitFor();
     await single.getByText("A detailed reason for asking").waitFor();
     await single.getByText("Second", { exact: true }).click();
     await single.getByRole("textbox", { name: "Optional comment" }).fill("More context");
@@ -35,6 +38,23 @@ export async function checkAskUserDialog(page, width) {
     assert.equal(await single.getByRole("textbox", { name: "Optional comment" }).inputValue(), "More context");
     await single.getByRole("button", { name: "Submit" }).click();
     await finish({ kind: "selection", selections: ["Second"], comment: "More context" });
+    const saved = page.locator("[data-interaction-receipt]").last();
+    await saved.waitFor();
+    const receiptId = await saved.getAttribute("data-interaction-receipt");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const receipt = page.locator(`[data-interaction-receipt="${receiptId}"]`);
+    await receipt.waitFor();
+    assert.equal(await receipt.count(), 1, "saved question receipt is not duplicated by reconnect");
+    const beforeReview = commands.filter((command) => command.type === "extension_ui_response").length;
+    await receipt.getByRole("button", { name: /Answered.*E2E browser question/ }).click();
+    await receipt.getByText("Second — More context", { exact: true }).last().waitFor();
+    await receipt.getByText("Another description", { exact: true }).waitFor();
+    const historical = receipt.getByRole("group", { name: "E2E browser question" });
+    await checkBlockingCard(historical);
+    assert.equal(await historical.getByRole("textbox").count(), 0);
+    assert.equal(await historical.getByRole("button", { name: /Submit|Cancel/ }).count(), 0);
+    await historical.getByRole("button", { name: "Collapse", exact: true }).click();
+    assert.equal(commands.filter((command) => command.type === "extension_ui_response").length, beforeReview);
 
     const multi = await start("multi");
     await multi.getByText("First", { exact: true }).click();
@@ -70,7 +90,8 @@ export async function checkAskUserDialog(page, width) {
     await timed.waitFor({ state: "hidden", timeout: 10000 });
     await finish(null);
     assert.equal(commands.slice(beforeTimeout).some((command) => command.type === "extension_ui_response"), false);
-    console.log(`PASS: ${width}px browser-native ask_user single/multi/freeform/cancel/expiry`);
+    await page.locator("[data-interaction-receipt]").last().getByRole("button", { name: /Timed out.*E2E browser question/ }).waitFor();
+    console.log(`PASS: ${width}px browser-native ask_user single/multi/freeform/cancel/expiry and persistent read-only receipts`);
   } finally {
     page.off("request", onRequest);
   }
