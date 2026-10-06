@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { createModelRuntimeWithExtensions } from "@/lib/model-runtime";
 import { accountCredentialStore, listProviderAccounts } from "@/lib/provider-accounts";
+import { createSseStream, SSE_HEADERS } from "@/lib/sse-stream";
 
 export const dynamic = "force-dynamic";
 
@@ -50,45 +51,54 @@ export async function GET(
 ) {
   const { provider } = await params;
 
-  const encoder = new TextEncoder();
-  const send = (controller: ReadableStreamDefaultController, data: unknown) => {
-    controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+  if (req.signal.aborted) return new Response(null, { status: 204 });
+
+  // Disconnects cancel provider work and settle pending client input, even
+  // when initialization has not finished yet.
+  const abort = new AbortController();
+  const registry = getCallbackRegistry();
+  const activeTokens = new Set<string>();
+  const cleanup = () => {
+    abort.abort();
+    for (const token of activeTokens) {
+      registry.get(token)?.reject(new Error("Login cancelled"));
+      registry.delete(token);
+    }
+    activeTokens.clear();
   };
 
-  // AbortController propagates client disconnect into ModelRuntime.login().
-  const abort = new AbortController();
-  req.signal.addEventListener("abort", () => abort.abort());
-
-  const stream = new ReadableStream({
-    async start(controller) {
+  const stream = createSseStream(
+    req,
+    async (writer) => {
+      const send = (data: unknown) => writer.send(data);
       let modelRuntime;
       try {
         const accountId = new URL(req.url).searchParams.get("accountId");
         const account = accountId ? listProviderAccounts().find((item) => item.id === accountId) : undefined;
         if (accountId && (!account || account.provider !== provider || account.type !== "oauth")) {
-          send(controller, { type: "error", message: "OAuth account not found for provider" });
-          controller.close();
+          send({ type: "error", message: "OAuth account not found for provider" });
+          writer.close();
           return;
         }
         modelRuntime = await createModelRuntimeWithExtensions(
           account ? accountCredentialStore({ [provider]: account.id }, undefined, undefined, { allowPendingLogin: true }) : undefined,
         );
+        if (writer.closed) return;
         if (!modelRuntime.getProvider(provider)?.auth.oauth) {
-          send(controller, { type: "error", message: `Unknown provider: ${provider}` });
-          controller.close();
+          send({ type: "error", message: `Unknown provider: ${provider}` });
+          writer.close();
           return;
         }
       } catch {
-        send(controller, { type: "error", message: "Could not initialize provider authorization" });
-        controller.close();
+        send({ type: "error", message: "Could not initialize provider authorization" });
+        writer.close();
         return;
       }
 
-      const registry = getCallbackRegistry();
-      const activeTokens = new Set<string>();
       let pendingManualRequest: { token: string; promise: Promise<string> } | undefined;
 
       const createClientInputRequest = () => {
+        if (writer.closed || abort.signal.aborted) throw new Error("Login cancelled");
         // Manual-code handshake token; crypto randomness so a pending OAuth
         // manual flow cannot be hijacked by predicting Math.random().
         const token = `${provider}-${randomUUID()}`;
@@ -109,6 +119,9 @@ export async function GET(
           });
         });
 
+        // A provider may still be awaiting other work when cancellation
+        // rejects this input. Keep rejection handled until it awaits the code.
+        void promise.catch(() => {});
         return { token, promise };
       };
 
@@ -124,18 +137,6 @@ export async function GET(
         return pendingManualRequest;
       };
 
-      // Cleanup: remove pending token and abort any waiting promise
-      const cleanup = () => {
-        for (const token of activeTokens) {
-          registry.get(token)?.reject(new Error("Login cancelled"));
-          registry.delete(token);
-        }
-        activeTokens.clear();
-      };
-
-      // Also cancel on client disconnect
-      abort.signal.addEventListener("abort", cleanup);
-
       try {
         await modelRuntime.login(provider, "oauth", {
           prompt: async (prompt: AuthPrompt) => {
@@ -143,14 +144,14 @@ export async function GET(
               ? getManualInputRequest()
               : createClientInputRequest();
             if (prompt.type === "select") {
-              send(controller, {
+              send({
                 type: "select_request",
                 message: prompt.message,
                 options: prompt.options,
                 token: request.token,
               });
             } else {
-              send(controller, {
+              send({
                 type: "prompt_request",
                 message: prompt.message,
                 placeholder: prompt.placeholder ?? null,
@@ -160,16 +161,17 @@ export async function GET(
             return request.promise;
           },
           notify: (event: AuthEvent) => {
+            if (writer.closed) return;
             if (event.type === "auth_url") {
               const request = getManualInputRequest();
-              send(controller, {
+              send({
                 type: "auth",
                 url: event.url,
                 instructions: event.instructions ?? null,
                 token: request.token,
               });
             } else if (event.type === "device_code") {
-              send(controller, {
+              send({
                 type: "device_code",
                 userCode: event.userCode,
                 verificationUri: event.verificationUri,
@@ -177,36 +179,28 @@ export async function GET(
                 expiresInSeconds: event.expiresInSeconds ?? null,
               });
             } else {
-              send(controller, { type: "progress", message: event.message });
+              send({ type: "progress", message: event.message });
             }
           },
           signal: abort.signal,
         });
 
+        if (writer.closed) return;
         invalidateModelsCache();
-        send(controller, { type: "success" });
+        send({ type: "success" });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg !== "Login cancelled") {
-          send(controller, { type: "error", message: msg });
+          send({ type: "error", message: msg });
         } else {
-          send(controller, { type: "cancelled" });
+          send({ type: "cancelled" });
         }
       } finally {
-        cleanup();
-        controller.close();
+        writer.close();
       }
     },
-    cancel() {
-      abort.abort();
-    },
-  });
+    cleanup,
+  );
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  });
+  return new Response(stream, { headers: SSE_HEADERS });
 }
