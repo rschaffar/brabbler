@@ -7,7 +7,7 @@ import { gitExecEnv } from "../../lib/git-exec";
 import { samePath, toNativePath } from "../../lib/paths";
 import { allowFileRoot } from "../../lib/file-access";
 import { onPluginSettingsChange, pluginProjectIdentity, readPluginSettings } from "../../lib/plugins/settings";
-import type { PluginCard, PluginUiContext, RequiredCheck } from "../../lib/plugins/types";
+import type { PluginCard, PluginCardField, PluginCardSection, PluginUiContext, RequiredCheck } from "../../lib/plugins/types";
 import { gitWorkflowManifest, type GitAction, type GitSettings } from "./manifest";
 
 export type GitOperation =
@@ -104,6 +104,9 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
   const current = head(cwd);
   const rows: string[] = [JSON.stringify(op, null, 2), `Checkout: ${cwd}`, `Branch: ${current.branch}`, `HEAD: ${current.tip}`,
     "Native Git operation is unsigned and hook-free. Stronger user/repository instructions still apply."];
+  const fields: PluginCardField[] = [{ label: "Checkout", value: cwd, code: true }, { label: "Branch", value: current.branch, code: true }];
+  const sections: PluginCardSection[] = [];
+  const notices = ["Native Git operation is unsigned and hook-free. Stronger user/repository instructions still apply."];
   let args: string[] = [];
   let patch: string | undefined;
   let checks: RequiredCheck[] = [];
@@ -111,6 +114,8 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
   if (op.action === "commit") {
     if (!op.message.trim() || op.message.length > 65536 || op.message.includes("\0")) throw new Error("An exact nonempty commit message is required");
     checks = policy.commitChecks;
+    fields.push({ label: "Selection", value: op.mode === "files" ? "Selected whole files, including unstaged content" : "Complete staged set" });
+    sections.push({ title: "Commit message", text: op.message, code: true });
     const files = op.mode === "files" ? fileSelection(cwd, op.files) : undefined;
     if (op.mode !== "staged" && op.mode !== "files") throw new Error("Invalid commit mode");
     if (op.mode === "staged" && op.files !== undefined) throw new Error("Staged mode commits the complete staged set, not selected paths");
@@ -127,7 +132,7 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
       else git(cwd, ["read-tree", "HEAD"], index);
       const tree = git(cwd, ["write-tree"], index).trim();
       if (tree === git(cwd, ["rev-parse", "HEAD^{tree}"]).trim()) throw new Error("No selected changes to commit");
-      patch = git(cwd, ["diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv", "HEAD", "--"], index);
+      patch = git(cwd, ["diff", "--cached", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", "HEAD", "--"], index);
       state.push(tree);
       rows.push(`Candidate tree: ${tree}`, `Exact message:\n${op.message}`);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
@@ -146,12 +151,15 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
       state.push(source, head(source));
     }
     state.push(feature, target);
+    fields.push({ label: "Feature → target", value: `${op.featureBranch} → ${policy.targetBranch}`, code: true });
+    notices.push("Diffs show feature changes since the merge base, not a predicted rebase/merge result.");
     rows.push(`Feature: ${op.featureBranch} ${feature}`, `Target: ${policy.targetBranch} ${target}`,
       "Patch shows feature changes since the merge base, not a predicted rebase/merge result.");
-    patch = git(cwd, ["diff", "--binary", "--no-ext-diff", "--no-textconv", `${target}...${feature}`, "--"]);
+    patch = git(cwd, ["diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", `${target}...${feature}`, "--"]);
     if (op.action === "rebase") args = ["rebase", "--no-autostash", "--no-update-refs", "--no-rebase-merges", "--no-gpg-sign", target];
     else {
       checks = policy.mergeChecks;
+      fields.push({ label: "Merge method", value: policy.mergeMethod === "ff-only" ? "Fast-forward only" : "Non-fast-forward merge" });
       rows.push(`Merge method: ${policy.mergeMethod}`, "Checks run in the selected feature checkout before merging; no automatic rebase.");
       if (checks.length && !sourceCheckout) throw new Error("Required merge checks need the feature's registered clean checkout");
       args = ["-c", `branch.${policy.targetBranch}.mergeOptions=`, "merge", policy.mergeMethod === "ff-only" ? "--ff-only" : "--no-ff", "--commit", "--no-edit", "--no-gpg-sign", feature];
@@ -175,6 +183,8 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
     if (op.action === "createWorktree" && exists) throw new Error("Create requires a new branch");
     if (op.action === "attachWorktree" && (op.baseBranch !== op.branch || !exists)) throw new Error("Attach requires the explicitly selected existing branch as base");
     state.push(base, destination);
+    fields.push({ label: "Base branch", value: op.baseBranch, code: true }, { label: "Worktree branch", value: op.branch, code: true },
+      { label: "Destination", value: destination, code: true });
     rows.push(`Base: ${op.baseBranch} ${base}`, `Destination: ${destination}`);
     args = op.action === "createWorktree" ? ["worktree", "add", "-b", op.branch, destination, base] : ["worktree", "add", destination, op.branch];
   } else if (op.action === "removeWorktree") {
@@ -184,18 +194,32 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
     const physical = checkout(callerCwd, selected.path);
     if (status(physical) || git(physical, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])) throw new Error("Removal requires a clean worktree with no ignored files; force removal is not provided");
     state.push(physical, head(physical));
+    fields.push({ label: "Remove worktree", value: physical, code: true });
+    notices.push("Only this worktree directory is removed. Branch and session history remain.");
     rows.push(`Remove only: ${physical}`, "Branch and session history remain. No automatic cleanup.");
     args = ["worktree", "remove", physical];
   } else throw new Error("Unknown Git action");
   if (checks.length) rows.push("Required checks (shell commands, may have side effects):", ...checks.map((check) => `${check.name}: ${check.command}`),
     op.action === "commit" ? "Checks run in the selected checkout, including its current staged/unstaged contents." : "Checks run in the feature checkout.");
+  if (checks.length) {
+    sections.push({ title: "Required checks", fields: checks.map((check) => ({ label: check.name, value: check.command, code: true })) });
+    notices.push("Checks are shell commands and may have side effects.", op.action === "commit"
+      ? "Checks run in the selected checkout, including its current staged/unstaged contents; they do not certify a separately exported candidate tree."
+      : "Checks run in the selected feature checkout before merging, not on a predicted merged result.");
+  }
+  sections.push({ title: "Operation notes", text: notices.join("\n"), notice: true });
   rows.push(`Git arguments: ${JSON.stringify(args)}`);
+  sections.push({ title: "Technical details", text: rows.join("\n\n"), code: true, collapsible: true });
   // Bind only applicable settings, not unrelated action permissions.
   state.push(policy[op.action], checks, op.action === "merge" ? policy.mergeMethod : null,
     op.action === "merge" || op.action === "rebase" ? policy.targetBranch : null);
   return { fingerprint: digest(state), cwd, args, checks,
-    card: { title: `Git ${op.action}`, text: rows.join("\n\n"), patch,
-      patchBefore: op.action === "commit" ? "HEAD" : "Merge base", patchAfter: op.action === "commit" ? "Candidate" : "Selected feature", actions: [{ id: "approve", label: "Approve operation and checks" }, { id: "reject", label: "Reject" }] } };
+    card: { title: { commit: "Git commit", rebase: "Git rebase", merge: "Git merge", createWorktree: "Create Git worktree", attachWorktree: "Attach Git worktree", removeWorktree: "Remove Git worktree" }[op.action],
+      subtitle: "Approval required", fields, sections, patch,
+      scope: `Approves the entire ${op.action === "commit" ? "commit candidate" : "selected operation"}${checks.length ? " and the listed checks" : ""}${patch ? ", not just an expanded file" : ""}.`,
+      patchBefore: op.action === "commit" ? "HEAD" : "Merge base", patchAfter: op.action === "commit" ? "Candidate" : "Selected feature",
+      actions: [{ id: "reject", label: "Reject" }, { id: "approve", primary: true,
+        label: { commit: "Approve commit", rebase: "Approve rebase", merge: "Approve merge", createWorktree: "Create worktree", attachWorktree: "Attach worktree", removeWorktree: "Remove worktree" }[op.action] }] } };
 }
 function run(command: string, args: string[], cwd: string, shell = false, index?: string): Promise<string> {
   // No AbortSignal or output-buffer kill on native effects: settle actual Git writes.

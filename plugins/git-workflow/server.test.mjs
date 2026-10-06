@@ -48,7 +48,15 @@ test("ask shows exact resource, message, patch and checks; decline and no UI do 
   set(repo, { commitChecks: [{ name: "Bounded check", command: "printf checked" }] });
   let card;
   failed(await call(repo, commit(repo), { pluginCard: async (_id, supplied) => { card = supplied; return "reject"; } }), /not approved/);
-  assert.match(card.text, /Exact message/); assert.match(card.text, /printf checked/); assert.match(card.text, new RegExp(repo)); assert.match(card.patch, /changed a/);
+  assert.equal(card.title, "Git commit");
+  assert.deepEqual(card.sections.find((section) => section.title === "Commit message"), { title: "Commit message", text: "Exact message\n\nBody", code: true });
+  assert.deepEqual(card.sections.find((section) => section.title === "Required checks").fields, [{ label: "Bounded check", value: "printf checked", code: true }]);
+  assert.equal(card.fields.find((field) => field.label === "Checkout").value, repo);
+  assert.match(card.scope, /entire commit candidate and the listed checks/);
+  assert.match(card.sections.find((section) => section.notice).text, /do not certify a separately exported candidate tree/);
+  assert.ok(card.sections.find((section) => section.title === "Technical details").collapsible);
+  assert.equal(card.actions.find((action) => action.primary).label, "Approve commit");
+  assert.match(card.patch, /changed a/);
   assert.equal(git(repo, "rev-parse", "HEAD"), before);
   failed(await call(repo, commit(repo), {}), /live Pi Web/);
   success(await call(repo, commit(repo)));

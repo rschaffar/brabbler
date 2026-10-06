@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { withExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
 
 /** Visual history tracks the selected checkout and branch, independently of the open chat. */
 export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorktree }) {
@@ -67,9 +68,20 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await page.waitForTimeout(700);
   assert.equal(await graph.locator("svg circle").count(), 3, "A late branch response must not replace the newer selection");
   await page.unroute("**/api/git/explorer?*", delayOtherBranch);
+  const patchReads = [];
+  const recordPatch = (request) => {
+    const query = new URL(request.url()).searchParams;
+    if (query.get("op") === "patch") patchReads.push(query.get("path"));
+  };
+  page.on("request", recordPatch);
   await graph.getByRole("button", { name: /second feature/ }).click();
   const detail = explorer.getByRole("region", { name: "Git commit details" });
-  await detail.getByRole("button", { name: /base\.txt/ }).click();
+  const firstFile = detail.getByRole("region", { name: "File changes: base.txt", exact: true });
+  const secondFile = detail.getByRole("region", { name: "File changes: second.txt", exact: true });
+  await firstFile.getByRole("region", { name: "Side-by-side diff" }).waitFor();
+  assert.equal(await secondFile.getByRole("button").getAttribute("aria-expanded"), "false");
+  assert.deepEqual([...new Set(patchReads)], ["base.txt"], "Only the initially expanded file is fetched (Strict Mode may cancel/restart its first read)");
+  assert.equal(await detail.getByRole("group", { name: "Patch view" }).count(), 1);
   assert.equal(await page.locator("#file-panel").getByRole("tab").count(), 0,
     "Commit inspection should not create a file tab");
   const oid = execFileSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
@@ -78,7 +90,7 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), oid);
   await detail.getByRole("button", { name: "Copy commit message" }).click();
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), "second feature");
-  const split = detail.getByRole("region", { name: "Side-by-side diff" });
+  const split = firstFile.getByRole("region", { name: "Side-by-side diff" });
   await split.locator('[data-deletions] [data-line-type="change-deletion"]').getByText("Base fixture").waitFor();
   await split.locator('[data-additions] [data-line-type="change-addition"]').getByText("Revised base fixture").waitFor();
   assert.ok((await split.locator("[data-line-number-content]").count()) >= 2, "Both sides have line numbers");
@@ -89,8 +101,59 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await detail.getByText(/-Base fixture/).waitFor();
   await detail.getByRole("button", { name: "Side by side" }).click();
   await split.waitFor();
-  await detail.getByRole("button", { name: /second\.txt/ }).click();
-  await detail.getByText("Second feature patch", { exact: true }).waitFor();
+  await secondFile.getByRole("button").click();
+  await secondFile.getByText("Second feature patch", { exact: true }).waitFor();
+  assert.deepEqual([...new Set(patchReads)], ["base.txt", "second.txt"]);
+  const loadedReads = patchReads.length;
+  await secondFile.getByRole("button").click();
+  await secondFile.getByRole("button").click();
+  await secondFile.getByText("Second feature patch", { exact: true }).waitFor();
+  assert.equal(patchReads.length, loadedReads, "Reopening a file reuses its candidate-bound successful patch");
+  await detail.getByRole("button", { name: "Unified", exact: true }).click();
+  await firstFile.getByRole("region", { name: "Unified diff" }).waitFor();
+  await secondFile.getByRole("region", { name: "Unified diff" }).waitFor();
+  await detail.getByRole("button", { name: "Side by side", exact: true }).click();
+  page.off("request", recordPatch);
+
+  const rootOid = execFileSync("git", ["-C", cwd, "rev-parse", "target"], { encoding: "utf8" }).trim();
+  const delayOldPatch = async (route) => {
+    const query = new URL(route.request().url()).searchParams;
+    if (query.get("op") !== "patch" || query.get("oid") !== rootOid) return route.continue();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.continue().catch(() => {});
+  };
+  await page.route("**/api/git/explorer?*", delayOldPatch);
+  const oldPatch = page.waitForRequest((request) => {
+    const query = new URL(request.url()).searchParams;
+    return query.get("op") === "patch" && query.get("oid") === rootOid;
+  });
+  await graph.getByRole("button", { name: /base fixture/ }).click();
+  await oldPatch;
+  await graph.getByRole("button", { name: /second feature/ }).click();
+  await firstFile.getByRole("region", { name: "Side-by-side diff" }).getByText("Revised base fixture", { exact: true }).waitFor();
+  await page.waitForTimeout(700);
+  await detail.getByText(oid, { exact: true }).waitFor();
+  assert.equal(await secondFile.getByRole("button").getAttribute("aria-expanded"), "false", "New commit view resets expansion and cannot inherit the old patch");
+  await page.unroute("**/api/git/explorer?*", delayOldPatch);
+
+  const unavailableUrl = `${base}/api/git/explorer?${new URLSearchParams({ cwd, op: "patch", branch: "feature", head: oid, oid, path: "second.txt" })}`;
+  const refusePatch = (route) => route.fulfill({ status: 409, json: { error: "E2E patch unavailable" } });
+  await page.route(unavailableUrl, refusePatch);
+  await withExpectedBrowserConflict(page, { scenario: "local file-patch error", url: unavailableUrl, method: "GET", body: null }, async () => {
+    const response = page.waitForResponse(unavailableUrl);
+    await secondFile.getByRole("button").click();
+    const refused = await response;
+    assert.equal(refused.status(), 409);
+    assert.deepEqual(await refused.json(), { error: "E2E patch unavailable" });
+    await secondFile.getByRole("alert").waitFor();
+    assert.match(await secondFile.getByRole("alert").innerText(), /E2E patch unavailable/);
+    assert.ok(await firstFile.getByRole("region", { name: "Side-by-side diff" }).isVisible(), "One file's error does not replace another file's diff");
+    assert.equal(execFileSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), checkoutHead);
+    return refused;
+  });
+  await page.unroute(unavailableUrl, refusePatch);
+  await secondFile.getByRole("button", { name: "Retry", exact: true }).click();
+  await secondFile.getByText("Second feature patch", { exact: true }).waitFor();
   const graphBounds = await graph.boundingBox();
   const detailBounds = await detail.boundingBox();
   assert.ok(graphBounds && detailBounds && graphBounds.x + graphBounds.width <= detailBounds.x + 2,
@@ -131,7 +194,6 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   assert.equal(await graph.locator("svg circle").count(), 1, "Target checkout shows its own history");
   assert.equal(await detail.count(), 0, "Changing worktrees clears the old commit detail");
   await graph.getByRole("button", { name: /base fixture/ }).click();
-  await detail.getByRole("button", { name: /base\.txt/ }).click();
   await detail.getByRole("region", { name: "Side-by-side diff" }).getByText("Base fixture", { exact: true }).waitFor();
   await page.unroute("**/api/git/explorer?*", delayOldHistory);
   await page.getByRole("button", { name: "New", exact: true }).click();

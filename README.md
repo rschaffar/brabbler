@@ -169,6 +169,8 @@ The Git Explorer's small active-lane graph layout adapts [binaryplease/git-graph
 
 Pi Web includes a web-focused adaptation of [pi-ask-user](https://github.com/edlsh/pi-ask-user) v0.15.0 (MIT; see `lib/ask-user.LICENSE`). In ordinary web sessions and subagents that load extensions, it replaces the recognized external `pi-ask-user` package's tool, preserving its parameter names, answer/result format, and `ask:answered` / `ask:cancelled` events. The browser form uses Pi Web's existing per-session extension UI transport, so pending questions survive an SSE reconnect and expire or close on Stop. The standalone Pi terminal still uses its separately installed extension. Chat-only sessions load no extensions, including `ask_user`.
 
+Blocking questions and extension select/confirm/input/editor requests use compact inline cards with a bounded scrolling body and fixed actions, not overlays. Collapsing a card retains its draft; cancellation, expiry and reconnect still belong to the live request. Optional Git plugin approvals share this shell with structured summaries and stacked file diffs; Git Explorer uses the same collapsible diff stack for committed history.
+
 Terminal-only layout and shortcut options remain accepted for compatibility but do not alter the browser form. Unrelated extensions that also register `ask_user` are not silently suppressed; resolve those tool collisions explicitly.
 
 ### Activity overview

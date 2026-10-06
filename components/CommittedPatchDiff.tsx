@@ -5,7 +5,7 @@ import { getFiletypeFromFileName, parsePatchFiles, preloadHighlighter, type File
 import { FileDiff } from "@pierre/diffs/react";
 import { useTheme } from "@/hooks/useTheme";
 
-type View = "split" | "unified" | "raw";
+export type PatchView = "split" | "unified" | "raw";
 const MAX_RENDERED_LINES = 2500;
 // Pierre's overflow:"scroll" synchronizes the columns. Keep its wrap layout
 // (no ScrollSyncManager) and give each code grid its own bounded scroll area.
@@ -20,14 +20,17 @@ const INDEPENDENT_SCROLL_CSS = `
 `;
 
 /** A presentation-only adapter over the existing bounded, first-parent Git patch. */
-export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, independentScroll = false }: {
+export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, independentScroll = false, view: controlledView }: {
   patch: string;
   hasBinaryChanges: boolean;
   before: string;
   after: string;
   independentScroll?: boolean;
+  /** A stack owns its shared toolbar; standalone viewers retain their own controls. */
+  view?: PatchView;
 }) {
-  const [view, setView] = useState<View>("split");
+  const [localView, setView] = useState<PatchView>("split");
+  const view = controlledView ?? localView;
   const { isDark } = useTheme();
   const [highlighterReady, setHighlighterReady] = useState(false);
   const [highlighterFailed, setHighlighterFailed] = useState(false);
@@ -69,7 +72,7 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
   const visibleView = file && highlighterReady ? view : "raw";
 
   return <div className="git-commit-diff mt-2 min-w-0 rounded border border-border bg-bg">
-    {file && <div role="group" aria-label="Patch view" className="flex items-center gap-1 border-b border-border bg-bg-panel p-1 text-xs">
+    {file && controlledView === undefined && <div role="group" aria-label="Patch view" className="flex items-center gap-1 border-b border-border bg-bg-panel p-1 text-xs">
       {(["split", "unified", "raw"] as const).map((mode) => <button key={mode} type="button"
         aria-pressed={visibleView === mode} onClick={() => setView(mode)}
         className="rounded px-2 py-1 text-text-muted hover:bg-bg-hover aria-pressed:bg-bg-selected aria-pressed:text-text">

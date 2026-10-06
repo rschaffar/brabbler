@@ -32,15 +32,28 @@ export interface PluginSettings {
   sources: Record<string, "builtin" | "global" | "project">;
 }
 
+export interface PluginCardField { label: string; value: string; code?: boolean }
+export interface PluginCardSection {
+  title: string;
+  text?: string;
+  fields?: PluginCardField[];
+  code?: boolean;
+  collapsible?: boolean;
+  notice?: boolean;
+}
 /** Browser presentation only; never instructions or execution authority. */
 export interface PluginCard {
   title: string;
   text?: string;
+  subtitle?: string;
+  fields?: PluginCardField[];
+  sections?: PluginCardSection[];
+  scope?: string;
   markdown?: string;
   patch?: string;
   patchBefore?: string;
   patchAfter?: string;
-  actions: Array<{ id: string; label: string }>;
+  actions: Array<{ id: string; label: string; primary?: boolean }>;
 }
 export interface PluginUiContext {
   pluginCard(pluginId: string, card: PluginCard, signal?: AbortSignal): Promise<string | null>;

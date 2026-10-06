@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
+import { checkBlockingCard } from "./blocking-card.mjs";
 
 export const extensionSource = `export default function (pi) {
   pi.registerCommand("e2e-dialog", {
@@ -8,6 +9,8 @@ export const extensionSource = `export default function (pi) {
       if (mode === "timeout") {
         await ctx.ui.select("E2E timeout", ["Wait"], { timeout: 4000 });
         result = await ctx.ui.input("E2E after timeout");
+      } else if (mode === "longtitle") {
+        result = await ctx.ui.confirm("E2E longtitle\\n" + "A long extension title. ".repeat(160), "Details");
       } else if (mode === "select") {
         result = await ctx.ui.select("E2E select", Array.from({ length: 30 }, (_, i) => "Option " + (i + 1)));
       } else {
@@ -50,8 +53,9 @@ export async function checkExtensionDialogs(page, artifacts, width) {
     const input = page.locator("textarea").last();
     await input.fill(`/e2e-dialog ${mode}`);
     await page.getByRole("button", { name: "Send", exact: true }).click();
-    const card = page.getByRole("group", { name: `E2E ${mode}`, exact: true });
+    const card = page.getByRole("group", mode === "longtitle" ? { name: /^E2E longtitle/ } : { name: `E2E ${mode}`, exact: true });
     await card.waitFor();
+    await checkBlockingCard(card);
     assert.equal(await card.locator("xpath=ancestor::div[contains(@class, 'overflow-y-auto')]").count() > 0, true, "Question card belongs to the chat scroller");
     return card;
   };
@@ -69,7 +73,7 @@ export async function checkExtensionDialogs(page, artifacts, width) {
     }
     assert.ok(await page.locator(":focus").evaluate(element => {
       const bounds = element.getBoundingClientRect();
-      const container = element.parentElement.parentElement.getBoundingClientRect();
+      const container = element.closest(".blocking-card-body").getBoundingClientRect();
       return bounds.top >= container.top && bounds.bottom <= container.bottom;
     }), "Keyboard selection must scroll into view");
     await page.screenshot({ path: join(artifacts, `extension-select-${width}.png`) });
@@ -83,7 +87,9 @@ export async function checkExtensionDialogs(page, artifacts, width) {
       if (mode === "input" || mode === "editor") {
         await dialog.getByRole("textbox").fill("Preserved draft");
         await dialog.getByRole("button", { name: "Collapse", exact: true }).click();
-        await page.getByRole("button", { name: new RegExp(`Awaiting response.*E2E ${mode}`) }).click();
+        await page.waitForFunction(() => document.activeElement?.classList.contains("blocking-card-collapsed"));
+        await page.keyboard.press("Enter");
+        await page.waitForFunction(() => document.activeElement?.matches("input, textarea") && document.activeElement.closest(".blocking-card"));
         assert.equal(await dialog.getByRole("textbox").inputValue(), "Preserved draft");
       }
       if (mode === "input" || mode === "editor") await dialog.getByRole("button", { name: "Cancel", exact: true }).focus();
@@ -94,6 +100,10 @@ export async function checkExtensionDialogs(page, artifacts, width) {
       assert.equal(commands.slice(before).filter(command => command.type === "extension_ui_response").length, 1);
       assert.equal(commands.slice(before).some(command => command.type === "abort"), false, "Dialog Esc must not abort the agent");
     }
+
+    const longTitle = await start("longtitle");
+    await longTitle.getByRole("button", { name: "Cancel", exact: true }).click();
+    await finish("longtitle", "false");
 
     const timed = await start("timeout");
     const countdown = timed.getByText(/expires in \ds/);

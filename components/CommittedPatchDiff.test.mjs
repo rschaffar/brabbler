@@ -49,6 +49,15 @@ test("committed text patches keep the three view controls while highlighting loa
   assert.deepEqual(file.additionLines.map((line) => line.trim()), ["First line", "New text"]);
 });
 
+test("a stack can own the view without repeating per-file controls, retaining raw while highlighting loads", () => {
+  const html = renderToStaticMarkup(React.createElement(CommittedPatchDiff, {
+    patch: modified, hasBinaryChanges: false, before: "parent", after: "commit", view: "unified",
+  }));
+  assert.doesNotMatch(html, /aria-label="Patch view"/);
+  assert.match(html, /role="region" aria-label="Raw patch"/);
+  assert.match(html, /-Old text/);
+});
+
 test("root commits parse additions next to an empty parent; raw fallback escapes contents", () => {
   const root = `diff --git a/base.txt b/base.txt
 new file mode 100644

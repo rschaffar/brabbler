@@ -18,6 +18,7 @@ import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { AnsiText } from "./AnsiText";
 import { AskUserDialog } from "./AskUserDialog";
 import { PluginCard } from "./plugin-ui/PluginCard";
+import { BlockingCard } from "./BlockingCard";
 import { ContextReloadNotice } from "./ContextReloadNotice";
 import { ArchivedSessionNotice } from "./ArchivedSessionNotice";
 import { useI18n } from "@/hooks/useI18n";
@@ -1585,97 +1586,16 @@ function ExtensionDialog({
         minWidth: 0,
       }}
     >
-      {collapsed ? (
-        <button
-          type="button"
-          onClick={() => setCollapsed(false)}
-          aria-expanded={false}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            width: "100%",
-            padding: "10px 12px",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            background: "var(--bg-panel)",
-            color: "var(--text)",
-            cursor: "pointer",
-            textAlign: "left",
-          }}
-        >
-          <span style={{ fontSize: 11, fontWeight: 650, color: "var(--accent)", flexShrink: 0 }}>
-            {t("chat.extensionPending")}
-          </span>
-          <span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-            {request.title}
-          </span>
-          {summary && (
-            <span style={{ fontSize: 12, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "34%", flexShrink: 1 }}>
-              {summary}
-            </span>
-          )}
-          {countdown}
-          <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>
-            {t("chat.extensionExpand")}
-          </span>
-        </button>
-      ) : (
-      <div
-        role="group"
-        aria-label={request.title}
-        style={{
-          width: "100%",
-          maxHeight: "min(760px, 65vh)",
-          display: "flex",
-          flexDirection: "column",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          background: "var(--bg)",
-          overflow: "hidden",
-        }}
-      >
-        <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-start", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--border)", maxHeight: "50%", overflowY: "auto" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {/* Pi's TUI shows the title verbatim, newlines included; select/input have no
-                separate message field, so extensions put multi-line text here. */}
-            <div style={{ color: "var(--text)", fontSize: 14, fontWeight: 650, lineHeight: 1.45, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{request.title}</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 3, color: "var(--text-dim)", fontSize: 11, fontFamily: "var(--font-mono)" }}>
-              <span>{t("chat.extensionRequest")}</span>
-              {countdown}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setCollapsed(true)}
-            aria-expanded={true}
-            title={t("chat.extensionCollapse")}
-            aria-label={t("chat.extensionCollapse")}
-            style={{
-              display: "grid",
-              placeItems: "center",
-              width: 28,
-              height: 28,
-              borderRadius: 6,
-              border: "1px solid var(--border)",
-              background: "var(--bg-panel)",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              flexShrink: 0,
-            }}
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polyline points="2 3.5 5 6.5 8 3.5" />
-            </svg>
-          </button>
-        </div>
-
-        <div
-          style={{
-            padding: 14,
-            flex: "1 1 auto", minHeight: 0, overflowY: "auto",
-          }}
-        >
+      <BlockingCard title={request.title} label={t("chat.extensionRequest")} collapsed={collapsed}
+        onCollapse={() => setCollapsed(true)} onExpand={() => setCollapsed(false)}
+        meta={<>{collapsed && summary && <span className="max-w-[34%] truncate">{summary}</span>}{countdown}</>}
+        footer={<>
+          <button type="button" autoFocus={request.method === "confirm" || (request.method === "select" && request.options.length === 0)}
+            onClick={() => onRespond(request, { cancelled: true })}>{t("chat.cancel")}</button>
+          {request.method !== "select" && <button type="button" data-primary onClick={submitValue}>
+            {t(request.method === "confirm" ? "chat.confirm" : "chat.submit")}
+          </button>}
+        </>}>
           {request.method === "confirm" && (
             <MarkdownBody>{request.message}</MarkdownBody>
           )}
@@ -1709,22 +1629,8 @@ function ExtensionDialog({
                     event.preventDefault();
                     onRespond(request, { value: option });
                   }}
-                  style={{
-                    width: "100%",
-                    padding: "9px 10px",
-                    borderRadius: 7,
-                    border: "1px solid var(--border)",
-                    background: "var(--bg-panel)",
-                    color: "var(--text)",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    fontSize: 13,
-                    overflowWrap: "anywhere",
-                    // Match the scroller's padding so keyboard navigation never parks the
-                    // option flush against the edge, where whole-pixel scroll snapping and
-                    // overflow clipping cut off its focus ring.
-                    scrollMargin: 14,
-                  }}
+                  className="blocking-card-choice text-left"
+                  style={{ scrollMargin: 12 }}
                 >
                   <div inert>
                     <MarkdownBody>{option}</MarkdownBody>
@@ -1742,16 +1648,7 @@ function ExtensionDialog({
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.nativeEvent.isComposing) submitValue();
               }}
-              style={{
-                width: "100%",
-                padding: "9px 10px",
-                borderRadius: 7,
-                border: "1px solid var(--border)",
-                background: "var(--bg-panel)",
-                color: "var(--text)",
-                outline: "none",
-                fontSize: 13,
-              }}
+              className="blocking-card-field"
             />
           )}
           {request.method === "editor" && (
@@ -1762,71 +1659,10 @@ function ExtensionDialog({
               onKeyDown={(e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !e.nativeEvent.isComposing) submitValue();
               }}
-              style={{
-                width: "100%",
-                minHeight: 220,
-                padding: 10,
-                borderRadius: 7,
-                border: "1px solid var(--border)",
-                background: "var(--bg-panel)",
-                color: "var(--text)",
-                outline: "none",
-                resize: "vertical",
-                fontSize: 13,
-                lineHeight: 1.55,
-                fontFamily: "var(--font-mono)",
-              }}
+              className="blocking-card-field min-h-[160px] resize-y font-mono"
             />
           )}
-        </div>
-
-        <div style={{ flexShrink: 0, display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid var(--border)", background: "var(--bg-panel)" }}>
-          <button
-            autoFocus={request.method === "confirm" || (request.method === "select" && request.options.length === 0)}
-            onClick={() => onRespond(request, { cancelled: true })}
-            style={{
-              padding: "6px 10px",
-              borderRadius: 6,
-              border: "1px solid var(--border)",
-              background: "var(--bg)",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-            }}
-          >
-             {t("chat.cancel")}
-          </button>
-          {request.method === "confirm" ? (
-            <button
-              onClick={submitValue}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 6,
-                border: "1px solid var(--accent)",
-                background: "var(--accent)",
-                color: "var(--accent-contrast)",
-                cursor: "pointer",
-              }}
-            >
-               {t("chat.confirm")}
-            </button>
-          ) : request.method !== "select" ? (
-            <button
-              onClick={submitValue}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 6,
-                border: "1px solid var(--accent)",
-                background: "var(--accent)",
-                color: "var(--accent-contrast)",
-                cursor: "pointer",
-              }}
-            >
-               {t("chat.submit")}
-            </button>
-          ) : null}
-        </div>
-      </div>
-      )}
+      </BlockingCard>
     </div>
   );
 }
