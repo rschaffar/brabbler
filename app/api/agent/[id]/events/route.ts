@@ -1,4 +1,5 @@
 import { createAgentEventStream } from "@/lib/agent-event-stream";
+import { SSE_HEADERS } from "@/lib/sse-stream";
 import { resolveSessionPath } from "@/lib/session-reader";
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
 
@@ -28,12 +29,5 @@ export async function GET(
 
   const stream = createAgentEventStream(req, id, sessionPromise);
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
+  return new Response(stream, { headers: SSE_HEADERS });
 }

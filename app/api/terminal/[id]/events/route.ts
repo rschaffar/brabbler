@@ -1,4 +1,5 @@
 import { hasTerminal, subscribeTerminal, type TerminalEvent } from "@/lib/terminal-manager";
+import { SSE_HEADERS } from "@/lib/sse-stream";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -73,12 +74,5 @@ export async function GET(
     },
   }, { highWaterMark: 256 * 1024, size: (chunk) => chunk.byteLength });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
+  return new Response(stream, { headers: SSE_HEADERS });
 }

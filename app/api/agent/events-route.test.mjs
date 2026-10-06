@@ -10,8 +10,7 @@ test("agent SSE starts sessions asynchronously and disables response buffering",
   assert.match(agentEventsSource, /sessionPromise = startRpcSession\([\s\S]*?\.then\(\(result\) => result\.session\)/);
   assert.doesNotMatch(agentEventsSource, /await startRpcSession\(/);
   assert.match(agentEventsSource, /if \(req\.signal\.aborted\) return new Response\(null, \{ status: 204 \}\)/);
-  assert.match(agentEventsSource, /"Cache-Control": "no-cache, no-transform"/);
-  assert.match(agentEventsSource, /"X-Accel-Buffering": "no"/);
+  assert.match(agentEventsSource, /headers: SSE_HEADERS/);
 });
 
 test("agent SSE reuses one TextEncoder per stream", () => {

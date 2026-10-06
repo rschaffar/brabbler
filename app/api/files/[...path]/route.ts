@@ -28,6 +28,7 @@ import {
 import { parseFormDataWithinLimit, parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import { filePathFromApiSegments, samePath } from "@/lib/paths";
 import { readTextPreviewChunk } from "@/lib/text-preview";
+import { createSseStream, SSE_HEADERS } from "@/lib/sse-stream";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -596,15 +597,11 @@ export async function GET(
       let lastIno = stat?.ino ?? 0;
       let lastSize = stat?.size ?? 0;
       let lastExists = stat !== undefined;
-      const stream = new ReadableStream({
-        start(controller) {
+      const stream = createSseStream(
+        request,
+        (writer) => {
           const send = (eventName: string, data: Record<string, unknown>) => {
-            const payload = `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
-            try {
-              controller.enqueue(new TextEncoder().encode(payload));
-            } catch {
-              // client disconnected
-            }
+            writer.send(data, eventName);
           };
           try {
             const watchedDirectory = path.dirname(filePath);
@@ -636,31 +633,21 @@ export async function GET(
                 send("change", { mtime: new Date().toISOString(), size: 0 });
               }
             });
-            watcher.on("error", () => {
-              try { watcher?.close(); } catch { /* ignore */ }
-              watcher = null;
-              try { controller.close(); } catch { /* ignore */ }
-            });
+            watcher.on("error", () => writer.close());
             // The client snapshots only after this event, so emit it after the
             // watcher exists to avoid dropping changes between those steps.
             send("connected", { filePath });
           } catch {
             send("error", { message: "Failed to watch file" });
-            controller.close();
+            writer.close();
           }
         },
-        cancel() {
-          try { watcher?.close(); } catch { /* ignore */ }
+        () => {
+          try { watcher?.close(); } catch { /* already closed */ }
+          watcher = null;
         },
-      });
-      return new Response(stream, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache, no-transform",
-          Connection: "keep-alive",
-          "X-Accel-Buffering": "no",
-        },
-      });
+      );
+      return new Response(stream, { headers: SSE_HEADERS });
     }
 
     // type === "list"
