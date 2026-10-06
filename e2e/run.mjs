@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { checkFilePanel, checkEditableFile, filePanelFixture } from "./file-panel.mjs";
+import { checkFilePanel, checkFileDiffViews, checkEditableFile, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
@@ -466,6 +466,7 @@ try {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       await checkFilePanel(page, previewFile);
+      await checkFileDiffViews(page, editableFile);
       await checkEditableFile(page, editableFile);
       assert.deepEqual(errors, [], "Browser errors during file editing");
       await context.tracing.stop();
@@ -898,6 +899,7 @@ try {
     await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
     await page.locator(".markdown-code-block pre").waitFor();
     await checkFilePanel(page, previewFile);
+    await checkFileDiffViews(page, editableFile);
     await checkEditableFile(page, editableFile);
     await checkExtensionDialogs(page, artifacts, viewport.width);
     await checkAskUserDialog(page, viewport.width);
