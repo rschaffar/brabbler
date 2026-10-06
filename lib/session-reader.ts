@@ -7,6 +7,7 @@ import { readdir } from "fs/promises";
 import { isAbsolute, join, normalize as normalizePath, relative, resolve as resolvePath, sep } from "path";
 import type { AgentMessage, ImageContent, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
 import { normalizeToolCalls } from "./normalize";
+import { interactionReceiptMessage } from "./interaction-receipts";
 import { getThinkingPreview } from "./message-display";
 import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
@@ -709,6 +710,7 @@ export function buildSessionContext(
  */
 function countsTowardTail(entry: SessionEntry): boolean {
   if (entry.type === "compaction") return true;
+  if (entry.type === "custom") return interactionReceiptMessage(entry) !== null;
   if (entry.type !== "message") return false;
   const role = (entry as { message?: { role?: string } }).message?.role;
   return role === "user" || role === "assistant";
@@ -885,7 +887,7 @@ function entryToUiMessage(
         timestamp: parseEntryTimestamp(entry.timestamp),
       };
     case "custom":
-      return null;
+      return interactionReceiptMessage(entry);
     case "custom_message":
       return {
         role: "custom",

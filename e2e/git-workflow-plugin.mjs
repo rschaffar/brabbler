@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkBlockingCard } from "./blocking-card.mjs";
 
@@ -106,8 +107,39 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   await card.getByRole("button", { name: "Side by side", exact: true }).click();
   await checkBlockingCard(card);
   await page.screenshot({ path: join(artifacts, `git-plugin-approval-${width}.png`) });
+  await card.getByRole("button", { name: "Raw patch", exact: true }).click();
+  const reviewedPatch = await first.getByRole("region", { name: "Raw patch", exact: true }).innerText();
   await card.getByRole("button", { name: "Approve commit", exact: true }).click();
   await finish("reconnect", "completed"); assert.notEqual(tip(), before);
+  const receipt = page.locator("[data-interaction-receipt]").last();
+  await receipt.waitFor();
+  const receiptId = await receipt.getAttribute("data-interaction-receipt");
+  const committedTip = tip();
+  const draftPath = join(repo, "draft.txt");
+  const committedDraft = readFileSync(draftPath);
+  writeFileSync(draftPath, "Changed after approval — not the historical diff\n");
+  try {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const historical = page.locator(`[data-interaction-receipt="${receiptId}"]`);
+    await historical.waitFor();
+    assert.equal(await historical.count(), 1);
+    await historical.getByRole("button", { name: /Answered.*Git commit/ }).click();
+    const group = historical.getByRole("group", { name: "Git commit", exact: true });
+    await checkBlockingCard(group);
+    await group.getByRole("region", { name: "Side-by-side diff" }).waitFor();
+    await group.getByRole("button", { name: "Raw patch", exact: true }).click();
+    assert.equal(await group.getByRole("region", { name: "Raw patch", exact: true }).innerText(), reviewedPatch);
+    await group.getByText("Decision only — see the tool result for execution outcome.", { exact: true }).waitFor();
+    assert.equal(await group.getByRole("button", { name: /Approve commit|Reject|Cancel/ }).count(), 0);
+    await group.getByRole("button", { name: "Collapse", exact: true }).click();
+    assert.equal(await historical.getByRole("region", { name: "Raw patch", exact: true }).count(), 0);
+    await historical.getByRole("button", { name: /Answered.*Git commit/ }).click();
+    await group.getByRole("region", { name: "Side-by-side diff" }).waitFor();
+    await group.getByRole("button", { name: "Collapse", exact: true }).click();
+    assert.equal(tip(), committedTip, "historical review cannot execute the approval again");
+  } finally {
+    writeFileSync(draftPath, committedDraft);
+  }
 
   await patch({ targetBranch: "target" });
   for (const [action, title] of [["rebase", "Git rebase"], ["merge", "Git merge"], ["createWorktree", "Create Git worktree"], ["attachWorktree", "Attach Git worktree"], ["removeWorktree", "Remove Git worktree"]]) {
@@ -140,5 +172,6 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("textarea").last().waitFor();
   assert.equal(await page.getByRole("group", { name: "Git commit", exact: true }).count(), 0);
-  console.log(`PASS: ${width}px all Git approval layouts, multi-file diffs, toggle, rejection, reconnect and Stop`);
+  await page.locator("[data-interaction-receipt]").last().getByRole("button", { name: /Interrupted.*Git commit/ }).waitFor();
+  console.log(`PASS: ${width}px all Git approval layouts, exact historical diffs, read-only receipts, toggle, rejection, reconnect and Stop`);
 }

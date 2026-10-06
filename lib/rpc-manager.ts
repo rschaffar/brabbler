@@ -56,10 +56,13 @@ import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createAskUserExtension, preferPiWebAskUserExtension, type AskUserUiContext } from "./ask-user-extension";
 import { createSessionReferenceExtension } from "./session-reference-extension";
 import { bundledPluginExtensions } from "./plugins/registry";
-import { validatePluginCard, validPluginAction } from "./plugins/ui";
+import { validatePluginCard } from "./plugins/ui";
 import type { PluginUiContext } from "./plugins/types";
-import { normalizeAskUserAnswer } from "./ask-user";
 import { isBlockingExtensionUiRequest } from "./browser-notifications";
+import {
+  INTERACTION_RECEIPT_TYPE, normalizeInteractionResponse, responseForExtension, snapshotInteractionRequest,
+  type InteractionOutcome, type InteractionReceipt, type InteractionRequest, type InteractionResponse,
+} from "./interaction-receipts";
 import {
   appendClearedSessionToolSelection,
   appendSessionToolSelection,
@@ -532,7 +535,7 @@ export class AgentSessionWrapper {
     }, SESSION_IDLE_TIMEOUT_MS);
   }
 
-  private persistBashOnlySession(): void {
+  private persistSessionWithoutAssistant(): void {
     const manager = this.inner.sessionManager;
     const sessionFile = manager.getSessionFile();
     if (!sessionFile || existsSync(sessionFile)) return;
@@ -546,8 +549,8 @@ export class AgentSessionWrapper {
     writeFileSync(sessionFile, content, { encoding: "utf8", flag: "wx" });
 
     // Pi normally delays the first flush until an assistant message exists.
-    // A leading shell command has no assistant message, so mark this SDK
-    // manager as flushed after writing its own generated entries.
+    // A leading shell command or completed extension dialog has no assistant
+    // message, so mark this SDK manager as flushed after writing its own entries.
     (manager as unknown as { flushed: boolean }).flushed = true;
     cacheSessionPath(this.inner.sessionId, sessionFile);
   }
@@ -1072,7 +1075,7 @@ export class AgentSessionWrapper {
         );
         try {
           const result = await execution;
-          this.persistBashOnlySession();
+          this.persistSessionWithoutAssistant();
           return result;
         } finally {
           this.resetIdleTimer();
@@ -1176,12 +1179,11 @@ export class AgentSessionWrapper {
   private resolveExtensionUiResponse(response: ExtensionUiResponse): void {
     const pending = this.pendingUiResponses.get(response.id);
     if (!pending) return;
-    const request = this.pendingUiRequests.get(response.id) as ExtensionUiRequest | undefined;
-    if (request?.method === "ask_user" && !("cancelled" in response)
-      && (!("answer" in response) || !normalizeAskUserAnswer(response.answer, request))) return;
-    if (request?.method === "plugin_card" && !("cancelled" in response)
-      && (!("action" in response) || !validPluginAction(request, response.action))) return;
-    pending.resolve(response);
+    const request = this.pendingUiRequests.get(response.id) as InteractionRequest | undefined;
+    if (!request) return;
+    const normalized = normalizeInteractionResponse(request, response);
+    if (!normalized) return;
+    pending.resolve(responseForExtension(response.id, normalized));
   }
 
   private getExtensionStatuses(): Array<{ key: string; text: string }> {
@@ -1543,12 +1545,14 @@ export class AgentSessionWrapper {
     const abortSignal = signal ? AbortSignal.any([signal, stopSignal]) : stopSignal;
 
     const id = randomUUID();
-    const fullRequest = {
+    // Own the exact payload sent to the browser; a caller cannot later mutate
+    // its arrays/fields and change the historical approval snapshot.
+    const fullRequest = JSON.parse(JSON.stringify({
       type: "extension_ui_request",
       id,
       ...request,
       ...(timeout ? { timeout, expiresAt: Date.now() + timeout } : {}),
-    };
+    })) as InteractionRequest;
 
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -1561,23 +1565,41 @@ export class AgentSessionWrapper {
         this.pendingUiResponses.delete(id);
         this.emit({ type: "extension_ui_closed", id });
       };
-      const settle = (value: T) => {
+      const settle = (value: T, outcome: InteractionOutcome, response?: InteractionResponse) => {
         if (settled) return;
         settled = true;
-        cleanup();
-        if (stopSignal.aborted) reject(stopSignal.reason);
-        else resolve(value);
+        try {
+          const receipt: InteractionReceipt = {
+            version: 1, request: snapshotInteractionRequest(fullRequest), outcome,
+            ...(response ? { response } : {}),
+          };
+          const manager = this.inner.sessionManager;
+          const entryId = manager.appendCustomEntry(INTERACTION_RECEIPT_TYPE, receipt);
+          this.persistSessionWithoutAssistant();
+          invalidateSessionListCache();
+          this.emit({ type: "interaction_receipt", entry: manager.getEntry(entryId) });
+          if (stopSignal.aborted) reject(stopSignal.reason);
+          else resolve(value);
+        } catch (error) {
+          // Never resume an approved operation if its receipt could not be saved.
+          reject(error);
+        } finally {
+          cleanup();
+        }
       };
-      const onAbort = () => settle(defaultValue);
+      const onAbort = () => settle(defaultValue, "aborted");
 
-      if (timeout) timeoutId = setTimeout(() => settle(defaultValue), timeout);
+      if (timeout) timeoutId = setTimeout(() => settle(defaultValue, "timed_out"), timeout);
       abortSignal.addEventListener("abort", onAbort, { once: true });
 
       this.pendingUiStartedAt.set(id, Date.now());
       this.pendingUiRequests.set(id, fullRequest as AgentEvent);
       const pendingResponse: PendingUiResponse = {
-        resolve: (response) => settle(parseResponse(response)),
-        cancel: () => settle(defaultValue),
+        resolve: (response) => {
+          const normalized = normalizeInteractionResponse(fullRequest, response);
+          if (normalized) settle(parseResponse(response), "cancelled" in normalized ? "cancelled" : "answered", normalized);
+        },
+        cancel: () => settle(defaultValue, "aborted"),
       };
       this.pendingUiResponses.set(id, pendingResponse);
       this.emit(fullRequest as AgentEvent);
@@ -1590,7 +1612,7 @@ export class AgentSessionWrapper {
         validatePluginCard(card);
         return this.requestExtensionUi(
           { method: "plugin_card", pluginId, ...card }, null,
-          (response) => "action" in response && validPluginAction(card, response.action) ? response.action : null,
+          (response) => "action" in response ? response.action : null,
           undefined, signal,
         );
       },
@@ -1625,7 +1647,7 @@ export class AgentSessionWrapper {
       askUser: (question, timeout, signal) => this.requestExtensionUi(
         { method: "ask_user", ...question },
         null,
-        (response) => "answer" in response ? normalizeAskUserAnswer(response.answer, question) : null,
+        (response) => "answer" in response ? response.answer : null,
         timeout,
         signal,
       ),

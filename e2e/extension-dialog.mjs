@@ -80,6 +80,13 @@ export async function checkExtensionDialogs(page, artifacts, width) {
     await page.keyboard.press("Enter");
     await select.waitFor({ state: "hidden" });
     await finish("select", "Option 30");
+    const receipt = page.locator("[data-interaction-receipt]").last();
+    await receipt.getByRole("button", { name: /Answered.*E2E select/ }).click();
+    const historical = receipt.getByRole("group", { name: "E2E select", exact: true });
+    await checkBlockingCard(historical);
+    assert.equal(await historical.getByRole("button").count(), 1, "historical choices cannot be submitted");
+    await historical.getByText("Option 30", { exact: true }).last().waitFor();
+    await historical.getByRole("button", { name: "Collapse", exact: true }).click();
 
     for (const mode of ["select", "confirm", "input", "editor"]) {
       const dialog = await start(mode);
@@ -110,7 +117,7 @@ export async function checkExtensionDialogs(page, artifacts, width) {
     await countdown.waitFor();
     const initialCountdown = await countdown.innerText();
     await page.waitForFunction(initial => {
-      const text = document.querySelector('[role="group"][aria-label="E2E timeout"]')?.textContent;
+      const text = document.querySelector('[role="group"][aria-label="E2E timeout"]:not([hidden])')?.textContent;
       return text?.includes("expires in") && !text.includes(initial);
     }, initialCountdown);
     const before = commands.length;
@@ -123,7 +130,8 @@ export async function checkExtensionDialogs(page, artifacts, width) {
     await afterTimeout.getByRole("textbox").fill("Still answerable");
     await page.keyboard.press("Enter");
     await finish("timeout", "Still answerable");
-    console.log(`PASS: ${width}px extension keyboard navigation, cancel, draft preservation, and server expiry`);
+    await page.getByRole("button", { name: /Timed out.*E2E timeout/ }).last().waitFor();
+    console.log(`PASS: ${width}px extension keyboard navigation, cancel, draft preservation, server expiry and read-only receipts`);
   } finally {
     page.off("request", onRequest);
   }

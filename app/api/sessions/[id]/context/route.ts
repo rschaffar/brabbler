@@ -9,6 +9,7 @@ export async function GET(
   const { id } = await params;
   const url = new URL(req.url);
   const leafId = url.searchParams.get("leafId") ?? undefined;
+  const ancestorId = url.searchParams.get("ancestorId");
   const deferThinking = url.searchParams.has("deferThinking");
   const deferToolResultImages = url.searchParams.has("deferMedia");
   // `tail` caps the ancestor chain returned (default 50); `before` rewinds the
@@ -27,9 +28,16 @@ export async function GET(
     }
 
     const sm = liveRpc?.inner.sessionManager ?? openSessionManager(filePath!);
+    // Receipt reconnects may follow a growing branch, but never a different
+    // browser's navigation to a sibling branch. Check the full raw ancestry,
+    // not the bounded visible page (which may no longer contain the anchor).
+    const contextLeafId = before ?? leafId ?? (ancestorId ? sm.getLeafId() : undefined);
+    if (ancestorId && !sm.getBranch(contextLeafId ?? undefined).some((entry) => entry.id === ancestorId)) {
+      return NextResponse.json({ error: "Branch changed" }, { status: 409 });
+    }
     // `before` is the oldest entry already on the client; fetch its ancestors
     // only (excludeLeaf) so prepending the page does not duplicate `before`.
-    const context = buildSessionContext(sm.getEntries() as never, before ?? leafId, {
+    const context = buildSessionContext(sm.getEntries() as never, contextLeafId, {
       deferThinking,
       deferToolResultImages,
       tail,

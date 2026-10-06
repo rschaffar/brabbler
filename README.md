@@ -171,6 +171,10 @@ Pi Web includes a web-focused adaptation of [pi-ask-user](https://github.com/edl
 
 Blocking questions and extension select/confirm/input/editor requests use compact inline cards with a bounded scrolling body and fixed actions, not overlays. Collapsing a card retains its draft; cancellation, expiry and reconnect still belong to the live request. Optional Git plugin approvals share this shell with structured summaries and stacked file diffs; Git Explorer uses the same collapsible diff stack for committed history.
 
+After settlement, questions and plugin approvals remain as collapsed, read-only cards in chat history. Expand them to review the displayed context, choices, answer and exact supplied diffs; reviewing a saved approval cannot execute it again. A recorded decision is not proof of execution success—check the tool result. Each interaction adds one versioned custom entry to the existing session tree, outside model context. Expansion and diff-view preferences are not saved; historical diff renderers unmount when collapsed.
+
+Receipts contain displayed text, submitted answers and supplied patches, like other session history. Pending requests still replay only while their server session is alive; abrupt server loss cannot save an unfinished interaction. Previous versions did not retain approval payloads, so there is no backfill. Pi's SDK HTML export does not render these custom-entry cards.
+
 Terminal-only layout and shortcut options remain accepted for compatibility but do not alter the browser form. Unrelated extensions that also register `ask_user` are not silently suppressed; resolve those tool collisions explicitly.
 
 ### Activity overview

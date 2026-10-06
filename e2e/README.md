@@ -32,7 +32,7 @@ controls, and independent Git Explorer. It checks the absence of Workflow
 controls. Git Explorer coverage verifies first-file expansion, lazy per-file
 patch reads and cache reuse, a shared split/unified/raw toolbar and first-parent
 merge inspection. Question fixtures verify the shared bounded card body and fixed
-footer as well as keyboard/draft/cancellation/expiry contracts.
+footer as well as keyboard/draft/cancellation/expiry contracts. Question and plugin flows also verify completed read-only receipts, reload/reconnect deduplication, exact historical patches despite changed working files, and unmounted collapsed historical diff bodies.
 OAuth/SSE account responses are mocked; no provider credentials are
 used. Slash commands exercise ordinary session/UI paths without a live model.
 Terminal checks execute a real local shell at desktop/mobile sizes and cover

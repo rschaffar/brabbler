@@ -8,12 +8,14 @@ import type {
   ExtensionUiRequest,
   ExtensionWidgetItem,
   SessionInfo,
+  SessionEntry,
   SessionTreeNode,
   ToolResultMessage,
   UserMessage,
 } from "@/lib/types";
 import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
 import { normalizeToolCalls } from "@/lib/normalize";
+import { appendInteractionReceipt, interactionReceiptMessage, mergeInteractionReceiptHistory, receiptBranchContains } from "@/lib/interaction-receipts";
 import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
 import {
   deleteSessionViewSnapshot,
@@ -425,6 +427,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const messagesRef = useRef<AgentMessage[]>([]);
   const entryIdsRef = useRef<string[]>([]);
   const activeLeafIdRef = useRef<string | null>(null);
+  const branchViewRevisionRef = useRef(0);
   const historyCursorRef = useRef<string | null>(null);
   const hasEarlierMessagesRef = useRef(false);
 
@@ -561,6 +564,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const inflight = options?.force || shouldApply ? undefined : loadFlightsRef.current.get(flightKey);
     if (inflight) return await inflight;
   const flight = (async (): Promise<unknown> => {
+    const viewLeafAtRead = activeLeafIdRef.current;
+    const viewRevisionAtRead = branchViewRevisionRef.current;
+    const followsLiveAtRead = viewLeafAtRead === (dataRef.current?.leafId ?? null);
+    if (!showLoading && !followsLiveAtRead) return "superseded";
     if (!shouldApply) pendingHistoryReadsRef.current += 1;
     let messagesLoaded = false;
     try {
@@ -568,7 +575,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1", tree: "summary" });
       if (options?.force) params.set("force", "1");
       const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}?${params}`);
-      if (shouldApply && !shouldApply()) return "superseded";
+      if (sessionIdRef.current !== sid) return null;
+      if ((shouldApply && !shouldApply()) || branchViewRevisionRef.current !== viewRevisionAtRead) return "superseded";
       if (res.status === 404) {
         if (showLoading) {
           setData(null);
@@ -585,7 +593,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d = await res.json() as SessionData;
-      if (shouldApply && !shouldApply()) return "superseded";
+      if ((shouldApply && !shouldApply()) || branchViewRevisionRef.current !== viewRevisionAtRead) return "superseded";
       if (sessionIdRef.current !== sid) return null;
       // Freshness check: when the disk snapshot is unchanged (same opaque
       // revision), keep any history the user already paged in instead of
@@ -598,7 +606,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         && cached.entryIds.length >= (d.context.entryIds ?? []).length,
       );
       const persistedMessages = revisionUnchanged ? messagesRef.current : d.context.messages;
-      setData(revisionUnchanged
+      const nextData = revisionUnchanged
         ? {
             ...d,
             context: {
@@ -609,7 +617,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               hasMore: hasEarlierMessagesRef.current,
             },
           }
-        : d);
+        : d;
+      dataRef.current = nextData;
+      activeLeafIdRef.current = d.leafId;
+      setData(nextData);
       setActiveLeafId(d.leafId);
       if (revisionUnchanged) {
         // Refresh the cached snapshot with the newest leaf/tree/stats while
@@ -630,8 +641,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           loadedEntryIds: entryIdsRef.current,
         });
       } else {
-        setMessages(persistedMessages);
-        setEntryIds(d.context.entryIds ?? []);
+        const preserveRecentReceipts = followsLiveAtRead && branchViewRevisionRef.current === viewRevisionAtRead
+          && receiptBranchContains(d.tree, d.leafId, viewLeafAtRead);
+        const latestSnapshotTimestamp = persistedMessages.reduce((latest, message) =>
+          Number.isFinite(message.timestamp) ? Math.max(latest, message.timestamp!) : latest, -Infinity);
+        setTranscript((current) => {
+          const saved = { messages: persistedMessages, entryIds: alignEntryIds(persistedMessages, d.context.entryIds ?? []) };
+          // A slow canonical snapshot must not erase a receipt emitted after it
+          // was captured. Never carry receipts across a branch-view change.
+          return preserveRecentReceipts ? mergeInteractionReceiptHistory(saved, current, latestSnapshotTimestamp) : saved;
+        });
         setHistoryCursor(d.context.oldestEntryId);
         setHasEarlierMessages(d.context.hasMore);
       }
@@ -709,7 +728,39 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (loadFlightsRef.current.get(flightKey) === flight) loadFlightsRef.current.delete(flightKey);
     });
     return await flight;
-  }, [setToolPresetState, syncLiveModel, setMessages, setEntryIds]);
+  }, [setToolPresetState, syncLiveModel, setMessages, setEntryIds, setTranscript]);
+
+  const reconcileInteractionReceipts = useCallback(async function reconcileReceipts(sid: string, receiptEntry?: SessionEntry): Promise<void> {
+    const viewLeaf = activeLeafIdRef.current;
+    const viewRevision = branchViewRevisionRef.current;
+    const minimumTimestamp = messagesRef.current.find((message) => Number.isFinite(message.timestamp))?.timestamp ?? -Infinity;
+    if (viewLeaf !== (dataRef.current?.leafId ?? null)) return;
+    try {
+      const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1" });
+      if (viewLeaf) params.set("ancestorId", viewLeaf);
+      if (receiptEntry) params.set("leafId", receiptEntry.id);
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sid)}/context?${params}`);
+      if (!response.ok) return;
+      const history = await response.json() as { context: SessionData["context"] };
+      if (!sessionHookMountedRef.current || sessionIdRef.current !== sid || branchViewRevisionRef.current !== viewRevision
+        || activeLeafIdRef.current !== (dataRef.current?.leafId ?? null)) return;
+      if (activeLeafIdRef.current !== viewLeaf) {
+        // A canonical read can advance the same branch while verification is
+        // in flight. Revalidate against that new anchor instead of losing a
+        // newer receipt or assuming the server stayed on the same branch.
+        await reconcileReceipts(sid, receiptEntry);
+        return;
+      }
+      // Merge only durable cards. Ordinary live messages must not be loaded
+      // ahead of their SSE message_end and then appended a second time.
+      setTranscript((current) => {
+        const reconciled = mergeInteractionReceiptHistory(current, history.context, minimumTimestamp);
+        return receiptEntry ? appendInteractionReceipt(reconciled, receiptEntry) : reconciled;
+      });
+    } catch {
+      // The next connection or normal settlement read restores saved history.
+    }
+  }, [setTranscript]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null, before?: string | null, options?: { tail?: number; signal?: AbortSignal }) => {
     transcriptRevisionRef.current += 1;
@@ -725,7 +776,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const res = await fetch(url, { signal: options?.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d = await res.json() as { context: SessionData["context"] };
-      if (sessionIdRef.current !== sid || options?.signal?.aborted || !sessionHookMountedRef.current) return;
+      if (sessionIdRef.current !== sid || options?.signal?.aborted || !sessionHookMountedRef.current
+        || activeLeafIdRef.current !== leafId) return;
       setHistoryCursor(d.context.oldestEntryId);
       setHasEarlierMessages(d.context.hasMore);
       setData((prev) => {
@@ -1305,6 +1357,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     switch (event.type) {
       case "connected": {
         dispatch({ type: "end" });
+        // Completed receipts are session entries, not replayable live requests.
+        // Reconcile missed history even when another client answered while offline.
+        if (sessionIdRef.current) void reconcileInteractionReceipts(sessionIdRef.current);
         if (event.isStreaming === true) {
           cancelEventStreamGrace();
           sdkAgentActiveRef.current = true;
@@ -1552,6 +1607,23 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (sessionIdRef.current) loadSession(sessionIdRef.current);
         }
         break;
+      case "interaction_receipt": {
+        const entry = event.entry as SessionEntry;
+        const message = entry && interactionReceiptMessage(entry);
+        if (!message) break;
+        if (activeLeafIdRef.current === (dataRef.current?.leafId ?? null)) {
+          if (entry.parentId === activeLeafIdRef.current) {
+            setTranscript((current) => appendInteractionReceipt(current, entry));
+          } else if (sessionIdRef.current) {
+            // Other clients can move the shared wrapper without updating our
+            // local refs. Verify ancestry before admitting a remote descendant.
+            void reconcileInteractionReceipts(sessionIdRef.current, entry);
+          }
+        }
+        const receipt = message.details as import("@/lib/interaction-receipts").InteractionReceipt;
+        setExtensionDialog((current) => current?.id === receipt.request.id ? null : current);
+        break;
+      }
       case "extension_ui_request":
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
@@ -1559,7 +1631,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setExtensionDialog((current) => current?.id === event.id ? null : current);
         break;
     }
-  }, [addNotice, cancelEventStreamGrace, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel, setMessages]);
+  }, [addNotice, cancelEventStreamGrace, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel, setMessages, setTranscript, reconcileInteractionReceipts]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -1752,6 +1824,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (bashRunningRef.current) return false;
     const sid = sessionIdRef.current;
     if (!sid) return false;
+    branchViewRevisionRef.current += 1;
     transcriptRevisionRef.current += 1;
     pendingHistoryReadsRef.current += 1;
     try {
@@ -1760,7 +1833,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         targetId: entryId,
       });
       if (result?.cancelled || sessionIdRef.current !== sid) return false;
-      await loadSession(sid);
+      loadFlightsRef.current.delete(sid);
+      await loadSession(sid, true);
       return sessionIdRef.current === sid;
     } catch (e) {
       console.error("Failed to navigate:", e);
@@ -1772,14 +1846,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const handleLeafChange = useCallback(async (leafId: string | null) => {
     if (bashRunningRef.current) return;
+    branchViewRevisionRef.current += 1;
     setActiveLeafId(leafId);
+    activeLeafIdRef.current = leafId;
     const sid = sessionIdRef.current;
     if (!sid) return;
     pendingHistoryReadsRef.current += 1;
     try {
       await loadContext(sid, leafId);
-      if (leafId && sessionIdRef.current === sid) {
-        await sendAgentCommand(sid, { type: "navigate_tree", targetId: leafId }).catch(() => {});
+      if (leafId && sessionIdRef.current === sid && activeLeafIdRef.current === leafId) {
+        const result = await sendAgentCommand<{ cancelled?: boolean }>(sid, { type: "navigate_tree", targetId: leafId }).catch(() => null);
+        if (result && !result.cancelled && sessionIdRef.current === sid && activeLeafIdRef.current === leafId) {
+          setData((current) => current ? { ...current, leafId } : current);
+        }
       }
     } finally {
       pendingHistoryReadsRef.current -= 1;
@@ -2298,7 +2377,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // run state — and the background read remains authoritative.
       const cached = getSessionViewSnapshot(session.id);
       if (cached) {
-        setData({
+        const cachedData: SessionData = {
           sessionId: session.id,
           filePath: "",
           totalActiveMs: cached.totalActiveMs ?? 0,
@@ -2313,7 +2392,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             model: cached.model,
           },
           stats: cached.stats as SessionData["stats"],
-        });
+        };
+        dataRef.current = cachedData;
+        activeLeafIdRef.current = cached.leafId;
+        setData(cachedData);
         setActiveLeafId(cached.leafId);
         setMessages(cached.messages);
         setEntryIds(cached.entryIds);
