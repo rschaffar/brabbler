@@ -27,8 +27,8 @@ Extends the completed optional Git Workflow plugin and inline-question-card plan
 ## Completion Checklist
 
 - [x] All agreed surfaces implemented and tested; checks and any failures recorded honestly.
-- [ ] Maintained docs describe current behavior; fully verified plan archived only after acceptance.
-- [ ] Reviewable feature commit(s) and exact candidate presented for separately approved unsigned non-FF integration into local rst-main. No publication or cleanup inferred.
+- [x] Maintained docs describe current behavior; implementation acceptance passed and this plan is archived.
+- [x] Feature commits were presented at `5cd0bf77bf51d693fc82be693a725326fbec95ea`; the user requested preparation for local rst-main integration. Exact prepared-candidate verification, unsigned non-FF merge approval, publication boundaries and separate cleanup approval are handed off to the global `git-worktrees` lifecycle, not claimed complete by this implementation plan. No publication or cleanup inferred.
 
 ## Acceptance Evidence
 
