@@ -317,6 +317,7 @@ export const zhCNLocale: LocalePlugin = {
     "sidebar.clearSearch": "清除搜索",
     "sidebar.searchSessions": "搜索对话或会话 ID...",
     "sidebar.toggleSessionSearch": "搜索对话",
+    "sidebar.searchTitlesOnly": "仅标题",
     "sidebar.searchAllProjects": "所有项目",
     "sidebar.searchCurrentProject": "当前项目",
     "sidebar.searchBothStatuses": "活跃和已归档",

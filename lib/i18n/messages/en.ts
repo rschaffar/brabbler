@@ -317,6 +317,7 @@ export const enLocale: LocalePlugin = {
     "sidebar.clearSearch": "Clear search",
     "sidebar.searchSessions": "Search conversations...",
     "sidebar.toggleSessionSearch": "Search conversations",
+    "sidebar.searchTitlesOnly": "Titles only",
     "sidebar.searchAllProjects": "All projects",
     "sidebar.searchCurrentProject": "Current project",
     "sidebar.searchBothStatuses": "Active and archived",

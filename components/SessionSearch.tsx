@@ -6,12 +6,13 @@ import { formatRelativeTime } from "@/lib/i18n/format";
 import type { SessionInfo } from "@/lib/types";
 import type { SessionSearchResponse } from "@/lib/session-search";
 
-export function SessionSearch({ open, query, projectKey, allProjects, status, children, selectedSessionId, onSelectSession }: {
+export function SessionSearch({ open, query, projectKey, allProjects, status, titlesOnly, children, selectedSessionId, onSelectSession }: {
   open: boolean;
   query: string;
   projectKey: string | null;
   allProjects: boolean;
   status: "active" | "archived" | "both";
+  titlesOnly: boolean;
   children: ReactNode;
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, entryId?: string, blockIndex?: number) => void;
@@ -20,7 +21,7 @@ export function SessionSearch({ open, query, projectKey, allProjects, status, ch
   const [refresh, setRefresh] = useState(0);
   const [state, setState] = useState<{ key: string; response?: SessionSearchResponse; failed?: boolean }>({ key: "" });
   const search = query.trim();
-  const params = new URLSearchParams({ q: search, status });
+  const params = new URLSearchParams({ q: search, status, field: titlesOnly ? "title" : "all" });
   if (allProjects) params.set("scope", "all");
   else if (projectKey) params.set("projectKey", projectKey);
   const searchKey = params.toString();
@@ -65,7 +66,7 @@ export function SessionSearch({ open, query, projectKey, allProjects, status, ch
           {t(failed ? "sidebar.searchRetry" : "sidebar.searchRefresh")}
         </button>}
       </div>
-      <div className="px-3 pb-2 text-xs text-text-dim">{scopeLabel}</div>
+      <div className="px-3 pb-2 text-xs text-text-dim">{scopeLabel}{titlesOnly && ` · ${t("sidebar.searchTitlesOnly")}`}</div>
       {response?.truncated && (
         <div role="status" className="px-3 pb-2 text-xs text-text-muted">{t("sidebar.sessionSearchPartial")}</div>
       )}

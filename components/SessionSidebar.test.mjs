@@ -17,6 +17,11 @@ test("session search inherits the selected project and archive view unless widen
   assert.match(source, /setSearchAllProjects\(false\);\s*setSearchBothStatuses\(false\)/);
   assert.match(source, /checked=\{searchAllProjects\}/);
   assert.match(source, /checked=\{searchBothStatuses\}/);
+  assert.match(source, /checked=\{searchTitlesOnly\}/);
+  assert.match(source, /titlesOnly=\{searchTitlesOnly\}/);
+  assert.match(source, /setSearchBothStatuses\(false\);\s*setSearchTitlesOnly\(false\)/);
+  assert.match(searchSource, /field: titlesOnly \? "title" : "all"/);
+  assert.match(searchSource, /titlesOnly && ` · \$\{t\("sidebar.searchTitlesOnly"\)\}`/);
   assert.match(searchSource, /if \(allProjects\) params\.set\("scope", "all"\);\s*else if \(projectKey\) params\.set\("projectKey", projectKey\)/);
   assert.match(searchSource, /if \(!open \|\| !search \|\| !canSearch\) return/);
   assert.match(searchSource, /const response = state\.key === requestKey \? state\.response : undefined/);

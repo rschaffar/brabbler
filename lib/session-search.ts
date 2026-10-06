@@ -34,13 +34,13 @@ function snippet(text: string, match: RegExpExecArray) {
   };
 }
 
-function metadataMatch(session: SessionInfo, matcher: RegExp): { result: SessionSearchResult; rank: number } | null {
+function metadataMatch(session: SessionInfo, matcher: RegExp, titlesOnly: boolean): { result: SessionSearchResult; rank: number } | null {
   const fields = [
     { kind: "title" as const, text: session.name || "" },
     { kind: "preview" as const, text: session.firstMessage || "" },
     { kind: "id" as const, text: session.id },
   ];
-  const matches = fields.flatMap(({ kind, text }) => {
+  const matches = fields.filter(({ kind }) => !titlesOnly || kind === "title").flatMap(({ kind, text }) => {
     const match = matcher.exec(text);
     if (!match) return [];
     const rank = text.length === match[0].length ? 0 : match.index === 0 ? 1 : 2;
@@ -100,7 +100,7 @@ export async function searchSessionContents(
   sessions: readonly SessionInfo[],
   query: string,
   requestSignal?: AbortSignal,
-  limits: { maxFileBytes?: number } = {},
+  limits: { maxFileBytes?: number; titlesOnly?: boolean } = {},
 ): Promise<SessionSearchResponse> {
   // Callers may lower the per-file budget, never raise the production cap.
   const maxFileBytes = limits.maxFileBytes ?? MAX_FILE_BYTES;
@@ -119,11 +119,13 @@ export async function searchSessionContents(
     .filter((session) => !session.transient && session.path)
     .sort((a, b) => b.modified.localeCompare(a.modified) || a.id.localeCompare(b.id));
 
-  const metadata = candidates.map((session) => metadataMatch(session, matcher)).filter((hit) => hit !== null)
+  const metadata = candidates.map((session) => metadataMatch(session, matcher, Boolean(limits.titlesOnly))).filter((hit) => hit !== null)
     .sort((a, b) => a.rank - b.rank || b.result.session.modified.localeCompare(a.result.session.modified)
       || a.result.session.id.localeCompare(b.result.session.id));
   response.results.push(...metadata.slice(0, MAX_RESULTS).map(({ result }) => result));
   if (metadata.length > MAX_RESULTS) response.truncated = true;
+  // Title-only search is complete without opening any transcript files.
+  if (limits.titlesOnly) return response;
   const matchedIds = new Set(metadata.map(({ result }) => result.session.id));
   const remaining = candidates.filter((session) => !matchedIds.has(session.id));
   // A preview comes from a real first message; recover its entry ID so that
