@@ -56,13 +56,13 @@ function worktrees(cwd: string): Array<{ path: string; branch?: string }> {
       branch: fields.find((value) => value.startsWith("branch refs/heads/"))?.slice(18) };
   });
 }
-function checkout(callerCwd: string, selected: string): string {
+function checkout(selected: string, repositoryCwd?: string): string {
   if (!isAbsolute(selected)) throw new Error("Select an absolute registered checkout path");
   const physical = realpathSync(selected);
-  const identity = pluginProjectIdentity(callerCwd);
-  if (!identity || identity !== pluginProjectIdentity(physical)
-    || !worktrees(callerCwd).some((entry) => samePath(entry.path, physical))) throw new Error("Selected checkout does not belong to the caller's repository");
-  if (!samePath(git(physical, ["rev-parse", "--show-toplevel"]).trim(), physical)) throw new Error("Select the checkout root");
+  const identity = pluginProjectIdentity(physical);
+  if (!identity || (repositoryCwd && identity !== pluginProjectIdentity(repositoryCwd))
+    || !worktrees(physical).some((entry) => samePath(entry.path, physical))) throw new Error("Selected checkout is not registered in the selected repository");
+  if (!samePath(toNativePath(git(physical, ["rev-parse", "--show-toplevel"]).trim()), physical)) throw new Error("Select the checkout root");
   idle(physical);
   // Even git status can invoke clean filters. Refuse before any content-based
   // preflight so an Ask/decline never executes project filter commands.
@@ -100,7 +100,7 @@ function refuseFilters(cwd: string, paths: string) {
   }
 }
 function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snapshot {
-  const cwd = checkout(callerCwd, op.checkout);
+  const cwd = checkout(op.checkout);
   const current = head(cwd);
   const rows: string[] = [JSON.stringify(op, null, 2), `Checkout: ${cwd}`, `Branch: ${current.branch}`, `HEAD: ${current.tip}`,
     "Native Git operation is unsigned and hook-free. Stronger user/repository instructions still apply."];
@@ -110,7 +110,7 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
   let args: string[] = [];
   let patch: string | undefined;
   let checks: RequiredCheck[] = [];
-  const state: unknown[] = [cwd, current, status(cwd), worktrees(cwd)];
+  const state: unknown[] = [cwd, pluginProjectIdentity(cwd), current, status(cwd), worktrees(cwd)];
   if (op.action === "commit") {
     if (!op.message.trim() || op.message.length > 65536 || op.message.includes("\0")) throw new Error("An exact nonempty commit message is required");
     checks = policy.commitChecks;
@@ -146,7 +146,7 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
     if (current.branch !== (op.action === "rebase" ? op.featureBranch : policy.targetBranch)) throw new Error("Select the checkout of the operation's branch");
     const sourceCheckout = worktrees(cwd).find((entry) => entry.branch === (op.action === "merge" ? op.featureBranch : policy.targetBranch));
     if (sourceCheckout) {
-      const source = checkout(callerCwd, sourceCheckout.path);
+      const source = checkout(sourceCheckout.path, cwd);
       if (status(source)) throw new Error("Other selected branch checkout must be clean");
       state.push(source, head(source));
     }
@@ -178,7 +178,7 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
     git(cwd, ["check-ref-format", `refs/heads/${op.branch}`]);
     const base = branchTip(cwd, op.baseBranch);
     const baseCheckout = worktrees(cwd).find((entry) => entry.branch === op.baseBranch);
-    if (baseCheckout && status(checkout(callerCwd, baseCheckout.path))) throw new Error("Base checkout must be clean");
+    if (baseCheckout && status(checkout(baseCheckout.path, cwd))) throw new Error("Base checkout must be clean");
     const exists = git(cwd, ["for-each-ref", "--format=%(refname)", `refs/heads/${op.branch}`]).split("\n").includes(`refs/heads/${op.branch}`);
     if (op.action === "createWorktree" && exists) throw new Error("Create requires a new branch");
     if (op.action === "attachWorktree" && (op.baseBranch !== op.branch || !exists)) throw new Error("Attach requires the explicitly selected existing branch as base");
@@ -189,9 +189,12 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
     args = op.action === "createWorktree" ? ["worktree", "add", "-b", op.branch, destination, base] : ["worktree", "add", destination, op.branch];
   } else if (op.action === "removeWorktree") {
     const selected = worktrees(cwd).find((entry) => samePath(entry.path, op.path));
+    // A session may live outside Git, or below a linked checkout's root.
+    const callerRoot = pluginProjectIdentity(callerCwd) === pluginProjectIdentity(cwd)
+      ? realpathSync(toNativePath(git(callerCwd, ["rev-parse", "--show-toplevel"]).trim())) : null;
     if (!selected || samePath(selected.path, worktrees(cwd)[0].path) || samePath(selected.path, cwd)
-      || samePath(selected.path, realpathSync(callerCwd))) throw new Error("Select another registered linked worktree; never the main or caller checkout");
-    const physical = checkout(callerCwd, selected.path);
+      || (callerRoot && samePath(selected.path, callerRoot))) throw new Error("Select another registered linked worktree; never the main or caller checkout");
+    const physical = checkout(selected.path, cwd);
     if (status(physical) || git(physical, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])) throw new Error("Removal requires a clean worktree with no ignored files; force removal is not provided");
     state.push(physical, head(physical));
     fields.push({ label: "Remove worktree", value: physical, code: true });
@@ -246,7 +249,9 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
   let started = false;
   let checksStarted = false;
   try {
-    const policy = settings(callerCwd);
+    // Permissions and recipes belong to the explicitly selected repository,
+    // never to the session's cwd. Deny still precedes preview and checks.
+    const policy = settings(op.checkout);
     if (policy[op.action] === "deny") throw new Error(`${op.action} is denied by current settings`);
     const snapshot = preview(callerCwd, op, policy);
     if (signal?.aborted) throw new Error("Cancelled before execution");
@@ -256,7 +261,7 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
       const unsubscribe = onPluginSettingsChange((id) => {
         if (id !== gitWorkflowManifest.id) return;
         try {
-          const current = settings(callerCwd);
+          const current = settings(op.checkout);
           if (digest(relevantPolicy(current, op.action)) !== digest(relevantPolicy(policy, op.action))) cancellation.abort();
         } catch { cancellation.abort(); }
       });
@@ -268,7 +273,7 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
     }
     const revalidate = () => {
       if (signal?.aborted) throw new Error("Cancelled before native effect");
-      const current = settings(callerCwd);
+      const current = settings(op.checkout);
       if (current[op.action] === "deny" || preview(callerCwd, op, current).fingerprint !== snapshot.fingerprint) throw new Error("Stale operation: relevant settings or repository state changed; invoke again");
     };
     revalidate();
