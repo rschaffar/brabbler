@@ -215,8 +215,16 @@ test("archive and restore preserve the session file and refresh the catalogue", 
   assert.deepEqual(await search("active", { projectKey: otherKey }), [otherId]);
   assert.deepEqual(await search("active", { scope: "all" }), [otherId]);
   assert.deepEqual(new Set(await search("both", { scope: "all" })), new Set([id, otherId]));
+  assert.deepEqual(await search("both", { projectKey, field: "title" }), [], "previews and bodies are not titles");
+  assert.equal((await patch({ name: "Archive fixture title" })).status, 200);
+  assert.deepEqual(await search("active", { projectKey, field: "title" }), [], "title mode preserves archive scope");
+  assert.deepEqual(await search("archived", { projectKey, field: "title" }), [id]);
+  assert.deepEqual(await search("both", { scope: "all", field: "title" }), [id]);
+  assert.deepEqual(new Set(await search("both", { scope: "all", field: "all" })), new Set([id, otherId]));
   for (const invalid of [new URLSearchParams({ q: "Archive fixture", status: "active" }),
     new URLSearchParams({ q: "Archive fixture", scope: "all", status: "unknown" }),
+    new URLSearchParams({ q: "Archive fixture", scope: "all", status: "active", field: "body" }),
+    new URLSearchParams({ q: "Archive fixture", scope: "all", status: "active", field: "" }),
     new URLSearchParams({ q: "Archive fixture", projectKey, status: "active", includeArchived: "1" })]) {
     assert.equal((await searchSessions(new Request(`http://localhost/api/sessions/search?${invalid}`))).status, 400);
   }

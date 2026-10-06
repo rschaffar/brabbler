@@ -23,7 +23,7 @@ function excerpt(text: string, index: number, length: number) {
   };
 }
 
-export async function searchSessions(query: string, scope: { projectKey?: string; allProjects: boolean; status: "active" | "archived" | "both" }): Promise<SessionSearchResponse> {
+export async function searchSessions(query: string, scope: { projectKey?: string; allProjects: boolean; titlesOnly?: boolean; status: "active" | "archived" | "both" }): Promise<SessionSearchResponse> {
   const needle = query.trim();
   if (!needle) return { results: [], truncated: false };
   const matcher = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
@@ -43,7 +43,7 @@ export async function searchSessions(query: string, scope: { projectKey?: string
       { kind: "preview" as const, text: summary.firstMessage || "" },
       { kind: "id" as const, text: summary.id },
     ];
-    const hits = fields.flatMap(({ kind, text }) => {
+    const hits = fields.filter(({ kind }) => !scope.titlesOnly || kind === "title").flatMap(({ kind, text }) => {
       const match = matcher.exec(text);
       if (!match) return [];
       const rank = text.length === match[0].length ? 0 : match.index === 0 ? 1 : 2;
@@ -71,6 +71,7 @@ export async function searchSessions(query: string, scope: { projectKey?: string
       metadata.push(hit);
       continue;
     }
+    if (scope.titlesOnly) continue;
     for (const entry of session.entries) {
       const blocks = blocksOf(entry);
       const text = blocks.map((block) => block.text).join("\n");

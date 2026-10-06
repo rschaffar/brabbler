@@ -317,6 +317,7 @@ export const zhTWLocale: LocalePlugin = {
     "sidebar.clearSearch": "清除搜尋",
     "sidebar.searchSessions": "搜尋對話或工作階段 ID...",
     "sidebar.toggleSessionSearch": "搜尋對話",
+    "sidebar.searchTitlesOnly": "僅標題",
     "sidebar.searchAllProjects": "所有專案",
     "sidebar.searchCurrentProject": "目前專案",
     "sidebar.searchBothStatuses": "使用中與已封存",

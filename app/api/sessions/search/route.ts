@@ -12,10 +12,12 @@ export async function GET(request: Request) {
   const projectKey = params.get("projectKey");
   const scope = params.get("scope");
   const status = params.get("status");
+  const field = params.get("field") ?? "all";
   const headers = { "Cache-Control": "no-store" };
   if (query.length > 200 || !["active", "archived", "both"].includes(status ?? "")
     || (scope !== "all" && (!projectKey || scope !== null))
     || (scope === "all" && projectKey !== null)
+    || !["all", "title"].includes(field)
     || params.has("includeArchived")) {
     return NextResponse.json({ error: "Invalid search query or scope" }, { status: 400, headers });
   }
@@ -29,7 +31,7 @@ export async function GET(request: Request) {
     const sessions = families.flatMap((family) => [family.root, ...family.subagents]);
     const archiveById = new Map(families.flatMap((family) => [family.root, ...family.subagents]
       .map((session) => [session.id, Boolean(family.root.archived)] as const)));
-    const result = await searchSessionContents(sessions, query, request.signal);
+    const result = await searchSessionContents(sessions, query, request.signal, { titlesOnly: field === "title" });
     return NextResponse.json({ ...result, results: result.results.map((hit) => ({
       ...hit, familyArchived: archiveById.get(hit.session.id),
     })) }, { headers });

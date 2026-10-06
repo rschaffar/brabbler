@@ -254,6 +254,7 @@ export const zhCNLocale: LocalePlugin = {
     "sidebar.noMatchingFiles": "没有匹配的文件",
     "sidebar.clearSearch": "清除搜索",
     "sidebar.searchSessions": "搜索对话...",
+    "sidebar.searchTitlesOnly": "仅标题",
     "sidebar.searchAllProjects": "所有项目",
     "sidebar.searchCurrentProject": "当前项目",
     "sidebar.searchBothStatuses": "活跃和已归档",

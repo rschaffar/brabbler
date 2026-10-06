@@ -942,6 +942,18 @@ try {
       await page.getByText("No matching conversations in this scope").waitFor();
       await page.getByRole("checkbox", { name: "Active and archived" }).check();
       await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
+      const titlesOnly = page.getByRole("checkbox", { name: "Titles only", exact: true });
+      await titlesOnly.check();
+      await page.getByText("No matching conversations in this scope").waitFor();
+      await titlesOnly.uncheck();
+      await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
+      const renameResponse = await fetch(`${base}/api/sessions/${ARCHIVE}`, {
+        method: "PATCH", body: JSON.stringify({ name: "E2E archive fixture" }), signal: AbortSignal.timeout(30_000),
+      });
+      assert.equal(renameResponse.status, 200);
+      await titlesOnly.check();
+      await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
+      await titlesOnly.uncheck();
       await page.getByRole("checkbox", { name: "Active and archived" }).uncheck();
       await page.getByText("No matching conversations in this scope").waitFor();
       await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
@@ -953,6 +965,10 @@ try {
       await page.getByRole("button", { name: /Other workspace task/ }).waitFor();
       await page.getByRole("checkbox", { name: "All projects" }).uncheck();
       await page.getByText("No matching conversations in this scope").waitFor();
+      await titlesOnly.check();
+      await searchToggle.click();
+      await searchToggle.click();
+      assert.equal(await titlesOnly.isChecked(), false, "Reopening search resets title-only mode");
       await searchToggle.click();
       await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
       await row.getByText("E2E archive fixture", { exact: true }).click();

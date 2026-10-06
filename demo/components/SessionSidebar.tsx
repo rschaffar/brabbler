@@ -427,6 +427,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [sessionSearchQuery, setSessionSearchQuery] = useState("");
   const [searchAllProjects, setSearchAllProjects] = useState(false);
   const [searchBothStatuses, setSearchBothStatuses] = useState(false);
+  const [searchTitlesOnly, setSearchTitlesOnly] = useState(false);
   const sessionSearchActive = sessionSearchOpen && Boolean(sessionSearchQuery.trim());
   const [changesCount, setChangesCount] = useState(0);
   const [changesCollapsed, setChangesCollapsed] = useState(true);
@@ -1185,6 +1186,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 setSessionSearchOpen((open) => !open);
                 setSearchAllProjects(false);
                 setSearchBothStatuses(false);
+                setSearchTitlesOnly(false);
                 setWtDropdownOpen(false);
               }}
               title={t("sidebar.toggleSessionSearch")}
@@ -1425,6 +1427,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               className="block h-[29px] w-full min-w-0 rounded-[7px] border border-border bg-bg px-[10px] text-xs text-text focus:outline-2 focus:outline-accent"
             />
             <div className="flex flex-wrap gap-x-3 gap-y-1">
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted">
+                <input type="checkbox" checked={searchTitlesOnly} onChange={(event) => setSearchTitlesOnly(event.target.checked)} className="accent-accent" />
+                {t("sidebar.searchTitlesOnly")}
+              </label>
               <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted">
                 <input type="checkbox" checked={searchAllProjects} onChange={(event) => setSearchAllProjects(event.target.checked)} className="accent-accent" />
                 {t("sidebar.searchAllProjects")}
@@ -1813,7 +1819,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           {showArchived ? t("sidebar.activeSessions") : t("sidebar.archivedSessions")}
         </button>
       </div>
-      <SessionSearch open={sessionSearchOpen} query={sessionSearchQuery} projectKey={searchAllProjects ? null : selectedProject?.key ?? null} allProjects={searchAllProjects} status={searchBothStatuses ? "both" : showArchived ? "archived" : "active"} selectedSessionId={selectedSessionId} onSelectSession={handleSelectSessionFromList}>
+      <SessionSearch open={sessionSearchOpen} query={sessionSearchQuery} projectKey={searchAllProjects ? null : selectedProject?.key ?? null} allProjects={searchAllProjects} titlesOnly={searchTitlesOnly} status={searchBothStatuses ? "both" : showArchived ? "archived" : "active"} selectedSessionId={selectedSessionId} onSelectSession={handleSelectSessionFromList}>
         <div
           ref={listScrollRef}
           onScroll={handleListScroll}

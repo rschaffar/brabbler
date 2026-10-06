@@ -53,12 +53,13 @@ async function sessionsRoute(request: MockRequest): Promise<Response> {
     const projectKey = request.query("projectKey");
     const scope = request.query("scope");
     const status = request.query("status");
+    const field = request.query("field") ?? "all";
     if (query.length > 200 || !["active", "archived", "both"].includes(status ?? "")
       || (scope !== "all" && (!projectKey || scope !== null))
-      || (scope === "all" && projectKey !== null) || request.query("includeArchived") !== null) {
+      || (scope === "all" && projectKey !== null) || !["all", "title"].includes(field) || request.query("includeArchived") !== null) {
       return error("Invalid search query or scope", 400);
     }
-    return json(await searchSessions(query, { projectKey: projectKey ?? undefined, allProjects: scope === "all", status: status as "active" | "archived" | "both" }));
+    return json(await searchSessions(query, { projectKey: projectKey ?? undefined, allProjects: scope === "all", titlesOnly: field === "title", status: status as "active" | "archived" | "both" }));
   }
   const session = getSession(id);
   if (!session) return error("Session not found", 404);
