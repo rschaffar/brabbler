@@ -966,7 +966,8 @@ try {
       await row.getByRole("button", { name: "Session actions", exact: true }).click();
       await row.getByRole("button", { name: "Move to project…", exact: true }).click();
       const moveDialog = page.getByRole("dialog", { name: "Move to project…" });
-      await moveDialog.getByLabel("Destination project").selectOption(otherProject);
+      await moveDialog.getByLabel("Destination project").click();
+      await moveDialog.locator(`button[role="option"][data-value="${otherProject}"]`).click();
       await moveDialog.getByRole("button", { name: "Move", exact: true }).click();
       await moveDialog.waitFor({ state: "detached" });
       await row.waitFor({ state: "detached" });

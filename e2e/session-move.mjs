@@ -21,13 +21,36 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
   const projectSelect = dialog.getByLabel("Destination project");
   const directorySelect = dialog.getByLabel("Worktree/directory");
   const move = dialog.getByRole("button", { name: "Move", exact: true });
+  const choose = async (field, value) => {
+    await dialog.getByLabel(field, { exact: true }).click();
+    await dialog.locator(`button[role="option"][data-value="${value}"]`).click();
+  };
   const select = async (root) => {
-    await projectSelect.selectOption(root);
+    await choose("Destination project", root);
     await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
   };
-  await select(project);
-  assert.equal(await directorySelect.locator(`option[value="${project}"]`).isDisabled(), true);
+  // Default to the session's own project, without proposing a destination yet.
+  assert.equal(await projectSelect.getAttribute("data-value"), project);
+  await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
+  await directorySelect.click();
+  assert.equal(await dialog.locator(`button[role="option"][data-value="${project}"]`).isDisabled(), true);
   assert.equal(await move.isDisabled(), true);
+  await directorySelect.press("Escape");
+  await choose("Destination project", project);
+  assert.equal(await directorySelect.isDisabled(), false, "Reselecting the current project retains its loaded listing");
+
+  // Both lists filter while typing, including names/paths and empty results.
+  await projectSelect.click();
+  await projectSelect.fill("no-such-project");
+  await dialog.getByText("No matching projects", { exact: true }).waitFor();
+  assert.equal(await dialog.getByRole("option").count(), 0);
+  assert.equal(await projectSelect.getAttribute("data-value"), project);
+  await projectSelect.fill(otherProject.toUpperCase());
+  assert.equal(await dialog.getByRole("option").count(), 1);
+  await projectSelect.press("ArrowDown");
+  await projectSelect.press("Enter");
+  await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
+  assert.equal(await projectSelect.getAttribute("data-value"), otherProject);
 
   // A superseded request must not replace a newer project's destinations.
   let pending;
@@ -40,7 +63,7 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
     await held;
     await route.fulfill({ json: { worktrees: [{ path: gitProject, branch: "stale-main", isMain: true }] } }).catch(() => {});
   });
-  await projectSelect.selectOption(gitProject);
+  await choose("Destination project", gitProject);
   await received;
   assert.equal(await directorySelect.isDisabled(), true);
   assert.equal(await move.isDisabled(), true);
@@ -48,9 +71,11 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
   release();
   await page.unroute(matcher);
   await page.waitForTimeout(150);
-  assert.equal(await projectSelect.inputValue(), otherProject);
-  assert.equal(await directorySelect.inputValue(), otherProject);
-  assert.equal(await directorySelect.locator("option", { hasText: "stale-main" }).count(), 0);
+  assert.equal(await projectSelect.getAttribute("data-value"), otherProject);
+  assert.equal(await directorySelect.getAttribute("data-value"), otherProject);
+  await directorySelect.click();
+  assert.equal(await dialog.getByRole("option", { name: /stale-main/ }).count(), 0);
+  await directorySelect.press("Escape");
   assert.equal((await session()).cwd, project, "Project selection is proposal-only");
   assert.equal(await page.locator('button[title^="Switch worktree:"]').count(), 0, "Picker selection must not switch the sidebar's plain checkout");
 
@@ -62,7 +87,7 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
     await browseHeld;
     await route.fulfill({ json: { worktrees: [{ path: gitProject, branch: "main", isMain: true }] } });
   });
-  await projectSelect.selectOption(gitProject);
+  await choose("Destination project", gitProject);
   await browseReceived;
   await dialog.getByRole("button", { name: "Browse another folder…" }).click();
   const pendingBrowser = page.getByRole("dialog", { name: "Select directory", exact: true });
@@ -77,25 +102,45 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
 
   // Listing failure leaves Move disabled, with an explicit retry and Browse.
   await page.route(matcher, (route) => route.fulfill({ json: { error: "Fixture listing unavailable" } }));
-  await projectSelect.selectOption(gitProject);
+  await choose("Destination project", gitProject);
   await dialog.getByRole("alert").filter({ hasText: "Fixture listing unavailable" }).waitFor();
   assert.equal(await move.isDisabled(), true);
   await page.unroute(matcher);
   await dialog.getByRole("button", { name: "Retry", exact: true }).click();
   await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
-  assert.equal(await directorySelect.locator(`option[value="${targetWorktree}"]`).innerText(), `target · ${targetWorktree}`);
-  assert.equal(await directorySelect.locator(`option[value="${gitProject}"]`).innerText(), `feature · ${gitProject}`);
-  await directorySelect.selectOption(targetWorktree);
+  await directorySelect.click();
+  assert.equal(await dialog.locator(`button[role="option"][data-value="${targetWorktree}"]`).innerText(), `target · ${targetWorktree}`);
+  assert.equal(await dialog.locator(`button[role="option"][data-value="${gitProject}"]`).innerText(), `feature · ${gitProject}`);
+  await directorySelect.fill("no-such-worktree");
+  await dialog.getByText("No matching worktrees", { exact: true }).waitFor();
+  await directorySelect.fill("TARGET");
+  assert.equal(await dialog.getByRole("option").count(), 1);
+  await directorySelect.press("Enter");
+  assert.equal(await directorySelect.getAttribute("data-value"), targetWorktree);
+  await directorySelect.click();
+  assert.equal(await dialog.getByRole("option").count(), 2, "Reopening resets the filter");
+  await directorySelect.press("Escape");
   assert.equal((await session()).cwd, project, "Worktree selection is proposal-only");
   await confirm(dialog, targetWorktree);
 
   // Same-project linked -> primary move, with only the exact source disabled.
   dialog = await open();
-  await dialog.getByLabel("Destination project").selectOption(gitProject);
+  assert.equal(await dialog.getByLabel("Destination project").getAttribute("data-value"), gitProject);
   await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
-  assert.equal(await dialog.getByLabel("Worktree/directory").locator(`option[value="${targetWorktree}"]`).isDisabled(), true);
-  assert.equal(await dialog.getByLabel("Worktree/directory").locator(`option[value="${gitProject}"]`).isDisabled(), false);
-  await dialog.getByLabel("Worktree/directory").selectOption(gitProject);
+  assert.equal(await dialog.getByRole("button", { name: "Move", exact: true }).isDisabled(), true);
+  const linkedDirectory = dialog.getByLabel("Worktree/directory");
+  await linkedDirectory.click();
+  assert.equal(await dialog.locator(`button[role="option"][data-value="${targetWorktree}"]`).isDisabled(), true);
+  assert.equal(await dialog.locator(`button[role="option"][data-value="${gitProject}"]`).isDisabled(), false);
+  await linkedDirectory.fill("feature");
+  await linkedDirectory.press("Enter");
+  // Reopening by keyboard resets the filter and skips the disabled source.
+  await linkedDirectory.press("ArrowUp");
+  await linkedDirectory.press("Enter");
+  assert.equal(await linkedDirectory.getAttribute("data-value"), gitProject);
+  await linkedDirectory.press("ArrowDown");
+  await linkedDirectory.press("Enter");
+  assert.equal(await linkedDirectory.getAttribute("data-value"), gitProject);
   assert.equal((await session()).cwd, targetWorktree);
   assert.equal(await page.locator(`button[title="Switch worktree: ${targetWorktree}"]`).count(), 1, "Proposing the primary directory must not switch the sidebar");
   await confirm(dialog, gitProject);
@@ -103,9 +148,9 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
   // Plain project remains directly selectable. Browse can override it with
   // another existing non-Git directory, without invoking Move itself.
   dialog = await open();
-  await dialog.getByLabel("Destination project").selectOption(project);
+  await choose("Destination project", project);
   await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
-  assert.equal(await dialog.getByLabel("Worktree/directory").inputValue(), project);
+  assert.equal(await dialog.getByLabel("Worktree/directory").getAttribute("data-value"), project);
   const browse = async (path) => {
     // The runner is next dev/Strict Mode: DirectoryPicker starts two initial
     // reads. Waiting only for its first loading=false can race the second read
@@ -135,7 +180,7 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
   const browseDirectory = `${project}/browse-only`;
   await browse(browseDirectory);
   assert.equal((await session()).cwd, gitProject);
-  assert.equal(await dialog.getByLabel("Destination project").inputValue(), "");
-  assert.equal(await dialog.getByLabel("Worktree/directory").inputValue(), browseDirectory);
+  assert.equal(await dialog.getByLabel("Destination project").getAttribute("data-value"), "");
+  assert.equal(await dialog.getByLabel("Worktree/directory").getAttribute("data-value"), browseDirectory);
   await confirm(dialog, browseDirectory);
 }
