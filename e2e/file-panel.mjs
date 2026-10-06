@@ -7,6 +7,47 @@ export const filePanelFixture = `<!doctype html><html><body style="margin:20px;m
 <p>HTML preview state must survive layout changes.</p>
 <script>window.previewInstance = Math.random();</script></body></html>`;
 
+// Mock only the bounded Git response; exercise the real explorer, file tab and renderer.
+export async function checkFileDiffViews(page, filePath) {
+  const panel = page.locator("#file-panel");
+  const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
+  const patches = {
+    modified: "diff --git a/editable.txt b/editable.txt\n--- a/editable.txt\n+++ b/editable.txt\n@@ -1 +1 @@\n-Old text\n+New text\n",
+    added: "diff --git a/editable.txt b/editable.txt\nnew file mode 100644\n--- /dev/null\n+++ b/editable.txt\n@@ -0,0 +1 @@\n+New text\n",
+    deleted: "diff --git a/editable.txt b/editable.txt\ndeleted file mode 100644\n--- a/editable.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-Old text\n",
+  };
+  for (const [status, patch] of Object.entries(patches)) {
+    if (await showSidebar.isVisible()) await showSidebar.click();
+    const respond = (route) => route.fulfill({ json: { supported: true, status, patch } });
+    await page.route("**/api/git/diff?*", respond);
+    try {
+      await page.getByTitle(filePath.replace(/\\/g, "/"), { exact: true }).click();
+      if (status !== "deleted") await panel.getByRole("button", { name: "Diff", exact: true }).click();
+      const controls = panel.getByRole("group", { name: "Patch view" });
+      await panel.getByRole("region", { name: "Side-by-side diff" }).waitFor();
+      assert.equal(await controls.getByRole("button", { name: "Side by side", exact: true }).getAttribute("aria-pressed"), "true");
+      await panel.getByText("Before · HEAD", { exact: true }).waitFor();
+      await panel.getByText("After · Working tree", { exact: true }).waitFor();
+      await controls.getByRole("button", { name: "Unified", exact: true }).click();
+      await panel.getByRole("region", { name: "Unified diff" }).waitFor();
+      assert.equal(await controls.getByRole("button", { name: "Unified", exact: true }).getAttribute("aria-pressed"), "true");
+      await controls.getByRole("button", { name: "Raw patch", exact: true }).click();
+      assert.equal(await panel.getByRole("region", { name: "Raw patch" }).textContent(), patch);
+      await controls.getByRole("button", { name: "Side by side", exact: true }).click();
+      await panel.getByRole("region", { name: "Side-by-side diff" }).waitFor();
+      if (status !== "deleted") {
+        await panel.getByRole("button", { name: "Source", exact: true }).click();
+        assert.equal(await controls.count(), 0, "Diff controls do not appear in source mode");
+      }
+      await panel.getByRole("button", { name: "Close editable.txt" }).click();
+      await panel.getByRole("button", { name: "Hide file panel" }).click();
+    } finally {
+      await page.unroute("**/api/git/diff?*", respond);
+    }
+  }
+  console.log(`PASS: Files explorer split/unified/raw diffs for modified, added and deleted files at ${page.viewportSize().width}px`);
+}
+
 export async function checkEditableFile(page, filePath) {
   writeFileSync(filePath, "Initial text\n");
   const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
