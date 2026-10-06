@@ -1386,7 +1386,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           <div role="dialog" aria-modal="true" aria-label={t("sidebar.moveSession")} onClick={(event) => event.stopPropagation()} style={{ width: 440, maxWidth: "calc(100vw - 24px)", background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10, padding: 20, display: "grid", gap: 12 }}>
             <strong>{t("sidebar.moveSession")}</strong>
             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("sidebar.moveSessionHint")}</div>
-            <SessionMoveDestinationPicker projects={recentProjects} currentCwd={movingSession.cwd} destination={moveDestination} onChange={proposeMoveDestination} disabled={moveBusy} />
+            <SessionMoveDestinationPicker projects={recentProjects} currentProject={movingSession.projectRoot ?? movingSession.cwd} currentCwd={movingSession.cwd} destination={moveDestination} onChange={proposeMoveDestination} disabled={moveBusy} />
             {moveDestination && <div style={{ fontSize: 11, overflowWrap: "anywhere" }}>{moveDestination}</div>}
             {moveError && <div role="alert" style={{ color: "#ef4444", fontSize: 12 }}>{moveError}</div>}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>

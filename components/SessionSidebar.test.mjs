@@ -62,7 +62,7 @@ test("every persisted session row copies its deep link without selecting the row
 test("move action keeps explicit confirmation and includes touch rows", () => {
   assert.match(sessionItemSource, /onMove\?\.\(\)/);
   assert.match(sessionItemSource, /disabled=\{isRunning\}[\s\S]*?sidebar\.moveSession/);
-  assert.match(source, /<SessionMoveDestinationPicker projects=\{recentProjects\} currentCwd=\{movingSession\.cwd\}/);
+  assert.match(source, /<SessionMoveDestinationPicker projects=\{recentProjects\} currentProject=\{movingSession\.projectRoot \?\? movingSession\.cwd\} currentCwd=\{movingSession\.cwd\}/);
   assert.match(source, /disabled=\{moveBusy \|\| !moveDestination\}/);
   assert.match(source, /\/move`, \{[\s\S]*?method: "POST"/);
   assert.match(source, /data\.movedIds\?\.includes\(selectedSessionId\)/);
