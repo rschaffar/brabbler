@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import type { ExplorerFile } from "@/lib/git-explorer";
 import { copyText } from "@/lib/clipboard";
+import type { DiffContext } from "@/lib/diff-context";
 
 // Keep the diff parser/renderer out of the normal chat and sidebar bundles.
 const GitPatchStack = dynamic(() => import("./GitPatchStack").then((module) => module.GitPatchStack), {
@@ -43,6 +44,8 @@ export function GitCommitViewer({ cwd, branch, head, oid }: { cwd: string; branc
   const files = useMemo(() => detail?.files.map((file) => ({ id: file.path, path: file.path, status: FILE_STATUS[file.status] ?? file.status })) ?? [], [detail]);
   const loadPatch = useCallback((path: string, signal: AbortSignal) =>
     load<Patch>(url(cwd, "patch", { branch, head, oid, path }), signal), [cwd, branch, head, oid]);
+  const loadContext = useCallback((path: string, signal: AbortSignal) =>
+    load<DiffContext>(url(cwd, "context", { branch, head, oid, path }), signal), [cwd, branch, head, oid]);
   useEffect(() => {
     const controller = new AbortController();
     setDetail(null); setDetailError(null);
@@ -68,7 +71,7 @@ export function GitCommitViewer({ cwd, branch, head, oid }: { cwd: string; branc
       {detail.parents.length > 1 && <p className="mt-2 text-xs text-text-muted">Merge commit · changes vs first parent</p>}
       <div className="mt-5 min-w-0">
         {files.length === 0 ? <p className="text-xs text-text-muted">No changes against the first parent.</p>
-          : <GitPatchStack key={`${branch}:${head}:${oid}`} files={files} loadPatch={loadPatch}
+          : <GitPatchStack key={`${branch}:${head}:${oid}`} files={files} loadPatch={loadPatch} loadContext={loadContext}
             before={detail.parents[0]?.slice(0, 8) ?? "empty tree"} after={oid.slice(0, 8)} />}
       </div>
     </>}

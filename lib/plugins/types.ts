@@ -19,6 +19,8 @@ export interface PluginManifest {
 export interface BundledPlugin {
   manifest: PluginManifest;
   extension(cwd: string): InlineExtension;
+  /** Read-only opaque display resources; repository semantics remain plugin-owned. */
+  readPatchContext?(handle: string, fileId: string): Promise<import("../diff-context").DiffContext>;
 }
 export type Overrides = Record<string, SettingValue>;
 export interface PluginSettings {
@@ -53,6 +55,8 @@ export interface PluginCard {
   patch?: string;
   patchBefore?: string;
   patchAfter?: string;
+  /** Optional plugin-owned, expiring immutable context handle; never execution authority. */
+  patchContext?: string;
   actions: Array<{ id: string; label: string; primary?: boolean }>;
 }
 export interface PluginUiContext {

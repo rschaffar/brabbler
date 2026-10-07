@@ -1,0 +1,28 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { createJiti } from "jiti";
+const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true, moduleCache: false });
+const { NextRequest } = await jiti.import("next/server");
+const { GET } = await jiti.import("./route.ts");
+const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
+test("Explorer context GET preserves admission, strict fields and changed-file scope", async (t) => {
+  const cwd = mkdtempSync(join(tmpdir(), "pi-web-context-route-"));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const git = (...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
+  git("init", "-qb", "main"); git("config", "user.name", "Test"); git("config", "user.email", "test@example.invalid");
+  git("config", "commit.gpgsign", "false"); writeFileSync(join(cwd, "file"), "exact context\n");
+  git("add", "file"); git("commit", "-qm", "root"); const head = git("rev-parse", "HEAD");
+  const args = { cwd, op: "context", head, oid: head, branch: "main", path: "file" };
+  const request = (values) => GET(new NextRequest(`http://localhost/api/git/explorer?${new URLSearchParams(values)}`));
+  assert.equal((await request(args)).status, 403);
+  allowFileRoot(cwd);
+  const result = await request(args); assert.equal(result.status, 200);
+  const value = await result.json(); assert.equal(value.oldFile, null); assert.equal(value.newFile.contents, "exact context\n");
+  assert.equal((await request({ ...args, blob: "arbitrary" })).status, 400);
+  assert.equal((await request({ ...args, path: ".git/config" })).status, 404);
+  git("commit", "--allow-empty", "-qm", "advance"); assert.equal((await request(args)).status, 409);
+});

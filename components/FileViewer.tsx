@@ -26,6 +26,8 @@ import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { FrontmatterCard } from "./FrontmatterCard";
 import { CommittedPatchDiff } from "./CommittedPatchDiff";
 import type { GitFileDiffResponse } from "@/lib/git-types";
+import type { DiffContext } from "@/lib/diff-context";
+import { createDiffReview } from "@/lib/git-diff-review";
 import { useI18n } from "@/hooks/useI18n";
 import {
   resolveInitialFileDisplayMode,
@@ -976,6 +978,16 @@ function TextFileViewer({
   const { t } = useI18n();
   const [data, setData] = useState<FileData | null>(null);
   const [gitDiff, setGitDiff] = useState<GitFileDiffResponse | null>(null);
+  const workingRevision = gitDiff?.revision;
+  const comparison = `${filePath}:${workingRevision ?? ""}`;
+  const diffReview = useMemo(() => gitDiff?.patch ? createDiffReview(gitDiff.patch, comparison) : undefined, [gitDiff?.patch, comparison]);
+  const loadWorkingContext = useCallback(async (signal: AbortSignal): Promise<DiffContext> => {
+    const params = new URLSearchParams({ cwd: cwd!, path: filePath, op: "context", revision: workingRevision! });
+    const response = await fetch(`/api/git/diff?${params}`, { signal, cache: "no-store" });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error ?? "Full-file context unavailable; refresh the diff.");
+    return body;
+  }, [cwd, filePath, workingRevision]);
   const [gitDiffLoading, setGitDiffLoading] = useState(false);
   const [gitDiffResolved, setGitDiffResolved] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -1673,7 +1685,9 @@ function TextFileViewer({
             style={{ boxSizing: "border-box", width: "100%", minHeight: "100%", padding: "12px 16px", resize: "none", border: "none", outline: "none", background: "var(--bg)", color: "var(--text)", ...FILE_CODE_STYLE, tabSize: 2 }}
           />
         ) : effectiveDisplayMode === "diff" && hasGitDiff ? (
-          <CommittedPatchDiff patch={gitDiff.patch!} hasBinaryChanges={false} before="HEAD" after="Working tree" />
+          <CommittedPatchDiff key={`${filePath}:${gitDiff.revision ?? gitDiff.patch}`} patch={gitDiff.patch!} hasBinaryChanges={false}
+            before="HEAD" after="Working tree" reviewModel={diffReview} loadContext={gitDiff.revision ? loadWorkingContext : undefined}
+            onRefresh={() => void fetchGitDiff(filePath)} />
         ) : isHtml && effectiveDisplayMode === "preview" ? (
           <iframe
             srcDoc={content}

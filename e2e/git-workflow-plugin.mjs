@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkBlockingCard } from "./blocking-card.mjs";
+import { withExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
 
 /** Fixture-only command delegates to the production plugin implementation, no model. */
 export function gitPluginFixtureSource(root) {
@@ -22,7 +23,10 @@ export default function (pi) {
         : { action, checkout: ctx.cwd, branch: action === "attachWorktree" ? "comparison-base" : "preview-new", baseBranch: action === "attachWorktree" ? "comparison-base" : "target", path: join(ctx.cwd + "-worktrees", "preview-new") };
     } else {
       const selectedCheckout = mode.startsWith("cross-") ? ctx.cwd + "-foreign" : ctx.cwd;
-      writeFileSync(join(selectedCheckout, "draft.txt"), "Plugin whole-file candidate " + mode + "\\n");
+      const draft = Array.from({ length: 5000 }, (_, index) => "Plugin context " + (index + 1) + "\\n");
+      draft[49] = "Plugin whole-file candidate " + mode + "\\n";
+      draft[4499] = "Plugin distant candidate " + mode + "\\n";
+      writeFileSync(join(selectedCheckout, "draft.txt"), draft.join(""));
       writeFileSync(join(selectedCheckout, "second-draft.txt"), "Second plugin candidate " + mode + "\\n");
       operation = { action: "commit", checkout: selectedCheckout, mode: "files", files: ["draft.txt", "second-draft.txt"], message: "Plugin browser commit " + mode };
     }
@@ -84,62 +88,237 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   await card.getByRole("button", { name: "Reject", exact: true }).click();
   await finish("decline", "refused"); assert.equal(tip(), before);
 
-  card = await start("reconnect");
-  await page.reload({ waitUntil: "domcontentloaded" });
-  card = page.getByRole("group", { name: "Git commit", exact: true }); await card.waitFor();
-  await card.getByText(/Plugin browser commit reconnect/).first().waitFor();
-  const first = card.getByRole("region", { name: "File changes: draft.txt", exact: true });
-  const second = card.getByRole("region", { name: "File changes: second-draft.txt", exact: true });
-  await first.getByRole("region", { name: "Side-by-side diff" }).waitFor();
-  assert.equal(await second.getByRole("button").getAttribute("aria-expanded"), "false");
-  assert.equal(await card.getByRole("group", { name: "Patch view" }).count(), 1);
-  await second.getByRole("button").click();
-  await second.getByRole("region", { name: "Side-by-side diff" }).waitFor();
-  await card.getByRole("button", { name: "Unified", exact: true }).click();
-  await first.getByRole("region", { name: "Unified diff" }).waitFor();
-  await second.getByRole("region", { name: "Unified diff" }).waitFor();
-  await card.getByRole("button", { name: "Collapse all", exact: true }).click();
-  assert.equal(await card.getByRole("region", { name: "Unified diff" }).count(), 0);
-  await card.getByRole("button", { name: "Expand all", exact: true }).click();
-  await first.getByRole("region", { name: "Unified diff" }).waitFor();
-  await card.getByRole("button", { name: "Collapse", exact: true }).click();
-  await page.getByRole("button", { name: /Awaiting response.*Git commit/ }).click();
-  await first.getByRole("region", { name: "Unified diff" }).waitFor();
-  await card.getByRole("button", { name: "Side by side", exact: true }).click();
-  await checkBlockingCard(card);
-  await page.screenshot({ path: join(artifacts, `git-plugin-approval-${width}.png`) });
-  await card.getByRole("button", { name: "Raw patch", exact: true }).click();
-  const reviewedPatch = await first.getByRole("region", { name: "Raw patch", exact: true }).innerText();
-  await card.getByRole("button", { name: "Approve commit", exact: true }).click();
-  await finish("reconnect", "completed"); assert.notEqual(tip(), before);
-  const receipt = page.locator("[data-interaction-receipt]").last();
-  await receipt.waitFor();
-  const receiptId = await receipt.getAttribute("data-interaction-receipt");
-  const committedTip = tip();
+  const contextPath = "/api/plugins/bundled/git-workflow/patch-context";
+  const contextReads = [], commands = [];
+  const recordReviewRequest = (request) => {
+    const address = new URL(request.url());
+    if (address.pathname === contextPath) contextReads.push(request);
+    if (address.pathname === `/api/agent/${sessionId}` && request.method() === "POST") commands.push(request.postDataJSON());
+  };
+  const decisions = () => commands.filter((request) => request.type === "extension_ui_response" || request.type === "abort");
+  const fileToggle = (file, path) => file.getByRole("button", { name: `Toggle diff: ${path}`, exact: true });
+  const version = (file, name) => file.getByRole("group", { name: "File version", exact: true }).getByRole("button", { name, exact: true });
+  // CodeView only mounts a window of lines. Navigate before checking distant text;
+  // never require all 5,000 lines to exist in the DOM.
+  const expectLine = async (file, name, number, text) => {
+    const region = file.getByRole("region", { name, exact: true });
+    const row = region.locator(`[data-line="${number}"]`).filter({ hasText: text }).first();
+    await row.waitFor();
+    assert.equal((await row.textContent()).trimEnd(), text);
+  };
+  const jumpTo = async (file, name, number, text) => {
+    await file.getByLabel("Line number", { exact: true }).fill(String(number));
+    await file.getByRole("button", { name: "Go to line", exact: true }).click();
+    await expectLine(file, name, number, text);
+  };
+  const completeRaw = (group) => group.locator("details").filter({ has: page.getByText("Complete raw patch", { exact: true }) });
   const draftPath = join(repo, "draft.txt");
-  const committedDraft = readFileSync(draftPath);
-  writeFileSync(draftPath, "Changed after approval — not the historical diff\n");
+  // Parent seeds this tracked file before the root commit; subsequent viewport
+  // runs may have a previous plugin candidate at the two changed lines.
+  const beforeDraft = execFileSync("git", ["-C", repo, "show", `${before}:draft.txt`], { encoding: "utf8" });
+  const beforeLines = beforeDraft.trimEnd().split("\n");
+  assert.equal(beforeLines.length, 5000, "draft.txt must be committed as a 5,000-line context fixture");
+  const candidate = `Plugin whole-file candidate reconnect-${width}`;
+  const distantCandidate = `Plugin distant candidate reconnect-${width}`;
+  page.on("request", recordReviewRequest);
   try {
+    card = await start("reconnect");
     await page.reload({ waitUntil: "domcontentloaded" });
-    const historical = page.locator(`[data-interaction-receipt="${receiptId}"]`);
-    await historical.waitFor();
-    assert.equal(await historical.count(), 1);
-    await historical.getByRole("button", { name: /Answered.*Git commit/ }).click();
-    const group = historical.getByRole("group", { name: "Git commit", exact: true });
-    await checkBlockingCard(group);
-    await group.getByRole("region", { name: "Side-by-side diff" }).waitFor();
-    await group.getByRole("button", { name: "Raw patch", exact: true }).click();
-    assert.equal(await group.getByRole("region", { name: "Raw patch", exact: true }).innerText(), reviewedPatch);
-    await group.getByText("Decision only — see the tool result for execution outcome.", { exact: true }).waitFor();
-    assert.equal(await group.getByRole("button", { name: /Approve commit|Reject|Cancel/ }).count(), 0);
-    await group.getByRole("button", { name: "Collapse", exact: true }).click();
-    assert.equal(await historical.getByRole("region", { name: "Raw patch", exact: true }).count(), 0);
-    await historical.getByRole("button", { name: /Answered.*Git commit/ }).click();
-    await group.getByRole("region", { name: "Side-by-side diff" }).waitFor();
-    await group.getByRole("button", { name: "Collapse", exact: true }).click();
-    assert.equal(tip(), committedTip, "historical review cannot execute the approval again");
+    card = page.getByRole("group", { name: "Git commit", exact: true }); await card.waitFor();
+    await card.getByText(/Plugin browser commit reconnect/).first().waitFor();
+    const first = card.getByRole("region", { name: "File changes: draft.txt", exact: true });
+    const second = card.getByRole("region", { name: "File changes: second-draft.txt", exact: true });
+    await card.getByRole("button", { name: "Side by side", exact: true }).click();
+    await first.getByRole("region", { name: "Side-by-side diff", exact: true }).waitFor();
+    await first.getByText("Modified", { exact: true }).waitFor();
+    assert.equal(await fileToggle(second, "second-draft.txt").getAttribute("aria-expanded"), "false");
+    assert.equal(await card.getByRole("group", { name: "Patch view", exact: true }).count(), 1);
+    await first.getByRole("button", { name: "Next change", exact: true }).click();
+    await expectLine(first, "Side-by-side diff", 50, candidate);
+    await first.getByRole("button", { name: "Next change", exact: true }).click();
+    await expectLine(first, "Side-by-side diff", 4500, distantCandidate);
+    await first.getByRole("button", { name: "Previous change", exact: true }).click();
+    await expectLine(first, "Side-by-side diff", 50, candidate);
+    await card.getByRole("button", { name: "Raw patch", exact: true }).click();
+    const reviewedPatch = await first.getByRole("region", { name: "Raw patch", exact: true }).textContent();
+    assert.equal(reviewedPatch.match(/^@@ /gm)?.length, 2, "The original partial patch contains both distant changes");
+    assert.equal(reviewedPatch.includes("Plugin context 2500"), false, "Unchanged full-file text is not part of the supplied patch");
+    await completeRaw(card).locator("summary").click();
+    const reviewedCompletePatch = await completeRaw(card).locator("pre").textContent();
+    assert.ok(reviewedCompletePatch.startsWith(reviewedPatch));
+    assert.ok(reviewedCompletePatch.includes(`Second plugin candidate reconnect-${width}`));
+    assert.equal(contextReads.length, 0, "Reconnect, patch rendering and change navigation never eagerly load full files");
+
+    await card.getByRole("button", { name: "Side by side", exact: true }).click();
+    const loaded = page.waitForResponse((response) => new URL(response.url()).pathname === contextPath);
+    await first.getByRole("button", { name: "Show full file", exact: true }).click();
+    const liveContext = await loaded;
+    assert.equal(liveContext.status(), 200);
+    assert.equal(liveContext.request().method(), "GET");
+    const contextUrl = liveContext.url(), query = new URL(contextUrl).searchParams;
+    assert.deepEqual([...query.keys()].sort(), ["file", "handle"], "Context transport has no checkout, path or revision authority");
+    assert.match(query.get("handle"), /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/);
+    assert.equal(query.get("file"), "0");
+    const snapshot = await liveContext.json();
+    const proposedDraft = readFileSync(draftPath, "utf8");
+    assert.equal(proposedDraft.trimEnd().split("\n").length, 5000);
+    assert.equal(snapshot.oldFile.contents, beforeDraft);
+    assert.equal(snapshot.newFile.contents, proposedDraft);
+    await jumpTo(first, "Side-by-side diff", 2500, "Plugin context 2500");
+    assert.ok(await first.getByRole("region", { name: "Side-by-side diff", exact: true }).locator("[data-line]").count() < 1000,
+      "Full-file reading remains virtualized");
+    assert.equal(contextReads.length, 1);
+    await first.getByRole("button", { name: "Diff context", exact: true }).click();
+    await card.getByRole("button", { name: "Unified", exact: true }).click();
+    await first.getByRole("button", { name: "Show full file", exact: true }).click();
+    await jumpTo(first, "Unified diff", 2500, "Plugin context 2500");
+    await version(first, "Before").click();
+    await jumpTo(first, "Before file", 50, beforeLines[49]);
+    await jumpTo(first, "Before file", 4500, beforeLines[4499]);
+    await version(first, "After").click();
+    await jumpTo(first, "After file", 50, candidate);
+    await jumpTo(first, "After file", 4500, distantCandidate);
+    await first.getByRole("searchbox", { name: "Search full file", exact: true }).fill("plugin context 2500");
+    await first.getByRole("button", { name: "Next match", exact: true }).click();
+    await expectLine(first, "After file", 2500, "Plugin context 2500");
+    await first.getByText("1/1 matches", { exact: true }).waitFor();
+    await fileToggle(first, "draft.txt").click();
+    assert.equal(await first.locator(".git-diff-code-view").count(), 0, "Collapsed file renderers unmount");
+    await fileToggle(first, "draft.txt").click();
+    assert.equal(await version(first, "After").getAttribute("aria-pressed"), "true");
+    assert.equal(await first.getByRole("searchbox", { name: "Search full file", exact: true }).inputValue(), "plugin context 2500");
+    await expectLine(first, "After file", 2500, "Plugin context 2500");
+    await version(first, "Changes").click();
+    assert.equal(await first.getByRole("button", { name: "Diff context", exact: true }).getAttribute("aria-pressed"), "true");
+    await fileToggle(second, "second-draft.txt").click();
+    await second.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
+    assert.equal(await second.getByRole("button", { name: "Show full file", exact: true }).getAttribute("aria-pressed"), "false",
+      "Showing one full file does not expand another file's context");
+    await card.getByRole("button", { name: "Collapse all files", exact: true }).click();
+    assert.equal(await card.locator(".git-diff-code-view").count(), 0);
+    await card.getByRole("button", { name: "Expand all files", exact: true }).click();
+    await first.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
+    await first.getByRole("button", { name: "Diff context", exact: true }).waitFor();
+    await card.getByRole("button", { name: "Collapse", exact: true }).click();
+    await page.getByRole("button", { name: /Awaiting response.*Git commit/ }).click();
+    await first.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
+    assert.equal(contextReads.length, 1, "View/version switches, file/card collapse and Expand all files reuse only the requested snapshot");
+
+    await card.getByRole("button", { name: "Side by side", exact: true }).click();
+    const beforeWide = decisions().length;
+    await first.getByRole("button", { name: "Wide view", exact: true }).click();
+    const wide = page.getByRole("dialog", { name: "Review file: draft.txt", exact: true });
+    await wide.waitFor();
+    await jumpTo(wide, "Side-by-side diff", 4500, distantCandidate);
+    await wide.getByRole("button", { name: "Close wide view", exact: true }).focus();
+    await page.keyboard.press("Escape");
+    await wide.waitFor({ state: "hidden" });
+    await page.waitForFunction(() => document.activeElement?.textContent === "Wide view");
+    assert.equal(decisions().length, beforeWide, "Escape from wide reading neither rejects the approval nor aborts the session");
+    assert.equal(await card.getByRole("button", { name: "Approve commit", exact: true }).isEnabled(), true);
+    assert.equal(tip(), before, "Context and wide reading are display-only");
+    await checkBlockingCard(card);
+    await page.screenshot({ path: join(artifacts, `git-plugin-approval-${width}.png`) });
+    await first.getByRole("button", { name: "Diff context", exact: true }).click();
+    await card.getByRole("button", { name: "Raw patch", exact: true }).click();
+    assert.equal(await first.getByRole("region", { name: "Raw patch", exact: true }).textContent(), reviewedPatch);
+    assert.equal(await completeRaw(card).locator("pre").textContent(), reviewedCompletePatch, "Reading context never rewrites the approved patch");
+    await card.getByRole("button", { name: "Approve commit", exact: true }).click();
+    await finish("reconnect", "completed"); assert.notEqual(tip(), before);
+    const receipt = page.locator("[data-interaction-receipt]").last();
+    await receipt.waitFor();
+    const receiptId = await receipt.getAttribute("data-interaction-receipt");
+    assert.equal(decisions().length, 1);
+    assert.equal(decisions()[0].action, "approve");
+    assert.equal(decisions()[0].id, receiptId);
+    const committedTip = tip(), committedDraft = readFileSync(draftPath);
+    const changedDraft = "Changed after approval — not the historical diff or full-file context\n";
+    writeFileSync(draftPath, changedDraft);
+    try {
+      await page.reload({ waitUntil: "domcontentloaded" });
+      const historical = page.locator(`[data-interaction-receipt="${receiptId}"]`);
+      await historical.waitFor();
+      assert.equal(await historical.count(), 1);
+      assert.equal(contextReads.length, 1, "Collapsed historical receipts never load context");
+      const saved = await page.request.get(`${base}/api/sessions/${sessionId}?tail=1000&tree=summary`);
+      assert.ok(saved.ok(), await saved.text());
+      const receipts = (await saved.json()).context.messages.filter((message) => message.role === "custom"
+        && message.customType === "pi-web:interaction-receipt" && message.details?.request?.id === receiptId);
+      assert.equal(receipts.length, 1);
+      assert.equal(receipts[0].details.request.patchContext, query.get("handle"), "Saved receipt carries the original opaque snapshot handle");
+      assert.equal(receipts[0].details.request.patch, reviewedCompletePatch);
+      await historical.getByRole("button", { name: /Answered.*Git commit/ }).click();
+      const group = historical.getByRole("group", { name: "Git commit", exact: true });
+      const historicalFile = group.getByRole("region", { name: "File changes: draft.txt", exact: true });
+      await checkBlockingCard(group);
+      // Raw was persisted before approval; choose split explicitly rather than
+      // assuming receipt expansion resets the shared browser view preference.
+      await group.getByRole("button", { name: "Side by side", exact: true }).click();
+      await historicalFile.getByRole("region", { name: "Side-by-side diff", exact: true }).waitFor();
+      assert.equal(contextReads.length, 1, "Opening a receipt's patch still does not load full-file context");
+      const historicalLoaded = page.waitForResponse(contextUrl);
+      await historicalFile.getByRole("button", { name: "Show full file", exact: true }).click();
+      const historicalContext = await historicalLoaded;
+      assert.equal(historicalContext.status(), 200);
+      assert.deepEqual(await historicalContext.json(), snapshot, "Historical Before/After use the immutable reviewed trees, not current files or HEAD");
+      assert.equal(contextReads.length, 2);
+      assert.equal(contextReads[1].url(), contextUrl);
+      await jumpTo(historicalFile, "Side-by-side diff", 2500, "Plugin context 2500");
+      await version(historicalFile, "Before").click();
+      await jumpTo(historicalFile, "Before file", 50, beforeLines[49]);
+      await version(historicalFile, "After").click();
+      await jumpTo(historicalFile, "After file", 50, candidate);
+      await jumpTo(historicalFile, "After file", 4500, distantCandidate);
+      await version(historicalFile, "Changes").click();
+      await group.getByRole("button", { name: "Raw patch", exact: true }).click();
+      assert.equal(await historicalFile.getByRole("region", { name: "Raw patch", exact: true }).textContent(), reviewedPatch);
+      await group.getByText("Decision only — see the tool result for execution outcome.", { exact: true }).waitFor();
+      assert.equal(await group.getByRole("button", { name: /Approve commit|Reject|Cancel/ }).count(), 0);
+      await group.getByRole("button", { name: "Collapse", exact: true }).click();
+      assert.equal(await historical.getByRole("region", { name: "Raw patch", exact: true }).count(), 0);
+      assert.equal(await historical.locator(".git-diff-code-view").count(), 0, "Collapsed historical diff bodies unmount");
+
+      // Remount so the successful context cache cannot hide the deliberate
+      // expired-snapshot response. Only this exact opaque request may fail.
+      await historical.getByRole("button", { name: /Answered.*Git commit/ }).click();
+      await group.getByRole("button", { name: "Side by side", exact: true }).click();
+      await historicalFile.getByRole("region", { name: "Side-by-side diff", exact: true }).waitFor();
+      assert.equal(contextReads.length, 2);
+      const expiredBody = { error: "This context snapshot has expired or the server restarted; the saved patch remains available." };
+      const refuseContext = (route) => route.fulfill({ status: 409, json: expiredBody });
+      await page.route(contextUrl, refuseContext);
+      try {
+        await withExpectedBrowserConflict(page, { scenario: "expired historical plugin context", url: contextUrl, method: "GET", body: null }, async () => {
+          const refusedResponse = page.waitForResponse(contextUrl);
+          await historicalFile.getByRole("button", { name: "Show full file", exact: true }).click();
+          const refused = await refusedResponse;
+          assert.equal(refused.status(), 409);
+          assert.deepEqual(await refused.json(), expiredBody);
+          const alert = historicalFile.getByRole("alert");
+          await alert.waitFor();
+          assert.ok((await alert.textContent()).includes(expiredBody.error));
+          assert.equal(await historicalFile.getByRole("region", { name: "Side-by-side diff", exact: true }).isVisible(), true);
+          await group.getByRole("button", { name: "Raw patch", exact: true }).click();
+          assert.equal(await historicalFile.getByRole("region", { name: "Raw patch", exact: true }).textContent(), reviewedPatch,
+            "Unavailable context leaves the exact saved raw patch readable");
+          assert.equal(contextReads.length, 3, "Expired context is not retried automatically");
+          assert.equal(decisions().length, 1, "Read-only context controls never submit an approval or cancellation");
+          assert.equal(tip(), committedTip);
+          return refused;
+        });
+      } finally {
+        await page.unroute(contextUrl, refuseContext);
+      }
+      await group.getByRole("button", { name: "Collapse", exact: true }).click();
+      assert.equal(await historical.getByRole("region", { name: "Raw patch", exact: true }).count(), 0);
+      assert.equal(decisions().length, 1);
+      assert.equal(tip(), committedTip, "Historical review cannot execute the approval again");
+      assert.equal(readFileSync(draftPath, "utf8"), changedDraft, "Historical context never modifies the current file");
+    } finally {
+      writeFileSync(draftPath, committedDraft);
+    }
   } finally {
-    writeFileSync(draftPath, committedDraft);
+    page.off("request", recordReviewRequest);
   }
 
   await patch({ targetBranch: "target" });
@@ -205,5 +384,5 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   await page.locator("textarea").last().waitFor();
   assert.equal(await page.getByRole("group", { name: "Git commit", exact: true }).count(), 0);
   await page.locator("[data-interaction-receipt]").last().getByRole("button", { name: /Interrupted.*Git commit/ }).waitFor();
-  console.log(`PASS: ${width}px all Git approval layouts, cross-repository approvals/settings, exact historical diffs, read-only receipts, toggle, rejection, reconnect and Stop`);
+  console.log(`PASS: ${width}px all Git approval layouts, lazy snapshot context in split/unified/Before/After, search/navigation/collapse, wide Escape, exact read-only historical context and expired raw fallback, cross-repository settings, toggle, rejection, reconnect and Stop`);
 }

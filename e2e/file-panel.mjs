@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
+import { checkDiffContext, contextPatch, contextContents, changedContextContents } from "./git-diff-context.mjs";
 
 export const filePanelFixture = `<!doctype html><html><body style="margin:20px;min-height:2400px">
 <label>Notes <input id="notes"></label>
@@ -15,10 +16,22 @@ export async function checkFileDiffViews(page, filePath) {
     modified: "diff --git a/editable.txt b/editable.txt\n--- a/editable.txt\n+++ b/editable.txt\n@@ -1 +1 @@\n-Old text\n+New text\n",
     added: "diff --git a/editable.txt b/editable.txt\nnew file mode 100644\n--- /dev/null\n+++ b/editable.txt\n@@ -0,0 +1 @@\n+New text\n",
     deleted: "diff --git a/editable.txt b/editable.txt\ndeleted file mode 100644\n--- a/editable.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-Old text\n",
+    context: contextPatch("editable.txt"),
   };
   for (const [status, patch] of Object.entries(patches)) {
     if (await showSidebar.isVisible()) await showSidebar.click();
-    const respond = (route) => route.fulfill({ json: { supported: true, status, patch } });
+    let contextReads = 0;
+    const respond = (route) => {
+      const query = new URL(route.request().url()).searchParams;
+      if (query.get("op") === "context") {
+        contextReads++; assert.equal(query.get("revision"), "a".repeat(64));
+        assert.equal(query.get("path"), filePath);
+        return route.fulfill({ json: { oldFile: { name: "editable.txt", contents: contextContents, cacheKey: "before" },
+          newFile: { name: "editable.txt", contents: changedContextContents, cacheKey: "after" } } });
+      }
+      return route.fulfill({ json: { supported: true, status: status === "context" ? "modified" : status, patch,
+        ...(status === "context" ? { revision: "a".repeat(64) } : {}) } });
+    };
     await page.route("**/api/git/diff?*", respond);
     try {
       await page.getByTitle(filePath.replace(/\\/g, "/"), { exact: true }).click();
@@ -28,6 +41,15 @@ export async function checkFileDiffViews(page, filePath) {
       assert.equal(await controls.getByRole("button", { name: "Side by side", exact: true }).getAttribute("aria-pressed"), "true");
       await panel.getByText("Before · HEAD", { exact: true }).waitFor();
       await panel.getByText("After · Working tree", { exact: true }).waitFor();
+      assert.equal(contextReads, 0, "Opening a file never eagerly fetches full context");
+      if (status === "context") {
+        await checkDiffContext(page, panel, panel);
+        assert.equal(contextReads, 1, "Gap expansion and all reading controls share one lazy snapshot read");
+        await panel.getByRole("button", { name: "Source", exact: true }).click();
+        await panel.getByRole("button", { name: "Diff", exact: true }).click();
+        await panel.getByRole("button", { name: "Diff context", exact: true }).waitFor();
+        assert.equal(contextReads, 1, "Source/Diff retains the revision-bound model");
+      }
       await controls.getByRole("button", { name: "Unified", exact: true }).click();
       await panel.getByRole("region", { name: "Unified diff" }).waitFor();
       assert.equal(await controls.getByRole("button", { name: "Unified", exact: true }).getAttribute("aria-pressed"), "true");

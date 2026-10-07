@@ -5,6 +5,8 @@ import { promisify } from "node:util";
 import { gitExecEnv } from "./git-exec.ts";
 // @ts-expect-error Native Node tests require the .ts suffix; Next resolves it too.
 import { samePath, toNativePath } from "./paths.ts";
+// @ts-expect-error Native Node tests require the .ts suffix; Next resolves it too.
+import { readGitFileContext } from "./git-file-context.ts";
 
 const exec = promisify(execFile);
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -192,6 +194,15 @@ export async function explorerCommit(cwd: string, head: string, oid: string, bra
   const files = await commitFiles(cwd, oid, parents);
   await anchored(cwd, head, branch);
   return { oid: requireOid(parts[0]), parents, author: parts[2], date: parts[3], message: parts[4].trimEnd(), files };
+}
+
+/** Full-file context under exactly the same captured history/path authority as a patch. */
+export async function explorerFileContext(cwd: string, head: string, oid: string, path: string, branch?: string) {
+  const commit = await explorerCommit(cwd, head, oid, branch);
+  if (!commit.files.some((file) => file.path === path)) throw new GitExplorerError("NOT_FOUND", "File was not changed by this commit");
+  const context = await readGitFileContext(cwd, commit.parents[0] ?? null, oid, path);
+  await anchored(cwd, head, branch);
+  return context;
 }
 
 /** A single file's committed patch, selected from this commit's server-derived file list. */

@@ -13,6 +13,8 @@ export function validatePluginCard(card: PluginCard): void {
   if (!card || !text(card.title, 256, false) || !card.title.trim()
     || [card.text, card.markdown, card.patch].some((value) => !text(value, 1_000_000))
     || [card.patchBefore, card.patchAfter].some((value) => !text(value, 256))
+    || card.patchContext !== undefined && (typeof card.patch !== "string" || typeof card.patchContext !== "string"
+      || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(card.patchContext))
     || !text(card.subtitle, 4096) || !text(card.scope, 4096) || !fields(card.fields)
     || card.sections !== undefined && (!Array.isArray(card.sections) || card.sections.length > 16 || card.sections.some((section) =>
       !section || !text(section.title, 128, false) || !section.title.trim() || !text(section.text, 1_000_000)
