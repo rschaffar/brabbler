@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkBlockingCard } from "./blocking-card.mjs";
 
@@ -21,9 +21,10 @@ export default function (pi) {
         : action === "removeWorktree" ? { action, checkout: ctx.cwd, path: targetCheckout }
         : { action, checkout: ctx.cwd, branch: action === "attachWorktree" ? "comparison-base" : "preview-new", baseBranch: action === "attachWorktree" ? "comparison-base" : "target", path: join(ctx.cwd + "-worktrees", "preview-new") };
     } else {
-      writeFileSync(join(ctx.cwd, "draft.txt"), "Plugin whole-file candidate " + mode + "\\n");
-      writeFileSync(join(ctx.cwd, "second-draft.txt"), "Second plugin candidate " + mode + "\\n");
-      operation = { action: "commit", checkout: ctx.cwd, mode: "files", files: ["draft.txt", "second-draft.txt"], message: "Plugin browser commit " + mode };
+      const selectedCheckout = mode.startsWith("cross-") ? ctx.cwd + "-foreign" : ctx.cwd;
+      writeFileSync(join(selectedCheckout, "draft.txt"), "Plugin whole-file candidate " + mode + "\\n");
+      writeFileSync(join(selectedCheckout, "second-draft.txt"), "Second plugin candidate " + mode + "\\n");
+      operation = { action: "commit", checkout: selectedCheckout, mode: "files", files: ["draft.txt", "second-draft.txt"], message: "Plugin browser commit " + mode };
     }
     const result = await executeGitOperation(ctx.cwd, operation, ctx.ui);
     ctx.ui.notify("Git plugin fixture " + mode + ": " + (result.isError ? "refused" : "completed"));
@@ -35,8 +36,8 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     const response = await page.request.post(`${base}/api/agent/${sessionId}`, { data: body });
     assert.ok(response.ok(), await response.text()); return (await response.json()).data;
   };
-  const patch = async (set, scope = "global", reset = []) => {
-    const response = await page.request.patch(`${base}/api/plugins/bundled`, { data: { pluginId: "git-workflow", cwd: repo, scope, set, reset } });
+  const patch = async (set, scope = "global", reset = [], cwd = repo) => {
+    const response = await page.request.patch(`${base}/api/plugins/bundled`, { data: { pluginId: "git-workflow", cwd, scope, set, reset } });
     assert.ok(response.ok(), await response.text()); return (await response.json()).settings;
   };
   const tip = () => execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
@@ -158,6 +159,37 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   await page.keyboard.press("Escape");
   await finish("cancel", "refused"); assert.equal(tip(), beforeCancel);
 
+  // An unrelated repository uses its own Ask/check settings, never the caller's Deny.
+  const foreign = `${repo}-foreign`;
+  const foreignGit = (...args) => execFileSync("git", ["-C", foreign, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8" }).trim();
+  if (!existsSync(foreign)) {
+    execFileSync("git", ["init", "-b", "delivery", foreign], { stdio: "ignore" });
+    foreignGit("config", "user.name", "E2E"); foreignGit("config", "user.email", "e2e@example.invalid");
+    writeFileSync(join(foreign, "draft.txt"), "Foreign initial draft\n");
+    writeFileSync(join(foreign, "second-draft.txt"), "Foreign initial second draft\n");
+    foreignGit("add", "."); foreignGit("commit", "-m", "Foreign initial");
+  }
+  await patch({ commit: "deny", commitChecks: [{ name: "Caller check must not run", command: "exit 7" }] }, "project");
+  // Settings use the ordinary browser workspace-selection authorization.
+  const selected = await page.request.post(`${base}/api/cwd/validate`, { data: { cwd: foreign } });
+  assert.ok(selected.ok(), await selected.text());
+  const selectedCheck = `test "$PWD" = '${foreign}'`;
+  await patch({ commit: "ask", commitChecks: [{ name: "Selected checkout check", command: selectedCheck }] }, "project", [], foreign);
+  const ownTip = tip(); const foreignBefore = foreignGit("rev-parse", "HEAD");
+  card = await start("cross-approve");
+  await card.getByText(foreign, { exact: true }).waitFor();
+  await card.getByRole("region", { name: "Required checks", exact: true }).getByText(selectedCheck, { exact: true }).waitFor();
+  await card.getByRole("button", { name: "Approve commit", exact: true }).click();
+  await finish("cross-approve", "completed");
+  assert.notEqual(foreignGit("rev-parse", "HEAD"), foreignBefore); assert.equal(tip(), ownTip);
+  const foreignCommitted = foreignGit("rev-parse", "HEAD");
+  card = await start("cross-cancel");
+  await patch({ commit: "allow" }, "project"); await card.waitFor();
+  await patch({ commit: "deny" }, "project", [], foreign); await card.waitFor({ state: "hidden" });
+  await finish("cross-cancel", "refused");
+  assert.equal(foreignGit("rev-parse", "HEAD"), foreignCommitted); assert.equal(tip(), ownTip);
+  await patch({}, "project", ["commit", "commitChecks"]);
+
   card = await start("disable");
   await patch({ enabled: false }); await card.waitFor({ state: "hidden" });
   await finish("disable", "refused");
@@ -173,5 +205,5 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   await page.locator("textarea").last().waitFor();
   assert.equal(await page.getByRole("group", { name: "Git commit", exact: true }).count(), 0);
   await page.locator("[data-interaction-receipt]").last().getByRole("button", { name: /Interrupted.*Git commit/ }).waitFor();
-  console.log(`PASS: ${width}px all Git approval layouts, exact historical diffs, read-only receipts, toggle, rejection, reconnect and Stop`);
+  console.log(`PASS: ${width}px all Git approval layouts, cross-repository approvals/settings, exact historical diffs, read-only receipts, toggle, rejection, reconnect and Stop`);
 }

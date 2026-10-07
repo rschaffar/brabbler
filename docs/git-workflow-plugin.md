@@ -53,8 +53,19 @@ or additional verification they require even when a plugin permission is Allow.
 
 Tools are ordinary Pi inline-extension tools, exposed only to ordinary Pi Web
 coding sessions while enabled. Chat-only sessions and subagent profiles do not
-load them. Genuine session cwd fixes the caller's repository; a model-supplied
-checkout must be a physically registered root in that same repository.
+load them. Each invocation explicitly selects an absolute `checkout` root in
+**any local repository**, independently of the session cwd. The caller may be
+in another repository or outside Git entirely; it does not move or adopt the
+selected checkout. The path must resolve to a physically registered root in its
+own repository, not a subdirectory, bare repository or arbitrary Git directory.
+
+Permissions, target branch, merge method and required checks resolve through
+built-in → global → **selected repository** overrides. The caller project's
+permissions and recipes are neither imported nor used to authorize the selected
+operation. Pending approvals follow the selected settings, and changing those
+relevant settings cancels them. Global disable still stops all new plugin calls.
+Related base/feature/removal checkouts must remain in the selected repository;
+registration and captured physical identity/state are rechecked before effects.
 
 - `git_commit`: `checkout`, `mode: files | staged`, exact `message`; Files also
   supplies literal whole-file paths. Files commits their full working contents,
@@ -72,8 +83,9 @@ checkout must be a physically registered root in that same repository.
   `checkout`, explicit absolute `path`; create/attach also supply `branch` and
   `baseBranch`. Create requires a new branch; attach requires that same existing
   local branch as base. Destinations are directly under `<main>-worktrees`.
-  Removal never deletes a branch and refuses main/caller/source checkouts,
-  dirty/untracked or ignored content. There is no force removal or post-merge cleanup.
+  Removal never deletes a branch and refuses main/caller/source checkouts
+  (including a caller cwd below that checkout's root), dirty/untracked or ignored
+  content. There is no force removal or post-merge cleanup.
 
 Effects are unsigned and hook-free, as disclosed in previews. Rebase/merge use
 Git's native conflict behavior; conflict state remains for explicit human/agent

@@ -5,7 +5,7 @@ import type { BundledPlugin, PluginUiContext } from "../../lib/plugins/types";
 import { gitWorkflowManifest } from "./manifest";
 import { executeGitOperation } from "./server";
 
-const checkout = Type.String({ description: "Absolute registered checkout root in the caller's repository" });
+const checkout = Type.String({ description: "Absolute registered checkout root in any local repository; the selected repository's settings apply, independently of the session cwd" });
 export const gitWorkflowPlugin: BundledPlugin = {
   manifest: gitWorkflowManifest,
   extension(cwd) {
@@ -30,7 +30,7 @@ export const gitWorkflowPlugin: BundledPlugin = {
     });
     const worktree = defineTool({
       name: "git_worktree", label: "Git worktree", executionMode: "sequential",
-      description: "Explicitly create, attach or remove a worktree in the caller's repository. Create/attach require a local base branch; attach uses that same existing branch. Destination is directly under <main-checkout>-worktrees. Removal refuses dirty/ignored content, keeps the branch and never removes main/caller checkout. Current per-action settings and stronger instructions apply.",
+      description: "Explicitly create, attach or remove a worktree in the selected checkout's repository, independently of the session cwd. Create/attach require a local base branch; attach uses that same existing branch. Destination is directly under <main-checkout>-worktrees. Removal refuses dirty/ignored content, keeps the branch and never removes main/caller checkout. Current per-action settings and stronger instructions apply.",
       parameters: Type.Union([
         Type.Object({ action: Type.Union([Type.Literal("createWorktree"), Type.Literal("attachWorktree")]), checkout, branch: Type.String(), baseBranch: Type.String(), path: Type.String() }),
         Type.Object({ action: Type.Literal("removeWorktree"), checkout, path: Type.String() }),
