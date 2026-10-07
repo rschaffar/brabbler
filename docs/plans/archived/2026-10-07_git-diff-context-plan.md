@@ -6,7 +6,7 @@ Reveal nearby unchanged lines, an entire gap, or the complete matching file in s
 
 Worktree: `/home/robert/projects/3rdparty/pi-web-worktrees/git-diff-context`; branch `feat/git-diff-context`; local starting point `rst-main` at `9c0f92b895cd708db73b20bb6a2a1e214458e64f`.
 
-Implementation and application acceptance are complete. Candidate commit/rebase preparation remains below; the installed service is unchanged.
+Implementation, acceptance and candidate handoff are complete. The installed service is unchanged; local integration still requires exact-state approval.
 
 ## Context
 
@@ -50,7 +50,7 @@ Large files remain bounded and virtualized; accepted browser fixtures contain 5,
 - [x] Extend Explorer/Files/plugin/receipt fixtures with 5,000-line multi-hunk comparisons; verify laziness, bounded DOM, failure/retry, stale selection isolation and immutable historical context.
 - [x] Hand maintained behavior to `docs/worktrees.md`, `docs/git-workflow-plugin.md`, `AGENTS.md` and browser-test notes.
 - [x] Complete full offline/core/static/plugin/browser acceptance without a production build; evidence follows.
-- [ ] Commit the implementation, rebase on current local `rst-main`, verify and present exact candidate/target IDs for separately approved unsigned non-FF integration. Retain feature resources; no publication or cleanup is inferred.
+- [x] Commit the implementation, rebase on current local `rst-main`, verify and present exact candidate/target IDs for separately approved unsigned non-FF integration. Retain feature resources; no publication or cleanup is inferred.
 
 ## Verification Evidence
 
@@ -68,6 +68,8 @@ Tests used disposable repositories; core/browser runtime checks also used privat
 | `nix develop -c npm run test:e2e` | Full browser acceptance passed |
 | Bounded read-only implementation review | No concrete correctness/security/lifecycle defect reported |
 
+Application commit `42b25298a68710764ed68a81a3e39874dbe78680` is prepared against local `rst-main` at `9c0f92b895cd708db73b20bb6a2a1e214458e64f` (already based on that target; no rebase rewrite). Exact verification `4c691bdc2476a6841656d8e112d4f0a1dc2cf23b7f5dd43a8eedab6eca849d0a` ran `nix develop -c bash /tmp/pi-web-diff-exact-checks.nK1xoi.sh`: `node_modules/.bin/tsc --noEmit`, `npm run lint`, isolated `npm test` (1,605 passed), separate plugin tests (35 passed) and `git diff --check rst-main..HEAD`, all successfully. The later archive/status-only commit changes no application, executable instructions or test inputs; its exact-tip documentation/unchanged-input checks are reported separately in the handoff, not attributed to this earlier acceptance. Current behavior belongs to the maintained guides listed above.
+
 Initial no-follow open races were normalized to refresh-required conflicts. A boundary fixture was corrected to count logical lines rather than trailing EOF. An owned completed-test lock blocked one full-browser startup; its dead PID/unbound port were checked and its metadata preserved at `/tmp/pi-web-stale-owned-test-lock.3xB2gs/lock` before successful rerun. No competing or installed server was stopped. Terminal acceptance is not applicable: terminal integration was not changed.
 
 ## Completion Checklist
@@ -77,4 +79,4 @@ Initial no-follow open races were normalized to refresh-required conflicts. A bo
 - [x] Reads are lazy, authorized, matching and bounded; failed/expired/stale context never changes approval scope.
 - [x] Root/first-parent/dirty-worktree/stale-branch, binary/raw and read-only receipt guarantees remain covered.
 - [x] Maintained guides describe shipped behavior and required application acceptance passes.
-- [ ] Exact feature candidate is committed and prepared for separate local integration approval.
+- [x] Exact feature candidate is committed and prepared for separate local integration approval.

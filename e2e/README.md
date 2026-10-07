@@ -54,7 +54,7 @@ errors and local 5xx responses fail acceptance; only explicitly corroborated
 expected conflicts are tolerated.
 
 The [removal checklist](../docs/plans/2026-09-29_policy-driven-git-tools-plan.md)
-retains earlier results and gaps. [Full-file diff acceptance](../docs/plans/2026-10-07_git-diff-context-plan.md)
+retains earlier results and gaps. [Archived full-file diff acceptance](../docs/plans/archived/2026-10-07_git-diff-context-plan.md)
 records passing context-focused, plugin/receipt and full browser checks at the
 implementation checkpoint. Local integration remains separately approved. A
 helper/unit pass is not browser acceptance, and source acceptance does not
