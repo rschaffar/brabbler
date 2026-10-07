@@ -19,7 +19,7 @@ import uuid
 
 ROOT_FILES = frozenset({
     '.gitignore', 'AGENTS.md', 'CONTEXT.md', 'LICENSE',
-    'README.md', 'README.ja.md', 'README.ru.md', 'README.zh-CN.md',
+    'README.md',
     'flake.nix', 'flake.lock', 'package.json', 'package-lock.json',
     'tsconfig.json', 'next.config.ts', 'eslint.config.mjs',
     'postcss.config.mjs', 'tailwind.config.ts', 'instrumentation.ts',
