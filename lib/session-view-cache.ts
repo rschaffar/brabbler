@@ -12,6 +12,7 @@
 //   streaming state, queued messages, run state, or SSE objects.
 
 import type { AgentMessage } from "./types";
+import type { ModelSpeed } from "./model-speed";
 
 export interface SessionViewSnapshot {
 	sessionId: string;
@@ -26,6 +27,7 @@ export interface SessionViewSnapshot {
 	/** Summary-format branch tree (no bodies) when the server sent one. */
 	summaryTree?: unknown;
 	thinkingLevel: string;
+	modelSpeed?: ModelSpeed;
 	model: { provider: string; modelId: string } | null;
 	stats?: unknown;
 	totalActiveMs?: number;

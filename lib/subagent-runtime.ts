@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Agent, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
   createAgentSessionFromServices,
   createAgentSessionServices,
@@ -33,6 +33,8 @@ import {
 import type { SessionEntry } from "./types";
 import { buildSubagentPromptPlan } from "./subagent-prompt";
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
+import { appendSessionModelSpeed, readSessionModelSpeed } from "./session-model-speed";
+import { withSessionModelSpeed } from "./session-model-speed-runtime";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createAskUserExtension, preferPiWebAskUserExtension } from "./ask-user-extension";
 import { appendSubagentInputFiles, loadSubagentInputFiles } from "./subagent-input";
@@ -299,6 +301,9 @@ export function createSubagentController(
       sessionManager.appendCustomEntry(SUBAGENT_META_TYPE, metadata);
       const inheritedAccounts = readSessionAccounts(parent.inner.sessionManager.getEntries() as SessionEntry[]);
       if (inheritedAccounts) appendSessionAccounts(sessionManager, inheritedAccounts);
+      appendSessionModelSpeed(sessionManager, readSessionModelSpeed(parent.inner.sessionManager.getEntries() as SessionEntry[]));
+      const speedAgent: { current?: Agent } = {};
+      services.modelRuntime = withSessionModelSpeed(services.modelRuntime, sessionManager, () => speedAgent.current);
       sessionManager.appendSessionInfo(metadata.description);
 
       const requestedModel = parseSubagentModel(parentModelRuntime, request.model ?? profile.model);
@@ -311,6 +316,7 @@ export function createSubagentController(
         tools: activeTools,
         excludeTools: [...SUBAGENT_CONTROL_TOOL_NAMES],
       });
+      speedAgent.current = inner.agent;
       dependencies.registerSession(inner, {
         ...(promptPlan.exactSystemPrompt !== undefined
           ? { exactSystemPrompt: promptPlan.exactSystemPrompt }

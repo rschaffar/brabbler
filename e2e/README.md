@@ -3,11 +3,13 @@
 ```sh
 nix develop -c npm run test:e2e
 nix develop -c env E2E_DIFF_CONTEXT_ONLY=1 npm run test:e2e
+nix develop -c env E2E_MODEL_SPEED_ONLY=1 npm run test:e2e
 nix develop -c npm run test:terminal
 ```
 
 Focused browser switches: `E2E_ASK_USER_ONLY=1`, `E2E_ACTIVITY_ONLY=1`,
-`E2E_TIMESTAMPS_ONLY=1`, `E2E_MOVE_ONLY=1` (destination picker at desktop/mobile sizes),
+`E2E_TIMESTAMPS_ONLY=1`, `E2E_MODEL_SPEED_ONLY=1` (native ChatGPT subscription speed),
+`E2E_MOVE_ONLY=1` (destination picker at desktop/mobile sizes),
 `E2E_DIFF_CONTEXT_ONLY=1` (Git Explorer + Files-panel 5,000-line diff fixtures at
 desktop/mobile sizes), `E2E_GIT_WORKFLOW_PLUGIN_ONLY=1` (optional bundled plugin
 settings, all six approval layouts, multi-file diff/collapse controls, snapshots,
@@ -31,19 +33,39 @@ modules or change host browser configuration for acceptance.
 The general suite covers session pagination/branches, rendering/scrolling,
 sidebar/navigation, files/editing, archive/restore/delete, ordinary inline
 extension questions, browser-native `ask_user`, Activity, provider-account
-controls, and independent Git Explorer. It checks the absence of Workflow
-controls. Git Explorer checks first-file expansion, lazy per-file patch/cache
-behavior, one shared split/unified/raw toolbar and first-parent merge inspection.
-The focused diff-context selection exercises on-demand context, keyboard gap and
-full-file controls, virtualized split/unified and clean Before/After views,
-change navigation/search/side-aware line jump, retained state, wrapping/horizontal
-scroll and Wide view Escape/focus. Plugin-only also covers immutable approval
-snapshots, exact historical receipt context despite changed working files and an
-expired-handle response's patch-only fallback without submitting decisions.
-Question fixtures verify the shared bounded card body and fixed
+controls, session-local model speed, and independent Git Explorer. It checks the
+absence of Workflow controls. Git Explorer checks first-file expansion, lazy
+per-file patch/cache behavior, one shared split/unified/raw toolbar and
+first-parent merge inspection. The focused diff-context selection exercises
+on-demand context, keyboard gap and full-file controls, virtualized split/unified
+and clean Before/After views, change navigation/search/side-aware line jump,
+retained state, wrapping/horizontal scroll and Wide view Escape/focus. Plugin-only
+also covers immutable approval snapshots, exact historical receipt context
+despite changed working files and an expired-handle response's patch-only fallback
+without submitting decisions. Question fixtures verify the shared bounded card
+body and fixed
 footer as well as keyboard/draft/cancellation/expiry contracts. Question and plugin flows also verify completed read-only receipts, reload/reconnect deduplication, exact historical patches despite changed working files, and unmounted collapsed historical diff bodies.
 OAuth/SSE account responses are mocked; no provider credentials are
 used. Slash commands exercise ordinary session/UI paths without a live model.
+
+Model-speed checks run in the full suite and via the focused environment switch
+(the runner does not select a module from a positional filename). At 1280×800
+and 390×844 they check exactly Standard/Fast, the visible quota note, More
+controls, real speed writes and canonical disk reads, reload/fresh-context
+persistence, sidebar session isolation and unsupported-model preference
+restoration. Opening System uses no-model `ensure_session`; a completed fixture
+dialog saves startup entries without an assistant turn. Desktop checks also
+fork/clone a branch omitting the latest speed entry. Only streaming/compaction
+flags and one session's SSE endpoint are mocked; pending mutations are delayed
+and continued unchanged. A dormant fresh composer also loses its browser-side
+acknowledgement after a real Fast save (with a successful, temporarily unavailable,
+or stalled state read), verifying authoritative reconciliation, online recovery
+and blocked Send without SSE. Node regressions cover overlapping reads, wrapper
+ID changes, deadlines, visibility/polling retries and unmount cancellation.
+Synthetic auth, `PI_OFFLINE`, disabled cache warming,
+and loopback catalog origins keep these fixtures off real providers. Each
+context retains trace, console/pageerror and local-5xx safeguards.
+
 Terminal checks execute a real local shell at desktop/mobile sizes and cover
 fonts, reconnect/restart, exit, close-during-creation and workspace isolation.
 

@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { allowFileRoot } from "@/lib/file-access";
 import { invalidateSessionListCache } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
+import { isModelSpeed, type ModelSpeed } from "@/lib/model-speed";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -44,7 +45,12 @@ export async function POST(req: Request) {
     }
 
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
-    const { provider, modelId, toolNames, thinkingLevel, accounts, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; accounts?: unknown; [key: string]: unknown };
+    const { provider, modelId, toolNames, thinkingLevel, modelSpeed, accounts, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; modelSpeed?: unknown; accounts?: unknown; [key: string]: unknown };
+    if (modelSpeed !== undefined && !isModelSpeed(modelSpeed)) {
+      return NextResponse.json({ error: "Invalid model speed: expected standard or fast",
+        ...(commandType === "prompt" ? { code: "prompt_rejected", accepted: false } : {}),
+      }, { status: 400 });
+    }
     if (accounts !== undefined && (accounts === null || typeof accounts !== "object" || Array.isArray(accounts)
       || Object.entries(accounts).some(([key, value]) => !key || typeof value !== "string"))) {
       throw new Error("accounts must map provider IDs to account IDs");
@@ -63,6 +69,7 @@ export async function POST(req: Request) {
       ...(accounts ? { accounts: accounts as Record<string, string> } : {}),
       ...(provider && modelId ? { initialModel: { provider, modelId } } : {}),
       ...(explicitThinkingLevel ? { thinkingLevel: explicitThinkingLevel } : {}),
+      ...(modelSpeed !== undefined ? { modelSpeed } : {}),
     });
 
     // Keep the files-route allowed-roots cache (see app/api/files/[...path]/route.ts)
@@ -74,6 +81,7 @@ export async function POST(req: Request) {
     const state = await session.send({ type: "get_state" }) as {
       model?: { id: string; provider: string };
       thinkingLevel?: string;
+      modelSpeed?: ModelSpeed;
     };
 
     if (promptCommand.type === "ensure_session") {
@@ -85,6 +93,7 @@ export async function POST(req: Request) {
           ? { provider: state.model.provider, modelId: state.model.id }
           : null,
         thinkingLevel: state.thinkingLevel,
+        modelSpeed: state.modelSpeed ?? "standard",
       });
     }
 
@@ -99,6 +108,7 @@ export async function POST(req: Request) {
         ? { provider: state.model.provider, modelId: state.model.id }
         : null,
       thinkingLevel: state.thinkingLevel,
+      modelSpeed: state.modelSpeed ?? "standard",
     });
   } catch (error) {
     return NextResponse.json({

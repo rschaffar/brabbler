@@ -15,6 +15,7 @@ import type {
 } from "@/lib/types";
 import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
 import { normalizeToolCalls } from "@/lib/normalize";
+import { isModelSpeed, type ModelSpeed } from "@/lib/model-speed";
 import { appendInteractionReceipt, interactionReceiptMessage, mergeInteractionReceiptHistory, receiptBranchContains } from "@/lib/interaction-receipts";
 import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
 import {
@@ -51,6 +52,7 @@ export interface SessionData {
   tree: SessionTreeNode[];
   leafId: string | null;
   toolNames?: string[];
+  modelSpeed?: ModelSpeed;
   /** Opaque freshness token for the session view cache (summary tree reads). */
   snapshotRevision?: string | null;
   /** "summary" when `tree` carries the body-free navigation format. */
@@ -89,6 +91,7 @@ type AgentStateResponse = {
   contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
   systemPrompt?: string;
   thinkingLevel?: string;
+  modelSpeed?: ModelSpeed;
   isStreaming?: boolean;
   isPromptRunning?: boolean;
   isBashRunning?: boolean;
@@ -199,6 +202,7 @@ const PROMPT_SETTLE_POLL_MS = 600;
 const PROMPT_SETTLE_MAX_MS = 20_000;
 const EVENT_STREAM_IDLE_GRACE_MS = 30_000;
 const AGENT_STATE_RECONCILE_MS = 15_000;
+const MODEL_SPEED_REQUEST_TIMEOUT_MS = 10_000;
 const BASH_STATE_RECONCILE_MS = 1_000;
 const EVENT_STREAM_READY_TIMEOUT_MS = 60_000;
 const EVENT_STREAM_RECONNECT_DELAY_MS = 1_000;
@@ -357,6 +361,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [newSessionDefaultThinkingLevel, setNewSessionDefaultThinkingLevel] = useState<ConcreteThinkingLevel | null>(null);
   const [currentThinkingOverride, setCurrentThinkingOverride] = useState<ConcreteThinkingLevel | null>(null);
   const [liveThinkingLevel, setLiveThinkingLevel] = useState<ConcreteThinkingLevel | null>(null);
+  const [modelSpeed, setModelSpeed] = useState<ModelSpeed>("standard");
+  const [modelSpeedChanging, setModelSpeedChanging] = useState(false);
+  const [modelSpeedRecovery, setModelSpeedRecovery] = useState<string | null>(null);
   const [retryInfo, setRetryInfo] = useState<{ attempt: number; maxAttempts: number; errorMessage?: string } | null>(null);
   const [contextUsage, setContextUsage] = useState<{ percent: number | null; contextWindow: number; tokens: number | null } | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
@@ -412,6 +419,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const newSessionModelOverrideRef = useRef<SelectedModel | null>(null);
   const newSessionAccountsRef = useRef<Record<string, string> | null>(null);
   const thinkingLevelOverrideRef = useRef<ConcreteThinkingLevel | null>(null);
+  const modelSpeedRef = useRef<ModelSpeed>("standard");
+  const modelSpeedRevisionRef = useRef(0);
+  const modelSpeedChangingRef = useRef(false);
   const thinkingLevelPinsRef = useRef<Record<string, string>>({});
   const defaultThinkingLevelRef = useRef<ConcreteThinkingLevel | null>(null);
   const promptRunIdRef = useRef(0);
@@ -494,7 +504,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     : currentThinkingLevel ?? (data?.context.messages.length === 0 ? newSessionDefaultThinkingLevel : null);
   const composerDraftKey = session?.id ?? newSessionDraftKey ?? undefined;
 
-  const syncLiveModel = useCallback((state?: AgentStateResponse) => {
+  const syncLiveModel = useCallback((state: AgentStateResponse | undefined, speedRevision: number) => {
+    if (isModelSpeed(state?.modelSpeed) && speedRevision === modelSpeedRevisionRef.current && !modelSpeedChangingRef.current) {
+      modelSpeedRef.current = state.modelSpeed;
+      setModelSpeed(state.modelSpeed);
+    }
     setLiveModel(state?.model
       ? { provider: state.model.provider, modelId: state.model.id }
       : null);
@@ -564,6 +578,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const inflight = options?.force || shouldApply ? undefined : loadFlightsRef.current.get(flightKey);
     if (inflight) return await inflight;
   const flight = (async (): Promise<unknown> => {
+    const speedRevisionAtRead = modelSpeedRevisionRef.current;
     const viewLeafAtRead = activeLeafIdRef.current;
     const viewRevisionAtRead = branchViewRevisionRef.current;
     const followsLiveAtRead = viewLeafAtRead === (dataRef.current?.leafId ?? null);
@@ -619,6 +634,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           }
         : d;
       dataRef.current = nextData;
+      if (speedRevisionAtRead === modelSpeedRevisionRef.current && !modelSpeedChangingRef.current) {
+        modelSpeedRef.current = isModelSpeed(d.modelSpeed) ? d.modelSpeed : "standard";
+        setModelSpeed(modelSpeedRef.current);
+      }
       activeLeafIdRef.current = d.leafId;
       setData(nextData);
       setActiveLeafId(d.leafId);
@@ -635,6 +654,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           hasMore: hasEarlierMessagesRef.current,
           summaryTree: d.tree,
           thinkingLevel: d.context.thinkingLevel,
+          modelSpeed: d.modelSpeed,
           model: d.context.model,
           stats: d.stats,
           totalActiveMs: d.totalActiveMs,
@@ -672,6 +692,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           hasMore: d.context.hasMore,
           summaryTree: d.tree,
           thinkingLevel: d.context.thinkingLevel,
+          modelSpeed: d.modelSpeed,
           model: d.context.model,
           stats: d.stats,
           totalActiveMs: d.totalActiveMs,
@@ -698,7 +719,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (sessionIdRef.current !== sid) return null;
 
         const liveState = agentState.state;
-        syncLiveModel(liveState);
+        syncLiveModel(liveState, speedRevisionAtRead);
         if (liveState) {
           if (liveState.contextUsage !== undefined) setContextUsage(liveState.contextUsage ?? null);
           if (liveState.systemPrompt !== undefined) setSystemPrompt(liveState.systemPrompt ?? null);
@@ -858,6 +879,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // enabledModels scope atomically with AgentSession construction.
       const selectedModel = newSessionModelOverrideRef.current;
       const selectedThinkingLevel = thinkingLevelOverrideRef.current;
+      const selectedModelSpeed = modelSpeedRef.current;
+      const selectedSpeedRevision = modelSpeedRevisionRef.current;
       if (selectedModel) setPendingModel(selectedModel);
       // Undefined means the user never overrode the loadout: omit the field entirely
       // so pi resolves settings.json defaultTools instead of being pinned to ours (#700).
@@ -869,6 +892,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         body: JSON.stringify({
           cwd: newSessionCwd,
           type: "ensure_session",
+          modelSpeed: selectedModelSpeed,
           ...(newSessionAccountsRef.current ? { accounts: newSessionAccountsRef.current } : {}),
           ...(toolNames !== undefined ? { toolNames } : {}),
           ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
@@ -882,9 +906,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         sessionId: string;
         model?: SelectedModel | null;
         thinkingLevel?: ThinkingLevelOption;
+        modelSpeed?: ModelSpeed;
       };
       const realId = result.sessionId;
       sessionIdRef.current = realId;
+      if (isModelSpeed(result.modelSpeed) && modelSpeedRevisionRef.current === selectedSpeedRevision) {
+        modelSpeedRef.current = result.modelSpeed;
+        setModelSpeed(result.modelSpeed);
+      }
       if (result.model && newSessionModelOverrideRef.current === selectedModel) {
         setPendingModel(result.model);
         if (!selectedModel) setNewSessionDefaultModel(result.model);
@@ -916,12 +945,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current ?? await ensureNewSession();
     if (!sid) return;
 
+    const speedRevision = modelSpeedRevisionRef.current;
     const [state] = await Promise.all([
       sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" }),
       loadTools(sid),
     ]);
     if (!sessionHookMountedRef.current || sessionIdRef.current !== sid) return;
-    syncLiveModel(state);
+    syncLiveModel(state, speedRevision);
     setSystemPrompt(state.systemPrompt ?? "");
   }, [ensureNewSession, loadTools, syncLiveModel]);
 
@@ -1159,6 +1189,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       ) return;
 
       try {
+        const speedRevision = modelSpeedRevisionRef.current;
         const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json() as { running?: boolean; state?: AgentStateResponse };
@@ -1169,7 +1200,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         ) return;
 
         const state = data.state;
-        syncLiveModel(state);
+        syncLiveModel(state, speedRevision);
         const promptActive = Boolean(data.running && state && (state.isStreaming || state.isPromptRunning));
         if (promptActive) {
           eventStreamGraceActiveRef.current = false;
@@ -1235,11 +1266,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     while (agentRunningRef.current && Date.now() - startedAt < PROMPT_SETTLE_MAX_MS) {
       if (runId !== undefined && promptRunIdRef.current !== runId) return;
       try {
+        const speedRevision = modelSpeedRevisionRef.current;
         const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
         if (res.ok) {
           const data = await res.json() as { running?: boolean; state?: AgentStateResponse };
           const state = data.state;
-          syncLiveModel(state);
+          syncLiveModel(state, speedRevision);
           if (!data.running || !state || (!state.isStreaming && !state.isPromptRunning)) {
             await finishPromptWithoutStream(sid, runId);
             return;
@@ -1263,10 +1295,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     ) {
       await delay(BASH_STATE_RECONCILE_MS);
       try {
+        const speedRevision = modelSpeedRevisionRef.current;
         const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
         if (!res.ok) continue;
         const data = await res.json() as { state?: AgentStateResponse };
-        syncLiveModel(data.state);
+        syncLiveModel(data.state, speedRevision);
         if (data.state?.isBashRunning) continue;
 
         await loadSession(sid);
@@ -1289,6 +1322,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const reconcileAgentState = useCallback(async (sid: string) => {
     if (!agentRunningRef.current || sessionIdRef.current !== sid) return;
     const runId = promptRunIdRef.current;
+    const speedRevision = modelSpeedRevisionRef.current;
     try {
       const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
       if (!res.ok) return;
@@ -1298,7 +1332,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // flight) — everything in it is stale, drop it.
       if (sessionIdRef.current !== sid || promptRunIdRef.current !== runId) return;
       const state = data.state;
-      syncLiveModel(state);
+      syncLiveModel(state, speedRevision);
       // Mirror compaction state unconditionally: a missed compaction_end
       // would otherwise leave the "Stop compaction" UI stuck. No state
       // (wrapper destroyed) means nothing is compacting.
@@ -1355,6 +1389,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const handleAgentEvent = useCallback((event: AgentEvent) => {
     switch (event.type) {
+      case "model_speed_change": {
+        if (isModelSpeed(event.modelSpeed)) {
+          modelSpeedRevisionRef.current += 1;
+          modelSpeedRef.current = event.modelSpeed;
+          setModelSpeed(event.modelSpeed);
+        }
+        break;
+      }
       case "connected": {
         dispatch({ type: "end" });
         // Completed receipts are session entries, not replayable live requests.
@@ -1386,11 +1428,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setRetryInfo(null);
         dispatch({ type: "end" });
         if (sessionIdRef.current) {
-          loadSession(sessionIdRef.current);
-          fetch(`/api/agent/${encodeURIComponent(sessionIdRef.current)}`)
+          const sid = sessionIdRef.current;
+          const speedRevision = modelSpeedRevisionRef.current;
+          loadSession(sid);
+          fetch(`/api/agent/${encodeURIComponent(sid)}`)
             .then((r) => r.json())
             .then((d: { state?: AgentStateResponse }) => {
-              syncLiveModel(d.state);
+              if (!sessionHookMountedRef.current || sessionIdRef.current !== sid) return;
+              syncLiveModel(d.state, speedRevision);
               if (d.state?.contextUsage !== undefined) setContextUsage(d.state.contextUsage ?? null);
               if (d.state?.systemPrompt !== undefined) setSystemPrompt(d.state.systemPrompt ?? null);
               if (d.state?.extensionStatuses !== undefined) setExtensionStatuses(d.state.extensionStatuses ?? []);
@@ -1635,6 +1680,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
+    if (modelSpeedChangingRef.current) return;
     const trimmedMessage = message.trim();
     if (!trimmedMessage && !images?.length) return;
     if (agentRunningRef.current || bashRunningRef.current) {
@@ -2209,6 +2255,150 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [opts.chatInputRef, addNotice]);
 
+  const handleModelSpeedChange = useCallback(async (nextSpeed: ModelSpeed) => {
+    if (!isModelSpeed(nextSpeed) || modelSpeedChangingRef.current || agentRunningRef.current || bashRunningRef.current || isCompacting || modelSwitching) return;
+    const previousSpeed = modelSpeedRef.current;
+    modelSpeedRevisionRef.current += 1;
+    const revision = modelSpeedRevisionRef.current;
+    modelSpeedRef.current = nextSpeed;
+    setModelSpeed(nextSpeed);
+    modelSpeedChangingRef.current = true;
+    setModelSpeedChanging(true);
+    let sid = sessionIdRef.current;
+    let needsRecovery = false;
+    const recoverCurrentSession = () => {
+      const currentId = sessionIdRef.current;
+      if (!sessionHookMountedRef.current || !currentId) return;
+      needsRecovery = true;
+      setModelSpeedRecovery(currentId);
+    };
+    try {
+      sid ??= await ensuringNewSessionRef.current;
+      if (!sid) return;
+      const result = await sendAgentCommand<{ modelSpeed: ModelSpeed }>(sid, { type: "set_model_speed", modelSpeed: nextSpeed }, {
+        signal: AbortSignal.timeout(MODEL_SPEED_REQUEST_TIMEOUT_MS),
+      });
+      if (!isModelSpeed(result?.modelSpeed)) throw new Error("Invalid model speed response");
+      if (!sessionHookMountedRef.current) return;
+      if (sessionIdRef.current !== sid) {
+        recoverCurrentSession();
+        return;
+      }
+      if (modelSpeedRevisionRef.current === revision) {
+        modelSpeedRef.current = result.modelSpeed;
+        setModelSpeed(result.modelSpeed);
+      }
+      setData((current) => current ? { ...current, modelSpeed: modelSpeedRef.current } : current);
+    } catch (e) {
+      if (!sessionHookMountedRef.current) return;
+      sid = sessionIdRef.current ?? sid;
+      if (sid) {
+        // A lost response is NOT proof that the server rejected the write. Keep
+        // Send blocked until an authoritative read (or newer SSE) confirms it.
+        try {
+          const speedRevision = modelSpeedRevisionRef.current;
+          const state = await sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" }, {
+            signal: AbortSignal.timeout(MODEL_SPEED_REQUEST_TIMEOUT_MS),
+          });
+          if (!isModelSpeed(state?.modelSpeed)) throw new Error("Invalid model speed response");
+          if (!sessionHookMountedRef.current) return;
+          if (sessionIdRef.current !== sid) {
+            recoverCurrentSession();
+            return;
+          }
+          if (speedRevision === modelSpeedRevisionRef.current) {
+            modelSpeedRef.current = state.modelSpeed;
+            setModelSpeed(state.modelSpeed);
+          }
+          setData((current) => current ? { ...current, modelSpeed: modelSpeedRef.current } : current);
+          if (modelSpeedRef.current === nextSpeed) return;
+        } catch {
+          recoverCurrentSession();
+        }
+      } else if (modelSpeedRevisionRef.current === revision) {
+        // No initialized session: only the local composer value changed.
+        modelSpeedRef.current = previousSpeed;
+        setModelSpeed(previousSpeed);
+      }
+      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      if (!needsRecovery) {
+        // Also invalidate reads begun DURING the save. On dormant composers
+        // there may be no SSE event to advance the revision on confirmation.
+        modelSpeedRevisionRef.current += 1;
+        modelSpeedChangingRef.current = false;
+        if (sessionHookMountedRef.current) setModelSpeedChanging(false);
+      }
+    }
+  }, [addNotice, isCompacting, modelSwitching]);
+
+  useEffect(() => {
+    if (!modelSpeedRecovery) return;
+    let cancelled = false;
+    let pendingRead: AbortController | null = null;
+    const reconcileSpeed = async (force = false) => {
+      if (cancelled || document.visibilityState !== "visible") return;
+      if (pendingRead) {
+        if (!force) return;
+        pendingRead.abort();
+      }
+      const sid = sessionIdRef.current;
+      if (sid !== modelSpeedRecovery) {
+        // A transient wrapper may have been recreated by Tools or Accounts.
+        setModelSpeedRecovery(sid);
+        if (!sid) {
+          modelSpeedRevisionRef.current += 1;
+          modelSpeedChangingRef.current = false;
+          setModelSpeedChanging(false);
+        }
+        return;
+      }
+      const controller = new AbortController();
+      pendingRead = controller;
+      const speedRevision = modelSpeedRevisionRef.current;
+      try {
+        const state = await sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" }, {
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(MODEL_SPEED_REQUEST_TIMEOUT_MS)]),
+        });
+        if (cancelled || pendingRead !== controller || controller.signal.aborted || !sessionHookMountedRef.current) return;
+        if (sessionIdRef.current !== sid) {
+          setModelSpeedRecovery(sessionIdRef.current);
+          if (!sessionIdRef.current) {
+            modelSpeedRevisionRef.current += 1;
+            modelSpeedChangingRef.current = false;
+            setModelSpeedChanging(false);
+          }
+          return;
+        }
+        if (speedRevision !== modelSpeedRevisionRef.current || !isModelSpeed(state?.modelSpeed)) return;
+        modelSpeedRef.current = state.modelSpeed;
+        setModelSpeed(state.modelSpeed);
+        setData((current) => current ? { ...current, modelSpeed: state.modelSpeed } : current);
+        setModelSpeedRecovery(null);
+        modelSpeedRevisionRef.current += 1;
+        modelSpeedChangingRef.current = false;
+        setModelSpeedChanging(false);
+      } catch {
+        // Keep Send blocked, retrying on visible-tab polls and network recovery.
+      } finally {
+        if (pendingRead === controller) pendingRead = null;
+      }
+    };
+    const retry = () => { void reconcileSpeed(); };
+    const reconnect = () => { void reconcileSpeed(true); };
+    retry();
+    const timer = setInterval(retry, AGENT_STATE_RECONCILE_MS);
+    document.addEventListener("visibilitychange", reconnect);
+    window.addEventListener("online", reconnect);
+    return () => {
+      cancelled = true;
+      pendingRead?.abort();
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", reconnect);
+      window.removeEventListener("online", reconnect);
+    };
+  }, [modelSpeedRecovery]);
+
   const handleThinkingLevelChange = useCallback(async (level: ThinkingLevelOption) => {
     if (level === "auto") {
       thinkingLevelOverrideRef.current = null;
@@ -2265,13 +2455,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setSlashCommands([]);
       setExtensionStatuses([]);
       setExtensionWidgets([]);
+      const speedRevision = modelSpeedRevisionRef.current;
       const [state] = await Promise.all([
         sendAgentCommand<AgentStateResponse>(activeSessionId, { type: "get_state" }),
         loadTools(activeSessionId),
       ]);
       if (sessionHookMountedRef.current && sessionIdRef.current === activeSessionId) {
         setSystemPrompt(state.systemPrompt ?? "");
-        syncLiveModel(state);
+        syncLiveModel(state, speedRevision);
       }
     } catch (e) {
       console.error("Failed to set tools:", e);
@@ -2379,6 +2570,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (cached) {
         const cachedData: SessionData = {
           sessionId: session.id,
+          modelSpeed: cached.modelSpeed ?? "standard",
           filePath: "",
           totalActiveMs: cached.totalActiveMs ?? 0,
           tree: cached.summaryTree as SessionData["tree"],
@@ -2396,6 +2588,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         dataRef.current = cachedData;
         activeLeafIdRef.current = cached.leafId;
         setData(cachedData);
+        modelSpeedRef.current = cachedData.modelSpeed ?? "standard";
+        setModelSpeed(modelSpeedRef.current);
         setActiveLeafId(cached.leafId);
         setMessages(cached.messages);
         setEntryIds(cached.entryIds);
@@ -2465,6 +2659,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             hasMore: hasEarlierMessagesRef.current,
             summaryTree: currentData.tree,
             thinkingLevel: currentData.context.thinkingLevel,
+            modelSpeed: modelSpeedRef.current,
             model: currentData.context.model,
             stats: currentData.stats,
             totalActiveMs: currentData.totalActiveMs,
@@ -2607,7 +2802,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   return {
     // State
     data, loading, error, possibleInterruptedRun, dismissPossibleInterruption, activeLeafId, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamState,
-    agentRunning, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
+    agentRunning, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel, modelSpeed, modelSpeedChanging,
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, modelSwitching, sessionStats, autoCompactionEnabled,
     slashCommands, slashCommandsLoading, queuedMessages,
@@ -2627,7 +2822,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handleRecallQueue,
     handleBuiltinSlashCommand,
     setNoticePaused: setPausedNoticeId,
-    handleToolPresetChange, handleThinkingLevelChange, loadTools, loadSlashCommands, setActiveLeafId, setData, setMessages, loadContext,
+    handleToolPresetChange, handleThinkingLevelChange, handleModelSpeedChange, loadTools, loadSlashCommands, setActiveLeafId, setData, setMessages, loadContext,
     scrollToBottom, scrollUserMsgToTop, scrollToMessage,
     dispatch, setAgentRunning, setForkingEntryId,
     bashRunning, pendingBash,
