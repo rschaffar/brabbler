@@ -16,6 +16,7 @@ import { checkActivityOverview } from "./activity.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
+import { MODEL_SPEED_IDS, seedModelSpeedFixtures, checkModelSpeed, checkModelSpeedPersistence } from "./model-speed.mjs";
 import { consumeExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { contextContents, changedContextContents } from "./git-diff-context.mjs";
@@ -41,8 +42,18 @@ writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = E2E\n\temail = e2e@exa
 const fixtureEnv = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config"),
   XDG_DATA_HOME: join(home, ".local/share"), XDG_STATE_HOME: join(home, ".local/state"),
   XDG_CACHE_HOME: join(home, ".cache"), XDG_RUNTIME_DIR: join(home, "runtime"),
-  PI_CODING_AGENT_DIR: agentDir,
+  PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1",
   GIT_CONFIG_GLOBAL: join(home, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" };
+// Native subscription fixtures must not discover host credentials or profiles.
+// Inspect names only; the child and in-process helpers use disposable auth.
+for (const key of Object.keys(fixtureEnv)) {
+  if (/(?:^|_)(?:API_KEY|TOKEN|PASSWORD|SECRET|PRIVATE_KEY|CREDENTIALS|CREDENTIALS_FILE)$/i.test(key)
+    || /^(?:AWS_|AZURE_|GOOGLE_|GCLOUD_|CLOUDSDK_|VERTEX_|BEDROCK_|OPENAI_|ANTHROPIC_|CODEX_)/i.test(key)
+    || /^(?:PI_CODING_AGENT_SESSION_DIR|NODE_OPTIONS|NODE_PATH|(?:https?|all)_proxy)$/i.test(key)) {
+    delete fixtureEnv[key];
+    delete process.env[key];
+  }
+}
 for (const key of ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR"]) mkdirSync(fixtureEnv[key], { recursive: true, mode: 0o700 });
 Object.assign(process.env, fixtureEnv); // All fixture helpers share disposable storage.
 const project = join(agentDir, "project");
@@ -72,7 +83,13 @@ const text = (i) => `E2E message ${String(i).padStart(4, "0")}`;
 const ids = (start, end) => Array.from({ length: end - start }, (_, i) => `e${start + i}`);
 
 function message(id, parentId, role, content) {
-  return { type: "message", id, parentId, timestamp, message: { role, content } };
+  // Native SDK context accounting requires usage on every assistant, including
+  // tool-call turns retained after compaction. These fixtures made no LLM calls.
+  const usage = role === "assistant" ? {
+    input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  } : undefined;
+  return { type: "message", id, parentId, timestamp, message: { role, content, ...(usage && { usage }) } };
 }
 
 function writeSession(id, entries, cwd = project) {
@@ -98,6 +115,7 @@ process.once("SIGTERM", interrupt);
 
 try {
   // Seed before startup so the first catalogue scan sees every fixture.
+  seedModelSpeedFixtures({ agentDir, writeSession, message, timestamp });
   mkdirSync(join(agentDir, "extensions"));
   writeFileSync(join(agentDir, "extensions", "e2e-dialog.js"), extensionSource);
   if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") writeFileSync(join(agentDir, "extensions", "e2e-git-plugin.js"), gitPluginFixtureSource(root));
@@ -277,14 +295,46 @@ try {
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK].sort());
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK, ...MODEL_SPEED_IDS].sort());
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
     await delay(250);
   }
 
-  if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") {
+  async function runModelSpeedChecks() {
+    browser ??= await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      let createdId;
+      for (const phase of ["exercise", "fresh"]) {
+        context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
+        await context.tracing.start({ screenshots: true, snapshots: true });
+        page = await context.newPage();
+        page.setDefaultTimeout(30_000);
+        const errors = [];
+        page.on("pageerror", (error) => errors.push(error.message));
+        page.on("console", (event) => {
+          if (event.type() !== "error" || consumeExpectedBrowserConflict(page, event)) return;
+          errors.push(event.text());
+        });
+        page.on("response", (response) => {
+          if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
+        });
+        const options = { base, api, post, agentDir, project, artifacts, width: viewport.width };
+        if (phase === "exercise") createdId = await checkModelSpeed(page, options);
+        else await checkModelSpeedPersistence(page, options, createdId);
+        assert.deepEqual(errors, [], `Model-speed browser/server errors at ${viewport.width}px (${phase})`);
+        await context.tracing.stop({ path: join(artifacts, `model-speed-${viewport.width}-${phase}.zip`) });
+        await context.close();
+        context = undefined;
+        page = undefined;
+      }
+    }
+  }
+
+  if (process.env.E2E_MODEL_SPEED_ONLY === "1") {
+    await runModelSpeedChecks();
+  } else if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") {
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
     for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
       context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
@@ -420,6 +470,8 @@ try {
   browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
     ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
     : {});
+  // Full acceptance includes speed; unrelated focused switches retain their selection.
+  if (!Object.keys(process.env).some((key) => /^E2E_.*_ONLY$/.test(key) && process.env[key] === "1")) await runModelSpeedChecks();
   // A live session keeps the context files it loaded until explicitly reloaded.
   {
     const contextFile = join(otherProject, "AGENTS.md");
@@ -840,7 +892,9 @@ try {
       await page.screenshot({ path: join(artifacts, "compaction-minimap.png") });
 
       const selectSession = async (title, entryId) => {
-        await page.locator(`[title="${title}"]`).click();
+        // Select the actual row, not a clipped label or its hover actions.
+        await page.locator(".session-row").filter({ has: page.getByTitle(title, { exact: true }) })
+          .click({ position: { x: 12, y: 12 } });
         await page.locator(`[data-entry-id="${entryId}"]:not([data-message-role])`).waitFor({ state: "visible" });
       };
       const readingOffset = (target) => target.evaluate((element) => (

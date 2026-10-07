@@ -28,6 +28,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
 import { useChatAppearance } from "@/hooks/useChatAppearance";
 import type { ToolPreset } from "@/lib/tool-presets";
+import type { ModelSpeed } from "@/lib/model-speed";
 import { ModelSelector, type ModelSelectorOption } from "./ModelSelector";
 
 export { filterModelOptions } from "./ModelSelector";
@@ -66,6 +67,9 @@ interface Props {
   toolPreset?: ToolPreset;
   onToolPresetChange?: (preset: ToolPreset) => void;
   thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  modelSpeed?: ModelSpeed;
+  modelSpeedChanging?: boolean;
+  onModelSpeedChange?: (speed: ModelSpeed) => void;
   /** New session has not committed a thinking level; the button still shows the resolved default. */
   isAutoThinkingSelection?: boolean;
   onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
@@ -553,7 +557,8 @@ export function ModelScopeWarningBanner({ warnings }: { warnings?: string[] }) {
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching, accountControl,
   onCompact, onAbortCompaction, isCompacting, compactError, compactResult, toolPreset, onToolPresetChange,
-  thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
+  thinkingLevel, modelSpeed = "standard", modelSpeedChanging = false, onModelSpeedChange,
+  isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
   onBuiltinCommand,
@@ -565,6 +570,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 }: Props, ref) {
   const { t } = useI18n();
   const { fontSize } = useChatAppearance();
+  const modelSpeedHelpId = React.useId();
   const isMobile = useIsMobile();
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey)?.value ?? "" : ""));
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
@@ -944,6 +950,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [attachedImages.length, clearInput, onBuiltinCommand]);
 
   const handleSend = useCallback(async () => {
+    if (modelSpeedChanging) return;
     const msg = value.trim();
     if (!msg && !attachedImages.length) return;
     onAudioUnlock?.();
@@ -952,7 +959,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (isStreaming) return;
     clearInput();
     onSend(msg, attachedImages.length ? attachedImages : undefined);
-  }, [value, attachedImages, isStreaming, runBuiltinCommand, onSend, clearInput, onAudioUnlock]);
+  }, [value, attachedImages, isStreaming, modelSpeedChanging, runBuiltinCommand, onSend, clearInput, onAudioUnlock]);
 
   const slashQuery = !compact && value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
@@ -1606,6 +1613,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       <div style={{ maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
         <ModelErrorBanner error={modelError} />
         <ModelScopeWarningBanner warnings={modelScopeWarnings} />
+        {onModelSpeedChange && modelSpeedChanging && (
+          <div role="status" style={{ fontSize: 11, color: "var(--text-muted)", padding: "0 4px 6px" }}>
+            {t("chat.modelSpeedConfirming")}
+          </div>
+        )}
+        {onModelSpeedChange && model?.provider === "openai-codex" && modelSpeed === "fast" && (
+          <div id={modelSpeedHelpId} role="note" style={{ fontSize: 11, color: "var(--text-muted)", padding: "0 4px 6px", overflowWrap: "anywhere" }}>
+            {t("chat.modelSpeedHelp")}
+          </div>
+        )}
         {showImageUnsupportedWarning && (() => {
           const entry = modelList?.find((m) => m.provider === model?.provider && m.id === model?.modelId);
           return (
@@ -2233,7 +2250,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           ) : (
             <button
               onClick={handleSend}
-              disabled={!value.trim() && !attachedImages.length}
+              disabled={modelSpeedChanging || (!value.trim() && !attachedImages.length)}
               style={{
                 flexShrink: 0,
                 alignSelf: "flex-end",
@@ -2397,6 +2414,30 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 backdropFilter: "blur(10px)",
               } : null),
             }}>
+            {onModelSpeedChange && model?.provider === "openai-codex" && (
+              <select
+                aria-label={t("chat.modelSpeed")}
+                aria-describedby={modelSpeed === "fast" ? modelSpeedHelpId : undefined}
+                aria-busy={modelSpeedChanging || undefined}
+                title={t(modelSpeedChanging ? "chat.modelSpeedConfirming" : "chat.modelSpeedHelp")}
+                value={modelSpeed}
+                disabled={isStreaming || isCompacting || modelSwitching || modelSpeedChanging}
+                onChange={(event) => {
+                  onAudioUnlock?.();
+                  onModelSpeedChange(event.target.value as ModelSpeed);
+                }}
+                style={{
+                  height: 32, maxWidth: 100, padding: isMobile ? "0 4px" : "0 8px",
+                  fontSize: 12, border: "none", borderRadius: 9,
+                  background: "var(--bg-panel)", color: modelSpeed === "fast" ? "var(--accent)" : "var(--text-muted)",
+                  cursor: isStreaming || isCompacting || modelSwitching || modelSpeedChanging ? "not-allowed" : "pointer",
+                  opacity: isStreaming || isCompacting || modelSwitching || modelSpeedChanging ? 0.5 : 1,
+                }}
+              >
+                <option value="standard">{t("chat.modelSpeedStandard")}</option>
+                <option value="fast">{t("chat.modelSpeedFast")}</option>
+              </select>
+            )}
             {onThinkingLevelChange && (
               <div ref={thinkingDropdownRef} style={{ position: "relative" }}>
                 <button

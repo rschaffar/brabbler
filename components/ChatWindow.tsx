@@ -291,7 +291,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
 
   const {
     loading, error, possibleInterruptedRun, dismissPossibleInterruption, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamState,
-    agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
+    agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel, modelSpeed, modelSpeedChanging,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, modelSwitching, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
@@ -307,7 +307,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
-    handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands, scrollUserMsgToTop,
+    handleToolPresetChange, handleThinkingLevelChange, handleModelSpeedChange, loadSlashCommands, scrollUserMsgToTop,
     loadContext, activeLeafId, scrollToBottom, scrollToMessage,
   } = useAgentSession({
     session, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd: wrappedOnAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked,
@@ -933,6 +933,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       toolPreset={toolPreset}
       onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
       thinkingLevel={thinkingLevel}
+      modelSpeed={modelSpeed}
+      modelSpeedChanging={modelSpeedChanging}
+      onModelSpeedChange={session || isNew ? handleModelSpeedChange : undefined}
       isAutoThinkingSelection={isAutoThinkingSelection}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       availableThinkingLevels={availableThinkingLevels}

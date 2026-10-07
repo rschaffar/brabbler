@@ -22,6 +22,7 @@ This is my personal project, shaped around the way I work. It started from [Pi W
 - **Git history you can explore.** Switch between project worktrees and browse local branches, commit graphs, and split or unified diffs. The optional Git Workflow plugin is separate and disabled by default.
 - **A terminal where you need it.** Open a workspace terminal alongside your files and conversations.
 - **Models and accounts under your control.** Configure providers, choose models and thinking levels, and manage multiple provider identities with per-session selection and project defaults.
+- **Session-local model speed.** Choose **Standard** or **Fast** beside Thinking for ChatGPT subscription models, independently of reasoning depth. Fast uses more subscription quota; the choice is saved per session, never as a global/browser default. See [Model speed](./docs/model-speed.md).
 - **Questions that fit the browser.** Answer `ask_user` and extension dialogs through inline cards. Saved interaction receipts let you review what was shown and decided without executing an action again.
 - **Your Pi setup, still yours.** Use Pi's existing sessions, settings, skills, and extensions rather than starting over in a separate hosted service.
 

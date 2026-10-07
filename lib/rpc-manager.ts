@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Agent, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, ModelRuntime, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
@@ -9,6 +9,9 @@ import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { accountCredentialStore, getProjectAccounts, validateAccountSelection, type AccountSelection } from "./provider-accounts";
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
+import { isModelSpeed, supportsModelSpeed, type ModelSpeed } from "./model-speed";
+import { appendSessionModelSpeed, readSessionModelSpeed } from "./session-model-speed";
+import { withSessionModelSpeed } from "./session-model-speed-runtime";
 import { samePath } from "./paths";
 import { readSessionHeader } from "./session-reader";
 import { invalidateModelsCache } from "./models-cache";
@@ -193,6 +196,7 @@ export interface RpcSessionStartOptions {
   initialModel?: { provider: string; modelId: string };
   allowInitialModelFallback?: boolean;
   thinkingLevel?: ThinkingLevel;
+  modelSpeed?: ModelSpeed;
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
@@ -771,6 +775,7 @@ export class AgentSessionWrapper {
             ? haveContextFilesChanged(this.inner.resourceLoader.getAgentsFiles().agentsFiles, this.cwd, getAgentDir())
             : false,
           thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
+          modelSpeed: readSessionModelSpeed(this.inner.sessionManager.getEntries() as unknown as SessionEntry[]),
           extensionStatuses: this.getExtensionStatuses(),
           extensionWidgets: this.getExtensionWidgets(),
         };
@@ -836,6 +841,7 @@ export class AgentSessionWrapper {
           const accountSelection = readSessionAccounts(sourceEntries);
           const destination = SessionManager.open(newSessionFile, sessionDir);
           if (accountSelection) appendSessionAccounts(destination, accountSelection);
+          appendSessionModelSpeed(destination, readSessionModelSpeed(sourceEntries));
           const newSessionId = forkedManager.getSessionId();
           cacheSessionPath(newSessionId, newSessionFile);
           invalidateSessionListCache();
@@ -865,6 +871,7 @@ export class AgentSessionWrapper {
           const sourceEntries = sessionManager.getEntries() as unknown as SessionEntry[];
           const accountSelection = readSessionAccounts(sourceEntries);
           if (accountSelection) appendSessionAccounts(forkedManager, accountSelection);
+          appendSessionModelSpeed(forkedManager, readSessionModelSpeed(sourceEntries));
           const newSessionId = forkedManager.getSessionId();
           cacheSessionPath(newSessionId, forkedPath);
           invalidateSessionListCache();
@@ -896,6 +903,7 @@ export class AgentSessionWrapper {
           const sourceEntries = sessionManager.getEntries() as unknown as SessionEntry[];
           const accountSelection = readSessionAccounts(sourceEntries);
           if (accountSelection) appendSessionAccounts(clonedManager, accountSelection);
+          appendSessionModelSpeed(clonedManager, readSessionModelSpeed(sourceEntries));
           const newSessionId = clonedManager.getSessionId();
           cacheSessionPath(newSessionId, clonedPath);
           invalidateSessionListCache();
@@ -910,6 +918,23 @@ export class AgentSessionWrapper {
         }
         const result = await this.inner.navigateTree(command.targetId as string, {});
         return { cancelled: result.cancelled };
+      }
+
+      case "set_model_speed": {
+        if (!isModelSpeed(command.modelSpeed)) throw new Error("Invalid model speed: expected standard or fast");
+        if (this.shutdownPromise) throw new Error("Cannot change model speed while the session is shutting down");
+        if (this.isRunning() || this.activeMutatingCommands > 1) {
+          throw new Error("Cannot change model speed while the session is running or another command is pending");
+        }
+        if (command.modelSpeed === "fast" && !supportsModelSpeed(this.inner.model)) {
+          throw new Error("Fast model speed is available only for ChatGPT subscription models");
+        }
+        if (readSessionModelSpeed(this.inner.sessionManager.getEntries() as unknown as SessionEntry[]) !== command.modelSpeed) {
+          appendSessionModelSpeed(this.inner.sessionManager, command.modelSpeed);
+          invalidateSessionListCache();
+          this.emit({ type: "model_speed_change", modelSpeed: command.modelSpeed });
+        }
+        return { modelSpeed: command.modelSpeed };
       }
 
       case "set_thinking_level": {
@@ -1964,6 +1989,7 @@ export async function setRpcSessionTools(
   const sessionCwd = existing.cwd;
   const model = existing.inner.model;
   const currentThinkingLevel = existing.inner.agent.state?.thinkingLevel;
+  const modelSpeed = readSessionModelSpeed(existing.inner.sessionManager.getEntries() as unknown as SessionEntry[]);
   await existing.shutdown();
 
   if (persistedFile) {
@@ -1972,6 +1998,7 @@ export async function setRpcSessionTools(
   }
 
   const started = await startRpcSessionInternal(`__recreate__${randomUUID()}`, "", sessionCwd, {
+    modelSpeed,
     ...(toolNames !== undefined ? { toolNames } : {}),
     ...(model ? { initialModel: { provider: model.provider, modelId: model.id } } : {}),
     allowInitialModelFallback: true,
@@ -2022,6 +2049,7 @@ export async function setRpcSessionAccount(sessionId: string, sessionFile: strin
     // model, thinking and tool choices.
     const started = await startRpcSessionInternal(`__recreate__${randomUUID()}`, "", manager.getCwd(), {
       accounts: next,
+      modelSpeed: readSessionModelSpeed(manager.getEntries() as unknown as SessionEntry[]),
       ...(pinnedTools !== undefined ? { toolNames: pinnedTools } : {}),
       ...(model ? { initialModel: { provider: model.provider, modelId: model.id } } : {}),
       allowInitialModelFallback: true,
@@ -2176,7 +2204,10 @@ export async function startRpcSession(
 async function startRpcSessionInternal(
   sessionId: string, sessionFile: string, cwd: string | undefined, options: RpcSessionStartOptions,
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
-  const { initialModel, allowInitialModelFallback, thinkingLevel } = options;
+  const { initialModel, allowInitialModelFallback, thinkingLevel, modelSpeed } = options;
+  if (modelSpeed !== undefined && !isModelSpeed(modelSpeed)) {
+    throw new Error("Invalid model speed: expected standard or fast");
+  }
   const requestedToolNames = options.toolNames === undefined
     ? undefined
     : validateSessionToolSelection(options.toolNames);
@@ -2214,7 +2245,10 @@ async function startRpcSessionInternal(
   const accounts = readSessionAccounts(sessionManager.getEntries() as unknown as SessionEntry[])
     ?? (sessionFile ? {} : options.accounts ?? await getProjectAccounts(sessionCwd));
   validateAccountSelection(accounts);
-  if (!sessionFile) appendSessionAccounts(sessionManager, accounts);
+  if (!sessionFile) {
+    appendSessionAccounts(sessionManager, accounts);
+    appendSessionModelSpeed(sessionManager, modelSpeed ?? "standard");
+  }
   if (!subagentResources && persistedToolNames === undefined && requestedToolNames !== undefined) {
     appendSessionToolSelection(sessionManager, requestedToolNames);
   }
@@ -2314,6 +2348,8 @@ async function startRpcSessionInternal(
           },
       ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
     });
+    const speedAgent: { current?: Agent } = {};
+    services.modelRuntime = withSessionModelSpeed(services.modelRuntime, sessionManager, () => speedAgent.current);
     const scope = await resolveVisibleModels(
       services.modelRuntime,
       services.settingsManager.getEnabledModels(),
@@ -2354,6 +2390,7 @@ async function startRpcSessionInternal(
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
       ...(subagentResources ? { excludeTools: [...SUBAGENT_CONTROL_TOOL_NAMES] } : {}),
     });
+    speedAgent.current = inner.agent;
 
     const persistedPreferences = await persistExplicitStartupPreferences(
       services.settingsManager,

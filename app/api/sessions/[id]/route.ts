@@ -24,6 +24,7 @@ import { computeSessionRevision } from "@/lib/session-revision";
 import type { SessionEntry } from "@/lib/types";
 import { readSubagentRun, readSubagentSessionResources, SUBAGENT_META_TYPE } from "@/lib/subagents";
 import { readSessionToolSelection } from "@/lib/session-tool-selection";
+import { readSessionModelSpeed } from "@/lib/session-model-speed";
 import { appendSessionArchiveState, isSessionArchived } from "@/lib/session-archive";
 import { jsonResponse } from "@/lib/json-response";
 import { clearSessionRunRecovery, readPossibleInterruptedRun } from "@/lib/session-run-recovery";
@@ -144,6 +145,7 @@ export async function GET(
       req,
       {
         sessionId: id,
+        modelSpeed: readSessionModelSpeed(entries as unknown as SessionEntry[]),
         filePath,
         info,
         leafId,
@@ -161,6 +163,7 @@ export async function GET(
       req,
       {
         sessionId: id,
+        modelSpeed: readSessionModelSpeed(entries as unknown as SessionEntry[]),
         filePath,
         info,
         leafId,
