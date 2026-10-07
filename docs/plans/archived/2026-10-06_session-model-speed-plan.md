@@ -51,10 +51,16 @@ Metadata is additive and ignored by older clients. Removing the feature leaves p
 - The first full core attempt exposed an outdated extracted warm-cache fixture (`modelSpeedRef` missing), now repaired. Full offline acceptance subsequently passed 245 files / 1,590 tests, plus 29 exporter contracts, type generation, typecheck and lint (`nix develop --offline --no-write-lock-file -c node nix/test-offline.mjs`; `/tmp/pi-model-speed-full-core.yWLDJS.log`). The final post-fixture rerun passed the same counts and checks (`/tmp/pi-model-speed-final-core.0PcqDi.log`).
 - Full browser acceptance passed at both widths (`nix develop --offline --no-write-lock-file -c npm run test:e2e`; `/tmp/pi-model-speed-full-browser.1OQdCH.log`). Earlier attempts exposed missing usage on synthetic post-compaction assistants and a clipped sidebar-label click; fixtures now provide zero usage and click the actual row. Failed traces/logs are retained. The stalled-read scenario now checks immediate signal cancellation on `online`, not merely eventual timeout/poll recovery.
 - Follow-up read-only UI/server reviews found no substantive remaining speed regression; the ambiguous-save, shutdown and SDK-auxiliary findings are resolved and covered.
+- After rebasing onto local `rst-main` at `67b133d9c046c834c443bba757d336890aae6649`, exact feature checkpoint `06808d8334f7b2772f0052033e86f1f7e91fcf0e` passed 253 files / 1,624 tests (no failures/skips), 29 exporter contracts, type generation, typecheck and lint (`nix develop --offline --no-write-lock-file -c node nix/test-offline.mjs`; `/tmp/pi-model-speed-rebased-core.e7peZ1.log`). Full desktop/mobile browser acceptance passed on the same clean checkpoint (`nix develop --offline --no-write-lock-file -c npm run test:e2e`; `/tmp/pi-model-speed-rebased-browser.PzCWVv.log`).
+- Rebase conflicts were documentation-only. Keep both test guides and the current Pi Desk README, adding the speed guide under its model/account features. Original and intermediate feature commits are retained on timestamped local backup branches. No remote, production build, live credential access or paid model request occurred.
 
 ## Completion Checklist
 
 - [x] Focused affected Node tests pass in the offline Nix environment.
 - [x] Full `npm test` coverage, `node_modules/.bin/tsc --noEmit` and `npm run lint` pass using the repository's isolated offline runner.
 - [x] Focused and full `npm run test:e2e` pass without paid provider calls; terminal tests are not applicable because no terminal integration changed.
-- [ ] Create a reviewable unsigned feature commit and verify its exact tip. Obtain separate exact-state approval before any unsigned non-fast-forward integration into current local `rst-main`; keep publication and cleanup separate.
+- [x] Create a reviewable unsigned feature commit and verify its exact tip at the checkpoint above.
+
+## Local integration handoff
+
+Implementation is complete; archiving this plan records acceptance, not integration. The global `git-worktrees` skill and the repository Git profile in `AGENTS.md` own the remaining lifecycle: obtain separate exact-state approval before any unsigned non-fast-forward integration into current local `rst-main`, and keep publication and cleanup separately approved. The subsequent archive/evidence commit changes only this plan; review that documentation delta and confirm application/test inputs remain identical to the tested checkpoint rather than rerunning application acceptance solely to record it.
