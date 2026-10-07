@@ -30,7 +30,8 @@ export function PluginCardContent({ request }: { request: Request }) {
     {request.text && <pre className="blocking-card-code">{request.text}</pre>}
     {request.markdown && <MarkdownBody>{request.markdown}</MarkdownBody>}
     {request.sections?.filter((section) => !section.collapsible).map((section, index) => <Section key={index} section={section} />)}
-    {request.patch && <SuppliedPatchStack patch={request.patch} before={request.patchBefore ?? "Current"} after={request.patchAfter ?? "Proposed"} />}
+    {request.patch && <SuppliedPatchStack patch={request.patch} before={request.patchBefore ?? "Current"} after={request.patchAfter ?? "Proposed"}
+      contextHandle={request.patchContext} pluginId={request.pluginId} />}
     {request.sections?.filter((section) => section.collapsible).map((section, index) => <Section key={index} section={section} />)}
   </>;
 }

@@ -1,7 +1,8 @@
 import { statSync } from "node:fs";
 import { NextRequest, NextResponse } from "next/server";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
-import { explorerCommit, explorerLog, explorerPatch, GitExplorerError } from "@/lib/git-explorer";
+import { explorerCommit, explorerFileContext, explorerLog, explorerPatch, GitExplorerError } from "@/lib/git-explorer";
+import { DiffContextError } from "@/lib/git-file-context";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
   const op = params.get("op");
   const fields = op === "log" ? ["cwd", "op", ...(params.has("skip") ? ["skip"] : []), ...(params.has("head") ? ["head"] : []), ...(params.has("branch") ? ["branch"] : [])]
     : op === "commit" ? ["cwd", "op", "head", "oid", ...(params.has("branch") ? ["branch"] : [])]
-    : op === "patch" ? ["cwd", "op", "head", "oid", "path", ...(params.has("branch") ? ["branch"] : [])] : [];
+    : op === "patch" || op === "context" ? ["cwd", "op", "head", "oid", "path", ...(params.has("branch") ? ["branch"] : [])] : [];
   if (!fields.length || params.size !== fields.length || fields.some((field) => !params.has(field)) ||
     !cwd || (params.has("branch") && !params.get("branch")) ||
     (!cwd.startsWith("/") && !isWindowsAbsolutePath(cwd))) return failure("Invalid Git Explorer request", 400);
@@ -34,8 +35,10 @@ export async function GET(request: NextRequest) {
     const oid = params.get("oid") ?? "";
     if (op === "commit") return NextResponse.json(await explorerCommit(cwd, head, oid, params.get("branch") ?? undefined));
     if (op === "patch") return NextResponse.json(await explorerPatch(cwd, head, oid, params.get("path") ?? "", params.get("branch") ?? undefined));
+    if (op === "context") return NextResponse.json(await explorerFileContext(cwd, head, oid, params.get("path") ?? "", params.get("branch") ?? undefined));
     return failure("Invalid Git Explorer request", 400);
   } catch (error) {
+    if (error instanceof DiffContextError) return failure(error.message, error.status);
     if (error instanceof GitExplorerError) {
       const status = { INVALID: 400, STALE: 409, NOT_FOUND: 404, TOO_LARGE: 413, UNAVAILABLE: 409 }[error.code];
       return failure(error.message, status);

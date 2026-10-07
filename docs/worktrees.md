@@ -28,9 +28,62 @@ Existing sessions stay grouped under the same project. Opening an existing sessi
 
 ### Browse the selected worktree's Git history
 
-Open the **Git Explorer** icon beside Activity and Starred. Its wide panel places the graph to the left of commit details and file diffs, alongside the chat; on mobile select a commit to see its details and use **Back to commits** to return to the graph. It follows the checkout selected by the sidebar worktree switcher, even when a chat from another checkout remains open, and needs no open chat. By default it shows that checkout's branch. The **History branch** selector can browse any local branch in the same repository without checking it out. Its read-only graph shows commits reachable from the selected branch's captured tip in topological order, with merge lanes, local branch labels, distinguishable local **tag** labels and older-history pages. Lightweight and annotated tags label their commits; tags do not become branch-selector options or authorize browsing unrelated objects. No tags are fetched or created by the explorer. Select a commit to inspect its author, message and changed files next to the graph; copy its full message or ID with the separate hover/focus buttons. Changed files appear as stacked collapsible diffs, with the first file expanded. Expand any other file to load its committed patch; Expand all / Collapse all controls review without a separate file picker. Successful reads are cached only for that captured commit view, requests are limited to three at once, and changes to the selected commit/branch/checkout cancel old reads. Each file has its own loading/error/retry state. A shared control switches expanded diffs between **side by side**, unified and raw patch, with old/new line numbers and hunk boundaries. Collapsed renderers are unmounted; expanded files away from view defer loading/rendering until scrolled near. The comparison is against the commit's first parent (or the empty tree for a root commit). Narrow phone screens can scroll diff columns horizontally. **Refresh** captures the current tip of the selected branch. If that branch moves or disappears while browsing, refresh before loading more history or inspecting a commit. Binary files get a summary; oversized patches fail rather than showing partial output. Detached HEAD and non-root directories cannot be browsed. This does not read uncommitted files, run checks, switch branches, merge, or contact remotes.
+Open the **Git Explorer** icon beside Activity and Starred. Its wide panel places the graph to the left of commit details and file diffs, alongside the chat; on mobile select a commit to see its details and use **Back to commits** to return to the graph. It follows the checkout selected by the sidebar worktree switcher, even when a chat from another checkout remains open, and needs no open chat. By default it shows that checkout's branch. The **History branch** selector can browse any local branch in the same repository without checking it out. Its read-only graph shows commits reachable from the selected branch's captured tip in topological order, with merge lanes, local branch labels, distinguishable local **tag** labels and older-history pages. Lightweight and annotated tags label their commits; tags do not become branch-selector options or authorize browsing unrelated objects. No tags are fetched or created by the explorer. Select a commit to inspect its author, message and changed files next to the graph; copy its full message or ID with the separate hover/focus buttons.
+
+Changed files appear as stacked collapsible diffs, with the first file expanded.
+**Expand all files / Collapse all files** open or close file sections, never eagerly
+load full-file context. One shared sticky toolbar selects **Side by side**, **Unified**
+or **Raw patch** and wrapping. Committed patches load lazily, at most three requests
+at once, with per-file loading/error/retry state and caching for that captured commit
+view only. Collapsed renderers unmount; other expanded files defer loading/rendering
+until scrolled near. Changing commit, branch or checkout cancels old reads.
+
+Patches and full context compare immutable commit objects against the commit's
+**first parent** (or the empty tree for a root commit), revalidating the captured
+local branch tip after context reads too. **Refresh** captures the branch's current
+tip; refresh if it moves or disappears. Binary files get a summary; oversized
+patches fail rather than showing partial output. Detached HEAD and non-root
+directories cannot be browsed. Explorer never reads uncommitted files, runs checks,
+switches branches, merges or contacts remotes.
 
 The graph layout adapts [binaryplease/git-graph](https://github.com/binaryplease/git-graph) under the MIT license (`lib/git-graph-layout.LICENSE`); Pi Web runs its own bounded read API and does not depend on that project's server.
+
+#### Full-file diff review
+
+Explorer, Files-panel and Git approval/receipt diffs share virtualized Pierre
+`CodeView` rendering (`@pierre/diffs` stays at 1.5.1):
+
+- **Show full file / Diff context** reveal or hide full context for one file in
+  split or unified view. Tab to gap buttons and press Enter/Space to reveal nearby
+  lines incrementally or the **entire gap**. Context loads only when requested.
+- **Previous/Next change** navigate changes. **Before / After** show clean file
+  versions; **Changes** returns to the diff. A missing side is explicitly absent,
+  not an empty file.
+- Search is **literal and case-insensitive**, not regex. Search and **Go to line**
+  use the **Before/After (old/new)** side selector in Changes view, or the displayed
+  clean version, revealing omitted lines as needed without changing the comparison.
+- Turn **Wrap lines** off for horizontal scrolling. **Wide view** opens a larger
+  reader; Escape closes it and restores focus without answering a live approval.
+
+Parsed patches, loaded context, gap/full-file expansion, selected version and
+reading anchors stay in local memory across file collapse and layout changes,
+scoped to the exact commit view, approval card or working-file revision. Only
+split/unified/raw and wrap preferences use browser `localStorage`, best effort;
+contents and context choices are never persisted there.
+
+Full context is limited to **1 MiB on each side** and **50,000 combined lines per
+file**. Invalid UTF-8, NUL/binary content, symlinks, gitlinks, missing objects and
+oversized files refuse context while leaving the patch available. Complete versions
+must match the supplied hunks and omitted unchanged ranges; incompatible file
+transformations cannot silently introduce changes into the displayed context. Git approval
+snapshots and historical availability have [separate limits](git-workflow-plugin.md#optional-full-file-patch-context).
+
+Files-panel diffs instead compare HEAD with the working file. Context uses the
+revision returned with that patch and refuses a changed HEAD or file: refresh the
+diff rather than attaching newer contents (use **Refresh diff** on a context error).
+The in-memory working-revision registry
+retains at most **512 entries for one hour**; expiry, eviction or server restart
+requires a fresh diff.
 
 ## Creating a Worktree
 

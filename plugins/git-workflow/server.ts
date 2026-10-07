@@ -9,13 +9,14 @@ import { allowFileRoot } from "../../lib/file-access";
 import { onPluginSettingsChange, pluginProjectIdentity, readPluginSettings } from "../../lib/plugins/settings";
 import type { PluginCard, PluginCardField, PluginCardSection, PluginUiContext, RequiredCheck } from "../../lib/plugins/types";
 import { gitWorkflowManifest, type GitAction, type GitSettings } from "./manifest";
+import { registerGitPatchContext } from "./context";
 
 export type GitOperation =
   | { action: "commit"; checkout: string; mode: "staged" | "files"; files?: string[]; message: string }
   | { action: "rebase" | "merge"; checkout: string; featureBranch: string }
   | { action: "createWorktree" | "attachWorktree"; checkout: string; branch: string; baseBranch: string; path: string }
   | { action: "removeWorktree"; checkout: string; path: string };
-interface Snapshot { fingerprint: string; card: PluginCard; checks: RequiredCheck[]; args: string[]; cwd: string }
+interface Snapshot { fingerprint: string; card: PluginCard; checks: RequiredCheck[]; args: string[]; cwd: string; comparison?: { before: string; after: string } }
 const MAX_OUTPUT = 2 * 1024 * 1024;
 function env(index?: string) {
   return { ...gitExecEnv(index), GIT_NO_LAZY_FETCH: "1", GIT_NO_REPLACE_OBJECTS: "1", GIT_LITERAL_PATHSPECS: "1",
@@ -109,6 +110,7 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
   const notices = ["Native Git operation is unsigned and hook-free. Stronger user/repository instructions still apply."];
   let args: string[] = [];
   let patch: string | undefined;
+  let comparison: Snapshot["comparison"];
   let checks: RequiredCheck[] = [];
   const state: unknown[] = [cwd, pluginProjectIdentity(cwd), current, status(cwd), worktrees(cwd)];
   if (op.action === "commit") {
@@ -126,13 +128,14 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
       state.push(existsSync(original) ? digest(readFileSync(original).toString("base64")) : null);
       if (files) {
         // --only builds from HEAD; unrelated staging is not part of this candidate.
-        git(cwd, ["read-tree", "HEAD"], index);
+        git(cwd, ["read-tree", current.tip], index);
         git(cwd, ["add", "-A", "--", ...files], index);
       } else if (existsSync(original)) copyFileSync(original, index);
-      else git(cwd, ["read-tree", "HEAD"], index);
+      else git(cwd, ["read-tree", current.tip], index);
       const tree = git(cwd, ["write-tree"], index).trim();
-      if (tree === git(cwd, ["rev-parse", "HEAD^{tree}"]).trim()) throw new Error("No selected changes to commit");
-      patch = git(cwd, ["diff", "--cached", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", "HEAD", "--"], index);
+      if (tree === git(cwd, ["rev-parse", `${current.tip}^{tree}`]).trim()) throw new Error("No selected changes to commit");
+      comparison = { before: current.tip, after: tree };
+      patch = git(cwd, ["diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", current.tip, tree, "--"], index);
       state.push(tree);
       rows.push(`Candidate tree: ${tree}`, `Exact message:\n${op.message}`);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
@@ -155,7 +158,9 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
     notices.push("Diffs show feature changes since the merge base, not a predicted rebase/merge result.");
     rows.push(`Feature: ${op.featureBranch} ${feature}`, `Target: ${policy.targetBranch} ${target}`,
       "Patch shows feature changes since the merge base, not a predicted rebase/merge result.");
-    patch = git(cwd, ["diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", `${target}...${feature}`, "--"]);
+    const base = git(cwd, ["merge-base", target, feature]).trim();
+    comparison = { before: base, after: feature };
+    patch = git(cwd, ["diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", base, feature, "--"]);
     if (op.action === "rebase") args = ["rebase", "--no-autostash", "--no-update-refs", "--no-rebase-merges", "--no-gpg-sign", target];
     else {
       checks = policy.mergeChecks;
@@ -216,7 +221,7 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
   // Bind only applicable settings, not unrelated action permissions.
   state.push(policy[op.action], checks, op.action === "merge" ? policy.mergeMethod : null,
     op.action === "merge" || op.action === "rebase" ? policy.targetBranch : null);
-  return { fingerprint: digest(state), cwd, args, checks,
+  return { fingerprint: digest(state), cwd, args, checks, comparison,
     card: { title: { commit: "Git commit", rebase: "Git rebase", merge: "Git merge", createWorktree: "Create Git worktree", attachWorktree: "Attach Git worktree", removeWorktree: "Remove Git worktree" }[op.action],
       subtitle: "Approval required", fields, sections, patch,
       scope: `Approves the entire ${op.action === "commit" ? "commit candidate" : "selected operation"}${checks.length ? " and the listed checks" : ""}${patch ? ", not just an expanded file" : ""}.`,
@@ -257,6 +262,9 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
     if (signal?.aborted) throw new Error("Cancelled before execution");
     if (policy[op.action] === "ask") {
       if (!ui.pluginCard) throw new Error("Ask requires the live Pi Web browser UI");
+      if (snapshot.comparison && snapshot.card.patch) {
+        snapshot.card.patchContext = registerGitPatchContext(snapshot.cwd, snapshot.comparison.before, snapshot.comparison.after, snapshot.card.patch);
+      }
       const cancellation = new AbortController();
       const unsubscribe = onPluginSettingsChange((id) => {
         if (id !== gitWorkflowManifest.id) return;

@@ -3,6 +3,10 @@ import fs from "fs";
 import path from "path";
 import { promisify } from "util";
 import { TEXT_PREVIEW_MAX_BYTES } from "./file-types";
+import { gitExecEnv } from "./git-exec";
+import { toNativePath } from "./paths";
+import { DiffContextError } from "./diff-context";
+import { captureWorkingDiff, readWorkingDiffFile, workingDiffHead, workingFileDigest } from "./working-diff-context";
 import type {
   GitFileDiffResponse,
   GitFileStatus,
@@ -22,14 +26,14 @@ async function git(cwd: string, args: string[], maxBuffer = GIT_STATUS_MAX_BUFFE
   const { stdout } = await execFileAsync("git", ["-C", cwd, ...args], {
     timeout: GIT_TIMEOUT_MS,
     maxBuffer,
-    env: { ...process.env, LC_ALL: "C" },
+    env: { ...gitExecEnv(), GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1", GIT_NO_LAZY_FETCH: "1", GIT_ALLOW_PROTOCOL: "", GIT_LITERAL_PATHSPECS: "1" },
   });
   return stdout;
 }
 
 async function findRepositoryRoot(cwd: string): Promise<string | null> {
   try {
-    return (await git(cwd, ["rev-parse", "--show-toplevel"])).trim() || null;
+    return toNativePath((await git(cwd, ["rev-parse", "--show-toplevel"])).trim()) || null;
   } catch {
     return null;
   }
@@ -168,6 +172,7 @@ async function createTrackedFilePatch(
   repositoryRoot: string,
   relativePath: string,
   originalPath?: string,
+  head = "HEAD",
 ): Promise<string | null> {
   const paths = originalPath && originalPath !== relativePath
     ? [originalPath, relativePath]
@@ -177,8 +182,9 @@ async function createTrackedFilePatch(
       "diff",
       "--no-color",
       "--no-ext-diff",
+      "--no-textconv",
       "--unified=3",
-      "HEAD",
+      head,
       "--",
       ...paths,
     ], TEXT_PREVIEW_MAX_BYTES * 4);
@@ -198,37 +204,28 @@ export async function getGitFileDiff(cwd: string, filePath: string): Promise<Git
   if (!entry) return { supported: false };
 
   const { status } = classifyGitStatus(entry);
-  if (status === "deleted") {
-    const patch = await createTrackedFilePatch(repositoryRoot, relativePath, entry.originalPath);
-    if (!patch?.includes("\n@@ ")) return { supported: false };
-    return { supported: true, status, patch };
-  }
-
-  let stat: fs.Stats;
-  try {
-    stat = fs.lstatSync(resolvedFilePath);
-  } catch {
-    return { supported: false };
-  }
-  if (!stat.isFile() || stat.size > TEXT_PREVIEW_MAX_BYTES) return { supported: false };
-
-  const currentBuffer = fs.readFileSync(resolvedFilePath);
-  if (hasNullByte(currentBuffer)) return { supported: false };
-  const newContent = currentBuffer.toString("utf8");
+  const head = await workingDiffHead(repositoryRoot);
+  let current;
+  try { current = readWorkingDiffFile(repositoryRoot, resolvedFilePath); }
+  catch (error) { if (error instanceof DiffContextError && error.status !== 403) return { supported: false }; throw error; }
+  if (!current && status !== "deleted") return { supported: false };
+  if (current && (current.buffer.length > TEXT_PREVIEW_MAX_BYTES || hasNullByte(current.buffer))) return { supported: false };
+  const newContent = current?.buffer.toString("utf8") ?? "";
 
   let patch: string;
-  if (status === "untracked") {
-    patch = createAddedFilePatch(relativePath, newContent);
-  } else {
-    const trackedPatch = await createTrackedFilePatch(repositoryRoot, relativePath, entry.originalPath);
+  if (status === "untracked") patch = createAddedFilePatch(relativePath, newContent);
+  else {
+    const trackedPatch = await createTrackedFilePatch(repositoryRoot, relativePath, entry.originalPath, head ?? "HEAD");
     if (trackedPatch === null) {
       if (status !== "added") return { supported: false };
       patch = createAddedFilePatch(relativePath, newContent);
-    } else {
-      patch = trackedPatch;
-    }
+    } else patch = trackedPatch;
   }
-
   if (!patch.includes("\n@@ ")) return { supported: false };
-  return { supported: true, status, patch };
+  if (head !== await workingDiffHead(repositoryRoot) || workingFileDigest(current) !== workingFileDigest(readWorkingDiffFile(repositoryRoot, resolvedFilePath))) {
+    throw new DiffContextError("Working file or HEAD changed while reading; refresh its diff.");
+  }
+  const revision = captureWorkingDiff({ cwd: path.resolve(cwd), root: repositoryRoot, filePath: resolvedFilePath,
+    gitPath: relativePath, oldPath: entry.originalPath ?? relativePath, head, signature: workingFileDigest(current) }, patch);
+  return { supported: true, status, patch, revision };
 }

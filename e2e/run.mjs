@@ -18,6 +18,7 @@ import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
 import { consumeExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
+import { contextContents, changedContextContents } from "./git-diff-context.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
 import { checkSessionMovePicker } from "./session-move.mjs";
 import { checkGitWorkflowPlugin, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
@@ -211,16 +212,19 @@ try {
     git("config", "--local", "tag.gpgsign", "false");
     git("config", "core.autocrlf", "false");
     writeFileSync(join(gitProject, "base.txt"), "Base fixture\n");
+    writeFileSync(join(gitProject, "z-context.txt"), contextContents);
+    writeFileSync(join(gitProject, "draft.txt"), Array.from({ length: 5000 }, (_, index) => `Plugin context ${index + 1}\n`).join(""));
     mkdirSync(join(gitProject, "checks"));
     writeFileSync(join(gitProject, "checks", "fixture.txt"), "Tracked modern check working directory\n");
-    git("add", "base.txt", "checks/fixture.txt"); commit("base fixture");
+    git("add", "base.txt", "checks/fixture.txt", "z-context.txt", "draft.txt"); commit("base fixture");
     git("switch", "-c", "feature");
     writeFileSync(join(gitProject, "first.txt"), "First feature patch\n");
     git("add", "first.txt"); commit("first feature");
     git("branch", "comparison-base"); // Read-only comparison branch; deliberately no checkout.
     writeFileSync(join(gitProject, "second.txt"), "Second feature patch\n");
     writeFileSync(join(gitProject, "base.txt"), "Revised base fixture\n");
-    git("add", "second.txt", "base.txt"); commit("second feature");
+    writeFileSync(join(gitProject, "z-context.txt"), changedContextContents);
+    git("add", "second.txt", "base.txt", "z-context.txt"); commit("second feature");
     git("tag", "e2e-light");
     git("tag", "--no-sign", "-a", "e2e-annotated", "-m", "E2E annotated release");
     git("tag", "same-name", "target");
@@ -287,6 +291,7 @@ try {
       page = await context.newPage();
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
+      page.on("console", (event) => { if (event.type() === "error" && !consumeExpectedBrowserConflict(page, event)) errors.push(event.text()); });
       page.on("response", (response) => { if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`); });
       await checkGitWorkflowPlugin(page, base, gitProject, GIT, artifacts, viewport.width);
       assert.deepEqual(errors, [], "Plugin browser/server errors");
@@ -462,6 +467,16 @@ try {
       const url = new URL(response.url());
       if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
     });
+    if (process.env.E2E_DIFF_CONTEXT_ONLY === "1") {
+      if (viewport.width === 1280) await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await page.locator(".markdown-code-block pre").waitFor();
+      await checkFilePanel(page, previewFile);
+      await checkFileDiffViews(page, editableFile);
+      assert.deepEqual(errors, [], `Browser errors during diff review at ${viewport.width}px`);
+      await context.tracing.stop(); await context.close(); context = undefined;
+      continue;
+    }
     if (process.env.E2E_FILE_EDIT_ONLY === "1") {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();

@@ -30,12 +30,12 @@ export function splitGitPatch(patch: string): DisplayFile[] {
 }
 
 /** Per-stack queue and successful-response cache. Only bounded, read-only patch loads. */
-export function createPatchLoader(load: (id: string, signal: AbortSignal) => Promise<DisplayPatch>, limit = 3) {
+export function createPatchLoader<T = DisplayPatch>(load: (id: string, signal: AbortSignal) => Promise<T>, limit = 3) {
   let active = 0;
-  const cache = new Map<string, DisplayPatch>();
+  const cache = new Map<string, T>();
   const queue: Array<() => void> = [];
   const pump = () => { while (active < limit && queue.length) queue.shift()!(); };
-  return (id: string, signal: AbortSignal): Promise<DisplayPatch> => {
+  return (id: string, signal: AbortSignal): Promise<T> => {
     if (signal.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
     const cached = cache.get(id);
     if (cached) return Promise.resolve(cached);

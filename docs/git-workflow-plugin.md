@@ -94,14 +94,15 @@ attributes (including LFS) are refused: even status/preview could otherwise run
 project commands before approval. Preview uses an ephemeral index and may add
 unreachable Git objects, but never stages working files. The supplied rebase/merge
 patch shows feature changes since the merge base, **not** a predicted result.
-Approval patches appear as stacked collapsible file diffs, with the first file
-expanded, change types/counts, Expand all / Collapse all and one shared
-side-by-side/unified/raw control. Collapsed diffs are not mounted; other expanded
-files render when scrolled near view. Binary and metadata-only changes remain
-explicit; oversized individual diffs fall back to their complete raw file patch.
-The complete supplied raw patch is always available, and unsupported multi-file
-framing falls back to it without omitting files. Bounded-read failures refuse
-rather than silently truncating approval data.
+Approval patches use the [shared diff-review controls](worktrees.md#full-file-diff-review):
+stacked collapsible files (first expanded), change types/counts, **Expand all files /
+Collapse all files** and one shared split/unified/raw and wrap toolbar. Expanding
+file sections never eagerly loads full context. Collapsed renderers unmount; other
+expanded files render near view. Binary and metadata-only changes remain explicit;
+oversized interactive diffs fall back to their complete raw file patch. The exact
+supplied raw patch is always available and never reconstructed from context.
+Unsupported multi-file framing falls back to it without omitting files; bounded-read
+failures refuse rather than silently truncating approval data.
 
 Current permissions, relevant settings, checkout/ref/index/file state are checked
 again after approval, between checks and immediately before the native effect.
@@ -133,13 +134,37 @@ just an expanded file. Worktree approvals use the same layout without patches.
 
 Cards use the existing per-session pending-dialog maps and `extension_ui_response`
 transport. Only an action declared by the matching live request can resolve it.
-SSE reconnect replays pending cards; Dismiss/Escape, Stop and wrapper teardown
-cancel them. Disable or relevant settings changes cancel waiting Git approvals;
-Pi's supported dynamic registration/hidden exposure removes active tools and their
-guidance immediately. Re-enable registers them without rebuilding the session.
+SSE reconnect replays pending cards; request dismissal, Stop and wrapper teardown
+cancel them. Escape in **Wide view** closes only the reader and restores focus;
+it neither submits nor cancels the live approval. Disable or relevant settings
+changes cancel waiting Git approvals; Pi's supported dynamic registration/hidden
+exposure removes active tools and their guidance immediately. Re-enable registers
+them without rebuilding the session.
 Native effects already started are not interrupted. Historical cards/tool results
 are never execution authority, and a server restart cannot reconstruct an approval.
 Settings and transcript history may remain for re-enabling.
+
+### Optional full-file patch context
+
+New Git patch approvals may carry an optional opaque UUID handle in the plugin's
+namespace. Commit snapshots bind captured **HEAD / candidate index tree** IDs;
+rebase/merge snapshots bind **merge-base / feature commit** IDs. They supplement
+the exact supplied patch, never replace or reconstruct it. The in-memory registry
+stores comparison/file identifiers, not file contents, with a **one-hour TTL,
+64 handles and at most 256 files per handle**. Reads recheck the physical common
+Git-directory identity before reading those objects.
+
+Core's generic **GET `/api/plugins/bundled/[id]/patch-context`** accepts only
+`handle` and a numeric `file` ID (0–255). The plugin resolves the captured file;
+there are no arbitrary paths or Git revisions, new previews, checks or mutations
+in this read. The shared **1 MiB per side / 50,000 combined lines per file** limits
+and [text/object rejection rules](worktrees.md#full-file-diff-review) apply; failed
+context leaves the patch readable.
+
+Historical receipts may read the same handle while retained. Legacy cards,
+expiry, eviction, server restart or unavailable objects remain patch-only; there
+is no durable content backfill or substitution from current working files.
+Context availability does not extend an approval's lifetime or execution authority.
 
 ## Verification
 
@@ -149,7 +174,7 @@ Linux worktree, with no dev server owning that checkout:
 
 ```sh
 nix develop --offline --no-write-lock-file -c node nix/test-offline.mjs
-# Separate plugin tests: disposable repos + real Pi registration/toggle lifecycle.
+# Separate plugin tests: snapshot bounds/expiry + real Pi registration/toggle lifecycle.
 nix develop --offline --no-write-lock-file -c sh -c \
   'env -i PATH="$PATH" LANG=C.UTF-8 PI_OFFLINE=1 node --experimental-strip-types --test "plugins/**/*.test.mjs"'
 # Plugin-only desktop/mobile browser acceptance (no model calls):

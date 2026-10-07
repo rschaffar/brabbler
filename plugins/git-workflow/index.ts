@@ -4,10 +4,12 @@ import { createPluginExtension } from "../../lib/plugins/runtime";
 import type { BundledPlugin, PluginUiContext } from "../../lib/plugins/types";
 import { gitWorkflowManifest } from "./manifest";
 import { executeGitOperation } from "./server";
+import { readGitPatchContext } from "./context";
 
 const checkout = Type.String({ description: "Absolute registered checkout root in any local repository; the selected repository's settings apply, independently of the session cwd" });
 export const gitWorkflowPlugin: BundledPlugin = {
   manifest: gitWorkflowManifest,
+  readPatchContext: readGitPatchContext,
   extension(cwd) {
     const commit = defineTool({
       name: "git_commit", label: "Git commit", executionMode: "sequential",

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { withExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
+import { checkDiffContext } from "./git-diff-context.mjs";
 
 /** Visual history tracks the selected checkout and branch, independently of the open chat. */
 export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorktree }) {
@@ -68,10 +69,11 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await page.waitForTimeout(700);
   assert.equal(await graph.locator("svg circle").count(), 3, "A late branch response must not replace the newer selection");
   await page.unroute("**/api/git/explorer?*", delayOtherBranch);
-  const patchReads = [];
+  const patchReads = [], contextReads = [];
   const recordPatch = (request) => {
     const query = new URL(request.url()).searchParams;
     if (query.get("op") === "patch") patchReads.push(query.get("path"));
+    if (query.get("op") === "context") contextReads.push(query.get("path"));
   };
   page.on("request", recordPatch);
   await graph.getByRole("button", { name: /second feature/ }).click();
@@ -79,7 +81,8 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   const firstFile = detail.getByRole("region", { name: "File changes: base.txt", exact: true });
   const secondFile = detail.getByRole("region", { name: "File changes: second.txt", exact: true });
   await firstFile.getByRole("region", { name: "Side-by-side diff" }).waitFor();
-  assert.equal(await secondFile.getByRole("button").getAttribute("aria-expanded"), "false");
+  assert.equal(await secondFile.getByRole("button", { name: "Toggle diff: second.txt", exact: true }).getAttribute("aria-expanded"), "false");
+  assert.equal(contextReads.length, 0, "Opening committed diffs is patch-only until context is requested");
   assert.deepEqual([...new Set(patchReads)], ["base.txt"], "Only the initially expanded file is fetched (Strict Mode may cancel/restart its first read)");
   assert.equal(await detail.getByRole("group", { name: "Patch view" }).count(), 1);
   assert.equal(await page.locator("#file-panel").getByRole("tab").count(), 0,
@@ -101,18 +104,58 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await detail.getByText(/-Base fixture/).waitFor();
   await detail.getByRole("button", { name: "Side by side" }).click();
   await split.waitFor();
-  await secondFile.getByRole("button").click();
+  await secondFile.getByRole("button", { name: "Toggle diff: second.txt", exact: true }).click();
   await secondFile.getByText("Second feature patch", { exact: true }).waitFor();
   assert.deepEqual([...new Set(patchReads)], ["base.txt", "second.txt"]);
   const loadedReads = patchReads.length;
-  await secondFile.getByRole("button").click();
-  await secondFile.getByRole("button").click();
+  await secondFile.getByRole("button", { name: "Toggle diff: second.txt", exact: true }).click();
+  await secondFile.getByRole("button", { name: "Toggle diff: second.txt", exact: true }).click();
   await secondFile.getByText("Second feature patch", { exact: true }).waitFor();
   assert.equal(patchReads.length, loadedReads, "Reopening a file reuses its candidate-bound successful patch");
   await detail.getByRole("button", { name: "Unified", exact: true }).click();
   await firstFile.getByRole("region", { name: "Unified diff" }).waitFor();
   await secondFile.getByRole("region", { name: "Unified diff" }).waitFor();
   await detail.getByRole("button", { name: "Side by side", exact: true }).click();
+  const longFile = detail.getByRole("region", { name: "File changes: z-context.txt", exact: true });
+  const toggleLongFile = longFile.getByRole("button", { name: "Toggle diff: z-context.txt", exact: true });
+  await detail.getByRole("button", { name: "Expand all files", exact: true }).click();
+  await toggleLongFile.scrollIntoViewIfNeeded();
+  await longFile.getByRole("region", { name: "Side-by-side diff", exact: true }).waitFor();
+  assert.equal(contextReads.length, 0, "Expand all files opens patches, never all full-file contents");
+  const contextUrl = `${base}/api/git/explorer?${new URLSearchParams({ cwd, op: "context", branch: "feature", head: oid, oid, path: "z-context.txt" })}`;
+  const refuseContext = (route) => route.fulfill({ status: 409, json: { error: "E2E matching context unavailable" } });
+  await page.route(contextUrl, refuseContext);
+  await withExpectedBrowserConflict(page, { scenario: "matching context unavailable", url: contextUrl, method: "GET", body: null }, async () => {
+    const response = page.waitForResponse(contextUrl);
+    await longFile.getByRole("button", { name: "Show full file", exact: true }).click();
+    const refused = await response; assert.equal(refused.status(), 409);
+    await longFile.getByRole("alert").getByText(/E2E matching context unavailable/).waitFor();
+    assert.equal(await longFile.getByRole("button", { name: "Show full file", exact: true }).getAttribute("aria-pressed"), "false");
+    assert.ok(await longFile.getByRole("region", { name: "Side-by-side diff", exact: true }).isVisible(), "Context failure never replaces the supplied patch");
+    return refused;
+  });
+  await page.unroute(contextUrl, refuseContext);
+  await longFile.getByRole("button", { name: "Retry context", exact: true }).click();
+  await longFile.getByRole("alert").waitFor({ state: "hidden" });
+  await checkDiffContext(page, longFile, detail, { toggleFile: toggleLongFile });
+  assert.deepEqual(contextReads, ["z-context.txt", "z-context.txt"], "Failure retries once, then layouts/expansion/reading reuse the same snapshot");
+  const oldViewport = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await longFile.getByRole("textbox", { name: "Line number", exact: true }).fill("5000");
+  await longFile.getByRole("button", { name: "Go to line", exact: true }).click();
+  await longFile.getByText("Context line 5000", { exact: true }).first().waitFor();
+  await page.waitForFunction(() => {
+    const element = document.querySelector('[aria-label="File changes: z-context.txt"] .git-diff-code-view');
+    return element && element.scrollWidth > element.clientWidth && element.clientWidth <= innerWidth;
+  });
+  await longFile.getByRole("button", { name: "Next change", exact: true }).click();
+  const addition = longFile.getByText("Explorer changed 4500", { exact: true }); await addition.waitFor();
+  const additionBounds = await addition.boundingBox(), readerBounds = await longFile.locator(".git-diff-code-view").boundingBox();
+  assert.ok(additionBounds && readerBounds && additionBounds.x < readerBounds.x + readerBounds.width && additionBounds.x + additionBounds.width > readerBounds.x,
+    "Change navigation brings the selected new side into the mobile viewport");
+  await page.setViewportSize(oldViewport);
+  const restoreSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
+  if (sidebarWasOpen && await restoreSidebar.isVisible()) await restoreSidebar.click();
   page.off("request", recordPatch);
 
   const rootOid = execFileSync("git", ["-C", cwd, "rev-parse", "target"], { encoding: "utf8" }).trim();
@@ -133,7 +176,7 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await firstFile.getByRole("region", { name: "Side-by-side diff" }).getByText("Revised base fixture", { exact: true }).waitFor();
   await page.waitForTimeout(700);
   await detail.getByText(oid, { exact: true }).waitFor();
-  assert.equal(await secondFile.getByRole("button").getAttribute("aria-expanded"), "false", "New commit view resets expansion and cannot inherit the old patch");
+  assert.equal(await secondFile.getByRole("button", { name: "Toggle diff: second.txt", exact: true }).getAttribute("aria-expanded"), "false", "New commit view resets expansion and cannot inherit the old patch");
   await page.unroute("**/api/git/explorer?*", delayOldPatch);
 
   const unavailableUrl = `${base}/api/git/explorer?${new URLSearchParams({ cwd, op: "patch", branch: "feature", head: oid, oid, path: "second.txt" })}`;
@@ -141,7 +184,7 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await page.route(unavailableUrl, refusePatch);
   await withExpectedBrowserConflict(page, { scenario: "local file-patch error", url: unavailableUrl, method: "GET", body: null }, async () => {
     const response = page.waitForResponse(unavailableUrl);
-    await secondFile.getByRole("button").click();
+    await secondFile.getByRole("button", { name: "Toggle diff: second.txt", exact: true }).click();
     const refused = await response;
     assert.equal(refused.status(), 409);
     assert.deepEqual(await refused.json(), { error: "E2E patch unavailable" });
@@ -206,7 +249,8 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
     const mobileDiff = detail.getByRole("region", { name: "Side-by-side diff" });
     await page.waitForFunction(() => {
       const diff = document.querySelector('[aria-label="Side-by-side diff"]');
-      return diff && diff.clientWidth <= innerWidth && diff.scrollWidth > diff.clientWidth;
+      const viewport = diff?.querySelector('.git-diff-code-view');
+      return diff && viewport && diff.clientWidth <= innerWidth && viewport.scrollWidth > viewport.clientWidth;
     });
     assert.ok(await mobileDiff.isVisible(), "Side-by-side diff remains scrollable on mobile");
     await explorer.getByRole("button", { name: "Back to commits" }).click();

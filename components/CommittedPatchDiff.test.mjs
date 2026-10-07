@@ -6,6 +6,11 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { parsePatchFiles } from "@pierre/diffs";
 import ts from "typescript";
+import { createJiti } from "jiti";
+const jiti = createJiti(import.meta.url, { fsCache: false, jsx: { runtime: "automatic" }, alias: { "@": new URL("..", import.meta.url).pathname } });
+const review = await jiti.import("../lib/git-diff-review.ts");
+const toolbar = await jiti.import("./GitDiffToolbar.tsx");
+const preferences = await jiti.import("../hooks/useGitDiffPreferences.ts");
 
 const filename = new URL("./CommittedPatchDiff.tsx", import.meta.url).pathname;
 const source = await readFile(filename, "utf8");
@@ -15,6 +20,9 @@ const require = createRequire(import.meta.url);
 // The component is transpiled to CJS for this focused SSR test; Pierre exports ESM-only entrypoints.
 mod.require = (id) => {
   if (id === "@/hooks/useTheme") return { useTheme: () => ({ isDark: false }) };
+  if (id === "@/lib/git-diff-review") return review;
+  if (id === "./GitDiffToolbar") return toolbar;
+  if (id === "@/hooks/useGitDiffPreferences") return preferences;
   if (id === "@pierre/diffs") return require(new URL("../node_modules/@pierre/diffs/dist/index.js", import.meta.url).pathname);
   if (id === "@pierre/diffs/react") return require(new URL("../node_modules/@pierre/diffs/dist/react/index.js", import.meta.url).pathname);
   return require(id);

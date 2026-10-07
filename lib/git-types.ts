@@ -28,4 +28,6 @@ export interface GitFileDiffResponse {
   supported: boolean;
   status?: GitFileStatusKind;
   patch?: string;
+  /** Opaque comparison identity; only equality-checked, never evaluated by Git. */
+  revision?: string;
 }
