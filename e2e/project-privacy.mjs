@@ -74,6 +74,30 @@ export async function checkProjectPrivacy(page, width, { base, api, post, select
 
   await region().getByRole("button", { name: "Show hidden projects", exact: true }).click();
   await privateRow().waitFor();
+  await region().getByRole("combobox", { name: "Project" }).selectOption({ label: "project" });
+
+  // Focus/visibility reloads withhold private rows until settings are known,
+  // but must not forget the browser's reveal preference or project filter.
+  let releaseFocusRead;
+  const focusRead = new Promise((resolve) => { releaseFocusRead = resolve; });
+  const holdPrivacyRead = async (route) => {
+    await focusRead;
+    await route.fulfill({ status: 200, contentType: "application/json", json: { keys: [key] } });
+  };
+  await page.route("**/api/hidden-projects", holdPrivacyRead);
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("blur"));
+    window.dispatchEvent(new Event("focus"));
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await region().getByText("Loading project privacy settings…", { exact: true }).waitFor();
+  assert.equal(await region().locator(".activity-item").count(), 0);
+  releaseFocusRead();
+  await privateRow().waitFor();
+  assert.equal(await region().getByRole("combobox", { name: "Project" }).inputValue(), key);
+  await page.unroute("**/api/hidden-projects", holdPrivacyRead);
+  await region().getByRole("combobox", { name: "Project" }).selectOption("");
+
   if (mobile) {
     await privateRow().click();
     await page.getByRole("button", { name: "Back to Activity" }).click();
@@ -81,14 +105,15 @@ export async function checkProjectPrivacy(page, width, { base, api, post, select
     await region().getByRole("button", { name: "Close Activity", exact: true }).click();
     await openActivity();
   }
-  await assertConcealed();
+  await privateRow().waitFor();
+  assert.equal(await region().getByRole("button", { name: "Conceal hidden projects", exact: true }).getAttribute("aria-pressed"), "true");
 
-  // Fresh page cannot inherit the temporary reveal bit.
-  await region().getByRole("button", { name: "Show hidden projects", exact: true }).click();
+  // Reload restores only this browser's reveal preference.
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByText("Active branch answer", { exact: true }).waitFor();
   await openActivity();
-  await assertConcealed();
+  await privateRow().waitFor();
+  assert.equal(await region().getByRole("button", { name: "Conceal hidden projects", exact: true }).getAttribute("aria-pressed"), "true");
   control = await openSettings();
   assert.equal(await control.getAttribute("aria-checked"), "true");
   await closeSettings();
@@ -112,6 +137,12 @@ export async function checkProjectPrivacy(page, width, { base, api, post, select
   assert.equal(await region().locator(".activity-item").count(), 0);
   await page.unroute("**/api/hidden-projects");
   await region().getByRole("button", { name: "Retry", exact: true }).click();
+  await privateRow().waitFor();
+  await region().getByRole("button", { name: "Conceal hidden projects", exact: true }).click();
+  await assertConcealed();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByText("Active branch answer", { exact: true }).waitFor();
+  await openActivity();
   await assertConcealed();
 
   // A failed save cannot optimistically reveal, silently reset storage, or keep stale rows.
@@ -129,8 +160,10 @@ export async function checkProjectPrivacy(page, width, { base, api, post, select
   await region().getByRole("button", { name: "Retry", exact: true }).click();
   await assertConcealed();
 
-  // Cross-browser persistence and restoration; no browser-local settings are required.
+  // Hidden-project settings are shared, but reveal is independent per browser.
   if (width === 1280) {
+    await region().getByRole("button", { name: "Show hidden projects", exact: true }).click();
+    await privateRow().waitFor();
     const peerContext = await page.context().browser().newContext({ viewport: { width, height: 900 }, locale: "en-US" });
     try {
       const peer = await peerContext.newPage();
@@ -147,6 +180,15 @@ export async function checkProjectPrivacy(page, width, { base, api, post, select
       await peerRegion.locator(".activity-item-working").filter({ hasText: "Other workspace task" }).waitFor();
       assert.equal(await peerRegion.locator(".activity-item-working").filter({ hasText: "Branch root" }).count(), 0);
       assert.equal(await peerRegion.getByRole("combobox", { name: "Project" }).locator("option").filter({ hasText: /^project$/ }).count(), 0);
+      await peerRegion.getByRole("button", { name: "Show hidden projects", exact: true }).click();
+      await peerRegion.locator(".activity-item-working").filter({ hasText: "Branch root" }).waitFor();
+      await region().getByRole("button", { name: "Conceal hidden projects", exact: true }).click();
+      await assertConcealed();
+      await peer.reload({ waitUntil: "domcontentloaded" });
+      await peer.getByText("Active branch answer", { exact: true }).waitFor();
+      await peer.getByRole("button", { name: /^Activity/ }).click();
+      await peerRegion.getByRole("button", { name: "Conceal hidden projects", exact: true }).waitFor();
+      await peerRegion.locator(".activity-item-working").filter({ hasText: "Branch root" }).waitFor();
       await post("/api/hidden-projects", { key, hidden: false });
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await privateRow().waitFor();
@@ -201,5 +243,5 @@ export async function checkProjectPrivacy(page, width, { base, api, post, select
   }
   await page.unroute("**/api/agent/running");
   await region().getByRole("button", { name: "Close Activity", exact: true }).click();
-  console.log(`PASS: ${width}px persistent hidden projects, safe loading, temporary reveal and restoration`);
+  console.log(`PASS: ${width}px persistent hidden projects, safe loading, browser-local reveal and restoration`);
 }
