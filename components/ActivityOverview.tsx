@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
-import { activityProjectName, activitySessionName, getActivitySections, type ActivityItem, type ActivityStatus } from "@/lib/activity";
+import { activityProjectName, activitySessionName, getActivitySections, hiddenActivitySessionIds, type ActivityItem, type ActivityStatus } from "@/lib/activity";
 import type { SessionAttention, SessionInfo } from "@/lib/types";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { SubagentIcon } from "./SubagentIcon";
+import { PrivacyEyeIcon } from "./PrivacyEyeIcon";
+import type { ProjectPrivacy } from "@/hooks/useHiddenProjects";
 
 interface Props {
   sessions: SessionInfo[];
@@ -20,13 +22,25 @@ interface Props {
   onClose: () => void;
   hidden?: boolean;
   recoveryRefreshKey?: number;
+  privacy: ProjectPrivacy;
 }
 
 const STATUS_ORDER: ActivityStatus[] = ["needs-you", "working", "queued", "interrupted", "ready"];
 
-export function ActivityOverview({ sessions, runningIds, queuedIds, attention, reviewIds, available, selectedId, onSelect, onMarkRead, onClose, hidden = false, recoveryRefreshKey = 0 }: Props) {
+export function ActivityOverview({ sessions, runningIds, queuedIds, attention, reviewIds, available, selectedId, onSelect, onMarkRead, onClose, hidden = false, recoveryRefreshKey = 0, privacy }: Props) {
   const { t, locale } = useI18n();
   const [projectFilter, setProjectFilter] = useState("");
+  const [showHidden, setShowHidden] = useState(false);
+  const revealing = showHidden && !hidden && privacy.keys !== null;
+  const privacyReady = privacy.keys !== null;
+  const hiddenIds = useMemo(() => hiddenActivitySessionIds(sessions, privacy.keys ?? new Set()), [sessions, privacy.keys]);
+  const filterConcealed = Boolean(privacy.keys?.has(projectFilter)) || (sessions.some((item) => workspaceKeyOf(item) === projectFilter)
+    && !sessions.some((item) => workspaceKeyOf(item) === projectFilter && !hiddenIds.has(item.id)));
+  const effectiveProjectFilter = privacyReady && (revealing || !filterConcealed) ? projectFilter : "";
+  useEffect(() => {
+    if (hidden || !privacyReady) setShowHidden(false);
+    if (!revealing && filterConcealed) setProjectFilter("");
+  }, [hidden, revealing, filterConcealed, privacyReady]);
   const [interruptedIds, setInterruptedIds] = useState<Set<string>>(() => new Set());
   const [recoveryAvailable, setRecoveryAvailable] = useState(true);
   const [recoveryLoading, setRecoveryLoading] = useState(true);
@@ -73,22 +87,25 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
     };
   }, [hidden, recoveryRefreshKey]);
 
-  const all = useMemo(() => getActivitySections(sessions, runningIds, attention, reviewIds, null, queuedIds, interruptedIds),
-    [sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds]);
+  const concealed = useMemo(() => getActivitySections(privacyReady ? sessions : [], runningIds, attention, reviewIds, null, queuedIds, interruptedIds, privacy.keys ?? new Set()),
+    [privacyReady, privacy.keys, sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds]);
+  const all = useMemo(() => revealing
+    ? getActivitySections(sessions, runningIds, attention, reviewIds, null, queuedIds, interruptedIds) : concealed,
+    [revealing, sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds, concealed]);
   const projects = useMemo(() => {
     const keys = new Map<string, string>();
     for (const item of Object.values(all).flat()) keys.set(item.projectKey, activityProjectName(item.session));
     // Keep an emptied selection visible, rather than showing "All projects"
     // while silently retaining a filter with no matches.
-    if (projectFilter && !keys.has(projectFilter)) {
-      const session = sessions.find((item) => workspaceKeyOf(item) === projectFilter);
-      keys.set(projectFilter, session ? activityProjectName(session) : projectFilter);
+    if (effectiveProjectFilter && !keys.has(effectiveProjectFilter)) {
+      const session = sessions.find((item) => workspaceKeyOf(item) === effectiveProjectFilter);
+      keys.set(effectiveProjectFilter, session ? activityProjectName(session) : effectiveProjectFilter);
     }
     return [...keys].sort((a, b) => a[1].localeCompare(b[1]));
-  }, [all, projectFilter, sessions]);
-  const sections = useMemo(() => projectFilter
-    ? getActivitySections(sessions, runningIds, attention, reviewIds, projectFilter, queuedIds, interruptedIds) : all,
-  [projectFilter, sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds, all]);
+  }, [all, effectiveProjectFilter, sessions]);
+  const sections = useMemo(() => effectiveProjectFilter
+    ? getActivitySections(privacyReady ? sessions : [], runningIds, attention, reviewIds, effectiveProjectFilter, queuedIds, interruptedIds, revealing ? new Set() : privacy.keys ?? new Set()) : all,
+  [effectiveProjectFilter, privacyReady, sessions, runningIds, attention, reviewIds, queuedIds, interruptedIds, revealing, privacy.keys, all]);
   const total = Object.values(sections).reduce((count, items) => count + items.length, 0);
   const sectionTitle: Record<ActivityStatus, string> = {
     "needs-you": t("activity.needsYou"), working: t("activity.working"), queued: t("activity.queued"),
@@ -113,14 +130,24 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
       </div>
       <div className="activity-filter">
         <label htmlFor="activity-project">{t("activity.project")}</label>
-        <select id="activity-project" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
+        <select id="activity-project" disabled={!privacyReady} value={effectiveProjectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
           <option value="">{t("activity.allProjects")}</option>
           {projects.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
         </select>
+        <button type="button" className="activity-privacy-toggle" disabled={!privacyReady} aria-pressed={revealing}
+          aria-label={t(revealing ? "privacy.conceal" : "privacy.reveal")} title={t(revealing ? "privacy.conceal" : "privacy.reveal")}
+          onClick={() => {
+            if (revealing && filterConcealed) setProjectFilter("");
+            setShowHidden(!revealing);
+          }}>
+          <PrivacyEyeIcon concealed={!revealing} />
+        </button>
       </div>
+      {privacy.error && <p role="alert" className="activity-unavailable">{t("privacy.unavailable")} <button type="button" onClick={privacy.refresh}>{t("privacy.retry")}</button></p>}
+      {!privacyReady && !privacy.error && <p role="status" className="activity-unavailable">{t("privacy.loading")}</p>}
       {!available && <p role="status" className="activity-unavailable">{t("activity.unavailable")}</p>}
       {!recoveryAvailable && <p role="status" className="activity-unavailable">{t("activity.recoveryUnavailable")}</p>}
-      {total === 0 && !recoveryLoading && available && recoveryAvailable && <p className="activity-empty">{t("activity.empty")}</p>}
+      {privacyReady && total === 0 && !recoveryLoading && available && recoveryAvailable && <p className="activity-empty">{t("activity.empty")}</p>}
       <div className="activity-sections">
         {STATUS_ORDER.map((status) => sections[status].length > 0 && (
           <section key={status} aria-label={sectionTitle[status]} className="activity-section">
@@ -144,6 +171,7 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
                         {session.relation?.kind === "subagent" && (
                           <span className="activity-subagent-icon" title={t("activity.subagent")}><SubagentIcon /></span>
                         )}
+                        {revealing && hiddenIds.has(session.id) && <span className="activity-private-marker" title={t("privacy.hiddenProject")} aria-label={t("privacy.hiddenProject")}><PrivacyEyeIcon concealed /></span>}
                         <span className="activity-item-title" title={label}>{label}</span>
                         <span className="activity-item-action">{action}</span>
                       </span>

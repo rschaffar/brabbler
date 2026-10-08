@@ -9,14 +9,15 @@ const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const { ActivityOverview } = await jiti.import("./ActivityOverview.tsx");
 
 const session = (id, relation) => ({
-  id, name: id, cwd: "/project", created: "2026-01-01T00:00:00Z", modified: "2026-01-02T00:00:00Z",
+  id, name: id, cwd: "/project", projectRoot: "/project", created: "2026-01-01T00:00:00Z", modified: "2026-01-02T00:00:00Z",
   ...(relation ? { relation: { kind: "subagent", parentSessionId: relation, profile: "explore" } } : {}),
 });
 
-function render(sessions, runningIds, reviewIds) {
+function render(sessions, runningIds, reviewIds, privacy = { keys: new Set(), error: false }) {
   return renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(ActivityOverview, {
     sessions, runningIds: new Set(runningIds), queuedIds: new Set(), attention: [], reviewIds: new Set(reviewIds),
     available: true, selectedId: null, onSelect() {}, onMarkRead() {}, onClose() {},
+    privacy: { pendingKey: null, refresh() {}, setHidden() {}, ...privacy },
   })));
 }
 
@@ -34,6 +35,34 @@ test("ready subagents are identified even when their parent is working or absent
   assert.doesNotMatch(html, /aria-label="ready-root[^\"]*Sub-agent/);
   assert.match(html, /aria-label="Mark ready-root as read"[^>]*>Read<\/button>/);
   assert.match(html, /aria-label="Mark ready-child as read"[^>]*>Read<\/button>/);
+});
+
+test("concealed projects have no rows, options, titles, summaries or section counts in the rendered HTML", () => {
+  const secret = { ...session("private-session"), cwd: "/secret-path", projectRoot: "/secret-path", name: "private-title" };
+  const child = { ...session("private-child", "private-session"), cwd: "/another-path" };
+  const html = render([secret, child, session("public-session")], ["private-session", "private-child", "public-session"], [], { keys: new Set(["/secret-path"]), error: false });
+  assert.doesNotMatch(html, /private-session|private-child|private-title|secret-path|another-path/);
+  assert.match(html, /Working <span>1<\/span>/);
+  assert.match(html, /aria-label="Show hidden projects"/);
+});
+
+test("an unresolved fresh worktree row is withheld until its canonical project identity is hydrated", () => {
+  const fresh = { ...session("private-prompt"), cwd: "/private-worktrees/fresh", projectRoot: undefined };
+  const privacy = { keys: new Set(["/private"]), error: false };
+  const pending = render([fresh, session("public-session")], ["private-prompt", "public-session"], [], privacy);
+  assert.doesNotMatch(pending, /private-prompt|private-worktrees/);
+  assert.match(pending, /Working <span>1<\/span>/);
+  const hydrated = render([{ ...fresh, projectRoot: "/private", projectKey: "/private" }, session("public-session")], ["private-prompt", "public-session"], [], privacy);
+  assert.doesNotMatch(hydrated, /private-prompt|private-worktrees/);
+});
+
+test("loading and failed privacy state withhold Activity rather than treating it as no hidden projects", () => {
+  for (const error of [false, true]) {
+    const html = render([session("private-session")], ["private-session"], [], { keys: null, error });
+    assert.doesNotMatch(html, /private-session|value="\/project"|Working <span>/);
+    assert.match(html, error ? /Project privacy settings are unavailable/ : /Loading project privacy settings/);
+    if (error) assert.match(html, />Retry<\/button>/);
+  }
 });
 
 test("nested subagents retain their indentation and icon", () => {

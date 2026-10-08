@@ -2154,6 +2154,12 @@ span.token.table {
 .activity-close { width: 32px; height: 32px; flex: none; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 24px; cursor: pointer; }
 .activity-close:hover, .activity-close:focus-visible { background: var(--bg-hover); color: var(--text); }
 .activity-filter { justify-content: flex-start; padding-block: 10px; font-size: 12px; color: var(--text-muted); }
+.activity-privacy-toggle { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex: none; margin-left: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text-muted); cursor: pointer; }
+.activity-privacy-toggle:hover, .activity-privacy-toggle:focus-visible { background: var(--bg-hover); color: var(--text); }
+.activity-privacy-toggle[aria-pressed="true"] { background: var(--bg-selected); color: var(--accent); border-color: var(--accent); }
+.activity-privacy-toggle:disabled { opacity: 0.5; cursor: default; }
+.activity-private-marker { display: inline-flex; flex: none; color: var(--text-dim); }
+.activity-private-marker svg { width: 14px; height: 14px; }
 .activity-filter select { min-width: 0; max-width: 220px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
 .activity-unavailable, .activity-empty { padding: 12px 16px; margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
 .activity-unavailable { background: var(--bg-hover); }
@@ -2192,5 +2198,5 @@ span.token.table {
   .activity-overview { position: absolute; inset: 0; z-index: 5; width: 100%; min-width: 0; border-right: 0; }
   .git-explorer-host { position: absolute; inset: 0; z-index: 5; width: 100%; border-right: 0; }
   .activity-item { min-height: 64px; }
-  .activity-close { width: 44px; height: 44px; }
+  .activity-close, .activity-privacy-toggle { width: 44px; height: 44px; }
 }
