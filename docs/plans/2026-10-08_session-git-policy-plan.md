@@ -35,7 +35,8 @@ Retraction: a prior chat recommendation limited automatic cleanup to worktrees w
 - [x] Add bounded cleanup mechanics, explicit generated-resource selection and optional feature-branch deletion with exact resource revalidation.
 - [x] Align documented skill/harness policy and repository instructions; prepare the Nix source changes only in separately approved isolation.
 - [x] Add regression coverage for recorded session scenarios; run focused tests while developing, then full offline/core tests, typecheck/lint and desktop/mobile browser acceptance. No production build.
-- [ ] Review and commit coherent feature changes; present exact-state local integration candidate only after verification.
+- [x] Review and commit coherent feature changes; verify the rebased application candidate.
+- [ ] Obtain exact-state local integration approval; retain feature resources until integration and cleanup are separately authorized.
 
 ## First-slice checkpoint (2026-10-08)
 
@@ -72,6 +73,21 @@ Latest verification:
 - Nix worktree: `bash tests/git-worktrees-skill.sh home/presets/skills/git-worktrees/SKILL.md home/presets/pi/AGENTS.md home/presets/ai-agents.nix`, `bash -n`, ShellCheck and `nix build --offline --no-write-lock-file --no-link .#checks.x86_64-linux.git-worktrees-skill`: passed. No activation or CLI engine change.
 
 Application work is verified; feature commits/local integration remain lifecycle steps, not deployment authority. The installed service/skill, remote repositories and primary `flake.lock` are untouched. No production build was run. Known limitations: live-model obedience to policy has not been evaluated; external Git/filesystem writers and other server processes are not coordinated; the prior archive/context race is not claimed fixed.
+
+## Rebased candidate verification
+
+Pi Web application commit `a8b1f71a0982b7811693064f452ccb050339ea72` is rebased onto current local `rst-main` `fe77710fd1c67abf8cc191fc3b5323679de77787` (question-set integration). Rebase completed without conflicts; reviewed the shared receipt/UI/runtime diff. The original pre-rebase feature commit was `6b70ac50228e1bb63c059e23fcc0cac6bd733850`.
+
+On the rebased application commit:
+
+- `npm test`: **1,669 passed**; `node_modules/.bin/tsc --noEmit`, `npm run lint`: passed (`/tmp/pi-git-policy-rebased-baseline.log`).
+- `nix develop --offline --no-write-lock-file -c node nix/test-offline.mjs`: **259/259 files, 1,663 tests passed**, including typegen/typecheck/lint (`/tmp/pi-git-policy-rebased-offline.log`).
+- Separate plugin test selection: **67 passed** (`/tmp/pi-git-policy-rebased-plugin-tests.log`).
+- Full desktop/mobile browser acceptance, including the newly integrated question sets: passed (`/tmp/pi-git-policy-rebased-browser.log`).
+- Plugin desktop/mobile browser acceptance: passed (`/tmp/pi-git-policy-rebased-plugin-browser.log`).
+- Terminal/browser-specific source is unchanged from the earlier passing real-terminal acceptance; core runtime/admission tests and browser startup flows were rerun above.
+
+Nix feature commit `67c1de6d6b6adf9fb65ef73a089becd7ce5c2c1b` retains base `e9a6386b1fb315f65169a23d5d8e454c3ee2a07c`; its focused verification is recorded above. Both feature commits are unsigned with the existing author identity. Nix local integration remains blocked by the unrelated primary `flake.lock` modification. This final status update changes only this plan, not tested application inputs. No merge, publication, activation or feature cleanup has been performed.
 
 ## Risks and Recovery
 
