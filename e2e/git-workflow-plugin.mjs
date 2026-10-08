@@ -19,7 +19,7 @@ export default function (pi) {
       const git = (...args) => execFileSync("git", ["-C", selectedCheckout, ...args], { encoding: "utf8" }).trim();
       operation = { action: "cleanupFeature", checkout: selectedCheckout, featureBranch: "cleanup", featureTip: git("rev-parse", "cleanup"),
         integrationCommit: git("rev-parse", "main"), targetBranch: "main", worktreePath: join(selectedCheckout + "-worktrees", "cleanup"),
-        removeWorktree: true, deleteBranch: true, artifactRoots: ["node_modules", ".codegraph"] };
+        removeWorktree: true, deleteBranch: true, artifactRoots: [] };
     } else if (mode.startsWith("preview-")) {
       const action = mode.split("-")[1];
       const targetCheckout = execFileSync("git", ["-C", ctx.cwd, "worktree", "list", "--porcelain"], { encoding: "utf8" }).split("\\n\\n").find((record) => record.includes("branch refs/heads/target")).split("\\n")[0].slice(9);
@@ -431,29 +431,85 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   await saved.getByRole("button", { name: "Collapse", exact: true }).click();
   await patch({}, "project", ["commit"]);
 
-  // One approval covers compact artifact inventory, linked worktree and local ref.
+  // Even under Allow, unpermitted discovered directories AND a regular file
+  // require one-time approval. This same real-Git fixture runs on desktop/mobile.
   const cleanupRepo = `${repo}-cleanup-${width}`;
   execFileSync("git", ["init", "-qb", "main", cleanupRepo]);
   const cleanupGit = (...args) => execFileSync("git", ["-C", cleanupRepo, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8" }).trim();
   cleanupGit("config", "user.name", "E2E"); cleanupGit("config", "user.email", "e2e@example.invalid");
-  writeFileSync(join(cleanupRepo, ".gitignore"), "node_modules/\n.codegraph/\n");
+  writeFileSync(join(cleanupRepo, ".gitignore"), "node_modules/\n.codegraph/\n.next/\ntest-results/\nnext-env.d.ts\n");
   cleanupGit("add", "."); cleanupGit("commit", "-qm", "Cleanup base");
   const cleanupPath = join(`${cleanupRepo}-worktrees`, "cleanup");
   cleanupGit("worktree", "add", "-b", "cleanup", cleanupPath);
   execFileSync("git", ["-C", cleanupPath, "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-qm", "Integrated feature"]);
   cleanupGit("merge", "--no-ff", "--no-edit", "cleanup");
-  for (const root of ["node_modules", ".codegraph"]) { mkdirSync(join(cleanupPath, root)); writeFileSync(join(cleanupPath, root, "generated"), "fixture artifact"); }
+  const cleanupRoots = ["node_modules", ".codegraph", ".next", "test-results", "next-env.d.ts"];
+  for (const root of cleanupRoots.slice(0, -1)) { mkdirSync(join(cleanupPath, root)); writeFileSync(join(cleanupPath, root, "generated"), "fixture artifact"); }
+  writeFileSync(join(cleanupPath, "next-env.d.ts"), "/// <reference types=\"next\" />\n");
   assert.ok((await page.request.post(`${base}/api/cwd/validate`, { data: { cwd: cleanupRepo } })).ok());
-  await patch({ cleanupFeature: "ask", targetBranch: "main", approvedArtifactRoots: "node_modules, .codegraph" }, "project", [], cleanupRepo);
-  card = await start("cleanup", "Clean up integrated Git feature");
-  await card.getByText(/entries · .* bytes · SHA256/).first().waitFor();
-  await card.getByRole("button", { name: "Clean up listed resources", exact: true }).click();
-  await finish("cleanup", "completed");
-  assert.equal(existsSync(cleanupPath), false); assert.equal(cleanupGit("branch", "--list", "cleanup"), "");
-  const cleanupReceipt = page.locator("[data-operation-receipt]").last();
-  await cleanupReceipt.getByRole("button", { name: /Succeeded/ }).click();
-  await cleanupReceipt.getByText("User approved · ask · project", { exact: true }).waitFor();
-  await checkBlockingCard(cleanupReceipt.getByRole("group", { name: "Clean up integrated Git feature", exact: true }));
-  await cleanupReceipt.getByRole("button", { name: "Collapse", exact: true }).click();
+  const cleanupSettings = await patch({ cleanupFeature: "allow", targetBranch: "main", approvedArtifactRoots: null }, "project", [], cleanupRepo);
+  const cleanupTip = cleanupGit("rev-parse", "cleanup");
+  const cleanupDecisionsBefore = decisions().length;
+  page.on("request", recordReviewRequest);
+  try {
+    card = await start("cleanup", "Clean up integrated Git feature");
+    for (const root of cleanupRoots) await card.getByText(root, { exact: true }).waitFor();
+    assert.equal(await card.getByText(/entries · .* bytes · SHA256/).count(), cleanupRoots.length);
+    await card.getByRole("button", { name: "Keep resources", exact: true }).click();
+    await finish("cleanup", "refused");
+    assert.equal(decisions().length, cleanupDecisionsBefore + 1);
+    assert.equal(cleanupGit("rev-parse", "cleanup"), cleanupTip);
+    for (const root of cleanupRoots) assert.equal(existsSync(join(cleanupPath, root)), true, `Reject retained ${root}`);
+    const rejectedCleanup = page.locator("[data-operation-receipt]").last();
+    await rejectedCleanup.getByRole("button", { name: /Cancelled/ }).click();
+    await rejectedCleanup.getByText("Not approved · ask · one-time artifacts (project allow)", { exact: true }).waitFor();
+    await rejectedCleanup.getByRole("button", { name: "Collapse", exact: true }).click();
+
+    card = await start("cleanup", "Clean up integrated Git feature");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    card = page.getByRole("group", { name: "Clean up integrated Git feature", exact: true });
+    await card.waitFor(); await checkBlockingCard(card);
+    assert.equal(await card.count(), 1, "One live card covers the operation and all artifacts");
+    for (const root of cleanupRoots) await card.getByText(root, { exact: true }).waitFor();
+    await card.getByText(/1 entries · .* bytes · SHA256/).waitFor();
+    assert.equal(await card.getByText(/entries · .* bytes · SHA256/).count(), cleanupRoots.length);
+    await page.screenshot({ path: join(artifacts, `git-plugin-cleanup-approval-${width}.png`) });
+    await card.getByRole("button", { name: "Clean up listed resources", exact: true }).click();
+    await finish("cleanup", "completed");
+    assert.equal(decisions().length, cleanupDecisionsBefore + 2, "Exactly one decision for each cleanup attempt");
+    assert.equal(decisions().at(-1).action, "approve");
+    assert.equal(existsSync(cleanupPath), false); assert.equal(cleanupGit("branch", "--list", "cleanup"), "");
+    const cleanupReceipt = page.locator("[data-operation-receipt]").last();
+    await cleanupReceipt.getByRole("button", { name: /Succeeded/ }).waitFor();
+    const cleanupOperationId = await cleanupReceipt.getAttribute("data-operation-receipt");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const historicalCleanup = page.locator(`[data-operation-receipt="${cleanupOperationId}"]`);
+    await historicalCleanup.getByRole("button", { name: /Succeeded/ }).click();
+    assert.equal(await historicalCleanup.count(), 1, "The durable outcome survives reload without duplication");
+    await historicalCleanup.getByText("User approved · ask · one-time artifacts (project allow)", { exact: true }).waitFor();
+    const cleanupGroup = historicalCleanup.getByRole("group", { name: "Clean up integrated Git feature", exact: true });
+    await checkBlockingCard(cleanupGroup);
+    for (const root of cleanupRoots) await cleanupGroup.getByText(root, { exact: true }).waitFor();
+    assert.equal(await cleanupGroup.getByRole("button", { name: /Clean up listed resources|Keep resources|Reject|Cancel/ }).count(), 0);
+    const persisted = await page.request.get(`${base}/api/sessions/${sessionId}?tail=1000&tree=summary`);
+    assert.ok(persisted.ok(), await persisted.text());
+    const outcomes = (await persisted.json()).context.messages.filter((message) => message.role === "custom"
+      && message.customType === "pi-web:operation-receipt" && message.details?.operationId === cleanupOperationId);
+    assert.equal(outcomes.length, 1);
+    assert.equal(outcomes[0].details.phase, "succeeded");
+    assert.equal(outcomes[0].details.authorization.mode, "ask");
+    assert.equal(outcomes[0].details.authorization.decision, "user-approved");
+    assert.equal(outcomes[0].details.authorization.source, "one-time artifacts (project allow)");
+    const inventory = outcomes[0].details.card.sections.flatMap((section) => section.fields ?? []).filter((field) => /SHA256/.test(field.value));
+    assert.deepEqual(inventory.map((field) => field.label).sort(), [...cleanupRoots].sort());
+    const afterSettings = await page.request.get(`${base}/api/plugins/bundled?${new URLSearchParams({ cwd: cleanupRepo, sessionId })}`);
+    assert.ok(afterSettings.ok(), await afterSettings.text());
+    assert.deepEqual((await afterSettings.json()).plugins.find((plugin) => plugin.manifest.id === "git-workflow").settings, cleanupSettings,
+      "Neither rejection nor one-time approval changes stored permission settings");
+    assert.equal(decisions().length, cleanupDecisionsBefore + 2, "Historical receipt cannot execute cleanup again");
+    await historicalCleanup.getByRole("button", { name: "Collapse", exact: true }).click();
+  } finally {
+    page.off("request", recordReviewRequest);
+  }
   console.log(`PASS: ${width}px durable Ask/Allow outcomes and bounded combined cleanup; all Git approval layouts, lazy snapshot context in split/unified/Before/After, search/navigation/collapse, wide Escape, exact read-only historical context and expired raw fallback, cross-repository settings, toggle, rejection, reconnect and Stop`);
 }

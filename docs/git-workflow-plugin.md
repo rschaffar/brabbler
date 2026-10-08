@@ -78,7 +78,9 @@ Each of `commit`, `rebase`, `merge`, `createWorktree`, `attachWorktree`,
 - **ask** displays the selected resources, captured full refs/tree, exact message,
   Git arguments and required check commands, then waits for an explicit answer.
   That approval covers those checks and the operation, not future invocations.
-- **allow** executes without an approval question, with the same validation.
+- **allow** executes without an approval question, with the same validation, except
+  cleanup artifacts missing from the reusable allowlist still require one-time
+  approval. Operation Allow never supplies missing artifact authority.
 
 Target local branch defaults to null (choose one before rebase/merge). Merge
 method defaults to ordinary non-FF; FF-only is the other choice. Required commit
@@ -139,7 +141,10 @@ registration and captured physical identity/state are rechecked before effects.
   content. This tool has no force removal or implicit post-merge cleanup.
 - `git_cleanup`: explicit `checkout`, `featureBranch`, full `featureTip` and
   `integrationCommit`, optional invocation `targetBranch` and `worktreePath`,
-  explicit `removeWorktree` / `deleteBranch` booleans and `artifactRoots` array.
+  explicit `removeWorktree` / `deleteBranch` booleans and `artifactRoots` array of
+  literal top-level generated files/directories. Worktree removal also proposes
+  top-level ignored artifacts, even with an empty array. Listing/discovery is not
+  permission; unlisted artifacts require the live approval below.
   The feature must remain exactly at its captured tip and be an ancestor of the
   pinned integration commit, which must remain reachable from the local target.
   A kept checked-out worktree cannot have its branch deleted. Symbolic refs and
@@ -149,22 +154,47 @@ registration and captured physical identity/state are rechecked before effects.
 
 ### Bounded cleanup
 
-**Permitted generated directories** (`approvedArtifactRoots`) is a user-owned,
-comma-separated list of disposable top-level directory names, with **no defaults**.
-For example, a user may explicitly permit `.codegraph, node_modules, .next` for a
-project. An agent cannot grant this permission by supplying an argument or naming
-an ignored directory. Even an Ask approval requires roots selected from this list.
-Workflow artifact Ask still uses `ask_user`; Keep forbids deletion. Existing
-`removeWorktree: allow` does not grant the new cleanup permission.
+Cleanup supports two complementary ways to authorize exact generated **files or
+directories** (see [ADR 0017](adr/0017-cleanup-artifact-approval.md)):
 
-One cleanup card covers the selected directories, worktree and local branch.
-It displays compact counts, byte sizes and SHA-256 inventory digests rather than
-one record per dependency. Inventories include contents, metadata, identities,
-tracked source and registration guards. Unknown files/directories, tracked source
-inside a generated root, dirty source, nested repositories, special files,
-symlink roots, mounted directories, locked/prunable worktrees and observed active
-use refuse cleanup. Links inside generated directories are inventoried as links,
-never followed. Main and caller checkouts (including descendant cwds) are protected.
+- **One-time approval:** when removing a worktree, the server proposes top-level
+  ignored files/directories alongside explicitly selected `artifactRoots`. Any
+  artifact missing from the reusable allowlist requires one live cleanup card,
+  **even when `cleanupFeature` is Allow**. The card lists each path, counts, byte
+  size and content/metadata digest, distinguishing permitted artifacts from those
+  needing approval. Approve authorizes only that captured operation; Reject/Cancel
+  retains the resources. It never changes settings. Missing browser UI fails closed.
+- **Reusable allowlist:** **Settings → Plugins → Git Workflow → Permitted generated
+  files and directories** (`approvedArtifactRoots`) accepts comma-separated literal
+  top-level names, with **no defaults or globs**. For example, explicitly permit
+  `.codegraph, node_modules, .next, test-results, next-env.d.ts, tsconfig.tsbuildinfo`
+  for a project if those paths are disposable there. Existing directory entries
+  keep their meaning. With all artifacts permitted, cleanup follows its ordinary
+  Ask/Allow permission; the allowlist itself does not grant operation permission.
+
+There is no need to populate settings merely to reach a one-time approval. An
+agent can propose paths but cannot grant itself authority or modify the allowlist.
+Ignored status does not mean disposable: review the displayed paths. Workflow
+artifact Ask still chooses intent through `ask_user`; Keep forbids deletion, and
+Deny refuses before discovery. Do not add a duplicate `ask_user` artifact-permission
+question before the card. Existing `removeWorktree: allow` does not grant cleanup
+permission, and strict `git_worktree` removal still refuses ignored content.
+
+One cleanup card covers the artifacts, worktree and local branch. Under a one-time
+exception its durable receipt says **User approved**, with effective Ask mode and
+configured-permission provenance, not **Policy authorized**. Counts/digests are
+compact rather than one record per dependency. Inventories include contents,
+metadata, identities, tracked source and registration guards. Paths are frozen
+before approval: later files cannot be silently included. Unselected unignored
+untracked files still block; explicit generated paths may be proposed for approval.
+Nested ignored files are never promoted to a parent containing tracked source.
+Tracked source inside an artifact root, dirty source, nested repositories, special
+files, symlink roots, mounted directories, locked/prunable worktrees and observed
+active use refuse cleanup. Roots must match exact directory-entry spellings;
+case/trailing-dot aliases of tracked roots or `.git` are conservatively refused
+on every platform. Links inside artifact directories are inventoried as
+links, never followed. Main and caller checkouts (including descendant cwds) are
+protected.
 
 Enumeration is incremental and bounded: at most 250,000 entries / 8 GiB per scan,
 and 750,000 entries / 24 GiB / 90 seconds of inventory time across the invocation.

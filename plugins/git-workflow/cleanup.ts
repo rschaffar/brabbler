@@ -23,11 +23,15 @@ export interface CleanupAccess {
 export interface ArtifactInventory { path: string; entries: number; bytes: number; digest: string }
 export interface CleanupSnapshot {
   identity: string; repositoryIdentity: string; fingerprint: string; artifacts: ArtifactInventory[];
+  unapprovedArtifacts: string[];
   path?: string; cwd: string; target: string;
 }
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const oid = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const rootName = /^[a-zA-Z0-9_.-]{1,128}$/;
+// Conservative on every platform, including Windows case/trailing-dot aliases.
+const rootKey = (name: string) => name.replace(/[. ]+$/g, "").toLowerCase();
+const validRoot = (name: string) => rootName.test(name) && !["", ".git"].includes(rootKey(name));
 export interface CleanupBudget { entries: number; bytes: number; elapsed: number }
 export const createCleanupBudget = (): CleanupBudget => ({ entries: 0, bytes: 0, elapsed: 0 });
 export function cleanupPathWithin(root: string, path: string): boolean {
@@ -43,8 +47,15 @@ function directBranch(access: CleanupAccess, cwd: string, branch: string): strin
 }
 function permittedRoots(policy: GitSettings): string[] {
   const roots = (policy.approvedArtifactRoots ?? "").split(",").map((value) => value.trim()).filter(Boolean);
-  if (roots.some((value) => !rootName.test(value) || [".", "..", ".git"].includes(value))) throw new Error("Invalid configured generated directory list");
+  if (roots.some((value) => !validRoot(value))) throw new Error("Invalid configured generated artifact list");
   return roots;
+}
+function validateRoots(roots: string[]) {
+  if (!Array.isArray(roots) || roots.length > 16 || new Set(roots).size !== roots.length
+    || roots.some((name) => typeof name !== "string" || !validRoot(name))) throw new Error("Select at most 16 distinct literal top-level generated files or directories");
+}
+function selectedArtifact(name: string, roots: string[]): boolean {
+  return roots.some((root) => name === root || name.startsWith(`${root}/`));
 }
 function statIdentity(path: string) {
   const stat = lstatSync(path, { bigint: true });
@@ -92,13 +103,13 @@ async function inventory(path: string, roots: string[], tracked: Set<string>, bu
     if (Number(stat.dev) !== device) throw new Error("Cleanup crosses a mounted filesystem");
     const artifact = byRoot.get(name.split("/")[0]);
     const hash = artifact?.hash ?? tree;
-    if (name.split("/").includes(".git") && name !== ".git") throw new Error("Nested repository in cleanup resources");
+    if (name.split("/").some((part) => rootKey(part) === ".git") && name !== ".git") throw new Error("Nested repository in cleanup resources");
     if (!artifact && name !== ".git" && (stat.isDirectory()
       ? !trackedDirectories.has(name) : !tracked.has(name))) throw new Error(`Unknown cleanup resource: ${name}`);
     hash.update(JSON.stringify([name, String(stat.dev), String(stat.ino), String(stat.mode), String(stat.size), String(stat.mtimeNs), String(stat.ctimeNs)]));
     if (artifact) artifact.entries++;
     if (stat.isSymbolicLink()) {
-      if (roots.includes(name)) throw new Error("Generated directory roots cannot be symlinks");
+      if (roots.includes(name)) throw new Error("Generated artifact roots cannot be symlinks");
       hash.update(readlinkSync(absolute)); // Never follow a link, including one outside this checkout.
     } else if (stat.isDirectory()) {
       for (const child of await names(absolute)) await visit(`${name}/${child}`);
@@ -121,27 +132,36 @@ async function inventory(path: string, roots: string[], tracked: Set<string>, bu
     const after = lstatSync(absolute, { bigint: true });
     if (after.ino !== stat.ino || after.dev !== stat.dev || after.mtimeNs !== stat.mtimeNs || after.ctimeNs !== stat.ctimeNs) throw new Error("Cleanup resource changed during inventory");
   };
-  for (const root of roots) {
-    if (!lstatSync(join(path, root)).isDirectory()) throw new Error("Select existing generated directories only");
-    if ([...tracked].some((file) => file === root || file.startsWith(`${root}/`))) throw new Error("Generated roots cannot include tracked source");
-  }
   try {
-    for (const name of await names(path)) await visit(name);
+    const topNames = await names(path);
+    const topEntries = new Set(topNames);
+    const trackedRoots = new Set([...tracked].map((file) => rootKey(file.split("/")[0])));
+    for (const root of roots) {
+      // lstat alone accepts alternate spellings on case-insensitive filesystems.
+      // Require the literal enumerated entry, not an alias with an empty inventory.
+      if (!topEntries.has(root)) throw new Error(`Artifact must match an exact top-level entry: ${root}`);
+      if (trackedRoots.has(rootKey(root))) throw new Error("Generated roots cannot include or alias tracked source");
+      const stat = lstatSync(join(path, root));
+      if (!stat.isDirectory() && !stat.isFile()) throw new Error("Select existing regular generated files or directories only; symlink roots are refused");
+    }
+    for (const name of topNames) await visit(name);
+    if (artifacts.some((item) => item.entries === 0)) throw new Error("Artifact root was not inventoried; resources retained");
     const rootAfter = lstatSync(path, { bigint: true });
     if (rootAfter.ino !== rootBefore.ino || rootAfter.dev !== rootBefore.dev || rootAfter.mtimeNs !== rootBefore.mtimeNs || rootAfter.ctimeNs !== rootBefore.ctimeNs) throw new Error("Cleanup root changed during inventory");
     return { tree: tree.digest("hex"), artifacts: artifacts.map(({ hash, ...entry }) => ({ ...entry, digest: hash.digest("hex") })) };
   } finally { budget.elapsed += Date.now() - started; }
 }
-export async function captureCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess, budget = createCleanupBudget()): Promise<CleanupSnapshot> {
+export async function captureCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess, budget = createCleanupBudget(), discoverArtifacts = true): Promise<CleanupSnapshot> {
   if (!oid.test(op.featureTip) || !oid.test(op.integrationCommit)) throw new Error("Cleanup requires full exact feature and integration commit IDs");
-  if (!Array.isArray(op.artifactRoots) || op.artifactRoots.length > 16 || new Set(op.artifactRoots).size !== op.artifactRoots.length
-    || op.artifactRoots.some((name) => typeof name !== "string" || !rootName.test(name) || [".", "..", ".git"].includes(name))) throw new Error("Select at most 16 distinct top-level generated directories");
+  validateRoots(op.artifactRoots);
+  let roots = [...op.artifactRoots];
+  const permitted = permittedRoots(policy);
   if (typeof op.removeWorktree !== "boolean" || typeof op.deleteBranch !== "boolean") throw new Error("Cleanup resource choices must be explicit");
   if (op.removeWorktree && policy.cleanupWorktree === "keep" || op.deleteBranch && policy.cleanupBranch === "keep"
     || op.artifactRoots.length && policy.cleanupArtifacts === "keep") throw new Error("Cleanup conflicts with a configured Keep choice");
-  // Model-supplied roots are NOT permission. Even Ask cards require a user-owned
-  // permitted-root setting; choosing a familiar name or ignored file is insufficient.
-  if (op.artifactRoots.some((root) => !permittedRoots(policy).includes(root))) throw new Error("Generated roots need explicit permission in the user-owned permitted directory setting");
+  // Arguments/discovery propose resources, never grant permission. The server
+  // requires a live one-time approval for every root absent from the allowlist,
+  // including when the operation's configured permission is Allow.
   const cwd = access.checkout(op.checkout);
   if (!samePath(cwd, resolve(op.checkout))) throw new Error("Cleanup checkout must be physical, without symlink aliases");
   const repositoryIdentity = repositoryIdentityOf(access, cwd);
@@ -163,18 +183,27 @@ export async function captureCleanup(callerCwd: string, op: CleanupOperation, po
       || samePath(path, registrations[0].path) || samePath(path, cwd)
       || callerWithin) throw new Error("Never clean main/caller, locked, prunable or changed worktrees");
     if (access.inUse(path)) throw new Error("Cleanup worktree is in active use");
+    if (op.removeWorktree && discoverArtifacts) {
+      // Git collapses wholly ignored directories. Never promote a nested ignored
+      // file to its parent: that could sweep in unrelated untracked/source files.
+      const ignored = access.git(path, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"])
+        .split("\0").filter(Boolean).map((name) => name.replace(/\/$/, "")).filter((name) => !name.includes("/"));
+      roots = [...new Set([...roots, ...ignored])];
+      validateRoots(roots);
+    }
+    if (roots.length && policy.cleanupArtifacts === "keep") throw new Error("Cleanup conflicts with a configured Keep choice; artifact resources retained");
     const changes = access.git(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).split("\0").filter(Boolean);
-    if (changes.some((change) => !change.startsWith("?? ") || !op.artifactRoots.some((root) => change.slice(3).startsWith(`${root}/`)))) throw new Error("Cleanup worktree has source changes or unapproved untracked files");
+    if (changes.some((change) => !change.startsWith("?? ") || !selectedArtifact(change.slice(3), roots))) throw new Error("Cleanup worktree has source changes or unapproved untracked files");
     const tracked = new Set(access.git(path, ["ls-files", "--cached", "-z"]).split("\0").filter(Boolean));
-    files = await inventory(path, op.artifactRoots, tracked, budget);
+    files = await inventory(path, roots, tracked, budget);
     if (access.inUse(path)) throw new Error("Cleanup worktree became active during inventory");
     const currentEntry = access.worktrees(cwd).find((item) => samePath(item.path, path!));
     if (digest(currentEntry) !== digest(entry) || !samePath(access.checkout(path, cwd), path)) throw new Error("Worktree registration changed during inventory");
     if (access.git(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).split("\0").filter(Boolean).some((change) => !change.startsWith("?? ")
-      || !op.artifactRoots.some((root) => change.slice(3).startsWith(`${root}/`)))) throw new Error("Source changed during cleanup inventory");
+      || !selectedArtifact(change.slice(3), roots))) throw new Error("Source changed during cleanup inventory");
     const admin = access.git(path, ["rev-parse", "--absolute-git-dir"]).trim();
     identity = [path, entry, statIdentity(path), realpathSync(admin), statIdentity(admin), files.tree];
-  } else if (op.removeWorktree || op.artifactRoots.length) throw new Error("Select the feature worktree for directory cleanup");
+  } else if (op.removeWorktree || op.artifactRoots.length) throw new Error("Select the feature worktree for artifact cleanup");
   if (op.deleteBranch && registrations.some((entry) => entry.branch === op.featureBranch && (!op.removeWorktree || !path || !samePath(entry.path, path)))) throw new Error("Cannot delete a branch retained in a registered worktree");
   // Target tip deliberately excluded: reachability above is the invariant, not
   // unrelated advancement of a target that this operation never writes.
@@ -182,24 +211,27 @@ export async function captureCleanup(callerCwd: string, op: CleanupOperation, po
     || directBranch(access, cwd, op.featureBranch) !== op.featureTip) throw new Error("Repository or feature changed during inventory");
   access.git(cwd, ["merge-base", "--is-ancestor", op.integrationCommit, directBranch(access, cwd, target)]);
   const bound = digest([repositoryIdentity, target, op.featureBranch, op.featureTip, op.integrationCommit, identity]);
-  return { cwd, target, path, repositoryIdentity, identity: bound, artifacts: files?.artifacts ?? [], fingerprint: digest([bound, files?.artifacts ?? []]) };
+  return { cwd, target, path, repositoryIdentity, identity: bound, artifacts: files?.artifacts ?? [],
+    unapprovedArtifacts: roots.filter((root) => !permitted.includes(root)), fingerprint: digest([bound, files?.artifacts ?? []]) };
 }
 export async function performCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess,
   snapshot: CleanupSnapshot, guardPolicy: () => void, runGit: (args: string[]) => Promise<string>, effects: string[],
   onDispatch: (description: string) => void, budget: CleanupBudget): Promise<string> {
-  let remaining = [...op.artifactRoots];
+  // Freeze the exact prepared list. Later ignored files are NOT discovered or
+  // implicitly added under an earlier approval.
+  let remaining = snapshot.artifacts.map((item) => item.path);
   const revalidate = async () => {
     guardPolicy();
-    const current = await captureCleanup(callerCwd, { ...op, artifactRoots: remaining }, policy, access, budget);
+    const current = await captureCleanup(callerCwd, { ...op, artifactRoots: remaining }, policy, access, budget, false);
     if (current.identity !== snapshot.identity || current.artifacts.some((item) =>
       digest(item) !== digest(snapshot.artifacts.find((original) => original.path === item.path)))) throw new Error("Cleanup resources changed; remaining resources retained");
     guardPolicy();
   };
-  for (const root of op.artifactRoots) {
+  for (const root of snapshot.artifacts.map((item) => item.path)) {
     await revalidate();
-    onDispatch(`Remove generated directory: ${root}`);
+    onDispatch(`Remove generated artifact: ${root}`);
     await rm(join(snapshot.path!, root), { recursive: true });
-    effects.push(`Removed generated directory: ${root}`);
+    effects.push(`Removed generated artifact: ${root}`);
     remaining = remaining.filter((name) => name !== root);
   }
   await revalidate();
