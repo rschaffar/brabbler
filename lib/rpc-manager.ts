@@ -62,6 +62,10 @@ import { createSessionReferenceExtension } from "./session-reference-extension";
 import { bundledPluginExtensions } from "./plugins/registry";
 import { validatePluginCard } from "./plugins/ui";
 import type { PluginUiContext } from "./plugins/types";
+import { OPERATION_RECEIPT_TYPE, nextOperationReceiptSequence, snapshotOperationReceipt } from "./operation-receipts";
+import { hasActiveTerminalWithin } from "./terminal-manager";
+import { isPathWithinRoots, physicalDirectoryPath } from "./path-security";
+import { acquireDirectoryReservation, assertDirectoryAdmissionAllowed } from "./directory-reservations";
 import { isBlockingExtensionUiRequest } from "./browser-notifications";
 import {
   INTERACTION_RECEIPT_TYPE, normalizeInteractionResponse, responseForExtension, snapshotInteractionRequest,
@@ -325,6 +329,7 @@ export class AgentSessionWrapper {
 
   /** Direct subagent prompts bypass send(); keep their OWN session busy during preflight. */
   beginCheckoutPromptAdmission(): () => void {
+    assertDirectoryAdmissionAllowed(this.cwd);
     this.pendingCheckoutAdmissions += 1;
     let released = false;
     return () => {
@@ -637,6 +642,9 @@ export class AgentSessionWrapper {
         // this submission starts a run or joins its streaming queue.
         const releaseAdmission = await this.acquirePromptAdmission();
         try {
+          // Recheck after extension binding and the serialized admission wait.
+          // No await may separate this check from publishing pendingPromptCount.
+          assertDirectoryAdmissionAllowed(this.cwd);
           if (this.inner.isBashRunning) {
             throw new Error("Cannot send a prompt while a shell command is running");
           }
@@ -1085,24 +1093,27 @@ export class AgentSessionWrapper {
       }
 
       case "bash": {
-        if (this.pendingPromptCount > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning) {
+        if (this.isRunning()) {
           throw new Error("Cannot run a shell command while the session is busy");
         }
-        const execution = this.inner.executeBash(
-          command.command as string,
-          undefined,
-          {
-            excludeFromContext: command.excludeFromContext as boolean | undefined,
-            operations: createProjectCommandBashOperations({
-              shellPath: this.inner.settingsManager.getShellPath(),
-            }),
-          },
-        );
+        // SDK bash hooks can await before isBashRunning becomes true. Publish
+        // admission now and retain it until actual execution settles.
+        const releaseAdmission = this.beginCheckoutPromptAdmission();
         try {
-          const result = await execution;
+          const result = await this.inner.executeBash(
+            command.command as string,
+            undefined,
+            {
+              excludeFromContext: command.excludeFromContext as boolean | undefined,
+              operations: createProjectCommandBashOperations({
+                shellPath: this.inner.settingsManager.getShellPath(),
+              }),
+            },
+          );
           this.persistSessionWithoutAssistant();
           return result;
         } finally {
+          releaseAdmission();
           this.resetIdleTimer();
           invalidateSessionListCache();
         }
@@ -1647,6 +1658,20 @@ export class AgentSessionWrapper {
 
   private createExtensionUiContext(): ExtensionUiContextLike & AskUserUiContext & PluginUiContext {
     return {
+      isDirectoryInUse: (directory) => hasBusyRpcSessionWithin(directory) || hasActiveTerminalWithin(directory),
+      reserveDirectory: (directory) => acquireDirectoryReservation(directory,
+        (physical) => hasBusyRpcSessionWithin(physical) || hasActiveTerminalWithin(physical)),
+      operationReceipt: (pluginId, receipt) => {
+        const manager = this.inner.sessionManager;
+        // In-memory/non-persisting sessions cannot authorize durable operations.
+        if (!manager.isPersisted() || !manager.getSessionFile() || !manager.getHeader()) throw new Error("Operation receipts require a persistent session");
+        const snapshot = snapshotOperationReceipt(pluginId, receipt, nextOperationReceiptSequence(manager.getEntries()));
+        const entryId = manager.appendCustomEntry(OPERATION_RECEIPT_TYPE, snapshot);
+        this.persistSessionWithoutAssistant();
+        invalidateSessionListCache();
+        // No abort check here: effects that already started must record their outcome.
+        this.emit({ type: "operation_receipt", entry: manager.getEntry(entryId) });
+      },
       pluginCard: (pluginId, card, signal) => {
         validatePluginCard(card);
         return this.requestExtensionUi(
@@ -1939,7 +1964,7 @@ function getStartingSessionCwds(): Map<string, number> {
 
 function trackStartingSession(cwd: string): () => void {
   const startingCwds = getStartingSessionCwds();
-  const key = normalizeRpcCwd(cwd);
+  const key = assertDirectoryAdmissionAllowed(cwd);
   startingCwds.set(key, (startingCwds.get(key) ?? 0) + 1);
   return () => {
     const remaining = (startingCwds.get(key) ?? 1) - 1;
@@ -2165,6 +2190,18 @@ export function getRpcSessionInfos(options: { includeTransient?: boolean } = {})
   return sessions;
 }
 
+/** Includes descendants and starting sessions without altering exact-cwd lifecycle helpers. */
+export function hasBusyRpcSessionWithin(directory: string): boolean {
+  const roots = new Set([physicalDirectoryPath(directory)]);
+  for (const [cwd, count] of getStartingSessionCwds()) {
+    if (count > 0 && isPathWithinRoots(physicalDirectoryPath(cwd), roots)) return true;
+  }
+  for (const session of getRegistry().values()) {
+    if (session.isRunning() && isPathWithinRoots(physicalDirectoryPath(session.cwd), roots)) return true;
+  }
+  return false;
+}
+
 export function hasBusyRpcSessionForCwd(cwd: string, exceptSessionId?: string): boolean {
   const targetCwd = normalizeRpcCwd(cwd);
   if (getStartingSessionCwds().has(targetCwd)) return true;
@@ -2238,49 +2275,54 @@ async function startRpcSessionInternal(
   const locks = getLocks();
 
   const existing = registry.get(sessionId);
-  if (existing?.isAlive()) return { session: existing, realSessionId: sessionId };
+  if (existing?.isAlive()) {
+    assertDirectoryAdmissionAllowed(existing.cwd);
+    return { session: existing, realSessionId: sessionId };
+  }
 
   const inflight = locks.get(sessionId);
   if (inflight) return inflight;
 
   const expectedCwd = sessionFile ? readSessionHeader(sessionFile)?.cwd : cwd;
   if (!expectedCwd) throw new Error("Cannot prove session cwd");
-  let sessionManager: SessionManager;
-  if (sessionFile) {
-    sessionManager = SessionManager.open(sessionFile, undefined);
-  } else {
-    if (!cwd) throw new Error("cwd is required for a new session");
-    sessionManager = SessionManager.create(cwd, undefined);
-  }
-  const sessionCwd = sessionManager.getCwd();
-  if (!samePath(sessionCwd, expectedCwd)) throw new Error("Session cwd changed during startup");
-  const subagentResources = sessionFile
-    ? readSubagentSessionResources(
-        sessionManager.getEntries() as unknown as SessionEntry[],
-      )
-    : null;
-  const persistedToolNames = subagentResources
-    ? undefined
-    : readSessionToolSelection(sessionManager.getEntries() as unknown as SessionEntry[]);
-  const selectedToolNames = subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
-  // Project defaults are snapshotted only at creation. Old sessions with no
-  // entry remain bound to Pi's default auth.json, regardless of project changes.
-  const accounts = readSessionAccounts(sessionManager.getEntries() as unknown as SessionEntry[])
-    ?? (sessionFile ? {} : options.accounts ?? await getProjectAccounts(sessionCwd));
-  validateAccountSelection(accounts);
-  if (!sessionFile) {
-    appendSessionAccounts(sessionManager, accounts);
-    appendSessionModelSpeed(sessionManager, modelSpeed ?? "standard");
-  }
-  if (!subagentResources && persistedToolNames === undefined && requestedToolNames !== undefined) {
-    appendSessionToolSelection(sessionManager, requestedToolNames);
-  }
-  const subagentLoadsResources = Boolean(
-    subagentResources?.loadExtensions || subagentResources?.loadSkills,
-  );
-  const chatOnly = selectedToolNames?.length === 0 && !subagentLoadsResources;
-  const finishStartingSession = trackStartingSession(sessionCwd);
+  // Check and publish startup before any await (including account lookup), so
+  // reservations cannot slip between admission and resource construction.
+  const finishStartingSession = trackStartingSession(expectedCwd);
   const starting = (async () => {
+    let sessionManager: SessionManager;
+    if (sessionFile) {
+      sessionManager = SessionManager.open(sessionFile, undefined);
+    } else {
+      if (!cwd) throw new Error("cwd is required for a new session");
+      sessionManager = SessionManager.create(cwd, undefined);
+    }
+    const sessionCwd = sessionManager.getCwd();
+    if (!samePath(sessionCwd, expectedCwd)) throw new Error("Session cwd changed during startup");
+    const subagentResources = sessionFile
+      ? readSubagentSessionResources(
+          sessionManager.getEntries() as unknown as SessionEntry[],
+        )
+      : null;
+    const persistedToolNames = subagentResources
+      ? undefined
+      : readSessionToolSelection(sessionManager.getEntries() as unknown as SessionEntry[]);
+    const selectedToolNames = subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
+    // Project defaults are snapshotted only at creation. Old sessions with no
+    // entry remain bound to Pi's default auth.json, regardless of project changes.
+    const accounts = readSessionAccounts(sessionManager.getEntries() as unknown as SessionEntry[])
+      ?? (sessionFile ? {} : options.accounts ?? await getProjectAccounts(sessionCwd));
+    validateAccountSelection(accounts);
+    if (!sessionFile) {
+      appendSessionAccounts(sessionManager, accounts);
+      appendSessionModelSpeed(sessionManager, modelSpeed ?? "standard");
+    }
+    if (!subagentResources && persistedToolNames === undefined && requestedToolNames !== undefined) {
+      appendSessionToolSelection(sessionManager, requestedToolNames);
+    }
+    const subagentLoadsResources = Boolean(
+      subagentResources?.loadExtensions || subagentResources?.loadSkills,
+    );
+    const chatOnly = selectedToolNames?.length === 0 && !subagentLoadsResources;
     // Some extensions access the SDK's global theme even outside the terminal UI.
     if (!chatOnly) initTheme();
     const agentDir = getAgentDir();

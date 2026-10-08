@@ -9,12 +9,16 @@ export interface PluginField {
   options?: readonly string[];
   nullable?: boolean;
   globalOnly?: boolean;
+  description?: string;
+  group?: string;
 }
 export interface PluginManifest {
   id: string;
   name: string;
   schemaVersion: number;
   fields: Readonly<Record<string, PluginField>>;
+  /** Explicit UI recipes, never applied by a model or merely by selecting a scope. */
+  presets?: Readonly<Record<string, { label: string; values: Overrides }>>;
 }
 export interface BundledPlugin {
   manifest: PluginManifest;
@@ -23,6 +27,8 @@ export interface BundledPlugin {
   readPatchContext?(handle: string, fileId: string): Promise<import("../diff-context").DiffContext>;
 }
 export type Overrides = Record<string, SettingValue>;
+/** Trusted host identity, never tool arguments. cwd is the session's own cwd. */
+export interface PluginSession { id: string; cwd: string }
 export interface PluginSettings {
   pluginId: string;
   schemaVersion: number;
@@ -31,7 +37,11 @@ export interface PluginSettings {
   global: Overrides;
   overrides: Overrides;
   effective: Overrides;
-  sources: Record<string, "builtin" | "global" | "project">;
+  sessionId?: string;
+  sessionProject?: string | null;
+  sessionApplicable?: boolean;
+  sessionOverrides?: Overrides;
+  sources: Record<string, "builtin" | "global" | "project" | "session">;
 }
 
 export interface PluginCardField { label: string; value: string; code?: boolean }
@@ -45,6 +55,8 @@ export interface PluginCardSection {
 }
 /** Browser presentation only; never instructions or execution authority. */
 export interface PluginCard {
+  /** Correlates a decision card with durable operation stage snapshots. */
+  operationId?: string;
   title: string;
   text?: string;
   subtitle?: string;
@@ -59,6 +71,29 @@ export interface PluginCard {
   patchContext?: string;
   actions: Array<{ id: string; label: string; primary?: boolean }>;
 }
+export interface PluginOperationReceipt {
+  version: 1;
+  operationId: string;
+  toolCallId?: string;
+  card: PluginCard;
+  phase: "prepared" | "authorized" | "checking" | "executing" | "succeeded" | "failed" | "cancelled";
+  authorization: {
+    mode: "ask" | "allow";
+    source: string;
+    revision: string;
+    decision: "pending" | "user-approved" | "policy-authorized" | "not-approved";
+  };
+  checks: Array<{ name: string; status: "pending" | "running" | "passed" | "failed" }>;
+  effectStarted: boolean;
+  summary?: string;
+}
 export interface PluginUiContext {
+  /** Observed managed RPC/terminal use at this physical directory or below; not an OS lock. */
+  isDirectoryInUse(path: string): boolean;
+  /** Synchronously reject busy/overlapping use and block new managed admissions until release.
+   * Release in finally only after the native effect settles, not merely on abort. */
+  reserveDirectory(path: string): () => void;
   pluginCard(pluginId: string, card: PluginCard, signal?: AbortSignal): Promise<string | null>;
+  /** Synchronous durable append, outside model context. Throws on failure; never gated by abort. */
+  operationReceipt(pluginId: string, receipt: PluginOperationReceipt): void;
 }

@@ -11,7 +11,8 @@ const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 after(() => { if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = oldAgentDir; rmSync(root, { recursive: true, force: true }); });
 const jiti = createJiti(import.meta.url);
-const { executeGitOperation } = await jiti.import("./server.ts");
+const { executeGitOperation: executeWithReceipts } = await jiti.import("./server.ts");
+const executeGitOperation = (cwd, op, ui, ...rest) => executeWithReceipts(cwd, op, { operationReceipt() {}, ...ui }, ...rest);
 const { gitWorkflowManifest } = await jiti.import("./manifest.ts");
 const { updatePluginSettings } = await jiti.import("../../lib/plugins/settings.ts");
 function git(cwd, ...args) { return execFileSync("git", ["-C", cwd, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(); }

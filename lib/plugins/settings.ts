@@ -5,9 +5,24 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import lockfile from "proper-lockfile";
 import { writePrivateFileAtomicSync } from "../atomic-file";
 import { gitExecEnv } from "../git-exec";
-import type { Overrides, PluginManifest, PluginSettings, SettingValue } from "./types";
+import { samePath, toNativePath } from "../paths";
+import type { Overrides, PluginManifest, PluginSession, PluginSettings, SettingValue } from "./types";
 
-interface StoredSettings { version: number; global: Overrides; projects: Record<string, Overrides> }
+interface StoredSettings {
+  version: number;
+  global: Overrides;
+  projects: Record<string, Overrides>;
+  sessions?: Record<string, { project: string; values: Overrides }>;
+}
+export function isPluginSessionId(value: unknown): value is string {
+  // Imported SDK sessions can use non-UUID IDs. They still need a bounded safe key;
+  // ownership comes from the saved header/runtime, not this lexical validation.
+  return typeof value === "string" && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(value)
+    && !["constructor", "prototype"].includes(value);
+}
+function validateSession(session: PluginSession): void {
+  if (!isPluginSessionId(session.id) || !session.cwd) throw new Error("Invalid plugin session identity");
+}
 const symbol = Symbol.for("pi-web:bundled-plugin-settings-listeners");
 const global = globalThis as typeof globalThis & { [symbol]?: Set<(id: string) => void> };
 const listeners = global[symbol] ??= new Set();
@@ -19,8 +34,8 @@ export function onPluginSettingsChange(listener: (id: string) => void): () => vo
 /** Physical common Git directory is shared by linked checkouts. No remote identity. */
 export function pluginProjectIdentity(cwd: string): string | null {
   try {
-    return realpathSync(execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-      { env: gitExecEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim());
+    return realpathSync(toNativePath(execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+      { env: gitExecEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()));
   } catch { return null; }
 }
 export function pluginSettingsPath(manifest: PluginManifest, agentDir = getAgentDir()): string {
@@ -55,43 +70,70 @@ function read(manifest: PluginManifest, path: string): StoredSettings {
   if (!object(raw) || raw.version !== manifest.schemaVersion || !object(raw.projects)) throw new Error("Unsupported plugin settings schema");
   validateOverrides(manifest, raw.global);
   for (const value of Object.values(raw.projects)) validateOverrides(manifest, value, true);
+  if (raw.sessions !== undefined) {
+    if (!object(raw.sessions)) throw new Error("Invalid plugin session settings");
+    for (const [id, value] of Object.entries(raw.sessions)) {
+      if (!object(value) || typeof value.project !== "string") throw new Error("Invalid plugin session settings");
+      validateSession({ id, cwd: value.project });
+      validateOverrides(manifest, value.values, true);
+    }
+  }
   return raw as unknown as StoredSettings;
 }
-export function resolvePluginSettings(manifest: PluginManifest, stored: StoredSettings, project: string | null): PluginSettings {
+export function resolvePluginSettings(manifest: PluginManifest, stored: StoredSettings, project: string | null,
+  session?: { id: string; project: string | null }): PluginSettings {
   const effective: Overrides = {};
   const sources: PluginSettings["sources"] = {};
   const overrides = project ? stored.projects[project] ?? {} : {};
+  const saved = session ? stored.sessions?.[session.id] : undefined;
+  // Both the operation and saved overrides must belong to the session's OWN project.
+  // An explicit foreign checkout, a move, or a non-Git session never imports them.
+  const sessionApplicable = Boolean(project && session?.project && samePath(session.project, project));
+  const sessionOverrides = sessionApplicable && project && saved?.project && samePath(saved.project, project) ? saved.values : {};
   for (const [key, field] of Object.entries(manifest.fields)) {
-    const source = Object.hasOwn(overrides, key) ? "project" : Object.hasOwn(stored.global, key) ? "global" : "builtin";
+    const source = !field.globalOnly && Object.hasOwn(sessionOverrides, key) ? "session"
+      : !field.globalOnly && Object.hasOwn(overrides, key) ? "project" : Object.hasOwn(stored.global, key) ? "global" : "builtin";
     sources[key] = source;
-    effective[key] = structuredClone(source === "project" ? overrides[key] : source === "global" ? stored.global[key] : field.default);
+    effective[key] = structuredClone(source === "session" ? sessionOverrides[key]
+      : source === "project" ? overrides[key] : source === "global" ? stored.global[key] : field.default);
   }
   return { pluginId: manifest.id, schemaVersion: manifest.schemaVersion, project,
-    enabled: effective.enabled === true, global: stored.global, overrides, effective, sources };
+    enabled: effective.enabled === true, global: stored.global, overrides, effective, sources,
+    ...(session ? { sessionId: session.id, sessionProject: session.project, sessionApplicable, sessionOverrides } : {}) };
 }
-export function readPluginSettings(manifest: PluginManifest, cwd?: string, path = pluginSettingsPath(manifest)): PluginSettings {
-  return resolvePluginSettings(manifest, read(manifest, path), cwd ? pluginProjectIdentity(cwd) : null);
+export function readPluginSettings(manifest: PluginManifest, cwd?: string, path = pluginSettingsPath(manifest), session?: PluginSession): PluginSettings {
+  if (session) validateSession(session);
+  return resolvePluginSettings(manifest, read(manifest, path), cwd ? pluginProjectIdentity(cwd) : null,
+    session ? { id: session.id, project: pluginProjectIdentity(session.cwd) } : undefined);
 }
 /** Only the authenticated settings route writes overrides; tools never receive this API. */
-export function updatePluginSettings(manifest: PluginManifest, scope: "global" | "project", cwd: string | undefined,
-  set: Record<string, SettingValue>, reset: string[], path = pluginSettingsPath(manifest)): PluginSettings {
-  if (scope !== "global" && scope !== "project") throw new Error("Invalid scope");
-  validateOverrides(manifest, set, scope === "project");
+export function updatePluginSettings(manifest: PluginManifest, scope: "global" | "project" | "session", cwd: string | undefined,
+  set: Record<string, SettingValue>, reset: string[], path = pluginSettingsPath(manifest), session?: PluginSession): PluginSettings {
+  if (scope !== "global" && scope !== "project" && scope !== "session") throw new Error("Invalid scope");
+  if (session) validateSession(session);
+  validateOverrides(manifest, set, scope !== "global");
   if (!Array.isArray(reset) || reset.some((key) => typeof key !== "string" || !Object.hasOwn(manifest.fields, key)
-    || (scope === "project" && manifest.fields[key].globalOnly) || Object.hasOwn(set, key))) throw new Error("Invalid reset");
+    || (scope !== "global" && manifest.fields[key].globalOnly) || Object.hasOwn(set, key))) throw new Error("Invalid reset");
   const project = cwd ? pluginProjectIdentity(cwd) : null;
-  if (scope === "project" && !project) throw new Error("Select a Git repository for project settings");
+  const ownProject = session ? pluginProjectIdentity(session.cwd) : null;
+  if (scope !== "global" && !project) throw new Error("Select a Git repository for project settings");
+  if (scope === "session" && (!session || !ownProject || !project || !samePath(project, ownProject))) throw new Error("Session overrides only apply to the session's own project");
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const release = lockfile.lockSync(path, { realpath: false, stale: 30_000 });
   let result: PluginSettings;
   try {
     const stored = read(manifest, path);
-    const values = scope === "global" ? stored.global : stored.projects[project!] ??= {};
+    if (scope === "session") {
+      stored.sessions ??= {};
+      if (!stored.sessions[session!.id] || !samePath(stored.sessions[session!.id].project, project!)) stored.sessions[session!.id] = { project: project!, values: {} };
+    }
+    const values = scope === "global" ? stored.global : scope === "session" ? stored.sessions![session!.id].values : stored.projects[project!] ??= {};
     for (const key of reset) delete values[key];
     Object.assign(values, set);
     if (project && Object.keys(stored.projects[project] ?? {}).length === 0) delete stored.projects[project];
+    if (session && stored.sessions?.[session.id] && Object.keys(stored.sessions[session.id].values).length === 0) delete stored.sessions[session.id];
     writePrivateFileAtomicSync(path, JSON.stringify(stored, null, 2));
-    result = resolvePluginSettings(manifest, stored, project);
+    result = resolvePluginSettings(manifest, stored, project, session ? { id: session.id, project: ownProject } : undefined);
   } finally { release(); }
   for (const listener of listeners) listener(manifest.id);
   return result;

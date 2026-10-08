@@ -21,6 +21,9 @@
 # production
 /build
 
+# local code-intelligence index (initialized in agent-created worktrees)
+/.codegraph/
+
 # misc
 .DS_Store
 *.pem

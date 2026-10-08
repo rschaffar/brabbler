@@ -4,6 +4,7 @@ import { readPluginSettings, updatePluginSettings } from "@/lib/plugins/settings
 import { getAllowedFileRoots, isFilePathAllowed, isExistingFilePathAllowed } from "@/lib/file-access";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import type { SettingValue } from "@/lib/plugins/types";
+import { resolvePluginSession } from "@/lib/plugins/session-context";
 
 export const dynamic = "force-dynamic";
 async function selectedCwd(value: unknown): Promise<string | undefined> {
@@ -15,8 +16,10 @@ async function selectedCwd(value: unknown): Promise<string | undefined> {
 export async function GET(req: Request) {
   if (!isApiRequestAllowed(req)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   try {
-    const cwd = await selectedCwd(new URL(req.url).searchParams.get("cwd"));
-    return NextResponse.json({ plugins: bundledPlugins.map(({ manifest }) => ({ manifest, settings: readPluginSettings(manifest, cwd) })) });
+    const query = new URL(req.url).searchParams;
+    const session = await resolvePluginSession(query.get("sessionId"));
+    const cwd = await selectedCwd(query.get("cwd") || session?.cwd);
+    return NextResponse.json({ plugins: bundledPlugins.map(({ manifest }) => ({ manifest, settings: readPluginSettings(manifest, cwd, undefined, session) })) });
   } catch (error) { return NextResponse.json({ error: String(error) }, { status: 400 }); }
 }
 export async function PATCH(req: Request) {
@@ -26,9 +29,10 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     if (!body || typeof body !== "object" || Array.isArray(body) || typeof body.pluginId !== "string") throw new Error("Invalid plugin settings request");
     const plugin = bundledPlugin(body.pluginId);
-    const cwd = await selectedCwd(body.cwd);
+    const session = await resolvePluginSession(body.sessionId);
+    const cwd = await selectedCwd(body.cwd || session?.cwd);
     const settings = updatePluginSettings(plugin.manifest, body.scope, cwd,
-      (body.set ?? {}) as Record<string, SettingValue>, body.reset ?? []);
+      (body.set ?? {}) as Record<string, SettingValue>, body.reset ?? [], undefined, session);
     return NextResponse.json({ settings });
   } catch (error) { return NextResponse.json({ error: String(error) }, { status: 400 }); }
 }

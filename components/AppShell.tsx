@@ -206,6 +206,7 @@ export function AppShell() {
   }, []);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  const [pluginSettingsSession, setPluginSettingsSession] = useState<{ id: string; cwd: string } | null>(null);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
@@ -1363,6 +1364,18 @@ export function AppShell() {
     if (!mobile && !showChat) return null;
     return (
       <div style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
+        <button type="button" aria-label="Session plugin settings" title="Session plugin settings"
+          disabled={!selectedSession || selectedSession.transient}
+          onClick={() => {
+            if (!selectedSession || selectedSession.transient) return;
+            setPluginSettingsSession({ id: selectedSession.id, cwd: selectedSession.cwd });
+            setSettingsSection("plugins");
+          }}
+          className="flex shrink-0 items-center justify-center gap-1 border-r border-border px-2 text-xs text-text-muted hover:bg-bg-hover disabled:opacity-40"
+          style={{ width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined }}>
+          <SettingsSectionIcon section="plugins" />
+          {!mobile && <span>Policy</span>}
+        </button>
         <button
           type="button"
           onClick={() => {
@@ -2631,13 +2644,15 @@ export function AppShell() {
     </div>
     {settingsSection && (
       <SettingsPanel
-        cwd={projectTrustCwd}
-        sessionId={selectedSession?.id ?? null}
+        cwd={pluginSettingsSession?.cwd ?? projectTrustCwd}
+        sessionId={pluginSettingsSession?.id ?? selectedSession?.id ?? null}
         initialSection={settingsSection}
+        initialPluginScope={pluginSettingsSession ? "session" : undefined}
         quoteSelectionEnabled={quoteSelectionEnabled}
         onQuoteSelectionChange={handleQuoteSelectionChange}
         onClose={() => {
           setSettingsSection(null);
+          setPluginSettingsSession(null);
           setModelsRefreshKey((key) => key + 1);
         }}
         onSessionReloaded={() => setSessionKey((key) => key + 1)}

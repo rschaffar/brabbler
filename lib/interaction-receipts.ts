@@ -1,3 +1,4 @@
+import { appendOperationReceipt, mergeOperationReceiptHistory } from "./operation-receipts";
 import { askUserSummary, normalizeAskUserAnswer } from "./ask-user";
 import { normalizeSetAnswers, parseQuestionSet, questionSetSummary, type SetAnswer } from "./question-set";
 import { validatePluginCard, validPluginAction } from "./plugins/ui";
@@ -127,7 +128,8 @@ export function appendInteractionReceipt<T extends { messages: import("./types")
   transcript: T, entry: SessionEntry,
 ): T {
   const message = interactionReceiptMessage(entry);
-  if (!message || transcript.entryIds.includes(entry.id) || transcript.messages.some((existing) =>
+  if (!message) return appendOperationReceipt(transcript, entry);
+  if (transcript.entryIds.includes(entry.id) || transcript.messages.some((existing) =>
     existing.role === "custom" && existing.customType === INTERACTION_RECEIPT_TYPE
     && readInteractionReceipt(existing.details)?.request.id === (message.details as InteractionReceipt).request.id)) return transcript;
   return { ...transcript, messages: [...transcript.messages, message], entryIds: [...transcript.entryIds, entry.id] };
@@ -176,7 +178,7 @@ export function mergeInteractionReceiptHistory<T extends { messages: import("./t
       entryIds: [...next.entryIds.slice(0, position), id, ...next.entryIds.slice(position)],
     };
   }
-  return next;
+  return mergeOperationReceiptHistory(next, history, minimumTimestamp);
 }
 
 export function responseForExtension(id: string, response: InteractionResponse): ExtensionUiResponse {

@@ -666,9 +666,11 @@ export function PluginsConfig({
   onClose,
   onReloaded,
   embedded = false,
+  initialPluginScope,
 }: {
   cwd: string;
   sessionId: string | null;
+  initialPluginScope?: "global" | "project" | "session";
   onClose: () => void;
   onReloaded?: () => void;
   embedded?: boolean;
@@ -922,7 +924,7 @@ export function PluginsConfig({
         <ConfigSplitView>
           <ConfigSidebar>
             <ConfigSidebarList>
-              <BundledPluginSidebar cwd={cwd} selected={addMode ? null : selected} onSelect={(key) => { setSelected(key); setAddMode(false); }} />
+              <BundledPluginSidebar cwd={cwd} sessionId={sessionId} selected={addMode ? null : selected} onSelect={(key) => { setSelected(key); setAddMode(false); }} />
               {loading ? (
                 <div className="config-sidebar-message">
                   Loading...
@@ -1027,7 +1029,7 @@ export function PluginsConfig({
                 onInstall={installPlugin}
               />
             ) : selected?.startsWith("bundled:") ? (
-              <BundledPluginSettings key={selected} cwd={cwd} id={selected.slice(8)} />
+              <BundledPluginSettings key={selected} cwd={cwd} sessionId={sessionId} id={selected.slice(8)} initialScope={initialPluginScope} />
             ) : loading ? null : selectedExtension ? (
               <StandaloneExtensionDetail extension={selectedExtension} />
             ) : selectedPackage ? (

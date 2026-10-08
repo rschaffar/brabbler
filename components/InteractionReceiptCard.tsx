@@ -17,7 +17,8 @@ export function InteractionReceiptCard({ receipt }: { receipt: InteractionReceip
     ? t(response.confirmed ? "chat.receiptConfirmed" : "chat.receiptDeclined")
     : interactionAnswer(receipt);
   const outcome = t(`chat.receipt.${receipt.outcome}`);
-  return <div className="my-4 min-w-0" data-interaction-receipt={request.id}>
+  return <div className="my-4 min-w-0" data-interaction-receipt={request.id}
+    data-operation-id={request.method === "plugin_card" ? request.operationId : undefined}>
     <BlockingCard title={interactionTitle(request)}
       label={request.method === "plugin_card" && request.subtitle ? `${request.subtitle} · ${outcome}` : outcome}
       collapsedLabel={outcome}
@@ -35,6 +36,7 @@ export function InteractionReceiptCard({ receipt }: { receipt: InteractionReceip
       {request.method === "plugin_card" ? <>
         {request.scope && <p className="blocking-card-scope">{request.scope}</p>}
         <PluginCardContent request={request} />
+        {request.operationId && <pre className="blocking-card-code">Operation: {request.operationId}</pre>}
       </>
         : request.method === "ask_user_batch" ? <>
           {request.context && <MarkdownBody>{request.context}</MarkdownBody>}

@@ -8,6 +8,7 @@ import { isAbsolute, join, normalize as normalizePath, relative, resolve as reso
 import type { AgentMessage, ImageContent, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
 import { normalizeToolCalls } from "./normalize";
 import { interactionReceiptMessage } from "./interaction-receipts";
+import { collapseOperationReceipts, operationReceiptMessage, readOperationReceipt } from "./operation-receipts";
 import { getThinkingPreview } from "./message-display";
 import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
@@ -692,8 +693,7 @@ export function buildSessionContext(
   }
 
   return {
-    messages,
-    entryIds,
+    ...collapseOperationReceipts({ messages, entryIds }),
     oldestEntryId: sliced[0]?.id ?? null,
     hasMore,
     ...getSessionSettings(entries, leafId),
@@ -710,7 +710,7 @@ export function buildSessionContext(
  */
 function countsTowardTail(entry: SessionEntry): boolean {
   if (entry.type === "compaction") return true;
-  if (entry.type === "custom") return interactionReceiptMessage(entry) !== null;
+  if (entry.type === "custom") return interactionReceiptMessage(entry) !== null || operationReceiptMessage(entry) !== null;
   if (entry.type !== "message") return false;
   const role = (entry as { message?: { role?: string } }).message?.role;
   return role === "user" || role === "assistant";
@@ -749,10 +749,17 @@ export function sliceActiveBranch(
   const chain: SessionEntry[] = [];
   let current: SessionEntry | undefined = leaf;
   let visible = 0;
+  const seenOperations = new Set<string>();
   const rawCap = rawWindowCap(tail);
   while (current) {
     chain.push(current);
-    if (countsTowardTail(current)) visible++;
+    const operation = operationReceiptMessage(current);
+    const receipt = operation && readOperationReceipt(operation.details);
+    if (receipt) {
+      const key = `${receipt.pluginId}:${receipt.operationId}`;
+      if (!seenOperations.has(key)) visible++;
+      seenOperations.add(key);
+    } else if (countsTowardTail(current)) visible++;
     if (visible >= tail || chain.length >= rawCap) break;
     current = current.parentId ? byId.get(current.parentId) : undefined;
   }
@@ -887,7 +894,7 @@ function entryToUiMessage(
         timestamp: parseEntryTimestamp(entry.timestamp),
       };
     case "custom":
-      return interactionReceiptMessage(entry);
+      return interactionReceiptMessage(entry) ?? operationReceiptMessage(entry);
     case "custom_message":
       return {
         role: "custom",
