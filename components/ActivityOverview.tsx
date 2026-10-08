@@ -8,6 +8,7 @@ import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { SubagentIcon } from "./SubagentIcon";
 import { PrivacyEyeIcon } from "./PrivacyEyeIcon";
 import type { ProjectPrivacy } from "@/hooks/useHiddenProjects";
+import { getShowHiddenProjects, saveShowHiddenProjects } from "@/lib/show-hidden-projects-preference";
 
 interface Props {
   sessions: SessionInfo[];
@@ -31,6 +32,8 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
   const { t, locale } = useI18n();
   const [projectFilter, setProjectFilter] = useState("");
   const [showHidden, setShowHidden] = useState(false);
+  // Restore after hydration; server rendering always starts concealed.
+  useEffect(() => { setShowHidden(getShowHiddenProjects()); }, []);
   const revealing = showHidden && !hidden && privacy.keys !== null;
   const privacyReady = privacy.keys !== null;
   const hiddenIds = useMemo(() => hiddenActivitySessionIds(sessions, privacy.keys ?? new Set()), [sessions, privacy.keys]);
@@ -38,9 +41,8 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
     && !sessions.some((item) => workspaceKeyOf(item) === projectFilter && !hiddenIds.has(item.id)));
   const effectiveProjectFilter = privacyReady && (revealing || !filterConcealed) ? projectFilter : "";
   useEffect(() => {
-    if (hidden || !privacyReady) setShowHidden(false);
-    if (!revealing && filterConcealed) setProjectFilter("");
-  }, [hidden, revealing, filterConcealed, privacyReady]);
+    if (privacyReady && !showHidden && filterConcealed) setProjectFilter("");
+  }, [showHidden, filterConcealed, privacyReady]);
   const [interruptedIds, setInterruptedIds] = useState<Set<string>>(() => new Set());
   const [recoveryAvailable, setRecoveryAvailable] = useState(true);
   const [recoveryLoading, setRecoveryLoading] = useState(true);
@@ -139,6 +141,7 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
           onClick={() => {
             if (revealing && filterConcealed) setProjectFilter("");
             setShowHidden(!revealing);
+            saveShowHiddenProjects(!revealing);
           }}>
           <PrivacyEyeIcon concealed={!revealing} />
         </button>
