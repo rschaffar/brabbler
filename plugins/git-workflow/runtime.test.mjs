@@ -82,7 +82,7 @@ test("real model-issued Git tools select repositories independently of Git and n
     const { session } = await createAgentSessionFromServices({ services, model: faux.getModel(), thinkingLevel: "off", sessionManager });
     st.after(() => disposeSession(session));
     let expectedCheckout; let approvals = 0; let calls = 0;
-    await session.bindExtensions({ mode: "rpc", uiContext: { notify() {}, pluginCard: async (id, card) => {
+    await session.bindExtensions({ mode: "rpc", uiContext: { notify() {}, operationReceipt(_pluginId, receipt) { sessionManager.appendCustomEntry("pi-web:operation-receipt", receipt); }, pluginCard: async (id, card) => {
       assert.equal(id, "git-workflow"); assert.equal(card.fields.find((field) => field.label === "Checkout").value, expectedCheckout);
       approvals++; return "approve";
     } } });

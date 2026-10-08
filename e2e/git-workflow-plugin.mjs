@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkBlockingCard } from "./blocking-card.mjs";
 import { withExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
@@ -14,7 +14,13 @@ import { executeGitOperation } from ${JSON.stringify(join(root, "plugins/git-wor
 export default function (pi) {
   pi.registerCommand("e2e-git-plugin", { handler: async (mode, ctx) => {
     let operation;
-    if (mode.startsWith("preview-")) {
+    if (mode.startsWith("cleanup-")) {
+      const selectedCheckout = ctx.cwd + "-" + mode;
+      const git = (...args) => execFileSync("git", ["-C", selectedCheckout, ...args], { encoding: "utf8" }).trim();
+      operation = { action: "cleanupFeature", checkout: selectedCheckout, featureBranch: "cleanup", featureTip: git("rev-parse", "cleanup"),
+        integrationCommit: git("rev-parse", "main"), targetBranch: "main", worktreePath: join(selectedCheckout + "-worktrees", "cleanup"),
+        removeWorktree: true, deleteBranch: true, artifactRoots: ["node_modules", ".codegraph"] };
+    } else if (mode.startsWith("preview-")) {
       const action = mode.split("-")[1];
       const targetCheckout = execFileSync("git", ["-C", ctx.cwd, "worktree", "list", "--porcelain"], { encoding: "utf8" }).split("\\n\\n").find((record) => record.includes("branch refs/heads/target")).split("\\n")[0].slice(9);
       operation = action === "rebase" || action === "merge"
@@ -30,7 +36,7 @@ export default function (pi) {
       writeFileSync(join(selectedCheckout, "second-draft.txt"), "Second plugin candidate " + mode + "\\n");
       operation = { action: "commit", checkout: selectedCheckout, mode: "files", files: ["draft.txt", "second-draft.txt"], message: "Plugin browser commit " + mode };
     }
-    const result = await executeGitOperation(ctx.cwd, operation, ctx.ui);
+    const result = await executeGitOperation(ctx.cwd, operation, ctx.ui, undefined, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd });
     ctx.ui.notify("Git plugin fixture " + mode + ": " + (result.isError ? "refused" : "completed"));
   } });
 }`;
@@ -41,7 +47,7 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     assert.ok(response.ok(), await response.text()); return (await response.json()).data;
   };
   const patch = async (set, scope = "global", reset = [], cwd = repo) => {
-    const response = await page.request.patch(`${base}/api/plugins/bundled`, { data: { pluginId: "git-workflow", cwd, scope, set, reset } });
+    const response = await page.request.patch(`${base}/api/plugins/bundled`, { data: { pluginId: "git-workflow", cwd, sessionId, scope, set, reset } });
     assert.ok(response.ok(), await response.text()); return (await response.json()).settings;
   };
   const tip = () => execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
@@ -67,9 +73,31 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   await panel.getByText(/Effective: "deny" · Source: project/).waitFor();
   await panel.getByRole("button", { name: "Use global default", exact: true }).click();
   await panel.getByText(/Effective: "ask" · Source: builtin/).first().waitFor();
+  await panel.getByLabel("Plugin settings scope").selectOption("session");
+  await panel.getByLabel("commit", { exact: true }).selectOption("allow");
+  await panel.getByText(/Effective: "allow" · Source: session/).waitFor();
+  await panel.getByLabel("Workflow preset", { exact: true }).selectOption("current-branch");
+  await panel.getByRole("button", { name: "Apply workflow preset", exact: true }).click();
+  await panel.getByText(/Effective: "current-branch" · Source: session/).waitFor();
+  assert.equal(await panel.getByLabel("commit", { exact: true }).inputValue(), "allow", "preset does not change operation permissions");
+  await panel.getByLabel("Plugin settings scope").selectOption("project");
+  assert.equal(await panel.getByLabel("commit", { exact: true }).inputValue(), "ask", "project editor must not show masking session value");
+  await panel.getByLabel("Plugin settings scope").selectOption("session");
+  await panel.getByLabel("Workflow preset", { exact: true }).selectOption("always-ask");
+  await panel.getByRole("button", { name: "Apply workflow preset", exact: true }).click();
+  await panel.getByText(/Effective: "ask" · Source: session/).first().waitFor();
+  assert.equal(await panel.getByLabel("Working location").inputValue(), "ask");
+  assert.equal(await panel.getByLabel("Working location").locator("option:checked").textContent(), "Ask via ask_user");
+  await panel.getByLabel("commit", { exact: true }).locator("..").getByRole("button", { name: "Use project default", exact: true }).click();
+  await panel.getByLabel("commit", { exact: true }).locator("..").getByText(/Source: builtin/).waitFor();
   await settings.getByRole("button", { name: "Close", exact: true }).click();
   if (width <= 600) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
   assert.ok((await command({ type: "get_tools" })).some((tool) => tool.name === "git_commit" && tool.active));
+  await page.getByRole("button", { name: "Session plugin settings", exact: true }).click();
+  await panel.waitFor();
+  assert.equal(await panel.getByLabel("Plugin settings scope").inputValue(), "session");
+  assert.equal(await panel.getByLabel("Working location").inputValue(), "ask");
+  await settings.getByRole("button", { name: "Close", exact: true }).click();
 
   const start = async (mode, title = "Git commit") => {
     const input = page.locator("textarea").last(); await input.fill(`/e2e-git-plugin ${mode}-${width}`);
@@ -384,5 +412,48 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   await page.locator("textarea").last().waitFor();
   assert.equal(await page.getByRole("group", { name: "Git commit", exact: true }).count(), 0);
   await page.locator("[data-interaction-receipt]").last().getByRole("button", { name: /Interrupted.*Git commit/ }).waitFor();
-  console.log(`PASS: ${width}px all Git approval layouts, lazy snapshot context in split/unified/Before/After, search/navigation/collapse, wide Escape, exact read-only historical context and expired raw fallback, cross-repository settings, toggle, rejection, reconnect and Stop`);
+  // Allow still creates one durable outcome card and never a decision receipt.
+  await patch({ commit: "allow" }, "project");
+  const decisionsBeforeAllow = await page.locator("[data-interaction-receipt]").count();
+  await page.locator("textarea").last().fill(`/e2e-git-plugin allow-${width}`);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await finish("allow", "completed");
+  assert.equal(await page.locator("[data-interaction-receipt]").count(), decisionsBeforeAllow);
+  const allowed = page.locator("[data-operation-receipt]").last();
+  await allowed.getByRole("button", { name: /Succeeded/ }).waitFor();
+  const operationId = await allowed.getAttribute("data-operation-receipt");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const saved = page.locator(`[data-operation-receipt="${operationId}"]`);
+  await saved.getByRole("button", { name: /Succeeded/ }).click();
+  await saved.getByText("Policy authorized · allow · project", { exact: true }).waitFor();
+  assert.equal(await saved.getByRole("button", { name: "Approve commit", exact: true }).count(), 0);
+  assert.equal(await page.locator(`[data-operation-receipt="${operationId}"]`).count(), 1);
+  await saved.getByRole("button", { name: "Collapse", exact: true }).click();
+  await patch({}, "project", ["commit"]);
+
+  // One approval covers compact artifact inventory, linked worktree and local ref.
+  const cleanupRepo = `${repo}-cleanup-${width}`;
+  execFileSync("git", ["init", "-qb", "main", cleanupRepo]);
+  const cleanupGit = (...args) => execFileSync("git", ["-C", cleanupRepo, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8" }).trim();
+  cleanupGit("config", "user.name", "E2E"); cleanupGit("config", "user.email", "e2e@example.invalid");
+  writeFileSync(join(cleanupRepo, ".gitignore"), "node_modules/\n.codegraph/\n");
+  cleanupGit("add", "."); cleanupGit("commit", "-qm", "Cleanup base");
+  const cleanupPath = join(`${cleanupRepo}-worktrees`, "cleanup");
+  cleanupGit("worktree", "add", "-b", "cleanup", cleanupPath);
+  execFileSync("git", ["-C", cleanupPath, "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-qm", "Integrated feature"]);
+  cleanupGit("merge", "--no-ff", "--no-edit", "cleanup");
+  for (const root of ["node_modules", ".codegraph"]) { mkdirSync(join(cleanupPath, root)); writeFileSync(join(cleanupPath, root, "generated"), "fixture artifact"); }
+  assert.ok((await page.request.post(`${base}/api/cwd/validate`, { data: { cwd: cleanupRepo } })).ok());
+  await patch({ cleanupFeature: "ask", targetBranch: "main", approvedArtifactRoots: "node_modules, .codegraph" }, "project", [], cleanupRepo);
+  card = await start("cleanup", "Clean up integrated Git feature");
+  await card.getByText(/entries · .* bytes · SHA256/).first().waitFor();
+  await card.getByRole("button", { name: "Clean up listed resources", exact: true }).click();
+  await finish("cleanup", "completed");
+  assert.equal(existsSync(cleanupPath), false); assert.equal(cleanupGit("branch", "--list", "cleanup"), "");
+  const cleanupReceipt = page.locator("[data-operation-receipt]").last();
+  await cleanupReceipt.getByRole("button", { name: /Succeeded/ }).click();
+  await cleanupReceipt.getByText("User approved · ask · project", { exact: true }).waitFor();
+  await checkBlockingCard(cleanupReceipt.getByRole("group", { name: "Clean up integrated Git feature", exact: true }));
+  await cleanupReceipt.getByRole("button", { name: "Collapse", exact: true }).click();
+  console.log(`PASS: ${width}px durable Ask/Allow outcomes and bounded combined cleanup; all Git approval layouts, lazy snapshot context in split/unified/Before/After, search/navigation/collapse, wide Escape, exact read-only historical context and expired raw fallback, cross-repository settings, toggle, rejection, reconnect and Stop`);
 }

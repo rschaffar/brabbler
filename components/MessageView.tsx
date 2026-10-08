@@ -5,6 +5,8 @@ import ReactMarkdown from "react-markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
 import { ThinkingIcon } from "./ThinkingIcon";
+import { OperationReceiptCard } from "./OperationReceiptCard";
+import { OPERATION_RECEIPT_TYPE, readOperationReceipt } from "@/lib/operation-receipts";
 import { InteractionReceiptCard } from "./InteractionReceiptCard";
 import { INTERACTION_RECEIPT_TYPE, readInteractionReceipt } from "@/lib/interaction-receipts";
 import { copyText } from "@/lib/clipboard";
@@ -287,6 +289,10 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     return null;
   }
   if (message.role === "custom") {
+    if (message.customType === OPERATION_RECEIPT_TYPE) {
+      const receipt = readOperationReceipt(message.details);
+      return receipt ? <OperationReceiptCard receipt={receipt} /> : null;
+    }
     if (message.customType === INTERACTION_RECEIPT_TYPE) {
       const receipt = readInteractionReceipt(message.details);
       return receipt ? <InteractionReceiptCard receipt={receipt} /> : null;

@@ -22,6 +22,23 @@ export function isPathWithinRoots(target: string, roots: Set<string>): boolean {
   return false;
 }
 
+/** Physical identity for managed live-use observations. Resolve existing ancestors of a
+ * not-yet-created cwd too; permission/I/O failures throw rather than report it unused. */
+export function physicalDirectoryPath(directory: string): string {
+  let current = path.resolve(directory);
+  const missing: string[] = [];
+  for (;;) {
+    try { return path.join(realpathSync(current), ...missing.reverse()); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const parent = path.dirname(current);
+      if (parent === current) throw error;
+      missing.push(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
 export function isExistingPathWithinRoots(target: string, roots: Set<string>): boolean {
   let realTarget: string;
   try {

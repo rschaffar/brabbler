@@ -1,5 +1,5 @@
 import { execFile, execFileSync, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { closeSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -7,16 +7,18 @@ import { gitExecEnv } from "../../lib/git-exec";
 import { samePath, toNativePath } from "../../lib/paths";
 import { allowFileRoot } from "../../lib/file-access";
 import { onPluginSettingsChange, pluginProjectIdentity, readPluginSettings } from "../../lib/plugins/settings";
-import type { PluginCard, PluginCardField, PluginCardSection, PluginUiContext, RequiredCheck } from "../../lib/plugins/types";
+import type { PluginCard, PluginCardField, PluginCardSection, PluginSession, PluginUiContext, PluginOperationReceipt, RequiredCheck } from "../../lib/plugins/types";
 import { gitWorkflowManifest, type GitAction, type GitSettings } from "./manifest";
 import { registerGitPatchContext } from "./context";
+import { captureCleanup, createCleanupBudget, performCleanup, type CleanupBudget, type CleanupAccess, type CleanupOperation, type CleanupSnapshot } from "./cleanup";
 
 export type GitOperation =
   | { action: "commit"; checkout: string; mode: "staged" | "files"; files?: string[]; message: string }
-  | { action: "rebase" | "merge"; checkout: string; featureBranch: string }
+  | { action: "rebase" | "merge"; checkout: string; featureBranch: string; targetBranch?: string; mergeMethod?: "ff-only" | "non-ff" }
   | { action: "createWorktree" | "attachWorktree"; checkout: string; branch: string; baseBranch: string; path: string }
-  | { action: "removeWorktree"; checkout: string; path: string };
-interface Snapshot { fingerprint: string; card: PluginCard; checks: RequiredCheck[]; args: string[]; cwd: string; comparison?: { before: string; after: string } }
+  | { action: "removeWorktree"; checkout: string; path: string }
+  | CleanupOperation;
+interface Snapshot { fingerprint: string; card: PluginCard; checks: RequiredCheck[]; args: string[]; cwd: string; comparison?: { before: string; after: string }; cleanup?: CleanupSnapshot }
 const MAX_OUTPUT = 2 * 1024 * 1024;
 function env(index?: string) {
   return { ...gitExecEnv(index), GIT_NO_LAZY_FETCH: "1", GIT_NO_REPLACE_OBJECTS: "1", GIT_LITERAL_PATHSPECS: "1",
@@ -50,11 +52,13 @@ function idle(cwd: string) {
   const flags = git(cwd, ["ls-files", "-v", "-z"]).split("\0").filter(Boolean);
   if (flags.some((entry) => /^[a-zS]/.test(entry))) throw new Error("Hidden index flags are unsupported");
 }
-function worktrees(cwd: string): Array<{ path: string; branch?: string }> {
+function worktrees(cwd: string): Array<{ path: string; branch?: string; locked?: string; prunable?: string }> {
   return git(cwd, ["worktree", "list", "--porcelain", "-z"]).split("\0\0").filter(Boolean).map((record) => {
     const fields = record.split("\0");
     return { path: toNativePath(fields.find((value) => value.startsWith("worktree "))!.slice(9)),
-      branch: fields.find((value) => value.startsWith("branch refs/heads/"))?.slice(18) };
+      branch: fields.find((value) => value.startsWith("branch refs/heads/"))?.slice(18),
+      locked: fields.find((value) => value === "locked" || value.startsWith("locked ")),
+      prunable: fields.find((value) => value === "prunable" || value.startsWith("prunable ")) };
   });
 }
 function checkout(selected: string, repositoryCwd?: string): string {
@@ -70,10 +74,23 @@ function checkout(selected: string, repositoryCwd?: string): string {
   refuseFilters(physical, git(physical, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]));
   return physical;
 }
-function settings(cwd: string): GitSettings {
-  const snapshot = readPluginSettings(gitWorkflowManifest, cwd);
+function settings(cwd: string, session?: PluginSession, op?: GitOperation): GitSettings {
+  const snapshot = readPluginSettings(gitWorkflowManifest, cwd, undefined, session);
   if (!snapshot.enabled) throw new Error("Git Workflow plugin is disabled");
-  return snapshot.effective as unknown as GitSettings;
+  const policy = snapshot.effective as unknown as GitSettings;
+  if (op?.action === "rebase" || op?.action === "merge" || op?.action === "cleanupFeature") {
+    // An Ask answer is an invocation choice, never a settings write or permission override.
+    if (op.targetBranch !== undefined) {
+      if (policy.targetSelection !== "ask" && policy.targetBranch && op.targetBranch !== policy.targetBranch) throw new Error("Target differs from configured policy");
+      policy.targetBranch = op.targetBranch;
+    }
+    if ("mergeMethod" in op && op.mergeMethod !== undefined) {
+      if (op.action !== "merge" || !["ff-only", "non-ff"].includes(op.mergeMethod)) throw new Error("Invalid merge method");
+      if (policy.methodSelection !== "ask" && op.mergeMethod !== policy.mergeMethod) throw new Error("Method differs from configured policy");
+      policy.mergeMethod = op.mergeMethod;
+    }
+  }
+  return policy;
 }
 function digest(value: unknown): string { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 function physicalPath(path: string): string {
@@ -100,7 +117,27 @@ function refuseFilters(cwd: string, paths: string) {
     if (attributes[i] !== "unspecified" && attributes[i] !== "unset") throw new Error("Git plugin preflight refuses clean/process filter attributes; use ordinary Git tools for this repository");
   }
 }
-function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snapshot {
+function cleanupAccess(ui: Partial<PluginUiContext>): CleanupAccess {
+  return { git, checkout, branchTip, worktrees, project: pluginProjectIdentity,
+    inUse: (path) => { if (!ui.isDirectoryInUse) throw new Error("Cleanup requires live directory-use inspection"); return ui.isDirectoryInUse(path); } };
+}
+async function preview(callerCwd: string, op: GitOperation, policy: GitSettings, ui: Partial<PluginUiContext> = {}, budget?: CleanupBudget): Promise<Snapshot> {
+  if (op.action === "cleanupFeature") {
+    if (!op.removeWorktree && !op.deleteBranch && !op.artifactRoots.length) throw new Error("Choose at least one cleanup resource");
+    const cleanup = await captureCleanup(callerCwd, op, policy, cleanupAccess(ui), budget);
+    const fields = [{ label: "Repository checkout", value: cleanup.cwd, code: true },
+      { label: "Integrated feature", value: `${op.featureBranch} at ${op.featureTip}`, code: true },
+      { label: "Verified integration", value: `${op.integrationCommit} remains reachable from ${cleanup.target}`, code: true },
+      { label: "Worktree", value: `${op.removeWorktree ? "Remove" : "Keep"}: ${cleanup.path ?? "none"}` },
+      { label: "Local branch", value: op.deleteBranch ? "Delete exact integrated ref" : "Keep" }];
+    return { fingerprint: digest([cleanup.fingerprint, relevantPolicy(policy, op.action)]), cleanup,
+      cwd: cleanup.cwd, args: [], checks: [], card: { title: "Clean up integrated Git feature", subtitle: "Approval required", fields,
+        sections: [{ title: "Explicitly permitted generated directories", fields: cleanup.artifacts.map((item) => ({ label: item.path,
+          value: `${item.entries} entries · ${item.bytes} bytes · SHA256 ${item.digest}`, code: true })) },
+        { title: "Boundaries", text: "Only listed resources. Content/identity rechecked before each effect. Unknown files, source changes, locked or active worktrees block cleanup. Target advancement is allowed only while integration remains reachable. External filesystem/Git writers are not locked out; partial effects are reported, never rolled back. Local branch config is retained; remote branches and backups are untouched.", notice: true }],
+        scope: "Approves all listed cleanup resources together, not an arbitrary ignored-file deletion.",
+        actions: [{ id: "reject", label: "Keep resources" }, { id: "approve", label: "Clean up listed resources", primary: true }] } };
+  }
   const cwd = checkout(op.checkout);
   const current = head(cwd);
   const rows: string[] = [JSON.stringify(op, null, 2), `Checkout: ${cwd}`, `Branch: ${current.branch}`, `HEAD: ${current.tip}`,
@@ -219,8 +256,7 @@ function preview(callerCwd: string, op: GitOperation, policy: GitSettings): Snap
   rows.push(`Git arguments: ${JSON.stringify(args)}`);
   sections.push({ title: "Technical details", text: rows.join("\n\n"), code: true, collapsible: true });
   // Bind only applicable settings, not unrelated action permissions.
-  state.push(policy[op.action], checks, op.action === "merge" ? policy.mergeMethod : null,
-    op.action === "merge" || op.action === "rebase" ? policy.targetBranch : null);
+  state.push(relevantPolicy(policy, op.action));
   return { fingerprint: digest(state), cwd, args, checks, comparison,
     card: { title: { commit: "Git commit", rebase: "Git rebase", merge: "Git merge", createWorktree: "Create Git worktree", attachWorktree: "Attach Git worktree", removeWorktree: "Remove Git worktree" }[op.action],
       subtitle: "Approval required", fields, sections, patch,
@@ -247,18 +283,40 @@ function run(command: string, args: string[], cwd: string, shell = false, index?
 }
 function relevantPolicy(policy: GitSettings, action: GitAction) {
   return [policy[action], action === "commit" ? policy.commitChecks : action === "merge" ? policy.mergeChecks : [],
-    action === "merge" || action === "rebase" ? policy.targetBranch : null, action === "merge" ? policy.mergeMethod : null];
+    action === "merge" || action === "rebase" || action === "cleanupFeature" ? [policy.targetSelection, policy.targetBranch] : null,
+    action === "merge" ? [policy.methodSelection, policy.mergeMethod] : null,
+    action === "cleanupFeature" ? [policy.cleanupWorktree, policy.cleanupBranch, policy.cleanupArtifacts, policy.approvedArtifactRoots] : null];
 }
-export async function executeGitOperation(callerCwd: string, operation: GitOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal) {
+export async function executeGitOperation(callerCwd: string, operation: GitOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, session?: PluginSession, toolCallId?: string) {
   const op = structuredClone(operation);
   let started = false;
   let checksStarted = false;
+  let completed = false;
+  let receipt: PluginOperationReceipt | undefined;
+  const effects: string[] = [];
+  const cleanupBudget = createCleanupBudget();
+  let attemptedEffect: string | undefined;
+  const record = (phase: PluginOperationReceipt["phase"], summary?: string) => {
+    if (!receipt || !ui.operationReceipt) throw new Error("Git operations require durable Pi Web operation receipts");
+    receipt = { ...receipt, phase, effectStarted: started, ...(summary ? { summary: summary.slice(0, 16000) } : {}) };
+    ui.operationReceipt(gitWorkflowManifest.id, structuredClone(receipt));
+  };
   try {
-    // Permissions and recipes belong to the explicitly selected repository,
-    // never to the session's cwd. Deny still precedes preview and checks.
-    const policy = settings(op.checkout);
+    // Foreign repositories never inherit caller/session overrides. Deny still
+    // precedes preview and checks. Identity is supplied by the host, not the model.
+    const policy = settings(op.checkout, session, op);
     if (policy[op.action] === "deny") throw new Error(`${op.action} is denied by current settings`);
-    const snapshot = preview(callerCwd, op, policy);
+    const snapshot = await preview(callerCwd, op, policy, ui, cleanupBudget);
+    const origin = readPluginSettings(gitWorkflowManifest, op.checkout, undefined, session);
+    if (origin.effective[op.action] !== policy[op.action]) throw new Error("Policy changed during preparation");
+    const operationId = randomUUID();
+    snapshot.card.operationId = operationId;
+    if (policy[op.action] === "allow") snapshot.card.subtitle = "Policy-authorized operation";
+    receipt = { version: 1, operationId, ...(toolCallId ? { toolCallId } : {}), card: snapshot.card, phase: "prepared", effectStarted: false,
+      authorization: { mode: policy[op.action] as "ask" | "allow", source: origin.sources[op.action], revision: digest(origin),
+        decision: policy[op.action] === "allow" ? "policy-authorized" : "pending" },
+      checks: snapshot.checks.map((check) => ({ name: check.name, status: "pending" })) };
+    record("prepared");
     if (signal?.aborted) throw new Error("Cancelled before execution");
     if (policy[op.action] === "ask") {
       if (!ui.pluginCard) throw new Error("Ask requires the live Pi Web browser UI");
@@ -269,7 +327,7 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
       const unsubscribe = onPluginSettingsChange((id) => {
         if (id !== gitWorkflowManifest.id) return;
         try {
-          const current = settings(op.checkout);
+          const current = settings(op.checkout, session, op);
           if (digest(relevantPolicy(current, op.action)) !== digest(relevantPolicy(policy, op.action))) cancellation.abort();
         } catch { cancellation.abort(); }
       });
@@ -277,34 +335,58 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
       try { answer = await ui.pluginCard(gitWorkflowManifest.id, snapshot.card,
         signal ? AbortSignal.any([signal, cancellation.signal]) : cancellation.signal); }
       finally { unsubscribe(); }
+      receipt.authorization.decision = answer === "approve" ? "user-approved" : "not-approved";
       if (answer !== "approve") throw new Error("Operation not approved or settings changed");
     }
-    const revalidate = () => {
+    record("authorized");
+    const revalidate = async () => {
       if (signal?.aborted) throw new Error("Cancelled before native effect");
-      const current = settings(op.checkout);
-      if (current[op.action] === "deny" || preview(callerCwd, op, current).fingerprint !== snapshot.fingerprint) throw new Error("Stale operation: relevant settings or repository state changed; invoke again");
+      const current = settings(op.checkout, session, op);
+      if (current[op.action] === "deny" || (await preview(callerCwd, op, current, ui, cleanupBudget)).fingerprint !== snapshot.fingerprint
+        || digest(relevantPolicy(settings(op.checkout, session, op), op.action)) !== digest(relevantPolicy(policy, op.action))) throw new Error("Stale operation: relevant settings or repository state changed; invoke again");
     };
-    revalidate();
+    // Cleanup owns a single full revalidation per effect, under its directory
+    // reservation. Do not rescan dependency trees at every generic checkpoint.
+    if (op.action !== "cleanupFeature") await revalidate();
     const checkCwd = op.action === "merge" ? worktrees(snapshot.cwd).find((entry) => entry.branch === op.featureBranch)?.path : snapshot.cwd;
-    for (const check of snapshot.checks) {
-      revalidate();
+    for (const [index, check] of snapshot.checks.entries()) {
+      await revalidate();
+      receipt.checks[index].status = "running";
+      record("checking");
       checksStarted = true;
-      await run(check.command, [], checkCwd!, true);
+      try { await run(check.command, [], checkCwd!, true); receipt.checks[index].status = "passed"; }
+      catch (error) { receipt.checks[index].status = "failed"; throw error; }
+      record("checking");
     }
-    revalidate();
+    if (op.action !== "cleanupFeature") await revalidate();
     const scratch = mkdtempSync(join(tmpdir(), "pi-web-git-effect-"));
     let output: string;
+    let releaseReservation: (() => void) | undefined;
     try {
+      if (snapshot.cleanup?.path) {
+        if (!ui.reserveDirectory) throw new Error("Cleanup requires managed directory reservation support");
+        releaseReservation = ui.reserveDirectory(snapshot.cleanup.path);
+      }
       const args = [...snapshot.args];
       if (op.action === "commit") {
         const messagePath = join(scratch, "message");
         writeFileSync(messagePath, op.message);
         args.splice(1, 0, "-F", messagePath);
       }
-      started = true;
+      // A durable executing stage is required BEFORE the first native mutation.
+      // If persistence fails, started stays false and no Git effect is dispatched.
+      record("executing");
+      if (op.action !== "cleanupFeature") { await revalidate(); started = true; }
       if (op.action === "createWorktree" || op.action === "attachWorktree") mkdirSync(resolve(op.path, ".."), { recursive: true });
       const commandArgs = ["-c", `core.hooksPath=${scratch}`, "-c", "core.fsmonitor=false", "-c", "commit.gpgSign=false", "-c", "rebase.autoStash=false", "-c", "merge.autoStash=false", "-C", snapshot.cwd, ...args];
-      if (op.action === "commit" && op.mode === "files") {
+      if (op.action === "cleanupFeature") {
+        output = await performCleanup(callerCwd, op, policy, cleanupAccess(ui), snapshot.cleanup!, () => {
+          if (signal?.aborted) throw new Error("Cancelled; remaining cleanup resources retained");
+          const current = settings(op.checkout, session, op);
+          if (digest(relevantPolicy(current, op.action)) !== digest(relevantPolicy(policy, op.action))) throw new Error("Cleanup policy changed; remaining resources retained");
+        }, (args) => run("git", [...commandArgs, ...args], snapshot.cwd), effects,
+          (description) => { started = true; attemptedEffect = description; }, cleanupBudget);
+      } else if (op.action === "commit" && op.mode === "files") {
         // Own Git's native index.lock only during effects. The private index keeps
         // unrelated staged entries; commit --only reconciles selected entries.
         const original = toNativePath(git(snapshot.cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]).trim());
@@ -314,7 +396,7 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
         let installed = false;
         const privateIndex = join(scratch, "index");
         try {
-          revalidate();
+          await revalidate();
           if (existsSync(original)) copyFileSync(original, privateIndex);
           else git(snapshot.cwd, ["read-tree", "HEAD"], privateIndex);
           await run("git", ["-C", snapshot.cwd, "add", "-A", "--", ...op.files!], snapshot.cwd, false, privateIndex);
@@ -337,17 +419,25 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
           }
         }
       } else output = await run("git", commandArgs, snapshot.cwd);
-    } finally { rmSync(scratch, { recursive: true, force: true }); }
+    } finally { releaseReservation?.(); rmSync(scratch, { recursive: true, force: true }); }
+    completed = true;
     if (op.action === "merge" || op.action === "rebase") idle(snapshot.cwd);
     if (op.action === "createWorktree" || op.action === "attachWorktree") allowFileRoot(op.path);
-    return { content: [{ type: "text" as const, text: `${op.action} completed.\n${output.slice(0, 12000)}` }], details: { action: op.action, completed: true } };
+    const result = `${op.action} completed.\n${output.slice(0, 12000)}\nObserved HEAD: ${JSON.stringify(head(snapshot.cwd))}`;
+    record("succeeded", result);
+    return { content: [{ type: "text" as const, text: result }], details: { action: op.action, completed: true, operationId, effects } };
   } catch (error) {
     let observed = "";
     if (started) {
       try { observed = `\nObserved HEAD: ${JSON.stringify(head(op.checkout))}\nStatus: ${status(op.checkout)}\nWorktrees: ${JSON.stringify(worktrees(op.checkout))}`; }
       catch { observed = "\nObserved state could not be read; inspect repository manually."; }
     }
-    return { isError: true, content: [{ type: "text" as const, text: `${error instanceof Error ? error.message : String(error)}${started ? "\nNative effect started; partial changes or conflict state may remain. No rollback, retry or cleanup was performed." : checksStarted ? "\nRequired checks started and may have side effects; Git effect did not start." : "\nGit effect did not start."}${observed}`.slice(0, 16000) }],
-      details: { action: op.action, completed: false, effectStarted: started, checksStarted } };
+    let text = `${error instanceof Error ? error.message : String(error)}${completed ? "\nNative effect completed, but post-effect reporting failed. Do not repeat the operation." : started ? "\nNative effect started; partial changes or conflict state may remain. No rollback or retry was performed." : checksStarted ? "\nRequired checks started and may have side effects; Git effect did not start." : "\nGit effect did not start."}${attemptedEffect ? `\nLast dispatched cleanup step: ${attemptedEffect}` : ""}${effects.length ? `\nCompleted cleanup steps:\n${effects.join("\n")}` : ""}${observed}`.slice(0, 15000);
+    if (receipt) {
+      try { record(completed ? "succeeded" : receipt.authorization.decision === "not-approved" || signal?.aborted && !started ? "cancelled" : "failed", text); }
+      catch { text += "\nTerminal receipt could not be persisted; saved outcome remains unknown. Inspect the repository before any retry."; }
+    }
+    return { isError: true, content: [{ type: "text" as const, text }],
+      details: { action: op.action, completed, effectStarted: started, checksStarted, operationId: receipt?.operationId, effects } };
   }
 }

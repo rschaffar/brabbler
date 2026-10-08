@@ -37,6 +37,7 @@ interface Props {
   cwd: string | null;
   sessionId: string | null;
   initialSection: SettingsSection;
+  initialPluginScope?: "global" | "project" | "session";
   onClose: () => void;
   onSessionReloaded: () => void;
   quoteSelectionEnabled: boolean;
@@ -487,7 +488,7 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, quoteSelectionEnab
   );
 }
 
-export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessionReloaded, quoteSelectionEnabled, onQuoteSelectionChange }: Props) {
+export function SettingsPanel({ cwd, sessionId, initialSection, initialPluginScope, onClose, onSessionReloaded, quoteSelectionEnabled, onQuoteSelectionChange }: Props) {
   const { t } = useI18n();
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [mountedSections, setMountedSections] = useState<ReadonlySet<SettingsSection>>(
@@ -587,7 +588,7 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
           {sectionHost("models", <ModelsConfig embedded cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("agents", <AgentsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}
-          {cwd && sectionHost("plugins", <PluginsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}
+          {cwd && sectionHost("plugins", <PluginsConfig embedded key={`${cwd}:${sessionId ?? ""}`} cwd={cwd} sessionId={sessionId} initialPluginScope={initialPluginScope} onClose={onClose} onReloaded={onSessionReloaded} />)}
         </main>
       </div>
     </div>

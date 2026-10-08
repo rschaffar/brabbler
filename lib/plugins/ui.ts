@@ -1,5 +1,9 @@
 import type { PluginCard, PluginCardField } from "./types";
 
+export function isOperationId(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 function text(value: unknown, max: number, optional = true): boolean {
   return optional && value === undefined || typeof value === "string" && value.length <= max;
 }
@@ -11,6 +15,7 @@ function fields(value: unknown): boolean {
 /** Bound payloads and action identities at the server transport boundary. */
 export function validatePluginCard(card: PluginCard): void {
   if (!card || !text(card.title, 256, false) || !card.title.trim()
+    || card.operationId !== undefined && !isOperationId(card.operationId)
     || [card.text, card.markdown, card.patch].some((value) => !text(value, 1_000_000))
     || [card.patchBefore, card.patchAfter].some((value) => !text(value, 256))
     || card.patchContext !== undefined && (typeof card.patch !== "string" || typeof card.patchContext !== "string"

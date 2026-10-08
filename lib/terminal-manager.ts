@@ -2,6 +2,8 @@ import { randomUUID } from "crypto";
 import { homedir } from "os";
 import type { IPty } from "node-pty";
 import { samePath } from "./paths";
+import { isPathWithinRoots, physicalDirectoryPath } from "./path-security";
+import { assertDirectoryAdmissionAllowed } from "./directory-reservations";
 
 export type TerminalEvent =
   | { type: "output"; data: string; offset: number; reset?: boolean }
@@ -72,6 +74,9 @@ function dimension(value: number, fallback: number): number {
 }
 
 export function createTerminal(cwd: string, cols: number, rows: number, id: string = randomUUID()): string {
+  // Synchronous through native spawn and registry publication: no lease can
+  // interleave between this check and the managed live-terminal observation.
+  assertDirectoryAdmissionAllowed(cwd || homedir());
   const existing = registry().get(id);
   if (existing) {
     if (!samePath(existing.cwd, cwd)) throw new Error("Terminal belongs to a different workspace");
@@ -141,6 +146,15 @@ export function createTerminal(cwd: string, cols: number, rows: number, id: stri
 
 export function hasTerminal(id: string): boolean {
   return registry().has(id);
+}
+
+/** Managed registry observations only, not an OS lock or external-process scan. */
+export function hasActiveTerminalWithin(directory: string): boolean {
+  const roots = new Set([physicalDirectoryPath(directory)]);
+  for (const record of registry().values()) {
+    if (!record.exited && isPathWithinRoots(physicalDirectoryPath(record.cwd || homedir()), roots)) return true;
+  }
+  return false;
 }
 
 export function getTerminalCwd(id: string): string | undefined {

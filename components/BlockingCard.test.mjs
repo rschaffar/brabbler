@@ -100,6 +100,45 @@ test("receipt cards default collapsed; expanded approvals retain scope and patch
   assert.doesNotMatch(expanded, /<form|<input|<textarea|type="submit"|data-primary|>chat.cancel</);
   assert.equal((expanded.match(/<button/g) ?? []).length, 1, "only collapse can act on the historical card");
 });
+const operationHelpers = await jiti.import("../lib/operation-receipts.ts");
+const operationDependencies = {
+  "@/lib/operation-receipts": operationHelpers,
+  "./BlockingCard": shell,
+  "./plugin-ui/PluginCard": { PluginCardContent },
+};
+const { OperationReceiptCard } = await component("./OperationReceiptCard.tsx", operationDependencies);
+const { OperationReceiptCard: ExpandedOperation } = await component("./OperationReceiptCard.tsx", {
+  ...operationDependencies, react: { ...React, useState: () => [false, () => {}] },
+});
+test("operation receipts collapse unmounted bodies and separate policy authorization from unknown execution", () => {
+  const receipt = { version: 1, pluginId: "example", sequence: 1, operationId: "a046677d-8293-4445-9a2b-558317345abc", toolCallId: "call-1",
+    card: { title: "Operation", text: "Exact candidate", scope: "Entire candidate", patch: "exact patch",
+      actions: [{ id: "approve", label: "Forbidden callback control" }] }, phase: "executing",
+    authorization: { mode: "allow", source: "session", revision: "revision-1", decision: "policy-authorized" },
+    checks: [{ name: "Tests", status: "passed" }], effectStarted: true };
+  const collapsed = renderToStaticMarkup(React.createElement(OperationReceiptCard, { receipt }));
+  assert.match(collapsed, /aria-expanded="false"/);
+  assert.match(collapsed, /Policy authorized/);
+  assert.match(collapsed, /outcome unknown/);
+  assert.doesNotMatch(collapsed, /Exact candidate|stack|Forbidden callback control|User accepted|Succeeded/);
+  const expanded = renderToStaticMarkup(React.createElement(ExpandedOperation, { receipt }));
+  assert.match(expanded, /Exact candidate/);
+  assert.match(expanded, /stack/);
+  assert.match(expanded, /Entire candidate/);
+  assert.match(expanded, /revision-1/);
+  assert.match(expanded, /call-1/);
+  assert.match(expanded, /Tests: passed/);
+  assert.match(expanded, /Effect started/);
+  const intentOnly = renderToStaticMarkup(React.createElement(ExpandedOperation, { receipt: { ...receipt, effectStarted: false } }));
+  assert.match(intentOnly, /Effect may have started/);
+  assert.doesNotMatch(intentOnly, /Effect not started/);
+  assert.doesNotMatch(expanded, /<form|<input|<textarea|type="submit"|data-primary|Forbidden callback control/);
+  assert.equal((expanded.match(/<button/g) ?? []).length, 1, "only local collapse control");
+  const terminal = renderToStaticMarkup(React.createElement(OperationReceiptCard, { receipt: { ...receipt, phase: "failed" } }));
+  assert.match(terminal, /Failed/);
+  assert.doesNotMatch(terminal, /outcome unknown/);
+});
+
 test("expanded question receipts preserve context, described choices and the normalized answer read-only", () => {
   const receipt = { version: 1, outcome: "answered", response: { answer: {
     kind: "selection", selections: ["Second"], comment: "Explanation",

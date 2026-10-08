@@ -18,6 +18,7 @@ import { clearQuestionDraft, reconcileQuestionDrafts } from "@/lib/question-set-
 import { useI18n } from "./useI18n";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { isModelSpeed, type ModelSpeed } from "@/lib/model-speed";
+import { appendOperationReceipt, collapseOperationReceipts, operationReceiptMessage } from "@/lib/operation-receipts";
 import { appendInteractionReceipt, interactionReceiptMessage, mergeInteractionReceiptHistory, receiptBranchContains } from "@/lib/interaction-receipts";
 import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
 import {
@@ -806,18 +807,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setHasEarlierMessages(d.context.hasMore);
       setData((prev) => {
         if (!prev || prev.sessionId !== sid) return prev;
-        const context = before ? {
+        const context = before ? collapseOperationReceipts({
           ...prev.context,
           messages: [...d.context.messages, ...prev.context.messages],
           entryIds: [...d.context.entryIds, ...prev.context.entryIds],
           oldestEntryId: d.context.oldestEntryId,
           hasMore: d.context.hasMore,
-        } : d.context;
+        }) : d.context;
         return { ...prev, context };
       });
       if (before) {
         // Older page: prepend so scroll position stays anchored.
-        setTranscript((current) => ({
+        setTranscript((current) => collapseOperationReceipts({
           messages: [...d.context.messages, ...current.messages],
           entryIds: [...d.context.entryIds, ...current.entryIds],
         }));
@@ -1670,6 +1671,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (sessionIdRef.current) loadSession(sessionIdRef.current);
         }
         break;
+      case "operation_receipt": {
+        const entry = event.entry as SessionEntry;
+        if (!entry || !operationReceiptMessage(entry)) break;
+        if (activeLeafIdRef.current === (dataRef.current?.leafId ?? null)) {
+          if (entry.parentId === activeLeafIdRef.current) {
+            setTranscript((current) => appendOperationReceipt(current, entry));
+          } else if (sessionIdRef.current) {
+            void reconcileInteractionReceipts(sessionIdRef.current, entry);
+          }
+        }
+        break;
+      }
       case "interaction_receipt": {
         const entry = event.entry as SessionEntry;
         const message = entry && interactionReceiptMessage(entry);

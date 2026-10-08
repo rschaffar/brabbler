@@ -7,6 +7,7 @@ import { createJiti } from "jiti";
 const source = await readFile(new URL("./useAgentSession.ts", import.meta.url), "utf8");
 const jiti = createJiti(import.meta.url);
 const helpers = await jiti.import("../lib/interaction-receipts.ts");
+const operations = await jiti.import("../lib/operation-receipts.ts");
 function runCase(type, next, bindings, event) {
   bindings = { sessionIdRef: { current: "session" }, clearQuestionDraft() {}, ...bindings };
   const body = source.slice(source.indexOf(`case "${type}"`), source.indexOf(`case "${next}"`, source.indexOf(`case "${type}"`)));
@@ -37,6 +38,39 @@ test("receipt events append aligned deduplicated history and close only their ow
   assert.equal(transcript.messages.length, 1);
   run({ ...entry, data: { version: 2 } });
   assert.equal(transcript.messages.length, 1);
+});
+
+const operation = (id, sequence, phase) => ({ ...entry, id, customType: operations.OPERATION_RECEIPT_TYPE,
+  data: operations.snapshotOperationReceipt("example", { version: 1, operationId: "a046677d-8293-4445-9a2b-558317345abc",
+    card: { title: "Operation", actions: [] }, phase, authorization: { mode: "allow", source: "session", revision: "r1", decision: "policy-authorized" },
+    checks: [], effectStarted: phase === "succeeded" }, sequence) });
+
+test("operation SSE updates and deduplicates stages with aligned IDs, rejects malformed entries and verifies branch ancestry", () => {
+  let transcript = { messages: [], entryIds: [] };
+  const activeLeafIdRef = { current: null };
+  const reads = [];
+  const bindings = {
+    activeLeafIdRef, dataRef: { current: { leafId: null } }, sessionIdRef: { current: "session" },
+    operationReceiptMessage: operations.operationReceiptMessage,
+    appendOperationReceipt: operations.appendOperationReceipt,
+    setTranscript: (update) => { transcript = update(transcript); },
+    reconcileInteractionReceipts: (...args) => reads.push(args),
+  };
+  const run = (entry) => runCase("operation_receipt", "interaction_receipt", bindings, { type: "operation_receipt", entry });
+  run(operation("prepared", 1, "prepared"));
+  const terminal = operation("terminal", 2, "succeeded");
+  run(terminal); run(terminal); run(operation("prepared", 1, "prepared"));
+  assert.deepEqual(transcript.entryIds, ["terminal"]);
+  assert.equal(transcript.messages.length, 1);
+  run({ ...terminal, data: { ...terminal.data, version: 2 } });
+  assert.deepEqual(transcript.entryIds, ["terminal"]);
+  activeLeafIdRef.current = "other-branch";
+  run(operation("failed", 3, "failed"));
+  assert.deepEqual(transcript.entryIds, ["terminal"]);
+  activeLeafIdRef.current = null;
+  run({ ...terminal, parentId: "remote-ancestor" });
+  assert.equal(reads.length, 1);
+  assert.equal(reads[0][1].parentId, "remote-ancestor");
 });
 
 test("connecting reconciles persisted receipts even when the agent is idle", () => {
@@ -132,6 +166,22 @@ test("slow reconnect merges receipts without erasing newer cards or preloading o
   assert.equal(new URL(harness.requests[0], "http://localhost").searchParams.get("ancestorId"), "live");
   assert.equal(harness.get().messages.some((message) => message === ordinary), false,
     "ordinary message_end remains the sole live delivery path");
+});
+
+test("slow reconnect history cannot downgrade terminal operations; missed terminal delivery reconciles on reconnect", async () => {
+  const prepared = operation("prepared", 1, "prepared");
+  const terminal = operation("terminal", 2, "succeeded");
+  const harness = reconnectHarness({ messages: [operations.operationReceiptMessage(prepared)], entryIds: ["prepared"] });
+  const pending = harness.reconcile("session");
+  await Promise.resolve();
+  harness.update(operations.appendOperationReceipt(harness.get(), terminal));
+  harness.finish(); await pending;
+  assert.deepEqual(harness.get().entryIds, ["terminal"]);
+  const replay = reconnectHarness({ messages: [operations.operationReceiptMessage(terminal)], entryIds: ["terminal"] });
+  replay.update(operations.appendOperationReceipt(replay.get(), prepared));
+  const replaying = replay.reconcile("session");
+  await Promise.resolve(); replay.finish(); await replaying;
+  assert.deepEqual(replay.get().entryIds, ["terminal"]);
 });
 
 test("canonical branch advancement revalidates a newer live receipt instead of dropping it", async () => {
