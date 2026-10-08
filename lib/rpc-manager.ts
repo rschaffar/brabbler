@@ -57,6 +57,7 @@ import { CHAT_ONLY_RESOURCE_LOADER_OPTIONS, contextFilesSystemPrompt } from "./c
 import { haveContextFilesChanged } from "./context-file-changes";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createAskUserExtension, preferPiWebAskUserExtension, type AskUserUiContext } from "./ask-user-extension";
+import { parseQuestionSet } from "./question-set";
 import { createSessionReferenceExtension } from "./session-reference-extension";
 import { bundledPluginExtensions } from "./plugins/registry";
 import { validatePluginCard } from "./plugins/ui";
@@ -1070,8 +1071,7 @@ export class AgentSessionWrapper {
       }
 
       case "extension_ui_response": {
-        this.resolveExtensionUiResponse(command as ExtensionUiResponse);
-        return null;
+        return { accepted: this.resolveExtensionUiResponse(command as ExtensionUiResponse) };
       }
 
       case "extension_ui_input": {
@@ -1201,14 +1201,22 @@ export class AgentSessionWrapper {
     return this.shutdownPromise;
   }
 
-  private resolveExtensionUiResponse(response: ExtensionUiResponse): void {
+  getPendingQuestionSetIds(): string[] {
+    return [...this.pendingUiRequests.values()].filter((request) => request.method === "ask_user_batch").map((request) => request.id as string);
+  }
+
+  private resolveExtensionUiResponse(response: ExtensionUiResponse): boolean {
     const pending = this.pendingUiResponses.get(response.id);
-    if (!pending) return;
+    if (!pending) return false;
     const request = this.pendingUiRequests.get(response.id) as InteractionRequest | undefined;
-    if (!request) return;
+    if (!request) return false;
     const normalized = normalizeInteractionResponse(request, response);
-    if (!normalized) return;
+    if (!normalized) {
+      if (request.method === "ask_user_batch") throw new Error("Invalid question-set response; answer every required question and explicitly skip optional questions.");
+      return false;
+    }
     pending.resolve(responseForExtension(response.id, normalized));
+    return true;
   }
 
   private getExtensionStatuses(): Array<{ key: string; text: string }> {
@@ -1593,6 +1601,7 @@ export class AgentSessionWrapper {
       const settle = (value: T, outcome: InteractionOutcome, response?: InteractionResponse) => {
         if (settled) return;
         settled = true;
+        let settlementError: unknown;
         try {
           const receipt: InteractionReceipt = {
             version: 1, request: snapshotInteractionRequest(fullRequest), outcome,
@@ -1607,10 +1616,15 @@ export class AgentSessionWrapper {
           else resolve(value);
         } catch (error) {
           // Never resume an approved operation if its receipt could not be saved.
+          settlementError = error;
           reject(error);
         } finally {
           cleanup();
         }
+        // A batch POST must not acknowledge acceptance when its tool promise failed.
+        // Persistence failure is terminal, unlike an uncertain network acknowledgement:
+        // retrying a partly appended SDK entry could fabricate duplicate receipts.
+        if (settlementError && fullRequest.method === "ask_user_batch" && response) throw settlementError;
       };
       const onAbort = () => settle(defaultValue, "aborted");
 
@@ -1669,6 +1683,15 @@ export class AgentSessionWrapper {
         opts?.timeout,
         opts?.signal,
       ),
+      askUserBatch: (set, timeout, signal) => {
+        const normalized = parseQuestionSet(set);
+        if (!normalized) throw new Error("Invalid question set");
+        return this.requestExtensionUi(
+          { method: "ask_user_batch", ...normalized }, null,
+          (response) => "answers" in response ? response.answers : null,
+          timeout, signal,
+        );
+      },
       askUser: (question, timeout, signal) => this.requestExtensionUi(
         { method: "ask_user", ...question },
         null,

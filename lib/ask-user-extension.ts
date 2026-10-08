@@ -9,12 +9,31 @@ import {
   type AskUserAnswer, type AskUserDetails, type AskUserQuestion,
 } from "./ask-user";
 
+import { normalizeSetAnswers, parseQuestionSet, questionSetSummary, type QuestionSet, type SetAnswer } from "./question-set";
+
+const setQuestionSchema = Type.Object({
+  id: Type.String({ description: "Stable unique question ID", pattern: "^[a-zA-Z0-9_-]{1,64}$" }),
+  shortLabel: Type.String({ minLength: 1, maxLength: 60, description: "Short navigation label" }),
+  question: Type.String({ minLength: 1, maxLength: 2000 }),
+  context: Type.Optional(Type.String({ maxLength: 8000 })),
+  type: Type.Unsafe<"single" | "multiple" | "text">({ type: "string", enum: ["single", "multiple", "text"] }),
+  required: Type.Optional(Type.Boolean({ description: "Default true. Optional questions may be explicitly skipped." })),
+  options: Type.Optional(Type.Array(Type.Object({
+    id: Type.String({ pattern: "^[a-zA-Z0-9_-]{1,64}$" }),
+    title: Type.String({ minLength: 1, maxLength: 200 }),
+    description: Type.Optional(Type.String({ maxLength: 2000 })),
+    recommended: Type.Optional(Type.Boolean()),
+    exclusive: Type.Optional(Type.Boolean({ description: "Cannot be selected with another option, e.g. None" })),
+  }), { maxItems: 12, description: "Required for choice questions; omit for text. Every question also allows an alternative written answer and additive details." })),
+});
+
 export const HOST_ASK_USER_EXTENSION_NAME = "pi-web-ask-user";
 const HOST_PATH = `<inline:${HOST_ASK_USER_EXTENSION_NAME}>`;
 
 /** Only the per-session Pi Web UI context supplies this method. */
 export interface AskUserUiContext {
   askUser(question: AskUserQuestion, timeout?: number, signal?: AbortSignal): Promise<AskUserAnswer | null>;
+  askUserBatch(set: QuestionSet, timeout?: number, signal?: AbortSignal): Promise<SetAnswer[] | null>;
 }
 
 export function createAskUserExtension(): InlineExtension {
@@ -25,17 +44,20 @@ export function createAskUserExtension(): InlineExtension {
       pi.registerTool({
         name: "ask_user",
         label: "Ask User",
-        description: "Ask the user a question with optional multiple-choice answers. Use this to gather information interactively. Ask exactly one focused question per call. Before calling, gather context with tools (read/web/ref) and pass a short summary via the context field.",
-        promptSnippet: "Ask the user one focused question with optional multiple-choice answers to gather information interactively",
+        description: "Ask the user a question, or a small set of related independent questions answered together. Use either question (legacy single) or title and questions (1–6 mixed single/multiple/text questions), never both. Users can revise all answers before submitting the set. Every batch question supports an alternative written answer and separate additive details. Gather context first and include a short summary.",
+        promptSnippet: "Ask one question or a small set of related independent questions, with editable drafts and one submission",
         promptGuidelines: [
           "Before calling ask_user, gather context with tools (read/web/ref) and pass a short summary via the context field.",
           "Use ask_user when the user's intent is ambiguous, when a decision requires explicit user input, or when multiple valid options exist.",
-          "Ask exactly one focused question per ask_user call.",
-          "Do not combine multiple numbered, multipart, or unrelated questions into one ask_user prompt.",
+          "Batch 2–4 related independent decisions in questions (maximum 6); use stable question and option IDs and concise shortLabel values.",
+          "Keep each question focused. Do not bundle unrelated decisions or questions that depend on an earlier answer; ask dependent follow-ups after receiving the set.",
+          "Use question for a single legacy question OR title and questions for a set, never both. Batch questions always offer alternative text plus additive details; do not add separate questions just to collect comments.",
         ],
         executionMode: "sequential",
         parameters: Type.Object({
-          question: Type.String({ description: "The question to ask the user" }),
+          question: Type.Optional(Type.String({ description: "Single question; mutually exclusive with questions" })),
+          title: Type.Optional(Type.String({ minLength: 1, maxLength: 200, description: "Required for a question set" })),
+          questions: Type.Optional(Type.Array(setQuestionSchema, { minItems: 1, maxItems: 6, description: "Related independent questions submitted together; do not combine with legacy single-question fields" })),
           context: Type.Optional(Type.String({ description: "Relevant context to show before the question (summary of findings)" })),
           options: Type.Optional(Type.Array(Type.Object({
             title: Type.String({ description: "Short title for this option" }),
@@ -43,7 +65,7 @@ export function createAskUserExtension(): InlineExtension {
           }), { description: "List of options for the user to choose from" })),
           allowMultiple: Type.Optional(Type.Boolean({ description: "Allow selecting multiple options. Default: false" })),
           allowFreeform: Type.Optional(Type.Boolean({ description: "Add a freeform text option. Default: true" })),
-          allowComment: Type.Optional(Type.Boolean({ description: "Collect an optional comment after selecting one or more options. Default: PI_ASK_USER_ALLOW_COMMENT env var if set, otherwise false." })),
+          allowComment: Type.Optional(Type.Boolean({ description: "Collect additional details alongside choices or a written answer. Default: PI_ASK_USER_ALLOW_COMMENT env var if set, otherwise true." })),
           displayMode: Type.Optional(Type.Unsafe<"overlay" | "inline">({ type: "string", enum: ["overlay", "inline"], description: "UI rendering mode. Pi Web presents a browser form regardless of terminal layout." })),
           singleSelectLayout: Type.Optional(Type.Unsafe<"auto" | "list">({ type: "string", enum: ["auto", "list"], description: "Terminal single-select layout; ignored by Pi Web." })),
           contextExpanded: Type.Optional(Type.Boolean({ description: "Start with oversized context expanded. Default: PI_ASK_USER_CONTEXT_EXPANDED env var if set, otherwise false." })),
@@ -52,6 +74,34 @@ export function createAskUserExtension(): InlineExtension {
           timeout: Type.Optional(Type.Number({ description: "Auto-dismiss after N milliseconds. Returns null (cancelled) when expired." })),
         }),
         async execute(_toolCallId, params, signal, onUpdate, ctx) {
+          if (params.questions !== undefined) {
+            if ([params.question, params.options, params.allowMultiple, params.allowFreeform, params.allowComment].some((v) => v !== undefined)) {
+              throw new Error("Use either question with legacy fields or title and questions, never both.");
+            }
+            const set = parseQuestionSet(params);
+            if (!set) throw new Error("Invalid question set: provide a title, 1–6 questions with unique IDs, shortLabel and type, and unique option IDs for choice questions.");
+            const ui = ctx.ui as typeof ctx.ui & Partial<AskUserUiContext>;
+            const details = (answers: SetAnswer[] | null) => ({ ...set, answers, cancelled: answers === null });
+            if (!ctx.hasUI || !ui.askUserBatch) return {
+              content: [{ type: "text" as const, text: `Questions require interactive mode:\n${set.questions.map((q) => q.question).join("\n")}` }],
+              isError: true, details: details(null),
+            };
+            if (signal?.aborted) return { content: [{ type: "text" as const, text: "Cancelled" }], details: details(null) };
+            pi.events.emit("herdr:blocked", { active: true, label: "Waiting for user response" });
+            let answers: SetAnswer[] | null;
+            try {
+              const timeout = typeof params.timeout === "number" && Number.isFinite(params.timeout) && params.timeout > 0
+                ? Math.min(params.timeout, 2_147_483_647) : undefined;
+              answers = normalizeSetAnswers(await ui.askUserBatch(set, timeout, signal), set);
+            } finally {
+              pi.events.emit("herdr:blocked", { active: false });
+            }
+            const emitFull = parseAskUserPreference(process.env.PI_ASK_USER_EMIT_FULL_EVENTS) ?? false;
+            pi.events.emit(answers ? "ask:answered" : "ask:cancelled", emitFull ? details(answers)
+              : { title: set.title, questionCount: set.questions.length, cancelled: answers === null });
+            return { content: [{ type: "text" as const, text: answers ? `User answered:\n\n${questionSetSummary(set, answers)}` : "User cancelled the question set" }], details: details(answers) };
+          }
+          if (!params.question?.trim() || params.title !== undefined) throw new Error("Provide question, or title and questions.");
           const rawOptions: unknown[] = Array.isArray(params.options) ? params.options : [];
           const options = rawOptions.map(coerceAskUserOption).filter((option) => option !== null);
           const question: AskUserQuestion = {
@@ -60,7 +110,7 @@ export function createAskUserExtension(): InlineExtension {
             options,
             allowMultiple: params.allowMultiple ?? false,
             allowFreeform: params.allowFreeform ?? true,
-            allowComment: params.allowComment ?? parseAskUserPreference(process.env.PI_ASK_USER_ALLOW_COMMENT) ?? false,
+            allowComment: params.allowComment ?? parseAskUserPreference(process.env.PI_ASK_USER_ALLOW_COMMENT) ?? true,
             contextExpanded: params.contextExpanded ?? parseAskUserPreference(process.env.PI_ASK_USER_CONTEXT_EXPANDED) ?? false,
           };
           const details = (response: AskUserAnswer | null): AskUserDetails => ({

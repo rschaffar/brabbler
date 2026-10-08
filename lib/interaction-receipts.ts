@@ -1,14 +1,15 @@
 import { askUserSummary, normalizeAskUserAnswer } from "./ask-user";
+import { normalizeSetAnswers, parseQuestionSet, questionSetSummary, type SetAnswer } from "./question-set";
 import { validatePluginCard, validPluginAction } from "./plugins/ui";
 import type { CustomMessage, ExtensionUiRequest, ExtensionUiResponse, SessionEntry, SessionTreeNode } from "./types";
 
 export const INTERACTION_RECEIPT_TYPE = "pi-web:interaction-receipt";
 export type InteractionRequest = Extract<ExtensionUiRequest, {
-  method: "select" | "confirm" | "input" | "editor" | "ask_user" | "plugin_card";
+  method: "select" | "confirm" | "input" | "editor" | "ask_user" | "ask_user_batch" | "plugin_card";
 }>;
 export type InteractionResponse =
   | { value: string } | { confirmed: boolean } | { action: string }
-  | { answer: import("./ask-user").AskUserAnswer } | { cancelled: true };
+  | { answer: import("./ask-user").AskUserAnswer } | { answers: SetAnswer[] } | { cancelled: true };
 export type InteractionOutcome = "answered" | "cancelled" | "timed_out" | "aborted";
 export interface InteractionReceipt {
   version: 1;
@@ -26,6 +27,10 @@ export function normalizeInteractionResponse(request: InteractionRequest, respon
   if (!record(response)) return null;
   if (response.cancelled === true) return { cancelled: true };
   switch (request.method) {
+    case "ask_user_batch": {
+      const answers = normalizeSetAnswers(response.answers, request);
+      return answers ? { answers } : null;
+    }
     case "ask_user": {
       const answer = normalizeAskUserAnswer(response.answer, request);
       return answer ? { answer } : null;
@@ -52,6 +57,7 @@ export function snapshotInteractionRequest(request: InteractionRequest): Interac
 
 function isInteractionRequest(value: unknown): value is InteractionRequest {
   if (!record(value) || value.type !== "extension_ui_request" || typeof value.id !== "string") return false;
+  if (value.method === "ask_user_batch") return parseQuestionSet(value) !== null;
   if (value.method === "ask_user") {
     return typeof value.question === "string" && (value.context === undefined || typeof value.context === "string")
       && Array.isArray(value.options) && value.options.every((option) => record(option)
@@ -75,13 +81,15 @@ function isInteractionRequest(value: unknown): value is InteractionRequest {
 /** Unknown versions and malformed custom entries stay hidden instead of breaking history. */
 export function readInteractionReceipt(value: unknown): InteractionReceipt | null {
   if (!record(value) || value.version !== 1 || !isInteractionRequest(value.request)) return null;
+  const request = value.request.method === "ask_user_batch"
+    ? { ...value.request, ...parseQuestionSet(value.request)! } : value.request;
   if (value.outcome === "answered" || value.outcome === "cancelled") {
-    const response = normalizeInteractionResponse(value.request, value.response);
+    const response = normalizeInteractionResponse(request, value.response);
     if (!response || ("cancelled" in response) !== (value.outcome === "cancelled")) return null;
-    return { version: 1, request: value.request, outcome: value.outcome, response };
+    return { version: 1, request, outcome: value.outcome, response };
   }
   if (value.outcome === "timed_out" || value.outcome === "aborted") {
-    return { version: 1, request: value.request, outcome: value.outcome };
+    return { version: 1, request, outcome: value.outcome };
   }
   return null;
 }
@@ -94,6 +102,7 @@ export function interactionAnswer(receipt: InteractionReceipt): string | null {
   const response = receipt.response;
   if (!response || "cancelled" in response) return null;
   if ("answer" in response) return askUserSummary(response.answer);
+  if ("answers" in response && receipt.request.method === "ask_user_batch") return questionSetSummary(receipt.request, response.answers);
   if ("value" in response) return response.value;
   if ("action" in response && receipt.request.method === "plugin_card") {
     return receipt.request.actions.find((action) => action.id === response.action)?.label ?? response.action;

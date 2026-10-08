@@ -41,6 +41,7 @@ export function isBlockingExtensionUiRequest(
     case "input":
     case "editor":
     case "ask_user":
+    case "ask_user_batch":
     case "plugin_card":
       return true;
     case "custom":

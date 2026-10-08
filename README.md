@@ -23,7 +23,7 @@ This is my personal project, shaped around the way I work. It started from [Pi W
 - **A terminal where you need it.** Open a workspace terminal alongside your files and conversations.
 - **Models and accounts under your control.** Configure providers, choose models and thinking levels, and manage multiple provider identities with per-session selection and project defaults.
 - **Session-local model speed.** Choose **Standard** or **Fast** beside Thinking for ChatGPT subscription models, independently of reasoning depth. Fast uses more subscription quota; the choice is saved per session, never as a global/browser default. See [Model speed](./docs/model-speed.md).
-- **Questions that fit the browser.** Answer `ask_user` and extension dialogs through inline cards. Saved interaction receipts let you review what was shown and decided without executing an action again.
+- **Questions that fit the browser.** Answer one question or a navigable set of mixed questions, revise choices or written alternatives, add separate details, and submit everything once. Same-tab drafts survive refresh while the request is pending. Saved interaction receipts let you review what was shown and decided without executing an action again. See [Browser questions](./docs/questions.md).
 - **Your Pi setup, still yours.** Use Pi's existing sessions, settings, skills, and extensions rather than starting over in a separate hosted service.
 
 The Activity view tracks runs managed by this app; it is not a monitor for unrelated Pi CLI processes. “Local” describes where the workspace runs—prompts still go to whichever model provider you select.

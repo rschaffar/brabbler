@@ -171,6 +171,7 @@ export type ExtensionUiRequest =
       expiresAt?: number;
     }
   | ({ type: "extension_ui_request"; id: string; method: "ask_user"; timeout?: number; expiresAt?: number } & AskUserQuestion)
+  | ({ type: "extension_ui_request"; id: string; method: "ask_user_batch"; timeout?: number; expiresAt?: number } & import("./question-set").QuestionSet)
   | {
       type: "extension_ui_request";
       id: string;
@@ -215,7 +216,7 @@ export type ExtensionUiRequest =
 
 export type BlockingExtensionUiRequest = Extract<
   ExtensionUiRequest,
-  { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "custom" | "plugin_card" }
+  { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "ask_user_batch" | "custom" | "plugin_card" }
 >;
 
 /** Lightweight, read-only attention metadata from Pi Web's live wrappers. */
@@ -236,7 +237,8 @@ export type ExtensionUiResponse =
   | { type: "extension_ui_response"; id: string; value: string }
   | { type: "extension_ui_response"; id: string; confirmed: boolean }
   | { type: "extension_ui_response"; id: string; cancelled: true }
-  | { type: "extension_ui_response"; id: string; answer: AskUserAnswer };
+  | { type: "extension_ui_response"; id: string; answer: AskUserAnswer }
+  | { type: "extension_ui_response"; id: string; answers: import("./question-set").SetAnswer[] };
 
 export interface ExtensionStatusItem {
   key: string;

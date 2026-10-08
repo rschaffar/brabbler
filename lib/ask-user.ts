@@ -12,7 +12,7 @@ export interface AskUserOption {
 
 export type AskUserAnswer =
   | { kind: "selection"; selections: string[]; comment?: string }
-  | { kind: "freeform"; text: string };
+  | { kind: "freeform"; text: string; comment?: string };
 
 export interface AskUserQuestion {
   question: string;
@@ -69,7 +69,8 @@ export function normalizeAskUserAnswer(value: unknown, question: AskUserQuestion
   if (answer.kind === "freeform") {
     if (question.options.length > 0 && !question.allowFreeform) return null;
     const text = typeof answer.text === "string" ? answer.text.trim() : "";
-    return text ? { kind: "freeform", text } : null;
+    const comment = question.allowComment && typeof answer.comment === "string" ? answer.comment.trim() : "";
+    return text ? { kind: "freeform", text, ...(comment ? { comment } : {}) } : null;
   }
   if (answer.kind !== "selection" || !Array.isArray(answer.selections) || question.options.length === 0) return null;
   const selections = answer.selections;
@@ -82,7 +83,7 @@ export function normalizeAskUserAnswer(value: unknown, question: AskUserQuestion
 }
 
 export function askUserSummary(response: AskUserAnswer): string {
-  if (response.kind === "freeform") return response.text;
+  if (response.kind === "freeform") return response.comment ? `${response.text} — ${response.comment}` : response.text;
   const selections = response.selections.join(", ");
   return response.comment ? `${selections} — ${response.comment}` : selections;
 }
