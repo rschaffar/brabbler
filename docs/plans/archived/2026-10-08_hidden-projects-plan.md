@@ -17,7 +17,7 @@ Settings → General → Privacy lists searchable known projects plus saved hidd
 - [x] Add Activity family filtering and eye reveal. `lib/activity.test.mjs` and `components/ActivityOverview.test.mjs` verify all statuses, canonical worktrees, cross-project descendants, unresolved identities/ancestry and no private DOM/counts. Browser checks verify filter and reveal resets.
 - [x] Update maintained `README.md` and `e2e/README.md`. No demo API change is required: the separately copied demo does not have Activity; expanding that older UI is outside this feature.
 - [x] Run focused and full verification without production builds: full `nix develop --offline --no-write-lock-file -c node nix/test-offline.mjs` passes 256 files / 1,645 tests, type generation, typecheck and lint. Direct `node_modules/.bin/tsc --noEmit` and `npm run lint` also pass. Full `npm run test:e2e`, `E2E_ACTIVITY_ONLY=1`, and `E2E_PROJECT_PRIVACY_ONLY=1` pass through the Nix shell; focused browser checks cover 1280×800, 700×800 and 390×844.
-- [ ] Commit the reviewed feature and request exact-state integration approval for local rst-main using an unsigned non-FF merge.
+- [x] Commit and prepare the reviewed feature for separate exact-state integration approval. Application commit `71db909deffb419e1a2dc2ffe3df7cbd4f2fcf51` is unsigned and clean; rebasing onto local `rst-main` at `fe77710fd1c67abf8cc191fc3b5323679de77787` reports up to date. Integration itself is a separately approved lifecycle action, not implementation authority.
 
 ## Non-Goals
 
@@ -41,4 +41,4 @@ Review also caught provisional cwd-only worktree rows: these and orphan ancestry
 
 - [x] Conceal/reveal and persisted switches meet the approved Activity-only design.
 - [x] Required verification passes; the corrected fixture failure is documented above.
-- [ ] Feature history and exact candidate are ready for separate integration approval; no remote or cleanup operations performed.
+- [x] Feature history and verified application candidate are ready for separate integration approval; no remote or cleanup operations performed. This archive is documentation-only; `README.md` owns current behavior and `e2e/README.md` owns browser commands/coverage. The separately copied demo remains unchanged. The worktree, private test artifacts and feature branch are retained.
