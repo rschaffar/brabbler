@@ -17,6 +17,7 @@ import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { AnsiText } from "./AnsiText";
 import { AskUserDialog } from "./AskUserDialog";
+import { QuestionSetDialog } from "./QuestionSetDialog";
 import { PluginCard } from "./plugin-ui/PluginCard";
 import { BlockingCard } from "./BlockingCard";
 import { ContextReloadNotice } from "./ContextReloadNotice";
@@ -1270,7 +1271,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
 
             {extensionDialog && (
               <div ref={questionCardRef} className="my-4 min-w-0 scroll-mt-4">
-                {extensionDialog.method === "ask_user"
+                {extensionDialog.method === "ask_user_batch"
+                  ? <QuestionSetDialog key={extensionDialog.id} request={extensionDialog} sessionId={session?.id ?? sessionIdRef.current ?? ""} onRespond={respondToExtensionUi} />
+                  : extensionDialog.method === "ask_user"
                   ? <AskUserDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
                   : extensionDialog.method === "plugin_card"
                     ? <PluginCard key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />

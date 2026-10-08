@@ -44,7 +44,7 @@ also covers immutable approval snapshots, exact historical receipt context
 despite changed working files and an expired-handle response's patch-only fallback
 without submitting decisions. Question fixtures verify the shared bounded card
 body and fixed
-footer as well as keyboard/draft/cancellation/expiry contracts. Question and plugin flows also verify completed read-only receipts, reload/reconnect deduplication, exact historical patches despite changed working files, and unmounted collapsed historical diff bodies.
+footer as well as keyboard/draft/cancellation/expiry contracts. `e2e/question-sets.mjs` extends the ask-user selection with mixed question navigation/review, alternative main answers plus additive details, same-tab reload recovery, explicit skip, exclusive choices, cancellation confirmation, failed-send retry, and atomic read-only receipts at both viewport sizes. Question and plugin flows also verify completed read-only receipts, reload/reconnect deduplication, exact historical patches despite changed working files, and unmounted collapsed historical diff bodies.
 OAuth/SSE account responses are mocked; no provider credentials are
 used. Slash commands exercise ordinary session/UI paths without a live model.
 

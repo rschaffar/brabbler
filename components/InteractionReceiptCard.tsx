@@ -6,6 +6,7 @@ import { interactionAnswer, interactionTitle, type InteractionReceipt } from "@/
 import { BlockingCard } from "./BlockingCard";
 import { MarkdownBody } from "./MarkdownBody";
 import { PluginCardContent } from "./plugin-ui/PluginCard";
+import { QuestionSetReview } from "./QuestionSetReview";
 
 /** No live request, submit callback, editable draft or timer exists in this component. */
 export function InteractionReceiptCard({ receipt }: { receipt: InteractionReceipt }) {
@@ -22,11 +23,12 @@ export function InteractionReceiptCard({ receipt }: { receipt: InteractionReceip
       collapsedLabel={outcome}
       collapsed={collapsed} retainBodyWhenCollapsed={false}
       onCollapse={() => setCollapsed(true)} onExpand={() => setCollapsed(false)}
-      meta={answer !== null ? <span className="block max-w-[220px] truncate" title={answer}>{answer}</span> : undefined}
+      meta={request.method === "ask_user_batch" ? t("chat.questionsReceiptCount", { total: request.questions.length,
+        answered: response && "answers" in response ? response.answers.filter((a) => a.kind !== "skipped").length : 0 }) : answer !== null ? <span className="block max-w-[220px] truncate" title={answer}>{answer}</span> : undefined}
       footer={<p className="min-w-0 text-xs text-text-muted">
         {request.method === "plugin_card" ? t("chat.receiptDecisionOnly") : outcome}
       </p>}>
-      {answer !== null && <section className="min-w-0">
+      {answer !== null && request.method !== "ask_user_batch" && <section className="min-w-0">
         <h3 className="blocking-card-section-title">{t("chat.receiptResponse")}</h3>
         <pre className="blocking-card-code">{answer}</pre>
       </section>}
@@ -34,7 +36,10 @@ export function InteractionReceiptCard({ receipt }: { receipt: InteractionReceip
         {request.scope && <p className="blocking-card-scope">{request.scope}</p>}
         <PluginCardContent request={request} />
       </>
-        : request.method === "ask_user" ? <>
+        : request.method === "ask_user_batch" ? <>
+          {request.context && <MarkdownBody>{request.context}</MarkdownBody>}
+          <QuestionSetReview set={request} answers={response && "answers" in response ? response.answers : []} showOptions />
+        </> : request.method === "ask_user" ? <>
           {request.context && <section className="min-w-0">
             <h3 className="blocking-card-section-title">{t("chat.askUserContext")}</h3>
             <MarkdownBody>{request.context}</MarkdownBody>

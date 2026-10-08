@@ -8,6 +8,7 @@ const source = await readFile(new URL("./useAgentSession.ts", import.meta.url), 
 const jiti = createJiti(import.meta.url);
 const helpers = await jiti.import("../lib/interaction-receipts.ts");
 function runCase(type, next, bindings, event) {
+  bindings = { sessionIdRef: { current: "session" }, clearQuestionDraft() {}, ...bindings };
   const body = source.slice(source.indexOf(`case "${type}"`), source.indexOf(`case "${next}"`, source.indexOf(`case "${type}"`)));
   const js = ts.transpileModule(`switch (event.type) { ${body} }`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   new Function("event", ...Object.keys(bindings), js)(event, ...Object.values(bindings));
@@ -44,6 +45,20 @@ test("connecting reconciles persisted receipts even when the agent is idle", () 
     dispatch() {}, sessionIdRef: { current: "session" }, reconcileInteractionReceipts: (id) => loads.push(id),
   }, { type: "connected", isStreaming: false });
   assert.deepEqual(loads, ["session"]);
+});
+
+test("reconnect closes a settled batch and reconciles only the selected session's drafts", () => {
+  let dialog = { id: "settled", method: "ask_user_batch" };
+  const snapshots = [];
+  const bindings = { dispatch() {}, sessionIdRef: { current: "session" }, reconcileInteractionReceipts() {},
+    reconcileQuestionDrafts: (...args) => snapshots.push(args),
+    setExtensionDialog: (update) => { dialog = update(dialog); } };
+  runCase("connected", "agent_start", bindings, { type: "connected", pendingQuestionSetIds: ["pending"], isStreaming: false });
+  assert.equal(dialog, null);
+  assert.deepEqual(snapshots, [["session", ["pending"]]]);
+  dialog = { id: "pending", method: "ask_user_batch" };
+  runCase("connected", "agent_start", bindings, { type: "connected", pendingQuestionSetIds: ["pending"], isStreaming: false });
+  assert.equal(dialog.id, "pending");
 });
 
 test("a live receipt never enters an independently browsed branch", () => {

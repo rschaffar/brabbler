@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { checkBlockingCard } from "./blocking-card.mjs";
+import { checkQuestionSets } from "./question-sets.mjs";
 
 export async function checkAskUserDialog(page, width) {
   const commands = [];
@@ -30,12 +31,12 @@ export async function checkAskUserDialog(page, width) {
     await single.waitFor();
     await single.getByText("A detailed reason for asking").waitFor();
     await single.getByText("Second", { exact: true }).click();
-    await single.getByRole("textbox", { name: "Optional comment" }).fill("More context");
+    await single.getByRole("textbox", { name: "Additional details (optional)" }).fill("More context");
     await single.getByRole("button", { name: "Collapse" }).click();
     await page.waitForFunction(() => document.activeElement?.classList.contains("blocking-card-collapsed"));
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => document.activeElement?.tagName === "TEXTAREA" && document.activeElement.closest(".blocking-card"));
-    assert.equal(await single.getByRole("textbox", { name: "Optional comment" }).inputValue(), "More context");
+    assert.equal(await single.getByRole("textbox", { name: "Additional details (optional)" }).inputValue(), "More context");
     await single.getByRole("button", { name: "Submit" }).click();
     await finish({ kind: "selection", selections: ["Second"], comment: "More context" });
     const saved = page.locator("[data-interaction-receipt]").last();
@@ -64,8 +65,9 @@ export async function checkAskUserDialog(page, width) {
 
     const freeform = await start("freeform");
     await freeform.getByRole("textbox", { name: "Type your answer…" }).fill("My own answer");
+    await freeform.getByRole("textbox", { name: "Additional details (optional)" }).fill("Extra detail");
     await freeform.getByRole("button", { name: "Submit" }).click();
-    await finish({ kind: "freeform", text: "My own answer" });
+    await finish({ kind: "freeform", text: "My own answer", comment: "Extra detail" });
 
     const longContext = await start("long");
     assert.equal(await longContext.getByText(/More background/).isVisible(), false, "Long context starts collapsed");
@@ -92,6 +94,7 @@ export async function checkAskUserDialog(page, width) {
     assert.equal(commands.slice(beforeTimeout).some((command) => command.type === "extension_ui_response"), false);
     await page.locator("[data-interaction-receipt]").last().getByRole("button", { name: /Timed out.*E2E browser question/ }).waitFor();
     console.log(`PASS: ${width}px browser-native ask_user single/multi/freeform/cancel/expiry and persistent read-only receipts`);
+    await checkQuestionSets(page, width);
   } finally {
     page.off("request", onRequest);
   }

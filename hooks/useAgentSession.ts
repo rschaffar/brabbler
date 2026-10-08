@@ -14,6 +14,8 @@ import type {
   UserMessage,
 } from "@/lib/types";
 import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
+import { clearQuestionDraft, reconcileQuestionDrafts } from "@/lib/question-set-drafts";
+import { useI18n } from "./useI18n";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { isModelSpeed, type ModelSpeed } from "@/lib/model-speed";
 import { appendInteractionReceipt, interactionReceiptMessage, mergeInteractionReceiptHistory, receiptBranchContains } from "@/lib/interaction-receipts";
@@ -117,7 +119,7 @@ function alignEntryIds(messages: AgentMessage[], entryIds: string[]): string[] {
   return Array.from({ length: messages.length }, (_, index) => entryIds[index] ?? "");
 }
 
-type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "plugin_card" }>;
+type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "ask_user_batch" | "plugin_card" }>;
 type ExtensionUiCustomRequest = Extract<ExtensionUiRequest, { method: "custom" }>;
 export type NoticeType = "info" | "success" | "warning" | "error";
 
@@ -311,6 +313,7 @@ type SlashCommandsResponse = {
 };
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
+  const { t } = useI18n();
   const {
     session, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
@@ -1060,21 +1063,30 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const respondToExtensionUi = useCallback(async (
     request: ExtensionUiDialogRequest,
-    response: { value: string } | { confirmed: boolean } | { action: string } | { cancelled: true } | { answer: import("@/lib/ask-user").AskUserAnswer },
+    response: { value: string } | { confirmed: boolean } | { action: string } | { cancelled: true } | { answer: import("@/lib/ask-user").AskUserAnswer } | { answers: import("@/lib/question-set").SetAnswer[] },
   ) => {
     const sid = sessionIdRef.current;
-    setExtensionDialog((current) => current?.id === request.id ? null : current);
-    if (!sid) return;
+    const batch = request.method === "ask_user_batch";
+    if (!batch) setExtensionDialog((current) => current?.id === request.id ? null : current);
+    if (!sid) { if (batch) throw new Error("Session unavailable"); return; }
     try {
-      await sendAgentCommand(sid, {
+      const result = await sendAgentCommand<{ accepted?: boolean }>(sid, {
         type: "extension_ui_response",
         id: request.id,
         ...response,
-      });
+      }, batch ? { signal: AbortSignal.timeout(15_000) } : undefined);
+      if (batch && sessionIdRef.current === sid) {
+        setExtensionDialog((current) => current?.id === request.id ? null : current);
+        void reconcileInteractionReceipts(sid);
+        if (result?.accepted === false) dispatchNotice({ type: "add", notice: {
+          id: createNoticeId(), type: "info", message: t("chat.questionsAlreadySettled"),
+        } });
+      }
     } catch (e) {
+      if (batch) throw e;
       console.error("Failed to send extension UI response:", e);
     }
-  }, []);
+  }, [reconcileInteractionReceipts, t]);
 
   const sendExtensionCustomInput = useCallback(async (request: ExtensionUiCustomRequest, data: string) => {
     const sid = sessionIdRef.current;
@@ -1112,6 +1124,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "input":
       case "editor":
       case "ask_user":
+      case "ask_user_batch":
       case "plugin_card":
         setExtensionDialog(request);
         break;
@@ -1399,6 +1412,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       case "connected": {
         dispatch({ type: "end" });
+        if (sessionIdRef.current && Array.isArray(event.pendingQuestionSetIds) && event.pendingQuestionSetIds.every((id) => typeof id === "string")) {
+          const pendingIds = event.pendingQuestionSetIds as string[];
+          reconcileQuestionDrafts(sessionIdRef.current, pendingIds);
+          setExtensionDialog((current) => current?.method === "ask_user_batch" && !pendingIds.includes(current.id) ? null : current);
+        }
         // Completed receipts are session entries, not replayable live requests.
         // Reconcile missed history even when another client answered while offline.
         if (sessionIdRef.current) void reconcileInteractionReceipts(sessionIdRef.current);
@@ -1666,6 +1684,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           }
         }
         const receipt = message.details as import("@/lib/interaction-receipts").InteractionReceipt;
+        if (sessionIdRef.current) clearQuestionDraft(sessionIdRef.current, receipt.request.id);
         setExtensionDialog((current) => current?.id === receipt.request.id ? null : current);
         break;
       }
@@ -1673,6 +1692,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
       case "extension_ui_closed":
+        if (sessionIdRef.current && typeof event.id === "string") clearQuestionDraft(sessionIdRef.current, event.id);
         setExtensionDialog((current) => current?.id === event.id ? null : current);
         break;
     }

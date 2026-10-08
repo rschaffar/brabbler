@@ -30,7 +30,7 @@ export function AskUserDialog({ request, onRespond }: {
 
   const remaining = request.expiresAt === undefined ? null : Math.max(0, Math.ceil((request.expiresAt - now) / 1000));
   const answer: AskUserAnswer | null = writing
-    ? (freeform.trim() ? { kind: "freeform", text: freeform.trim() } : null)
+    ? (freeform.trim() ? { kind: "freeform", text: freeform.trim(), ...(request.allowComment && comment.trim() ? { comment: comment.trim() } : {}) } : null)
     : (selected.length ? { kind: "selection", selections: selected, ...(request.allowComment && comment.trim() ? { comment: comment.trim() } : {}) } : null);
   const select = (title: string) => {
     setWriting(false);
@@ -79,7 +79,7 @@ export function AskUserDialog({ request, onRespond }: {
           onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing && answer) { event.preventDefault(); onRespond(request, { answer }); } }}
           className="blocking-card-field min-h-[70px] resize-y" />}
       </div>}
-      {request.allowComment && !writing && request.options.length > 0 && <label className="grid gap-1 text-xs text-text-muted">{t("chat.askUserComment")}
+      {request.allowComment && <label className="grid gap-1 text-xs text-text-muted">{t("chat.askUserComment")}
         <textarea value={comment} onChange={(event) => setComment(event.target.value)} rows={2} className="blocking-card-field resize-y" />
       </label>}
     </BlockingCard>

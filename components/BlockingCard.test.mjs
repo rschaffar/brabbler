@@ -73,6 +73,9 @@ const receiptDependencies = {
   "./BlockingCard": shell,
   "./MarkdownBody": { MarkdownBody: ({ children }) => React.createElement("p", {}, children) },
   "./plugin-ui/PluginCard": { PluginCardContent },
+  "./QuestionSetReview": await component("./QuestionSetReview.tsx", {
+    "./MarkdownBody": { MarkdownBody: ({ children }) => React.createElement("p", {}, children) },
+  }),
 };
 const { InteractionReceiptCard } = await component("./InteractionReceiptCard.tsx", receiptDependencies);
 const { InteractionReceiptCard: ExpandedReceipt } = await component("./InteractionReceiptCard.tsx", {
