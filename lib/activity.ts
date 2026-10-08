@@ -1,5 +1,6 @@
 import type { SessionAttention, SessionInfo } from "./types";
 import { workspaceKeyOf } from "./workspace-memory";
+import { hasResolvedProjectIdentity } from "./hidden-projects";
 
 export type ActivityStatus = "needs-you" | "working" | "queued" | "interrupted" | "ready";
 export interface ActivityItem {
@@ -32,6 +33,28 @@ export function activityProjectName(session: SessionInfo): string {
   return path.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).at(-1) || path;
 }
 
+/** Hide a project's subagents too, even when their cwd belongs to another project. */
+export function hiddenActivitySessionIds(sessions: readonly SessionInfo[], hiddenProjectKeys: ReadonlySet<string>): Set<string> {
+  const hidden = new Set<string>();
+  if (hiddenProjectKeys.size === 0) return hidden;
+  const byId = new Map(sessions.map((session) => [session.id, session]));
+  for (const session of sessions) {
+    const visited = new Set<string>();
+    let current: SessionInfo | undefined = session;
+    while (current && !visited.has(current.id)) {
+      // Unknown worktree identity or missing ancestry is not proof of a public project.
+      if (!hasResolvedProjectIdentity(current) || hiddenProjectKeys.has(workspaceKeyOf(current))
+        || (current.relation?.kind === "subagent" && !byId.has(current.relation.parentSessionId))) {
+        hidden.add(session.id);
+        break;
+      }
+      visited.add(current.id);
+      current = current.relation?.kind === "subagent" ? byId.get(current.relation.parentSessionId) : undefined;
+    }
+  }
+  return hidden;
+}
+
 /** Classify only sessions known to this Pi Web catalogue; idle history is not an inbox. */
 export function getActivitySections(
   sessions: readonly SessionInfo[],
@@ -41,12 +64,15 @@ export function getActivitySections(
   projectFilter: string | null = null,
   queuedIds: ReadonlySet<string> = new Set(),
   interruptedIds: ReadonlySet<string> = new Set(),
+  hiddenProjectKeys: ReadonlySet<string> = new Set(),
 ): ActivitySections {
   const byId = new Map(sessions.map((session) => [session.id, session]));
   const attentionById = new Map(attention.map((request) => [request.sessionId, request]));
   const sections: ActivitySections = { "needs-you": [], working: [], queued: [], interrupted: [], ready: [] };
   const statusById = new Map<string, ActivityStatus>();
-  const isArchived = (session: SessionInfo): boolean => {
+  const hiddenIds = hiddenActivitySessionIds(sessions, hiddenProjectKeys);
+  const isExcluded = (session: SessionInfo): boolean => {
+    if (hiddenIds.has(session.id)) return true;
     const visited = new Set<string>();
     let current: SessionInfo | undefined = session;
     while (current && !visited.has(current.id)) {
@@ -58,7 +84,7 @@ export function getActivitySections(
   };
 
   for (const session of sessions) {
-    if (isArchived(session)) continue;
+    if (isExcluded(session)) continue;
     const projectKey = workspaceKeyOf(session);
     if (projectFilter && projectKey !== projectFilter) continue;
     const request = attentionById.get(session.id);

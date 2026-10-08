@@ -7,6 +7,7 @@ import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { WebVersionNotice } from "./WebVersionNotice";
 import { ActivityOverview } from "./ActivityOverview";
+import { useHiddenProjects } from "@/hooks/useHiddenProjects";
 import { StarredOverview } from "./StarredOverview";
 import { getActivitySections, type ActivityStatus } from "@/lib/activity";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
@@ -128,6 +129,7 @@ export function AppShell() {
   }, [playDoneSound, soundEnabledRef]);
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   const [sessionCatalog, setSessionCatalog] = useState<SessionInfo[]>([]);
+  const projectPrivacy = useHiddenProjects();
   const handleSessionsChange = useCallback((sessions: SessionInfo[]) => {
     setSessionCatalog(sessions);
     // The sidebar hydrates metadata after the selected session has already
@@ -2397,6 +2399,7 @@ export function AppShell() {
               reviewIds={reviewSessionIds}
               available={activityAvailable}
               recoveryRefreshKey={recoveryRefreshKey}
+              privacy={projectPrivacy}
               selectedId={selectedSession?.id ?? null}
               onSelect={handleActivitySelectSession}
               onMarkRead={handleMarkReviewRead}
@@ -2648,6 +2651,8 @@ export function AppShell() {
         sessionId={pluginSettingsSession?.id ?? selectedSession?.id ?? null}
         initialSection={settingsSection}
         initialPluginScope={pluginSettingsSession ? "session" : undefined}
+        sessions={sessionsWithSelection}
+        privacy={projectPrivacy}
         quoteSelectionEnabled={quoteSelectionEnabled}
         onQuoteSelectionChange={handleQuoteSelectionChange}
         onClose={() => {

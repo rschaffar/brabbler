@@ -8,6 +8,9 @@ nix develop -c npm run test:terminal
 ```
 
 Focused browser switches: `E2E_ASK_USER_ONLY=1`, `E2E_ACTIVITY_ONLY=1`,
+`E2E_PROJECT_PRIVACY_ONLY=1` (persistent hidden-project switches, safe loading and
+response failures, project-filter/count concealment, temporary eye reveal and
+mobile navigation reset at desktop/compact/mobile sizes),
 `E2E_TIMESTAMPS_ONLY=1`, `E2E_MODEL_SPEED_ONLY=1` (native ChatGPT subscription speed),
 `E2E_MOVE_ONLY=1` (destination picker at desktop/mobile sizes),
 `E2E_DIFF_CONTEXT_ONLY=1` (Git Explorer + Files-panel 5,000-line diff fixtures at
@@ -47,6 +50,11 @@ body and fixed
 footer as well as keyboard/draft/cancellation/expiry contracts. `e2e/question-sets.mjs` extends the ask-user selection with mixed question navigation/review, alternative main answers plus additive details, same-tab reload recovery, explicit skip, exclusive choices, cancellation confirmation, failed-send retry, and atomic read-only receipts at both viewport sizes. Question and plugin flows also verify completed read-only receipts, reload/reconnect deduplication, exact historical patches despite changed working files, and unmounted collapsed historical diff bodies.
 OAuth/SSE account responses are mocked; no provider credentials are
 used. Slash commands exercise ordinary session/UI paths without a live model.
+
+Project-privacy checks run in the full suite and through their focused switch.
+They use real isolated settings-file writes, with registry snapshots mocked to
+supply two working projects without model calls. Malformed privacy responses
+exercise fail-closed rendering without suppressing genuine browser/5xx errors.
 
 Model-speed checks run in the full suite and via the focused environment switch
 (the runner does not select a module from a positional filename). At 1280×800

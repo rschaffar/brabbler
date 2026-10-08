@@ -114,6 +114,16 @@ Additional provider accounts are stored in `~/.pi/agent/pi-web-accounts.json`. S
 
 Treat account files, API keys, session histories, and interaction receipts as private. Do not commit them to this repository or include them unredacted in issue reports. File drafts survive switching tabs, but are not persisted across a browser reload.
 
+### Hidden projects in Activity
+
+Use **Settings → General → Privacy → Hidden projects** to exclude selected projects from Activity. Search by name or path; each switch saves immediately and covers the project's worktrees and subagents, including descendants working in another project. Hidden projects disappear from Activity rows, project-filter options and section counts, without stopping agents or acknowledging results.
+
+The **eye button** beside Activity's project filter temporarily reveals hidden activity. Revealed rows carry a crossed-eye marker. Concealing a selected hidden project resets the filter to All projects. Leaving Activity, opening a chat from the mobile list, reloading the page or reloading privacy settings restores concealment; the reveal choice is never persisted.
+
+Project choices are shared across browsers through the private, versioned `~/.pi/agent/pi-web/hidden-projects.json` file (`PI_CODING_AGENT_DIR` applies). Other clients refresh on focus/visibility return and every 15 seconds while visible. Missing storage means no hidden projects; unreadable/corrupt settings withhold Activity and offer Retry rather than showing private rows. Saved hidden entries remain editable even if their sessions disappear. While any project is hidden, sessions with unresolved project identity or missing subagent ancestry are also withheld until metadata arrives (or explicitly revealed); provisional worktree paths are not offered as separate settings entries.
+
+**This is Activity-only concealment, not an access-control or global screen-sharing mode.** The sidebar, Starred, open chats, toolbar activity indicators and desktop/push notifications remain unchanged. Check those surfaces before screen sharing.
+
 ### Remote access
 
 **This is a coding agent with access to your machine, not a public chat service.** Keep it on loopback unless you deliberately configure remote access.

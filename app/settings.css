@@ -1124,6 +1124,37 @@
   line-height: 1.5;
 }
 
+.project-privacy-search {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.project-privacy-list {
+  max-height: 300px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.project-privacy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 54px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.project-privacy-info { min-width: 0; }
+.project-privacy-info strong { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.project-privacy-info small { display: block; color: var(--text-dim); font-size: 10px; overflow-wrap: anywhere; }
+
 .settings-theme-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -13,6 +13,7 @@ import { checkFilePanel, checkFileDiffViews, checkEditableFile, filePanelFixture
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
+import { checkProjectPrivacy } from "./project-privacy.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
@@ -500,7 +501,7 @@ try {
   }
   for (const viewport of [
     ...(process.env.E2E_ARCHIVE_ONLY === "1" ? [] : [{ width: 1280, height: 800 }]),
-    ...(process.env.E2E_ACTIVITY_ONLY === "1" ? [{ width: 700, height: 800 }] : []),
+    ...(process.env.E2E_ACTIVITY_ONLY === "1" || process.env.E2E_PROJECT_PRIVACY_ONLY === "1" ? [{ width: 700, height: 800 }] : []),
     { width: 390, height: 844 },
   ]) {
     context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
@@ -560,6 +561,13 @@ try {
       await context.close();
       context = undefined;
       page = undefined;
+      continue;
+    }
+    if (process.env.E2E_PROJECT_PRIVACY_ONLY === "1") {
+      await checkProjectPrivacy(page, viewport.width, { base, api, post, selectedSessionId: BRANCH, otherSessionId: OTHER });
+      assert.deepEqual(errors, [], `Project privacy browser errors at width ${viewport.width}`);
+      await context.tracing.stop({ path: join(artifacts, `project-privacy-${viewport.width}.zip`) });
+      await context.close(); context = undefined; page = undefined;
       continue;
     }
     if (process.env.E2E_ACTIVITY_ONLY === "1") {
@@ -704,6 +712,7 @@ try {
       page = undefined;
       continue;
     }
+    await checkProjectPrivacy(page, viewport.width, { base, api, post, selectedSessionId: BRANCH, otherSessionId: OTHER });
     if (viewport.width === 1280) {
       assert.equal(await page.getByRole("button", { name: "Workflow", exact: true }).count(), 0, "Managed Workflow controls must be absent");
       await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
