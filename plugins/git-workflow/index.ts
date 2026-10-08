@@ -43,10 +43,10 @@ export const gitWorkflowPlugin: BundledPlugin = {
     });
     const cleanup = defineTool({
       name: "git_cleanup", label: "Git feature cleanup", executionMode: "sequential",
-      description: "Clean up explicitly selected, verified integrated local feature resources together. Separate cleanupFeature permission defaults Ask. Requires full feature/integration IDs and named resources. Generated directories need a user-configured permitted-root entry, not merely ignored status. Never removes main/caller/active/locked worktrees, unknown files or source changes. No remote operations, retries or rollback; partial effects are reported. Workflow choices set to Ask require ask_user before invoking; never edit your own permissions.",
+      description: "Clean up explicitly selected, verified integrated local feature resources together. Separate cleanupFeature permission defaults Ask. Requires full feature/integration IDs and named resources. Worktree removal discovers top-level ignored artifact files/directories. Artifacts absent from the user-owned allowlist require a one-time cleanup card even under Allow; no settings editing is needed. Never removes main/caller/active/locked worktrees, unselected untracked files or source changes. No remote operations, retries or rollback; partial effects are reported. Workflow choices set to Ask require ask_user before invoking; never edit your own permissions.",
       parameters: Type.Object({ checkout, featureBranch: Type.String(), featureTip: Type.String(), integrationCommit: Type.String(),
         targetBranch: Type.Optional(Type.String()), worktreePath: Type.Optional(Type.String()), removeWorktree: Type.Boolean(), deleteBranch: Type.Boolean(),
-        artifactRoots: Type.Array(Type.String(), { description: "Exact top-level generated directories selected from the user-owned permitted directory setting; empty means none" }) }),
+        artifactRoots: Type.Array(Type.String(), { description: "Explicit literal top-level generated files/directories to propose. When removeWorktree is true, top-level ignored artifacts are also discovered even with an empty array. Unlisted artifacts require one-time user approval; arguments never grant permission" }) }),
       execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, { action: "cleanupFeature", ...params }, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id),
     });
     const policy = defineTool({

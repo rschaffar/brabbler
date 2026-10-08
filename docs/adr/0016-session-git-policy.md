@@ -3,6 +3,7 @@
 - Status: Accepted direction by user; implementation tracked in the [plan](../plans/2026-10-08_session-git-policy-plan.md)
 - Scope: Optional bundled Git plugin; ADR 0014 remains in force
 - Revises: ADR 0015's settings hierarchy, not cross-repository operation support
+- Follow-up: [ADR 0017](0017-cleanup-artifact-approval.md) replaces the setting-only artifact authority below with one-time approval plus a reusable file/directory allowlist.
 
 ## Decision
 

@@ -132,8 +132,9 @@ async function preview(callerCwd: string, op: GitOperation, policy: GitSettings,
       { label: "Local branch", value: op.deleteBranch ? "Delete exact integrated ref" : "Keep" }];
     return { fingerprint: digest([cleanup.fingerprint, relevantPolicy(policy, op.action)]), cleanup,
       cwd: cleanup.cwd, args: [], checks: [], card: { title: "Clean up integrated Git feature", subtitle: "Approval required", fields,
-        sections: [{ title: "Explicitly permitted generated directories", fields: cleanup.artifacts.map((item) => ({ label: item.path,
-          value: `${item.entries} entries · ${item.bytes} bytes · SHA256 ${item.digest}`, code: true })) },
+        sections: [{ title: "Generated files and directories to remove", fields: cleanup.artifacts.map((item) => ({ label: item.path,
+          value: `${cleanup.unapprovedArtifacts.includes(item.path) ? "Needs one-time approval" : "Permitted by settings"} · ${item.entries} entries · ${item.bytes} bytes · SHA256 ${item.digest}`, code: true })) },
+        ...(cleanup.unapprovedArtifacts.length ? [{ title: "One-time artifact permission", text: "The listed unpermitted artifacts require your approval for this operation, even when cleanup is set to Allow. Ignored status does not mean disposable. Approving does not change your reusable allowlist.", notice: true }] : []),
         { title: "Boundaries", text: "Only listed resources. Content/identity rechecked before each effect. Unknown files, source changes, locked or active worktrees block cleanup. Target advancement is allowed only while integration remains reachable. External filesystem/Git writers are not locked out; partial effects are reported, never rolled back. Local branch config is retained; remote branches and backups are untouched.", notice: true }],
         scope: "Approves all listed cleanup resources together, not an arbitrary ignored-file deletion.",
         actions: [{ id: "reject", label: "Keep resources" }, { id: "approve", label: "Clean up listed resources", primary: true }] } };
@@ -311,14 +312,17 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
     if (origin.effective[op.action] !== policy[op.action]) throw new Error("Policy changed during preparation");
     const operationId = randomUUID();
     snapshot.card.operationId = operationId;
-    if (policy[op.action] === "allow") snapshot.card.subtitle = "Policy-authorized operation";
+    const artifactApproval = !!snapshot.cleanup?.unapprovedArtifacts.length;
+    const mode = artifactApproval ? "ask" : policy[op.action] as "ask" | "allow";
+    if (artifactApproval) snapshot.card.subtitle = "One-time artifact approval required";
+    else if (mode === "allow") snapshot.card.subtitle = "Policy-authorized operation";
     receipt = { version: 1, operationId, ...(toolCallId ? { toolCallId } : {}), card: snapshot.card, phase: "prepared", effectStarted: false,
-      authorization: { mode: policy[op.action] as "ask" | "allow", source: origin.sources[op.action], revision: digest(origin),
-        decision: policy[op.action] === "allow" ? "policy-authorized" : "pending" },
+      authorization: { mode, source: artifactApproval ? `one-time artifacts (${origin.sources[op.action]} ${policy[op.action]})` : origin.sources[op.action], revision: digest(origin),
+        decision: mode === "allow" ? "policy-authorized" : "pending" },
       checks: snapshot.checks.map((check) => ({ name: check.name, status: "pending" })) };
     record("prepared");
     if (signal?.aborted) throw new Error("Cancelled before execution");
-    if (policy[op.action] === "ask") {
+    if (mode === "ask") {
       if (!ui.pluginCard) throw new Error("Ask requires the live Pi Web browser UI");
       if (snapshot.comparison && snapshot.card.patch) {
         snapshot.card.patchContext = registerGitPatchContext(snapshot.cwd, snapshot.comparison.before, snapshot.comparison.after, snapshot.card.patch);
