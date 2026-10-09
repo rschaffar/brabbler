@@ -7,10 +7,10 @@ Implementation reference moved from `AGENTS.md`; repository-relative code paths 
 - `globalThis` survives Next.js hot-reload; plain module-level Map does not
 - Idle timeout: 10 minutes by default (`PI_WEB_IDLE_TIMEOUT_MS`, `0` disables). Concurrent `startRpcSession()` calls share a single start Promise (`globalThis.__piStartLocks`)
 
-### Fork must destroy the wrapper immediately
-`AgentSession.fork()` **mutates the wrapper's inner state in-place** — after fork, `inner.sessionId` is the *new* session's id. If the wrapper stays alive in the registry under the old id, the next request gets the already-forked state and subsequent forks produce a corrupt `parentSession` chain.
+### Per-message forks are non-destructive copies
+`send("fork")` (before a user message) and `send("fork_branch")` (through a saved response) copy persisted history using a **separate** `SessionManager`. They work while the source is running and must never replace, navigate, abort, or shut down its wrapper. The original keeps its session ID, active leaf, queued work, event listeners, and pending extension UI; none of that live work is copied to the child. Current provider accounts and model speed are copied explicitly even when their entries lie after the fork point.
 
-**Fix**: `send("fork")` captures `newSessionId`, then calls `this.destroy()` before returning. The next request for the original session reloads a clean AgentSession from the original file.
+Do not call a replacement/fork API on the source's own manager or runtime: `createBranchedSession()` changes the manager's identity in-place. Clone retains its separate idle-only replacement lifecycle; in-session navigation still changes the original conversation.
 
 ### Two kinds of branching — don't confuse them
 - **Fork** ("New session" on user message): creates a new independent `.jsonl` file. Shown as a child in the sidebar tree via `parentSession` header field.

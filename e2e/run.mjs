@@ -19,6 +19,7 @@ import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
 import { MODEL_SPEED_IDS, seedModelSpeedFixtures, checkModelSpeed, checkModelSpeedPersistence } from "./model-speed.mjs";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
+import { RUNNING_FORK_IDS, seedRunningForkFixtures, checkRunningSessionForks } from "./running-session-forks.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { contextContents, changedContextContents } from "./git-diff-context.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
@@ -88,6 +89,7 @@ let context;
 
   // Seed before startup so the first catalogue scan sees every fixture.
   seedModelSpeedFixtures({ agentDir, writeSession, message, timestamp });
+  seedRunningForkFixtures({ agentDir, writeSession, message });
   mkdirSync(join(agentDir, "extensions"));
   writeFileSync(join(agentDir, "extensions", "e2e-dialog.js"), extensionSource);
   if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") writeFileSync(join(agentDir, "extensions", "e2e-git-plugin.js"), gitPluginFixtureSource(root));
@@ -276,7 +278,7 @@ let context;
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK, ...MODEL_SPEED_IDS,
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS,
         ...(process.env.E2E_TRUST_ONLY === "1" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
       break;
     }
@@ -304,7 +306,22 @@ let context;
     }
   }
 
-  if (process.env.E2E_MODEL_SPEED_ONLY === "1") {
+  async function runRunningForkChecks() {
+    browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+      page = await context.newPage();
+      page.setDefaultTimeout(30_000);
+      const errors = harness.errorsFor(context);
+      await checkRunningSessionForks(page, { base, api, post, artifacts, width: viewport.width });
+      assert.deepEqual(errors, [], `Running-fork browser/server errors at ${viewport.width}px`);
+      await harness.closeContext(context); context = undefined; page = undefined;
+    }
+  }
+
+  if (process.env.E2E_RUNNING_FORKS_ONLY === "1") {
+    await runRunningForkChecks();
+  } else if (process.env.E2E_MODEL_SPEED_ONLY === "1") {
     await runModelSpeedChecks();
   } else if (process.env.E2E_TRUST_ONLY === "1") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
@@ -449,7 +466,10 @@ let context;
     ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
     : {});
   // Full acceptance includes speed; unrelated focused switches retain their selection.
-  if (!Object.keys(process.env).some((key) => /^E2E_.*_ONLY$/.test(key) && process.env[key] === "1")) await runModelSpeedChecks();
+  if (!Object.keys(process.env).some((key) => /^E2E_.*_ONLY$/.test(key) && process.env[key] === "1")) {
+    await runModelSpeedChecks();
+    await runRunningForkChecks();
+  }
   // A live session keeps the context files it loaded until explicitly reloaded.
   {
     const contextFile = join(otherProject, "AGENTS.md");

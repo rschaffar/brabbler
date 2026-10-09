@@ -191,12 +191,23 @@ test("first user messages expose both branch actions and edit before their own e
     source.indexOf("  const handleLeafChange = useCallback"),
   );
 
-  assert.match(chatWindowSource, /onFork=\{sessionBusy \|\| isNew \? undefined : handleFork\}/);
+  assert.match(chatWindowSource, /onFork=\{isNew \? undefined : handleFork\}/);
+  assert.match(chatWindowSource, /onNavigate=\{sessionBusy \? undefined : handleNavigate\}/);
   assert.doesNotMatch(chatWindowSource, /idx === 0 && msg\.role === "user"/);
   assert.doesNotMatch(chatWindowSource, /prevAssistantEntryId/);
   assert.match(navigateSource, /type: "navigate_tree",\s*targetId: entryId/);
   assert.match(navigateSource, /branchViewRevisionRef\.current \+= 1/);
   assert.match(navigateSource, /loadFlightsRef\.current\.delete\(sid\);\s*await loadSession\(sid, true\)/);
+});
+
+test("independent forks stay available during prompts, shell commands, and compaction", () => {
+  const forkSource = source.slice(
+    source.indexOf("  const handleFork = useCallback"),
+    source.indexOf("  const handleNavigate = useCallback"),
+  );
+  assert.doesNotMatch(forkSource, /bashRunningRef|agentRunning|isCompacting|handleAbort/);
+  assert.match(forkSource, /type: "fork",\s*entryId/);
+  assert.match(chatWindowSource, /onAskInNewChat && quotedSelection\.sourceEntryId && \(/);
 });
 
 test("an empty persisted session displays the model it will use on first send", () => {

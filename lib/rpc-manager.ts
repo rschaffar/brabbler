@@ -186,7 +186,7 @@ export function resolveSessionIdleTimeoutMs(
 
 const SESSION_IDLE_TIMEOUT_MS = resolveSessionIdleTimeoutMs();
 
-const SESSION_REPLACEMENT_COMMAND_TYPES = new Set(["fork", "clone"]);
+const SESSION_REPLACEMENT_COMMAND_TYPES = new Set(["clone"]);
 const COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT = new Set([
   "get_state",
   "get_session_stats",
@@ -270,7 +270,7 @@ export class AgentSessionWrapper {
   private extensionWidgetsResetting = false;
   private pendingPromptCount = 0;
   private activeMutatingCommands = 0;
-  private sessionReplacement: "fork" | "clone" | null = null;
+  private sessionReplacement: "clone" | null = null;
   private agentRunNeedsCompletion = false;
   private pendingCheckoutAdmissions = 0;
   private promptAdmissionTail: Promise<void> = Promise.resolve();
@@ -581,7 +581,7 @@ export class AgentSessionWrapper {
   }
 
   private async withSessionReplacement<T>(
-    replacement: "fork" | "clone",
+    replacement: "clone",
     operation: () => Promise<T>,
   ): Promise<T> {
     if (this.sessionReplacement) throw new Error("Session is already being copied");
@@ -600,7 +600,7 @@ export class AgentSessionWrapper {
       || this.pendingPromptCount > 0;
   }
 
-  private async shutdownAfterSessionReplacement(replacement: "fork" | "clone"): Promise<void> {
+  private async shutdownAfterSessionReplacement(replacement: "clone"): Promise<void> {
     try {
       await this.shutdown();
     } catch (error) {
@@ -807,87 +807,78 @@ export class AgentSessionWrapper {
       }
 
       case "fork": {
-        if (this.isSessionRunningForReplacement()) {
-          throw new Error("Cannot fork while the session is running");
+        // Copy with a separate manager: never replace or shut down the source,
+        // whose prompt, tools, compaction, or extension UI may still be running.
+        const entryId = command.entryId as string;
+        const sessionManager = this.inner.sessionManager;
+        const currentSessionFile = this.inner.sessionFile;
+
+        if (!sessionManager.isPersisted()) return { cancelled: true };
+        if (!currentSessionFile) throw new Error("Persisted session is missing a session file");
+
+        const entry = sessionManager.getEntry(entryId);
+        if (!entry) throw new Error("Invalid entry ID for forking");
+
+        const sessionDir = sessionManager.getSessionDir();
+        let newSessionFile: string;
+        let forkedManager: SessionManager;
+
+        if (!entry.parentId) {
+          // Fork before the first message: create an empty session linked to this one
+          forkedManager = SessionManager.create(sessionManager.getCwd(), sessionDir, {
+            parentSession: currentSessionFile,
+          });
+          newSessionFile = forkedManager.getSessionFile() as string;
+        } else {
+          // Fork after some history: copy path up to (but not including) the fork point
+          forkedManager = SessionManager.open(currentSessionFile, sessionDir);
+          const forkedPath = forkedManager.createBranchedSession(entry.parentId);
+          if (!forkedPath) throw new Error("Failed to create forked session");
+          newSessionFile = forkedPath;
         }
-        return this.withSessionReplacement("fork", async () => {
-          const entryId = command.entryId as string;
-          const sessionManager = this.inner.sessionManager;
-          const currentSessionFile = this.inner.sessionFile;
 
-          if (!sessionManager.isPersisted()) return { cancelled: true };
-          if (!currentSessionFile) throw new Error("Persisted session is missing a session file");
+        if (!existsSync(newSessionFile)) {
+          const header = forkedManager.getHeader();
+          if (!header) throw new Error("Forked session is missing a session header");
+          const content = [header, ...forkedManager.getEntries()]
+            .map((forkedEntry) => JSON.stringify(forkedEntry))
+            .join("\n") + "\n";
+          writeFileSync(newSessionFile, content, { encoding: "utf8", flag: "wx" });
+        }
 
-          const entry = sessionManager.getEntry(entryId);
-          if (!entry) throw new Error("Invalid entry ID for forking");
-
-          const sessionDir = sessionManager.getSessionDir();
-          let newSessionFile: string;
-          let forkedManager: SessionManager;
-
-          if (!entry.parentId) {
-            // Fork before the first message: create an empty session linked to this one
-            forkedManager = SessionManager.create(sessionManager.getCwd(), sessionDir, {
-              parentSession: currentSessionFile,
-            });
-            newSessionFile = forkedManager.getSessionFile() as string;
-          } else {
-            // Fork after some history: copy path up to (but not including) the fork point
-            forkedManager = SessionManager.open(currentSessionFile, sessionDir);
-            const forkedPath = forkedManager.createBranchedSession(entry.parentId);
-            if (!forkedPath) throw new Error("Failed to create forked session");
-            newSessionFile = forkedPath;
-          }
-
-          if (!existsSync(newSessionFile)) {
-            const header = forkedManager.getHeader();
-            if (!header) throw new Error("Forked session is missing a session header");
-            const content = [header, ...forkedManager.getEntries()]
-              .map((forkedEntry) => JSON.stringify(forkedEntry))
-              .join("\n") + "\n";
-            writeFileSync(newSessionFile, content, { encoding: "utf8", flag: "wx" });
-          }
-
-          const sourceEntries = sessionManager.getEntries() as unknown as SessionEntry[];
-          const accountSelection = readSessionAccounts(sourceEntries);
-          const destination = SessionManager.open(newSessionFile, sessionDir);
-          if (accountSelection) appendSessionAccounts(destination, accountSelection);
-          appendSessionModelSpeed(destination, readSessionModelSpeed(sourceEntries));
-          const newSessionId = forkedManager.getSessionId();
-          cacheSessionPath(newSessionId, newSessionFile);
-          invalidateSessionListCache();
-          await this.shutdownAfterSessionReplacement("fork");
-          return { cancelled: false, newSessionId };
-        });
+        const sourceEntries = sessionManager.getEntries() as unknown as SessionEntry[];
+        const accountSelection = readSessionAccounts(sourceEntries);
+        const destination = SessionManager.open(newSessionFile, sessionDir);
+        if (accountSelection) appendSessionAccounts(destination, accountSelection);
+        appendSessionModelSpeed(destination, readSessionModelSpeed(sourceEntries));
+        const newSessionId = forkedManager.getSessionId();
+        cacheSessionPath(newSessionId, newSessionFile);
+        invalidateSessionListCache();
+        return { cancelled: false, newSessionId };
       }
 
       case "fork_branch": {
-        if (this.isSessionRunningForReplacement()) {
-          throw new Error("Cannot fork while the session is running");
-        }
-        return this.withSessionReplacement("fork", async () => {
-          const entryId = command.entryId as string;
-          const sessionManager = this.inner.sessionManager;
-          const currentSessionFile = this.inner.sessionFile;
-          if (!sessionManager.isPersisted()) return { cancelled: true };
-          if (!currentSessionFile) throw new Error("Persisted session is missing a session file");
-          if (!sessionManager.getEntry(entryId)) throw new Error("Invalid entry ID for forking");
+        const entryId = command.entryId as string;
+        const sessionManager = this.inner.sessionManager;
+        const currentSessionFile = this.inner.sessionFile;
+        if (!sessionManager.isPersisted()) return { cancelled: true };
+        if (!currentSessionFile) throw new Error("Persisted session is missing a session file");
+        if (!sessionManager.getEntry(entryId)) throw new Error("Invalid entry ID for forking");
 
-          const sessionDir = sessionManager.getSessionDir();
-          const sourceManager = SessionManager.open(currentSessionFile, sessionDir);
-          const forkedPath = sourceManager.createBranchedSession(entryId);
-          if (!forkedPath) throw new Error("Failed to create forked session");
+        const sessionDir = sessionManager.getSessionDir();
+        const sourceManager = SessionManager.open(currentSessionFile, sessionDir);
+        const forkedPath = sourceManager.createBranchedSession(entryId);
+        if (!forkedPath) throw new Error("Failed to create forked session");
 
-          const forkedManager = SessionManager.open(forkedPath, sessionDir);
-          const sourceEntries = sessionManager.getEntries() as unknown as SessionEntry[];
-          const accountSelection = readSessionAccounts(sourceEntries);
-          if (accountSelection) appendSessionAccounts(forkedManager, accountSelection);
-          appendSessionModelSpeed(forkedManager, readSessionModelSpeed(sourceEntries));
-          const newSessionId = forkedManager.getSessionId();
-          cacheSessionPath(newSessionId, forkedPath);
-          invalidateSessionListCache();
-          return { cancelled: false, newSessionId };
-        });
+        const forkedManager = SessionManager.open(forkedPath, sessionDir);
+        const sourceEntries = sessionManager.getEntries() as unknown as SessionEntry[];
+        const accountSelection = readSessionAccounts(sourceEntries);
+        if (accountSelection) appendSessionAccounts(forkedManager, accountSelection);
+        appendSessionModelSpeed(forkedManager, readSessionModelSpeed(sourceEntries));
+        const newSessionId = forkedManager.getSessionId();
+        cacheSessionPath(newSessionId, forkedPath);
+        invalidateSessionListCache();
+        return { cancelled: false, newSessionId };
       }
 
       case "clone": {
