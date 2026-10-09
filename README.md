@@ -112,6 +112,8 @@ Provider requests honor `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`.
 
 ### Sessions and provider accounts
 
+**New session** on a saved user message copies the history before that message into an independent chat, even while the original is running. **Ask in new chat** on a saved response copies history through that response. Neither stops the original or copies its running tools, queued messages, or pending questions. **Edit from here** changes the original conversation and remains unavailable while it is running.
+
 Pi Desk reads Pi's local session files and shares its default model settings and credentials with the CLI. Back up your agent-data directory before experimenting with sessions or configuration you care about.
 
 Additional provider accounts are stored in `~/.pi/agent/pi-web-accounts.json`. Sessions save opaque account IDs, not the credentials themselves. A session bound to a deleted account fails rather than silently using a different identity. Changing a project's account default affects new sessions, not existing ones.
