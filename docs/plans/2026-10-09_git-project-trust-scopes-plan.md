@@ -31,14 +31,15 @@ This supersedes the unmerged `feat/trust-agent-created-worktrees` behavior, incl
 - [x] Design canonical project identity, persistent project-scope store, and explicit checkout-over-project precedence in `lib/project-trust.ts` and `lib/project-trust-repository.ts`; evidence: `lib/project-trust.test.mjs` passes for registered linked/future worktrees, sibling repository, explicit denial and replacement at the same path.
 - [x] Extend `app/api/project-trust/route.ts` and shared resource gates to read/write one effective scope; evidence: `app/api/project-trust/route.test.mjs`, `lib/project-trust.test.mjs` and `lib/rpc-manager.test.mjs` pass for grants/revocation, busy starting/descendant sessions, cache/session invalidation wiring, and SDK extension loading after trust.
 - [x] Update `components/AppShell.tsx`, `components/ProjectTrustDialog.tsx`, Settings General and translations with two-scope management; evidence: `E2E_TRUST_ONLY=1 npm run test:e2e` passes at 1280px and 390px with a disposable repo and both checkouts, including grant, restriction, clear and revocation.
-- [ ] Prepare the replacement feature onto current `rst-main` after committing; this fresh branch starts at `ee623378`, contains no old `git_workspace_start` implementation and adds no implicit trust to browser or agent worktree creation. Recheck target ancestry and verify the exact rebased candidate before integration.
+- [x] Prepare the replacement onto local `rst-main` `32a3469d`: rebase the feature to `bbd80fd6`, containing no old `git_workspace_start` implementation and no implicit trust on worktree creation. Post-rebase evidence: `npm test` 1,695/1,695, `node_modules/.bin/tsc --noEmit`, `npm run lint`, `git diff --check`, and focused desktop/mobile `E2E_TRUST_ONLY=1 npm run test:e2e` pass on the exact clean tip. Integration still requires the tool's exact-state approval.
 - [x] Update `docs/worktrees.md` and `e2e/README.md`, run focused tests, `npm test`, `node_modules/.bin/tsc --noEmit`, `npm run lint`, and affected browser E2E without a production build. Evidence at the working-tree checkpoint: 37 focused tests, `npm test` 1,692/1,692, typecheck/lint, and 1280px/390px trust browser tests pass. Earlier full-suite attempts with a full `/tmp` or a symlinked TMPDIR failed for environmental reasons; the normal `/tmp` rerun passed after space became available. Re-run checks if later changes invalidate this evidence.
 
 ## Completion Checklist
 
 - [x] User approves the UX and trust boundary before implementation: explicitly requested implementation of the reviewed two-scope plan.
 - [x] Both scopes and explicit overrides verified across SDK resource loads, future linked checkouts, route mutation/lifecycle guards, and desktop/mobile browser trust management; evidence in focused tests and `E2E_TRUST_ONLY=1 npm run test:e2e`.
-- [ ] Changes are committed on a clean linked feature worktree; local non-FF integration and cleanup receive separate exact-state approvals.
+- [x] Implementation commit `5c1b5058` was reviewed and rebased to `bbd80fd6` on a clean linked worktree; exact candidate checks above passed.
+- [ ] Local unsigned non-FF integration and any subsequent cleanup receive their separate exact-state approvals and are verified before plan retirement.
 
 ## Rollback / Recovery
 
