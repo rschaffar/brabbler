@@ -1,5 +1,17 @@
 import type { UsageBucket, UsageReport } from "./provider-usage";
 
+/** Detailed account-only metadata, never part of the compact quota indicator. */
+export function bankedResetDetails(report: Pick<UsageReport, "bankedResets" | "bankedResetExpiresAt">, locale: string): string {
+  const count = report.bankedResets;
+  if (count === undefined) return "";
+  const available = `${count} banked ${count === 1 ? "reset" : "resets"} available`;
+  if (count === 0) return available;
+  const expiry = report.bankedResetExpiresAt === undefined ? NaN : report.bankedResetExpiresAt * 1_000;
+  return Number.isFinite(expiry) && expiry >= 0 && expiry <= 8_640_000_000_000_000
+    ? `${available} (next expires ${new Date(expiry).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })})`
+    : `${available} (expiry not reported)`;
+}
+
 /** Only rate-limit windows, never weekly API-key spend or a provider's credit balance. */
 export function remainingRateLimits(report: Pick<UsageReport, "buckets">, detailLocale?: string): string[] {
   const relevant = report.buckets.filter((bucket) => (bucket.unit === "percent" || bucket.unit === "count") && (

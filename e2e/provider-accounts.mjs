@@ -125,7 +125,7 @@ export async function checkProviderAccountAuthorization(page, { base, sessionId,
       if (providerId !== "openai-codex") return route.continue();
       queriedAccounts.push(accountId);
       const secondary = accountId === fakeAccount.id;
-      await route.fulfill({ json: { providerId, status: "ready", report: { providerId, capturedAt: Date.now(), metrics: [], bankedResets: secondary ? 0 : 2, buckets: [
+      await route.fulfill({ json: { providerId, status: "ready", report: { providerId, capturedAt: Date.now(), metrics: [], bankedResets: secondary ? 0 : 2, bankedResetExpiresAt: secondary ? undefined : 1_800_172_800, buckets: [
         { id: "primary", label: "5h", windowMinutes: 300, remaining: secondary ? 50 : 90, unit: "percent", resetsAt: 1_800_000_000 },
         { id: "secondary", label: "Weekly", windowMinutes: 10080, remaining: secondary ? 25 : 70, unit: "percent", resetsAt: 1_800_086_400 },
       ] } } });
@@ -137,7 +137,7 @@ export async function checkProviderAccountAuthorization(page, { base, sessionId,
     const usagePanel = page.getByRole("region", { name: "Provider accounts" });
     await usagePanel.getByLabel("Account provider").selectOption("openai-codex");
     assert.equal(await usagePanel.getByLabel("Account label").count(), 0);
-    await usagePanel.getByText(/Weekly 70% remaining \(resets .*\) · 5h 90% remaining \(resets .*\) · 2 banked resets available/).waitFor();
+    await usagePanel.getByText(/Weekly 70% remaining \(resets .*\) · 5h 90% remaining \(resets .*\) · 2 banked resets available \(next expires .*\)/).waitFor();
     await usagePanel.getByText(/Weekly 25% remaining \(resets .*\) · 5h 50% remaining \(resets .*\) · 0 banked resets available/).waitFor();
     const compactLabel = await page.getByRole("button", { name: /^Account for/ }).getAttribute("aria-label");
     assert.doesNotMatch(compactLabel, /resets|banked/i, "reset details stay in the popover");

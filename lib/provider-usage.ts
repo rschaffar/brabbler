@@ -40,6 +40,8 @@ export interface UsageReport {
   notes?: string[];
   /** Banked manual resets, separate from automatic quota-window resets and usage credits. */
   bankedResets?: number;
+  /** Earliest reported expiry of an available banked reset, in Unix seconds. */
+  bankedResetExpiresAt?: number;
 }
 
 export type ProviderUsageResult =
@@ -143,17 +145,32 @@ async function fetchJson(providerId: ProviderUsageId, auth: {
     const token = bearerToken(headers.get("authorization")) ?? auth.apiKey;
     endpoint += token?.startsWith("sk-api-") ? "/account/query_balance" : "/v1/token_plan/remains";
   }
-  const response = await fetch(endpoint, {
-    headers,
-    redirect: "error",
-    signal: AbortSignal.timeout(15_000),
-  });
-  const body = await response.text();
-  if (body.length > 65_536) throw new Error("Usage response was too large.");
-  if (!response.ok) throw new Error(`Usage endpoint returned ${response.status}.`);
-  const parsed: unknown = JSON.parse(body);
-  if (!isRecord(parsed)) throw new Error("Usage response was not an object.");
-  return parsed;
+  const readJson = async (url: string): Promise<Record<string, unknown>> => {
+    const response = await fetch(url, {
+      headers,
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+    });
+    const body = await response.text();
+    if (body.length > 65_536) throw new Error("Usage response was too large.");
+    if (!response.ok) throw new Error(`Usage endpoint returned ${response.status}.`);
+    const parsed: unknown = JSON.parse(body);
+    if (!isRecord(parsed)) throw new Error("Usage response was not an object.");
+    return parsed;
+  };
+  const payload = await readJson(endpoint);
+  const resetSummary = record(payload.rate_limit_reset_credits);
+  if (providerId === "openai-codex" && (number(resetSummary?.available_count) ?? 0) > 0) {
+    try {
+      // /usage carries only the count. The read-only details endpoint supplies RFC 3339
+      // expiries; reuse this account's exact headers, never redeem a credit here.
+      const details = await readJson("https://chatgpt.com/backend-api/wham/rate-limit-reset-credits");
+      payload.rate_limit_reset_credits = { ...resetSummary, credits: details.credits };
+    } catch {
+      // Optional expiry metadata must not hide quota windows or leak upstream errors.
+    }
+  }
+  return payload;
 }
 
 export function isOfficialProviderUsageOrigin(providerId: ProviderUsageId, baseUrl: string | undefined): boolean {
@@ -221,11 +238,27 @@ function normalizeCodex(payload: Record<string, unknown>, capturedAt: number): U
   if (credits?.unlimited === true) metrics.push({ id: "credits", label: "Credits", value: "Unlimited" });
   else if (number(credits?.balance) !== undefined) metrics.push({ id: "credits", label: "Credits", value: number(credits?.balance)!, unit: "count" });
   if (!buckets.length && !metrics.length) throw new Error("Codex returned no usage data.");
-  const availableCount = record(payload.rate_limit_reset_credits)?.available_count;
+  const resetCredits = record(payload.rate_limit_reset_credits);
+  const availableCount = resetCredits?.available_count;
   const bankedResets = typeof availableCount === "number" && Number.isSafeInteger(availableCount) && availableCount >= 0
     ? availableCount : undefined;
+  let bankedResetExpiresAt: number | undefined;
+  if (bankedResets !== undefined && bankedResets > 0 && Array.isArray(resetCredits?.credits)) {
+    for (const raw of resetCredits.credits) {
+      const credit = record(raw);
+      if (credit?.status !== "available" || credit.reset_type !== "codex_rate_limits") continue;
+      const expiry = credit.expires_at;
+      // Require the HTTP contract's timezone-qualified timestamp, not an app-server
+      // epoch, a local-time string, or a date inferred from when the credit was granted.
+      if (typeof expiry !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(expiry)) continue;
+      const seconds = Date.parse(expiry) / 1_000;
+      if (!Number.isFinite(seconds) || seconds < 0) continue;
+      if (bankedResetExpiresAt === undefined || seconds < bankedResetExpiresAt) bankedResetExpiresAt = seconds;
+    }
+  }
   return { providerId: "openai-codex", providerName: PROVIDER_NAMES["openai-codex"], capturedAt, buckets, metrics,
-    ...(bankedResets !== undefined ? { bankedResets } : {}) };
+    ...(bankedResets !== undefined ? { bankedResets } : {}),
+    ...(bankedResetExpiresAt !== undefined ? { bankedResetExpiresAt } : {}) };
 }
 
 function normalizeDeepSeek(payload: Record<string, unknown>, capturedAt: number): UsageReport {

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
 import { safeAuthorizationUrl } from "@/lib/oauth-url";
 import { isProviderUsageId } from "@/lib/provider-usage-ids";
-import { remainingRateLimits } from "@/lib/provider-usage-limits";
+import { bankedResetDetails, remainingRateLimits } from "@/lib/provider-usage-limits";
 import type { ProviderUsageResult } from "@/lib/provider-usage";
 import { DeviceAuthorization } from "./DeviceAuthorization";
 
@@ -207,10 +207,8 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
     if (!snapshot) return "Loading usage…";
     if (snapshot.status !== "ready") return snapshot.message;
     const limits = remainingRateLimits(snapshot.report, locale).join(" · ") || "No weekly or 5h limit reported";
-    const resets = snapshot.report.bankedResets;
-    return providerId === "openai-codex" && resets !== undefined
-      ? `${limits} · ${resets} banked ${resets === 1 ? "reset" : "resets"} available`
-      : limits;
+    const resets = providerId === "openai-codex" ? bankedResetDetails(snapshot.report, locale) : "";
+    return resets ? `${limits} · ${resets}` : limits;
   };
   const currentLimits = selectionReady && isProviderUsageId(currentProvider) && currentAccount !== "Unavailable account"
     ? usage[usageKey(currentProvider, currentId || null)] : undefined;
