@@ -118,15 +118,48 @@ suite filenames; the test now checks the moved suites. Its original output and
 subsequent focused logs remain retained. Application assertions/deadlines were
 not weakened and there were no automatic retries.
 
+## Rebased candidate verification
+
+During completion, local `rst-main` advanced to
+`cbf620b302b63bee42f74c3abdcef00e0193271f` (nested cleanup artifacts).
+Rebase completed without conflicts; `git range-diff` showed both feature patches
+unchanged. The test-workspace ADR moved to 0020 to avoid the incoming 0019 number.
+Plugin verification guidance now uses the non-materializing shell for core and
+browser commands. These documentation edits were included in source digest
+`13f4a52c17b6627ca70845f9fc091b73cc5189a85d8e92bec508eef7a7ed9c11`.
+
+- `nix develop --offline --no-write-lock-file .#test -c node nix/test-offline.mjs --keep-workspace`:
+  268 files / 1,734 tests and complete static preparation passed; command 124 s
+  after shell entry. Log `/tmp/pi-test-lifecycle-rebased-core.Fbx9Em.log`;
+  root `/tmp/pi-web-test-offline.ynZrTkoD`, deliberately kept for the following
+  plugin check (immutable dependency link, not a retained dependency copy).
+- `node --experimental-strip-types --test 'plugins/**/*.test.mjs'` in that retained
+  source, with `fixtureEnvironment` and `runOwned`, isolated Git configuration and
+  disabled Jiti cache: all 185 tests passed and observed resources settled in
+  80.849 s. Exact executable/arguments, settlement and TAP are in that root's
+  `plugin-integration.json` and `plugin-integration.log`.
+- `nix develop --offline --no-write-lock-file .#test -c env E2E_GIT_WORKFLOW_PLUGIN_ONLY=1 npm run test:e2e`:
+  both viewports including nested cleanup passed, command 334 s after shell entry.
+  Log `/tmp/pi-test-lifecycle-rebased-plugin-browser.dQhnza.log`;
+  report `test-results/e2e/browser-z0mzKh`; snapshot `/tmp/pwe-JFWsgF`.
+  Inner resources settled, server group absent, dependency copy and `.next` removed.
+
+General browser, terminal and paired-invocation evidence remains scoped to the
+previously recorded input. The incoming delta changes optional-plugin behavior,
+not those suites or their shared harness; combined core/plugin checks above cover
+the affected integration. This final evidence edit changes no executable inputs.
+
 ## Remaining boundaries
 
 Linux x86_64 was exercised; other systems were not. Non-Linux acceptance remains
-explicit legacy `--in-place`. Process observation is bounded, not OS containment.
+explicit legacy `--in-place`. Same-worktree concurrency was exercised; a separate
+cross-worktree/live-manual-dev-server trial was not performed. Process observation
+is bounded, not OS containment.
 Source snapshots, traces and failed fixtures still consume space intentionally;
 only run-owned regenerable bulk is automatically removed. Npm-only installed-lock
 validation has regression coverage, not a separate full npm-only installation run.
 The cacheable Nix check remains distinct from fresh app acceptance. Durable
-choices are in ADR 0019; operational behavior is in the testing/browser guides.
+choices are in ADR 0020; operational behavior is in the testing/browser guides.
 Implementation is committed and local integration intent is resolved. This
 archive-only follow-up does not change tested executable inputs; it receives
 Markdown-link and diff validation, not a redundant application-suite run.

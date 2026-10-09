@@ -365,13 +365,13 @@ Core tests remain separate from expensive Git integration tests. See
 Linux worktree, with no dev server owning that checkout:
 
 ```sh
-nix develop --offline --no-write-lock-file -c node nix/test-offline.mjs
+nix develop --offline --no-write-lock-file .#test -c node nix/test-offline.mjs
 # Separate plugin tests: snapshot bounds/expiry + real Pi registration/toggle lifecycle.
 nix develop --offline --no-write-lock-file -c sh -c \
   'env -i PATH="$PATH" LANG=C.UTF-8 PI_OFFLINE=1 node --experimental-strip-types --test "plugins/**/*.test.mjs"'
 # Plugin-only desktop/mobile browser acceptance (no model calls):
-nix develop --offline --no-write-lock-file -c sh -c \
-  'env -i PATH="$PATH" PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="$PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH" LANG=C.UTF-8 PI_OFFLINE=1 E2E_GIT_WORKFLOW_PLUGIN_ONLY=1 npm run test:e2e'
+nix develop --offline --no-write-lock-file .#test -c env \
+  E2E_GIT_WORKFLOW_PLUGIN_ONLY=1 npm run test:e2e
 ```
 
 The ordinary `npm test`, typecheck and lint commands are unchanged. The Nix
