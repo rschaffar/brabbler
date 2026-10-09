@@ -7,7 +7,7 @@ nix develop -c env E2E_MODEL_SPEED_ONLY=1 npm run test:e2e
 nix develop -c npm run test:terminal
 ```
 
-Focused browser switches: `E2E_ASK_USER_ONLY=1`, `E2E_ACTIVITY_ONLY=1`,
+Focused browser switches: `E2E_TRUST_ONLY=1` (worktree/project grants, revocation and restriction at desktop/mobile sizes), `E2E_ASK_USER_ONLY=1`, `E2E_ACTIVITY_ONLY=1`,
 `E2E_PROJECT_PRIVACY_ONLY=1` (persistent hidden-project switches, safe loading and
 response failures, project-filter/count concealment, browser-local eye reveal
 persistence across focus/reload/navigation, and independent browser preferences
