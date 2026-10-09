@@ -18,6 +18,15 @@ export function seedRunningForkFixtures({ agentDir, writeSession, message }) {
   }
 }
 
+export function waitForForkResponse(page, predicate, options) {
+  const pending = page.waitForResponse(predicate, options);
+  // UI assertions can fail before the caller awaits this response. Observe the
+  // rejection immediately so the harness can close the context and settle its
+  // outstanding waits; returning the original promise preserves await failures.
+  void pending.catch(() => {});
+  return pending;
+}
+
 export async function checkRunningSessionForks(page, { base, api, post, artifacts, width }) {
   const sourceId = `e2e-running-fork-${width}`;
   const sourcePath = `/api/agent/${sourceId}`;
@@ -26,7 +35,7 @@ export async function checkRunningSessionForks(page, { base, api, post, artifact
   await page.getByText(`Later answer ${width}`, { exact: true }).waitFor();
   const origin = await page.evaluate(() => performance.timeOrigin);
   const question = () => page.getByRole("group", { name: "E2E confirm", exact: true });
-  const responseFor = (type) => page.waitForResponse((response) =>
+  const responseFor = (type) => waitForForkResponse(page, (response) =>
     new URL(response.url()).pathname === sourcePath && response.request().method() === "POST"
     && response.request().postDataJSON()?.type === type, { timeout: 120_000 });
   // A genuine SDK extension command stays active without a provider request.
@@ -102,7 +111,7 @@ export async function checkRunningSessionForks(page, { base, api, post, artifact
     // Ask in new chat sends immediately. Use another fixture command so the
     // child can run independently without touching a provider.
     await composer.locator(".chat-input-textarea").fill("/e2e-dialog input");
-    const childPrompt = page.waitForResponse((response) => response.request().method() === "POST"
+    const childPrompt = waitForForkResponse(page, (response) => response.request().method() === "POST"
       && /^\/api\/agent\/[^/]+$/.test(new URL(response.url()).pathname)
       && response.request().postDataJSON()?.message === "/e2e-dialog input");
     const quotedFork = responseFor("fork_branch");
