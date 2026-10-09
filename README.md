@@ -58,6 +58,10 @@ Open **[http://127.0.0.1:30141](http://127.0.0.1:30141)**. If you have not confi
 
 `PI_WEB_SKIP_VERSION_CHECK=1` disables the inherited upstream npm version checks and running-version reload prompts. It does not update this fork; update the source checkout deliberately.
 
+### Inspecting Pi Web's own source
+
+Installed packages include the first-party TypeScript/CSS source alongside the built app. In an ordinary Pi Web agent session, call `pi_web_source` when investigating Pi Web itself; it returns this installation's package path and version so the agent can read only the relevant files (`app/`, `components/`, `hooks/`, `lib/`, `plugins/`). No source text is added to the prompt automatically. Chat-only sessions do not load this tool. The installed copy is a reference, not a checkout for edits.
+
 ### Nix installation
 
 For an installed application rather than a development server, the flake provides a package and launcher for x86_64/aarch64 Linux and aarch64 macOS. From a committed checkout:

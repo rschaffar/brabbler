@@ -39,6 +39,7 @@ Notes:
 
 - This bumps `package.json` and `package-lock.json`.
 - It intentionally runs a production build. Do not run `next build` during normal development; release work is the exception.
+- Before publishing a release, inspect `npm pack --dry-run --json --ignore-scripts` **after the production build**. Confirm that `.next/` and first-party source (`app/`, `components/`, `hooks/`, `lib/`, `plugins/`) are present, and that local data, dependencies, and caches are absent. The package allowlist and `lib/pi-web-source-extension.test.mjs` check the source portion during normal development; the production artifact itself can only be checked during release.
 - If `npm view @agegr/pi-web version` briefly shows the previous version, check the exact version instead:
 
 ```bash
