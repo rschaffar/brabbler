@@ -7,6 +7,9 @@ import { executeGitOperation } from "./server";
 import { readGitPatchContext } from "./context";
 import { gitPolicy, gitPolicyGuidance } from "./policy";
 
+type ProgressUpdate = (result: { content: Array<{ type: "text"; text: string }>; details: { action: string; completed: boolean; effectStarted: boolean; checksStarted: boolean; operationId?: string; effects: string[] } }) => void;
+const progress = (action: string, update?: ProgressUpdate) => (text: string) => update?.({ content: [{ type: "text", text }],
+  details: { action, completed: false, effectStarted: false, checksStarted: false, effects: [] } });
 const checkout = Type.String({ description: "Absolute registered checkout root in any local repository; the selected repository's settings apply, independently of the session cwd" });
 export const gitWorkflowPlugin: BundledPlugin = {
   manifest: gitWorkflowManifest,
@@ -17,20 +20,20 @@ export const gitWorkflowPlugin: BundledPlugin = {
       description: "Commit selected whole files (including their unstaged content) or the complete staged set with an exact message. Current settings deny, ask or allow. Required checks run here; never change your own permissions. Stronger user/repository instructions apply.",
       parameters: Type.Object({ checkout, mode: Type.Union([Type.Literal("files"), Type.Literal("staged")]),
         files: Type.Optional(Type.Array(Type.String())), message: Type.String() }),
-      execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, { action: "commit", ...params }, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id),
+      execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, { action: "commit", ...params }, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id, progress("commit", _update)),
     });
     const rebase = defineTool({
       name: "git_rebase", label: "Git rebase", executionMode: "sequential",
       description: "Rebase the explicitly selected feature checkout onto the configured local target branch. No automatic retry or conflict cleanup. Current permission applies; stronger user/repository instructions apply.",
       parameters: Type.Object({ checkout, featureBranch: Type.String(), targetBranch: Type.Optional(Type.String({ description: "Local target chosen via ask_user when target selection is Ask; does not change settings" })) }),
-      execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, { action: "rebase", ...params }, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id),
+      execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, { action: "rebase", ...params }, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id, progress("rebase", _update)),
     });
     const merge = defineTool({
       name: "git_merge", label: "Git merge", executionMode: "sequential",
       description: "Merge an explicitly selected feature into the configured local target's clean checkout using the configured FF-only or ordinary non-FF method. Runs required checks in the feature checkout. No rebase, fallback or cleanup. Stronger user/repository instructions apply.",
       parameters: Type.Object({ checkout, featureBranch: Type.String(), targetBranch: Type.Optional(Type.String({ description: "Local target chosen via ask_user when target selection is Ask" })),
         mergeMethod: Type.Optional(Type.Union([Type.Literal("ff-only"), Type.Literal("non-ff")], { description: "Method chosen via ask_user when method selection is Ask; does not change settings" })) }),
-      execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, { action: "merge", ...params }, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id),
+      execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, { action: "merge", ...params }, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id, progress("merge", _update)),
     });
     const worktree = defineTool({
       name: "git_worktree", label: "Git worktree", executionMode: "sequential",
@@ -39,7 +42,7 @@ export const gitWorkflowPlugin: BundledPlugin = {
         Type.Object({ action: Type.Union([Type.Literal("createWorktree"), Type.Literal("attachWorktree")]), checkout, branch: Type.String(), baseBranch: Type.String(), path: Type.String() }),
         Type.Object({ action: Type.Literal("removeWorktree"), checkout, path: Type.String() }),
       ]),
-      execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, params, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id),
+      execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, params, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id, progress(params.action, _update)),
     });
     const cleanup = defineTool({
       name: "git_cleanup", label: "Git feature cleanup", executionMode: "sequential",
@@ -47,7 +50,7 @@ export const gitWorkflowPlugin: BundledPlugin = {
       parameters: Type.Object({ checkout, featureBranch: Type.String(), featureTip: Type.String(), integrationCommit: Type.String(),
         targetBranch: Type.Optional(Type.String()), worktreePath: Type.Optional(Type.String()), removeWorktree: Type.Boolean(), deleteBranch: Type.Boolean(),
         artifactRoots: Type.Array(Type.String(), { description: "Explicit literal top-level generated files/directories to propose. When removeWorktree is true, top-level ignored artifacts are also discovered even with an empty array. Unlisted artifacts require one-time user approval; arguments never grant permission" }) }),
-      execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, { action: "cleanupFeature", ...params }, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id),
+      execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, { action: "cleanupFeature", ...params }, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id, progress("cleanupFeature", _update)),
     });
     const policy = defineTool({
       name: "git_policy", label: "Git policy", executionMode: "sequential",

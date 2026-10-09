@@ -1,4 +1,12 @@
-import type { PluginCard, PluginCardField } from "./types";
+import type { PluginCard, PluginCardField, PluginReviewReference } from "./types";
+
+export function validReviewReference(value: unknown): value is PluginReviewReference {
+  if (!value || typeof value !== "object") return false;
+  const ref = value as PluginReviewReference;
+  return ref.version === 1 && isOperationId(ref.id) && isOperationId(ref.operationId)
+    && typeof ref.sha256 === "string" && /^[a-f0-9]{64}$/.test(ref.sha256)
+    && Number.isSafeInteger(ref.entries) && ref.entries >= 0 && Number.isSafeInteger(ref.bytes) && ref.bytes >= 0;
+}
 
 export function isOperationId(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -16,9 +24,10 @@ function fields(value: unknown): boolean {
 export function validatePluginCard(card: PluginCard): void {
   if (!card || !text(card.title, 256, false) || !card.title.trim()
     || card.operationId !== undefined && !isOperationId(card.operationId)
+    || card.review !== undefined && (!validReviewReference(card.review) || card.review.operationId !== card.operationId)
     || [card.text, card.markdown, card.patch].some((value) => !text(value, 1_000_000))
     || [card.patchBefore, card.patchAfter].some((value) => !text(value, 256))
-    || card.patchContext !== undefined && (typeof card.patch !== "string" || typeof card.patchContext !== "string"
+    || card.patchContext !== undefined && (typeof card.patch !== "string" && card.review === undefined || typeof card.patchContext !== "string"
       || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(card.patchContext))
     || !text(card.subtitle, 4096) || !text(card.scope, 4096) || !fields(card.fields)
     || card.sections !== undefined && (!Array.isArray(card.sections) || card.sections.length > 16 || card.sections.some((section) =>
@@ -30,7 +39,10 @@ export function validatePluginCard(card: PluginCard): void {
     || new Set(card.actions.map((action) => action.id)).size !== card.actions.length
     || card.actions.filter((action) => action.primary).length > 1) throw new Error("Invalid plugin card");
   // Keep the existing separately bounded patch; cap all other presentation together.
-  if (JSON.stringify({ ...card, patch: undefined }).length > 1_100_000) throw new Error("Invalid plugin card");
+  const { title, operationId, text: body, markdown, subtitle, scope, fields: rows, sections, patchBefore, patchAfter, patchContext, review, actions } = card;
+  if (JSON.stringify({ title, operationId, text: body, markdown, subtitle, scope, fields: rows, sections, patchBefore, patchAfter, patchContext, review, actions }).length > 1_100_000) {
+    throw new Error("Invalid plugin card: presentation exceeds 1,100,000 characters; use durable review attachments");
+  }
 }
 export function validPluginAction(card: PluginCard, action: unknown): action is string {
   return typeof action === "string" && card.actions.some((choice) => choice.id === action);

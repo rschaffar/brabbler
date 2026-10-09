@@ -14,7 +14,9 @@ const { gitPolicy } = await jiti.import("./policy.ts");
 const { gitWorkflowPlugin } = await jiti.import("./index.ts");
 const { updatePluginSettings, readPluginSettings } = await jiti.import("../../lib/plugins/settings.ts");
 const { executeGitOperation: executeWithReceipts } = await jiti.import("./server.ts");
-const executeGitOperation = (cwd, op, ui, ...rest) => executeWithReceipts(cwd, op, { operationReceipt() {}, ...ui }, ...rest);
+const { preparePluginReview } = await jiti.import("../../lib/plugins/review-store.ts");
+const { snapshotOperationReceipt } = await jiti.import("../../lib/operation-receipts.ts");
+const executeGitOperation = (cwd, op, ui, ...rest) => executeWithReceipts(cwd, op, { prepareReview: preparePluginReview, operationReceipt(id, receipt) { snapshotOperationReceipt(id, receipt, 1); }, ...ui }, ...rest);
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "pi-git-policy-")), agentDir = join(root, "agent");

@@ -11,6 +11,7 @@ import { fauxProvider, fauxAssistantMessage, fauxToolCall } from "@earendil-work
 const jiti = createJiti(import.meta.url);
 const { gitWorkflowPlugin } = await jiti.import("./index.ts");
 const { bundledPluginExtensions } = await jiti.import("../../lib/plugins/registry.ts");
+const { preparePluginReview } = await jiti.import("../../lib/plugins/review-store.ts");
 const { updatePluginSettings } = await jiti.import("../../lib/plugins/settings.ts");
 async function disposeSession(session) {
   // Mirror Pi Web shutdown: dispose alone invalidates the SDK runner without
@@ -82,7 +83,7 @@ test("real model-issued Git tools select repositories independently of Git and n
     const { session } = await createAgentSessionFromServices({ services, model: faux.getModel(), thinkingLevel: "off", sessionManager });
     st.after(() => disposeSession(session));
     let expectedCheckout; let approvals = 0; let calls = 0;
-    await session.bindExtensions({ mode: "rpc", uiContext: { notify() {}, operationReceipt(_pluginId, receipt) { sessionManager.appendCustomEntry("pi-web:operation-receipt", receipt); }, pluginCard: async (id, card) => {
+    await session.bindExtensions({ mode: "rpc", uiContext: { notify() {}, prepareReview: preparePluginReview, operationReceipt(_pluginId, receipt) { sessionManager.appendCustomEntry("pi-web:operation-receipt", receipt); }, pluginCard: async (id, card) => {
       assert.equal(id, "git-workflow"); assert.equal(card.fields.find((field) => field.label === "Checkout").value, expectedCheckout);
       approvals++; return "approve";
     } } });

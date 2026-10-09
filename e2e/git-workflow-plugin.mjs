@@ -14,7 +14,11 @@ import { executeGitOperation } from ${JSON.stringify(join(root, "plugins/git-wor
 export default function (pi) {
   pi.registerCommand("e2e-git-plugin", { handler: async (mode, ctx) => {
     let operation;
-    if (mode.startsWith("cleanup-")) {
+    if (mode.startsWith("large-")) {
+      const files = Array.from({ length: 45 }, (_, index) => "large-review-" + index + ".txt");
+      for (const file of files) writeFileSync(join(ctx.cwd, file), ("Large browser review " + mode + "\\n").repeat(2000));
+      operation = { action: "commit", checkout: ctx.cwd, mode: "files", files, message: "Large exact browser review " + mode };
+    } else if (mode.startsWith("cleanup-")) {
       const selectedCheckout = ctx.cwd + "-" + mode;
       const git = (...args) => execFileSync("git", ["-C", selectedCheckout, ...args], { encoding: "utf8" }).trim();
       operation = { action: "cleanupFeature", checkout: selectedCheckout, featureBranch: "cleanup", featureTip: git("rev-parse", "cleanup"),
@@ -274,7 +278,11 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
         && message.customType === "pi-web:interaction-receipt" && message.details?.request?.id === receiptId);
       assert.equal(receipts.length, 1);
       assert.equal(receipts[0].details.request.patchContext, query.get("handle"), "Saved receipt carries the original opaque snapshot handle");
-      assert.equal(receipts[0].details.request.patch, reviewedCompletePatch);
+      assert.equal(receipts[0].details.request.patch, undefined, "Receipts reference immutable content instead of repeating it");
+      const review = receipts[0].details.request.review;
+      assert.ok(review && review.entries === 3);
+      const exact = await page.request.get(`${base}/api/sessions/${sessionId}/reviews/${review.id}?patch=1&download=1`);
+      assert.equal(await exact.text(), reviewedCompletePatch);
       await historical.getByRole("button", { name: /Answered.*Git commit/ }).click();
       const group = historical.getByRole("group", { name: "Git commit", exact: true });
       const historicalFile = group.getByRole("region", { name: "File changes: draft.txt", exact: true });
@@ -355,7 +363,10 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     if (action === "rebase" || action === "merge") {
       await card.getByText("feature → target", { exact: true }).waitFor();
       await card.getByRole("region", { name: "Operation notes", exact: true }).getByText(/not a predicted rebase\/merge result/).waitFor();
-      await card.getByRole("group", { name: "Patch view" }).waitFor();
+      await card.getByRole("region", { name: "Exact operation review" }).getByRole("link", { name: "Download complete exact patch", exact: true }).waitFor();
+      // Desktop's later large commit remains in the shared feature history for
+      // mobile: its branch previews intentionally use paged review, not one DOM.
+      if (width > 600) await card.getByRole("group", { name: "Patch view" }).waitFor();
     } else assert.equal(await card.getByRole("group", { name: "Patch view" }).count(), 0);
     await card.getByRole("button", { name: "Reject", exact: true }).click();
     await finish(`preview-${action}`, "refused");
@@ -511,5 +522,15 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   } finally {
     page.off("request", recordReviewRequest);
   }
+  card = await start("large");
+  const exactReview = card.getByRole("region", { name: "Exact operation review" });
+  await exactReview.getByText(/Showing entries 1–40 of 46/).waitFor();
+  await card.getByRole("button", { name: "Approve commit", exact: true }).waitFor();
+  assert.ok(await exactReview.getByRole("link", { name: "Download complete exact patch", exact: true }).getAttribute("href"));
+  await exactReview.getByRole("button", { name: "Next files", exact: true }).click();
+  await exactReview.getByText(/Showing entries 41–46 of 46/).waitFor();
+  await card.getByRole("button", { name: "Approve commit", exact: true }).click();
+  await finish("large", "completed");
+  assert.equal(execFileSync("git", ["-C", repo, "show", "--format=", "--name-only", "HEAD"], { encoding: "utf8" }).trim().split("\n").length, 45);
   console.log(`PASS: ${width}px durable Ask/Allow outcomes and bounded combined cleanup; all Git approval layouts, lazy snapshot context in split/unified/Before/After, search/navigation/collapse, wide Escape, exact read-only historical context and expired raw fallback, cross-repository settings, toggle, rejection, reconnect and Stop`);
 }

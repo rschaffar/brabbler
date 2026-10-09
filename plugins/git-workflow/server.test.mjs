@@ -12,7 +12,15 @@ process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 after(() => { if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = oldAgentDir; rmSync(root, { recursive: true, force: true }); });
 const jiti = createJiti(import.meta.url);
 const { executeGitOperation: executeWithReceipts } = await jiti.import("./server.ts");
-const executeGitOperation = (cwd, op, ui, ...rest) => executeWithReceipts(cwd, op, { operationReceipt() {}, ...ui }, ...rest);
+const { preparePluginReview, reviewEntry, reviewPreview } = await jiti.import("../../lib/plugins/review-store.ts");
+const { snapshotOperationReceipt } = await jiti.import("../../lib/operation-receipts.ts");
+const { validatePluginCard } = await jiti.import("../../lib/plugins/ui.ts");
+const executeGitOperation = (cwd, op, ui, ...rest) => executeWithReceipts(cwd, op, {
+  prepareReview: preparePluginReview,
+  operationReceipt(id, receipt) { snapshotOperationReceipt(id, receipt, 1); },
+  ...ui,
+  ...(ui?.pluginCard ? { pluginCard: (id, card, signal) => { validatePluginCard(card); return ui.pluginCard(id, card, signal); } } : {}),
+}, ...rest);
 const { gitWorkflowManifest } = await jiti.import("./manifest.ts");
 const { updatePluginSettings } = await jiti.import("../../lib/plugins/settings.ts");
 function git(cwd, ...args) { return execFileSync("git", ["-C", cwd, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(); }
@@ -57,7 +65,8 @@ test("ask shows exact resource, message, patch and checks; decline and no UI do 
   assert.match(card.sections.find((section) => section.notice).text, /do not certify a separately exported candidate tree/);
   assert.ok(card.sections.find((section) => section.title === "Technical details").collapsible);
   assert.equal(card.actions.find((action) => action.primary).label, "Approve commit");
-  assert.match(card.patch, /changed a/);
+  assert.equal(card.patch, undefined);
+  assert.match((await reviewPreview(card.review, await reviewEntry(card.review, 1))).text, /changed a/);
   assert.equal(git(repo, "rev-parse", "HEAD"), before);
   failed(await call(repo, commit(repo), {}), /live Pi Web/);
   success(await call(repo, commit(repo)));

@@ -9,6 +9,9 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url);
 const { executeGitOperation } = await jiti.import("./server.ts");
 const { cleanupPathWithin } = await jiti.import("./cleanup.ts");
+const { preparePluginReview } = await jiti.import("../../lib/plugins/review-store.ts");
+const { snapshotOperationReceipt } = await jiti.import("../../lib/operation-receipts.ts");
+const { validatePluginCard } = await jiti.import("../../lib/plugins/ui.ts");
 const { gitWorkflowManifest: manifest } = await jiti.import("./manifest.ts");
 const { pluginSettingsPath, updatePluginSettings } = await jiti.import("../../lib/plugins/settings.ts");
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -29,7 +32,7 @@ function fixture(t) {
   updatePluginSettings(manifest, "global", repo, { enabled: true }, []);
   set({ targetBranch: "main", targetSelection: "configured", cleanupFeature: "ask", approvedArtifactRoots: "node_modules, .codegraph, .next" });
   const receipts = [], cards = []; let approvals = 0;
-  const ui = { isDirectoryInUse: () => false, reserveDirectory: () => () => {}, operationReceipt: (_id, value) => receipts.push(structuredClone(value)), pluginCard: async (_id, card) => { approvals++; cards.push(structuredClone(card)); return "approve"; } };
+  const ui = { prepareReview: preparePluginReview, isDirectoryInUse: () => false, reserveDirectory: () => () => {}, operationReceipt: (id, value) => { snapshotOperationReceipt(id, value, receipts.length + 1); receipts.push(structuredClone(value)); }, pluginCard: async (_id, card) => { validatePluginCard(card); approvals++; cards.push(structuredClone(card)); return "approve"; } };
   const op = { action: "cleanupFeature", checkout: repo, featureBranch: "feature", featureTip, integrationCommit, worktreePath: path, removeWorktree: true, deleteBranch: true, artifactRoots: [] };
   const artifact = (name, content = "generated") => { mkdirSync(join(path, name), { recursive: true }); writeFileSync(join(path, name, "cache"), content); };
   const call = (extra = {}, custom = {}) => executeGitOperation(repo, { ...op, ...extra }, { ...ui, ...custom }, undefined, undefined, "cleanup-call");
@@ -411,4 +414,15 @@ test("receipt persistence failure blocks effects; branch-only cleanup needs no r
   git(f.repo, "worktree", "remove", f.path);
   passed(await f.call({ worktreePath: undefined, removeWorktree: false }));
   assert.equal(git(f.repo, "branch", "--list", "feature"), "");
+});
+test("more than sixteen generated roots remain a single exact approved cleanup", async (t) => {
+  const f = fixture(t);
+  const roots = Array.from({ length: 25 }, (_, i) => `generated-${i}`);
+  for (const root of roots) f.artifact(root);
+  passed(await f.call({ artifactRoots: roots }));
+  assert.equal(f.approvals(), 1);
+  assert.equal(f.receipts.at(-1).phase, "succeeded");
+  assert.equal(f.receipts[0].card.sections[0].fields.length, 24);
+  assert.match(f.receipts[0].card.sections[0].text, /24 of 25/);
+  assert.ok(f.receipts[0].card.review);
 });

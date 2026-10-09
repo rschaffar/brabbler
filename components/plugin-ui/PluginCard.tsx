@@ -7,6 +7,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { MarkdownBody } from "../MarkdownBody";
 import { BlockingCard } from "../BlockingCard";
 import { SuppliedPatchStack } from "../GitPatchStack";
+import { ReviewAttachment } from "./ReviewAttachment";
 
 type Request = Extract<ExtensionUiRequest, { method: "plugin_card" }>;
 function Fields({ fields }: { fields: PluginCardField[] }) {
@@ -24,12 +25,13 @@ function Section({ section }: { section: PluginCardSection }) {
   </section>;
 }
 /** Identical supplied fields and patches for live approvals and historical receipts. */
-export function PluginCardContent({ request }: { request: Request }) {
+export function PluginCardContent({ request, sessionId }: { request: Request; sessionId?: string }) {
   return <>
     {request.fields && <Fields fields={request.fields} />}
     {request.text && <pre className="blocking-card-code">{request.text}</pre>}
     {request.markdown && <MarkdownBody>{request.markdown}</MarkdownBody>}
     {request.sections?.filter((section) => !section.collapsible).map((section, index) => <Section key={index} section={section} />)}
+    {request.review && <ReviewAttachment key={`${sessionId}:${request.review.id}`} review={request.review} sessionId={sessionId} before={request.patchBefore} after={request.patchAfter} contextHandle={request.patchContext} pluginId={request.pluginId} />}
     {request.patch && <SuppliedPatchStack patch={request.patch} before={request.patchBefore ?? "Current"} after={request.patchAfter ?? "Proposed"}
       contextHandle={request.patchContext} pluginId={request.pluginId} />}
     {request.sections?.filter((section) => section.collapsible).map((section, index) => <Section key={index} section={section} />)}
@@ -37,8 +39,8 @@ export function PluginCardContent({ request }: { request: Request }) {
 }
 
 /** Reusable presentation only. Buttons answer a live session request, never execute. */
-export function PluginCard({ request, onRespond }: {
-  request: Request;
+export function PluginCard({ request, onRespond, sessionId }: {
+  request: Request; sessionId?: string;
   onRespond: (request: Request, response: { action: string } | { cancelled: true }) => void;
 }) {
   const { t } = useI18n();
@@ -59,7 +61,7 @@ export function PluginCard({ request, onRespond }: {
         {request.actions.map((action) => <button key={action.id} type="button" disabled={sent} data-primary={action.primary || undefined}
           onClick={() => respond({ action: action.id })}>{action.label}</button>)}
       </>}>
-      <PluginCardContent request={request} />
+      <PluginCardContent request={request} sessionId={sessionId} />
     </BlockingCard>
   </div>;
 }

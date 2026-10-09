@@ -62,6 +62,7 @@ import { createSessionReferenceExtension } from "./session-reference-extension";
 import { createPiWebSourceExtension } from "./pi-web-source-extension";
 import { bundledPluginExtensions } from "./plugins/registry";
 import { validatePluginCard } from "./plugins/ui";
+import { preparePluginReview } from "./plugins/review-store";
 import type { PluginUiContext } from "./plugins/types";
 import { OPERATION_RECEIPT_TYPE, nextOperationReceiptSequence, snapshotOperationReceipt } from "./operation-receipts";
 import { hasActiveTerminalWithin } from "./terminal-manager";
@@ -1662,6 +1663,11 @@ export class AgentSessionWrapper {
       isDirectoryInUse: (directory) => hasBusyRpcSessionWithin(directory) || hasActiveTerminalWithin(directory),
       reserveDirectory: (directory) => acquireDirectoryReservation(directory,
         (physical) => hasBusyRpcSessionWithin(physical) || hasActiveTerminalWithin(physical)),
+      prepareReview: async (pluginId, operationId, build) => {
+        const manager = this.inner.sessionManager;
+        if (!manager.isPersisted() || !manager.getSessionFile() || !manager.getHeader()) throw new Error("Review attachments require a persistent session");
+        return preparePluginReview(pluginId, operationId, build);
+      },
       operationReceipt: (pluginId, receipt) => {
         const manager = this.inner.sessionManager;
         // In-memory/non-persisting sessions cannot authorize durable operations.

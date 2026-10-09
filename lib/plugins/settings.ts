@@ -52,13 +52,14 @@ export function validateOverrides(manifest: PluginManifest, raw: unknown, projec
     if (!Object.hasOwn(manifest.fields, key) || !field || (project && field.globalOnly)) throw new Error(`Invalid setting: ${key}`);
     if (value === null && field.nullable) continue;
     const valid = field.kind === "boolean" ? typeof value === "boolean"
-      : field.kind === "text" ? typeof value === "string" && value.length <= 256 && !/[\x00-\x1f]/.test(value)
+      : field.kind === "text" ? typeof value === "string" && !/[\x00-\x1f]/.test(value)
       : field.kind === "enum" ? typeof value === "string" && field.options?.includes(value)
-      : Array.isArray(value) && value.length <= 32 && value.every((check) => object(check)
-        && Object.keys(check).every((key) => key === "name" || key === "command")
-        && typeof check.name === "string" && check.name.trim().length > 0 && check.name.length <= 128
-        && typeof check.command === "string" && check.command.trim().length > 0 && check.command.length <= 4096
-        && !check.command.includes("\0"))
+      : Array.isArray(value) && value.every((check) => object(check)
+        && Object.keys(check).every((key) => key === "name" || key === "command" || key === "timeoutMs")
+        && typeof check.name === "string" && check.name.trim().length > 0
+        && typeof check.command === "string" && check.command.trim().length > 0
+        && !check.command.includes("\0")
+        && (check.timeoutMs === undefined || typeof check.timeoutMs === "number" && Number.isSafeInteger(check.timeoutMs) && check.timeoutMs >= 0 && check.timeoutMs <= 2_147_483_647))
         && new Set(value.map((check) => check.name)).size === value.length;
     if (!valid) throw new Error(`Invalid value for ${key}`);
   }
