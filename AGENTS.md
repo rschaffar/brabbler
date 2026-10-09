@@ -31,8 +31,8 @@ From the selected Linux worktree:
 nix develop                         # prepares checkout-local writable dependencies
 npm run dev                         # manual development, port 30141; see lifecycle below
 # Or run isolated checks without starting a manual server:
-nix develop -c node nix/test-offline.mjs --file lib/worktree.test.mjs
-nix develop -c node nix/test-offline.mjs
+nix develop .#test -c node nix/test-offline.mjs --file lib/worktree.test.mjs
+nix develop .#test -c node nix/test-offline.mjs
 ```
 
 The shell reuses matching Nix-managed `node_modules`; do not run `npm ci` over it,
@@ -49,11 +49,12 @@ candidate; a new commit ID alone is not a reason to repeat unaffected applicatio
 checks. Do not bypass configured Git checks or relabel older evidence as a new-tip
 run. Evidence/status-only follow-ups use the global skill's proportional checks.
 
-One owner coordinates dependency preparation, source export and heavy acceptance.
-Pause source writers during export and acceptance. Do not overlap browser or
-SDK-sensitive acceptance with other heavy validation. Use the runner's bounded
-defaults (desired 8 workers, resource-clamped); increase concurrency only on
-comparable measurements. Never append Node concurrency flags to `npm test`.
+One owner coordinates dependency preparation, source export and acceptance budgets.
+Pause source writers during export; snapshot-based runs then use immutable input
+identities, not subsequent edits. Independent invocations may share a worktree,
+but their worker limits are not machine-wide reservations. Coordinate smaller
+budgets for concurrent reviewers and keep ordinary browser/SDK acceptance separate
+from deliberate concurrency tests; do not hide contention with longer deadlines. Never append Node concurrency flags to `npm test`.
 Report command runtime separately from preparation, model work and coordination.
 
 Delegate only independent work with an explicit checkout, scope, capabilities and
@@ -66,10 +67,10 @@ obvious change.
 ## Browser and dev-server lifecycle
 
 - **Manual development:** before starting, run `lsof -nP -iTCP:30141 -sTCP:LISTEN`; identify the checkout/process and reuse a healthy matching server. Do not interrupt an installed service or a different task's server.
-- **Acceptance:** [e2e/README.md](e2e/README.md) owns the fixture lifecycle. Runners require no active `.next/dev/lock` in their checkout and start their own free-port Turbopack server, never the installed service. A different port does not permit two dev servers in one checkout.
+- **Acceptance:** [e2e/README.md](e2e/README.md) owns the fixture lifecycle. Linux launchers use separate source/dependency snapshots and free-port Turbopack servers, never the installed service or the checkout's `.next`. Explicit legacy `--in-place` execution still requires a free checkout lock; different ports do not permit two servers sharing one `.next`.
 - A browser-only `Module ... factory is not available` overlay may be stale HMR. Explicitly reload the page, then compare current server logs and a direct HTTP/API request. Restart only after a fresh page and server-side checks corroborate failure. Stop the exact owned dev process gracefully, retain `.next` in a `mktemp -d` backup, then use `npm run dev`. No webpack fallback.
 - Diagnose failures from the exact run's logs, responses, traces and observed process events. Preserve failures before a justified retry; a passing unchanged retry does not prove a fix. Do not suppress general console/5xx errors or inflate deadlines to manufacture acceptance.
-- Test roots, failed builds, dependency copies and backups are not automatically disposable. [docs/testing.md](docs/testing.md#diagnostics-and-retention) owns retention and separately authorized cleanup; no wildcard/age-based reapers.
+- [docs/testing.md](docs/testing.md#diagnostics-and-retention) owns bounded current-run bulk cleanup after settlement and retained evidence. Historical roots, failed builds, checkout dependencies and backups still require separately authorized cleanup; no wildcard/age-based reapers.
 - Next.js may append a generated `BEGIN:nextjs-agent-rules` block to this file. Check `git status` after starting a server and exclude generated tooling output from unrelated commits.
 
 ## Read the relevant implementation guide

@@ -202,8 +202,8 @@ export function createOwnedTracker(original, { readIdentity = processIdentity, r
     catch (error) { if (['ENOENT', 'ESRCH'].includes(error.code)) return null; throw error; }
   };
   function remember(current) {
-    if (owned.has(current.pid)) return;
-    if (owned.size >= limit) { limited = true; return; }
+    if (owned.get(current.pid)?.start === current.start) return;
+    if (!owned.has(current.pid) && owned.size >= limit) { limited = true; return; }
     owned.set(current.pid, current); observed++;
   }
   if (original) remember(original);
@@ -249,7 +249,8 @@ export function createOwnedTracker(original, { readIdentity = processIdentity, r
         let candidates = 0;
         for (const pid of listPids()) {
           if (++candidates > 16384) { sessionScanLimited = uncertain = true; break; }
-          if (owned.has(pid)) continue;
+          // A previously observed PID may now name a new same-session child.
+          // Read its identity rather than skipping the recycled numeric PID.
           try {
             const current = read(pid);
             if (current && current.state !== 'Z' && current.session === original.pid &&

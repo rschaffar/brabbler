@@ -89,6 +89,11 @@
         let
           nodejs = pkgs.nodejs_22;
           modules = devModules pkgs nodejs;
+          testInputs = pkgs.writeText "pi-web-test-inputs.json" (builtins.toJSON {
+            modules = "${modules}/node_modules";
+            packageSha256 = builtins.hashString "sha256" (builtins.readFile ./package.json);
+            lockSha256 = builtins.hashString "sha256" (builtins.readFile ./package-lock.json);
+          });
         in
         {
           default = pkgs.mkShell {
@@ -104,6 +109,13 @@
                 sourceModules = "${modules}/node_modules";
               }} || exit 1
             '';
+            PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";
+            PI_WEB_TEST_INPUTS = testInputs;
+          };
+          # Core/acceptance launchers own their snapshots. No checkout mutation.
+          test = pkgs.mkShell {
+            packages = [ nodejs pkgs.git pkgs.python3 pkgs.chromium ];
+            PI_WEB_TEST_INPUTS = testInputs;
             PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";
           };
           # npm dependency changes edit only the manifest and lockfile. The
