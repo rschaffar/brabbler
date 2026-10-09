@@ -108,6 +108,7 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
   const sections = useMemo(() => effectiveProjectFilter
     ? getActivitySections(privacyReady ? sessions : [], runningIds, attention, reviewIds, effectiveProjectFilter, queuedIds, interruptedIds, revealing ? new Set() : privacy.keys ?? new Set()) : all,
   [effectiveProjectFilter, privacyReady, sessions, runningIds, attention, reviewIds, queuedIds, interruptedIds, revealing, privacy.keys, all]);
+  const readySubagents = sections.ready.filter((item) => item.session.relation?.kind === "subagent");
   const total = Object.values(sections).reduce((count, items) => count + items.length, 0);
   const sectionTitle: Record<ActivityStatus, string> = {
     "needs-you": t("activity.needsYou"), working: t("activity.working"), queued: t("activity.queued"),
@@ -154,7 +155,15 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
       <div className="activity-sections">
         {STATUS_ORDER.map((status) => sections[status].length > 0 && (
           <section key={status} aria-label={sectionTitle[status]} className="activity-section">
-            <h2>{sectionTitle[status]} <span>{sections[status].length}</span></h2>
+            <div className="activity-section-header">
+              <h2>{sectionTitle[status]} <span>{sections[status].length}</span></h2>
+              {status === "ready" && <button type="button" className="activity-mark-read activity-mark-all-subagents-read"
+                disabled={readySubagents.length === 0}
+                title={t("activity.markAllSubagentsReadHint")}
+                onClick={() => readySubagents.forEach((item) => onMarkRead(item.session.id))}>
+                {t("activity.markAllSubagentsRead")}
+              </button>}
+            </div>
             <div role="list" className="activity-items">
               {sections[status].map((item) => {
                 const { session } = item;

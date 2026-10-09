@@ -35,6 +35,20 @@ test("ready subagents are identified even when their parent is working or absent
   assert.doesNotMatch(html, /aria-label="ready-root[^\"]*Sub-agent/);
   assert.match(html, /aria-label="Mark ready-root as read"[^>]*>Read<\/button>/);
   assert.match(html, /aria-label="Mark ready-child as read"[^>]*>Read<\/button>/);
+  assert.match(html, /class="activity-mark-read activity-mark-all-subagents-read" title="[^"]+">Mark all subagents as read<\/button>/);
+});
+
+test("bulk subagent read is disabled when only parent sessions are ready", () => {
+  const html = render([session("ready-root"), session("working-child", "ready-root")], ["working-child"], ["ready-root", "working-child"]);
+  assert.match(html, /class="activity-mark-read activity-mark-all-subagents-read" disabled=""/);
+});
+
+test("concealed ready subagents do not enable the bulk read action", () => {
+  const hiddenParent = { ...session("hidden-parent"), cwd: "/private", projectRoot: "/private" };
+  const html = render([hiddenParent, session("hidden-child", "hidden-parent"), session("ready-root")], [],
+    ["hidden-child", "ready-root"], { keys: new Set(["/private"]), error: false });
+  assert.doesNotMatch(html, /hidden-child|hidden-parent/);
+  assert.match(html, /class="activity-mark-read activity-mark-all-subagents-read" disabled=""/);
 });
 
 test("concealed projects have no rows, options, titles, summaries or section counts in the rendered HTML", () => {

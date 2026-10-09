@@ -120,6 +120,10 @@ Additional provider accounts are stored in `~/.pi/agent/pi-web-accounts.json`. S
 
 Treat account files, API keys, session histories, and interaction receipts as private. Do not commit them to this repository or include them unredacted in issue reports. File drafts survive switching tabs, but are not persisted across a browser reload.
 
+### Reviewing Activity
+
+In **Ready to review**, use **Mark all subagents as read** to acknowledge all ready subagents shown by the current project filter. Parent sessions and working, queued, blocked or interrupted subagents are left unchanged. Concealed projects are excluded unless revealed with the eye button. Read acknowledgements are saved on the server and survive reloads.
+
 ### Hidden projects in Activity
 
 Use **Settings → General → Privacy → Hidden projects** to exclude selected projects from Activity. Search by name or path; each switch saves immediately and covers the project's worktrees and subagents, including descendants working in another project. Hidden projects disappear from Activity rows, project-filter options and section counts, without stopping agents or acknowledging results.
