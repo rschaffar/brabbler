@@ -14,6 +14,7 @@ import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
 import { checkProjectPrivacy } from "./project-privacy.mjs";
+import { checkProjectTrustScopes } from "./project-trust-scopes.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
@@ -78,6 +79,10 @@ const ARCHIVE = "e2e-archive-session";
 const BULK = ["e2e-bulk-desktop-a", "e2e-bulk-desktop-b", "e2e-bulk-mobile-a", "e2e-bulk-mobile-b"];
 const OTHER = "e2e-other-project";
 const GIT = "e2e-git-explorer";
+const TRUST_MAIN = "e2e-trust-main";
+const TRUST_LINKED = "e2e-trust-linked";
+const trustProject = join(agentDir, "trust-project");
+const trustLinked = join(agentDir, "trust-linked");
 const gitProject = join(agentDir, "git-project");
 const targetWorktree = join(agentDir, "git-target-worktree");
 const text = (i) => `E2E message ${String(i).padStart(4, "0")}`;
@@ -206,6 +211,18 @@ try {
     message("root", null, "user", "Other workspace task"),
     message("reply", "root", "assistant", "Waiting for more work"),
   ], otherProject);
+  if (process.env.E2E_TRUST_ONLY === "1") {
+    mkdirSync(trustProject);
+    const git = (...args) => execFileSync("git", ["-C", trustProject, ...args], { encoding: "utf8", env: fixtureEnv }).trim();
+    git("init", "-qb", "main");
+    mkdirSync(join(trustProject, ".pi", "extensions"), { recursive: true });
+    writeFileSync(join(trustProject, ".pi", "extensions", ".keep"), "fixture\n");
+    git("add", ".");
+    git("-c", "user.name=E2E", "-c", "user.email=e2e@example.invalid", "commit", "-qm", "trust fixture");
+    git("worktree", "add", "-qb", "linked", trustLinked);
+    writeSession(TRUST_MAIN, [message("root", null, "user", "Trust main fixture")], trustProject);
+    writeSession(TRUST_LINKED, [message("root", null, "user", "Trust linked fixture")], trustLinked);
+  }
   {
     const otherGit = (...args) => execFileSync("git", ["-C", otherProject, ...args], { encoding: "utf8", env: fixtureEnv }).trim();
     otherGit("init", "-qb", "other-main");
@@ -296,7 +313,8 @@ try {
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK, ...MODEL_SPEED_IDS].sort());
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK, ...MODEL_SPEED_IDS,
+        ...(process.env.E2E_TRUST_ONLY === "1" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
@@ -335,6 +353,19 @@ try {
 
   if (process.env.E2E_MODEL_SPEED_ONLY === "1") {
     await runModelSpeedChecks();
+  } else if (process.env.E2E_TRUST_ONLY === "1") {
+    browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
+      page = await context.newPage();
+      const errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      page.on("console", (event) => { if (event.type() === "error" && !consumeExpectedBrowserConflict(page, event)) errors.push(event.text()); });
+      page.on("response", (response) => { if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`); });
+      await checkProjectTrustScopes(page, { base, api, trustProject, trustLinked, mainId: TRUST_MAIN, width: viewport.width });
+      assert.deepEqual(errors, [], "Trust browser/server errors");
+      await context.close(); context = undefined; page = undefined;
+    }
   } else if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") {
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
     for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {

@@ -16,7 +16,7 @@ import { GitExplorerPanel } from "./GitExplorerPanel";
 import { TabBar, type Tab } from "./TabBar";
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
-import { ProjectTrustDialog } from "./ProjectTrustDialog";
+import { ProjectTrustDialog, type TrustChoice } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { SystemPromptPanel } from "./SystemPromptPanel";
 import { ToolDefinitionsPanel } from "./ToolDefinitionsPanel";
@@ -1168,6 +1168,8 @@ export function AppShell() {
   const mobileProjectPath = selectedSession?.projectRoot ?? selectedSession?.cwd ?? effectiveNewSessionCwd;
   const mobileProjectName = mobileProjectPath ? getFileName(mobileProjectPath) || mobileProjectPath : null;
   const projectTrustCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
+  const projectTrustCwdRef = useRef(projectTrustCwd);
+  projectTrustCwdRef.current = projectTrustCwd;
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
 
@@ -1193,7 +1195,7 @@ export function AppShell() {
     return () => controller.abort();
   }, [projectTrustCwd]);
 
-  const handleTrustProject = useCallback(async () => {
+  const handleTrustProject = useCallback(async (choice: TrustChoice) => {
     if (!projectTrustCwd || projectTrustBusy) return;
     setProjectTrustBusy(true);
     setProjectTrustError(null);
@@ -1201,16 +1203,17 @@ export function AppShell() {
       const response = await fetch("/api/project-trust", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: projectTrustCwd }),
+        body: JSON.stringify({ cwd: projectTrustCwd, ...choice }),
       });
       const data = await response.json() as ProjectTrustStatus & { error?: string };
       if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+      if (projectTrustCwdRef.current !== projectTrustCwd) return;
       setProjectTrust(data);
       setProjectTrustDialogOpen(false);
       setModelsRefreshKey((key) => key + 1);
       setSessionKey((key) => key + 1);
     } catch (error) {
-      setProjectTrustError(error instanceof Error ? error.message : String(error));
+      if (projectTrustCwdRef.current === projectTrustCwd) setProjectTrustError(error instanceof Error ? error.message : String(error));
     } finally {
       setProjectTrustBusy(false);
     }
@@ -1357,7 +1360,7 @@ export function AppShell() {
           <path d="M12 8v4" />
           <path d="M12 16h.01" />
         </svg>
-        <span>{translate("trust.resourcesNotLoaded")}</span>
+        <span>{translate("trust.resourcesNotLoaded")} · <strong>{translate("trust.manage")}</strong></span>
       </button>
     );
   };
@@ -2661,17 +2664,20 @@ export function AppShell() {
           setModelsRefreshKey((key) => key + 1);
         }}
         onSessionReloaded={() => setSessionKey((key) => key + 1)}
+        trustStatus={projectTrust}
+        onManageTrust={() => { setProjectTrustError(null); setProjectTrustDialogOpen(true); }}
       />
     )}
     {projectTrustDialogOpen && projectTrustCwd && (
       <ProjectTrustDialog
         cwd={projectTrustCwd}
+        status={projectTrust}
         busy={projectTrustBusy}
         error={projectTrustError}
         onCancel={() => {
           if (!projectTrustBusy) setProjectTrustDialogOpen(false);
         }}
-        onConfirm={() => void handleTrustProject()}
+        onConfirm={(choice) => void handleTrustProject(choice)}
       />
     )}
     </>

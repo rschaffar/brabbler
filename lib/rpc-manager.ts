@@ -2226,6 +2226,16 @@ export async function destroyRpcSessionsForCwd(cwd: string): Promise<number> {
   return sessions.length;
 }
 
+/** A repository trust change affects sessions in every registered worktree, including subdirectories. */
+export async function destroyRpcSessionsInWorktrees(worktrees: readonly string[]): Promise<number> {
+  const roots = new Set(worktrees.map(physicalDirectoryPath));
+  const sessions = Array.from(getRegistry().values()).filter(
+    (session) => isPathWithinRoots(physicalDirectoryPath(session.cwd), roots),
+  );
+  await Promise.all(sessions.map((session) => session.shutdown()));
+  return sessions.length;
+}
+
 export function getRpcSessionAttention(): SessionAttention[] {
   return [...getRegistry().values()].flatMap((session) => {
     const attention = session.getPendingAttention?.();

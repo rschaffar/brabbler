@@ -72,6 +72,12 @@ export interface SkillsResponse {
 export interface ProjectTrustStatus {
   requiresTrust: boolean;
   trusted: boolean;
+  /** GET /api/project-trust includes the effective saved decision and Git scope. */
+  scope?: "worktree" | "repository" | "denied" | "none";
+  worktreeDecision?: boolean | null;
+  repositoryTrusted?: boolean;
+  repositoryRoot?: string | null;
+  checkoutRoot?: string | null;
 }
 
 export interface AppUpdateResponse {

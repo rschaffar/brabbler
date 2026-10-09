@@ -4,8 +4,10 @@ import { NextResponse } from "next/server";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { invalidateModelsCache } from "@/lib/models-cache";
-import { getProjectTrustStatus, trustProject } from "@/lib/project-trust";
-import { destroyRpcSessionsForCwd, hasBusyRpcSessionForCwd } from "@/lib/rpc-manager";
+import { clearWorktreeTrust, getProjectTrustDetails, setProjectTrust } from "@/lib/project-trust";
+import { trustedGitRepository } from "@/lib/project-trust-repository";
+import { destroyRpcSessionsInWorktrees, hasBusyRpcSessionWithin } from "@/lib/rpc-manager";
+import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 
 export const dynamic = "force-dynamic";
 
@@ -35,28 +37,46 @@ async function validateCwd(value: unknown): Promise<
 export async function GET(req: Request) {
   const result = await validateCwd(new URL(req.url).searchParams.get("cwd"));
   if ("response" in result) return result.response;
-  return NextResponse.json(getProjectTrustStatus(result.cwd, getAgentDir()));
+  return NextResponse.json(getProjectTrustDetails(result.cwd, getAgentDir()));
 }
 
 export async function POST(req: Request) {
+  if (!isApiRequestAllowed(req)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  if (!hasJsonContentType(req)) return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
   try {
-    const body = await req.json() as { cwd?: unknown };
+    const body = await req.json() as { cwd?: unknown; scope?: unknown; action?: unknown };
+    if (body.scope !== undefined && body.scope !== "worktree" && body.scope !== "repository") {
+      return NextResponse.json({ error: "Invalid trust scope" }, { status: 400 });
+    }
+    if (body.action !== undefined && body.action !== "trust" && body.action !== "revoke" && body.action !== "clear") {
+      return NextResponse.json({ error: "Invalid trust action" }, { status: 400 });
+    }
+    const scope = body.scope ?? "worktree";
+    const action = body.action ?? "trust";
+    if (scope === "repository" && action === "clear") return NextResponse.json({ error: "Invalid trust action" }, { status: 400 });
     const result = await validateCwd(body.cwd);
     if ("response" in result) return result.response;
-
     const agentDir = getAgentDir();
-    const current = getProjectTrustStatus(result.cwd, agentDir);
-    if (!current.requiresTrust) {
-      return NextResponse.json({ error: "This project has no resources that require trust" }, { status: 409 });
+    const repository = trustedGitRepository(result.cwd);
+    if (scope === "repository" && !repository) {
+      return NextResponse.json({ error: "Select a registered Git checkout for project-wide trust" }, { status: 409 });
     }
-    if (hasBusyRpcSessionForCwd(result.cwd)) {
-      return NextResponse.json({ error: "Wait for the active session to finish before trusting this project" }, { status: 409 });
+    const current = getProjectTrustDetails(result.cwd, agentDir);
+    if (action === "trust" && scope === "worktree" && !current.requiresTrust && !current.checkoutRoot) {
+      return NextResponse.json({ error: "This directory has no resources that require trust" }, { status: 409 });
     }
-
-    const status = trustProject(result.cwd, agentDir);
+    const worktreeCwd = repository?.checkout ?? result.cwd;
+    const affected = scope === "repository" ? repository!.worktrees : [worktreeCwd];
+    if (affected.some(hasBusyRpcSessionWithin)) {
+      return NextResponse.json({ error: "Wait for active sessions in the affected checkout(s) to finish before changing trust" }, { status: 409 });
+    }
+    // No await between the last busy check and the persisted decision. Every loader
+    // resolves the effective decision again on startup/reload.
+    if (action === "clear") clearWorktreeTrust(worktreeCwd, agentDir);
+    else setProjectTrust(scope === "worktree" ? worktreeCwd : result.cwd, agentDir, scope as "worktree" | "repository", action === "trust");
     invalidateModelsCache();
-    await destroyRpcSessionsForCwd(result.cwd);
-    return NextResponse.json(status);
+    await destroyRpcSessionsInWorktrees(affected);
+    return NextResponse.json(getProjectTrustDetails(result.cwd, agentDir));
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : String(error) },

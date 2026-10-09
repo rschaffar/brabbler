@@ -26,6 +26,12 @@ Switching worktrees affects:
 
 Existing sessions stay grouped under the same project. Opening an existing session moves the effective working directory back to that session's checkout.
 
+### Trusting project resources
+
+A new worktree is **not** trusted merely because an agent or the sidebar created it. When project extensions, skills or settings require trust, Pi Web keeps them restricted and offers **Review trust…** for the selected chat's checkout. Choose **Trust this worktree only** to trust just that checkout (the Pi CLI shares this path decision), or **Trust this Git project (all worktrees)** to trust every registered checkout of the same repository, including future worktrees. The broader decision is Pi Web-only; it does not automatically trust those paths in the Pi CLI. Trust enables project-controlled resources that may run local code, not Git mutation permissions or general file access.
+
+**Settings → General → Manage trust…** shows the current effective decision even when no resources need trust yet. Stop trusting a worktree to restrict it even under a project grant; clear that override to return to the project's decision. Stopping project-wide trust leaves explicitly trusted worktrees trusted. Changing trust while affected sessions are active is refused; try again once they finish. An unregistered checkout or another repository never inherits a Git project grant.
+
 ### Browse the selected worktree's Git history
 
 Open the **Git Explorer** icon beside Activity and Starred. Its wide panel places the graph to the left of commit details and file diffs, alongside the chat; on mobile select a commit to see its details and use **Back to commits** to return to the graph. It follows the checkout selected by the sidebar worktree switcher, even when a chat from another checkout remains open, and needs no open chat. By default it shows that checkout's branch. The **History branch** selector can browse any local branch in the same repository without checking it out. Its read-only graph shows commits reachable from the selected branch's captured tip in topological order, with merge lanes, local branch labels, distinguishable local **tag** labels and older-history pages. Lightweight and annotated tags label their commits; tags do not become branch-selector options or authorize browsing unrelated objects. No tags are fetched or created by the explorer. Select a commit to inspect its author, message and changed files next to the graph; copy its full message or ID with the separate hover/focus buttons.
