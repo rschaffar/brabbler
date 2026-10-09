@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-export async function checkProjectPrivacy(page, width, { base, api, post, selectedSessionId, otherSessionId }) {
+export async function checkProjectPrivacy(page, width, { base, api, post, harness, selectedSessionId, otherSessionId }) {
   const mobile = width <= 640;
   const { sessions } = await api("/api/sessions?force=1");
   const project = sessions.find((session) => session.id === selectedSessionId);
@@ -164,7 +164,7 @@ export async function checkProjectPrivacy(page, width, { base, api, post, select
   if (width === 1280) {
     await region().getByRole("button", { name: "Show hidden projects", exact: true }).click();
     await privateRow().waitFor();
-    const peerContext = await page.context().browser().newContext({ viewport: { width, height: 900 }, locale: "en-US" });
+    const peerContext = await harness.newContext(page.context().browser(), { viewport: { width, height: 900 }, locale: "en-US" }, base);
     try {
       const peer = await peerContext.newPage();
       const peerErrors = [];
@@ -193,7 +193,7 @@ export async function checkProjectPrivacy(page, width, { base, api, post, select
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await privateRow().waitFor();
       assert.deepEqual(peerErrors, [], "fresh-browser privacy errors");
-    } finally { await peerContext.close(); }
+    } finally { await harness.closeContext(peerContext); }
   } else {
     control = await openSettings();
     await saveSwitch(control, false);

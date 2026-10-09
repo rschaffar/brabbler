@@ -1,21 +1,21 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 assert.ok(!existsSync(join(root, ".next/dev/lock")), "Run in a checkout without an active dev server");
-const artifacts = mkdtempSync(join(tmpdir(), "pi-web-terminal-e2e-"));
-console.log(`Artifacts: ${artifacts}`);
-const agentDir = join(artifacts, "agent");
-const workspace = join(artifacts, "workspace-a");
-const otherWorkspace = join(artifacts, "workspace-b");
+const harness = createHarness(root, "terminal");
+const { artifacts, agentDir, fixtureRoot, env: fixtureEnv } = harness;
+try {
+applyFixtureEnvironment(fixtureEnv);
+const workspace = join(fixtureRoot, "workspace-a");
+const otherWorkspace = join(fixtureRoot, "workspace-b");
 mkdirSync(join(agentDir, "sessions", "test"), { recursive: true });
 mkdirSync(workspace);
 mkdirSync(otherWorkspace);
@@ -39,32 +39,28 @@ await once(probe, "listening");
 const port = probe.address().port;
 await new Promise((resolve) => probe.close(resolve));
 const base = `http://127.0.0.1:${port}`;
-const log = createWriteStream(join(artifacts, "server.log"));
-const server = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "dev", "-H", "127.0.0.1", "-p", String(port)], {
+const ownedServer = harness.startServer(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "dev", "--turbopack", "-H", "127.0.0.1", "-p", String(port)], {
   cwd: root,
-  env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1", HISTFILE: process.platform === "win32" ? "NUL" : "/dev/null", BASH_SILENCE_DEPRECATION_WARNING: "1", SHELL: process.platform === "win32" ? process.env.SHELL : (process.env.PI_WEB_TEST_SHELL || process.env.SHELL || "/bin/bash") },
-  stdio: ["ignore", "pipe", "pipe"],
+  env: { ...fixtureEnv, NODE_ENV: "development", SHELL: process.platform === "win32" ? fixtureEnv.SHELL : (fixtureEnv.PI_WEB_TEST_SHELL || fixtureEnv.SHELL || "/bin/bash") },
 });
-server.stdout.pipe(log, { end: false });
-server.stderr.pipe(log, { end: false });
-const serverExit = once(server, "exit");
+const server = ownedServer.child;
 let browser;
-try {
-  for (let i = 0; ; i++) {
-    const response = await fetch(`${base}/api/sessions`).catch(() => null);
+  const deadline = Date.now() + 120_000;
+  for (;;) {
+    if (ownedServer.error) throw ownedServer.error;
+    const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) break;
-    assert.ok(i < 120 && server.exitCode === null, "Server did not become ready");
+    assert.ok(Date.now() < deadline && server.exitCode === null && server.signalCode === null, "Server did not become ready; see server.log and events.jsonl");
     await delay(500);
   }
   const chromiumPath = process.env.PI_WEB_TEST_CHROMIUM || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  browser = await chromium.launch(chromiumPath ? { executablePath: chromiumPath } : undefined);
+  browser = await harness.launchBrowser(chromium, chromiumPath ? { executablePath: chromiumPath } : undefined);
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
-    const context = await browser.newContext({ viewport, locale: "en-US" });
+    const context = await harness.newContext(browser, { viewport, locale: "en-US" }, base);
     const page = await context.newPage();
     page.setDefaultTimeout(30_000);
-    const errors = [];
+    const errors = harness.errorsFor(context);
     const created = new Set();
-    page.on("pageerror", (error) => errors.push(error.message));
     page.on("request", (request) => {
       if (new URL(request.url()).pathname === "/api/terminal" && request.method() === "POST") created.add(request.postDataJSON().id);
     });
@@ -243,35 +239,17 @@ try {
       assert.deepEqual(errors, []);
       console.log(`PASS ${viewport.width}: real shell, files, sessions, refresh, reconnect, restart, exit, close during creation, workspace isolation`);
     } catch (error) {
-      await page.screenshot({ path: join(artifacts, `failure-${viewport.width}.png`), fullPage: true });
-      const hitTest = await page.evaluate(() => {
-        const describe = (element) => {
-          const style = getComputedStyle(element);
-          return {
-            tag: element.tagName, id: element.id, class: element.getAttribute("class"),
-            label: element.getAttribute("aria-label"), rect: element.getBoundingClientRect().toJSON(),
-            style: Object.fromEntries(["display", "position", "zIndex", "pointerEvents", "overflow", "flexDirection", "flexWrap"].map((key) => [key, style[key]])),
-            html: element.outerHTML.slice(0, 1500),
-          };
-        };
-        return [...document.querySelectorAll('button[aria-controls="file-panel"]')].map((button) => {
-          const rect = button.getBoundingClientRect();
-          const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-          const ancestors = [];
-          for (let element = button.parentElement; element; element = element.parentElement) ancestors.push(describe(element));
-          return { button: describe(button), point, stack: document.elementsFromPoint(point.x, point.y).map(describe), ancestors };
-        });
-      });
-      writeFileSync(join(artifacts, `failure-${viewport.width}-hit-test.json`), JSON.stringify(hitTest, null, 2));
-      console.error(await page.locator("body").innerText());
+      await harness.fail(error);
+      // DOM snapshots and screenshots belong to the bounded shared capture path;
+      // do not issue unbounded page.evaluate diagnostics after a browser failure.
       throw error;
     } finally {
-      await context.close();
+      await harness.closeContext(context);
     }
   }
+} catch (error) {
+  console.error(error);
+  await harness.fail(error);
 } finally {
-  await browser?.close();
-  server.kill("SIGTERM");
-  await serverExit;
-  log.end();
+  await harness.finish();
 }

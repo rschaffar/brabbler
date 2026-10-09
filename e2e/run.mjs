@@ -1,10 +1,9 @@
 // Adapted from @Nuctori's script-style CI/E2E fixtures in PR #617 (issue #599).
 import assert from "node:assert/strict";
-import { spawn, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { once } from "node:events";
-import { appendFileSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -19,7 +18,7 @@ import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
 import { MODEL_SPEED_IDS, seedModelSpeedFixtures, checkModelSpeed, checkModelSpeedPersistence } from "./model-speed.mjs";
-import { consumeExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
+import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { contextContents, changedContextContents } from "./git-diff-context.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
@@ -32,32 +31,10 @@ process.umask(0o077);
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 assert.ok(!process.env.E2E_SERVER_MODE || process.env.E2E_SERVER_MODE === "dev", "This runner launches only its own Turbopack dev server; no installed runtime or next start");
 assert.ok(!existsSync(join(root, ".next/dev/lock")), "Use this checkout only without an active dev server");
-const artifacts = join(root, "test-results/e2e");
-mkdirSync(artifacts, { recursive: true });
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-e2e-"));
-// Retain private HOME/config for other fixture consumers. Git identity is set
-// locally in each owned repository below: the external isolation forwarder
-// forces GIT_CONFIG_GLOBAL=/dev/null even after production strips GIT_*.
-const home = join(agentDir, "home");
-mkdirSync(home);
-writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = E2E\n\temail = e2e@example.invalid\n[commit]\n\tgpgsign = false\n");
-const fixtureEnv = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config"),
-  XDG_DATA_HOME: join(home, ".local/share"), XDG_STATE_HOME: join(home, ".local/state"),
-  XDG_CACHE_HOME: join(home, ".cache"), XDG_RUNTIME_DIR: join(home, "runtime"),
-  PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1",
-  GIT_CONFIG_GLOBAL: join(home, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" };
-// Native subscription fixtures must not discover host credentials or profiles.
-// Inspect names only; the child and in-process helpers use disposable auth.
-for (const key of Object.keys(fixtureEnv)) {
-  if (/(?:^|_)(?:API_KEY|TOKEN|PASSWORD|SECRET|PRIVATE_KEY|CREDENTIALS|CREDENTIALS_FILE)$/i.test(key)
-    || /^(?:AWS_|AZURE_|GOOGLE_|GCLOUD_|CLOUDSDK_|VERTEX_|BEDROCK_|OPENAI_|ANTHROPIC_|CODEX_)/i.test(key)
-    || /^(?:PI_CODING_AGENT_SESSION_DIR|NODE_OPTIONS|NODE_PATH|(?:https?|all)_proxy)$/i.test(key)) {
-    delete fixtureEnv[key];
-    delete process.env[key];
-  }
-}
-for (const key of ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR"]) mkdirSync(fixtureEnv[key], { recursive: true, mode: 0o700 });
-Object.assign(process.env, fixtureEnv); // All fixture helpers share disposable storage.
+const harness = createHarness(root, "browser");
+const { artifacts, agentDir, env: fixtureEnv } = harness;
+try {
+applyFixtureEnvironment(fixtureEnv); // In-process helpers and children share isolation.
 const project = join(agentDir, "project");
 const otherProject = join(agentDir, "other-project");
 const sessionDir = join(agentDir, "sessions", "e2e");
@@ -105,21 +82,10 @@ function writeSession(id, entries, cwd = project) {
 }
 
 let server;
-let serverExited;
 let browser;
 let page;
 let context;
-let serverError;
-const serverLog = createWriteStream(join(artifacts, "server.log"));
-const interrupt = () => {
-  process.exitCode = 1;
-  server?.kill("SIGTERM");
-  void browser?.close().catch(() => {});
-};
-process.once("SIGINT", interrupt);
-process.once("SIGTERM", interrupt);
 
-try {
   // Seed before startup so the first catalogue scan sees every fixture.
   seedModelSpeedFixtures({ agentDir, writeSession, message, timestamp });
   mkdirSync(join(agentDir, "extensions"));
@@ -278,16 +244,13 @@ try {
   const port = probe.address().port;
   await new Promise((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
   const base = `http://127.0.0.1:${port}`;
-  server = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "dev", "--turbopack", "-H", "127.0.0.1", "-p", String(port)], {
+  const ownedServer = harness.startServer(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "dev", "--turbopack", "-H", "127.0.0.1", "-p", String(port)], {
     cwd: root,
     env: { ...fixtureEnv, NODE_ENV: "development",
       PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  server.once("error", (error) => { serverError = error; });
-  serverExited = once(server, "exit");
-  server.stdout.pipe(serverLog, { end: false });
-  server.stderr.pipe(serverLog, { end: false });
+  server = ownedServer.child;
 
   async function api(path, status = 200) {
     const response = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(30_000) });
@@ -308,8 +271,8 @@ try {
 
   const deadline = Date.now() + 120_000;
   while (true) {
-    if (serverError) throw serverError;
-    assert.equal(server.exitCode, null, "Server exited before readiness; see server.log");
+    if (ownedServer.error) throw ownedServer.error;
+    assert.ok(server.exitCode === null && server.signalCode === null, "Server exited before readiness; see server.log and events.jsonl");
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
@@ -322,29 +285,19 @@ try {
   }
 
   async function runModelSpeedChecks() {
-    browser ??= await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
     for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
       let createdId;
       for (const phase of ["exercise", "fresh"]) {
-        context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
-        await context.tracing.start({ screenshots: true, snapshots: true });
+        context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
         page = await context.newPage();
         page.setDefaultTimeout(30_000);
-        const errors = [];
-        page.on("pageerror", (error) => errors.push(error.message));
-        page.on("console", (event) => {
-          if (event.type() !== "error" || consumeExpectedBrowserConflict(page, event)) return;
-          errors.push(event.text());
-        });
-        page.on("response", (response) => {
-          if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
-        });
+        const errors = harness.errorsFor(context);
         const options = { base, api, post, agentDir, project, artifacts, width: viewport.width };
         if (phase === "exercise") createdId = await checkModelSpeed(page, options);
         else await checkModelSpeedPersistence(page, options, createdId);
         assert.deepEqual(errors, [], `Model-speed browser/server errors at ${viewport.width}px (${phase})`);
-        await context.tracing.stop({ path: join(artifacts, `model-speed-${viewport.width}-${phase}.zip`) });
-        await context.close();
+        await harness.closeContext(context);
         context = undefined;
         page = undefined;
       }
@@ -367,29 +320,25 @@ try {
       await context.close(); context = undefined; page = undefined;
     }
   } else if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") {
-    browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
     for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
-      context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
+      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
       page = await context.newPage();
-      const errors = [];
-      page.on("pageerror", (error) => errors.push(error.message));
-      page.on("console", (event) => { if (event.type() === "error" && !consumeExpectedBrowserConflict(page, event)) errors.push(event.text()); });
-      page.on("response", (response) => { if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`); });
+      const errors = harness.errorsFor(context);
       await checkGitWorkflowPlugin(page, base, gitProject, GIT, artifacts, viewport.width);
       assert.deepEqual(errors, [], "Plugin browser/server errors");
-      await context.close(); context = undefined; page = undefined;
+      await harness.closeContext(context); context = undefined; page = undefined;
     }
   } else if (process.env.E2E_TIMESTAMPS_ONLY === "1") {
-    browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
     for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
-      context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
+      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
       page = await context.newPage();
-      const errors = [];
-      page.on("pageerror", (error) => errors.push(error.message));
+      const errors = harness.errorsFor(context);
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await checkMessageTimestamps(page, timestamp);
       assert.deepEqual(errors, [], "Message timestamp browser errors");
-      await context.close();
+      await harness.closeContext(context);
       context = undefined;
       page = undefined;
     }
@@ -499,7 +448,7 @@ try {
     console.log("PASS: isolated account creation, metadata redaction, project defaults, transient switching and concurrent persisted switches");
   }
 
-  browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+  browser = await harness.launchBrowser(chromium, process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
     ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
     : {});
   // Full acceptance includes speed; unrelated focused switches retain their selection.
@@ -507,7 +456,7 @@ try {
   // A live session keeps the context files it loaded until explicitly reloaded.
   {
     const contextFile = join(otherProject, "AGENTS.md");
-    const checkContext = await browser.newContext();
+    const checkContext = await harness.newContext(browser, {}, base);
     const checkPage = await checkContext.newPage();
     try {
       await post(`/api/agent/${OTHER}`, { type: "get_state" });
@@ -527,7 +476,7 @@ try {
       console.log("PASS: live context changes offer a session reload and clear after applying");
     } finally {
       rmSync(contextFile, { force: true });
-      await checkContext.close();
+      await harness.closeContext(checkContext);
     }
   }
   for (const viewport of [
@@ -535,19 +484,12 @@ try {
     ...(process.env.E2E_ACTIVITY_ONLY === "1" || process.env.E2E_PROJECT_PRIVACY_ONLY === "1" ? [{ width: 700, height: 800 }] : []),
     { width: 390, height: 844 },
   ]) {
-    context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
-    await context.tracing.start({ screenshots: true, snapshots: true });
+    context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
     page = await context.newPage();
     page.setDefaultTimeout(30_000);
-    const errors = [];
+    const errors = harness.errorsFor(context);
     const olderResponses = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (event) => {
-      if (event.type() !== "error" || consumeExpectedBrowserConflict(page, event)) return;
-      errors.push(event.text());
-    });
     page.on("response", (response) => {
-      if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
       const url = new URL(response.url());
       if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
     });
@@ -558,7 +500,7 @@ try {
       await checkFilePanel(page, previewFile);
       await checkFileDiffViews(page, editableFile);
       assert.deepEqual(errors, [], `Browser errors during diff review at ${viewport.width}px`);
-      await context.tracing.stop(); await context.close(); context = undefined;
+      await harness.closeContext(context); context = undefined;
       continue;
     }
     if (process.env.E2E_FILE_EDIT_ONLY === "1") {
@@ -568,8 +510,7 @@ try {
       await checkFileDiffViews(page, editableFile);
       await checkEditableFile(page, editableFile);
       assert.deepEqual(errors, [], "Browser errors during file editing");
-      await context.tracing.stop();
-      await context.close();
+      await harness.closeContext(context);
       context = undefined;
       continue;
     }
@@ -588,29 +529,26 @@ try {
       assert.equal((await api("/api/sessions?force=1")).sessions.find((session) => session.id === ARCHIVE)?.archived, undefined);
       assert.deepEqual(errors, [], "Browser errors during inline restoration");
       console.log("PASS: archived chat restores inline and remains open");
-      await context.tracing.stop();
-      await context.close();
+      await harness.closeContext(context);
       context = undefined;
       page = undefined;
       continue;
     }
     if (process.env.E2E_PROJECT_PRIVACY_ONLY === "1") {
-      await checkProjectPrivacy(page, viewport.width, { base, api, post, selectedSessionId: BRANCH, otherSessionId: OTHER });
+      await checkProjectPrivacy(page, viewport.width, { base, api, post, harness, selectedSessionId: BRANCH, otherSessionId: OTHER });
       assert.deepEqual(errors, [], `Project privacy browser errors at width ${viewport.width}`);
-      await context.tracing.stop({ path: join(artifacts, `project-privacy-${viewport.width}.zip`) });
-      await context.close(); context = undefined; page = undefined;
+      await harness.closeContext(context); context = undefined; page = undefined;
       continue;
     }
     if (process.env.E2E_ACTIVITY_ONLY === "1") {
       // Seed only after the selected chat has loaded, so clicking its newly
       // discovered Activity row must refresh the warning in that same chat.
       await checkActivityOverview(page, viewport.width, {
-        base, api, post, artifacts, waitingSessionId: RICH, selectedSessionId: BRANCH, otherSessionId: OTHER,
+        base, api, post, artifacts, harness, waitingSessionId: RICH, selectedSessionId: BRANCH, otherSessionId: OTHER,
         seedInterruptedRun: () => seedRecoveryRun(`${viewport.width}-activity-recovery`),
       });
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
-      await context.tracing.stop();
-      await context.close();
+      await harness.closeContext(context);
       context = undefined;
       page = undefined;
       continue;
@@ -627,8 +565,7 @@ try {
         body: JSON.stringify({ id: account.id }) });
       assert.equal(removedFixture.status, 200);
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
-      await context.tracing.stop();
-      await context.close();
+      await harness.closeContext(context);
       context = undefined;
       page = undefined;
       continue;
@@ -641,8 +578,7 @@ try {
       assert.match(tools.find((tool) => tool.name === "ask_user").description, /^Ask the user a question/);
       await checkAskUserDialog(page, viewport.width);
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
-      await context.tracing.stop();
-      await context.close();
+      await harness.closeContext(context);
       context = undefined;
       page = undefined;
       continue;
@@ -664,8 +600,7 @@ try {
       await page.getByText("E2E archive fixture", { exact: true }).first().waitFor();
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
       console.log(`PASS: ${viewport.width}px copied session URL opens the saved chat without changing selection`);
-      await context.tracing.stop();
-      await context.close();
+      await harness.closeContext(context);
       context = undefined;
       page = undefined;
       continue;
@@ -726,8 +661,7 @@ try {
       assert.equal(await second.getByRole("checkbox").count(), 0, "Selection mode exits after success");
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
       console.log(`PASS: ${viewport.width}px opt-in bulk archive, restore, and confirmed delete`);
-      await context.tracing.stop();
-      await context.close();
+      await harness.closeContext(context);
       context = undefined;
       page = undefined;
       continue;
@@ -737,13 +671,12 @@ try {
       await checkSessionMovePicker(page, { base, api, sessionId: moveId, project, otherProject, gitProject, targetWorktree, mobile: viewport.width <= 600 });
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
       console.log(`PASS: ${viewport.width}px session move picker worktrees, exclusion, Browse, failure and stale responses`);
-      await context.tracing.stop();
-      await context.close();
+      await harness.closeContext(context);
       context = undefined;
       page = undefined;
       continue;
     }
-    await checkProjectPrivacy(page, viewport.width, { base, api, post, selectedSessionId: BRANCH, otherSessionId: OTHER });
+    await checkProjectPrivacy(page, viewport.width, { base, api, post, harness, selectedSessionId: BRANCH, otherSessionId: OTHER });
     if (viewport.width === 1280) {
       assert.equal(await page.getByRole("button", { name: "Workflow", exact: true }).count(), 0, "Managed Workflow controls must be absent");
       await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
@@ -1113,13 +1046,12 @@ try {
     }
     assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
     console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`);
-    await context.tracing.stop();
-    await context.close();
+    await harness.closeContext(context);
     context = undefined;
     page = undefined;
   }
   if (process.env.E2E_SESSION_LINK_ONLY !== "1") {
-  context = await browser.newContext();
+  context = await harness.newContext(browser, {}, base);
   page = await context.newPage();
   await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /^Account for/ }).click();
@@ -1137,12 +1069,14 @@ try {
   await page.getByRole("button", { name: /^Account for/ }).click();
   await page.getByLabel("Account provider").selectOption("anthropic");
   const unavailablePicker = page.getByLabel("Session account", { exact: true });
-  await unavailablePicker.selectOption(secondaryAccountId);
+  // The deleted binding is already selected. Selecting it again issues a real
+  // rejected PUT, rather than testing restoration/display of the saved binding.
+  assert.equal(await unavailablePicker.inputValue(), secondaryAccountId);
   assert.equal(await unavailablePicker.locator("option:checked").innerText(), "Unavailable account");
   await unavailablePicker.selectOption("");
   assert.deepEqual((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${RICH}`)).session, {});
   console.log("PASS: deleted account remains visible and can be explicitly switched to Pi default");
-  await context.close();
+  await harness.closeContext(context);
   context = undefined;
   page = undefined;
 
@@ -1153,13 +1087,13 @@ try {
     const oauthProvider = oauthEntry.id;
     const { account: deviceAccount } = await post("/api/auth/accounts", { provider: oauthProvider, label: "E2E device", type: "oauth" });
     for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 600 }]) {
-      context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
+      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);
       page = await context.newPage();
       page.setDefaultTimeout(30_000);
       await checkProviderAccountAuthorization(page, { base, sessionId: RICH, provider: oauthProvider,
         providerName: oauthEntry.name, accountLabel: deviceAccount.label, width: viewport.width, artifacts });
-      await context.close();
+      await harness.closeContext(context);
       context = undefined;
       page = undefined;
     }
@@ -1169,18 +1103,7 @@ try {
 } catch (error) {
   console.error(error);
   process.exitCode = 1;
-  if (page) await page.screenshot({ path: join(artifacts, "failure.png") }).catch(() => {});
-  if (context) await context.tracing.stop({ path: join(artifacts, "trace.zip") }).catch(() => {});
+  await harness.fail(error);
 } finally {
-  await browser?.close().catch(() => {});
-  if (server && server.exitCode === null && server.signalCode === null) {
-    server.kill("SIGTERM");
-    const forceKill = setTimeout(() => server.kill("SIGKILL"), 10_000);
-    await serverExited;
-    clearTimeout(forceKill);
-  }
-  serverLog.end();
-  rmSync(agentDir, { recursive: true, force: true });
-  process.off("SIGINT", interrupt);
-  process.off("SIGTERM", interrupt);
+  await harness.finish();
 }

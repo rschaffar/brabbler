@@ -57,8 +57,11 @@ Restart Pi Web after repair.
 
 ## Verification
 
-Run `npm test` for native PTY, lease, output cursor, input queue, and storage
-checks. `npm run test:terminal` starts an isolated development server and runs
-desktop/mobile browser checks using generated session fixtures. Install the
-Playwright Chromium browser first with `npx playwright install chromium`.
-The browser check prints the temporary location of its screenshots and log.
+The [common baseline](testing.md) covers native PTY, lease, output cursor, input
+queue and storage checks. `nix develop -c npm run test:terminal` uses the shell's
+Chromium and starts an isolated development server for desktop/mobile acceptance.
+In a non-Nix checkout, prepare Playwright Chromium before `npm run test:terminal`.
+The shared [browser harness](../e2e/README.md#diagnostics-shutdown-and-retention)
+isolates HOME/XDG/agent/TMP, traces each context, bounds owned-server shutdown and
+prints the unique artifact directory plus retained fixture root. Acceptance never
+uses the installed service, and cleanup of retained resources remains separate.
