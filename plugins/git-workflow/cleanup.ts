@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readFileSync, readSync, readlinkSync, realpathSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { sortedDirectoryNames } from "./inventory-names";
+import { directoryIdentity, holdCleanupParent, supportsNestedCleanup, type CleanupDirectoryIdentity } from "./cleanup-path";
 import { setImmediate } from "node:timers/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { samePath } from "../../lib/paths";
@@ -26,6 +27,9 @@ export interface ArtifactInventory { path: string; entries: number; bytes: numbe
 export interface CleanupSnapshot {
   identity: string; repositoryIdentity: string; fingerprint: string; artifacts: ArtifactInventory[];
   unapprovedArtifacts: string[];
+  artifactParents: string[];
+  artifactParentMetadata: Array<{ path: string; digest: string }>;
+  artifactParentIdentities: CleanupDirectoryIdentity[];
   path?: string; cwd: string; target: string;
 }
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -33,7 +37,16 @@ const oid = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const rootName = /^[a-zA-Z0-9_.-]+$/;
 // Conservative on every platform, including Windows case/trailing-dot aliases.
 const rootKey = (name: string) => name.replace(/[. ]+$/g, "").toLowerCase();
-const validRoot = (name: string) => rootName.test(name) && !["", ".git"].includes(rootKey(name));
+const pathKey = (name: string) => name.split("/").map(rootKey).join("/");
+const validRoot = (name: string) => name.split("/").every((part) => rootName.test(part) && !["", ".git"].includes(rootKey(part)));
+function artifactParentsOf(roots: string[]): string[] {
+  const parents = new Set<string>();
+  for (const root of roots) {
+    const parts = root.split("/");
+    for (let i = 1; i < parts.length; i++) parents.add(parts.slice(0, i).join("/"));
+  }
+  return [...parents];
+}
 export interface CleanupBudget { entries: number; bytes: number; elapsed: number; guard?: () => void }
 export const createCleanupBudget = (guard?: () => void): CleanupBudget => ({ entries: 0, bytes: 0, elapsed: 0, guard });
 export function cleanupPathWithin(root: string, path: string): boolean {
@@ -54,7 +67,16 @@ function permittedRoots(policy: GitSettings): string[] {
 }
 function validateRoots(roots: string[]) {
   if (!Array.isArray(roots) || new Set(roots).size !== roots.length
-    || roots.some((name) => typeof name !== "string" || !validRoot(name))) throw new Error("Select distinct literal top-level generated files or directories");
+    || roots.some((name) => typeof name !== "string" || !validRoot(name))) throw new Error("Select distinct literal relative generated files or directories");
+  const keys = roots.map(pathKey).sort();
+  const selected = new Set<string>();
+  for (const key of keys) {
+    if (selected.has(key) || artifactParentsOf([key]).some((parent) => selected.has(parent))) throw new Error("Generated artifact roots cannot overlap or alias each other");
+    selected.add(key);
+  }
+}
+function directArtifactParents(roots: string[]): string[] {
+  return [...new Set(roots.filter((root) => root.includes("/")).map((root) => root.slice(0, root.lastIndexOf("/"))))];
 }
 function selectedArtifact(name: string, roots: string[]): boolean {
   return roots.some((root) => name === root || name.startsWith(`${root}/`));
@@ -69,11 +91,16 @@ function repositoryIdentityOf(access: CleanupAccess, cwd: string): string {
   return digest([cwd, statIdentity(cwd), common, statIdentity(common)]);
 }
 /** Read-only bounded content inventory, never one JSON row per dependency in the approval. */
-async function inventory(path: string, roots: string[], tracked: Set<string>, budget: CleanupBudget) {
+async function inventory(path: string, roots: string[], tracked: Set<string>, budget: CleanupBudget, artifactParents: string[], metadataParents: string[], explicitRoots: string[]) {
   const started = Date.now();
   const rootBefore = lstatSync(path, { bigint: true });
   const trackedDirectories = new Set<string>();
   for (const file of tracked) { const parts = file.split("/"); for (let i = 1; i < parts.length; i++) trackedDirectories.add(parts.slice(0, i).join("/")); }
+  const parents = new Set(artifactParents);
+  const mutableParents = new Set(metadataParents);
+  const artifactParentMetadata: CleanupSnapshot["artifactParentMetadata"] = [];
+  const artifactParentIdentities: CleanupDirectoryIdentity[] = [{ path: "", identity: directoryIdentity(rootBefore) }];
+  const trackedKeys = new Set([...tracked, ...trackedDirectories].map(pathKey));
   const buffer = Buffer.allocUnsafe(1024 * 1024);
   let entries = 0;
   const bound = () => {
@@ -89,24 +116,33 @@ async function inventory(path: string, roots: string[], tracked: Set<string>, bu
   const mounts = process.platform === "linux" ? readFileSync("/proc/self/mountinfo", "utf8").split("\n").filter(Boolean).map((line) =>
     line.split(" ")[4].replace(/\\([0-7]{3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)))) : [];
   if (mounts.some((mount) => cleanupPathWithin(path, mount))) throw new Error("Mounted cleanup resources are unsupported");
-  const visit = async (name: string): Promise<void> => {
+  const visit = async (name: string, inheritedArtifact?: typeof artifacts[number]): Promise<void> => {
     const absolute = join(path, name);
     const stat = lstatSync(absolute, { bigint: true });
     entries++; budget.entries++; bound();
     if (entries % 128 === 0) await setImmediate();
     if (Number(stat.dev) !== device) throw new Error("Cleanup crosses a mounted filesystem");
-    const artifact = byRoot.get(name.split("/")[0]);
+    const artifact = byRoot.get(name) ?? inheritedArtifact;
     const hash = artifact?.hash ?? tree;
     if (name.split("/").some((part) => rootKey(part) === ".git") && name !== ".git") throw new Error("Nested repository in cleanup resources");
     if (!artifact && name !== ".git" && (stat.isDirectory()
-      ? !trackedDirectories.has(name) : !tracked.has(name))) throw new Error(`Unknown cleanup resource: ${name}`);
-    hash.update(JSON.stringify([name, String(stat.dev), String(stat.ino), String(stat.mode), String(stat.size), String(stat.mtimeNs), String(stat.ctimeNs)]));
+      ? !trackedDirectories.has(name) && !parents.has(name) : !tracked.has(name))) throw new Error(`Unknown cleanup resource: ${name}`);
+    // Direct parents change size/timestamps after an approved child deletion.
+    // Keep those fields separately, still strict before approval/first effect;
+    // between effects only completed deletions exempt their own direct parents.
+    // Identity/mode and all non-artifact entries/content remain bound in tree.
+    if (!artifact && stat.isDirectory() && parents.has(name)) artifactParentIdentities.push({ path: name, identity: directoryIdentity(stat) });
+    const structuralParent = !artifact && stat.isDirectory() && mutableParents.has(name);
+    const metadata = [String(stat.size), String(stat.mtimeNs), String(stat.ctimeNs)];
+    if (structuralParent) artifactParentMetadata.push({ path: name, digest: digest(metadata) });
+    hash.update(JSON.stringify([name, String(stat.dev), String(stat.ino), String(stat.mode),
+      ...(structuralParent ? [] : metadata)]));
     if (artifact) artifact.entries++;
     if (stat.isSymbolicLink()) {
       if (roots.includes(name)) throw new Error("Generated artifact roots cannot be symlinks");
       hash.update(readlinkSync(absolute)); // Never follow a link, including one outside this checkout.
     } else if (stat.isDirectory()) {
-      for await (const child of names(absolute)) await visit(`${name}/${child}`);
+      for await (const child of names(absolute)) await visit(`${name}/${child}`, artifact);
     } else if (stat.isFile()) {
       budget.bytes += Number(stat.size); bound();
       if (artifact) artifact.bytes += Number(stat.size);
@@ -127,22 +163,30 @@ async function inventory(path: string, roots: string[], tracked: Set<string>, bu
     if (after.ino !== stat.ino || after.dev !== stat.dev || after.mtimeNs !== stat.mtimeNs || after.ctimeNs !== stat.ctimeNs) throw new Error("Cleanup resource changed during inventory");
   };
   try {
-    const topEntries = new Set<string>();
-    for await (const name of names(path)) topEntries.add(name);
-    const trackedRoots = new Set([...tracked].map((file) => rootKey(file.split("/")[0])));
-    for (const root of roots) {
-      // lstat alone accepts alternate spellings on case-insensitive filesystems.
-      // Require the literal enumerated entry, not an alias with an empty inventory.
-      if (!topEntries.has(root)) throw new Error(`Artifact must match an exact top-level entry: ${root}`);
-      if (trackedRoots.has(rootKey(root))) throw new Error("Generated roots cannot include or alias tracked source");
-      const stat = lstatSync(join(path, root));
-      if (!stat.isDirectory() && !stat.isFile()) throw new Error("Select existing regular generated files or directories only; symlink roots are refused");
+    // Validate every component before reading below it: no aliased entry or
+    // symlink ancestor may redirect inventory/deletion outside the worktree.
+    // Discovery must not hide a typo, alias or symlink in an explicit child
+    // by replacing it with a valid wholly ignored parent.
+    for (const root of new Set([...roots, ...explicitRoots])) {
+      let directory = path; let prefix = "";
+      const parts = root.split("/");
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i]; prefix = prefix ? `${prefix}/${part}` : part;
+        let exact = false;
+        for await (const name of names(directory)) if (name === part) { exact = true; break; }
+        if (!exact) throw new Error(`Artifact must match an exact directory entry: ${prefix}`);
+        if (trackedKeys.has(pathKey(prefix)) && (i === parts.length - 1 || !trackedDirectories.has(prefix))) throw new Error("Generated roots cannot include or alias tracked source");
+        const absolute = join(directory, part);
+        const stat = lstatSync(absolute);
+        if (i < parts.length - 1 ? !stat.isDirectory() : !stat.isDirectory() && !stat.isFile()) throw new Error("Select existing regular generated files or directories only; symlink roots and ancestors are refused");
+        directory = absolute;
+      }
     }
     for await (const name of names(path)) await visit(name);
     if (artifacts.some((item) => item.entries === 0)) throw new Error("Artifact root was not inventoried; resources retained");
     const rootAfter = lstatSync(path, { bigint: true });
     if (rootAfter.ino !== rootBefore.ino || rootAfter.dev !== rootBefore.dev || rootAfter.mtimeNs !== rootBefore.mtimeNs || rootAfter.ctimeNs !== rootBefore.ctimeNs) throw new Error("Cleanup root changed during inventory");
-    return { tree: tree.digest("hex"), artifacts: artifacts.map(({ hash, ...entry }) => ({ ...entry, digest: hash.digest("hex") })) };
+    return { tree: tree.digest("hex"), artifactParentMetadata, artifactParentIdentities, artifacts: artifacts.map(({ hash, ...entry }) => ({ ...entry, digest: hash.digest("hex") })) };
   } finally { budget.elapsed += Date.now() - started; }
 }
 async function* gitRecords(access: CleanupAccess, cwd: string, args: string[]) {
@@ -154,7 +198,7 @@ async function assertSourceClean(access: CleanupAccess, path: string, roots: str
     if (!change.startsWith("?? ") || !selectedArtifact(change.slice(3), roots)) throw new Error("Cleanup worktree has source changes or unapproved untracked files");
   }
 }
-export async function captureCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess, budget = createCleanupBudget(), discoverArtifacts = true): Promise<CleanupSnapshot> {
+export async function captureCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess, budget = createCleanupBudget(), discoverArtifacts = true, frozenStructure?: Pick<CleanupSnapshot, "artifactParents" | "artifactParentMetadata">): Promise<CleanupSnapshot> {
   if (!oid.test(op.featureTip) || !oid.test(op.integrationCommit)) throw new Error("Cleanup requires full exact feature and integration commit IDs");
   validateRoots(op.artifactRoots);
   let roots = [...op.artifactRoots];
@@ -176,6 +220,8 @@ export async function captureCleanup(callerCwd: string, op: CleanupOperation, po
   await access.git(cwd, ["merge-base", "--is-ancestor", op.integrationCommit, targetTip]);
   const registrations = await access.worktrees(cwd);
   let path: string | undefined; let files: Awaited<ReturnType<typeof inventory>> | undefined; let identity: unknown;
+  let artifactParents = frozenStructure?.artifactParents ?? artifactParentsOf(roots);
+  let metadataParents = frozenStructure?.artifactParentMetadata.map((item) => item.path) ?? directArtifactParents(roots);
   if (op.worktreePath) {
     if (!isAbsolute(op.worktreePath) || lstatSync(op.worktreePath).isSymbolicLink()) throw new Error("Select a physical absolute linked worktree");
     path = await access.checkout(op.worktreePath, cwd);
@@ -187,21 +233,26 @@ export async function captureCleanup(callerCwd: string, op: CleanupOperation, po
       || callerWithin) throw new Error("Never clean main/caller, locked, prunable or changed worktrees");
     if (access.inUse(path)) throw new Error("Cleanup worktree is in active use");
     if (op.removeWorktree && discoverArtifacts) {
-      // Git collapses wholly ignored directories. Never promote a nested ignored
-      // file to its parent: that could sweep in unrelated untracked/source files.
+      // Preserve exact Git paths, including nested caches. Git may collapse a
+      // wholly ignored directory; never promote a path to a source parent.
       const discovered = new Set(roots);
       for await (const name of gitRecords(access, path, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"])) {
-        const top = name.replace(/\/$/, "");
-        if (top && !top.includes("/")) discovered.add(top);
+        const root = name.replace(/\/$/, "");
+        if (root) discovered.add(root);
       }
-      roots = [...discovered];
+      // If Git reports an ignored parent of an explicit child, inventory it once
+      // and show that actual parent in approval, never delete overlapping roots.
+      roots = [...discovered].filter((root) => !artifactParentsOf([root]).some((parent) => discovered.has(parent)));
       validateRoots(roots);
+      artifactParents = artifactParentsOf(roots);
+      metadataParents = directArtifactParents(roots);
     }
     if (roots.length && policy.cleanupArtifacts === "keep") throw new Error("Cleanup conflicts with a configured Keep choice; artifact resources retained");
+    if (roots.some((root) => root.includes("/")) && !supportsNestedCleanup()) throw new Error("Nested cleanup requires Linux no-follow directory handles; resources retained");
     await assertSourceClean(access, path, roots);
     const tracked = new Set<string>();
     for await (const name of gitRecords(access, path, ["ls-files", "--cached", "-z"])) if (name) tracked.add(name);
-    files = await inventory(path, roots, tracked, budget);
+    files = await inventory(path, roots, tracked, budget, artifactParents, metadataParents, op.artifactRoots);
     if (access.inUse(path)) throw new Error("Cleanup worktree became active during inventory");
     const currentEntry = (await access.worktrees(cwd)).find((item) => samePath(item.path, path!));
     if (digest(currentEntry) !== digest(entry) || !samePath(await access.checkout(path, cwd), path)) throw new Error("Worktree registration changed during inventory");
@@ -217,7 +268,8 @@ export async function captureCleanup(callerCwd: string, op: CleanupOperation, po
   await access.git(cwd, ["merge-base", "--is-ancestor", op.integrationCommit, await directBranch(access, cwd, target)]);
   const bound = digest([repositoryIdentity, target, op.featureBranch, op.featureTip, op.integrationCommit, identity]);
   return { cwd, target, path, repositoryIdentity, identity: bound, artifacts: files?.artifacts ?? [],
-    unapprovedArtifacts: roots.filter((root) => !permitted.includes(root)), fingerprint: digest([bound, files?.artifacts ?? []]) };
+    artifactParents, artifactParentMetadata: files?.artifactParentMetadata ?? [], artifactParentIdentities: files?.artifactParentIdentities ?? [],
+    unapprovedArtifacts: roots.filter((root) => !permitted.includes(root)), fingerprint: digest([bound, files?.artifacts ?? [], files?.artifactParentMetadata ?? []]) };
 }
 export async function performCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess,
   snapshot: CleanupSnapshot, guardPolicy: () => void, runGit: (args: string[]) => Promise<string>, effects: string[],
@@ -225,18 +277,28 @@ export async function performCleanup(callerCwd: string, op: CleanupOperation, po
   // Freeze the exact prepared list. Later ignored files are NOT discovered or
   // implicitly added under an earlier approval.
   let remaining = snapshot.artifacts.map((item) => item.path);
+  const changedParents = new Set<string>();
   const revalidate = async () => {
     guardPolicy();
-    const current = await captureCleanup(callerCwd, { ...op, artifactRoots: remaining }, policy, access, budget, false);
-    if (current.identity !== snapshot.identity || current.artifacts.some((item) =>
+    const current = await captureCleanup(callerCwd, { ...op, artifactRoots: remaining }, policy, access, budget, false, snapshot);
+    if (current.identity !== snapshot.identity || current.artifactParentMetadata.some((item) =>
+      !changedParents.has(item.path) && item.digest !== snapshot.artifactParentMetadata.find((original) => original.path === item.path)?.digest)
+      || current.artifacts.some((item) =>
       digest(item) !== digest(snapshot.artifacts.find((original) => original.path === item.path)))) throw new Error("Cleanup resources changed; remaining resources retained");
     guardPolicy();
   };
   for (const root of snapshot.artifacts.map((item) => item.path)) {
     await revalidate();
-    onDispatch(`Remove generated artifact: ${root}`);
-    await rm(join(snapshot.path!, root), { recursive: true });
+    // Hold physical ancestors across the destructive call. An external rename
+    // or symlink substitution cannot redirect nested rm to an outside target.
+    const held = root.includes("/") ? holdCleanupParent(snapshot.path!, root, snapshot.artifactParentIdentities) : undefined;
+    try {
+      guardPolicy(); held?.validate();
+      onDispatch(`Remove generated artifact: ${root}`);
+      await rm(held?.path ?? join(snapshot.path!, root), { recursive: true });
+    } finally { held?.close(); }
     effects.push(`Removed generated artifact: ${root}`);
+    if (root.includes("/")) changedParents.add(root.slice(0, root.lastIndexOf("/")));
     remaining = remaining.filter((name) => name !== root);
   }
   await revalidate();

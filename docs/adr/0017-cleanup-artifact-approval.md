@@ -2,6 +2,7 @@
 
 - Status: Accepted by user (2026-10-08)
 - Revises: ADR 0016's setting-only artifact authorization; other boundaries remain
+- Revised by: [ADR 0019](0019-nested-cleanup-artifacts.md), extending exact artifact paths below top level
 - Implementation: [cleanup artifact plan](../plans/archived/2026-10-08_cleanup-artifact-approval-plan.md)
 
 ## Context

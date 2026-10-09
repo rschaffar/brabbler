@@ -20,7 +20,7 @@ desktop/mobile sizes), `E2E_GIT_WORKFLOW_PLUGIN_ONLY=1` (optional bundled plugin
 settings, all six approval layouts, multi-file diff/collapse controls, snapshots,
 historical receipts/expiry fallback, reconnect, cancellation, disable and Stop at
 desktop/mobile sizes; combined cleanup also covers discovered directories and
-regular files, one-time approval/rejection under Allow, and reusable allowlists). The plugin-only selection
+regular files, nested Python caches beside tracked source, one-time approval/rejection under Allow, and reusable allowlists). The plugin-only selection
 uses a fixture command delegating to the real server implementation, no model;
 real Pi tool-registration lifecycle is also tested separately in `plugins/`. The managed Workflow browser/containment suites are
 removed, not skipped acceptance requirements.

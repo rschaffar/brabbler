@@ -47,7 +47,9 @@ export default function (pi) {
 }
 export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifacts, width) {
   const command = async (body) => {
-    const response = await page.request.post(`${base}/api/agent/${sessionId}`, { data: body });
+    // These one-shot probes are separated by long interactive settings steps.
+    // Do not reuse an idle API-test socket; no retry or error suppression.
+    const response = await page.request.post(`${base}/api/agent/${sessionId}`, { data: body, headers: { Connection: "close" } });
     assert.ok(response.ok(), await response.text()); return (await response.json()).data;
   };
   const patch = async (set, scope = "global", reset = [], cwd = repo) => {
@@ -442,54 +444,67 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   await saved.getByRole("button", { name: "Collapse", exact: true }).click();
   await patch({}, "project", ["commit"]);
 
-  // Even under Allow, unpermitted discovered directories AND a regular file
-  // require one-time approval. This same real-Git fixture runs on desktop/mobile.
-  const cleanupRepo = `${repo}-cleanup-${width}`;
+  // Keep both five-root scenarios independently bounded by the existing browser
+  // deadlines. Together they retain every original build-output check and add
+  // a mixed top-level/nested approval beside tracked source. The eight-root
+  // combination is also covered by real-Git integration tests.
+  for (const cleanupMode of process.platform === "linux" ? ["cleanup", "cleanup-nested"] : ["cleanup"]) {
+  const nestedCleanup = cleanupMode === "cleanup-nested";
+  const cleanupRepo = `${repo}-${cleanupMode}-${width}`;
   execFileSync("git", ["init", "-qb", "main", cleanupRepo]);
   const cleanupGit = (...args) => execFileSync("git", ["-C", cleanupRepo, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8" }).trim();
   cleanupGit("config", "user.name", "E2E"); cleanupGit("config", "user.email", "e2e@example.invalid");
-  writeFileSync(join(cleanupRepo, ".gitignore"), "node_modules/\n.codegraph/\n.next/\ntest-results/\nnext-env.d.ts\n");
+  writeFileSync(join(cleanupRepo, ".gitignore"), "node_modules/\n.codegraph/\n.next/\ntest-results/\nnext-env.d.ts\n__pycache__/\n*.pyc\n");
+  mkdirSync(join(cleanupRepo, "src/meetings"), { recursive: true });
+  writeFileSync(join(cleanupRepo, "src/meetings/main.py"), "# tracked sibling, not a cleanup artifact\n");
+  mkdirSync(join(cleanupRepo, "src/other"));
+  writeFileSync(join(cleanupRepo, "src/other/main.py"), "# second tracked sibling\n");
   cleanupGit("add", "."); cleanupGit("commit", "-qm", "Cleanup base");
   const cleanupPath = join(`${cleanupRepo}-worktrees`, "cleanup");
   cleanupGit("worktree", "add", "-b", "cleanup", cleanupPath);
   execFileSync("git", ["-C", cleanupPath, "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-qm", "Integrated feature"]);
   cleanupGit("merge", "--no-ff", "--no-edit", "cleanup");
-  const cleanupRoots = ["node_modules", ".codegraph", ".next", "test-results", "next-env.d.ts"];
-  for (const root of cleanupRoots.slice(0, -1)) { mkdirSync(join(cleanupPath, root)); writeFileSync(join(cleanupPath, root, "generated"), "fixture artifact"); }
+  const cleanupDirectories = nestedCleanup ? ["node_modules", "src/meetings/__pycache__", "src/other/__pycache__"] : ["node_modules", ".codegraph", ".next", "test-results"];
+  const cleanupFiles = ["next-env.d.ts", ...(nestedCleanup ? ["src/meetings/main.pyc"] : [])];
+  const cleanupRoots = [...cleanupDirectories, ...cleanupFiles];
+  for (const root of cleanupDirectories) { mkdirSync(join(cleanupPath, root), { recursive: true }); writeFileSync(join(cleanupPath, root, "generated"), "fixture artifact"); }
   writeFileSync(join(cleanupPath, "next-env.d.ts"), "/// <reference types=\"next\" />\n");
+  if (nestedCleanup) writeFileSync(join(cleanupPath, "src/meetings/main.pyc"), "fixture bytecode");
   assert.ok((await page.request.post(`${base}/api/cwd/validate`, { data: { cwd: cleanupRepo } })).ok());
   const cleanupSettings = await patch({ cleanupFeature: "allow", targetBranch: "main", approvedArtifactRoots: null }, "project", [], cleanupRepo);
   const cleanupTip = cleanupGit("rev-parse", "cleanup");
   const cleanupDecisionsBefore = decisions().length;
   page.on("request", recordReviewRequest);
   try {
-    card = await start("cleanup", "Clean up integrated Git feature");
+    card = await start(cleanupMode, "Clean up integrated Git feature");
     for (const root of cleanupRoots) await card.getByText(root, { exact: true }).waitFor();
     assert.equal(await card.getByText(/entries · .* bytes · SHA256/).count(), cleanupRoots.length);
     await card.getByRole("button", { name: "Keep resources", exact: true }).click();
-    await finish("cleanup", "refused");
+    await finish(cleanupMode, "refused");
     assert.equal(decisions().length, cleanupDecisionsBefore + 1);
     assert.equal(cleanupGit("rev-parse", "cleanup"), cleanupTip);
     for (const root of cleanupRoots) assert.equal(existsSync(join(cleanupPath, root)), true, `Reject retained ${root}`);
+    assert.equal(readFileSync(join(cleanupPath, "src/meetings/main.py"), "utf8"), "# tracked sibling, not a cleanup artifact\n");
     const rejectedCleanup = page.locator("[data-operation-receipt]").last();
     await rejectedCleanup.getByRole("button", { name: /Cancelled/ }).click();
     await rejectedCleanup.getByText("Not approved · ask · one-time artifacts (project allow)", { exact: true }).waitFor();
     await rejectedCleanup.getByRole("button", { name: "Collapse", exact: true }).click();
 
-    card = await start("cleanup", "Clean up integrated Git feature");
+    card = await start(cleanupMode, "Clean up integrated Git feature");
     await page.reload({ waitUntil: "domcontentloaded" });
     card = page.getByRole("group", { name: "Clean up integrated Git feature", exact: true });
     await card.waitFor(); await checkBlockingCard(card);
     assert.equal(await card.count(), 1, "One live card covers the operation and all artifacts");
     for (const root of cleanupRoots) await card.getByText(root, { exact: true }).waitFor();
-    await card.getByText(/1 entries · .* bytes · SHA256/).waitFor();
+    assert.equal(await card.getByText(/1 entries · .* bytes · SHA256/).count(), cleanupFiles.length, "Regular files have exact inventories");
     assert.equal(await card.getByText(/entries · .* bytes · SHA256/).count(), cleanupRoots.length);
-    await page.screenshot({ path: join(artifacts, `git-plugin-cleanup-approval-${width}.png`) });
+    await page.screenshot({ path: join(artifacts, `git-plugin-${cleanupMode}-approval-${width}.png`) });
     await card.getByRole("button", { name: "Clean up listed resources", exact: true }).click();
-    await finish("cleanup", "completed");
+    await finish(cleanupMode, "completed");
     assert.equal(decisions().length, cleanupDecisionsBefore + 2, "Exactly one decision for each cleanup attempt");
     assert.equal(decisions().at(-1).action, "approve");
     assert.equal(existsSync(cleanupPath), false); assert.equal(cleanupGit("branch", "--list", "cleanup"), "");
+    assert.equal(readFileSync(join(cleanupRepo, "src/meetings/main.py"), "utf8"), "# tracked sibling, not a cleanup artifact\n");
     const cleanupReceipt = page.locator("[data-operation-receipt]").last();
     await cleanupReceipt.getByRole("button", { name: /Succeeded/ }).waitFor();
     const cleanupOperationId = await cleanupReceipt.getAttribute("data-operation-receipt");
@@ -521,6 +536,7 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     await historicalCleanup.getByRole("button", { name: "Collapse", exact: true }).click();
   } finally {
     page.off("request", recordReviewRequest);
+  }
   }
   card = await start("large");
   const exactReview = card.getByRole("region", { name: "Exact operation review" });
