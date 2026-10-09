@@ -5,18 +5,23 @@
 From the physical Linux working-tree root, including untracked test helpers:
 
 ```sh
-nix develop -c node nix/test-offline.mjs
+nix develop .#test -c node nix/test-offline.mjs
 # Focused work (repeat --file for multiple exact paths):
-nix develop -c node nix/test-offline.mjs --file lib/worktree.test.mjs
-# Desired concurrency, inventory, help:
-nix develop -c node nix/test-offline.mjs --jobs 16
-nix develop -c node nix/test-offline.mjs --inventory-only
-nix develop -c node nix/test-offline.mjs --help
+nix develop .#test -c node nix/test-offline.mjs --file lib/worktree.test.mjs
+# Smaller worker budget for concurrent reviewers, inventory, help:
+nix develop .#test -c node nix/test-offline.mjs --jobs 2
+nix develop .#test -c node nix/test-offline.mjs --inventory-only
+nix develop .#test -c node nix/test-offline.mjs --help
+# Preserve regenerable bulk for dependency/generated-file debugging:
+nix develop .#test -c node nix/test-offline.mjs --keep-workspace
 ```
 
 Use focused checks while fixing defects, then a full run at a stable checkpoint
-once edits and review changes settle. One owner coordinates dependency preparation,
-export and heavy acceptance; source writers pause during export and acceptance.
+once edits and review changes settle. One owner coordinates dependency preparation
+and validation budgets. Pause source writers during snapshot export; after export,
+the run uses its own source, not subsequent edits. Simultaneous reviewers may run
+from the same worktree: each invocation owns its snapshot and mutable state.
+Record the source digest, not merely a branch name, when comparing results.
 A selected-file pass is not full-suite acceptance. Focused offline runs still
 perform the complete static preparation: there is no tests-only mode yet. Bundled-plugin Git integration tests remain separate; the
 [Git plugin guide](git-workflow-plugin.md#verification) owns their commands and
@@ -88,12 +93,19 @@ automatically to bypass a shell refusal.
 The launcher scrubs HOME, all XDG/agent/TMP directories, Nix configuration,
 credentials, proxies and Node options. Its inner Nix invocation is local/offline,
 with builders, substitution and registries disabled. Missing cached prerequisites
-fail without remote fallback. `nix develop --offline --no-write-lock-file -c …`
+fail without remote fallback. `nix develop --offline --no-write-lock-file .#test -c …`
 also makes shell entry local-only; first-time dependency preparation is separate.
 No global installation, live settings or installed-service contact is involved.
 
-Normal execution copies source/dependencies into a private disposable workspace
-and runs exporter contracts, genuine `next typegen`,
+The `test` shell supplies pinned tools and immutable Nix dependencies without
+creating or modifying checkout-local `node_modules`. The default development
+shell still prepares a writable worktree-local copy for manual development.
+Identical manifests/toolchain/platform reuse the same dependency output.
+
+Normal core execution copies filtered source into a private workspace and links
+`node_modules` directly to the read-only Nix output. Source is made writable before
+attaching that link; store permissions are never changed. It runs exporter
+contracts, genuine `next typegen`,
 `tsc --noEmit --incremental false`, lint, then the tests. Generated types never
 pollute the checkout. Help runs export/verification but no test pipeline;
 inventory-only discovers tests without static checks or test execution.
@@ -120,8 +132,11 @@ All discovered files are included. Unreviewed files warn and run exclusively.
 Nix `max-jobs` limits derivations, not inner Node workers. A check honors its actual
 positive `NIX_BUILD_CORES` allocation. The fresh app honors that cap when supplied
 but does not invent one; `nix run --cores` alone is not an app runtime allocation.
-Do not overlap browser/SDK-sensitive acceptance with other heavy validation.
-Use defaults unless same-input, same-environment measurements justify a change.
+Concurrent invocations have independent writable state, but these limits and
+exclusive lanes are per runner, not machine-wide reservations. Coordinate worker
+budgets when running several reviewers (for example, `--jobs 2` per core run).
+Do not oversubscribe browser/SDK-sensitive acceptance or inflate deadlines to mask
+contention. Keep normal full acceptance separate from deliberate concurrency tests.
 Record actual command wall time separately from shell/dependency preparation,
 agent reasoning, review, approval and idle coordination time. File/case duration
 sums and interrupted runs are not comparable full-suite wall-time benchmarks.
@@ -144,12 +159,20 @@ success cannot mask pipeline failure. Failed builder trees retained with
 Record the printed artifact and fixture/export roots and their disposition in the
 handoff; report storage pressure rather than making space by deleting unknown
 resources. Browser/terminal run manifests also name their separate fixture roots.
-Launcher exports and fresh-app bulk roots are retained on success as well as
-failure (the enclosing temporary-directory owner may have a lifetime policy).
-Successful per-file workspace removal does not remove that bulk root. Existing
-failed/interrupted/uncertain resources require separately authorized cleanup;
-store GC is not failed-build-tree cleanup. Do not use wildcard or age-based
-reapers. Settlement covers observed original Linux process identities and a final
+`lifecycle.json` records execution, dependency identity, settlement and cleanup;
+`execution.log` retains core preparation/runner output. After observed settlement,
+the run owner removes only its own `source/node_modules`, `source/.next` and
+`tmp/node-compile-cache`, on success **or failure**. Store links are unlinked, never
+followed. Root/source identity changes, mountpoints, observation failures and
+interruption prevent cleanup. `--keep-workspace` retains these regenerables too.
+A cleanup error is reported as refused/possibly partial, not silently successful.
+
+Source snapshots, manifests, reports and failed fixture state remain for diagnosis;
+this is intentionally not a zero-artifact policy. Launcher exports may also be
+subject to their enclosing temporary-directory owner's lifetime policy. No old
+root is discovered or swept. Existing failed/interrupted/uncertain resources need
+separately authorized cleanup; Nix GC does not clean ordinary `/tmp` copies or
+failed build trees. Do not use wildcard or age-based reapers. Settlement covers observed original Linux process identities and a final
 session scan, not arbitrary unobserved escaped descendants; fixtures must settle
 their own detached helpers.
 
@@ -167,15 +190,20 @@ Cached checks are declared-input evidence, not fresh browser/runtime acceptance.
 `nix flake check --no-build` is evaluation only. Browser/terminal coverage is separate:
 
 ```sh
-nix develop -c npm run test:e2e
-nix develop -c npm run test:terminal
+nix develop .#test -c npm run test:e2e
+nix develop .#test -c npm run test:terminal
 ```
 
 Use disposable fixture storage; see [e2e/README.md](../e2e/README.md). These scripts
 launch only their own dev server on a free port, never the installed port 30141.
-Do not launch another server while that checkout’s `.next/dev/lock` is active.
+Linux launchers snapshot the checkout before starting the suite; each snapshot
+has its own `.next`, dependency copy and server. They can run concurrently from
+the same worktree without touching its manual dev server. Browser dependency
+copies remain necessary for Turbopack and are cleaned under the same settled-run
+policy; details and non-Linux legacy execution are in the browser guide.
 Removed Workflow E2E/containment tests are not acceptance requirements. Checks
-grant no integration, publication, deployment or resource-cleanup authority.
+grant no integration, publication, deployment or cleanup authority over existing
+resources outside their explicitly owned regenerable bulk.
 
 References: [Node test execution](https://nodejs.org/docs/latest-v22.x/api/test.html#test-runner-execution-model),
 [Nix cores/jobs](https://nix.dev/manual/nix/stable/advanced-topics/cores-vs-jobs),

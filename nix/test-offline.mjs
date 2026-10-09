@@ -19,7 +19,7 @@ export function validateArgs(args) {
     const flag = args[i];
     if (flag !== '--file' && seen.has(flag)) throw fail(`Duplicate option: ${flag}`);
     seen.add(flag);
-    if (flag === '--help' || flag === '--inventory-only') continue;
+    if (flag === '--help' || flag === '--inventory-only' || flag === '--keep-workspace') continue;
     if (flag === '--jobs') {
       const value = args[++i];
       if (!/^(?:[1-9]|[12][0-9]|3[0-2])$/.test(value ?? '')) throw fail('--jobs must be a canonical integer 1..32');

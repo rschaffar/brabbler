@@ -59,6 +59,11 @@
       "reason": "Shared acceptance-harness regressions mutate test-process umask/exit status and exercise owned child SIGTERM/SIGKILL lifecycle; exclusive avoids nested process contention. No browser/terminal acceptance substitution."
     },
     {
+      "path": "lib/test-lifecycle.test.mjs",
+      "lane": "E",
+      "reason": "Owned process supervision and FD-safe cleanup contracts launch concurrent tiny children and exercise interruption; exclusive avoids nesting with SDK-sensitive acceptance. No browser acceptance substitution."
+    },
+    {
       "path": "lib/test-runner.test.mjs",
       "lane": "E",
       "reason": "Runner-only mechanics deliberately launch tiny two-worker subprocesses, exercise SIGINT/TERM and mutate sentinel env/umask; exclusive avoids nested pool oversubscription. No SDK/native proof."

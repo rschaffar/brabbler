@@ -1,11 +1,13 @@
 # Browser and terminal regression tests
 
 ```sh
-nix develop -c npm run test:e2e
-nix develop -c env E2E_DIFF_CONTEXT_ONLY=1 npm run test:e2e
-nix develop -c env E2E_MODEL_SPEED_ONLY=1 npm run test:e2e
-nix develop -c env E2E_RUNNING_FORKS_ONLY=1 npm run test:e2e
-nix develop -c npm run test:terminal
+nix develop .#test -c npm run test:e2e
+nix develop .#test -c env E2E_DIFF_CONTEXT_ONLY=1 npm run test:e2e
+nix develop .#test -c env E2E_MODEL_SPEED_ONLY=1 npm run test:e2e
+nix develop .#test -c env E2E_RUNNING_FORKS_ONLY=1 npm run test:e2e
+nix develop .#test -c npm run test:terminal
+# Retain copied dependencies and generated files for debugging:
+nix develop .#test -c npm run test:e2e -- --keep-workspace
 ```
 
 Focused browser switches: `E2E_TRUST_ONLY=1` (worktree/project grants, revocation and restriction at desktop/mobile sizes), `E2E_RUNNING_FORKS_ONLY=1` (historical-message, root, and quoted-response forks while a real SDK extension prompt waits for input; original question replay and completion at desktop/mobile sizes), `E2E_ASK_USER_ONLY=1`, `E2E_ACTIVITY_ONLY=1`,
@@ -25,11 +27,26 @@ uses a fixture command delegating to the real server implementation, no model;
 real Pi tool-registration lifecycle is also tested separately in `plugins/`. The managed Workflow browser/containment suites are
 removed, not skipped acceptance requirements.
 
-Run at a stable source checkpoint, separately from heavy unit/SDK validation.
-The scripts require no `.next/dev/lock` in their checkout and launch only their
-own **Turbopack dev server on a free loopback port**. They never contact/restart
-the installed service on 30141. Do not use production builds, `next start`,
-webpack fallback, competing servers or forced clicks.
+On Linux, `e2e/run.mjs` and `e2e/terminal.mjs` are dependency-free launchers.
+They export and verify filtered source (including untracked helpers, excluding
+`.env*`, private configuration and generated state), copy matching dependencies,
+and execute `browser-suite.mjs` / `terminal-suite.mjs` from that snapshot.
+Each invocation owns its `.next`, fixtures, reports and **Turbopack dev server on
+a free loopback port**. Concurrent reviewers in the same worktree do not share
+writable state or disturb its manual dev server. Pause writers during export and
+coordinate CPU/RAM budgets; isolation is not a resource reservation.
+
+The `test` Nix shell supplies cached modules without preparing checkout-local
+modules; dependency manifests must match the snapshot. Non-Nix Linux runs need
+Python 3, GNU coreutils and a prepared physical `node_modules`. Nothing installs
+or downloads dependencies during a run. Other platforms can explicitly use
+`npm run test:e2e -- --in-place` (or `test:terminal`) for the legacy execution
+model: it retains resources, requires a free checkout `.next/dev/lock`, and does
+**not** promise same-worktree concurrency. There is no silent in-place fallback.
+
+No path contacts/restarts the installed service on 30141. Do not use production
+builds, `next start`, webpack fallback, competing servers in one snapshot or
+forced clicks.
 
 The `test:e2e` and `test:terminal` runners share `e2e/harness.mjs`: private
 HOME/XDG/agent/TMP (and Windows profile/app-data) storage, local repositories and a
@@ -95,8 +112,12 @@ fonts, reconnect/restart, exit, close-during-creation and workspace isolation.
 ## Diagnostics, shutdown and retention
 
 Every `test:e2e` / `test:terminal` invocation prints a new private directory under
-`test-results/e2e/browser-*` or `test-results/e2e/terminal-*`. A later run never
-reuses it. CI's existing recursive artifact upload includes these directories.
+the original checkout's `test-results/e2e/browser-*` or `test-results/e2e/terminal-*`.
+A later run never reuses it. CI's recursive artifact upload includes these paths.
+The outer `lifecycle.json` records the original checkout, snapshot, dependency
+identity, phase outcomes, bounded process observations and cleanup disposition.
+Source export/verification logs, `source-input.json`, and `suite.log` remain beside
+the existing harness diagnostics. `run.json.root` now names the executed snapshot.
 
 - `run.json` records the checkout, start/end, status, errors and exact separate
   fixture-storage root. An unfinished `running` record is not acceptance.
@@ -123,11 +144,19 @@ reuses it. CI's existing recursive artifact upload includes these directories.
   group absence. A surviving/unknown group fails without signaling a recycled group
   ID; escaped descendants and Windows descendants are **not certified**. Unsettled
   shutdown is a failure, not a cleanup certificate.
-- Artifacts **and fixture roots are retained** on both success and failure. The
-  paths in the manifest, not an age/wildcard scan, identify candidates for separately
-  authorized cleanup. Nothing here authorizes deleting old roots, dependencies,
-  backups or feature resources. Auxiliary standalone PDF/theme scripts are not
-  part of these two runner lifecycle guarantees.
+- Source snapshots, artifacts and fixture roots are retained on success and failure.
+  After the outer supervisor observes settlement **and** the inner harness reports
+  `resourcesSettled`, the owner removes only that run's dependency copy, `.next`
+  and Node compile cache. Failed assertions do not prevent this cleanup. Pending
+  browser/context acquisitions, timed-out close operations, interruption, mount or
+  identity changes and uncertain process observations retain bulk conservatively.
+  `--keep-workspace` disables bulk cleanup. Cleanup refusal/partial failure is
+  explicit in `lifecycle.json` and fails the command without hiding test failures.
+  See [retention policy](../docs/testing.md#diagnostics-and-retention).
+- These rules never authorize deleting historical roots, backups, checkout
+  dependencies or feature resources. Their recorded paths require separate bounded
+  cleanup authority; no age/wildcard scans. Auxiliary PDF/theme scripts are outside
+  these two runner guarantees.
 
 Console/page errors and local 5xx responses fail acceptance; only explicitly
 corroborated expected conflicts are tolerated. Aborted requests are diagnostic

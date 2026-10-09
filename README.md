@@ -161,19 +161,26 @@ typecheck and lint—do not run the ordinary npm baseline in addition solely for
 its spelling:
 
 ```bash
-nix develop -c node nix/test-offline.mjs
+nix develop .#test -c node nix/test-offline.mjs
 # Focused tests; repeat --file for multiple exact paths:
-nix develop -c node nix/test-offline.mjs --file lib/worktree.test.mjs
+nix develop .#test -c node nix/test-offline.mjs --file lib/worktree.test.mjs
 ```
+
+The `test` shell does not create checkout-local dependencies. Core runs share
+read-only Nix modules; Linux browser/terminal launchers use independent snapshots
+and temporary local dependency copies. Settled runs clean regenerable bulk while
+retaining source, diagnostics and fixture evidence; use `--keep-workspace` to
+preserve bulk too. Multiple reviewers can test the same worktree concurrently,
+with smaller worker budgets to avoid CPU/RAM contention.
 
 The isolated runner defaults to eight bounded file workers; `--jobs N` accepts 1–32. Do not append Node concurrency flags to `npm test`: options after its globs do not control Node. Browser and terminal acceptance are separate:
 
 ```bash
-npm run test:e2e
-npm run test:terminal
+nix develop .#test -c npm run test:e2e
+nix develop .#test -c npm run test:terminal
 ```
 
-**Never run `next build` or `npm run build` during normal development.** Builds write to `.next/` and can interfere with the development server; reserve them for installation or release work. Manual development reuses a healthy matching server. Acceptance instead requires a free checkout lock and owns an isolated free-port server; it never substitutes or restarts the installed service.
+**Never run `next build` or `npm run build` during normal development.** Builds write to `.next/` and can interfere with the development server; reserve them for installation or release work. Manual development reuses a healthy matching server. Linux acceptance instead owns a separate snapshot and free-port server; it never substitutes or restarts the installed service. Non-Linux legacy acceptance requires explicit `--in-place` and a free checkout lock.
 
 For Nix dependency changes, use `nix develop .#update` and `npm install --package-lock-only`, update the dependency hash in `nix/npm-deps.nix`, and deliberately move the old managed `node_modules` aside before re-entering the default shell. Never overwrite an unmanaged dependency tree to bypass a shell refusal.
 

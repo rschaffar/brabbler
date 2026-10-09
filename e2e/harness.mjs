@@ -1,7 +1,7 @@
 // Shared by the script-style browser and terminal acceptance runners.
 // Importing this file has no filesystem, environment or process side effects.
 import { spawn } from "node:child_process";
-import { appendFileSync, createWriteStream, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, createWriteStream, lstatSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { finished } from "node:stream/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,7 +26,7 @@ export function fixtureEnvironment(root, source = process.env) {
     XDG_STATE_HOME: join(home, "state"), XDG_CACHE_HOME: join(home, "cache"),
     XDG_RUNTIME_DIR: join(root, "runtime"), XDG_CONFIG_DIRS: join(home, "config"), XDG_DATA_DIRS: join(home, "data"),
     TMPDIR: temp, TMP: temp, TEMP: temp, PI_CODING_AGENT_DIR: root,
-    PI_OFFLINE: "1", PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1",
+    PI_OFFLINE: "1", PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1", JITI_FS_CACHE: "0",
     GIT_CONFIG_GLOBAL: join(home, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0",
     HISTFILE: process.platform === "win32" ? "NUL" : "/dev/null", BASH_SILENCE_DEPRECATION_WARNING: "1",
   });
@@ -127,14 +127,25 @@ export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTim
   process.umask(0o077);
   const parent = join(root, "test-results", "e2e");
   mkdirSync(parent, { recursive: true });
-  const artifacts = mkdtempSync(join(parent, `${kind}-`));
+  const artifacts = process.env.PI_WEB_TEST_ARTIFACTS ?? mkdtempSync(join(parent, `${kind}-`));
+  const artifactStat = lstatSync(artifacts);
+  if (!artifactStat.isDirectory() || (process.platform !== "win32" && (artifactStat.uid !== process.getuid() || (artifactStat.mode & 0o077)))) {
+    throw new Error("Artifacts must be an owned private physical directory");
+  }
   // Keep socket paths short and outside nix develop's auto-removed TMPDIR.
   // Host temp policies still apply; the manifest records the exact private root.
-  const fixtureRoot = mkdtempSync(join(process.platform === "win32" ? tmpdir() : "/tmp", `pw-${kind}-`));
+  const fixtureRoot = process.env.PI_WEB_TEST_FIXTURES ?? mkdtempSync(join(process.platform === "win32" ? tmpdir() : "/tmp", `pw-${kind}-`));
   const env = fixtureEnvironment(fixtureRoot);
+  if (process.env.PI_WEB_TEST_TMP) {
+    const temp = process.env.PI_WEB_TEST_TMP, st = lstatSync(temp);
+    if (!st.isDirectory() || st.uid !== process.getuid() || (st.mode & 0o077)) throw new Error("Temporary storage must be owned and private");
+    env.TMPDIR = env.TMP = env.TEMP = temp;
+  }
   const state = { version: 1, kind, root, artifacts, fixtureRoot, startedAt: new Date().toISOString(), status: "running" };
   const save = () => writeFileSync(join(artifacts, "run.json"), JSON.stringify(state, null, 2) + "\n");
   let diagnosticFailure = false;
+  let resourcesUncertain = false;
+  const acquisitions = new Set();
   const event = (type, detail = {}) => {
     try { appendFileSync(join(artifacts, "events.jsonl"), JSON.stringify({ at: new Date().toISOString(), type, ...detail }) + "\n"); }
     catch (error) {
@@ -155,8 +166,8 @@ export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTim
   let finishing;
   const recordError = (type, error, detail = {}) => { allErrors.push(`${type}: ${error.message ?? error}`); event(type, { ...detail, message: String(error.message ?? error) }); };
   async function diagnose(type, operation, timeoutMs = diagnosticTimeoutMs, detail = {}) {
-    const done = await bounded(Promise.resolve().then(operation).catch((error) => recordError(type, error, detail)), timeoutMs);
-    if (!done) recordError(type, new Error(`Timed out after ${timeoutMs}ms; settlement unknown`), detail);
+    const done = await bounded(Promise.resolve().then(operation).catch((error) => { resourcesUncertain = true; recordError(type, error, detail); }), timeoutMs);
+    if (!done) { resourcesUncertain = true; recordError(type, new Error(`Timed out after ${timeoutMs}ms; settlement unknown`), detail); }
   }
   async function captureFailure() {
     for (const [context, info] of contexts) {
@@ -193,13 +204,14 @@ export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTim
   };
   const onInt = () => interrupt("SIGINT");
   const onTerm = () => interrupt("SIGTERM");
-  process.once("SIGINT", onInt); process.once("SIGTERM", onTerm);
+  process.on("SIGINT", onInt); process.on("SIGTERM", onTerm);
   function checkActive() {
     if (interrupted || finishing) throw new Error("Harness interrupted or finishing; no new resources may start");
   }
   function finish() {
     finishing ??= (async () => {
       if (launching) await diagnose("browser-launch-settlement-error", () => launching);
+      for (const acquisition of acquisitions) await diagnose("context-acquisition-settlement-error", () => acquisition);
       for (const context of contexts.keys()) await closeContext(context);
       await diagnose("browser-close-error", () => browser?.close());
       const settlement = await server?.stop();
@@ -208,6 +220,8 @@ export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTim
       state.status = failed ? "failed" : "passed";
       state.finishedAt = new Date().toISOString(); state.server = settlement ?? null;
       state.errors = errors; state.interrupted = interrupted;
+      state.resourcesSettled = !resourcesUncertain && !launching && acquisitions.size === 0 && !interrupted &&
+        (!settlement || settlement.settled && settlement.processGroup === "absent");
       event("run-end", { status: state.status });
       try { save(); } catch (error) { recordError("manifest-error", error); process.exitCode = 1; }
       process.off("SIGINT", onInt); process.off("SIGTERM", onTerm);
@@ -243,7 +257,10 @@ export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTim
     async newContext(owner, options = {}, base) {
       checkActive();
       browser = owner;
-      const context = await owner.newContext(options);
+      const acquisition = owner.newContext(options);
+      acquisitions.add(acquisition);
+      let context;
+      try { context = await acquisition; } finally { acquisitions.delete(acquisition); }
       const info = { id: `context-${++sequence}`, errors: [] };
       contexts.set(context, info);
       observations.push(info);

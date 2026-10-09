@@ -1,0 +1,1157 @@
+// Adapted from @Nuctori's script-style CI/E2E fixtures in PR #617 (issue #599).
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { once } from "node:events";
+import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { dirname, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
+import { chromium } from "playwright";
+import { createJiti } from "jiti";
+import { checkFilePanel, checkFileDiffViews, checkEditableFile, filePanelFixture } from "./file-panel.mjs";
+import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
+import { checkAskUserDialog } from "./ask-user.mjs";
+import { checkActivityOverview } from "./activity.mjs";
+import { checkProjectPrivacy } from "./project-privacy.mjs";
+import { checkProjectTrustScopes } from "./project-trust-scopes.mjs";
+import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
+import { checkChatAppearance } from "./chat-appearance.mjs";
+import { checkMessageTimestamps } from "./message-timestamps.mjs";
+import { MODEL_SPEED_IDS, seedModelSpeedFixtures, checkModelSpeed, checkModelSpeedPersistence } from "./model-speed.mjs";
+import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
+import { RUNNING_FORK_IDS, seedRunningForkFixtures, checkRunningSessionForks } from "./running-session-forks.mjs";
+import { checkGitExplorer } from "./git-explorer.mjs";
+import { contextContents, changedContextContents } from "./git-diff-context.mjs";
+import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
+import { checkSessionMovePicker } from "./session-move.mjs";
+import { checkGitWorkflowPlugin, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
+
+// Test-process isolation only: the disposable child server inherits private file
+// creation from startup. Never repair SDK files or change umask inside a hook.
+process.umask(0o077);
+const root = dirname(dirname(fileURLToPath(import.meta.url)));
+assert.ok(!process.env.E2E_SERVER_MODE || process.env.E2E_SERVER_MODE === "dev", "This runner launches only its own Turbopack dev server; no installed runtime or next start");
+assert.ok(!existsSync(join(root, ".next/dev/lock")), "Use this checkout only without an active dev server");
+const harness = createHarness(root, "browser");
+const { artifacts, agentDir, env: fixtureEnv } = harness;
+try {
+applyFixtureEnvironment(fixtureEnv); // In-process helpers and children share isolation.
+const project = join(agentDir, "project");
+const otherProject = join(agentDir, "other-project");
+const sessionDir = join(agentDir, "sessions", "e2e");
+mkdirSync(project);
+mkdirSync(otherProject);
+mkdirSync(join(project, "browse-only"));
+const previewFile = join(project, "preview.html");
+const editableFile = join(project, "editable.txt");
+writeFileSync(previewFile, filePanelFixture);
+writeFileSync(editableFile, "Initial text\n");
+mkdirSync(sessionDir, { recursive: true });
+const timestamp = "2026-08-23T00:00:00.000Z";
+const LONG = "e2e-long-session";
+const BRANCH = "e2e-branch-session";
+const RICH = "e2e-rich-session";
+const COMPACTED = "e2e-compacted-session";
+const APPEND = "e2e-external-append-session";
+const ARCHIVE = "e2e-archive-session";
+const BULK = ["e2e-bulk-desktop-a", "e2e-bulk-desktop-b", "e2e-bulk-mobile-a", "e2e-bulk-mobile-b"];
+const OTHER = "e2e-other-project";
+const ACTIVITY_SUBAGENTS = process.env.E2E_ACTIVITY_ONLY === "1"
+  ? ["e2e-ready-child-a", "e2e-ready-child-b", "e2e-working-child", "e2e-other-child"] : [];
+const GIT = "e2e-git-explorer";
+const TRUST_MAIN = "e2e-trust-main";
+const TRUST_LINKED = "e2e-trust-linked";
+const trustProject = join(agentDir, "trust-project");
+const trustLinked = join(agentDir, "trust-linked");
+const gitProject = join(agentDir, "git-project");
+const targetWorktree = join(agentDir, "git-target-worktree");
+const text = (i) => `E2E message ${String(i).padStart(4, "0")}`;
+const ids = (start, end) => Array.from({ length: end - start }, (_, i) => `e${start + i}`);
+
+function message(id, parentId, role, content) {
+  // Native SDK context accounting requires usage on every assistant, including
+  // tool-call turns retained after compaction. These fixtures made no LLM calls.
+  const usage = role === "assistant" ? {
+    input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  } : undefined;
+  return { type: "message", id, parentId, timestamp, message: { role, content, ...(usage && { usage }) } };
+}
+
+function writeSession(id, entries, cwd = project, parentSessionId) {
+  const header = { type: "session", version: 3, id, timestamp, cwd,
+    ...(parentSessionId ? { parentSession: join(sessionDir, `2026-08-23T00-00-00-000Z_${parentSessionId}.jsonl`) } : {}) };
+  writeFileSync(join(sessionDir, `2026-08-23T00-00-00-000Z_${id}.jsonl`),
+    [header, ...entries].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+}
+
+let server;
+let browser;
+let page;
+let context;
+
+  const activityReview = ACTIVITY_SUBAGENTS.length
+    ? await createJiti(import.meta.url).import("../lib/activity-review-server.ts") : null;
+  // Seed before startup so the first catalogue scan sees every fixture.
+  seedModelSpeedFixtures({ agentDir, writeSession, message, timestamp });
+  seedRunningForkFixtures({ agentDir, writeSession, message });
+  mkdirSync(join(agentDir, "extensions"));
+  writeFileSync(join(agentDir, "extensions", "e2e-dialog.js"), extensionSource);
+  if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") writeFileSync(join(agentDir, "extensions", "e2e-git-plugin.js"), gitPluginFixtureSource(root));
+  // Simulate the recognized external package so the browser owns ask_user exactly once.
+  mkdirSync(join(agentDir, "extensions", "pi-ask-user"));
+  writeFileSync(join(agentDir, "extensions", "pi-ask-user", "index.js"), `export default function (pi) {
+    pi.registerTool({ name: "ask_user", label: "External Ask", description: "External copy",
+      parameters: { type: "object", properties: { question: { type: "string" } }, required: ["question"] },
+      execute: async () => ({ content: [{ type: "text", text: "External copy ran" }], details: undefined }),
+    });
+  }`);
+  const longEntries = Array.from({ length: 5000 }, (_, i) =>
+    message(`e${i}`, i ? `e${i - 1}` : null, i % 2 ? "assistant" : "user", text(i)));
+  longEntries.splice(1, 0, message("alternate", "e0", "user", "E2E alternate history branch"));
+  writeSession(LONG, longEntries);
+  writeSession(BRANCH, [
+    message("root", null, "user", "Branch root"),
+    message("old", "root", "assistant", "Inactive branch answer"),
+    message("new", "root", "assistant", "Active branch answer"),
+  ]);
+  const recoveryDir = join(agentDir, "pi-web", "run-journal", "v1", BRANCH);
+  mkdirSync(recoveryDir, { recursive: true });
+  const seedRecoveryRun = (runId) => writeFileSync(join(recoveryDir, `${runId}.start.json`), JSON.stringify({
+    version: 1, runId, sessionId: BRANCH, ownerPid: 99999999,
+    startedAt: new Date().toISOString(),
+  }));
+  if (process.env.E2E_ACTIVITY_ONLY !== "1") seedRecoveryRun("11111111-1111-4111-8111-111111111111");
+  const toolResult = message("result", "call", "toolResult", [{ type: "text", text: "E2E tool output" }]);
+  Object.assign(toolResult.message, { toolCallId: "t1", toolName: "bash", isError: false });
+  const richEntries = [
+    message("user", null, "user", "Render **E2E markdown**"),
+    message("call", "user", "assistant", [
+      { type: "thinking", thinking: "" },
+      { type: "thinking", thinking: "E2E intermediate reasoning\nIntermediate thinking details." },
+      { type: "text", text: "E2E process paragraph.\n\n".repeat(20) },
+      { type: "toolCall", id: "t1", name: "bash", arguments: { command: "echo E2E tool output" } },
+    ]),
+    toolResult,
+    message("answer", "result", "assistant", [
+      { type: "thinking", thinking: "" },
+      { type: "thinking", thinking: "E2E follow-up reasoning\nFollow-up thinking details." },
+      { type: "text", text: "E2E process note" },
+      { type: "thinking", thinking: "E2E final reasoning\nFinal thinking details." },
+      { type: "text", text:
+        "E2E final answer\n```js\nconsole.log('E2E code');\n```\n\n"
+        + "E2E answer paragraph.\n\n".repeat(20)
+        + "## E2E reading position\n\n"
+        + "E2E answer paragraph.\n\n".repeat(20),
+      },
+    ]),
+  ];
+  for (const entry of richEntries) entry.message.timestamp = Date.parse(timestamp);
+  Object.assign(richEntries.at(-1).message, {
+    provider: "test", model: "E2E Model",
+    usage: { input: 100, output: 20, cacheRead: 30, cacheWrite: 0, cost: { total: 0.0123 } },
+  });
+  writeSession(RICH, richEntries);
+  // The default page is 50 *visible* messages (user / assistant / compaction).
+  // toolResults ride along free after #810, so 48 tool-call assistants + the
+  // final answer + the divider fill that window; the user prompt is the 51st
+  // visible entry and must stay outside the first page.
+  const compactedEntries = [
+    message("user", null, "user", "E2E prompt outside the compacted page"),
+    { type: "compaction", id: "compact", parentId: "user", timestamp, summary: "E2E compaction anchor", firstKeptEntryId: "user", tokensBefore: 100 },
+  ];
+  for (let i = 0; i < 48; i++) {
+    compactedEntries.push(message(`call${i}`, compactedEntries.at(-1).id, "assistant", [
+      { type: "toolCall", id: `t${i}`, name: "bash", arguments: { command: `echo step${i}` } },
+    ]));
+    const result = message(`result${i}`, `call${i}`, "toolResult", [{ type: "text", text: `step${i}` }]);
+    Object.assign(result.message, { toolCallId: `t${i}`, toolName: "bash", isError: false });
+    compactedEntries.push(result);
+  }
+  compactedEntries.push(message("answer", "result47", "assistant", [{ type: "text", text:
+    "E2E compacted answer paragraph.\n\n".repeat(20)
+    + "## E2E compacted heading\n\n"
+    + "E2E compacted answer paragraph.\n\n".repeat(20),
+  }]));
+  writeSession(COMPACTED, compactedEntries);
+  writeSession(APPEND, [
+    message("root", null, "user", "E2E wrapper root"),
+    message("reply", "root", "assistant", "E2E wrapper reply"),
+  ]);
+  writeSession(ARCHIVE, [message("root", null, "user", "E2E archive fixture")]);
+  for (const id of BULK) writeSession(id, [message("root", null, "user", `E2E bulk ${id}`)]);
+  writeSession(OTHER, [
+    message("root", null, "user", "Other workspace task"),
+    message("reply", "root", "assistant", "Waiting for more work"),
+  ], otherProject);
+  if (process.env.E2E_TRUST_ONLY === "1") {
+    mkdirSync(trustProject);
+    const git = (...args) => execFileSync("git", ["-C", trustProject, ...args], { encoding: "utf8", env: fixtureEnv }).trim();
+    git("init", "-qb", "main");
+    mkdirSync(join(trustProject, ".pi", "extensions"), { recursive: true });
+    writeFileSync(join(trustProject, ".pi", "extensions", ".keep"), "fixture\n");
+    git("add", ".");
+    git("-c", "user.name=E2E", "-c", "user.email=e2e@example.invalid", "commit", "-qm", "trust fixture");
+    git("worktree", "add", "-qb", "linked", trustLinked);
+    writeSession(TRUST_MAIN, [message("root", null, "user", "Trust main fixture")], trustProject);
+    writeSession(TRUST_LINKED, [message("root", null, "user", "Trust linked fixture")], trustLinked);
+  }
+  for (const [index, id] of ACTIVITY_SUBAGENTS.entries()) {
+    const parentSessionId = index === 3 ? OTHER : BRANCH;
+    writeSession(id, [
+      { type: "custom", id: "meta", parentId: null, timestamp, customType: "pi-web:subagent", data: {
+        version: 1, parentSessionId,
+        parentSessionPath: join(sessionDir, `2026-08-23T00-00-00-000Z_${parentSessionId}.jsonl`),
+        profile: "explore", description: id, task: "Activity bulk review fixture", createdAt: timestamp,
+      } },
+      message("prompt", "meta", "user", id),
+      message("answer", "prompt", "assistant", "Fixture result"),
+      { type: "custom", id: "result", parentId: "answer", timestamp, customType: "pi-web:subagent-result",
+        data: { version: 1, status: "completed", completedAt: timestamp } },
+    ], index === 3 ? otherProject : project, parentSessionId);
+  }
+  {
+    const otherGit = (...args) => execFileSync("git", ["-C", otherProject, ...args], { encoding: "utf8", env: fixtureEnv }).trim();
+    otherGit("init", "-qb", "other-main");
+    // Beta fixture only, before any seed commit or selected-source capture.
+    otherGit("config", "--local", "user.name", "E2E");
+    otherGit("config", "--local", "user.email", "e2e@example.invalid");
+    otherGit("config", "--local", "commit.gpgsign", "false");
+    otherGit("config", "--local", "tag.gpgsign", "false");
+    otherGit("commit", "--allow-empty", "-qm", "Other project fixture");
+  }
+  {
+    mkdirSync(gitProject);
+    const git = (...args) => execFileSync("git", ["-C", gitProject, ...args], {
+      encoding: "utf8", env: fixtureEnv,
+    }).trim();
+    const commit = (subject) => git("-c", "user.name=E2E", "-c", "user.email=e2e@example.invalid", "commit", "-m", subject);
+    git("init", "-b", "target");
+    // Alpha fixture only, before commits/tags/candidates. Its linked target
+    // shares this common local config; no identity comes from global config.
+    git("config", "--local", "user.name", "E2E");
+    git("config", "--local", "user.email", "e2e@example.invalid");
+    git("config", "--local", "commit.gpgsign", "false");
+    git("config", "--local", "tag.gpgsign", "false");
+    git("config", "core.autocrlf", "false");
+    writeFileSync(join(gitProject, "base.txt"), "Base fixture\n");
+    writeFileSync(join(gitProject, "z-context.txt"), contextContents);
+    writeFileSync(join(gitProject, "draft.txt"), Array.from({ length: 5000 }, (_, index) => `Plugin context ${index + 1}\n`).join(""));
+    mkdirSync(join(gitProject, "checks"));
+    writeFileSync(join(gitProject, "checks", "fixture.txt"), "Tracked modern check working directory\n");
+    git("add", "base.txt", "checks/fixture.txt", "z-context.txt", "draft.txt"); commit("base fixture");
+    git("switch", "-c", "feature");
+    writeFileSync(join(gitProject, "first.txt"), "First feature patch\n");
+    git("add", "first.txt"); commit("first feature");
+    git("branch", "comparison-base"); // Read-only comparison branch; deliberately no checkout.
+    writeFileSync(join(gitProject, "second.txt"), "Second feature patch\n");
+    writeFileSync(join(gitProject, "base.txt"), "Revised base fixture\n");
+    writeFileSync(join(gitProject, "z-context.txt"), changedContextContents);
+    git("add", "second.txt", "base.txt", "z-context.txt"); commit("second feature");
+    git("tag", "e2e-light");
+    git("tag", "--no-sign", "-a", "e2e-annotated", "-m", "E2E annotated release");
+    git("tag", "same-name", "target");
+    writeFileSync(join(gitProject, "draft.txt"), "Manual commit fixture\n");
+    writeFileSync(join(gitProject, "second-draft.txt"), "Second captured commit file\n");
+    git("worktree", "add", targetWorktree, "target");
+    writeSession(GIT, [message("root", null, "user", "E2E Git browsing conversation"),
+      message("answer", "root", "assistant", "Ready to browse Git history")], gitProject);
+
+  }
+
+  const probe = createServer();
+  probe.listen(0, "127.0.0.1");
+  await once(probe, "listening");
+  const port = probe.address().port;
+  await new Promise((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
+  const base = `http://127.0.0.1:${port}`;
+  const ownedServer = harness.startServer(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "dev", "--turbopack", "-H", "127.0.0.1", "-p", String(port)], {
+    cwd: root,
+    env: { ...fixtureEnv, NODE_ENV: "development",
+      PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  server = ownedServer.child;
+
+  async function api(path, status = 200) {
+    const response = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(30_000) });
+    assert.equal(response.status, status, path);
+    return response.json();
+  }
+
+  async function post(path, body) {
+    const response = await fetch(`${base}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
+    });
+    assert.ok(response.ok, `POST ${path} -> ${response.status}`);
+    return response.json();
+  }
+
+  const deadline = Date.now() + 120_000;
+  while (true) {
+    if (ownedServer.error) throw ownedServer.error;
+    assert.ok(server.exitCode === null && server.signalCode === null, "Server exited before readiness; see server.log and events.jsonl");
+    const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
+    if (response?.ok) {
+      const { sessions } = await response.json();
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...ACTIVITY_SUBAGENTS,
+        ...(process.env.E2E_TRUST_ONLY === "1" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
+      for (const id of ACTIVITY_SUBAGENTS) {
+        assert.equal(sessions.find((session) => session.id === id)?.relation?.kind, "subagent", `${id} must have real subagent metadata`);
+      }
+      break;
+    }
+    assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
+    await delay(250);
+  }
+
+  async function runModelSpeedChecks() {
+    browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      let createdId;
+      for (const phase of ["exercise", "fresh"]) {
+        context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+        page = await context.newPage();
+        page.setDefaultTimeout(30_000);
+        const errors = harness.errorsFor(context);
+        const options = { base, api, post, agentDir, project, artifacts, width: viewport.width };
+        if (phase === "exercise") createdId = await checkModelSpeed(page, options);
+        else await checkModelSpeedPersistence(page, options, createdId);
+        assert.deepEqual(errors, [], `Model-speed browser/server errors at ${viewport.width}px (${phase})`);
+        await harness.closeContext(context);
+        context = undefined;
+        page = undefined;
+      }
+    }
+  }
+
+  async function runRunningForkChecks() {
+    browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+      page = await context.newPage();
+      page.setDefaultTimeout(30_000);
+      const errors = harness.errorsFor(context);
+      await checkRunningSessionForks(page, { base, api, post, artifacts, width: viewport.width });
+      assert.deepEqual(errors, [], `Running-fork browser/server errors at ${viewport.width}px`);
+      await harness.closeContext(context); context = undefined; page = undefined;
+    }
+  }
+
+  if (process.env.E2E_RUNNING_FORKS_ONLY === "1") {
+    await runRunningForkChecks();
+  } else if (process.env.E2E_MODEL_SPEED_ONLY === "1") {
+    await runModelSpeedChecks();
+  } else if (process.env.E2E_TRUST_ONLY === "1") {
+    browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+      page = await context.newPage();
+      const errors = harness.errorsFor(context);
+      await checkProjectTrustScopes(page, { base, api, trustProject, trustLinked, mainId: TRUST_MAIN, width: viewport.width });
+      assert.deepEqual(errors, [], "Trust browser/server errors");
+      await harness.closeContext(context); context = undefined; page = undefined;
+    }
+  } else if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") {
+    browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+      page = await context.newPage();
+      const errors = harness.errorsFor(context);
+      await checkGitWorkflowPlugin(page, base, gitProject, GIT, artifacts, viewport.width);
+      assert.deepEqual(errors, [], "Plugin browser/server errors");
+      await harness.closeContext(context); context = undefined; page = undefined;
+    }
+  } else if (process.env.E2E_TIMESTAMPS_ONLY === "1") {
+    browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+      page = await context.newPage();
+      const errors = harness.errorsFor(context);
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await checkMessageTimestamps(page, timestamp);
+      assert.deepEqual(errors, [], "Message timestamp browser errors");
+      await harness.closeContext(context);
+      context = undefined;
+      page = undefined;
+    }
+  } else {
+  const detail = await api(`/api/sessions/${LONG}?deferThinking=1&deferMedia=1`);
+  assert.deepEqual(detail.context.entryIds, ids(4950, 5000));
+  assert.equal(detail.context.messages.length, 50);
+  assert.equal(detail.context.hasMore, true);
+  assert.ok(JSON.stringify(detail).length < 100_000, "Detail transferred unbounded history");
+  const tail = await api(`/api/sessions/${LONG}/context?tail=50`);
+  assert.deepEqual(tail.context.entryIds, ids(4950, 5000));
+  assert.equal(tail.context.messages.length, 50);
+  const selectedBranch = await api(`/api/sessions/${BRANCH}/context?leafId=old`);
+  assert.deepEqual(selectedBranch.context.entryIds, ["root", "old"]);
+  const rootPage = await api(`/api/sessions/${BRANCH}/context?before=old&tail=1`);
+  assert.deepEqual(rootPage.context.entryIds, ["root"]);
+  assert.equal(rootPage.context.hasMore, false);
+  const beforeRoot = await api(`/api/sessions/${BRANCH}/context?before=root`);
+  assert.deepEqual(beforeRoot.context.entryIds, []);
+  assert.equal(beforeRoot.context.hasMore, false);
+  await api("/api/sessions/e2e-does-not-exist", 404);
+  await api("/api/files/..%2F..%2Fetc%2Fpasswd?type=read", 403);
+  const compacted = await api(`/api/sessions/${COMPACTED}`);
+  assert.equal(compacted.context.entryIds[0], "compact");
+  assert.equal(compacted.context.messages.some((entry) => entry.role === "user"), false);
+  console.log("PASS: bounded history, branch context, pagination root, and API errors");
+
+  // #632 regression: a live wrapper shadows the session file. Ordinary reads
+  // keep that snapshot (two processes writing one JSONL is unsupported). A
+  // mount/refresh GET (?force=1) must see the external append and stay stable.
+  {
+    const file = join(sessionDir, `2026-08-23T00-00-00-000Z_${APPEND}.jsonl`);
+    await post(`/api/agent/${APPEND}`, { type: "get_state" });
+    const beforeAppend = await api(`/api/sessions/${APPEND}`);
+    assert.deepEqual(beforeAppend.context.entryIds, ["root", "reply"], "the wrapper must serve its own snapshot first");
+    appendFileSync(file, `${JSON.stringify(message("external", "reply", "assistant", "E2E external append"))}\n`);
+    const ordinaryRead = await api(`/api/sessions/${APPEND}`);
+    assert.deepEqual(ordinaryRead.context.entryIds, ["root", "reply"], "post-turn reads must not probe disk");
+    assert.equal(ordinaryRead.wrapperRebuilt, undefined);
+    const afterForce = await api(`/api/sessions/${APPEND}?force=1`);
+    assert.deepEqual(afterForce.context.entryIds, ["root", "reply", "external"], "a mount/refresh read must see the external append");
+    assert.equal(afterForce.wrapperRebuilt, true);
+    const again = await api(`/api/sessions/${APPEND}`);
+    assert.deepEqual(again.context.entryIds, ["root", "reply", "external"], "repeated reads must stay stable");
+    const appended = await api(`/api/sessions/${APPEND}/context?tail=1`);
+    assert.deepEqual(appended.context.entryIds, ["external"], "the appended entry must be readable on its own");
+    console.log("PASS: external session-file appends are visible on force/mount reads");
+  }
+
+  let secondaryAccountId;
+  // Secondary provider identities stay out of pi's auth.json and project
+  // defaults are snapshotted when each session is created.
+  {
+    const unsupported = await fetch(`${base}/api/auth/accounts`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "not-a-provider", label: "Invalid", type: "oauth" }),
+    });
+    assert.equal(unsupported.status, 400);
+    const invalidOAuth = await fetch(`${base}/api/auth/login/anthropic?accountId=missing`);
+    assert.match(await invalidOAuth.text(), /OAuth account not found for provider/);
+    const { account } = await post("/api/auth/accounts", { provider: "anthropic", label: "E2E work", type: "api_key" });
+    assert.equal(account.authorized, false);
+    secondaryAccountId = account.id;
+    const secret = "e2e-secondary-key-only";
+    await post(`/api/auth/accounts/${account.id}/api-key`, { apiKey: secret });
+    const metadata = await api("/api/auth/accounts");
+    assert.equal(JSON.stringify(metadata).includes(secret), false, "Account metadata must never contain credentials");
+    assert.equal(metadata.accounts.find((entry) => entry.id === account.id).authorized, true);
+    const response = await fetch(`${base}/api/auth/accounts/selection`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "project", cwd: project, provider: "anthropic", accountId: account.id }),
+    });
+    assert.equal(response.status, 200);
+    const first = await post("/api/agent/new", { cwd: project, type: "ensure_session", toolNames: ["read"] });
+    assert.equal((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${first.sessionId}`)).session.anthropic, account.id);
+    const removedDefault = await fetch(`${base}/api/auth/accounts/selection`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "project", cwd: project, provider: "anthropic", accountId: null }),
+    });
+    assert.equal(removedDefault.status, 200);
+    assert.equal((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${first.sessionId}`)).session.anthropic, account.id,
+      "existing sessions must retain their project-default snapshot");
+    const second = await post("/api/agent/new", { cwd: project, type: "ensure_session" });
+    assert.deepEqual((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${second.sessionId}`)).session, {});
+    const switched = await fetch(`${base}/api/auth/accounts/selection`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "session", sessionId: first.sessionId, provider: "anthropic", accountId: null }),
+    });
+    assert.equal(switched.status, 200);
+    const switchedId = (await switched.json()).sessionId;
+    assert.ok(switchedId);
+    assert.deepEqual((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${switchedId}`)).session, {});
+    const tools = (await post(`/api/agent/${switchedId}`, { type: "get_tools" })).data;
+    assert.equal(tools.find((entry) => entry.name === "read")?.active, true);
+    assert.equal(tools.find((entry) => entry.name === "bash")?.active, false,
+      "transient account switches must retain the tool preset");
+    const { account: other } = await post("/api/auth/accounts", { provider: "openai", label: "E2E other", type: "api_key" });
+    await post(`/api/auth/accounts/${other.id}/api-key`, { apiKey: "e2e-other-key" });
+    const setSession = (provider, accountId) => fetch(`${base}/api/auth/accounts/selection`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "session", sessionId: APPEND, provider, accountId }),
+    });
+    const changes = await Promise.all([setSession("anthropic", account.id), setSession("openai", other.id)]);
+    assert.deepEqual(changes.map((entry) => entry.status), [200, 200]);
+    assert.deepEqual((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${APPEND}`)).session,
+      { anthropic: account.id, openai: other.id }, "concurrent switches must preserve both providers");
+    console.log("PASS: isolated account creation, metadata redaction, project defaults, transient switching and concurrent persisted switches");
+  }
+
+  browser = await harness.launchBrowser(chromium, process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+    ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+    : {});
+  // Full acceptance includes speed; unrelated focused switches retain their selection.
+  if (!Object.keys(process.env).some((key) => /^E2E_.*_ONLY$/.test(key) && process.env[key] === "1")) {
+    await runModelSpeedChecks();
+    await runRunningForkChecks();
+  }
+  // A live session keeps the context files it loaded until explicitly reloaded.
+  {
+    const contextFile = join(otherProject, "AGENTS.md");
+    const checkContext = await harness.newContext(browser, {}, base);
+    const checkPage = await checkContext.newPage();
+    try {
+      await post(`/api/agent/${OTHER}`, { type: "get_state" });
+      await checkPage.goto(`${base}/?session=${OTHER}`, { waitUntil: "domcontentloaded" });
+      await checkPage.getByText("Waiting for more work", { exact: true }).waitFor();
+      const reloadNotice = checkPage.getByText("Session instructions changed on disk.", { exact: false });
+      assert.equal(await reloadNotice.count(), 0);
+      writeFileSync(contextFile, "New project instructions");
+      await checkPage.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await reloadNotice.waitFor();
+      await checkPage.getByRole("button", { name: "Reload session" }).click();
+      await reloadNotice.waitFor({ state: "detached" });
+      assert.equal((await api(`/api/agent/${OTHER}`)).state.contextFilesChanged, false);
+      writeFileSync(contextFile, "Updated project instructions");
+      await checkPage.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await reloadNotice.waitFor();
+      console.log("PASS: live context changes offer a session reload and clear after applying");
+    } finally {
+      rmSync(contextFile, { force: true });
+      await harness.closeContext(checkContext);
+    }
+  }
+  for (const viewport of [
+    ...(process.env.E2E_ARCHIVE_ONLY === "1" ? [] : [{ width: 1280, height: 800 }]),
+    ...(process.env.E2E_ACTIVITY_ONLY === "1" || process.env.E2E_PROJECT_PRIVACY_ONLY === "1" ? [{ width: 700, height: 800 }] : []),
+    { width: 390, height: 844 },
+  ]) {
+    context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+    page = await context.newPage();
+    page.setDefaultTimeout(30_000);
+    const errors = harness.errorsFor(context);
+    const olderResponses = [];
+    page.on("response", (response) => {
+      const url = new URL(response.url());
+      if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
+    });
+    if (process.env.E2E_DIFF_CONTEXT_ONLY === "1") {
+      if (viewport.width === 1280) await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await page.locator(".markdown-code-block pre").waitFor();
+      await checkFilePanel(page, previewFile);
+      await checkFileDiffViews(page, editableFile);
+      assert.deepEqual(errors, [], `Browser errors during diff review at ${viewport.width}px`);
+      await harness.closeContext(context); context = undefined;
+      continue;
+    }
+    if (process.env.E2E_FILE_EDIT_ONLY === "1") {
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await page.locator(".markdown-code-block pre").waitFor();
+      await checkFilePanel(page, previewFile);
+      await checkFileDiffViews(page, editableFile);
+      await checkEditableFile(page, editableFile);
+      assert.deepEqual(errors, [], "Browser errors during file editing");
+      await harness.closeContext(context);
+      context = undefined;
+      continue;
+    }
+    if (process.env.E2E_ARCHIVE_ONLY === "1") {
+      const archiveResponse = await fetch(`${base}/api/sessions/${ARCHIVE}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: true }),
+      });
+      assert.equal(archiveResponse.status, 200);
+      await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });
+      const archivedNotice = page.getByText("This session is archived. Restore it to show it in active sessions.");
+      await archivedNotice.waitFor();
+      await page.getByRole("button", { name: "Restore session", exact: true }).click();
+      await archivedNotice.waitFor({ state: "detached" });
+      assert.equal(new URL(page.url()).searchParams.get("session"), ARCHIVE);
+      assert.equal((await api("/api/sessions?force=1")).sessions.find((session) => session.id === ARCHIVE)?.archived, undefined);
+      assert.deepEqual(errors, [], "Browser errors during inline restoration");
+      console.log("PASS: archived chat restores inline and remains open");
+      await harness.closeContext(context);
+      context = undefined;
+      page = undefined;
+      continue;
+    }
+    if (process.env.E2E_PROJECT_PRIVACY_ONLY === "1") {
+      await checkProjectPrivacy(page, viewport.width, { base, api, post, harness, selectedSessionId: BRANCH, otherSessionId: OTHER });
+      assert.deepEqual(errors, [], `Project privacy browser errors at width ${viewport.width}`);
+      await harness.closeContext(context); context = undefined; page = undefined;
+      continue;
+    }
+    if (process.env.E2E_ACTIVITY_ONLY === "1") {
+      // Seed only after the selected chat has loaded, so clicking its newly
+      // discovered Activity row must refresh the warning in that same chat.
+      await checkActivityOverview(page, viewport.width, {
+        base, api, post, artifacts, harness, waitingSessionId: RICH, selectedSessionId: BRANCH, otherSessionId: OTHER,
+        seedInterruptedRun: () => seedRecoveryRun(`${viewport.width}-activity-recovery`),
+        subagentIds: ACTIVITY_SUBAGENTS,
+        seedSubagentCompletions: () => {
+          const path = join(agentDir, "pi-web", "activity-review.json");
+          return new Map([BRANCH, ...ACTIVITY_SUBAGENTS].map((sessionId) => {
+            const { at } = activityReview.recordActivityCompletion(sessionId, path);
+            return [sessionId, at];
+          }));
+        },
+      });
+      assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      await harness.closeContext(context);
+      context = undefined;
+      page = undefined;
+      continue;
+    }
+    if (process.env.E2E_ACCOUNT_ONLY === "1") {
+      const { oauthProviders } = await api("/api/auth/providers");
+      const oauthEntry = oauthProviders.find((item) => item.id === "github-copilot") ?? oauthProviders[0];
+      assert.ok(oauthEntry, "OAuth provider required for account browser fixture");
+      const { account } = await post("/api/auth/accounts", { provider: oauthEntry.id, label: `E2E device ${viewport.width}`, type: "oauth" });
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await checkProviderAccountAuthorization(page, { base, sessionId: RICH, provider: oauthEntry.id,
+        providerName: oauthEntry.name, accountLabel: account.label, width: viewport.width, artifacts });
+      const removedFixture = await fetch(`${base}/api/auth/accounts`, { method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: account.id }) });
+      assert.equal(removedFixture.status, 200);
+      assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      await harness.closeContext(context);
+      context = undefined;
+      page = undefined;
+      continue;
+    }
+    if (process.env.E2E_ASK_USER_ONLY === "1") {
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await page.locator(".markdown-code-block pre").waitFor();
+      const { data: tools } = await post(`/api/agent/${RICH}`, { type: "get_tools" });
+      assert.deepEqual(tools.filter((tool) => tool.name === "ask_user").map((tool) => tool.active), [true]);
+      assert.match(tools.find((tool) => tool.name === "ask_user").description, /^Ask the user a question/);
+      await checkAskUserDialog(page, viewport.width);
+      assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      await harness.closeContext(context);
+      context = undefined;
+      page = undefined;
+      continue;
+    }
+    if (process.env.E2E_SESSION_LINK_ONLY === "1") {
+      await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });
+      await page.getByText("E2E archive fixture", { exact: true }).first().waitFor();
+      if (viewport.width <= 600) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+      const row = page.locator(`[data-session-id="${ARCHIVE}"]`);
+      await row.scrollIntoViewIfNeeded();
+      if (viewport.width <= 600) await row.getByRole("button", { name: "Session actions" }).click();
+      else await row.hover();
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await row.getByRole("button", { name: "Copy session link" }).click();
+      const link = await page.evaluate(() => navigator.clipboard.readText());
+      assert.equal(link, `${base}/?session=${ARCHIVE}`);
+      assert.equal(new URL(page.url()).searchParams.get("session"), ARCHIVE);
+      await page.goto(link, { waitUntil: "domcontentloaded" });
+      await page.getByText("E2E archive fixture", { exact: true }).first().waitFor();
+      assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      console.log(`PASS: ${viewport.width}px copied session URL opens the saved chat without changing selection`);
+      await harness.closeContext(context);
+      context = undefined;
+      page = undefined;
+      continue;
+    }
+    if (process.env.E2E_BULK_ONLY === "1") {
+      const ids = viewport.width <= 600 ? BULK.slice(2) : BULK.slice(0, 2);
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await page.locator(".markdown-code-block pre").waitFor();
+      if (viewport.width <= 600) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+      const first = page.locator(`[data-session-id="${ids[0]}"]`);
+      const second = page.locator(`[data-session-id="${ids[1]}"]`);
+      const select = page.getByRole("button", { name: "Select", exact: true });
+      await select.waitFor();
+      assert.equal(await first.getByRole("checkbox").count(), 0, "Selection controls stay hidden until Select");
+      await select.click();
+      await first.scrollIntoViewIfNeeded();
+      await first.getByRole("checkbox").check();
+      await second.scrollIntoViewIfNeeded();
+      await second.getByRole("checkbox").check();
+      await page.getByText("2 selected", { exact: true }).waitFor();
+      const archiveConflict = `**/api/sessions/${ids[0]}`;
+      const failArchive = (route) => route.request().method() === "PATCH"
+        ? route.fulfill({ status: 409, json: { error: "Session is running" } }) : route.continue();
+      await page.route(archiveConflict, failArchive);
+      await page.getByRole("button", { name: "Archive", exact: true }).click();
+      await page.getByRole("alert").getByText("1 failed, 1 succeeded", { exact: false }).waitFor();
+      const expectedConflict = errors.indexOf("Failed to load resource: the server responded with a status of 409 (Conflict)");
+      assert.notEqual(expectedConflict, -1, "Simulated archive conflict should reach the browser");
+      errors.splice(expectedConflict, 1);
+      assert.ok(await first.getByRole("checkbox").isChecked(), "Failed session stays selected for retry");
+      assert.equal((await api("/api/sessions?force=1")).sessions.find((s) => s.id === ids[1])?.archived, true);
+      await page.unroute(archiveConflict, failArchive);
+      await page.getByRole("button", { name: "Archive", exact: true }).click();
+      await first.waitFor({ state: "detached" });
+      const archivedSessions = (await api("/api/sessions?force=1")).sessions;
+      assert.ok(ids.every((id) => archivedSessions.find((s) => s.id === id)?.archived === true));
+      await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
+      await page.getByRole("button", { name: "Select", exact: true }).click();
+      await first.scrollIntoViewIfNeeded();
+      await first.getByRole("checkbox").check();
+      await second.scrollIntoViewIfNeeded();
+      await second.getByRole("checkbox").check();
+      await page.getByRole("button", { name: "Restore", exact: true }).click();
+      await first.waitFor({ state: "detached" });
+      await page.getByRole("button", { name: "Active sessions", exact: true }).click();
+      await page.getByRole("button", { name: "Select", exact: true }).click();
+      await first.scrollIntoViewIfNeeded();
+      await first.getByRole("checkbox").check();
+      await page.getByRole("button", { name: "Delete", exact: true }).click();
+      await page.getByText("Permanently delete selected sessions (1) and their subagents? Forks will remain.").waitFor();
+      assert.ok((await api("/api/sessions?force=1")).sessions.some((s) => s.id === ids[0]), "Delete requires confirmation");
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("button", { name: "Delete", exact: true }).click();
+      await page.getByRole("button", { name: "Delete", exact: true }).last().click();
+      await first.waitFor({ state: "detached" });
+      assert.ok(!(await api("/api/sessions?force=1")).sessions.some((s) => s.id === ids[0]));
+      assert.ok((await api("/api/sessions?force=1")).sessions.some((s) => s.id === ids[1]));
+      assert.equal(await second.getByRole("checkbox").count(), 0, "Selection mode exits after success");
+      assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      console.log(`PASS: ${viewport.width}px opt-in bulk archive, restore, and confirmed delete`);
+      await harness.closeContext(context);
+      context = undefined;
+      page = undefined;
+      continue;
+    }
+    if (process.env.E2E_MOVE_ONLY === "1") {
+      const moveId = viewport.width <= 600 ? ARCHIVE : APPEND;
+      await checkSessionMovePicker(page, { base, api, sessionId: moveId, project, otherProject, gitProject, targetWorktree, mobile: viewport.width <= 600 });
+      assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      console.log(`PASS: ${viewport.width}px session move picker worktrees, exclusion, Browse, failure and stale responses`);
+      await harness.closeContext(context);
+      context = undefined;
+      page = undefined;
+      continue;
+    }
+    await checkProjectPrivacy(page, viewport.width, { base, api, post, harness, selectedSessionId: BRANCH, otherSessionId: OTHER });
+    if (viewport.width === 1280) {
+      assert.equal(await page.getByRole("button", { name: "Workflow", exact: true }).count(), 0, "Managed Workflow controls must be absent");
+      await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
+      await checkIntegratedGitGraph(page, targetWorktree);
+    }
+    // Use a separate tab: a deliberate full-page reload must not alter the
+    // reading-position and session-history fixtures exercised below.
+    const versionPage = await context.newPage();
+    try {
+      await versionPage.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      const reloadWeb = versionPage.getByRole("button", { name: "Reload Pi Web" });
+      assert.equal(await reloadWeb.count(), 0, "The running version should not show a reload prompt");
+      await versionPage.route("**/api/app-version", (route) => route.fulfill({ json: { version: "99.99.99" } }));
+      await versionPage.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await reloadWeb.waitFor();
+      assert.ok(await versionPage.getByText("Pi Web v99.99.99 is running.").isVisible());
+      versionPage.once("dialog", (dialog) => dialog.dismiss());
+      await reloadWeb.click();
+      await reloadWeb.waitFor();
+      await versionPage.unroute("**/api/app-version");
+      versionPage.once("dialog", (dialog) => dialog.accept());
+      await Promise.all([versionPage.waitForNavigation(), reloadWeb.click()]);
+      await reloadWeb.waitFor({ state: "detached" });
+      console.log(`PASS: ${viewport.width}px version mismatch prompts before page reload`);
+    } finally {
+      await versionPage.close();
+    }
+    const stateReady = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/sessions/${LONG}/state`);
+    await page.goto(`${base}/?session=${LONG}`, { waitUntil: "domcontentloaded" });
+    assert.equal((await stateReady).status(), 200);
+    await page.getByText(text(4999), { exact: true }).waitFor();
+    const mobileIdentity = page.locator('[data-mobile-session-identity="true"]');
+    if (viewport.width <= 600) {
+      await mobileIdentity.waitFor();
+      assert.equal(await mobileIdentity.locator(".mobile-session-title").textContent(), text(0));
+      assert.equal(await mobileIdentity.locator(".mobile-session-project").textContent(), "project");
+      assert.equal(await mobileIdentity.locator(".mobile-session-project").getAttribute("title"), project);
+      assert.ok(await mobileIdentity.evaluate((element) => element.scrollWidth <= element.clientWidth), "Mobile identity must not overflow the viewport");
+      const topActions = page.locator(".top-bar-actions");
+      const sidebarToggle = page.getByRole("button", { name: "Show sidebar" });
+      const sidebarX = (await sidebarToggle.boundingBox()).x;
+      assert.equal(await topActions.evaluate((element) => getComputedStyle(element).scrollbarWidth), "none");
+      const scrolled = await topActions.evaluate((element) => {
+        const overflow = element.scrollWidth - element.clientWidth;
+        element.scrollTo({ left: overflow, behavior: "instant" });
+        return { overflow, scrollLeft: element.scrollLeft };
+      });
+      assert.ok(scrolled.overflow > 0 && scrolled.scrollLeft > 0, "Mobile actions must scroll horizontally");
+      assert.equal((await sidebarToggle.boundingBox()).x, sidebarX, "Sidebar toggle must stay pinned while scrolling");
+      assert.ok(await page.locator('[data-mobile-toolbar-file="true"]').isVisible(), "Trailing file control must be reachable");
+      for (const label of ["Git Explorer"]) {
+        const button = page.getByRole("button", { name: label, exact: true });
+        await button.scrollIntoViewIfNeeded();
+        assert.ok(await button.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const strip = element.closest(".top-bar-actions").getBoundingClientRect();
+          return rect.left >= strip.left && rect.right <= strip.right;
+        }), `${label} remains reachable in the scroll row`);
+      }
+    } else {
+      assert.equal(await mobileIdentity.count(), 0, "Desktop chat should not gain a mobile identity row");
+    }
+    const latestUser = await page.getByText(text(4998), { exact: true }).elementHandle();
+    assert.ok(latestUser, "Latest user message must be mounted before pagination");
+    const sentinel = page.getByText("Scroll up to load earlier messages", { exact: true });
+    await sentinel.waitFor({ state: "attached" });
+    assert.equal(await page.getByText(text(4949), { exact: true }).count(), 0);
+
+    // Exercise the real IntersectionObserver and prepend path, twice.
+    for (let turn = 0; turn < 2; turn++) {
+      const responsePromise = page.waitForResponse((response) =>
+        new URL(response.url()).pathname === `/api/sessions/${LONG}/context`);
+      await sentinel.evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
+      const response = await responsePromise;
+      const older = (await response.json()).context;
+      const firstMessage = older.messages.find((message) => message.role === "user")?.content;
+      assert.equal(typeof firstMessage, "string", "Older page must contain user messages");
+      await page.getByText(firstMessage, { exact: true }).waitFor({ state: "attached" });
+      await page.getByText(text(4999), { exact: true }).evaluate((element) => element.scrollIntoView({ block: "end", behavior: "instant" }));
+    }
+    assert.deepEqual(await latestUser.evaluate((element) => ({
+      connected: element.isConnected,
+      text: element.textContent,
+    })), { connected: true, text: text(4998) }, "Prepending history must preserve existing message nodes");
+    await latestUser.dispose();
+    assert.ok(olderResponses.length >= 2, "Scrolling must fetch consecutive older pages");
+    let oldest = Number(new URL(olderResponses[0].url()).searchParams.get("before")?.slice(1));
+    assert.ok(Number.isInteger(oldest), "Older page must include a numeric before cursor");
+    for (const response of olderResponses) {
+      assert.equal(response.status(), 200);
+      assert.equal(new URL(response.url()).searchParams.get("before"), `e${oldest}`);
+      const older = (await response.json()).context;
+      assert.deepEqual(older.entryIds, ids(oldest - 50, oldest));
+      assert.equal(older.messages.length, 50);
+      oldest -= 50;
+      assert.equal(older.oldestEntryId, `e${oldest}`);
+      assert.equal(older.hasMore, true);
+    }
+    const rendered = await page.getByText(/^E2E message \d{4}$/).allTextContents();
+    // The sidebar also displays the first message as the session title.
+    assert.deepEqual(rendered.filter((value) => value !== text(0)),
+      Array.from({ length: 5000 - oldest }, (_, i) => text(oldest + i)), "Missing, reordered, or duplicate chat messages");
+    await page.screenshot({ path: join(artifacts, `history-${viewport.width}.png`) });
+
+    await page.goto(`${base}/?session=${BRANCH}`, { waitUntil: "domcontentloaded" });
+    await page.getByText("Active branch answer", { exact: true }).waitFor();
+    if (viewport.width <= 600) {
+      await page.locator('.mobile-session-title').getByText("Branch root", { exact: true }).waitFor();
+    }
+    assert.equal(await page.getByText("Inactive branch answer", { exact: true }).count(), 0);
+    const interruption = page.getByText("A previous run may have been interrupted", { exact: false });
+    if (viewport.width === 1280) {
+      await interruption.waitFor();
+      await page.getByRole("button", { name: /^Activity/ }).click();
+      const overview = page.getByRole("region", { name: "Activity" });
+      const interruptedRow = overview.locator(".activity-item-interrupted").filter({ hasText: "Branch root" });
+      await interruptedRow.waitFor();
+      await interruptedRow.click();
+      await interruption.waitFor();
+      await page.getByRole("button", { name: "Close Activity" }).click();
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await interruption.waitFor();
+      await page.getByRole("button", { name: "Dismiss" }).click();
+      await interruption.waitFor({ state: "detached" });
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.getByText("Active branch answer", { exact: true }).waitFor();
+      assert.equal(await interruption.count(), 0);
+    } else {
+      assert.equal(await interruption.count(), 0, "acknowledgement persists across tabs");
+    }
+    console.log("PASS: interrupted run notice survives reload until dismissed and never replaces saved history");
+    const thinkingRequests = [];
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname.endsWith("/thinking")) thinkingRequests.push(request.url());
+    });
+    await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+    await page.locator("strong").filter({ hasText: "E2E markdown" }).waitFor();
+    await page.locator("pre").filter({ hasText: "console.log('E2E code');" }).waitFor();
+    await page.getByText("E2E final answer", { exact: true }).waitFor();
+    const processDetails = page.getByRole("button", { name: /^Process details/ });
+    const thinking = page.getByRole("button", { name: /^Thinking/ });
+    assert.equal(await processDetails.count(), 1);
+    assert.equal(await thinking.count(), 0, "All thinking stays inside process details");
+    const finalMessage = page.locator("[data-entry-id='answer']");
+    assert.equal(await finalMessage.getByRole("button", { name: /^Thinking/ }).count(), 0);
+    assert.equal(await finalMessage.getByText("test/E2E Model", { exact: true }).count(), 1);
+    assert.equal(thinkingRequests.length, 0);
+    await checkMessageTimestamps(page, timestamp);
+    await processDetails.click();
+    assert.equal(await thinking.count(), 3);
+    assert.equal(await thinking.last().innerText(), "E2E final reasoning");
+    assert.equal(thinkingRequests.length, 0);
+    for (const [index, text] of ["Intermediate thinking details.", "Follow-up thinking details.", "Final thinking details."].entries()) {
+      await thinking.nth(index).click();
+      await page.getByText(text, { exact: false }).waitFor();
+    }
+    assert.equal(thinkingRequests.length, 3);
+    const processText = await processDetails.locator("..").innerText();
+    assert.ok(processText.indexOf("E2E intermediate reasoning") < processText.indexOf("echo E2E tool output"));
+    assert.ok(processText.indexOf("echo E2E tool output") < processText.indexOf("E2E follow-up reasoning"));
+    assert.ok(processText.indexOf("E2E follow-up reasoning") < processText.indexOf("E2E process note"));
+    assert.ok(processText.indexOf("E2E process note") < processText.indexOf("E2E final reasoning"));
+    assert.equal(processText.split("E2E final reasoning").length - 1, 1);
+    assert.ok(!(await finalMessage.last().innerText()).includes("E2E final reasoning"));
+    await page.getByText("echo E2E tool output", { exact: true }).waitFor();
+    await page.getByRole("button", { name: /bash.*echo E2E tool output/ }).click();
+    await page.getByText("E2E tool output", { exact: true }).waitFor();
+    await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
+    const heading = page.getByRole("heading", { name: "E2E compacted heading", exact: true });
+    await heading.waitFor({ state: "attached" });
+    if (viewport.width > 600) {
+      const node = page.locator("[data-minimap-node-index='0']");
+      await node.waitFor();
+      const rect = await node.boundingBox();
+      assert.ok(rect);
+      await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      const preview = page.locator("[data-minimap-preview-box]");
+      await preview.getByRole("button", { name: "E2E compaction anchor", exact: true }).waitFor();
+      await preview.getByRole("button", { name: "E2E compacted heading", exact: true }).click();
+      await page.waitForFunction(() => {
+        const heading = document.querySelector("[data-entry-id='answer'] h2");
+        const scroll = heading?.closest(".overflow-y-auto");
+        return heading && scroll && Math.abs(heading.getBoundingClientRect().top
+          - scroll.getBoundingClientRect().top - scroll.clientHeight * 0.3) < 5;
+      });
+      await page.screenshot({ path: join(artifacts, "compaction-minimap.png") });
+
+      const selectSession = async (title, entryId) => {
+        // Select the actual row, not a clipped label or its hover actions.
+        await page.locator(".session-row").filter({ has: page.getByTitle(title, { exact: true }) })
+          .click({ position: { x: 12, y: 12 } });
+        await page.locator(`[data-entry-id="${entryId}"]:not([data-message-role])`).waitFor({ state: "visible" });
+      };
+      const readingOffset = (target) => target.evaluate((element) => (
+        element.getBoundingClientRect().top - element.closest(".overflow-y-auto").getBoundingClientRect().top
+      ));
+      const positionForReading = async (target) => {
+        const offset = await target.evaluate(async (element) => {
+          // A response/attached row can precede pagination's post-layout anchoring.
+          // Establish a real visible reading position, not an off-screen snapshot.
+          const layout = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          await layout();
+          const scroll = element.closest(".overflow-y-auto");
+          scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 120;
+          await layout();
+          return element.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
+        });
+        assert.ok(Math.abs(offset - 120) < 5, `Reading fixture must settle at its visible anchor, got ${offset}`);
+        return offset;
+      };
+      await selectSession(text(0), "e4999");
+      const olderPage = page.waitForResponse((response) => response.url().includes(`/api/sessions/${LONG}/context?`));
+      await page.getByText("Scroll up to load earlier messages", { exact: true }).evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
+      await olderPage;
+      const olderMessage = page.locator("[data-entry-id='e4920']");
+      const olderOffset = await positionForReading(olderMessage);
+      await selectSession("Render **E2E markdown**", "user");
+      const process = page.getByRole("button", { name: /process details/i });
+      await process.click();
+      const answerHeading = page.getByRole("heading", { name: "E2E reading position", exact: true });
+      const answerOffset = await positionForReading(answerHeading);
+      await selectSession(text(0), "e4920");
+      // The message can become visible before its post-layout scroll restoration runs.
+      await page.waitForFunction(({ expected }) => {
+        const element = document.querySelector('[data-entry-id="e4920"]:not([data-message-role])');
+        const scroll = element?.closest(".overflow-y-auto");
+        return element && scroll && Math.abs(element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - expected) < 5;
+      }, { expected: olderOffset }, { timeout: 8000 });
+      assert.ok(Math.abs(await readingOffset(olderMessage) - olderOffset) < 5, "Returning to older history must restore its reading offset");
+      await selectSession("Render **E2E markdown**", "user");
+      assert.equal(await process.getAttribute("aria-expanded"), "false");
+      assert.ok(Math.abs(await readingOffset(answerHeading) - answerOffset) < 5, "Collapsing process details on remount must not displace the answer");
+
+      // Hold pagination until a different branch has loaded, exercising effect cancellation.
+      let releaseHistory;
+      const historyGate = new Promise((resolve) => { releaseHistory = resolve; });
+      const contextRoute = `**/api/sessions/${LONG}/context?*`;
+      await page.route(contextRoute, async (route) => {
+        if (new URL(route.request().url()).searchParams.has("before")) await historyGate;
+        await route.continue().catch(() => {});
+      });
+      // Context loading is real; avoid starting an agent just to persist the test branch.
+      const agentRoute = `**/api/agent/${LONG}`;
+      await page.route(agentRoute, (route) => route.fulfill({ json: {} }));
+      try {
+        const pendingHistory = page.waitForRequest((request) => request.url().includes(`/api/sessions/${LONG}/context?`) && new URL(request.url()).searchParams.has("before"));
+        await page.locator(`[title="${text(0)}"]`).click();
+        await pendingHistory;
+        await page.getByRole("button", { name: "Branches", exact: true }).click();
+        await page.getByText("E2E alternate history branch", { exact: true }).click();
+        await page.locator("[data-entry-id='alternate']:not([data-message-role])").waitFor({ state: "visible" });
+        await page.screenshot({ path: join(artifacts, "scroll-restore-branch.png") });
+      } finally {
+        releaseHistory();
+        await page.unroute(contextRoute);
+        await page.unroute(agentRoute);
+      }
+      console.log("PASS: session reading offsets, collapsed process details, and cancelled branch restoration");
+      await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
+      await heading.waitFor({ state: "visible" });
+    }
+    await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+    await page.locator(".markdown-code-block pre").waitFor();
+    await checkFilePanel(page, previewFile);
+    await checkFileDiffViews(page, editableFile);
+    await checkEditableFile(page, editableFile);
+    await checkExtensionDialogs(page, artifacts, viewport.width);
+    await checkAskUserDialog(page, viewport.width);
+    if (viewport.width <= 600) {
+      await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });
+      await page.getByText("E2E archive fixture", { exact: true }).first().waitFor();
+      await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+      const row = page.locator(`[data-session-id="${ARCHIVE}"]`);
+      await row.scrollIntoViewIfNeeded();
+      const actionsToggle = row.getByRole("button", { name: "Session actions", exact: true });
+      const archiveButton = row.getByRole("button", { name: "Archive", exact: true });
+      await actionsToggle.waitFor({ state: "visible" });
+      assert.ok(await actionsToggle.evaluate((button) => button.getBoundingClientRect().width <= 34));
+      assert.equal(await archiveButton.isVisible(), false, "Only the compact toggle should show initially");
+      await actionsToggle.click();
+      await archiveButton.waitFor({ state: "visible" });
+      assert.equal(await actionsToggle.getAttribute("aria-expanded"), "true");
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await row.getByRole("button", { name: "Copy session link" }).click();
+      assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `${base}/?session=${ARCHIVE}`);
+      assert.equal(new URL(page.url()).searchParams.get("session"), ARCHIVE, "Copy must not select a different row");
+      await actionsToggle.click();
+      await page.keyboard.press("Escape");
+      assert.equal(await archiveButton.isVisible(), false, "Escape should collapse the actions");
+      await actionsToggle.click();
+      await archiveButton.waitFor({ state: "visible" });
+      const iconOffset = await archiveButton.evaluate((button) => {
+        const bounds = button.getBoundingClientRect();
+        const icon = button.querySelector("svg").getBoundingClientRect();
+        return [Math.abs((icon.left + icon.right - bounds.left - bounds.right) / 2),
+          Math.abs((icon.top + icon.bottom - bounds.top - bounds.bottom) / 2)];
+      });
+      assert.ok(iconOffset.every((offset) => offset <= 1), `Archive icon is off-center: ${iconOffset}`);
+      await archiveButton.click();
+      await row.waitFor({ state: "detached" });
+      assert.equal((await api("/api/sessions")).sessions.find((session) => session.id === ARCHIVE)?.archived, true);
+      const searchToggle = page.getByRole("button", { name: "Search conversations", exact: true });
+      await searchToggle.click();
+      await page.getByRole("searchbox", { name: "Search conversations..." }).fill("E2E archive fixture");
+      await page.getByText("No matching conversations in this scope").waitFor();
+      await page.getByRole("checkbox", { name: "Active and archived" }).check();
+      await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
+      const titlesOnly = page.getByRole("checkbox", { name: "Titles only", exact: true });
+      await titlesOnly.check();
+      await page.getByText("No matching conversations in this scope").waitFor();
+      await titlesOnly.uncheck();
+      await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
+      const renameResponse = await fetch(`${base}/api/sessions/${ARCHIVE}`, {
+        method: "PATCH", body: JSON.stringify({ name: "E2E archive fixture" }), signal: AbortSignal.timeout(30_000),
+      });
+      assert.equal(renameResponse.status, 200);
+      await titlesOnly.check();
+      await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
+      await titlesOnly.uncheck();
+      await page.getByRole("checkbox", { name: "Active and archived" }).uncheck();
+      await page.getByText("No matching conversations in this scope").waitFor();
+      await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
+      await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
+      await page.getByRole("button", { name: "Active sessions", exact: true }).click();
+      await page.getByRole("searchbox", { name: "Search conversations..." }).fill("Other workspace task");
+      await page.getByText("No matching conversations in this scope").waitFor();
+      await page.getByRole("checkbox", { name: "All projects" }).check();
+      await page.getByRole("button", { name: /Other workspace task/ }).waitFor();
+      await page.getByRole("checkbox", { name: "All projects" }).uncheck();
+      await page.getByText("No matching conversations in this scope").waitFor();
+      await titlesOnly.check();
+      await searchToggle.click();
+      await searchToggle.click();
+      assert.equal(await titlesOnly.isChecked(), false, "Reopening search resets title-only mode");
+      await searchToggle.click();
+      await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
+      await row.getByText("E2E archive fixture", { exact: true }).click();
+      await page.getByText("This session is archived. Restore it to show it in active sessions.").waitFor();
+      await page.getByRole("button", { name: "Restore session", exact: true }).click();
+      await page.getByText("This session is archived. Restore it to show it in active sessions.").waitFor({ state: "detached" });
+      await row.waitFor({ state: "detached" });
+      assert.equal(new URL(page.url()).searchParams.get("session"), ARCHIVE, "Inline restore should keep the chat open");
+      assert.equal((await api("/api/sessions")).sessions.find((session) => session.id === ARCHIVE)?.archived, undefined);
+      console.log("PASS: mobile session archive and inline restore keep the chat open without a page reload");
+      await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+      await page.getByRole("button", { name: "Active sessions", exact: true }).click();
+      await row.getByRole("button", { name: "Session actions", exact: true }).click();
+      await row.getByRole("button", { name: "Move to project…", exact: true }).click();
+      const moveDialog = page.getByRole("dialog", { name: "Move to project…" });
+      await moveDialog.getByLabel("Destination project").click();
+      await moveDialog.locator(`button[role="option"][data-value="${otherProject}"]`).click();
+      await moveDialog.getByRole("button", { name: "Move", exact: true }).click();
+      await moveDialog.waitFor({ state: "detached" });
+      await row.waitFor({ state: "detached" });
+      const moved = (await api("/api/sessions?force=1")).sessions.find((session) => session.id === ARCHIVE);
+      assert.equal(moved?.cwd, otherProject);
+      assert.equal(moved?.projectRoot, otherProject);
+      await page.goto(`${base}/?session=${OTHER}`, { waitUntil: "domcontentloaded" });
+      await page.locator('.mobile-session-title').getByText("Other workspace task", { exact: true }).waitFor();
+      assert.equal(await page.locator('.mobile-session-project').textContent(), "other-project");
+      console.log("PASS: mobile session move changes the saved project and refreshes the sidebar");
+    }
+    if (viewport.width > 600) {
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await page.locator(".markdown-code-block pre").waitFor();
+      await checkChatAppearance(page);
+    }
+    assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+    console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`);
+    await harness.closeContext(context);
+    context = undefined;
+    page = undefined;
+  }
+  if (process.env.E2E_SESSION_LINK_ONLY !== "1") {
+  context = await harness.newContext(browser, {}, base);
+  page = await context.newPage();
+  await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /^Account for/ }).click();
+  await page.getByLabel("Account provider").selectOption("anthropic");
+  const accountPicker = page.getByLabel("Session account", { exact: true });
+  await accountPicker.selectOption(secondaryAccountId);
+  assert.equal((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${RICH}`)).session.anthropic, secondaryAccountId);
+  console.log("PASS: browser session account selector persists an idle-session switch");
+  const removed = await fetch(`${base}/api/auth/accounts`, {
+    method: "DELETE", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: secondaryAccountId }),
+  });
+  assert.equal(removed.status, 200);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /^Account for/ }).click();
+  await page.getByLabel("Account provider").selectOption("anthropic");
+  const unavailablePicker = page.getByLabel("Session account", { exact: true });
+  // The deleted binding is already selected. Selecting it again issues a real
+  // rejected PUT, rather than testing restoration/display of the saved binding.
+  assert.equal(await unavailablePicker.inputValue(), secondaryAccountId);
+  assert.equal(await unavailablePicker.locator("option:checked").innerText(), "Unavailable account");
+  await unavailablePicker.selectOption("");
+  assert.deepEqual((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${RICH}`)).session, {});
+  console.log("PASS: deleted account remains visible and can be explicitly switched to Pi default");
+  await harness.closeContext(context);
+  context = undefined;
+  page = undefined;
+
+  if (process.env.E2E_ACCOUNT_ONLY !== "1") {
+    const { oauthProviders } = await api("/api/auth/providers");
+    const oauthEntry = oauthProviders.find((item) => item.id === "github-copilot") ?? oauthProviders[0];
+    assert.ok(oauthEntry, "OAuth provider required for browser authorization fixture");
+    const oauthProvider = oauthEntry.id;
+    const { account: deviceAccount } = await post("/api/auth/accounts", { provider: oauthProvider, label: "E2E device", type: "oauth" });
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 600 }]) {
+      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      page = await context.newPage();
+      page.setDefaultTimeout(30_000);
+      await checkProviderAccountAuthorization(page, { base, sessionId: RICH, provider: oauthProvider,
+        providerName: oauthEntry.name, accountLabel: deviceAccount.label, width: viewport.width, artifacts });
+      await harness.closeContext(context);
+      context = undefined;
+      page = undefined;
+    }
+  }
+  }
+  }
+} catch (error) {
+  console.error(error);
+  process.exitCode = 1;
+  await harness.fail(error);
+} finally {
+  await harness.finish();
+}

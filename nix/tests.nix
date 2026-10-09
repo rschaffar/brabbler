@@ -42,18 +42,16 @@ let
         ${pkgs.python3}/bin/python3 -B ${./export-test-source.py} ${src} \
           --output "$root/source" --manifest "$root/source-input.json" --verify-manifest
         phase_done
-        if [ "$inventory_only" != 1 ]; then
-          phase_start copy-modules
-          cp -a --no-preserve=ownership --reflink=auto ${modules}/node_modules "$root/source/node_modules"
-          chmod -R u+w "$root/source/node_modules"
-          phase_done
-        fi
-        # The source export preserves original modes. Only this disposable
-        # copy is made writable for genuine Next type generation.
+        # Make only exported source writable, BEFORE attaching immutable modules.
         phase_start writable-source
         chmod -R u+w "$root/source"
         cd "$root/source"
         phase_done
+        if [ "$inventory_only" != 1 ]; then
+          phase_start link-modules
+          ln -s ${modules}/node_modules "$root/source/node_modules"
+          phase_done
+        fi
         export PATH="${forwarder}/bin:$root/source/node_modules/.bin:${toolPath}"
         if [ "$inventory_only" != 1 ]; then
           phase_start exporter-contracts
@@ -84,10 +82,11 @@ let
       jobs=8
       jobs_seen=0
       inventory_only=0
+      keep_workspace=0
       help=0
       selection=()
       ${if mode == "offline" then ''
-        refuse() { echo 'Allowed: --jobs <1..32>, repeatable --file <relative-discovered.test.mjs>, --inventory-only, --help' >&2; exit 2; }
+        refuse() { echo 'Allowed: --jobs <1..32>, repeatable --file <relative-discovered.test.mjs>, --inventory-only, --keep-workspace, --help' >&2; exit 2; }
         while [ "$#" -gt 0 ]; do
           case "$1" in
             --jobs)
@@ -118,6 +117,11 @@ let
               inventory_only=1
               shift
               ;;
+            --keep-workspace)
+              [ "$keep_workspace" = 0 ] || refuse
+              keep_workspace=1
+              shift
+              ;;
             --help)
               [ "$help" = 0 ] || refuse
               help=1
@@ -128,7 +132,7 @@ let
         done
         if [ "$help" = 1 ]; then
           printf '%s\n' \
-            'test-offline [--jobs <1..32>] [--file <relative-discovered.test.mjs> ...] [--inventory-only] [--help]' \
+            'test-offline [--jobs <1..32>] [--file <relative-discovered.test.mjs> ...] [--inventory-only] [--keep-workspace] [--help]' \
             'Default desired jobs: 8; actual CPU/quota/allocation/memory admission may reduce it.' \
             'Root, Git, tools and artifact paths are fixed by this app; overrides/unknown options refuse.' \
             'Selected-file success is NOT full-suite acceptance. Inventory-only runs no checks/tests.'
@@ -182,9 +186,9 @@ let
       for dir in home config cache data state runtime agent tmp artifacts; do
         ${pkgs.coreutils}/bin/mkdir -m 700 "$root/$dir"
       done
-      echo "Private ${mode} test root (retained for settlement/audit): $root"
+      echo "Private ${mode} test root (evidence retained; settled bulk cleaned): $root"
       # Never inherit live HOME/credentials/proxies/NODE_OPTIONS or user bus.
-      # No automatic recursive cleanup of potentially unsettled host fixtures.
+      # The supervisor owns settlement and only removes this run's regenerables.
       exec ${pkgs.coreutils}/bin/env -i \
         PATH=${lib.escapeShellArg toolPath} \
         HOME="$root/home" XDG_CONFIG_HOME="$root/config" XDG_CACHE_HOME="$root/cache" \
@@ -192,10 +196,11 @@ let
         XDG_CONFIG_DIRS="$root/config" XDG_DATA_DIRS="$root/data" \
         PI_CODING_AGENT_DIR="$root/agent" TMPDIR="$root/tmp" TMP="$root/tmp" TEMP="$root/tmp" \
         LANG=C.UTF-8 LC_ALL=C.UTF-8 SHELL=${pkgs.bash}/bin/bash \
-        PI_WEB_TEST_SHELL=${pkgs.bash}/bin/bash \
+        PI_WEB_TEST_SHELL=${pkgs.bash}/bin/bash PI_WEB_TEST_MODULES=${modules}/node_modules \
         PI_OFFLINE=1 JITI_FS_CACHE=0 NEXT_TELEMETRY_DISABLED=1 \
         GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_GLOBAL=/dev/null \
         GIT_TERMINAL_PROMPT=0 "''${core_env[@]}" \
+        ${nodejs}/bin/node ${src}/nix/test-lifecycle.mjs "$root" "$keep_workspace" \
         ${body} "$root" "$inventory_only" "''${runner_args[@]}"
     '';
   offlineProgram = program "offline";
@@ -230,7 +235,8 @@ in
     # per-file TAP/stderr, events, inventory and summary, without a run-* glob.
     mkdir -p "$out"
     cp -a "$check_root/artifacts" "$out/artifacts"
-    cp "$check_root/source-input.json" "$check_root/driver.log" "$out/"
+    cp "$check_root/source-input.json" "$check_root/driver.log" \
+      "$check_root/execution.log" "$check_root/lifecycle.json" "$out/"
     printf '%s\n' \
       'Offline check passed. Stored/cached artifacts are diagnostics, NOT fresh native/OS authority receipts.' \
       'driver.log includes exporter/static preparation stdout+stderr; original output is also in the Nix build log.' \
