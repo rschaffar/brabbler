@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
-export async function checkActivityOverview(page, width, { base, api, post, waitingSessionId, selectedSessionId, otherSessionId, artifacts, harness, seedInterruptedRun }) {
+export async function checkActivityOverview(page, width, { base, api, post, waitingSessionId, selectedSessionId, otherSessionId, artifacts, harness, seedInterruptedRun, subagentIds, seedSubagentCompletions }) {
   const mobile = width <= 640;
   const dotColor = (row) => row.locator(".activity-item-top .activity-dot")
     .evaluate((dot) => getComputedStyle(dot).backgroundColor);
@@ -242,6 +243,60 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   assert.equal(await reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Other workspace task" }).count(), 0,
     "server-reviewed runs must not reappear after reloading this browser");
   assert.equal(await page.evaluate(() => localStorage.getItem("pi-web:reviewed-run-times")), null);
+  const [childA, childB, workingChild, otherChild] = subagentIds;
+  const completed = seedSubagentCompletions();
+  await page.route("**/api/agent/running", async (route) => {
+    const response = await route.fetch();
+    const snapshot = await response.json();
+    await route.fulfill({ response, json: { ...snapshot,
+      runningSessionIds: [...new Set([...snapshot.runningSessionIds, workingChild])],
+    } });
+  });
+  try {
+    const row = (id, status = "ready") => reloadedOverview.locator(`.activity-item-${status}`).filter({ hasText: id });
+    await reloadedOverview.getByRole("combobox", { name: "Project" }).selectOption({ label: "project" });
+    await row(childA).waitFor({ timeout: 15000 });
+    await row(childB).waitFor();
+    await row(workingChild, "working").waitFor();
+    const parentReady = reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Branch root" });
+    await parentReady.waitFor();
+    const before = await api("/api/agent/running");
+    const reviewedBefore = new Map(before.reviewedRuns.map(({ sessionId, at }) => [sessionId, at]));
+    const bulkRead = reloadedOverview.getByRole("button", { name: "Mark all subagents as read", exact: true });
+    await bulkRead.click();
+    await row(childA).waitFor({ state: "hidden" });
+    await row(childB).waitFor({ state: "hidden" });
+    assert.equal(await parentReady.isVisible(), true, "bulk review leaves parent sessions unread");
+    assert.equal(await row(workingChild, "working").isVisible(), true, "bulk review leaves running children alone");
+    assert.equal(await bulkRead.isDisabled(), true, "only a parent remains ready in this filter");
+    // Poll outside the page: an async browser predicate returns a truthy Promise
+    // before its result, so it is not evidence that both acknowledgements landed.
+    const deadline = Date.now() + 15000;
+    let after;
+    while (true) {
+      after = await api("/api/agent/running");
+      if ([childA, childB].every((id) => after.reviewedRuns.some((entry) =>
+        entry.sessionId === id && entry.at === completed.get(id)))) break;
+      assert.ok(Date.now() < deadline, "all bulk read acknowledgements must reach server storage");
+      await delay(100);
+    }
+    for (const id of [selectedSessionId, workingChild, otherChild]) {
+      assert.equal(after.reviewedRuns.find((entry) => entry.sessionId === id)?.at, reviewedBefore.get(id),
+        `bulk review must not acknowledge ${id}`);
+    }
+    await reloadedOverview.getByRole("combobox", { name: "Project" }).selectOption({ label: "other-project" });
+    await row(otherChild).waitFor();
+    await page.screenshot({ path: join(artifacts, `activity-bulk-read-${width}.png`) });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.getByText("Other workspace task", { exact: true }).last().waitFor();
+    await page.getByRole("button", { name: /^Activity/ }).click();
+    await reloadedOverview.getByRole("combobox", { name: "Project" }).selectOption({ label: "project" });
+    await parentReady.waitFor();
+    assert.equal(await row(childA).count(), 0, "reviewed children stay absent after reload");
+    assert.equal(await row(childB).count(), 0, "all target children stay absent after reload");
+  } finally {
+    await page.unroute("**/api/agent/running");
+  }
   const finalReview = await api("/api/agent/running");
   assert.ok(finalReview.reviewedRuns.some((entry) => entry.sessionId === otherSessionId));
   // Each viewport is a new browser; leave a shared clean baseline for the next

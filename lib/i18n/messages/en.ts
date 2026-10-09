@@ -162,6 +162,8 @@ export const enLocale: LocalePlugin = {
     "activity.openAndAnswer": "Open & answer",
     "activity.review": "Review",
     "activity.markRead": "Read",
+    "activity.markAllSubagentsRead": "Mark all subagents as read",
+    "activity.markAllSubagentsReadHint": "Mark ready subagents in the current project filter as read. Parent sessions stay unread.",
     "activity.markReadSession": "Mark {name} as read",
     "activity.open": "Open",
     "activity.close": "Close Activity",

@@ -644,7 +644,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setExplorerOpen(loadExplorerOpen());
   }, []);
 
-  const flushReviewAcks = useCallback(async () => {
+  const flushReviewAcks = useCallback(async function flushReviewAcks() {
     if (reviewAckInFlightRef.current || pendingReviewAcksRef.current.size === 0) return;
     reviewAckInFlightRef.current = true;
     const entries = [...pendingReviewAcksRef.current].map(([sessionId, at]) => ({ sessionId, at }));
@@ -669,6 +669,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       setActivityAvailable(false);
     } finally {
       reviewAckInFlightRef.current = false;
+      // Bulk reads may enqueue more receipts while the first POST is in flight.
+      // Drain them promptly instead of relying on another visible-tab poll.
+      if (!reviewAckFailedRef.current && pendingReviewAcksRef.current.size > 0) void flushReviewAcks();
     }
   }, []);
 

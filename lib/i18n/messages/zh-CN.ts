@@ -162,6 +162,8 @@ export const zhCNLocale: LocalePlugin = {
     "activity.openAndAnswer": "打开并回答",
     "activity.review": "查看",
     "activity.markRead": "已读",
+    "activity.markAllSubagentsRead": "将所有子 Agent 标记为已读",
+    "activity.markAllSubagentsReadHint": "将当前项目筛选中待查看的子 Agent 标记为已读。父会话保持未读。",
     "activity.markReadSession": "将{name}标记为已读",
     "activity.open": "打开",
     "activity.close": "关闭动态",

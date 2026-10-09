@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { createJiti } from "jiti";
 import { checkFilePanel, checkFileDiffViews, checkEditableFile, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
@@ -56,6 +57,8 @@ const APPEND = "e2e-external-append-session";
 const ARCHIVE = "e2e-archive-session";
 const BULK = ["e2e-bulk-desktop-a", "e2e-bulk-desktop-b", "e2e-bulk-mobile-a", "e2e-bulk-mobile-b"];
 const OTHER = "e2e-other-project";
+const ACTIVITY_SUBAGENTS = process.env.E2E_ACTIVITY_ONLY === "1"
+  ? ["e2e-ready-child-a", "e2e-ready-child-b", "e2e-working-child", "e2e-other-child"] : [];
 const GIT = "e2e-git-explorer";
 const TRUST_MAIN = "e2e-trust-main";
 const TRUST_LINKED = "e2e-trust-linked";
@@ -76,8 +79,9 @@ function message(id, parentId, role, content) {
   return { type: "message", id, parentId, timestamp, message: { role, content, ...(usage && { usage }) } };
 }
 
-function writeSession(id, entries, cwd = project) {
-  const header = { type: "session", version: 3, id, timestamp, cwd };
+function writeSession(id, entries, cwd = project, parentSessionId) {
+  const header = { type: "session", version: 3, id, timestamp, cwd,
+    ...(parentSessionId ? { parentSession: join(sessionDir, `2026-08-23T00-00-00-000Z_${parentSessionId}.jsonl`) } : {}) };
   writeFileSync(join(sessionDir, `2026-08-23T00-00-00-000Z_${id}.jsonl`),
     [header, ...entries].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
 }
@@ -87,6 +91,8 @@ let browser;
 let page;
 let context;
 
+  const activityReview = ACTIVITY_SUBAGENTS.length
+    ? await createJiti(import.meta.url).import("../lib/activity-review-server.ts") : null;
   // Seed before startup so the first catalogue scan sees every fixture.
   seedModelSpeedFixtures({ agentDir, writeSession, message, timestamp });
   seedRunningForkFixtures({ agentDir, writeSession, message });
@@ -191,6 +197,20 @@ let context;
     writeSession(TRUST_MAIN, [message("root", null, "user", "Trust main fixture")], trustProject);
     writeSession(TRUST_LINKED, [message("root", null, "user", "Trust linked fixture")], trustLinked);
   }
+  for (const [index, id] of ACTIVITY_SUBAGENTS.entries()) {
+    const parentSessionId = index === 3 ? OTHER : BRANCH;
+    writeSession(id, [
+      { type: "custom", id: "meta", parentId: null, timestamp, customType: "pi-web:subagent", data: {
+        version: 1, parentSessionId,
+        parentSessionPath: join(sessionDir, `2026-08-23T00-00-00-000Z_${parentSessionId}.jsonl`),
+        profile: "explore", description: id, task: "Activity bulk review fixture", createdAt: timestamp,
+      } },
+      message("prompt", "meta", "user", id),
+      message("answer", "prompt", "assistant", "Fixture result"),
+      { type: "custom", id: "result", parentId: "answer", timestamp, customType: "pi-web:subagent-result",
+        data: { version: 1, status: "completed", completedAt: timestamp } },
+    ], index === 3 ? otherProject : project, parentSessionId);
+  }
   {
     const otherGit = (...args) => execFileSync("git", ["-C", otherProject, ...args], { encoding: "utf8", env: fixtureEnv }).trim();
     otherGit("init", "-qb", "other-main");
@@ -278,8 +298,11 @@ let context;
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS,
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...ACTIVITY_SUBAGENTS,
         ...(process.env.E2E_TRUST_ONLY === "1" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
+      for (const id of ACTIVITY_SUBAGENTS) {
+        assert.equal(sessions.find((session) => session.id === id)?.relation?.kind, "subagent", `${id} must have real subagent metadata`);
+      }
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
@@ -563,6 +586,14 @@ let context;
       await checkActivityOverview(page, viewport.width, {
         base, api, post, artifacts, harness, waitingSessionId: RICH, selectedSessionId: BRANCH, otherSessionId: OTHER,
         seedInterruptedRun: () => seedRecoveryRun(`${viewport.width}-activity-recovery`),
+        subagentIds: ACTIVITY_SUBAGENTS,
+        seedSubagentCompletions: () => {
+          const path = join(agentDir, "pi-web", "activity-review.json");
+          return new Map([BRANCH, ...ACTIVITY_SUBAGENTS].map((sessionId) => {
+            const { at } = activityReview.recordActivityCompletion(sessionId, path);
+            return [sessionId, at];
+          }));
+        },
       });
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
       await harness.closeContext(context);
