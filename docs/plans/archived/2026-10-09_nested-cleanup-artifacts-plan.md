@@ -35,7 +35,7 @@ removal; unsupported platforms/proc configurations refuse before approval.
 - [x] Extend desktop/mobile cleanup browser fixtures with nested caches beside tracked source.
 - [x] Update tool/policy/settings guidance, maintained guides and a revising ADR.
 - [x] Complete independent safety review, full Linux offline baseline, separate plugin tests and plugin-only desktop/mobile browser acceptance; retain exact logs/artifacts.
-- [ ] Commit coherent changes, resolve completion intent and exact-state integration through the guarded Git lifecycle.
+- [x] Commit coherent changes and resolve completion preparation; hand remaining exact-state integration/cleanup to this session's guarded Git-tool lifecycle and durable receipts, not this implementation plan.
 
 ## Verification checkpoint
 
@@ -97,6 +97,41 @@ these runs are not new-target acceptance. Completion intent and exact-state merg
 approval remain pending. The installed service and original meetings resources
 are untouched.
 
+## Rebased acceptance and lifecycle handoff
+
+The user requested rebase first because `rst-main` moved. Feature commit
+`c690f4451fc554658aed27a42651e3ba5fa15987` rebased cleanly to
+`cba8575abb1ce62c2f5a9ca3c7a7dc783c6635fc`, directly above local target
+`05f3f264d88bb6ab561780046ec491d0e4c9ed83`. `git range-diff` reports the
+feature patch unchanged. Target changes include Pi runtime 1.1.0 dependencies;
+all required acceptance was rerun rather than reusing the earlier checkpoint.
+
+- Old dependencies/browser cache retained in
+  `/tmp/pi-nested-cleanup-rebase-backup.BcKZjt`, no disposal authorized.
+  Dependency preparation took **8.47 s**, log
+  `/tmp/pi-nested-cleanup-rebase-prep.teKktQ.log`. Its trailing version probe
+  failed because `package.json` is not an exported package subpath; preparation
+  itself succeeded, and the subsequent matching-shell acceptance entry succeeded.
+- Same full baseline command: **267 files / 1,718 tests**, typegen/typecheck/lint
+  passed, **131.16 s**; log `/tmp/pi-nested-cleanup-rebased-offline.DAnfyR.log`;
+  export `/tmp/pi-web-test-offline.hDPScv9o/source`, artifacts
+  `/tmp/pi-web-test-offline.hDPScv9o/artifacts/run-XNmssj`.
+- Same separate plugin command (without the separately unnecessary extra lint):
+  **185 tests passed**, **86.32 s**; log
+  `/tmp/pi-nested-cleanup-rebased-plugin.FEpTtx.log`.
+- Same plugin-only browser command: **1280px / 390px passed**, **378.45 s**;
+  log `/tmp/pi-nested-cleanup-rebased-browser.gjtdzz.log`; artifacts
+  `test-results/e2e/browser-CGii6E`, fixture `/tmp/pw-browser-dusDMd`.
+- Checkouts clean after acceptance; patch whitespace check passed. The following
+  archival/evidence-only commit changes no application, dependency or test inputs;
+  its own checks are documentation review and patch/input identity checks.
+
+Implementation is verified and handed off to ADR 0019 and the maintained cleanup
+and feature guides. This session owns the remaining separate exact-state local
+integration approval, result verification and cleanup gates, recorded by the Git
+tools' durable receipts. They are not pre-approved by plan archival. No deployment,
+remote publication or original meetings cleanup is included.
+
 ## Risks and Recovery
 
 Nested deletion must never follow symlink parents, sweep tracked siblings, or accept
@@ -111,4 +146,4 @@ separately authorized deployment.
 - [x] Exact nested cache paths reach one approval card and cleanup succeeds with tracked siblings intact.
 - [x] Negative cases retain unsafe/unapproved resources and report honest outcomes.
 - [x] Required checks and review pass; candidate/commands/results/artifacts recorded.
-- [ ] Local integration completed or blocker/resources explicitly handed off; no remote publication or deployment.
+- [x] Feature commit/rebase/acceptance documented; separate remaining integration/cleanup has one explicit current owner (this session's guarded Git lifecycle and receipts). No remote publication or deployment.
