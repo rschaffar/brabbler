@@ -30,8 +30,11 @@ own **Turbopack dev server on a free loopback port**. They never contact/restart
 the installed service on 30141. Do not use production builds, `next start`,
 webpack fallback, competing servers or forced clicks.
 
-Fixtures use disposable HOME/XDG/agent storage, local repositories and a private
-umask; no existing sessions or model credentials. The Nix shell supplies Chromium
+The `test:e2e` and `test:terminal` runners share `e2e/harness.mjs`: private
+HOME/XDG/agent/TMP (and Windows profile/app-data) storage, local repositories and a
+private umask. An explicit tool/browser environment allowlist excludes ambient
+credentials, provider profiles, Node options, proxies and shell startup overrides;
+no existing sessions or model credentials are used. The Nix shell supplies Chromium
 through `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`. Never run `npm ci` over Nix-managed
 modules or change host browser configuration for acceptance.
 
@@ -79,11 +82,53 @@ context retains trace, console/pageerror and local-5xx safeguards.
 Terminal checks execute a real local shell at desktop/mobile sizes and cover
 fonts, reconnect/restart, exit, close-during-creation and workspace isolation.
 
-Failures retain screenshots, traces and server logs in `test-results/e2e/`;
-terminal checks print their artifact root. Fixtures' owned lifecycle does not
-authorize deleting old test roots, dependencies or feature resources. Console
-errors and local 5xx responses fail acceptance; only explicitly corroborated
-expected conflicts are tolerated.
+## Diagnostics, shutdown and retention
+
+Every `test:e2e` / `test:terminal` invocation prints a new private directory under
+`test-results/e2e/browser-*` or `test-results/e2e/terminal-*`. A later run never
+reuses it. CI's existing recursive artifact upload includes these directories.
+
+- `run.json` records the checkout, start/end, status, errors and exact separate
+  fixture-storage root. An unfinished `running` record is not acceptance.
+- `server.log` contains stdout/stderr and is flushed before final reporting.
+  `events.jsonl` timestamps spawn/error/exit/close, requested signals, browser
+  console/page errors, failed requests and local 5xx responses. Requested shutdown
+  and observed process exit are different events; teardown after an HTTP error
+  must not be mistaken for its cause.
+- Every context created by these runners (including plugin-only, timestamps,
+  account and Activity/privacy peers) starts tracing before pages. `context-N.zip`
+  is saved on close on success as well as failure; failure screenshots use the
+  same context ID. Context-open events include viewport information. Capture/flush
+  failures are reported, never silently replaced with an older trace.
+- SIGINT/SIGTERM fail the run and start owned-server shutdown immediately. Normal
+  and interrupted teardown requests SIGTERM, escalating after 10 seconds, then
+  waits up to 5 more seconds. Graceful SIGTERM targets the child so Next can close
+  its own workers and release its lock; POSIX escalation targets the newly spawned
+  process group while its leader is still owned, and Windows targets the child.
+  Browser launches have a 30-second deadline and late arrivals are closed after
+  interruption. Browser diagnostic operations are individually
+  bounded: screenshots/close operations get 5 seconds; potentially >100 MB trace
+  archives get a separately measured 30-second export budget. Application assertion
+  deadlines are unchanged. The runner observes child/pipe closure and POSIX process
+  group absence. A surviving/unknown group fails without signaling a recycled group
+  ID; escaped descendants and Windows descendants are **not certified**. Unsettled
+  shutdown is a failure, not a cleanup certificate.
+- Artifacts **and fixture roots are retained** on both success and failure. The
+  paths in the manifest, not an age/wildcard scan, identify candidates for separately
+  authorized cleanup. Nothing here authorizes deleting old roots, dependencies,
+  backups or feature resources. Auxiliary standalone PDF/theme scripts are not
+  part of these two runner lifecycle guarantees.
+
+Console/page errors and local 5xx responses fail acceptance; only explicitly
+corroborated expected conflicts are tolerated. Aborted requests are diagnostic
+information, not blanket failures: SSE/navigation legitimately cancels requests.
+Before a justified retry, inspect the exact run's logs, response/trace evidence
+and child lifecycle. Keep the original failure visible. An unchanged passing
+retry is not a root-cause diagnosis or a fix; do not add blanket retries, hide
+errors or inflate deadlines to force a pass.
+
+Harness regressions: `lib/e2e-harness.test.mjs` runs in the common core suite.
+Focused helper tests do not replace real browser/terminal acceptance.
 
 The [removal checklist](../docs/plans/2026-09-29_policy-driven-git-tools-plan.md)
 retains earlier results and gaps. [Archived full-file diff acceptance](../docs/plans/archived/2026-10-07_git-diff-context-plan.md)

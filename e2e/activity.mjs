@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 
-export async function checkActivityOverview(page, width, { base, api, post, waitingSessionId, selectedSessionId, otherSessionId, artifacts, seedInterruptedRun }) {
+export async function checkActivityOverview(page, width, { base, api, post, waitingSessionId, selectedSessionId, otherSessionId, artifacts, harness, seedInterruptedRun }) {
   const mobile = width <= 640;
   const dotColor = (row) => row.locator(".activity-item-top .activity-dot")
     .evaluate((dot) => getComputedStyle(dot).backgroundColor);
@@ -120,6 +120,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   // Extension commands keep the POST open until the user responds. Launch it
   // without awaiting so the browser can see and answer the background dialog.
   const prompting = post(`/api/agent/${waitingSessionId}`, { type: "prompt", message: "/e2e-ask-user single" });
+  void prompting.catch(() => {}); // Observe early rejection during teardown; await below still fails.
   await page.waitForFunction(async (id) => {
     const response = await fetch("/api/agent/running", { cache: "no-store" });
     const snapshot = await response.json();
@@ -204,7 +205,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await originalReady.waitFor({ state: "hidden" });
   // A separate browser context has no shared localStorage. Explicitly marking
   // this result read must still clear its queue on the server's next visible poll.
-  const peerContext = width === 1280 ? await page.context().browser().newContext({ viewport: { width, height: 900 }, locale: "en-US" }) : null;
+  const peerContext = width === 1280 ? await harness.newContext(page.context().browser(), { viewport: { width, height: 900 }, locale: "en-US" }, base) : null;
   const peer = peerContext ? await peerContext.newPage() : null;
   if (peer) {
     await page.waitForFunction(async (id) => {
@@ -228,7 +229,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   if (peer) {
     await peer.getByRole("region", { name: "Activity" }).locator(".activity-item-ready")
       .filter({ hasText: "Other workspace task" }).waitFor({ state: "hidden", timeout: 15000 });
-    await peerContext.close();
+    await harness.closeContext(peerContext);
   }
   await otherReady.waitFor({ state: "hidden" });
   assert.equal(await overview.getByRole("combobox", { name: "Project" }).evaluate((select) => select.selectedOptions[0]?.textContent), "other-project",

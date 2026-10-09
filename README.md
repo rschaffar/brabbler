@@ -146,17 +146,13 @@ A password does not encrypt HTTP traffic. Use HTTPS through a trusted reverse pr
 
 This project follows my personal workflow rather than promising a fixed release schedule or feature roadmap. If you use it, expect it to evolve as that workflow changes. Upstream is not responsible for supporting this fork.
 
-Read [AGENTS.md](./AGENTS.md) for repository workflow rules, architecture, and the detailed file map.
+Read [AGENTS.md](./AGENTS.md) for repository workflow rules and
+[Architecture](./docs/architecture.md) for the source map. [Testing](./docs/testing.md)
+owns the verification baseline and change-dependent acceptance matrix.
 
-Common checks:
-
-```bash
-npm test
-node_modules/.bin/tsc --noEmit
-npm run lint
-```
-
-For isolated Linux checks, including type generation, typecheck, and lint:
+On Linux, one complete isolated run satisfies common core tests, type generation,
+typecheck and lint—do not run the ordinary npm baseline in addition solely for
+its spelling:
 
 ```bash
 nix develop -c node nix/test-offline.mjs
@@ -171,7 +167,7 @@ npm run test:e2e
 npm run test:terminal
 ```
 
-**Never run `next build` or `npm run build` during normal development.** Builds write to `.next/` and can interfere with the development server; reserve them for installation or release work. Reuse an existing healthy dev server rather than starting another for the same checkout.
+**Never run `next build` or `npm run build` during normal development.** Builds write to `.next/` and can interfere with the development server; reserve them for installation or release work. Manual development reuses a healthy matching server. Acceptance instead requires a free checkout lock and owns an isolated free-port server; it never substitutes or restarts the installed service.
 
 For Nix dependency changes, use `nix develop .#update` and `npm install --package-lock-only`, update the dependency hash in `nix/npm-deps.nix`, and deliberately move the old managed `node_modules` aside before re-entering the default shell. Never overwrite an unmanaged dependency tree to bypass a shell refusal.
 

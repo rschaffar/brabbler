@@ -54,6 +54,11 @@
       "reason": "Known offline-contract failures must remain visible; included exclusive, no network enablement or skip workaround."
     },
     {
+      "path": "lib/e2e-harness.test.mjs",
+      "lane": "E",
+      "reason": "Shared acceptance-harness regressions mutate test-process umask/exit status and exercise owned child SIGTERM/SIGKILL lifecycle; exclusive avoids nested process contention. No browser/terminal acceptance substitution."
+    },
+    {
       "path": "lib/test-runner.test.mjs",
       "lane": "E",
       "reason": "Runner-only mechanics deliberately launch tiny two-worker subprocesses, exercise SIGINT/TERM and mutate sentinel env/umask; exclusive avoids nested pool oversubscription. No SDK/native proof."

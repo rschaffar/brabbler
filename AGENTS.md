@@ -1,4 +1,4 @@
-# Pi Web - Development Notes
+# Pi Web — Development Instructions
 
 <!-- project-workflow-align: baseline-v3 -->
 ## Project Git Profile
@@ -13,9 +13,9 @@ all other lifecycle safeguards remain in force.
 - **Local integration target (required):** Integrate completed work into local `rst-main`. Rebase on its current local tip, verify the exact candidate, and obtain exact-state approval before integration. If blocked, retain the feature resources and resolve the blocker rather than bypassing safeguards.
 - **Local integration method (required):** Use an ordinary unsigned **non-fast-forward merge**. Do not fast-forward or squash into `rst-main`. Remote publication and feature-worktree cleanup remain separate approvals.
 - **Commit signing and authorship:** No project-specific signing or identity requirement; the global lifecycle applies.
-- **Required verification:** Use the common checks in this file and `README.md`: `npm test`, `node_modules/.bin/tsc --noEmit`, and `npm run lint`, narrowed or extended for the affected area. Run `npm run test:e2e` for affected browser flows and `npm run test:terminal` for terminal integration changes. Never run `next build` or `npm run build` during normal development; production builds are release-only.
-- **Publication constraints:** `docs/release.md` owns the release process. GitHub pushes/releases and npm publication require separate, explicit authorization for the exact remote operation.
-- **Planning workflow:** `.agents/skills/writing-plans/SKILL.md` owns plans under `docs/plans/`; durable decisions belong in `docs/adr/`, and current operational or contributor behavior belongs in the focused guide under `docs/` or `README.md`/`AGENTS.md`.
+- **Required verification:** Follow the single baseline and change-dependent acceptance matrix in [docs/testing.md](docs/testing.md). A complete successful Linux offline pipeline satisfies common core tests, type generation, typecheck and lint; do not additionally run the ordinary npm baseline just to satisfy its spelling. Focused passes are not full acceptance. Browser, terminal and plugin integration coverage remain separate. Never run `next build` or `npm run build` during normal development; production builds are release-only.
+- **Publication constraints:** [docs/release.md](docs/release.md) owns the release process. GitHub pushes/releases and npm publication require separate, explicit authorization for the exact remote operation.
+- **Planning workflow:** [.agents/skills/writing-plans/SKILL.md](.agents/skills/writing-plans/SKILL.md) owns plans under `docs/plans/`; durable decisions belong in `docs/adr/`, and current operational or contributor behavior belongs in the focused guide under `docs/` or `README.md`/`AGENTS.md`.
 - **Intentional deviations or incompatible rules:** The required linked worktree, `rst-main` target, and non-fast-forward merge replace the global lifecycle's optional direct-checkout, alternative/no-target, and fast-forward/squash choices for this repository. Keep its inspection, clean-state, verification, exact-state approval, remote boundary, and separate cleanup safeguards. Preserve the stronger no-build-during-development rule above.
 
 Do not copy the global lifecycle into this section. If another applicable rule
@@ -23,363 +23,78 @@ conflicts with these project requirements, stop before mutation and ask which
 rule applies to the bounded task. A task-specific answer does not rewrite this
 profile.
 
-## Quick Start
+## Prepare and verify
 
-```bash
-npm run dev   # port 30141
+From the selected Linux worktree:
+
+```sh
+nix develop                         # prepares checkout-local writable dependencies
+npm run dev                         # manual development, port 30141; see lifecycle below
+# Or run isolated checks without starting a manual server:
+nix develop -c node nix/test-offline.mjs --file lib/worktree.test.mjs
+nix develop -c node nix/test-offline.mjs
 ```
 
-Typecheck: `node_modules/.bin/tsc --noEmit`  
-Lint: `npm run lint`  
-**Never run `next build` during dev** — pollutes `.next/` and breaks `npm run dev`.
-
-Linux developer tests: `nix develop -c node nix/test-offline.mjs` (includes typegen, typecheck and lint in a disposable copy). Use repeatable `--file <exact-relative.test.mjs>` for focused work and `--jobs N` for bounded parallelism (default 8, range 1..32; latency-sensitive files run alone). [docs/testing.md](docs/testing.md) owns isolation, diagnostics and retained-resource limits. Never append Node concurrency flags to `npm test`: they follow the globs and do not control Node. Run focused tests while fixing defects, then the full suite at a stable checkpoint; browser/terminal acceptance remains separate.
-
-### Dev server troubleshooting
-
-- Before starting a server, run `lsof -nP -iTCP:30141 -sTCP:LISTEN` and reuse the existing Pi Web process when it is healthy. A second `next dev` for the same checkout cannot use a different port as a workaround because both processes contend for `.next/dev/lock`.
-- A browser-only `Module ... factory is not available` overlay usually means that tab has a stale Turbopack/HMR graph; it does not prove the server or source is broken. First call the browser's explicit reload action, then compare the current server log and a direct HTTP/API request.
-- Restart only after the failure reproduces from a fresh page and the server-side checks also fail. Stop the exact dev process gracefully, move `.next` into a `mktemp -d` backup, and restart with the standard `npm run dev` command.
-- Do not use `next dev --webpack` as a fallback. This repository's development graph can fail on `undici` imports such as `node:console`; development is expected to use Turbopack.
-- Next.js may append a generated `BEGIN:nextjs-agent-rules` block to `AGENTS.md` when `next dev` starts. Treat that as generated tooling output, verify it with `git status`, and do not include it in an unrelated feature commit.
-
----
-
-## Architecture
-
-```
-Browser                Next.js Server              AgentSession (in-process)
-  │                        │                               │
-  ├─ GET /api/sessions ────▶ reads ~/.pi/agent/sessions/   │
-  ├─ GET /api/sessions/[id] reads .jsonl file directly     │
-  ├─ GET /api/agent/running ───────▶ running id snapshot   │
-  │                        │                               │
-  ├─ send message ─────────▶ POST /api/agent/[id]          │
-  │                        │   startRpcSession() ─────────▶│ createAgentSession()
-  │                        │   session.send(cmd) ─────────▶│ session.prompt()
-  │                        │                               │
-  ├─ SSE connect ──────────▶ GET /api/agent/[id]/events    │
-  │                        │   session.onEvent() ◀─────────│ session.subscribe()
-  │◀── data: {...} ─────────│                               │
-```
-
-**Session browsing** (read-only): reads `.jsonl` files through SDK `SessionManager` helpers and `lib/session-reader.ts` — no AgentSession created.  
-**Sending a message**: `startRpcSession()` in `lib/rpc-manager.ts` creates an AgentSession in-process.
-
----
-
-## File Map
-
-```
-app/api/
-  sessions/route.ts               GET  list all sessions
-  sessions/[id]/route.ts          GET/PATCH/DELETE session
-  sessions/[id]/move/route.ts     POST relocate an idle session family to another cwd
-  starred-sessions/route.ts        GET list | POST set/import stars
-  activity/review/route.ts         POST acknowledge/import settled completions
-  sessions/[id]/context/route.ts  GET ?leafId= — context for a specific leaf
-  sessions/[id]/export/route.ts   GET exported HTML for a session
-  agent/new/route.ts              POST { cwd, message, toolNames?, provider?, modelId? }
-  agent/[id]/route.ts             GET state | POST any command
-  agent/[id]/events/route.ts      GET SSE stream
-  agent/running/route.ts          GET currently-running session ids
-  auth/api-key/[provider]/route.ts POST/DELETE provider API key storage
-  auth/login/[provider]/route.ts  GET OAuth/device-code SSE | POST manual code
-  auth/logout/[provider]/route.ts POST OAuth logout
-  auth/providers/route.ts         GET OAuth and API-key provider lists
-  cwd/validate/route.ts           POST validate/select a cwd
-  default-cwd/route.ts            POST create ~/pi-cwd-YYYYMMDD
-  files/[...path]/route.ts        GET file contents for viewer
-  home/route.ts                   GET user home directory
-  models/route.ts                 GET { models, modelList, defaultModel }
-  models/enabled/route.ts         GET/PUT enabledModels switches for the Models panel
-  models/refresh/route.ts         POST fetch provider catalogs from pi.dev on demand
-  models-config/route.ts          GET/PUT — read/write ~/.pi/agent/models.json
-  models-config/catalog/route.ts  GET models.dev pricing presets
-  models-config/discover/route.ts POST fetch a configured provider's upstream model list
-  models-config/test/route.ts     POST test a configured model/provider
-  plugins/route.ts                GET/POST package plugin management
-  skills/route.ts                 GET/PATCH loaded skills and disable-model-invocation
-  skills/install/route.ts         POST install skills through npx skills add
-  skills/search/route.ts          GET/POST skills.sh search
-  subagents/settings/route.ts     GET/PUT built-in subagent feature setting
-  worktrees/route.ts              GET/POST/DELETE git worktrees (explicit local base/tip on creation)
-  git/explorer/route.ts           GET worktree-scoped read-only history/commit/file patch
-  web-auth/route.ts               GET status | POST login | DELETE logout (browser password)
-  plugins/check/route.ts          POST check plugin package updates
-  project-trust/route.ts          GET/POST project trust for package installs
-  sessions/search/route.ts        GET session search
-  sessions/[id]/state/route.ts    GET live wrapper state when the session is running
-  sessions/[id]/auto-name/route.ts POST generate a session title
-  sessions/title-model/route.ts      GET/PUT server-wide title model preference
-  terminal/route.ts               POST create a terminal session
-  terminal/[id]/route.ts          GET stream | POST input/resize | DELETE kill
-  cwd/browse/route.ts             GET browse allowed cwd directories
-  app-update/route.ts             GET current vs latest published pi-web version
-  file-index/route.ts             GET file list for @-mentions
-  git/status/route.ts             GET changed files for a cwd
-  git/diff/route.ts               GET diff for one changed file
-  provider-usage/query/route.ts   POST provider usage quotas
-  push/config/route.ts            GET VAPID public key for push subscriptions
-  push/subscribe/route.ts         POST register a push subscription
-  tools/settings/route.ts         GET/PUT shell tool settings (PowerShell on Windows)
-
-lib/
-  agent-client.ts      typed fetch helper for /api/agent commands
-  draft-store.ts       local draft persistence helpers
-  file-access.ts       allowed file roots for /api/files and worktrees
-  file-paths.ts        client/server path encoding helpers
-  enabled-models.ts    pure minimal-edit engine for the `enabledModels` pattern list
-  enabled-models-runtime.ts  SDK adapter: per-pattern resolution, provider kinds, settings IO
-  markdown.ts          shared markdown helpers
-  node-cli.ts          locate bundled npm-cli.js / npx-cli.js so npm/npx spawn without a shell (Windows npm.cmd)
-  npx.ts               npx runner used by skill install
-  plugin-updates.ts    npm view update checks for /api/plugins/check
-  pi-types.ts          local structural types for pi SDK objects
-  rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession
-  session-reader.ts   SessionManager wrappers + path cache + buildSessionContext adapter
-  session-move.ts     staged JSONL relocation + fork/subagent path repair
-  starred-sessions-server.ts  server-owned star list + serialized atomic edits
-  activity-review-server.ts  durable bounded completion and review ledger
-  subagent-settings.ts  read/write ~/.pi/agent/agents/settings.json
-  tool-presets.ts     PRESET_NONE/READ_ONLY/DEFAULT/FULL + getPresetFromTools()
-  tool-preset-preference.ts  browser-persisted default for fresh sessions
-  types.ts            shared TypeScript types
-  normalize.ts        normalizeToolCalls() — field name mismatch between file format and our types
-  worktree.ts         project/worktree resolution and git worktree operations
-  git-explorer.ts       session-independent bounded selected-worktree history/commit/patch reads
-  git-graph-layout.ts   adapted MIT active-lane graph layout (see git-graph-layout.LICENSE)
-
-components/
-  AppShell.tsx        layout + URL state + tab management
-  SessionSidebar.tsx  session tree + FileExplorer
-  ChatWindow.tsx      chat composition + completion sound wrapper
-  GitExplorer.tsx    local-branch visual history for sidebar-selected worktree
-  GitExplorerPanel.tsx  wide graph/detail sidecar beside chat
-  GitCommitViewer.tsx  committed-file patches and copy controls inside Git panel, no checkout reads
-  CommittedPatchDiff.tsx  split/unified/raw single-file Git renderer using @pierre/diffs
-  GitPatchStack.tsx   collapsible file diffs and shared view controls for Explorer/approvals
-  BlockingCard.tsx   shared compact bounded shell for live blocking requests
-  ChatInput.tsx       input bar + model/thinking/tools/compact controls
-  MessageView.tsx     renders one message (user/assistant/toolCall/toolResult)
-  BranchNavigator.tsx in-session branch switcher
-  ChatMinimap.tsx     scroll minimap alongside the message list
-  MarkdownBody.tsx    markdown renderer
-  ModelsConfig.tsx    modal for editing models.json (opened from sidebar bottom)
-  EnabledModelsSection.tsx  model switches inside ModelsConfig, backed by enabledModels
-  AgentsConfig.tsx    built-in subagent toggle + agent profile editor
-  PluginsConfig.tsx   modal for installed package plugins
-  SkillsConfig.tsx    modal for loaded/search/installable skills
-  FileExplorer.tsx    file tree inside sidebar
-  FileIcons.tsx       file icon helpers
-  FileViewer.tsx      file content in a tab
-  TabBar.tsx          tab bar (Chat + open file tabs)
-
-hooks/
-  useAgentSession.ts  messages + streaming + SSE + fork/navigate/reconciliation logic
-  useAudio.ts         completion sound + browser AudioContext unlock
-  useDragDrop.ts      shared drag/drop state
-  useIsMobile.ts      responsive breakpoint hook
-  useTheme.ts         theme state
-```
-
----
-
-## Key Design Decisions & Traps
-
-### AgentSession lifecycle (`lib/rpc-manager.ts`)
-- One `AgentSessionWrapper` per session id, keyed in `globalThis.__piSessions`
-- `globalThis` survives Next.js hot-reload; plain module-level Map does not
-- Idle timeout: 10 minutes by default (`PI_WEB_IDLE_TIMEOUT_MS`, `0` disables). Concurrent `startRpcSession()` calls share a single start Promise (`globalThis.__piStartLocks`)
-
-### Fork must destroy the wrapper immediately
-`AgentSession.fork()` **mutates the wrapper's inner state in-place** — after fork, `inner.sessionId` is the *new* session's id. If the wrapper stays alive in the registry under the old id, the next request gets the already-forked state and subsequent forks produce a corrupt `parentSession` chain.
-
-**Fix**: `send("fork")` captures `newSessionId`, then calls `this.destroy()` before returning. The next request for the original session reloads a clean AgentSession from the original file.
-
-### Two kinds of branching — don't confuse them
-- **Fork** ("New session" on user message): creates a new independent `.jsonl` file. Shown as a child in the sidebar tree via `parentSession` header field.
-- **In-session branch** ("Edit from here" / BranchNavigator): calls `navigate_tree` within the same file. Multiple entries share the same `parentId`. Switching between them calls `/api/sessions/[id]/context?leafId=`.
-
-### Session files can be fully rewritten
-`parentSession` in the header is **display metadata only** — has zero effect on chat content. Safe to `writeFileSync` the entire file (pi does this itself during migrations). Used when cascade-reparenting children on delete.
-
-### ToolCall field normalization
-Pi stores toolCall blocks as `{type:"toolCall", id, name, arguments}` but `ToolCallContent` uses `{toolCallId, toolName, input}`. `normalizeToolCalls()` in `lib/normalize.ts` handles this — called in both `session-reader.ts` (file load) and `handleAgentEvent` in `hooks/useAgentSession.ts` (streaming).
-
-### New session tool preset
-Tool names are passed at session creation (`POST /api/agent/new` -> `toolNames[]`) and persisted in versioned `pi-web:tool-selection` custom entries. No entry means a legacy session and keeps Pi's default behavior; an empty array means Chat only. Chat only resolves before services are created, loads no extensions/skills/prompts/themes, and replaces Pi's base prompt with the ordered contents of Pi's discovered context files. Crossing the Chat-only boundary rebuilds the wrapper; changing between nonempty presets updates it in place.
-
-**Exact system prompts go through `before_agent_start`.** Since pi 0.86 the prompt lives in the transcript: `agent.state.systemPrompt` is a getter replayed from persisted system messages (assigning it throws), and the agent loop's request context has no `systemPrompt` field, so neither mutating the state nor patching `prepareNextTurnWithContext` reaches the model. Chat-only sessions and subagent profiles in replace mode register `lib/exact-system-prompt.ts` as an inline extension factory on the resource loader; its `before_agent_start` handler returns `{ systemPrompt }`, which the SDK projects as the provider's leading system prompt for the whole run while the transcript keeps recording Pi's structured sections. `get_state.systemPrompt` reports the exact prompt for those wrappers because the SDK state only shows the structured sections. Subagents persist their active tools plus profile-level skill and extension loading switches in `resourceSnapshot`; loaded extensions cannot expose the reserved `Agent`, `get_subagent_result`, or `steer_subagent` tools to a subagent. See `docs/adr/0002-chat-only-tool-selection.md`.
-
-The last preset explicitly selected by the user is stored in browser `localStorage` and initializes fresh-session composers only. Existing sessions never trust that preference; they use their live `get_tools` state or pi's default when no wrapper exists.
-
-### Generated session titles
-General Settings stores a server-wide optional title model beside the title language in `~/.pi/agent/pi-web/title-settings.json`. The default is the session model. A selected provider/model ID resolves through the active session's `ModelRuntime` so it uses that session's provider account, without switching the chat model; if it disappears, title generation errors rather than silently charging the chat model. The picker lists models visible for the selected session via `/api/models`.
-
-### Model defaults for new sessions
-`GET /api/models` returns `defaultModel` read from `~/.pi/agent/settings.json`. `ChatWindow` pre-selects this on mount for new sessions. Explicit browser model/thinking selections are applied atomically during AgentSession construction, then `lib/startup-preferences.ts` persists their effective values without replaying `set_model`/`set_thinking_level`; implicit `enabledModels` fallbacks and thinking pins are not persisted.
-
-### Session model speed
-`pi-web:model-speed` custom entries store only `standard` or `fast`, independently of Thinking. The latest valid entry across the entire session wins (not branch-local); legacy sessions default to Standard. Copy the current value explicitly on forks/clones/subagent creation and preserve it during transient account/tool recreation. Never persist a global/browser speed default.
-
-`lib/session-model-speed-runtime.ts` wraps the pinned SDK 1.0.0 runtime with a **session-local proxy view**, never mutating a runtime shared with subagents. Matching native `openai-codex` / `openai-codex-responses` chat streams must carry the owning agent's active signal **and** payload callback (session ID alone also matches SDK auxiliaries). They use full runtime options (`default` / `priority`), preserving auth, reasoning, token clamping and request/header hooks; `streamSimple` drops the tier, and payload-only injection loses pricing intent. Auxiliary calls and other providers/session IDs keep existing behavior. Reject conflicting payload tiers; retain native priority pricing and correct only explicitly reported legacy Codex `fast` from recomputed base costs. The picker is request intent, not delivered-tier proof, and dollar estimates are not subscription quota charges. Review this adapter on SDK upgrades; see `docs/model-speed.md`.
-
-### Remote provider catalogs
-pi's built-in model lists are generated when the SDK is built and pi-web pins one SDK version, so a model a provider ships after that release is invisible until pi-web publishes a new version (#914). The SDK carries the other half: each built-in provider is wrapped in a pi.dev catalog overlay that `ModelRuntime.refresh()` fetches and persists to `~/.pi/agent/models-store.json`, and restoring that overlay needs no network. Both of pi-web's refresh paths ask for the offline half only (`createAgentSessionServices()` and `lib/provider-usage.ts` pass `allowNetwork: false`), which is why running the pi CLI once used to be the fix — the CLI refreshed with the network on and pi-web read what it left behind.
-
-`lib/model-catalog-refresh.ts` runs that network pass, and **only when the user asks for it**: the "Refresh catalog" button in `EnabledModelsSection` posts to `/api/models/refresh`. Nothing refreshes catalogs on a timer or on another request's path — a pass fetches a catalog per authenticated provider, and a save must not wait on a slow one, the same reason `/api/auth/api-key/[provider]` stores the credential itself instead of calling `ModelRuntime.login()`. `refresh()` is called with `force: true`, since pressing the button is exactly a request to skip the SDK's four-hour freshness window, but *without* `allowNetwork`, so the runtime keeps applying its own `PI_OFFLINE` rule instead of pi-web overriding it; the module reports `reason: "offline"` rather than pretending a pass ran. `shareModelCatalogRefresh()` joins concurrent presses for the same providers so two tabs cannot race over the store file.
-
-Change detection compares the model ids and names the runtime exposes, never the stored bytes: a successful revalidation rewrites `checkedAt` and `etag` on every pass. It only decides whether `invalidateModelsCache()` runs and whether the panel reloads — the overlay itself reaches the UI through the ordinary `/api/models` and `/api/models/enabled` loads, which build a fresh runtime that restores the store, so the refresh route never returns a model list of its own.
-
-### `enabledModels` scoping
-The `enabledModels` setting uses pi's `--models` syntax: minimatch globs against `provider/modelId` or a bare `modelId`, fuzzy matching for non-glob patterns, and an optional `:thinkingLevel` suffix. Never compare those patterns as literal strings — `lib/model-scope.ts` delegates to the SDK's `resolveModelScopeWithDiagnostics()` so pi-web and the TUI agree on the visible model list, and falls back to all available models when patterns resolve to nothing. `startRpcSession()` resolves that scope before creating an AgentSession and passes the selected initial model, thinking pin, and SDK-native `scopedModels` atomically; `GET /api/models` reuses the helper only for selector data, `thinkingLevelPins`, and `modelScopeWarnings` display.
-
-Editing that setting from the Models panel goes through `/api/models/enabled`, never through pattern strings composed in the browser. Each toggle is a **minimal edit** of the stored list (`lib/enabled-models.ts`): a pattern that matches no available model is preserved verbatim, only the pattern covering the switched-off model is expanded in place (keeping its `:level` suffix), and every provider that ends up fully enabled with two or more entries collapses back into one glob — pi refreshes provider catalogs from the network into `models-store.json`, so an enumerated list rots when a model is renamed (deepseek's `deepseek-v4-flash` became `deepseek-flash`), while a glob heals itself. A lone exact reference is a deliberate pick and is left alone. **Never assume `provider/*` covers a provider**: pi matches with minimatch, whose `*` stops at `/`, so that glob silently misses every nested model id (`commandcode/sakana/fugu-ultra`, most OpenRouter ids) — writing it turned "enable all" into 15 of 71 models. `resolveProviderGlobs()` resolves `provider/*` then `provider/**` and keeps one only when its match set is exactly the provider's models; a provider that neither covers is written model by model. Also never rewrite the whole list from `getAvailable()` the way the TUI's `/scoped-models` does — it only sees providers that currently pass `checkAuth()`, so that would delete every entry for a provider whose credential is missing right now, and flatten globs and pins.
-
-Disabling the last enabled model is refused with `409 { reason: "last-model" }`: pi falls back to every model when a scope resolves to nothing, so an empty list silently means the opposite. Writes always target the global settings file; a project `.pi/settings.json` replaces the global array instead of merging, so the route reports `scope: "project"`, renders the switches read-only, and returns that file's path as `settingsPath` — the banner names the file it just wrote (`~/.pi/agent/settings.json · enabledModels 20/104`) instead of describing the effect in prose. Built-in *and* extension-registered providers get per-model switches; models.json providers are switched as a whole by `EnabledModelsProviderSwitch` in their detail header, next to Delete, because a custom model can simply be deleted and both bulk buttons only ever sent the same provider-wide write. That switch is on only when every model of the provider is on, so a partial selection reads as off beside the sidebar's `1/2` badge and one click completes it; reading it as "any enabled" would leave partial unreachable in both directions once the last-model guard blocks the way down. Why it cannot move is its tooltip, not body text. `op: "prune"` is the only operation that drops unmatched entries, for cleaning up after such a rename; everything else preserves them. Saving models.json re-reads the switches through `op: "resync"`, which repairs the stored patterns against the new catalog: it rewrites renamed **models** and then renamed **providers**, **cuts back entries whose provider prefix no longer scopes them**, and re-asserts the providers that were fully enabled before the save. (Model references first: they still spell the old provider id, which the provider rewrite would otherwise have replaced already.) All three are needed because a pattern's meaning depends on the catalog. pi matches a pattern against the bare `modelId` as well as `provider/modelId`, so `stepfun/*` also matches another provider's model whose id *is* `stepfun/Step-5-Preview` — renaming a provider to `stepfun` silently enabled three `commandcode` models, and switching stepfun off then wrote them into the file. In the other direction, renaming a model to an id with a slash drops it out of `provider/*` (minimatch `*` stops at `/`), so a fully enabled provider silently loses it. A model renamed in the panel is a known move, not the kind of mismatch worth preserving: leaving `stepfun/ddd` behind after it became `stepfun/ddd1` loses the selection, and when it was the only entry the scope resolves to nothing, which pi reads as "no scope" and quietly enables every model. `ModelsConfig` mirrors every array move of the draft in `savedModelIdsRef` so `collectModelRenames()` can tell a rename from an add or a delete without guessing. Only `resync` repairs entries; ordinary toggles stay minimal edits and never rewrite what the user did not touch. A models.json provider missing from the runtime (unsaved edits, no models, a key that does not work) must not be reported as a sign-in problem, which is why it has its own control: the switch renders disabled with that reason as its tooltip, while `EnabledModelsSection` — now built-in only — keeps the sign-in empty state. See `docs/adr/0004-enabled-models-toggles.md`.
-
-### Context-file change notice
-A live ordinary session retains the context files (`AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`) loaded at startup or last session reload. `get_state` compares that snapshot to the SDK's read-only `loadProjectContextFiles()` discovery, so new, edited, removed, and newly overriding files offer a **Reload session** button in the selected chat. The browser polls while visible and checks on visibility return; it does not reload resources automatically or create a wrapper just to check. Chat-only sessions also load context files; subagents with context loading disabled do not show the notice. Other resources (skills, extensions, prompts, themes) are not monitored by this notice.
-
-### SSE reconnect on page refresh mid-stream
-On `ChatWindow` mount, `GET /api/agent/[id]` is called. If `state.isStreaming === true`, SSE is reconnected automatically. `thinkingLevel` and `isCompacting` are also synced from this response.
-
-### Compaction SSE events
-Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `auto_compaction_start` / `auto_compaction_end`. `handleAgentEvent` accepts both sets to keep `isCompacting` in sync. Manual compact is a blocking POST — the button stays disabled until the response returns.
-
-### Transcript system messages, usage entries and context edits (pi >= 0.86)
-- Every new session's first request persists a `message` entry with `role: "system"` holding the prompt sections and tool declarations; later prompt or tool changes append more. The agent loop announces them with `message_start` / `message_end` like any message. They are provider input, never conversation: `toClientAgentEvent()` drops them before the SSE stream (they carry every tool schema), `handleAgentEvent` skips any that slip through, `entryToUiMessage()` returns null for them, and `BranchNavigator` / `lib/project-tree.ts` never label or preview a branch with one. They still count toward `messageCount` and `totalMessages`, exactly as the SDK counts them.
-- `usage` entries (`kind: "cache_warm"`) record prompt-cache warming that is billed but never enters model context. `computeSessionStats()` adds them like compaction usage so the token/cost counters match `/session` in the TUI.
-- `context_edit` entries omit or replace an earlier entry's model context without changing raw history; the UI ignores them. A retain-none compaction stores its own id in `firstKeptEntryId`.
-- `SessionManager.listAll()` now reads files newest-mtime first (then reverse filename) so `--resume` can render progressively; its stable sort keeps that order for sessions with equal activity time, and `listSessionsIncremental()` reproduces it from the stat fingerprints it already keeps.
-
-### Running state polling + reconciliation
-- The sidebar polls `/api/agent/running` every 2.5 seconds while the tab is visible and pauses polling in background tabs. The session-list response remains the initial fallback.
-- `invalidateSessionListCache()` bumps the generation but **keeps** the previous scan, and the cache is fresh only while its recorded generation matches. Ordinary agent activity invalidates it constantly, and rebuilding costs hundreds of milliseconds because `loadAllSessions()` re-reads every forked and subagent session. Callers that only need metadata — mapping search hits to sidebar rows — pass `listAllSessions({ allowStale: true })` to read the previous scan and let the rebuild happen in the background. A stale scan is a complete catalogue apart from sessions created seconds ago, so those callers accept a brief window where a brand-new session is not yet listed.
-- `useAgentSession` treats per-session SSE as primary for chat events and opens it before each prompt. `prompt_done` completes the current UI stage and notification immediately, but the idle SSE stays open for a 30-second grace window and is reused by the next prompt. `agent_start` cancels that close timer; `agent_settled` finishes extension-injected runs that have no wrapper-level `prompt_done` and starts a fresh grace window. Do not close on the first `agent_end`: retries, compaction, and extension-queued messages can continue the same logical prompt.
-- While a run is active, `useAgentSession` periodically calls `GET /api/agent/[id]` and also reconciles on `visibilitychange`/`online`. This fixes missed terminal events from background tabs or half-open connections.
-- Prompt runs use a monotonic run id; late SSE or slow reconciliation responses from an old run must be ignored so they cannot resurrect stale streaming bubbles.
-- Every SSE (re)connection in `useAgentSession` is gated on `sessionHookMountedRef`. React Strict Mode (on by default in `next dev`) re-runs effects in declaration order after a simulated unmount: the mount-only effect's cleanup sets that ref to `false`, and it is only restored when that effect re-runs, *after* the warm-session effect. The warm-session effect therefore re-asserts the ref before `maintainEventsConnected()`. Without it a dev-server tab never opened the event stream on mount or when switching back to a running session, so streamed output and new messages stayed invisible until the 15-second reconcile poll or a page refresh (`next start` was unaffected).
-
-### Moving sessions between projects
-- The row's **Move to project…** action proposes a project and registered worktree/directory, or another existing directory through Browse, without changing the sidebar checkout. The route accepts distinct registered checkout roots within the same repository, but refuses the exact current directory, same-repository subdirectories and running families. A move changes the header cwd and the SDK session-file directory for the selected session and its nested subagents; forks stay in place, but any stored parent path pointing at a moved file is repaired (including subagent metadata).
-- `lib/session-move.ts` stages all rewrites, backs up originals for rollback, installs destination files without overwriting an existing file, evicts idle wrappers, and refreshes both session-path and list caches. Never only change the header or only rename the JSONL: Pi's session discovery and parent references must stay consistent. Other Pi processes writing concurrently are not coordinated with this operation.
-
-### Starred sessions
-- Stars live in `~/.pi/agent/pi-web/starred-sessions.json`, not in session files or the browser's long-term storage. `POST /api/starred-sessions` applies idempotent per-ID set/unset changes under a file lock; legacy localStorage lists are imported as a union then removed only after success. A browser with an old, not-yet-imported list may reintroduce a previously removed star on its first visit.
-- `useStarredSessions` shares one browser-tab snapshot across the sidebar and Starred view, and reloads when the tab regains focus/visibility so other clients' changes become visible.
-
-### Activity overview
-- The Activity button triages **Pi Web-managed** sessions/subagents only. `/api/agent/running` adds registry-only `attention` (actual pending blocking extension UI) and the newest 1,000 distinct settled completions plus review receipts from `~/.pi/agent/pi-web/activity-review.json`. Never create wrappers or subscribe to every session to populate the overview; disk-only Pi CLI/Herdr activity cannot be classified as working or blocked.
-- `SessionSidebar` owns the existing visible-tab poll and passes attention, running, and server-derived review markers to `AppShell`. Needs you overrides working; a current run overrides an older unread marker. Every settled Pi Web run is recorded even when subagent push/sound notifications are suppressed, so short runs still enter Ready to review. Only the explicit **Read** action on a Ready to review row acknowledges it; opening or selecting a chat leaves the item ready. Acknowledgement POSTs merge per-session timestamps under the same lock as completion recording; the client keeps pending receipts until the server confirms them, and a stale poll cannot resurrect an acknowledged item. Legacy browser timestamps are imported only where a retained completion corroborates them; ID-only unread flags are dropped. A newly observed historical completion must not play a sound; only an observed eligible root running-to-idle transition does.
-- `lib/activity.ts` filters archived families, uses `workspaceKeyOf` for project identity, and nests a subagent when its parent shares the same section. The optional Queued section uses only live subagent queue IDs; an on-disk `queued` status after a server restart is not proof of a live queue. `ActivityOverview` only lists/navigates: the single selected `ChatWindow` still owns SSE, question replay, and answer submission. Mobile hides the list while viewing a chat but keeps it mounted so Back preserves its filter and scroll position.
-
-### Worktrees and project grouping
-- `lib/worktree.ts` resolves linked worktree top-levels back to the main repo `projectRoot`; `listAllSessions()` attaches that to each `SessionInfo` so all worktrees for one repo are grouped together in the sidebar.
-- Worktree operations are served by `/api/worktrees` and guarded by the same allowed-root rules as `/api/files`.
-- New worktrees are created under `<repoRoot>-worktrees/<sanitized-branch>` only after selecting a local base branch and its full expected tip. Explicit `create` refuses an existing branch; explicit `attach` requires an existing local branch and its full expected tip. Neither silently uses remote-tracking refs or an implicit checkout HEAD. Source and any checked-out base must be clean (including untracked files). Ref tips are rechecked, but external Git writers may still race.
-- Removing a dirty worktree returns `409` with `{ dirty: true }` so the UI can ask before retrying with `force`.
-- Sessions whose cwd points at a removed worktree are inferred back into the main project instead of becoming a phantom project row.
-- git prints POSIX-style absolute paths even on Windows, so every path read out of git goes through `toNativePath()` (`lib/paths.ts`) before it is compared or returned. Compare paths with `samePath()`, never `===` — raw equality made `isTopLevel` permanently false on Windows and hid the worktree switcher entirely. Branch names are not paths and must keep their forward slashes. Browser code cannot apply Node path rules, so `/api/worktrees` resolves `currentWorktreePath` server-side; the sidebar must use that identity for highlighting and removal fallback.
-
-### Git Explorer
-- The top-bar **Git Explorer** icon opens a wide graph/detail panel beside chat; it follows the sidebar's effective checkout (`AppShell.activeCwd`), even when an open chat keeps its own saved `cwd`. `GitExplorerPanel` is keyed by that checkout; branch changes, refreshes and checkout changes clear detail and abort stale reads. The branch picker defaults to the checked-out branch and browses other **local branches only**, without checking out. Local tags decorate their commit rows separately from branches; they are display metadata, never history-root authority or checkout actions. Its GET-only `/api/git/explorer` authorizes the physical checkout root against allowed file roots, captures an exact local branch tip for bounded `--topo-order` history pages, rechecks that branch for pagination/detail/patch/context reads and limits commits to that tip's reachable objects. Legacy checkout-HEAD-only requests remain bound to HEAD. Patches/context compare immutable first-parent/commit objects; Explorer never uses session integration policy, uncommitted files or a remote. `GitCommitViewer` has separate copy controls for full commit ID and message. `GitPatchStack` has collapsible sections (first expanded), one shared split/unified/raw and wrap toolbar, and lazy committed-patch reads capped at three concurrent requests. **Expand all files / Collapse all files** affect sections, never eagerly fetch full context. Collapsed renderers unmount; off-screen expanded sections defer reads/rendering. `CommittedPatchDiff` shares virtualized Pierre `CodeView` (`@pierre/diffs` remains 1.5.1) across Explorer, Files and approvals/receipts: per-file full/context and keyboard gap controls, change navigation, clean Before/After, literal case-insensitive search/side-aware line jump, wrapping and Wide view. Escape closes Wide view and restores focus without answering a live approval. Parsed/context/expansion/version/anchor state stays local across file collapse/layout, scoped to the exact commit view, card or working revision; only split/unified/raw and wrap preferences use best-effort browser `localStorage`, never contents/context choices. Files context uses the returned revision and refuses changed HEAD/file state. On mobile graph and details are successive views and diff columns scroll inside the panel. The active-lane algorithm adapts binaryplease/git-graph with attribution in `lib/git-graph-layout.LICENSE`; do not bring over its Bun server or checkout actions. See [docs/worktrees.md](docs/worktrees.md) for controls/limits and [docs/git-workflow-plugin.md](docs/git-workflow-plugin.md#optional-full-file-patch-context) for optional snapshot/receipt context.
-
-### Git operations
-
-Managed Workflow tools, settings, approvals and injected guidance remain removed; private Workflow data/history is untouched. Independent Git Explorer, read-only status/diffs and standalone worktrees remain. Ordinary coding/shell Git usage follows applicable user/repository instructions and never depends on plugin settings. The optional default-disabled Git Workflow plugin uses the static `lib/plugins/registry.ts` composition root and Pi extension APIs, not the removed framework. Core chat/session code imports only generic plugin extensions/cards; Git semantics stay in `plugins/git-workflow/`. Private schema-versioned overrides inherit built-in → global → selected canonical-repository project → session, with global-only enablement. Session overrides apply only when the selected repository matches the session's own repository and the override's stored binding; cross-project operations never borrow caller/session settings. Presets change workflow choices only, each of which supports Ask via `ask_user`. SDK-context identity and validated saved headers own session identity; forks/subagents do not copy overrides and moves deactivate mismatched bindings. Request-local `pi-web:git-policy/v1` guidance and read-only `git_policy` expose current choices without persisting policy instructions into conversation history. Live saves update tools through Pi registration/hidden exposure and cancel waiting approvals; started native effects settle honestly. No managed tasks, legacy evidence protocols, CLI dependency or arbitrary code loader. Saved intent does not override stronger instructions unless those instructions explicitly recognize the harness contract. Both Ask and Allow require durable generic operation receipts before checks/effects and after settlement; policy authorization never means user acceptance or execution success. Unsettled stages remain unknown. `git_cleanup` has separate default-Ask permission, exact integration/feature IDs, bounded content inventories and managed-directory admission protection. `approvedArtifactRoots` is a reusable user-owned allowlist of literal top-level generated **files or directories** (no defaults/globs). Worktree removal also proposes top-level ignored artifacts even with `artifactRoots: []`; explicit roots may add generated paths, but neither discovery nor arguments grant authority. Any unlisted artifact requires one live cleanup-card approval even under Allow; Ask combines artifact and operation consent in that same card, without changing settings. Record effective Ask/user-approved provenance, not Policy authorized, for this exception. Freeze paths before approval; do not discover new artifacts during effects. Unselected unignored untracked files, tracked/dirty source, changed resources, symbolic refs, symlink roots, main/caller/active checkouts and mounts are refused; partial effects are recorded without rollback. See `docs/adr/0017-cleanup-artifact-approval.md`. Target advancement alone does not stale cleanup if pinned integration remains reachable. External writers are not locked out. Original strict `removeWorktree` still retains branches and refuses ignored files; the CLI is unchanged. See [docs/git-workflow-plugin.md](docs/git-workflow-plugin.md) for tools, checks, unsupported repository states and separate plugin test commands.
-
-### Size-independent Git operation review
-
-New Git operations save exact review bundles once in private `pi-web/reviews/`; compact cards and stage receipts reference them. Never raise the inline card cap to accommodate a large operation or repeat patches at every receipt stage. Session-scoped review GETs authorize only through saved receipt references (prepared counts), verify integrity and never create wrappers or read current checkouts. Small reviews retain the shared diff/context controls; larger ones use paged inventories/content and streamed exact downloads. Preview limits never remove approval actions or narrow scope. Published bundles are retained without TTL/automatic GC so moves and surviving forks keep history; backups must include them. Git preparation/check output is streamed, Files commits use NUL-delimited pathspec files, and checks have optional explicit `timeoutMs` (zero/absent means none). Cleanup inventories remain complete and cancellable, with spill-to-disk directory sorting instead of fixed total-size/time budgets; existing source/mount/authority protections still apply. See `docs/adr/0018-size-independent-git-reviews.md` and `docs/git-workflow-plugin.md`.
-
-### File access allow-list
-- `/api/files` is intentionally not a general filesystem browser. Allowed roots come from session cwds, their resolved project roots, `~/pi-cwd-*`, and roots explicitly added with `allowFileRoot()`.
-- `/api/cwd/validate`, `/api/default-cwd`, and `/api/worktrees` call `allowFileRoot()` when they make a new location browsable.
-- Allowed roots are stored slash-normalized, but that is a Set-key convention, not a correctness requirement: `isPathWithinRoots()` (`lib/path-security.ts`, the single implementation behind `isFilePathAllowed()`) re-resolves and case-folds both sides, so either path form authorizes correctly. Keep that one implementation — it is the security boundary.
-- A UNC cwd (`\\host\share\dir`) must survive the `/api/files/[...path]` round-trip. `encodeFilePathForApi()` folds the `//` root into the first segment (`%2F%2Fhost`) because a literal `//` URL prefix is 308-normalized away before routing; `filePathFromApiSegments()` decodes it back. Never split UNC paths into segments and rejoin them — that silently turns `\\host\share` into the relative-looking `host/share` and every allow-check fails with 403.
-
-### Editing open files
-- The Files panel offers Edit/Save only for existing, writable UTF-8 text files up to 1 MB in the writable file-root allow-list. `GET ?type=edit` returns a complete bounded snapshot and SHA-256 revision; `PUT ?type=save` checks that revision before a same-directory replacement. Session-referenced paths outside the allow-list remain read-only, even though ordinary GET can show them. Reject symlink targets, escapes, binary/media files and read-only directories; do not use the chunked text preview as a save baseline.
-- `AppShell` owns unsaved drafts per file tab because only the active `FileViewer` mounts. Watch events refresh clean content but never overwrite a dirty draft; external edits cause a conflict requiring discard/reload rather than silent overwrite. Saves preserve file mode but replace the inode (including hardlink identity), and external filesystem writers can race the final compare/rename. Browser reload does not persist drafts.
-
-### Plugins and skills
-- `/api/plugins` uses pi's `SettingsManager` + `DefaultPackageManager` for global/project package install, remove, update, enable, and disable. Disabling writes empty `extensions/skills/prompts/themes` arrays for that package entry.
-- `/api/skills` uses `DefaultResourceLoader` so settings paths, package skills, and project `.agents/skills` are listed the same way the runtime sees them.
-- Skill toggling edits only the `disable-model-invocation` frontmatter key on the target `SKILL.md`; keep that surgical so user formatting survives.
-- `/api/skills/install` shells through `npx skills add ... --agent pi`; project installs run with the selected cwd.
-
-### Built-in subagents
-- The global `builtInEnabled` switch is persisted in `~/.pi/agent/agents/settings.json` and defaults to `false` when the file or field is absent. Malformed settings fail closed; atomic updates preserve unknown fields.
-- The inline built-in extension factory is always present so reloading an existing wrapper can apply setting changes, but it registers no tools while disabled. After changing the switch, the user must explicitly reload the current session.
-- When enabled, only a recognized legacy `pi-subagents` extension that registers any reserved tool (`Agent`, `get_subagent_result`, or `steer_subagent`) is removed. Unrelated extensions remain loaded, and resolved conflict diagnostics are discarded.
-- Runtime `Agent` dispatch checks the setting again so a stale tool call cannot start a subagent after the feature is switched off.
-- See `docs/adr/0003-built-in-subagent-toggle.md` for the precedence and persistence rationale.
-- Individual built-in profiles (`general-purpose`, `explore`, `plan`) are switched off by name in the same file's `disabledBuiltIns` array, never by copying them out to a `.md` file: a copy freezes the built-in prompt at the version it was copied from and is visible to the other runtimes reading those directories. `builtInProfiles()` stamps `enabled` onto the constants so the panel, the `Agent` tool description, and `resolveSubagentProfile` agree; each write is a minimal edit that preserves names it did not touch, including ones no built-in claims (a newer build's). Reading the list fails *open* — the feature switch beside it has already failed closed — while `PATCH /api/subagents/profiles` with `scope: "builtin"` performs the write and `PUT`/`DELETE` still refuse that scope. A same-name file replaces the built-in outright and is switched off through its own frontmatter. Only the switch is live for a built-in; the rest of the form stays read-only. See `docs/adr/0005-built-in-subagent-disable.md`.
-- A background run's completion notification (`notifyParent`) is skipped when the parent already collected the same result with `get_subagent_result`: the tool marks a finished background run consumed and the notification takes that mark. The check cannot happen only when the completion promise resolves — the parent is usually still inside its `get_subagent_result` poll at that moment (500ms interval) and `deliverAs: "followUp"` would just queue the duplicate until that turn ends. So `notifyParent` holds the message while the parent `isRunning()` and re-checks the mark before sending; an idle parent is still notified immediately.
-- Agent profile files (`~/.pi/agent/agents/*.md`, project `.pi/agents/*.md`) are shared with other runtimes, so a save round-trips the frontmatter keys this app does not own (`name`, `allowed_subagents`, `exclude_extensions`, `disallowed_tools`, …) and carries foreign `ext:` tool selectors through. Managed keys are exactly `description`, `display_name`, `tools`, `load_skills`, `load_extensions`, `enabled`, `inherit_context`, `run_in_background`, `model`, `thinking`, `max_turns`.
-- A background run's completion reaches the parent through `sendCustomMessage`, and pi's `convertToLlm` replays every `custom` message to the model as a plain `user` turn. `subagentNotificationText()` therefore prefixes the report with `SUBAGENT_NOTIFICATION_PREFIX` so a compaction pass — whose prompt asks what *the user* wants — does not file the subagent's output under Goal / Constraints (#875). Foreground `Agent` and `get_subagent_result` results keep the bare `subagentFinalText()`: they are already `toolResult` messages and need no marker. Keep the prefix in code, not in a profile prompt, so the model cannot drop it.
-- The `skills` / `extensions` spellings pi-subagents reads are seeded on first save and kept in step while they are booleans; a hand-authored whitelist such as `extensions: pi-advisor-flow` is never rewritten, and the two flags fall back to those aliases when `load_skills` / `load_extensions` are absent.
-
-### Browser-native `ask_user`
-- `ask_user` accepts either the legacy `question` form or `title` plus 1–6 ID-based `questions` (`single`, `multiple`, `text`). Batch related independent decisions, never dependent follow-ups. `lib/question-set.ts` validates complete answer sets atomically; the internal `ask_user_batch` request uses the existing pending UI lifecycle. Every batch question has an alternative written main answer and separate additive details, even for freeform answers; optional skip is explicit. `QuestionSetDialog` owns free navigation/review and preserves drafts until confirmed submission; `QuestionSetReview` is also the read-only receipt body. Recommendations are not defaults. Same-tab `sessionStorage` drafts are scoped to session/request/payload, cleared on observed settlement, and bounded to 12 sets/24 hours on load/save. They are never sent to the model; no cross-device or server-restart recovery. See [docs/questions.md](docs/questions.md).
-- `lib/ask-user.ts` and `lib/ask-user-extension.ts` adapt the web-relevant contract from pi-ask-user 0.15.0; the upstream MIT license ships as `lib/ask-user.LICENSE`. The terminal package remains separate. Only a recognized `pi-ask-user` extension is suppressed in ordinary Pi Web sessions and extension-enabled subagents so the tool is not registered twice; do not hide unrelated collisions or load the tool in Chat-only mode.
-- `AgentSessionWrapper.createExtensionUiContext().askUser()` uses the same pending request/response maps as ordinary extension dialogs. Questions and choices are replayed to reconnecting SSE clients; server-side answer validation, timeout, Stop, and teardown own settlement. `AskUserDialog` in the browser handles the native form, not ANSI custom-UI keystrokes. Live blocking extension requests (`ask_user`, select, confirm, input, editor, plugin cards) render at the chat tail, not in modal overlays. Settlement appends one versioned `pi-web:interaction-receipt` custom session entry with the exact displayed payload and normalized decision, outside model context, before closing the live request. `lib/interaction-receipts.ts` projects recognized receipts into branch-aware UI history; `InteractionReceiptCard` renders them read-only and collapsed by default. Receipt events deduplicate by entry/request ID; SSE connection reconciles missed saved history. Decisions never claim execution success, and historical review never invokes tools. Expansion preferences are not persisted and collapsed historical bodies unmount. Existing entries are not backfilled and SDK HTML export does not render receipts. `BlockingCard` owns their compact shared presentation, bounded scrolling body and fixed footer; collapse retains drafts and nested diff state. Generic plugin card fields/sections remain bounded by `lib/plugins/ui.ts`; Git-specific summaries are supplied by the plugin, never inferred by core from text. The existing request ID, response and close events still own expiry, replay and cancellation; the non-question custom UI panel remains an overlay. Keep response details, redacted events, and tool schema compatible with the installed extension.
-
-### Web password throttling
-- `lib/auth-throttle.ts` is deliberately global, not per-IP: Next 16 route handlers have no socket address and `x-forwarded-for` is spoofable, while the server binds `127.0.0.1` for a single operator. Failures double the delay (1s → 60s cap) for everyone; a success or 5 idle minutes resets it. The reset window must stay longer than the max delay or waiting out one block restarts the burst.
-- State lives on `globalThis` under `Symbol.for("pi-web:auth-throttle")` so it survives hot reload and is shared by every module instance. Tests reset it with `recordAuthSuccess()`.
-- `POST /api/web-auth` and every `Authorization: Basic` header on `/api/*` share the counter; `proxy.ts` checks Basic before its `/api/web-auth` exemption, so `GET /api/web-auth` is not an unthrottled password oracle. A valid session cookie is checked first and is never blocked. While blocked, Basic gets `429` even with the right password (otherwise the answer leaks), and a Basic success does not reset the counter: Basic clients authenticate on every request, so a reset would restart an interleaved guesser at the base delay. The proxy and route handlers share the `globalThis` state under both `next dev` and `next start` (checked by failing one and observing `429` on the other).
-
-### Provider account selection
-- Pi's `auth.json` remains the single-credential-per-provider **Pi default** shared with the CLI. Additional identities are stored only in permission-restricted `pi-web-accounts.json` by `lib/provider-accounts.ts`; never return credential values from account routes.
-- `lib/session-accounts.ts` persists a complete provider-to-account snapshot in `pi-web:provider-accounts` custom entries. Legacy sessions with no entry use Pi default; project defaults (keyed by `resolveProject(cwd).projectRoot`) apply only to new sessions. Forks and subagents copy the snapshot even when their branch history omits its earlier entry.
-- `startRpcSession()` injects a session-bound `ModelRuntime` before loading resources. OAuth refresh updates only its selected account under the file lock; a missing/deleted binding must fail closed instead of falling back to ambient or Pi-default credentials. `setRpcSessionAccount()` serializes idle switches and rebuilds wrappers; `/api/agent/[id]` waits for an in-progress switch before sending a command. No mutable process-global active account.
-- `GET /api/models` bypasses the cwd-only cache for a selected account snapshot; otherwise models for the Pi default or another project's account would leak across selectors. Extra-account OAuth uses `GET /api/auth/login/[provider]?accountId=...` and API keys use `/api/auth/accounts/[id]/api-key`; provider-wide auth routes still change Pi default.
-- `ProviderAccounts` sits beside the model selector as a compact current-provider indicator; its popover retains session/project selectors and account management. Both this popover and Models settings allow only HTTPS or loopback HTTP OAuth/device URLs before linking or opening them and offer a Copy button for device codes. The provider selector is locked during an in-flight login, and manual responses use that login's provider. Closing the popover retains an in-flight login; Cancel or unmount closes its EventSource.
-
-### Auth and model config
-- `ModelsConfig` combines models from `~/.pi/agent/models.json` with provider auth status from pi's `AuthStorage`/`ModelRegistry`.
-- Provider listing is capability-driven, never id-driven: `lib/provider-listing.ts` decides membership from `auth.apiKey.login` / `auth.oauth` plus the stored credential type, so dual-auth providers (anthropic and github-copilot today — which providers declare both changes between SDK releases, so never assume it from an id) appear exactly once and never fall through both lists (#309). `lib/provider-listing-runtime.ts` adapts `ModelRuntime` to those pure helpers.
-- auth.json holds **one** credential per provider and `ModelRuntime.logout()` deletes whichever it is. The delete routes therefore use `removeStoredCredentialIfType()` to compare and delete under the same file lock used by pi's auth storage. `ModelsConfig` also refreshes *both* provider lists after any auth change — refreshing one leaves a dual-auth provider rendered twice.
-- OAuth/device-code/manual-code flows are streamed by `GET /api/auth/login/[provider]`; manual code responses POST back with a short-lived token stored in `globalThis.__piLoginCallbacks`.
-- API-key routes store and remove keys through `AuthStorage`. Status endpoints must never return the raw key.
-- The model test route is `app/api/models-config/test/route.ts`; `app/api/models/test/` is not a real route.
-
-### Completion sound
-- `hooks/useAudio.ts` stores the toggle in `localStorage` as `pi-sound-enabled` and reuses one `AudioContext`.
-- Browser autoplay policy means sound must be unlocked from a user gesture; `ChatInput` calls the unlock hook from interactive controls, and `ChatWindow` plays the tone from `onAgentEnd`.
-
-### Exported session HTML
-- `/api/sessions/[id]/export` delegates to pi's export helper, then patches recursive tree helpers in the generated HTML to iterative versions so very deep linear sessions do not overflow the browser call stack.
-
-## Pi Session File Format
-
-Location: `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`
-
-```jsonl
-{"type":"session","version":3,"id":"<uuid>","timestamp":"...","cwd":"/path","parentSession":"/abs/path/to/parent.jsonl"}
-{"type":"model_change","id":"<8hex>","parentId":null,"provider":"zenmux","modelId":"claude-sonnet-4-6","timestamp":"..."}
-{"type":"message","id":"<8hex>","parentId":"<8hex>","message":{"role":"user","content":"..."}}
-{"type":"message","id":"<8hex>","parentId":"<8hex>","message":{"role":"assistant","content":[...],...}}
-{"type":"message","id":"<8hex>","parentId":"<8hex>","message":{"role":"toolResult","toolCallId":"...","content":[...]}}
-{"type":"compaction","id":"<8hex>","parentId":"<8hex>","summary":"...","firstKeptEntryId":"<8hex>","tokensBefore":N}
-{"type":"session_info","id":"...","parentId":"...","name":"user-defined name"}
-```
-
-`entryIds[]` in `SessionContext` is a parallel array to `messages[]` — maps each displayed message back to its `.jsonl` entry id, used for fork and navigate_tree calls.
-
----
-
-## CSS Variables (`app/globals.css`)
-
-```
---bg --bg-panel --bg-hover --bg-selected --border
---text --text-muted --text-dim
---accent --user-bg --tool-bg
---font-mono
-```
-
-
-
+The shell reuses matching Nix-managed `node_modules`; do not run `npm ci` over it,
+symlink another checkout's dependencies, or rewrite its marker to bypass a
+refusal. First-time dependency preparation can require downloads; add
+`--offline --no-write-lock-file` to `nix develop` for cached local-only entry.
+Dependency derivations and `next typegen` are not production application builds.
+[README.md](README.md#development) owns non-Nix setup and deliberate dependency updates.
+
+Use focused checks while editing, then complete acceptance once source and review
+changes settle. Record the candidate, command/selection, result and artifact path.
+Rebase/relevant input changes require reassessing and verifying the resulting
+candidate; a new commit ID alone is not a reason to repeat unaffected application
+checks. Do not bypass configured Git checks or relabel older evidence as a new-tip
+run. Evidence/status-only follow-ups use the global skill's proportional checks.
+
+One owner coordinates dependency preparation, source export and heavy acceptance.
+Pause source writers during export and acceptance. Do not overlap browser or
+SDK-sensitive acceptance with other heavy validation. Use the runner's bounded
+defaults (desired 8 workers, resource-clamped); increase concurrency only on
+comparable measurements. Never append Node concurrency flags to `npm test`.
+Report command runtime separately from preparation, model work and coordination.
+
+Delegate only independent work with an explicit checkout, scope, capabilities and
+deliverable. Check that the selected profile can produce that deliverable; a
+read-only researcher cannot write patches or run checks. Reuse findings instead
+of delegating fixture discovery again. Preserve one repository writer and useful
+independent safety review; do not require delegation or a durable plan for a small,
+obvious change.
+
+## Browser and dev-server lifecycle
+
+- **Manual development:** before starting, run `lsof -nP -iTCP:30141 -sTCP:LISTEN`; identify the checkout/process and reuse a healthy matching server. Do not interrupt an installed service or a different task's server.
+- **Acceptance:** [e2e/README.md](e2e/README.md) owns the fixture lifecycle. Runners require no active `.next/dev/lock` in their checkout and start their own free-port Turbopack server, never the installed service. A different port does not permit two dev servers in one checkout.
+- A browser-only `Module ... factory is not available` overlay may be stale HMR. Explicitly reload the page, then compare current server logs and a direct HTTP/API request. Restart only after a fresh page and server-side checks corroborate failure. Stop the exact owned dev process gracefully, retain `.next` in a `mktemp -d` backup, then use `npm run dev`. No webpack fallback.
+- Diagnose failures from the exact run's logs, responses, traces and observed process events. Preserve failures before a justified retry; a passing unchanged retry does not prove a fix. Do not suppress general console/5xx errors or inflate deadlines to manufacture acceptance.
+- Test roots, failed builds, dependency copies and backups are not automatically disposable. [docs/testing.md](docs/testing.md#diagnostics-and-retention) owns retention and separately authorized cleanup; no wildcard/age-based reapers.
+- Next.js may append a generated `BEGIN:nextjs-agent-rules` block to this file. Check `git status` after starting a server and exclude generated tooling output from unrelated commits.
+
+## Read the relevant implementation guide
+
+These are task-scoped references, not extra context to load for every change.
+Read the relevant sections **before modifying that area**, and update the owning
+guide rather than growing this instruction file with another feature narrative.
+Code paths in the guides are relative to the repository root.
+
+| Area | Guide |
+| --- | --- |
+| Architecture, complete source map, CSS variables | [Architecture](docs/architecture.md) |
+| Session lifecycle, fork/branch, exact prompts, streaming, relocation, subagents, JSONL | [Session contracts](docs/session-internals.md) |
+| Model scoping/catalogs, defaults, titles, provider accounts/auth | [Model/account contracts](docs/model-internals.md); [session speed](docs/model-speed.md) |
+| Activity/stars, files/security/editing, skills/plugins, authentication, sound | [Feature contracts](docs/feature-internals.md) |
+| Worktrees, Git Explorer, immutable diff/context review | [Worktrees](docs/worktrees.md); [feature contracts](docs/feature-internals.md#git-explorer) |
+| Optional Git tools, policy, approvals, operation receipts and cleanup | [Git plugin](docs/git-workflow-plugin.md); [feature contracts](docs/feature-internals.md#git-operations) |
+| Browser questions, blocking cards and interaction receipts | [Questions](docs/questions.md); [feature contracts](docs/feature-internals.md#browser-native-ask_user) |
+| Terminal behavior | [Terminal](docs/terminal.md) |
+| Verification and browser fixtures | [Testing](docs/testing.md); [browser/terminal acceptance](e2e/README.md) |
+| Localization, demo and release | [i18n](docs/i18n.md); [demo](demo/README.md); [release](docs/release.md) |
+
+Cross-cutting invariants: keep credential/account bindings session-local and
+fail closed; preserve the single path-security boundary and Windows/UNC identity;
+never substitute current files for immutable Git snapshots; keep Git semantics in
+the optional plugin, not generic chat. A saved decision or receipt is neither new
+authority nor proof of execution success. Preserve these boundaries when following
+the linked implementation details.
