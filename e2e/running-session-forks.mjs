@@ -79,6 +79,9 @@ export async function checkRunningSessionForks(page, { base, api, post, artifact
     if (await sidebar.isVisible()) await sidebar.click();
     await page.locator(`.session-row[data-session-id="${sourceId}"]`).click({ position: { x: 12, y: 12 } });
     await question().waitFor();
+    // Question replay can precede the warm-session state GET. Steer is a
+    // running indicator visible even when mobile More controls is collapsed.
+    await page.getByRole("button", { name: "Steer", exact: true }).waitFor();
     assert.equal(await page.evaluate(() => performance.timeOrigin), origin);
   };
 
