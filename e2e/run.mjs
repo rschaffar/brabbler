@@ -307,17 +307,14 @@ let context;
   if (process.env.E2E_MODEL_SPEED_ONLY === "1") {
     await runModelSpeedChecks();
   } else if (process.env.E2E_TRUST_ONLY === "1") {
-    browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
     for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
-      context = await browser.newContext({ viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 });
+      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
       page = await context.newPage();
-      const errors = [];
-      page.on("pageerror", (error) => errors.push(error.message));
-      page.on("console", (event) => { if (event.type() === "error" && !consumeExpectedBrowserConflict(page, event)) errors.push(event.text()); });
-      page.on("response", (response) => { if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`); });
+      const errors = harness.errorsFor(context);
       await checkProjectTrustScopes(page, { base, api, trustProject, trustLinked, mainId: TRUST_MAIN, width: viewport.width });
       assert.deepEqual(errors, [], "Trust browser/server errors");
-      await context.close(); context = undefined; page = undefined;
+      await harness.closeContext(context); context = undefined; page = undefined;
     }
   } else if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
