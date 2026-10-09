@@ -59,6 +59,7 @@ import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createAskUserExtension, preferPiWebAskUserExtension, type AskUserUiContext } from "./ask-user-extension";
 import { parseQuestionSet } from "./question-set";
 import { createSessionReferenceExtension } from "./session-reference-extension";
+import { createPiWebSourceExtension } from "./pi-web-source-extension";
 import { bundledPluginExtensions } from "./plugins/registry";
 import { validatePluginCard } from "./plugins/ui";
 import type { PluginUiContext } from "./plugins/types";
@@ -2397,6 +2398,7 @@ async function startRpcSessionInternal(
         : {
             extensionFactories: [
               createSessionReferenceExtension(),
+              createPiWebSourceExtension(),
               createProjectCommandBashExtension({
                 cwd: sessionCwd,
                 settings: settingsManager,
