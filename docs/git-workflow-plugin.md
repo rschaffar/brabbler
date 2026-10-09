@@ -145,8 +145,9 @@ registration and captured physical identity/state are rechecked before effects.
 - `git_cleanup`: explicit `checkout`, `featureBranch`, full `featureTip` and
   `integrationCommit`, optional invocation `targetBranch` and `worktreePath`,
   explicit `removeWorktree` / `deleteBranch` booleans and `artifactRoots` array of
-  literal top-level generated files/directories. Worktree removal also proposes
-  top-level ignored artifacts, even with an empty array. Listing/discovery is not
+  literal worktree-relative generated files/directories, including nested paths
+  using `/` (for example `src/meetings/__pycache__`). Worktree removal also proposes
+  exact ignored artifacts at any depth, even with an empty array. Listing/discovery is not
   permission; unlisted artifacts require the live approval below.
   The feature must remain exactly at its captured tip and be an ancestor of the
   pinned integration commit, which must remain reachable from the local target.
@@ -158,10 +159,11 @@ registration and captured physical identity/state are rechecked before effects.
 ### Bounded cleanup
 
 Cleanup supports two complementary ways to authorize exact generated **files or
-directories** (see [ADR 0017](adr/0017-cleanup-artifact-approval.md)):
+directories** (see [ADR 0017](adr/0017-cleanup-artifact-approval.md) and its
+[nested-path revision, ADR 0019](adr/0019-nested-cleanup-artifacts.md)):
 
-- **One-time approval:** when removing a worktree, the server proposes top-level
-  ignored files/directories alongside explicitly selected `artifactRoots`. Any
+- **One-time approval:** when removing a worktree, the server proposes exact
+  ignored files/directories, including nested artifacts, alongside explicitly selected `artifactRoots`. Any
   artifact missing from the reusable allowlist requires one live cleanup card,
   **even when `cleanupFeature` is Allow**. The card lists each path, counts, byte
   size and content/metadata digest, distinguishing permitted artifacts from those
@@ -169,10 +171,11 @@ directories** (see [ADR 0017](adr/0017-cleanup-artifact-approval.md)):
   retains the resources. It never changes settings. Missing browser UI fails closed.
 - **Reusable allowlist:** **Settings → Plugins → Git Workflow → Permitted generated
   files and directories** (`approvedArtifactRoots`) accepts comma-separated literal
-  top-level names, with **no defaults or globs**. For example, explicitly permit
-  `.codegraph, node_modules, .next, test-results, next-env.d.ts, tsconfig.tsbuildinfo`
-  for a project if those paths are disposable there. Existing directory entries
-  keep their meaning. With all artifacts permitted, cleanup follows its ordinary
+  worktree-relative paths, with **no defaults or globs**. For example, explicitly permit
+  `.codegraph, node_modules, next-env.d.ts, src/meetings/__pycache__`
+  for a project if those paths are disposable there. Existing top-level entries
+  keep their meaning. Authority matches an exact selected root: permitting `src`
+  does not permit a separately selected `src/meetings/__pycache__`. With all artifacts permitted, cleanup follows its ordinary
   Ask/Allow permission; the allowlist itself does not grant operation permission.
 
 There is no need to populate settings merely to reach a one-time approval. An
@@ -190,12 +193,23 @@ compact rather than one record per dependency. Inventories include contents,
 metadata, identities, tracked source and registration guards. Paths are frozen
 before approval: later files cannot be silently included. Unselected unignored
 untracked files still block; explicit generated paths may be proposed for approval.
-Nested ignored files are never promoted to a parent containing tracked source.
+Nested ignored paths are never promoted to a parent containing tracked source.
+Explicit roots must be distinct and nonoverlapping; when Git reports a wholly
+ignored directory containing an explicitly selected child, the approval lists
+that exact ignored directory once. Every slash-delimited component must be literal:
+absolute paths, traversal, empty components and backslashes are refused.
 Tracked source inside an artifact root, dirty source, nested repositories, special
-files, symlink roots, mounted directories, locked/prunable worktrees and observed
-active use refuse cleanup. Roots must match exact directory-entry spellings;
-case/trailing-dot aliases of tracked roots or `.git` are conservatively refused
-on every platform. Links inside artifact directories are inventoried as
+files, symlink roots or ancestors, mounted directories, locked/prunable worktrees
+and observed active use refuse cleanup. Every component must match an exact
+directory-entry spelling; case/trailing-dot aliases of tracked paths or `.git`
+are conservatively refused on every platform. Sharing an exact tracked directory
+parent is allowed, but does not authorize deleting it or its other children.
+Artifact-only cleanup retains empty structural parent directories. Nested deletion
+requires Linux `/proc/self/fd` and no-follow directory opens: captured ancestor
+handles stay open across each deletion, preventing a later ancestor symlink swap
+from redirecting it. Unsupported platforms/proc configurations refuse nested
+cleanup before approval; top-level cleanup is unchanged. Explicit child paths are
+validated even if discovery later proposes their wholly ignored parent. Links inside artifact directories are inventoried as
 links, never followed. Main and caller checkouts (including descendant cwds) are
 protected.
 
@@ -204,7 +218,13 @@ entry/byte or cumulative time ceilings. Content reads reuse a buffer and yield;
 large directory sorting spills to private scratch instead of retaining every name
 in one sort buffer. Source-name indexes and explicit resource metadata still scale
 with their counts. Progress reports distinguish inventory work from authorization.
-No incomplete inventory authorizes deletion. Real I/O/storage failures refuse;
+Source contents, entry structure and identities remain frozen across deletions.
+Direct artifact-parent size/timestamps are also strict through approval and before
+the first effect; only a completed child deletion permits those volatile fields
+to differ for its own direct parent. Unaffected ancestor directories and all
+remaining artifacts retain strict metadata checks. Each inventory still requires
+metadata stability within that scan. No incomplete inventory authorizes deletion.
+Real I/O/storage failures refuse;
 Linux mount metadata also rejects same-device bind mounts, while other platforms
 reject device changes and links.
 
