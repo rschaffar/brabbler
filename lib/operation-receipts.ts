@@ -29,7 +29,7 @@ export function validateOperationReceipt(value: unknown): asserts value is Plugi
     || !decisions.includes(value.authorization.decision as string)
     || value.authorization.mode === "allow" && value.authorization.decision === "user-approved"
     || value.authorization.mode === "ask" && value.authorization.decision === "policy-authorized"
-    || !Array.isArray(value.checks) || value.checks.length > 64
+    || !Array.isArray(value.checks)
     || value.checks.some((check) => !record(check) || !text(check.name, 256) || !checkStatuses.includes(check.status as string))
     || typeof value.effectStarted !== "boolean"
     || value.summary !== undefined && (typeof value.summary !== "string" || value.summary.length > 16384)) {

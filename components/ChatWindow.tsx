@@ -1276,7 +1276,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                   : extensionDialog.method === "ask_user"
                   ? <AskUserDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
                   : extensionDialog.method === "plugin_card"
-                    ? <PluginCard key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
+                    ? <PluginCard key={extensionDialog.id} request={extensionDialog} sessionId={session?.id ?? sessionIdRef.current ?? undefined} onRespond={respondToExtensionUi} />
                     : <ExtensionDialog key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />}
               </div>
             )}

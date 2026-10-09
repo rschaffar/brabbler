@@ -6,7 +6,7 @@ import { BlockingCard } from "./BlockingCard";
 import { PluginCardContent } from "./plugin-ui/PluginCard";
 
 /** Read-only full snapshot: no tool callbacks, authorization controls or inferred success. */
-export function OperationReceiptCard({ receipt }: { receipt: OperationReceiptSnapshot }) {
+export function OperationReceiptCard({ receipt, sessionId }: { receipt: OperationReceiptSnapshot; sessionId?: string }) {
   const [collapsed, setCollapsed] = useState(true);
   const authorization = operationAuthorizationLabel(receipt);
   const outcome = operationOutcomeLabel(receipt);
@@ -31,7 +31,7 @@ export function OperationReceiptCard({ receipt }: { receipt: OperationReceiptSna
           <li key={index} className="blocking-card-choice break-words">{check.name}: {check.status}</li>)}</ul>}
       </section>
       {request.scope && <p className="blocking-card-scope">{request.scope}</p>}
-      <PluginCardContent request={request} />
+      <PluginCardContent request={request} sessionId={sessionId} />
       <section className="min-w-0 text-xs text-text-muted">
         <h3 className="blocking-card-section-title">Correlation</h3>
         <pre className="blocking-card-code">{receipt.pluginId}{"\n"}{receipt.operationId}{receipt.toolCallId ? `\n${receipt.toolCallId}` : ""}</pre>

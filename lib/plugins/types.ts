@@ -1,7 +1,7 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 
 export type SettingValue = boolean | string | null | RequiredCheck[];
-export interface RequiredCheck { name: string; command: string }
+export interface RequiredCheck { name: string; command: string; /** Omitted or zero means no deadline. */ timeoutMs?: number }
 export interface PluginField {
   label: string;
   kind: "boolean" | "text" | "enum" | "checks";
@@ -53,6 +53,15 @@ export interface PluginCardSection {
   collapsible?: boolean;
   notice?: boolean;
 }
+export interface PluginReviewReference {
+  version: 1; id: string; operationId: string; sha256: string; entries: number; bytes: number;
+}
+/** Sequential streaming writer. The host publishes only a completely settled bundle. */
+export interface PluginReviewWriter {
+  begin(label: string, kind: "text" | "patch"): Promise<void>;
+  write(chunk: Uint8Array): Promise<void>;
+  end(): Promise<void>;
+}
 /** Browser presentation only; never instructions or execution authority. */
 export interface PluginCard {
   /** Correlates a decision card with durable operation stage snapshots. */
@@ -65,6 +74,8 @@ export interface PluginCard {
   scope?: string;
   markdown?: string;
   patch?: string;
+  /** Durable exact review material; display pages never narrow authorization. */
+  review?: PluginReviewReference;
   patchBefore?: string;
   patchAfter?: string;
   /** Optional plugin-owned, expiring immutable context handle; never execution authority. */
@@ -93,6 +104,7 @@ export interface PluginUiContext {
   /** Synchronously reject busy/overlapping use and block new managed admissions until release.
    * Release in finally only after the native effect settles, not merely on abort. */
   reserveDirectory(path: string): () => void;
+  prepareReview(pluginId: string, operationId: string, build: (writer: PluginReviewWriter) => Promise<void>): Promise<PluginReviewReference>;
   pluginCard(pluginId: string, card: PluginCard, signal?: AbortSignal): Promise<string | null>;
   /** Synchronous durable append, outside model context. Throws on failure; never gated by abort. */
   operationReceipt(pluginId: string, receipt: PluginOperationReceipt): void;

@@ -1,15 +1,17 @@
-import { execFile, execFileSync, spawn } from "node:child_process";
+import { gitText as git, gitOutput, records, outputDigest, run, withPreparationSignal } from "./process";
+import { buildGitReview, compactGitCard } from "./review";
+import { createReadStream } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { gitExecEnv } from "../../lib/git-exec";
+
 import { samePath, toNativePath } from "../../lib/paths";
 import { allowFileRoot } from "../../lib/file-access";
 import { onPluginSettingsChange, pluginProjectIdentity, readPluginSettings } from "../../lib/plugins/settings";
 import type { PluginCard, PluginCardField, PluginCardSection, PluginSession, PluginUiContext, PluginOperationReceipt, RequiredCheck } from "../../lib/plugins/types";
 import { gitWorkflowManifest, type GitAction, type GitSettings } from "./manifest";
-import { registerGitPatchContext } from "./context";
+
 import { captureCleanup, createCleanupBudget, performCleanup, type CleanupBudget, type CleanupAccess, type CleanupOperation, type CleanupSnapshot } from "./cleanup";
 
 export type GitOperation =
@@ -19,41 +21,32 @@ export type GitOperation =
   | { action: "removeWorktree"; checkout: string; path: string }
   | CleanupOperation;
 interface Snapshot { fingerprint: string; card: PluginCard; checks: RequiredCheck[]; args: string[]; cwd: string; comparison?: { before: string; after: string }; cleanup?: CleanupSnapshot }
-const MAX_OUTPUT = 2 * 1024 * 1024;
-function env(index?: string) {
-  return { ...gitExecEnv(index), GIT_NO_LAZY_FETCH: "1", GIT_NO_REPLACE_OBJECTS: "1", GIT_LITERAL_PATHSPECS: "1",
-    GIT_EDITOR: "true", GIT_SEQUENCE_EDITOR: "true" };
-}
-function git(cwd: string, args: string[], index?: string, input?: string): string {
-  return execFileSync("git", ["-C", cwd, "--no-optional-locks", "-c", "core.fsmonitor=false", ...args], {
-    env: env(index), encoding: "utf8", maxBuffer: MAX_OUTPUT, timeout: 15_000, input, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
-  });
-}
-function branchTip(cwd: string, branch: string): string {
+async function branchTip(cwd: string, branch: string): Promise<string> {
   if (!branch || branch.startsWith("-") || branch === "HEAD") throw new Error("Select an explicit local branch");
-  git(cwd, ["check-ref-format", `refs/heads/${branch}`]);
-  return git(cwd, ["rev-parse", "--verify", `refs/heads/${branch}^{commit}`]).trim();
+  await git(cwd, ["check-ref-format", `refs/heads/${branch}`]);
+  return (await git(cwd, ["rev-parse", "--verify", `refs/heads/${branch}^{commit}`])).trim();
 }
-function head(cwd: string) {
-  return { branch: git(cwd, ["symbolic-ref", "--short", "HEAD"]).trim(), tip: git(cwd, ["rev-parse", "HEAD"]).trim() };
+async function head(cwd: string) {
+  return { branch: (await git(cwd, ["symbolic-ref", "--short", "HEAD"])).trim(), tip: (await git(cwd, ["rev-parse", "HEAD"])).trim() };
 }
-function status(cwd: string): string { return git(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]); }
-function assertIdle(cwd: string) {
+function status(cwd: string): Promise<string> { return outputDigest(gitOutput(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])); }
+async function assertIdle(cwd: string) {
   for (const name of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer"]) {
-    if (existsSync(toNativePath(git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", name]).trim()))) throw new Error(`Conflicting Git operation: ${name}`);
+    if (existsSync(toNativePath((await git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", name])).trim()))) throw new Error(`Conflicting Git operation: ${name}`);
   }
-  if (git(cwd, ["config", "--get", "core.sparseCheckout"]).trim() === "true") throw new Error("Sparse checkout is unsupported");
+  if ((await git(cwd, ["config", "--get", "core.sparseCheckout"])).trim() === "true") throw new Error("Sparse checkout is unsupported");
 }
 // config --get exits 1 for absent keys.
-function idle(cwd: string) {
-  try { assertIdle(cwd); } catch (error) {
+async function idle(cwd: string) {
+  try { await assertIdle(cwd); } catch (error) {
     if ((error as { status?: number }).status !== 1) throw error;
   }
-  const flags = git(cwd, ["ls-files", "-v", "-z"]).split("\0").filter(Boolean);
-  if (flags.some((entry) => /^[a-zS]/.test(entry))) throw new Error("Hidden index flags are unsupported");
+  for await (const entry of records(gitOutput(cwd, ["ls-files", "-v", "-z"]))) {
+    if (/^[a-zS]/.test(entry)) throw new Error("Hidden index flags are unsupported");
+  }
 }
-function worktrees(cwd: string): Array<{ path: string; branch?: string; locked?: string; prunable?: string }> {
-  return git(cwd, ["worktree", "list", "--porcelain", "-z"]).split("\0\0").filter(Boolean).map((record) => {
+async function worktrees(cwd: string): Promise<Array<{ path: string; branch?: string; locked?: string; prunable?: string }>> {
+  return (await git(cwd, ["worktree", "list", "--porcelain", "-z"])).split("\0\0").filter(Boolean).map((record) => {
     const fields = record.split("\0");
     return { path: toNativePath(fields.find((value) => value.startsWith("worktree "))!.slice(9)),
       branch: fields.find((value) => value.startsWith("branch refs/heads/"))?.slice(18),
@@ -61,17 +54,17 @@ function worktrees(cwd: string): Array<{ path: string; branch?: string; locked?:
       prunable: fields.find((value) => value === "prunable" || value.startsWith("prunable ")) };
   });
 }
-function checkout(selected: string, repositoryCwd?: string): string {
+async function checkout(selected: string, repositoryCwd?: string): Promise<string> {
   if (!isAbsolute(selected)) throw new Error("Select an absolute registered checkout path");
   const physical = realpathSync(selected);
   const identity = pluginProjectIdentity(physical);
   if (!identity || (repositoryCwd && identity !== pluginProjectIdentity(repositoryCwd))
-    || !worktrees(physical).some((entry) => samePath(entry.path, physical))) throw new Error("Selected checkout is not registered in the selected repository");
-  if (!samePath(toNativePath(git(physical, ["rev-parse", "--show-toplevel"]).trim()), physical)) throw new Error("Select the checkout root");
-  idle(physical);
+    || !(await worktrees(physical)).some((entry) => samePath(entry.path, physical))) throw new Error("Selected checkout is not registered in the selected repository");
+  if (!samePath(toNativePath((await git(physical, ["rev-parse", "--show-toplevel"])).trim()), physical)) throw new Error("Select the checkout root");
+  await idle(physical);
   // Even git status can invoke clean filters. Refuse before any content-based
   // preflight so an Ask/decline never executes project filter commands.
-  refuseFilters(physical, git(physical, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]));
+  await refuseFilters(physical, gitOutput(physical, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]));
   return physical;
 }
 function settings(cwd: string, session?: PluginSession, op?: GitOperation): GitSettings {
@@ -97,8 +90,8 @@ function physicalPath(path: string): string {
   if (existsSync(path)) return realpathSync(path);
   return join(physicalPath(dirname(path)), basename(path));
 }
-function fileSelection(cwd: string, files: string[] | undefined): string[] {
-  if (!files?.length || files.length > 256 || new Set(files).size !== files.length) throw new Error("Select 1–256 distinct whole files");
+async function fileSelection(cwd: string, files: string[] | undefined): Promise<string[]> {
+  if (!files?.length || new Set(files).size !== files.length) throw new Error("Select distinct whole files");
   for (const file of files) {
     if (!file || file.includes("\0") || isAbsolute(file) || file.split(/[\\/]/).some((part) => part === ".." || part === ".git")
       || relative(cwd, resolve(cwd, file)).startsWith("..")) throw new Error("Invalid selected file path");
@@ -106,19 +99,19 @@ function fileSelection(cwd: string, files: string[] | undefined): string[] {
     const parent = physicalPath(resolve(cwd, file, ".."));
     if (relative(cwd, parent).startsWith("..")) throw new Error("Selected file escapes checkout");
     // A tracked deletion is a valid whole-file selection. Refuse absent/untracked typo paths.
-    if (!existsSync(join(cwd, file))) git(cwd, ["ls-files", "--error-unmatch", "--", file]);
+    if (!existsSync(join(cwd, file))) await git(cwd, ["ls-files", "--error-unmatch", "--", file]);
   }
-  refuseFilters(cwd, `${files.join("\0")}\0`);
+  await refuseFilters(cwd, `${files.join("\0")}\0`);
   return files;
 }
-function refuseFilters(cwd: string, paths: string) {
-  const attributes = git(cwd, ["check-attr", "-z", "--stdin", "filter"], undefined, paths).split("\0");
-  for (let i = 2; i < attributes.length; i += 3) {
-    if (attributes[i] !== "unspecified" && attributes[i] !== "unset") throw new Error("Git plugin preflight refuses clean/process filter attributes; use ordinary Git tools for this repository");
+async function refuseFilters(cwd: string, paths: string | AsyncIterable<Uint8Array>, index?: string) {
+  let i = 0;
+  for await (const attribute of records(gitOutput(cwd, ["check-attr", "-z", "--stdin", "filter"], { input: paths, index }))) {
+    if (i++ % 3 === 2 && attribute !== "unspecified" && attribute !== "unset") throw new Error("Git plugin preflight refuses clean/process filter attributes; use ordinary Git tools for this repository");
   }
 }
 function cleanupAccess(ui: Partial<PluginUiContext>): CleanupAccess {
-  return { git, checkout, branchTip, worktrees, project: pluginProjectIdentity,
+  return { git, records: (cwd, args) => records(gitOutput(cwd, args)), checkout, branchTip, worktrees, project: pluginProjectIdentity,
     inUse: (path) => { if (!ui.isDirectoryInUse) throw new Error("Cleanup requires live directory-use inspection"); return ui.isDirectoryInUse(path); } };
 }
 async function preview(callerCwd: string, op: GitOperation, policy: GitSettings, ui: Partial<PluginUiContext> = {}, budget?: CleanupBudget): Promise<Snapshot> {
@@ -139,66 +132,66 @@ async function preview(callerCwd: string, op: GitOperation, policy: GitSettings,
         scope: "Approves all listed cleanup resources together, not an arbitrary ignored-file deletion.",
         actions: [{ id: "reject", label: "Keep resources" }, { id: "approve", label: "Clean up listed resources", primary: true }] } };
   }
-  const cwd = checkout(op.checkout);
-  const current = head(cwd);
+  const cwd = await checkout(op.checkout);
+  const current = await head(cwd);
   const rows: string[] = [JSON.stringify(op, null, 2), `Checkout: ${cwd}`, `Branch: ${current.branch}`, `HEAD: ${current.tip}`,
     "Native Git operation is unsigned and hook-free. Stronger user/repository instructions still apply."];
   const fields: PluginCardField[] = [{ label: "Checkout", value: cwd, code: true }, { label: "Branch", value: current.branch, code: true }];
   const sections: PluginCardSection[] = [];
   const notices = ["Native Git operation is unsigned and hook-free. Stronger user/repository instructions still apply."];
   let args: string[] = [];
-  let patch: string | undefined;
   let comparison: Snapshot["comparison"];
   let checks: RequiredCheck[] = [];
-  const state: unknown[] = [cwd, pluginProjectIdentity(cwd), current, status(cwd), worktrees(cwd)];
+  const state: unknown[] = [cwd, pluginProjectIdentity(cwd), current, await status(cwd), await worktrees(cwd)];
   if (op.action === "commit") {
-    if (!op.message.trim() || op.message.length > 65536 || op.message.includes("\0")) throw new Error("An exact nonempty commit message is required");
+    if (!op.message.trim() || op.message.includes("\0")) throw new Error("An exact nonempty commit message is required");
     checks = policy.commitChecks;
     fields.push({ label: "Selection", value: op.mode === "files" ? "Selected whole files, including unstaged content" : "Complete staged set" });
     sections.push({ title: "Commit message", text: op.message, code: true });
-    const files = op.mode === "files" ? fileSelection(cwd, op.files) : undefined;
+    const files = op.mode === "files" ? await fileSelection(cwd, op.files) : undefined;
     if (op.mode !== "staged" && op.mode !== "files") throw new Error("Invalid commit mode");
     if (op.mode === "staged" && op.files !== undefined) throw new Error("Staged mode commits the complete staged set, not selected paths");
     const scratch = mkdtempSync(join(tmpdir(), "pi-web-git-preview-"));
     try {
       const index = join(scratch, "index");
-      const original = toNativePath(git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]).trim());
-      state.push(existsSync(original) ? digest(readFileSync(original).toString("base64")) : null);
+      const original = toNativePath((await git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"])).trim());
+      state.push(existsSync(original) ? await outputDigest(createReadStream(original)) : null);
       if (files) {
         // --only builds from HEAD; unrelated staging is not part of this candidate.
-        git(cwd, ["read-tree", current.tip], index);
-        git(cwd, ["add", "-A", "--", ...files], index);
+        await git(cwd, ["read-tree", current.tip], index);
+        // HEAD may restore attributes staged for deletion in the real index.
+        // Check the actual candidate-index attribute view before content reads.
+        await refuseFilters(cwd, `${files.join("\0")}\0`, index);
+        await git(cwd, ["add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"], index, `${files.join("\0")}\0`);
       } else if (existsSync(original)) copyFileSync(original, index);
-      else git(cwd, ["read-tree", current.tip], index);
-      const tree = git(cwd, ["write-tree"], index).trim();
-      if (tree === git(cwd, ["rev-parse", `${current.tip}^{tree}`]).trim()) throw new Error("No selected changes to commit");
+      else await git(cwd, ["read-tree", current.tip], index);
+      const tree = (await git(cwd, ["write-tree"], index)).trim();
+      if (tree === (await git(cwd, ["rev-parse", `${current.tip}^{tree}`])).trim()) throw new Error("No selected changes to commit");
       comparison = { before: current.tip, after: tree };
-      patch = git(cwd, ["diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", current.tip, tree, "--"], index);
       state.push(tree);
       rows.push(`Candidate tree: ${tree}`, `Exact message:\n${op.message}`);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
-    args = ["commit", "--no-gpg-sign", "--cleanup=verbatim", ...(files ? ["--only", "--", ...files] : [])];
+    args = ["commit", "--no-gpg-sign", "--cleanup=verbatim", ...(files ? ["--only"] : [])];
   } else if (op.action === "rebase" || op.action === "merge") {
     if (!policy.targetBranch) throw new Error("Configure a target local branch first");
     if (op.featureBranch === policy.targetBranch) throw new Error("Feature and target must differ");
-    const feature = branchTip(cwd, op.featureBranch);
-    const target = branchTip(cwd, policy.targetBranch);
-    if (status(cwd)) throw new Error("Selected checkout must be clean, including untracked files");
+    const feature = await branchTip(cwd, op.featureBranch);
+    const target = await branchTip(cwd, policy.targetBranch);
+    if (await status(cwd)) throw new Error("Selected checkout must be clean, including untracked files");
     if (current.branch !== (op.action === "rebase" ? op.featureBranch : policy.targetBranch)) throw new Error("Select the checkout of the operation's branch");
-    const sourceCheckout = worktrees(cwd).find((entry) => entry.branch === (op.action === "merge" ? op.featureBranch : policy.targetBranch));
+    const sourceCheckout = (await worktrees(cwd)).find((entry) => entry.branch === (op.action === "merge" ? op.featureBranch : policy.targetBranch));
     if (sourceCheckout) {
-      const source = checkout(sourceCheckout.path, cwd);
-      if (status(source)) throw new Error("Other selected branch checkout must be clean");
-      state.push(source, head(source));
+      const source = await checkout(sourceCheckout.path, cwd);
+      if (await status(source)) throw new Error("Other selected branch checkout must be clean");
+      state.push(source, await head(source));
     }
     state.push(feature, target);
     fields.push({ label: "Feature → target", value: `${op.featureBranch} → ${policy.targetBranch}`, code: true });
     notices.push("Diffs show feature changes since the merge base, not a predicted rebase/merge result.");
     rows.push(`Feature: ${op.featureBranch} ${feature}`, `Target: ${policy.targetBranch} ${target}`,
       "Patch shows feature changes since the merge base, not a predicted rebase/merge result.");
-    const base = git(cwd, ["merge-base", target, feature]).trim();
+    const base = (await git(cwd, ["merge-base", target, feature])).trim();
     comparison = { before: base, after: feature };
-    patch = git(cwd, ["diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", base, feature, "--"]);
     if (op.action === "rebase") args = ["rebase", "--no-autostash", "--no-update-refs", "--no-rebase-merges", "--no-gpg-sign", target];
     else {
       checks = policy.mergeChecks;
@@ -208,21 +201,21 @@ async function preview(callerCwd: string, op: GitOperation, policy: GitSettings,
       args = ["-c", `branch.${policy.targetBranch}.mergeOptions=`, "merge", policy.mergeMethod === "ff-only" ? "--ff-only" : "--no-ff", "--commit", "--no-edit", "--no-gpg-sign", feature];
     }
   } else if (op.action === "createWorktree" || op.action === "attachWorktree") {
-    if (status(cwd)) throw new Error("Source checkout must be clean");
+    if (await status(cwd)) throw new Error("Source checkout must be clean");
     if (!isAbsolute(op.path) || existsSync(op.path)) throw new Error("Choose a new absolute worktree destination");
     const parent = resolve(op.path, "..");
     const physicalParent = physicalPath(parent);
     const destination = resolve(physicalParent, basename(op.path));
     const common = pluginProjectIdentity(cwd)!;
     // Limit creation to the existing allowed repository-adjacent worktree container.
-    const main = worktrees(cwd)[0].path;
+    const main = (await worktrees(cwd))[0].path;
     const container = `${main}-worktrees`;
     if (!samePath(resolve(destination, ".."), container) || relative(common, destination).startsWith("..") === false) throw new Error(`Destination must be directly inside ${container}`);
-    git(cwd, ["check-ref-format", `refs/heads/${op.branch}`]);
-    const base = branchTip(cwd, op.baseBranch);
-    const baseCheckout = worktrees(cwd).find((entry) => entry.branch === op.baseBranch);
-    if (baseCheckout && status(checkout(baseCheckout.path, cwd))) throw new Error("Base checkout must be clean");
-    const exists = git(cwd, ["for-each-ref", "--format=%(refname)", `refs/heads/${op.branch}`]).split("\n").includes(`refs/heads/${op.branch}`);
+    await git(cwd, ["check-ref-format", `refs/heads/${op.branch}`]);
+    const base = await branchTip(cwd, op.baseBranch);
+    const baseCheckout = (await worktrees(cwd)).find((entry) => entry.branch === op.baseBranch);
+    if (baseCheckout && await status(await checkout(baseCheckout.path, cwd))) throw new Error("Base checkout must be clean");
+    const exists = (await git(cwd, ["for-each-ref", "--format=%(refname)", `refs/heads/${op.branch}`])).split("\n").includes(`refs/heads/${op.branch}`);
     if (op.action === "createWorktree" && exists) throw new Error("Create requires a new branch");
     if (op.action === "attachWorktree" && (op.baseBranch !== op.branch || !exists)) throw new Error("Attach requires the explicitly selected existing branch as base");
     state.push(base, destination);
@@ -231,15 +224,15 @@ async function preview(callerCwd: string, op: GitOperation, policy: GitSettings,
     rows.push(`Base: ${op.baseBranch} ${base}`, `Destination: ${destination}`);
     args = op.action === "createWorktree" ? ["worktree", "add", "-b", op.branch, destination, base] : ["worktree", "add", destination, op.branch];
   } else if (op.action === "removeWorktree") {
-    const selected = worktrees(cwd).find((entry) => samePath(entry.path, op.path));
+    const selected = (await worktrees(cwd)).find((entry) => samePath(entry.path, op.path));
     // A session may live outside Git, or below a linked checkout's root.
     const callerRoot = pluginProjectIdentity(callerCwd) === pluginProjectIdentity(cwd)
-      ? realpathSync(toNativePath(git(callerCwd, ["rev-parse", "--show-toplevel"]).trim())) : null;
-    if (!selected || samePath(selected.path, worktrees(cwd)[0].path) || samePath(selected.path, cwd)
+      ? realpathSync(toNativePath((await git(callerCwd, ["rev-parse", "--show-toplevel"])).trim())) : null;
+    if (!selected || samePath(selected.path, (await worktrees(cwd))[0].path) || samePath(selected.path, cwd)
       || (callerRoot && samePath(selected.path, callerRoot))) throw new Error("Select another registered linked worktree; never the main or caller checkout");
-    const physical = checkout(selected.path, cwd);
-    if (status(physical) || git(physical, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])) throw new Error("Removal requires a clean worktree with no ignored files; force removal is not provided");
-    state.push(physical, head(physical));
+    const physical = await checkout(selected.path, cwd);
+    if (await status(physical) || await outputDigest(gitOutput(physical, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"]))) throw new Error("Removal requires a clean worktree with no ignored files; force removal is not provided");
+    state.push(physical, await head(physical));
     fields.push({ label: "Remove worktree", value: physical, code: true });
     notices.push("Only this worktree directory is removed. Branch and session history remain.");
     rows.push(`Remove only: ${physical}`, "Branch and session history remain. No automatic cleanup.");
@@ -260,27 +253,11 @@ async function preview(callerCwd: string, op: GitOperation, policy: GitSettings,
   state.push(relevantPolicy(policy, op.action));
   return { fingerprint: digest(state), cwd, args, checks, comparison,
     card: { title: { commit: "Git commit", rebase: "Git rebase", merge: "Git merge", createWorktree: "Create Git worktree", attachWorktree: "Attach Git worktree", removeWorktree: "Remove Git worktree" }[op.action],
-      subtitle: "Approval required", fields, sections, patch,
-      scope: `Approves the entire ${op.action === "commit" ? "commit candidate" : "selected operation"}${checks.length ? " and the listed checks" : ""}${patch ? ", not just an expanded file" : ""}.`,
+      subtitle: "Approval required", fields, sections,
+      scope: `Approves the entire ${op.action === "commit" ? "commit candidate" : "selected operation"}${checks.length ? " and the listed checks" : ""}${comparison ? ", not just an expanded file or displayed page" : ""}.`,
       patchBefore: op.action === "commit" ? "HEAD" : "Merge base", patchAfter: op.action === "commit" ? "Candidate" : "Selected feature",
       actions: [{ id: "reject", label: "Reject" }, { id: "approve", primary: true,
         label: { commit: "Approve commit", rebase: "Approve rebase", merge: "Approve merge", createWorktree: "Create worktree", attachWorktree: "Attach worktree", removeWorktree: "Remove worktree" }[op.action] }] } };
-}
-function run(command: string, args: string[], cwd: string, shell = false, index?: string): Promise<string> {
-  // No AbortSignal or output-buffer kill on native effects: settle actual Git writes.
-  if (!shell) return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env: env(index), stdio: ["ignore", "pipe", "pipe"] });
-    let output = "";
-    const append = (chunk: Buffer) => { if (output.length < MAX_OUTPUT) output += chunk.toString().slice(0, MAX_OUTPUT - output.length); };
-    child.stdout.on("data", append); child.stderr.on("data", append);
-    child.on("error", reject);
-    child.on("close", (code, signal) => code === 0 ? resolve(output) : reject(new Error(`Git exited ${code ?? signal}\n${output}`)));
-  });
-  return new Promise((resolve, reject) => execFile(command, args, { cwd, env: env(), shell: true,
-    maxBuffer: MAX_OUTPUT, timeout: 120_000 }, (error, stdout, stderr) => {
-    if (error) reject(new Error(`${error.message}\n${stdout}\n${stderr}`));
-    else resolve(`${stdout}${stderr}`);
-  }));
 }
 function relevantPolicy(policy: GitSettings, action: GitAction) {
   return [policy[action], action === "commit" ? policy.commitChecks : action === "merge" ? policy.mergeChecks : [],
@@ -288,14 +265,22 @@ function relevantPolicy(policy: GitSettings, action: GitAction) {
     action === "merge" ? [policy.methodSelection, policy.mergeMethod] : null,
     action === "cleanupFeature" ? [policy.cleanupWorktree, policy.cleanupBranch, policy.cleanupArtifacts, policy.approvedArtifactRoots] : null];
 }
-export async function executeGitOperation(callerCwd: string, operation: GitOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, session?: PluginSession, toolCallId?: string) {
+export async function executeGitOperation(callerCwd: string, operation: GitOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, session?: PluginSession, toolCallId?: string, onProgress?: (text: string) => void) {
   const op = structuredClone(operation);
   let started = false;
   let checksStarted = false;
   let completed = false;
   let receipt: PluginOperationReceipt | undefined;
   const effects: string[] = [];
-  const cleanupBudget = createCleanupBudget();
+  let lastInventoryPolicyCheck = 0;
+  const cleanupBudget = createCleanupBudget(() => {
+    signal?.throwIfAborted();
+    if (Date.now() - lastInventoryPolicyCheck > 500) {
+      lastInventoryPolicyCheck = Date.now();
+      if (!started) onProgress?.(`Inventory: ${cleanupBudget.entries} entries, ${cleanupBudget.bytes} bytes checked. No new authority is granted by this scan.`);
+      if (settings(op.checkout, session, op)[op.action] === "deny") throw new Error("Operation denied during inventory");
+    }
+  });
   let attemptedEffect: string | undefined;
   const record = (phase: PluginOperationReceipt["phase"], summary?: string) => {
     if (!receipt || !ui.operationReceipt) throw new Error("Git operations require durable Pi Web operation receipts");
@@ -307,11 +292,15 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
     // precedes preview and checks. Identity is supplied by the host, not the model.
     const policy = settings(op.checkout, session, op);
     if (policy[op.action] === "deny") throw new Error(`${op.action} is denied by current settings`);
-    const snapshot = await preview(callerCwd, op, policy, ui, cleanupBudget);
+    onProgress?.("Capturing exact Git state; large repositories are processed incrementally. Stop cancels preparation.");
+    const snapshot = await withPreparationSignal(signal, () => preview(callerCwd, op, policy, ui, cleanupBudget));
     const origin = readPluginSettings(gitWorkflowManifest, op.checkout, undefined, session);
     if (origin.effective[op.action] !== policy[op.action]) throw new Error("Policy changed during preparation");
     const operationId = randomUUID();
     snapshot.card.operationId = operationId;
+    if (!ui.prepareReview) throw new Error("Git operations require durable Pi Web review attachments");
+    const review = await ui.prepareReview(gitWorkflowManifest.id, operationId, (writer) => buildGitReview(writer, op, snapshot, signal, onProgress));
+    snapshot.card = { ...compactGitCard(snapshot.card), review };
     const artifactApproval = !!snapshot.cleanup?.unapprovedArtifacts.length;
     const mode = artifactApproval ? "ask" : policy[op.action] as "ask" | "allow";
     if (artifactApproval) snapshot.card.subtitle = "One-time artifact approval required";
@@ -319,14 +308,12 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
     receipt = { version: 1, operationId, ...(toolCallId ? { toolCallId } : {}), card: snapshot.card, phase: "prepared", effectStarted: false,
       authorization: { mode, source: artifactApproval ? `one-time artifacts (${origin.sources[op.action]} ${policy[op.action]})` : origin.sources[op.action], revision: digest(origin),
         decision: mode === "allow" ? "policy-authorized" : "pending" },
-      checks: snapshot.checks.map((check) => ({ name: check.name, status: "pending" })) };
+      checks: snapshot.checks.map((check) => ({ name: check.name.slice(0, 240), status: "pending" })) };
     record("prepared");
+    onProgress?.(`Exact review saved: ${review.entries} entries, ${review.bytes} bytes. Awaiting authorization/checks.`);
     if (signal?.aborted) throw new Error("Cancelled before execution");
     if (mode === "ask") {
       if (!ui.pluginCard) throw new Error("Ask requires the live Pi Web browser UI");
-      if (snapshot.comparison && snapshot.card.patch) {
-        snapshot.card.patchContext = registerGitPatchContext(snapshot.cwd, snapshot.comparison.before, snapshot.comparison.after, snapshot.card.patch);
-      }
       const cancellation = new AbortController();
       const unsubscribe = onPluginSettingsChange((id) => {
         if (id !== gitWorkflowManifest.id) return;
@@ -346,19 +333,19 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
     const revalidate = async () => {
       if (signal?.aborted) throw new Error("Cancelled before native effect");
       const current = settings(op.checkout, session, op);
-      if (current[op.action] === "deny" || (await preview(callerCwd, op, current, ui, cleanupBudget)).fingerprint !== snapshot.fingerprint
+      if (current[op.action] === "deny" || (await withPreparationSignal(signal, () => preview(callerCwd, op, current, ui, cleanupBudget))).fingerprint !== snapshot.fingerprint
         || digest(relevantPolicy(settings(op.checkout, session, op), op.action)) !== digest(relevantPolicy(policy, op.action))) throw new Error("Stale operation: relevant settings or repository state changed; invoke again");
     };
     // Cleanup owns a single full revalidation per effect, under its directory
     // reservation. Do not rescan dependency trees at every generic checkpoint.
     if (op.action !== "cleanupFeature") await revalidate();
-    const checkCwd = op.action === "merge" ? worktrees(snapshot.cwd).find((entry) => entry.branch === op.featureBranch)?.path : snapshot.cwd;
+    const checkCwd = op.action === "merge" ? (await worktrees(snapshot.cwd)).find((entry) => entry.branch === op.featureBranch)?.path : snapshot.cwd;
     for (const [index, check] of snapshot.checks.entries()) {
       await revalidate();
       receipt.checks[index].status = "running";
       record("checking");
       checksStarted = true;
-      try { await run(check.command, [], checkCwd!, true); receipt.checks[index].status = "passed"; }
+      try { await run(check.command, [], checkCwd!, true, undefined, signal, check.timeoutMs); receipt.checks[index].status = "passed"; }
       catch (error) { receipt.checks[index].status = "failed"; throw error; }
       record("checking");
     }
@@ -376,6 +363,11 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
         const messagePath = join(scratch, "message");
         writeFileSync(messagePath, op.message);
         args.splice(1, 0, "-F", messagePath);
+        if (op.mode === "files") {
+          const paths = join(scratch, "paths");
+          writeFileSync(paths, `${op.files!.join("\0")}\0`);
+          args.push(`--pathspec-from-file=${paths}`, "--pathspec-file-nul");
+        }
       }
       // A durable executing stage is required BEFORE the first native mutation.
       // If persistence fails, started stays false and no Git effect is dispatched.
@@ -384,16 +376,16 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
       if (op.action === "createWorktree" || op.action === "attachWorktree") mkdirSync(resolve(op.path, ".."), { recursive: true });
       const commandArgs = ["-c", `core.hooksPath=${scratch}`, "-c", "core.fsmonitor=false", "-c", "commit.gpgSign=false", "-c", "rebase.autoStash=false", "-c", "merge.autoStash=false", "-C", snapshot.cwd, ...args];
       if (op.action === "cleanupFeature") {
-        output = await performCleanup(callerCwd, op, policy, cleanupAccess(ui), snapshot.cleanup!, () => {
+        output = await withPreparationSignal(signal, () => performCleanup(callerCwd, op, policy, cleanupAccess(ui), snapshot.cleanup!, () => {
           if (signal?.aborted) throw new Error("Cancelled; remaining cleanup resources retained");
           const current = settings(op.checkout, session, op);
           if (digest(relevantPolicy(current, op.action)) !== digest(relevantPolicy(policy, op.action))) throw new Error("Cleanup policy changed; remaining resources retained");
         }, (args) => run("git", [...commandArgs, ...args], snapshot.cwd), effects,
-          (description) => { started = true; attemptedEffect = description; }, cleanupBudget);
+          (description) => { started = true; attemptedEffect = description; }, cleanupBudget));
       } else if (op.action === "commit" && op.mode === "files") {
         // Own Git's native index.lock only during effects. The private index keeps
         // unrelated staged entries; commit --only reconciles selected entries.
-        const original = toNativePath(git(snapshot.cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]).trim());
+        const original = toNativePath((await git(snapshot.cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"])).trim());
         const lockPath = `${original}.lock`;
         const fd = openSync(lockPath, "wx", 0o600);
         const ownedLock = fstatSync(fd);
@@ -402,14 +394,14 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
         try {
           await revalidate();
           if (existsSync(original)) copyFileSync(original, privateIndex);
-          else git(snapshot.cwd, ["read-tree", "HEAD"], privateIndex);
-          await run("git", ["-C", snapshot.cwd, "add", "-A", "--", ...op.files!], snapshot.cwd, false, privateIndex);
-          const before = head(snapshot.cwd).tip;
+          else await git(snapshot.cwd, ["read-tree", "HEAD"], privateIndex);
+          await run("git", ["-c", "core.fsmonitor=false", "-C", snapshot.cwd, "add", "-A", `--pathspec-from-file=${join(scratch, "paths")}`, "--pathspec-file-nul"], snapshot.cwd, false, privateIndex);
+          const before = (await head(snapshot.cwd)).tip;
           try { output = await run("git", commandArgs, snapshot.cwd, false, privateIndex); }
           finally {
             // Even an output/exit failure can follow a completed commit. Preserve
             // its reconciled index when HEAD actually advanced; never reset HEAD.
-            if (head(snapshot.cwd).tip !== before) {
+            if ((await head(snapshot.cwd)).tip !== before) {
               writeFileSync(fd, readFileSync(privateIndex));
               renameSync(lockPath, original);
               installed = true;
@@ -425,21 +417,28 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
       } else output = await run("git", commandArgs, snapshot.cwd);
     } finally { releaseReservation?.(); rmSync(scratch, { recursive: true, force: true }); }
     completed = true;
-    if (op.action === "merge" || op.action === "rebase") idle(snapshot.cwd);
+    if (op.action === "merge" || op.action === "rebase") await idle(snapshot.cwd);
     if (op.action === "createWorktree" || op.action === "attachWorktree") allowFileRoot(op.path);
-    const result = `${op.action} completed.\n${output.slice(0, 12000)}\nObserved HEAD: ${JSON.stringify(head(snapshot.cwd))}`;
+    const result = `${op.action} completed.\n${output.slice(0, 12000)}\nObserved HEAD: ${JSON.stringify(await head(snapshot.cwd))}`;
     record("succeeded", result);
     return { content: [{ type: "text" as const, text: result }], details: { action: op.action, completed: true, operationId, effects } };
   } catch (error) {
     let observed = "";
     if (started) {
-      try { observed = `\nObserved HEAD: ${JSON.stringify(head(op.checkout))}\nStatus: ${status(op.checkout)}\nWorktrees: ${JSON.stringify(worktrees(op.checkout))}`; }
+      try { observed = `\nObserved HEAD: ${JSON.stringify(await head(op.checkout))}\nStatus digest (empty means clean): ${await status(op.checkout)}\nWorktrees: ${JSON.stringify(await worktrees(op.checkout))}`; }
       catch { observed = "\nObserved state could not be read; inspect repository manually."; }
     }
     let text = `${error instanceof Error ? error.message : String(error)}${completed ? "\nNative effect completed, but post-effect reporting failed. Do not repeat the operation." : started ? "\nNative effect started; partial changes or conflict state may remain. No rollback or retry was performed." : checksStarted ? "\nRequired checks started and may have side effects; Git effect did not start." : "\nGit effect did not start."}${attemptedEffect ? `\nLast dispatched cleanup step: ${attemptedEffect}` : ""}${effects.length ? `\nCompleted cleanup steps:\n${effects.join("\n")}` : ""}${observed}`.slice(0, 15000);
     if (receipt) {
       try { record(completed ? "succeeded" : receipt.authorization.decision === "not-approved" || signal?.aborted && !started ? "cancelled" : "failed", text); }
-      catch { text += "\nTerminal receipt could not be persisted; saved outcome remains unknown. Inspect the repository before any retry."; }
+      catch {
+        // A presentation bug must not be retried verbatim as the failure card.
+        // This minimal record reports outcome only; it never grants authority.
+        receipt.card = { title: "Git operation outcome", operationId: receipt.operationId,
+          text: "The full operation card could not be persisted. See the tool result for the observed outcome.", actions: [] };
+        try { record(completed ? "succeeded" : "failed", text); }
+        catch { text += "\nTerminal receipt could not be persisted; saved outcome remains unknown. Inspect the repository before any retry."; }
+      }
     }
     return { isError: true, content: [{ type: "text" as const, text }],
       details: { action: op.action, completed, effectStarted: started, checksStarted, operationId: receipt?.operationId, effects } };

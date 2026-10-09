@@ -21,6 +21,9 @@ const { PluginCard, PluginCardContent } = await component("./plugin-ui/PluginCar
   "../BlockingCard": shell,
   "../MarkdownBody": { MarkdownBody: ({ children }) => React.createElement("p", {}, children) },
   "../GitPatchStack": { SuppliedPatchStack: () => React.createElement("div", {}, "stack") },
+  "./ReviewAttachment": await component("./plugin-ui/ReviewAttachment.tsx", {
+    "../GitPatchStack": { SuppliedPatchStack: () => React.createElement("div", {}, "stack") },
+  }),
 });
 
 test("shared shell labels grouped sections and forms, escapes titles, and retains hidden content on collapse", () => {
@@ -52,6 +55,19 @@ test("generic plugin cards display exact structured values, warnings, checks and
   assert.match(html, /Approve the entire candidate/);
   assert.match(html, /data-primary="true"[^>]*>Approve commit/);
   assert.doesNotMatch(html, /<script>/);
+});
+
+test("large reference-only reviews retain the entire-operation scope and live actions", () => {
+  const html = renderToStaticMarkup(React.createElement(PluginCard, { sessionId: "current-session", onRespond() {}, request: {
+    id: "request", pluginId: "example", title: "Large operation", operationId: "operation", scope: "Approve the entire operation",
+    review: { version: 1, id: "review", operationId: "operation", sha256: "a".repeat(64), entries: 100000, bytes: 5_000_000_000 },
+    actions: [{ id: "approve", label: "Approve merge", primary: true }],
+  } }));
+  assert.match(html, /Download complete exact patch/);
+  assert.match(html, /\/api\/sessions\/current-session\/reviews\/review/);
+  assert.match(html, /data-primary="true"[^>]*>Approve merge/);
+  assert.match(html, /Approve the entire operation/);
+  assert.ok(html.length < 10000);
 });
 
 test("historical shell uses outcome labels and does not mount expensive collapsed bodies", () => {

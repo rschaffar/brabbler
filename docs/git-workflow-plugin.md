@@ -86,7 +86,10 @@ Target local branch defaults to null (choose one before rebase/merge). Merge
 method defaults to ordinary non-FF; FF-only is the other choice. Required commit
 and merge checks are named shell commands, default empty arrays. Edit them as JSON,
 for example `[{"name":"Tests","command":"npm test"}]`. Commands run with a
-sanitized Git environment, at most 120 seconds and 2 MiB captured output per check.
+sanitized Git environment and drain their full output while retaining a bounded
+display tail. There is no implicit deadline. Optional `timeoutMs` sets an explicit
+per-check deadline; omitted or zero means none. Stop/deadline terminates cancellable
+check processes, with escalation and honest reporting of uncertain settlement.
 Commit checks run in the selected checkout, including its current staged/unstaged
 contents; they do **not** certify a separately exported staged tree. Merge checks
 run in the registered clean feature checkout **before** merging; they do not test
@@ -196,12 +199,14 @@ on every platform. Links inside artifact directories are inventoried as
 links, never followed. Main and caller checkouts (including descendant cwds) are
 protected.
 
-Enumeration is incremental and bounded: at most 250,000 entries / 8 GiB per scan,
-and 750,000 entries / 24 GiB / 90 seconds of inventory time across the invocation.
-Approval waiting does not consume that time budget. Directory membership is
-indexed once per scan; reads reuse a buffer and yield so Stop/settings requests
-can be processed. Limits refuse rather than truncate. Linux mount metadata also
-rejects same-device bind mounts; other platforms reject device changes and links.
+Enumeration is incremental, complete and cancellable, without fixed root-count,
+entry/byte or cumulative time ceilings. Content reads reuse a buffer and yield;
+large directory sorting spills to private scratch instead of retaining every name
+in one sort buffer. Source-name indexes and explicit resource metadata still scale
+with their counts. Progress reports distinguish inventory work from authorization.
+No incomplete inventory authorizes deletion. Real I/O/storage failures refuse;
+Linux mount metadata also rejects same-device bind mounts, while other platforms
+reject device changes and links.
 
 A managed-directory reservation spans final validation and mutation, blocking new
 Pi Web prompts/startup/terminals in that directory while existing active use
@@ -220,15 +225,17 @@ attributes (including LFS) are refused: even status/preview could otherwise run
 project commands before approval. Preview uses an ephemeral index and may add
 unreachable Git objects, but never stages working files. The supplied rebase/merge
 patch shows feature changes since the merge base, **not** a predicted result.
-Approval patches use the [shared diff-review controls](worktrees.md#full-file-diff-review):
-stacked collapsible files (first expanded), change types/counts, **Expand all files /
-Collapse all files** and one shared split/unified/raw and wrap toolbar. Expanding
-file sections never eagerly loads full context. Collapsed renderers unmount; other
-expanded files render near view. Binary and metadata-only changes remain explicit;
-oversized interactive diffs fall back to their complete raw file patch. The exact
-supplied raw patch is always available and never reconstructed from context.
-Unsupported multi-file framing falls back to it without omitting files; bounded-read
-failures refuse rather than silently truncating approval data.
+Exact review material is saved once before the prepared receipt, independently of
+card size. Small reviews use the [shared diff-review controls](worktrees.md#full-file-diff-review):
+stacked collapsible files (first expanded), shared split/unified/raw and wrap,
+optional full context and read-only historical review. Larger reviews use 40-entry
+inventory pages and lazy entry reads. Interactive rendering is display-bounded;
+large individual entries have 256 KiB raw content pages. Complete exact reviews,
+raw patches and individual entries can always be streamed for download while the
+saved material is available. Binary and metadata-only changes remain explicit.
+Preview errors leave the operation card and action footer available. A page,
+excerpt or expanded file never narrows the captured operation's approval scope.
+No raw patch is reconstructed from context or silently dropped to fit a card.
 
 Current permissions, relevant settings, checkout/ref/index/file state are checked
 again after approval, between checks and immediately before the native effect.
@@ -276,8 +283,9 @@ Settings and transcript history may remain for re-enabling.
 Every admitted Git operation persists `pi-web:operation-receipt` snapshots before
 checks/effects and at settlement. A separate generic host API owns persistence;
 missing capability or failed pre-effect persistence refuses execution. Records
-carry the operation UUID, optional SDK tool-call ID, exact bounded presentation,
-authorization mode/source/revision, check states and observed outcome. Ask decision
+carry the operation UUID, optional SDK tool-call ID, compact bounded presentation
+and an immutable exact-review reference, authorization mode/source/revision,
+check states and observed outcome. Patches are not duplicated at every stage. Ask decision
 receipts retain the same operation UUID but remain explicitly decision-only.
 Allow says **Policy authorized**, never **User approved**.
 
@@ -290,9 +298,27 @@ an effect started or completed. A failed terminal write is reported in the tool
 result without pretending the Git mutation was rolled back. Native partial effects
 and check failures remain explicit. SDK HTML export does not render these cards.
 
+### Durable exact review storage
+
+Generic session-scoped GET `/api/sessions/[id]/reviews/[reviewId]` validates the
+exact reference in persisted operation/interaction receipts, including prepared
+operations. It never creates wrappers, reads a checkout or grants permission.
+The existing application authentication/origin boundary applies. Reads validate
+stored integrity; bounded pages and streamed downloads do not impose an operation
+size ceiling. Old inline receipts continue to render unchanged.
+
+Private `pi-web/reviews/` storage is independent of cwd and creator-session paths.
+Moves preserve references; forks with copied receipts retain access even after
+the parent is deleted. Published bundles have no TTL or automatic garbage
+collection, including bundles orphaned after publication. Unpublished scratch is
+removed by its writer. Back up this directory along with session JSONL for full
+review history; do not delete it during rollback. Insufficient disk space or
+failed pre-effect persistence still refuses execution. See
+[ADR 0018](adr/0018-size-independent-git-reviews.md).
+
 ### Optional full-file patch context
 
-New Git patch approvals may carry an optional opaque UUID handle in the plugin's
+Small new Git patch approvals may carry an optional opaque UUID handle in the plugin's
 namespace. Commit snapshots bind captured **HEAD / candidate index tree** IDs;
 rebase/merge snapshots bind **merge-base / feature commit** IDs. They supplement
 the exact supplied patch, never replace or reconstruct it. The in-memory registry
