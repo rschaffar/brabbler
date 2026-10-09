@@ -53,7 +53,7 @@ cleanup of existing resources. No broader network-sandbox claim.
 - [x] Give browser/terminal invocations separate source/dependency/generated workspaces while preserving existing diagnostics, fixture isolation and explicit non-Linux limitations.
 - [x] Verify two core invocations and two browser invocations from the same worktree use disjoint writable state and matching cached dependencies without downloads.
 - [x] Complete the common baseline plus general/plugin browser and terminal acceptance, independent safety review, and documentation updates; retain exact commands/results/artifacts.
-- [ ] Commit reviewed work and resolve completion intent; integration and feature cleanup remain separate gated operations.
+- [x] Commit reviewed work and resolve completion intent; integration and feature cleanup remain separate gated operations. Implementation commit: `60c668dd36f422ecf9eb37b6ad317006c23cf93c`; user selected local `rst-main` integration after verification.
 
 ## Risks and Recovery
 
@@ -127,4 +127,7 @@ only run-owned regenerable bulk is automatically removed. Npm-only installed-loc
 validation has regression coverage, not a separate full npm-only installation run.
 The cacheable Nix check remains distinct from fresh app acceptance. Durable
 choices are in ADR 0019; operational behavior is in the testing/browser guides.
-Local commit/integration intent and resource cleanup remain under the Git skill.
+Implementation is committed and local integration intent is resolved. This
+archive-only follow-up does not change tested executable inputs; it receives
+Markdown-link and diff validation, not a redundant application-suite run.
+Exact integration approval and resource cleanup remain under the Git skill.
