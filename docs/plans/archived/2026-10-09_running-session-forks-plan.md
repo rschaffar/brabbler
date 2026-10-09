@@ -8,7 +8,7 @@ Allow **New session** from a persisted user message while its source session is 
 
 The user requested this implementation. The existing fork paths already use separate `SessionManager` instances, but retain busy/replacement guards; `fork` additionally shuts down its source. No active plan owns these per-message actions. Work is isolated on `fix/fork-running-session`, originally based on local `rst-main` at `32a3469d6af4d276f790953c352ebf4fb60fedb6`.
 
-The feature is now rebased onto local `rst-main` at `277db2349ede6a5e261a84ef3b6afc25083095d6`. The user chose local integration, then requested **rebase first**; integration remains paused without exact-state merge approval. Both pre-rebase backup branches and the feature worktree are retained.
+The user requested **rebase first**, then approved local integration. Feature tip `3d0e35498d6cccfc349de0e1fc74a2b2f07abdb7` was merged into local `rst-main` at `e4ca21d914b0c49f44dbb5f3e50a0d60a1e82a56` by an unsigned non-fast-forward merge. Exact parents (`277db2349ede6a5e261a84ef3b6afc25083095d6`, then the feature tip), feature-matching tree and clean checkouts were verified. Both pre-rebase backup branches are retained.
 
 ## Plan
 
@@ -49,11 +49,16 @@ The target advanced first to `c09460c1a8e2c9fb16a69a60235e6bfa28a05fbf`, then to
 - The first full rebased browser run failed on an immediate busy-action assertion before the warm-session GET completed (`test-results/e2e/browser-m87ItV`). A preliminary **Stop** readiness wait then failed because that button is inside collapsed mobile More controls, not because busy-state restoration was broken (`test-results/e2e/browser-xxwLS8`). The corrected visible **Steer** wait preserves the action assertions and original deadlines; both failed runs and their fixture roots remain retained.
 - Initial preflight also refused a lingering generated lock. No active checkout server/lock holder was found; generated state was retained at `/tmp/pi-web-running-forks-preflight.3DCcRN`, with subsequent observed-released lock files retained in task-specific temporary directories. A later short-lived process/lock cleanup race delayed trust acceptance; the process exited and lock disappeared before the successful run. No installed service was stopped or restarted, and no feature, backup or retained-diagnostic cleanup was performed.
 
+## Handoff
+
+The maintained session contract is in `docs/session-internals.md`; browser fixture readiness and response-waiter safeguards are documented in `e2e/README.md`. This archived plan retains measured acceptance and failure evidence. The global `git-worktrees` lifecycle owns remaining documentation-only integration and separately approved feature/artifact cleanup through its exact-state tools and operation receipts. This handoff does not grant cleanup or publication authority.
+
 ## Completion Checklist
 
 - [x] Focused runtime/hook tests pass, including busy source cases, invalid targets, and root/history boundaries.
 - [x] Desktop/mobile browser checks prove independent child creation and source continuation without a live provider.
 - [x] Isolated full core suite, TypeScript, and lint pass; verification scopes and retained failures are explicit.
 - [x] Maintained documentation is accurate, diff reviewed, and feature committed.
-- [x] Completion intent was resolved through `ask_user`: integrate into local `rst-main`, subject to the later instruction to rebase first and pause before merging.
-- [ ] Obtain exact-state approval, integrate the verified candidate by unsigned non-fast-forward merge into current local `rst-main`, verify the result, then resolve separate cleanup approval.
+- [x] Completion intent was resolved through `ask_user`; the later rebase-first request was honored before the user resumed integration.
+- [x] Obtain exact-state approval, integrate the verified implementation into local `rst-main` by unsigned non-fast-forward merge, and verify the exact parents, tree and unsigned result at `e4ca21d914b0c49f44dbb5f3e50a0d60a1e82a56`.
+- [x] Hand off remaining Git/cleanup obligations to their explicit current owner, the global `git-worktrees` lifecycle and exact-state operation receipts; no cleanup is claimed by this plan.

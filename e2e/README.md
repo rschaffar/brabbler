@@ -57,6 +57,15 @@ footer as well as keyboard/draft/cancellation/expiry contracts. `e2e/question-se
 OAuth/SSE account responses are mocked; no provider credentials are
 used. Slash commands exercise ordinary session/UI paths without a live model.
 
+Running-fork checks run in the full suite and via `E2E_RUNNING_FORKS_ONLY=1`.
+Real blocked SDK extension commands verify historical/root/quoted copies, independent
+child completion and original question replay/completion without a provider. A
+replayed question can precede the source's warm-state GET; wait for visible **Steer**
+before checking busy-only action guards. **Stop** is inside collapsed mobile More
+controls and is not a cross-layout readiness marker. Observe response-waiter
+rejections immediately while retaining the original promise's awaited failure, so
+intervening UI errors cannot bypass harness diagnostics and owned teardown.
+
 Project-privacy checks run in the full suite and through their focused switch.
 They use real isolated settings-file writes, with registry snapshots mocked to
 supply two working projects without model calls. Malformed privacy responses
