@@ -524,7 +524,11 @@ let context;
     ...(process.env.E2E_ACTIVITY_ONLY === "1" || process.env.E2E_PROJECT_PRIVACY_ONLY === "1" ? [{ width: 700, height: 800 }] : []),
     { width: 390, height: 844 },
   ]) {
-    context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+    context = await harness.newContext(browser, { viewport, locale: viewport.width > 600 ? "zh-CN" : "zh-TW", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+    // Legacy interface preferences must not change controls or dates after reload.
+    await context.addInitScript(({ locale, origin }) => {
+      if (window === window.top && location.origin === origin) localStorage.setItem("pi-locale", locale);
+    }, { locale: viewport.width > 600 ? "zh-CN" : "zh-TW", origin: base });
     page = await context.newPage();
     page.setDefaultTimeout(30_000);
     const errors = harness.errorsFor(context);
@@ -1061,8 +1065,22 @@ let context;
       assert.equal(await titlesOnly.isChecked(), false, "Reopening search resets title-only mode");
       await searchToggle.click();
       await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
+      // Finish reopening/reconciliation before testing restore. The notice can
+      // render while SSE is still starting an old wrapper; restoring then races
+      // that startup against the newly appended restore entry (Branch changed).
+      const archivedSnapshot = await api(`/api/sessions/${ARCHIVE}`);
+      const archivedAnchor = archivedSnapshot.leafId;
+      const reopenedContext = page.waitForResponse((response) => {
+        const address = new URL(response.url());
+        return address.pathname === `/api/sessions/${ARCHIVE}/context`
+          && address.searchParams.get("ancestorId") === archivedAnchor;
+      });
+      void reopenedContext.catch(() => {});
       await row.getByText("E2E archive fixture", { exact: true }).click();
       await page.getByText("This session is archived. Restore it to show it in active sessions.").waitFor();
+      const reopenedResponse = await reopenedContext;
+      assert.equal(reopenedResponse.status(), 200);
+      assert.deepEqual((await reopenedResponse.json()).context.entryIds, archivedSnapshot.context.entryIds);
       await page.getByRole("button", { name: "Restore session", exact: true }).click();
       await page.getByText("This session is archived. Restore it to show it in active sessions.").waitFor({ state: "detached" });
       await row.waitFor({ state: "detached" });

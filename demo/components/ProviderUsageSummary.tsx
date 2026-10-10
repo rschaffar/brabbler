@@ -159,5 +159,5 @@ function formatAmount(value: number | undefined): string {
 }
 
 function formatReset(seconds: number): string {
-  return new Date(seconds * 1_000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return new Date(seconds * 1_000).toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }

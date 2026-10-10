@@ -91,7 +91,7 @@ Code paths in the guides are relative to the repository root.
 | Browser questions, blocking cards and interaction receipts | [Questions](docs/questions.md); [feature contracts](docs/feature-internals.md#browser-native-ask_user) |
 | Terminal behavior | [Terminal](docs/terminal.md) |
 | Verification and browser fixtures | [Testing](docs/testing.md); [browser/terminal acceptance](e2e/README.md) |
-| Localization, demo and release | [i18n](docs/i18n.md); [demo](demo/README.md); [release](docs/release.md) |
+| Interface messages, demo and release | [English messages](docs/i18n.md); [demo](demo/README.md); [release](docs/release.md) |
 
 Cross-cutting invariants: keep credential/account bindings session-local and
 fail closed; preserve the single path-security boundary and Windows/UNC identity;

@@ -7,6 +7,16 @@ export async function checkMessageTimestamps(page, timestamp) {
   assert.equal(await assistantEntries.locator("time").count(), 1, "Final answer shows its timestamp while process details are collapsed");
   const answerTime = assistantEntries.locator("time");
   assert.equal(await answerTime.getAttribute("datetime"), timestamp);
+  const englishTime = await page.evaluate((value) => {
+    const date = new Date(value);
+    const now = new Date();
+    const time = date.toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" });
+    const sameDay = date.toDateString() === now.toDateString();
+    const day = date.toLocaleDateString("en", { month: "short", day: "numeric", year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined });
+    return { visible: sameDay ? time : `${day} ${time}`, tooltip: date.toLocaleString("en") };
+  }, timestamp);
+  assert.equal(await answerTime.textContent(), englishTime.visible);
+  assert.equal(await answerTime.getAttribute("title"), englishTime.tooltip);
   const metadataOrder = await answerTime.evaluate((el) => ({
     previous: el.previousElementSibling?.textContent,
     next: el.nextElementSibling?.getAttribute("title"),

@@ -234,9 +234,9 @@ function formatTime(ts?: number): string | null {
   const isToday = d.getFullYear() === now.getFullYear() &&
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate();
-  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const time = d.toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" });
   if (isToday) return time;
-  const date = d.toLocaleDateString([], { month: "short", day: "numeric", year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined });
+  const date = d.toLocaleDateString("en", { month: "short", day: "numeric", year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined });
   return `${date} ${time}`;
 }
 
@@ -863,7 +863,7 @@ function AssistantMessageView({
           </div>
         )}
         {time && (
-          <time dateTime={new Date(message.timestamp!).toISOString()} title={new Date(message.timestamp!).toLocaleString()} style={{ fontSize: 11, color: "var(--text-dim)", whiteSpace: "nowrap" }}>{time}</time>
+          <time dateTime={new Date(message.timestamp!).toISOString()} title={new Date(message.timestamp!).toLocaleString("en")} style={{ fontSize: 11, color: "var(--text-dim)", whiteSpace: "nowrap" }}>{time}</time>
         )}
         {textContent && !isStreaming && (
           <button

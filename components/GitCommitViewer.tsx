@@ -67,7 +67,7 @@ export function GitCommitViewer({ cwd, branch, head, oid }: { cwd: string; branc
         <p className="min-w-0 whitespace-pre-wrap break-words text-text">{detail.message}</p>
         <CopyCommitField label="commit message" value={detail.message} />
       </div>
-      <p className="mt-2 text-xs text-text-muted">{detail.author} · {new Date(detail.date).toLocaleString()}</p>
+      <p className="mt-2 text-xs text-text-muted">{detail.author} · {new Date(detail.date).toLocaleString("en")}</p>
       {detail.parents.length > 1 && <p className="mt-2 text-xs text-text-muted">Merge commit · changes vs first parent</p>}
       <div className="mt-5 min-w-0">
         {files.length === 0 ? <p className="text-xs text-text-muted">No changes against the first parent.</p>

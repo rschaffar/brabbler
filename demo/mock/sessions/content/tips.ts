@@ -112,7 +112,7 @@ Get familiar with the pi-web repository and its recent history.
 - The tool preset button switches between *Chat only*, read-only tools, the default four (\`read\`, \`bash\`, \`edit\`, \`write\`) and the full set.
 - The divider above marks a **compaction**: older turns were summarized to free up context. \`/compact\` does it on demand; expand the divider to read the summary.
 - **Settings → General → Chat** can show *Ask here* / *Ask in new chat* actions when you select text in a reply.
-- **Settings → General** has themes (Light, Dark, Mist, Rose, Pine or System), languages, chat width and font size.
+- **Settings → General** has themes (Light, Dark, Mist, Rose, Pine or System), generated title language, chat width and font size.
 - The search button above the session list searches **all** conversations; the strip on the right of the chat is a minimap for long sessions.
 - On a phone, add Pi Web to the home screen and turn on push notifications to hear when a long run finishes.`,
             zh: `速查表：

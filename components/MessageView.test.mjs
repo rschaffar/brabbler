@@ -78,7 +78,7 @@ test("does not invent timestamps for messages with missing or invalid dates", ()
 test("preserves the existing user message timestamp", () => {
   const html = renderMessage({ role: "user", content: "Timestamped user", timestamp });
   const date = new Date(timestamp);
-  const expectedTime = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const expectedTime = date.toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" });
   assert.ok(html.includes(expectedTime));
 });
 
