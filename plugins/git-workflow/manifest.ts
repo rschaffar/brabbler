@@ -2,6 +2,9 @@ import type { PluginManifest, RequiredCheck } from "../../lib/plugins/types";
 
 export const actions = ["commit", "rebase", "merge", "createWorktree", "attachWorktree", "removeWorktree", "cleanupFeature"] as const;
 export type GitAction = typeof actions[number];
+/** Browser-only permissions never add model-facing tools. */
+export const browserActions = ["discardResources"] as const;
+export type GitOperationAction = GitAction | typeof browserActions[number];
 export type Permission = "deny" | "ask" | "allow";
 export interface GitWorkflowChoices {
   workspace: "ask" | "worktree" | "current-branch";
@@ -31,6 +34,7 @@ export interface GitSettings extends GitWorkflowChoices {
   attachWorktree: Permission;
   removeWorktree: Permission;
   cleanupFeature: Permission;
+  discardResources: Permission;
   approvedArtifactRoots: string | null;
   targetBranch: string | null;
   mergeMethod: "ff-only" | "non-ff";
@@ -47,13 +51,14 @@ export const gitWorkflowManifest = {
     ...Object.fromEntries(actions.map((action) => [action, {
       label: action, group: "Operation permissions", kind: "enum" as const, default: "ask", options: ["deny", "ask", "allow"],
     }])),
+    discardResources: { label: "Manual manager discard", group: "Operation permissions", kind: "enum", default: "ask", options: ["deny", "ask", "allow"], description: "Browser-only deliberate branch/worktree removal, including resources not proven integrated. Deny blocks removal; Ask and Allow both require an exact live browser confirmation. Completed-feature Keep preferences do not veto this separate manual operation. Artifact consent and structural protections still apply." },
     workspace: { label: "Working location", group: "Workflow choices", kind: "enum", default: "ask", options: ["ask", "worktree", "current-branch"], description: "Ask uses ask_user for each applicable decision. Otherwise create a dedicated worktree or work on the current branch; stronger repository rules still apply." },
     completion: { label: "After completing work", group: "Workflow choices", kind: "enum", default: "ask", options: ["ask", "retain", "integrate"] },
     targetSelection: { label: "Choose integration target", group: "Workflow choices", kind: "enum", default: "ask", options: ["ask", "configured"], description: "Ask via ask_user, or use the configured local target below. A missing configured target still needs a choice." },
     methodSelection: { label: "Choose integration method", group: "Workflow choices", kind: "enum", default: "ask", options: ["ask", "configured"] },
-    cleanupWorktree: { label: "Completed feature worktree", group: "Workflow choices", kind: "enum", default: "ask", options: ["ask", "keep", "remove-integrated"] },
-    cleanupBranch: { label: "Completed feature branch", group: "Workflow choices", kind: "enum", default: "ask", options: ["ask", "keep", "delete-integrated"] },
-    cleanupArtifacts: { label: "Generated cleanup artifacts", group: "Workflow choices", kind: "enum", default: "ask", options: ["ask", "keep", "remove-approved"], description: "Ask via ask_user. Remove-approved uses the reusable allowlist or a one-time cleanup-card approval for exact generated files/directories; ignored status alone never grants deletion authority." },
+    cleanupWorktree: { label: "Completed feature worktree", group: "Workflow choices", kind: "enum", default: "ask", options: ["ask", "keep", "remove-integrated"], description: "Completed-feature workflow intent; Keep blocks integrated cleanup, not a separately confirmed manual manager discard." },
+    cleanupBranch: { label: "Completed feature branch", group: "Workflow choices", kind: "enum", default: "ask", options: ["ask", "keep", "delete-integrated"], description: "Completed-feature workflow intent; Keep blocks integrated cleanup, not a separately confirmed manual manager discard." },
+    cleanupArtifacts: { label: "Generated cleanup artifacts", group: "Workflow choices", kind: "enum", default: "ask", options: ["ask", "keep", "remove-approved"], description: "Completed-feature workflow intent; Keep does not veto a separately confirmed manual manager discard. Ask via ask_user. Remove-approved uses the reusable allowlist or a one-time cleanup-card approval for exact generated files/directories; ignored status alone never grants deletion authority." },
     approvedArtifactRoots: { label: "Permitted generated files and directories", kind: "text", default: null, nullable: true, description: "Reusable allowlist of disposable literal worktree-relative paths, comma-separated (for example .codegraph, node_modules, next-env.d.ts, src/meetings/__pycache__). Nested paths use /; permission matches exact roots, not children selected separately. No defaults, globs or traversal. Nested cleanup requires Linux no-follow directory handles. Unlisted artifacts require a one-time cleanup approval, even under Allow. Source/nested-repository/mount protections and the separate cleanup permission still apply." },
     targetBranch: { label: "Target local branch", kind: "text", default: null, nullable: true },
     mergeMethod: { label: "Merge method", kind: "enum", default: "non-ff", options: ["ff-only", "non-ff"] },

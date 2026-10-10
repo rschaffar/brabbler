@@ -1,5 +1,5 @@
 import type { PluginCard, PluginReviewWriter, RequiredCheck } from "../../lib/plugins/types";
-import type { GitOperation } from "./server";
+import type { ReviewedGitOperation } from "./server";
 import { gitOutput } from "./process";
 import { registerGitPatchContext } from "./context";
 
@@ -50,7 +50,7 @@ export async function writePatchEntries(writer: PluginReviewWriter, source: Asyn
   if (opened) { await writer.write(pending); await writer.end(); }
   return count;
 }
-export async function buildGitReview(writer: PluginReviewWriter, operation: GitOperation,
+export async function buildGitReview(writer: PluginReviewWriter, operation: ReviewedGitOperation,
   snapshot: { card: PluginCard; fingerprint: string; cwd: string; args: string[]; checks: RequiredCheck[]; comparison?: { before: string; after: string } }, signal?: AbortSignal, onProgress?: (text: string) => void) {
   signal?.throwIfAborted();
   await writer.begin("Exact operation, checks and captured state", "text");

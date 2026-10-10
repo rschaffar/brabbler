@@ -36,6 +36,9 @@ test("real Pi lifecycle keeps disabled sessions ordinary, enables live and withd
   updatePluginSettings(gitWorkflowPlugin.manifest, "global", root, { enabled: true }, []);
   assert.ok(session.getActiveToolNames().includes("git_commit"));
   assert.ok(session.getAllTools().some((tool) => tool.name === "git_merge" && tool.exposure === "model-only"));
+  assert.deepEqual(session.getAllTools().filter((tool) => tool.name.startsWith("git_")).map((tool) => tool.name).sort(),
+    ["git_cleanup", "git_commit", "git_merge", "git_policy", "git_rebase", "git_worktree"]);
+  assert.equal(session.getAllTools().some((tool) => /discard/.test(tool.name)), false);
   updatePluginSettings(gitWorkflowPlugin.manifest, "global", root, { enabled: false }, []);
   assert.equal(session.getActiveToolNames().some((name) => name.startsWith("git_")), false);
   assert.ok(session.getAllTools().filter((tool) => tool.name.startsWith("git_")).every((tool) => tool.exposure === "hidden"));

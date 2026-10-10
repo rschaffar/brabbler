@@ -39,7 +39,7 @@ export async function GET(request: Request) {
       configuredTarget: typeof policy.effective.targetBranch === "string" ? policy.effective.targetBranch : null,
       targetSource: policy.sources.targetBranch as "builtin" | "global" | "project", signal: request.signal });
     return Response.json({ ...inventory, cleanup: { pluginId: plugin.manifest.id, enabled: policy.enabled,
-      permission: policy.effective.cleanupFeature, targetSelection: policy.effective.targetSelection } }, { headers });
+      permission: policy.effective.discardResources, targetSelection: policy.effective.targetSelection } }, { headers });
   } catch (error) {
     const code = error instanceof WorktreeManagementError ? error.code : error instanceof SyntaxError ? "INVALID" : "UNAVAILABLE";
     return Response.json({ error: error instanceof Error ? error.message : String(error), code },

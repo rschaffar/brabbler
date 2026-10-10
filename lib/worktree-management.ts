@@ -114,15 +114,16 @@ export async function captureWorktreeManagement(cwd: string, options: { target?:
     const worktrees = checkout.registrations.filter((w) => w.branch === r.branch);
     const integration = r.branch === target?.branch ? "target" : !target || graphFailure ? "unknown"
       : merged.has(`refs/heads/${r.branch}`) ? "integrated" : shallow || !r.tipDate ? "unknown" : "not-integrated";
-    return { id: `branch:${r.branch}`, ...r, worktrees, integration,
+    return { id: `branch:${r.branch}`, kind: "branch", ...r, worktrees, integration,
       ...(integration === "unknown" ? { integrationReason: !target ? "target-needed" : graphFailure || !r.tipDate ? "graph-unavailable" : "incomplete-history" } : {}),
       mergeDate: { state: integration === "integrated" ? "not-loaded" : "not-applicable" },
-      blockers: [...(integration !== "integrated" ? ["current-tip-not-proven-integrated"] : []), ...(r.symbolic ? ["symbolic-ref"] : []),
-        ...(worktrees.some((w) => w.main) ? ["main-checkout"] : []), ...(worktrees.some((w) => w.selected) ? ["selected-checkout"] : []),
-        ...(worktrees.some((w) => w.locked !== null || w.prunable !== null || w.missing) ? ["diagnostic-registration"] : [])] };
+      // Containment is evidence, not removal authority. Protect both targets independently.
+      // Checkout-specific blockers are evaluated against the selected removal path in the view.
+      blockers: [...(r.symbolic ? ["symbolic-ref"] : []),
+        ...(r.branch === configured ? ["configured-target"] : []), ...(r.branch === target?.branch ? ["comparison-target"] : [])] };
   });
-  for (const [index, w] of checkout.registrations.entries()) {
-    if (!w.branch || !branches.values.some((r) => r.branch === w.branch)) rows.push({ id: `registration:${index}`, branch: w.branch, tip: w.head, symbolic: false,
+  for (const w of checkout.registrations) {
+    if (!w.branch || !branches.values.some((r) => r.branch === w.branch)) rows.push({ id: `registration:${hash(w.path)}`, kind: "diagnostic", branch: w.branch, tip: w.head, symbolic: false,
       tipDate: null, authorDate: null, subject: null, worktrees: [w], integration: "unknown", integrationReason: "diagnostic-registration", mergeDate: { state: "not-applicable" }, blockers: ["diagnostic-registration"] });
   }
   let diagnostic = 0;
@@ -131,8 +132,13 @@ export async function captureWorktreeManagement(cwd: string, options: { target?:
     while (diagnostic < diagnostics.length) {
       const row = diagnostics[diagnostic++];
       try {
-        const [date, authorDate, subject] = (await managementGit(cwd, ["show", "-s", "--no-show-signature", "--format=%cI%x00%aI%x00%s", row.tip!], signal)).trimEnd().split("\0");
+        const [date, authorDate, subject] = (await managementGit(cwd, ["show", "-s", "--no-show-signature", "--format=%cI%x00%aI%x00%s", `${row.tip!}^{commit}`], signal)).trimEnd().split("\0");
         row.tipDate = date || null; row.authorDate = authorDate || null; row.subject = subject || null;
+        const w = row.worktrees[0];
+        if (!w.branch && w.detached && date && authorDate && !w.missing && w.locked === null && w.prunable === null) {
+          row.kind = "detached"; row.integrationReason = "detached-head";
+          row.blockers = [];
+        }
       } catch { signal?.throwIfAborted(); }
     }
   }));

@@ -80,6 +80,7 @@ export interface PluginCard {
   fields?: PluginCardField[];
   sections?: PluginCardSection[];
   scope?: string;
+  requiredAcknowledgment?: string;
   markdown?: string;
   patch?: string;
   /** Durable exact review material; display pages never narrow authorization. */

@@ -20,9 +20,12 @@ function fields(value: unknown): boolean {
   return value === undefined || Array.isArray(value) && value.length <= 32 && value.every((field: PluginCardField) =>
     field && text(field.label, 128, false) && field.label.trim() && text(field.value, 65536, false) && flag(field.code));
 }
-/** Bound payloads and action identities at the server transport boundary. */
-export function validatePluginCard(card: PluginCard): void {
+/** Default session transports cannot enforce acknowledgments and must fail closed.
+ * Only the project-action host and read-only operation metadata opt in. */
+export function validatePluginCard(card: PluginCard, options: { allowRequiredAcknowledgment?: boolean } = {}): void {
   if (!card || !text(card.title, 256, false) || !card.title.trim()
+    || card.requiredAcknowledgment !== undefined && (options.allowRequiredAcknowledgment !== true
+      || !text(card.requiredAcknowledgment, 4096, false) || !card.requiredAcknowledgment.trim())
     || card.operationId !== undefined && !isOperationId(card.operationId)
     || card.review !== undefined && (!validReviewReference(card.review) || card.review.operationId !== card.operationId)
     || [card.text, card.markdown, card.patch].some((value) => !text(value, 1_000_000))
@@ -43,8 +46,8 @@ export function validatePluginCard(card: PluginCard): void {
     || new Set(card.actions.map((action) => action.id)).size !== card.actions.length
     || card.actions.filter((action) => action.primary).length > 1) throw new Error("Invalid plugin card");
   // Keep the existing separately bounded patch; cap all other presentation together.
-  const { title, operationId, text: body, markdown, subtitle, scope, fields: rows, sections, patchBefore, patchAfter, patchContext, review, actions, allowDetails, sessionLinks } = card;
-  if (JSON.stringify({ title, operationId, text: body, markdown, subtitle, scope, fields: rows, sections, patchBefore, patchAfter, patchContext, review, actions, allowDetails, sessionLinks }).length > 1_100_000) {
+  const { title, operationId, text: body, markdown, subtitle, scope, fields: rows, sections, patchBefore, patchAfter, patchContext, review, actions, allowDetails, sessionLinks, requiredAcknowledgment } = card;
+  if (JSON.stringify({ title, operationId, text: body, markdown, subtitle, scope, fields: rows, sections, patchBefore, patchAfter, patchContext, review, actions, allowDetails, sessionLinks, requiredAcknowledgment }).length > 1_100_000) {
     throw new Error("Invalid plugin card: presentation exceeds 1,100,000 characters; use durable review attachments");
   }
 }

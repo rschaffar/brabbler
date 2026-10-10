@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { closeSync, constants, existsSync, fsyncSync, fstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -11,11 +11,12 @@ import { bundledPlugin } from "./registry";
 import { readPluginSettings } from "./settings";
 import { preparePluginReview } from "./review-store";
 import { isOperationId, validatePluginCard } from "./ui";
-import type { ProjectActionPrepare, ProjectOperation } from "./project-operation-types";
+import { assertProjectAcknowledgment, parseProjectActionDecision, projectCardDigest, validateSavedProjectAcknowledgment } from "./project-acknowledgment";
+import type { ProjectAcknowledgmentAnswer, ProjectActionPrepare, ProjectOperation } from "./project-operation-types";
 import type { BundledPlugin, PluginUiContext } from "./types";
 
 interface Stored extends ProjectOperation { inputDigest: string }
-interface Live { record: Stored; controller: AbortController; answer?: (answer: string | null) => void; card?: ProjectOperation["card"]; timer?: ReturnType<typeof setTimeout>; claimed: boolean }
+interface Live { record: Stored; controller: AbortController; answer?: (answer: string | null) => void; card?: ProjectOperation["card"]; cardNonce?: string; timer?: ReturnType<typeof setTimeout>; claimed: boolean }
 const key = Symbol.for("pi-web:project-operations/v1");
 const host = globalThis as typeof globalThis & { [key]?: Map<string, Live> };
 const live = host[key] ??= new Map<string, Live>();
@@ -36,6 +37,7 @@ function read(id: string): Stored | undefined {
     if (value.version !== 1 || value.id !== id || value.requestId !== id || !/^[a-f0-9]{64}$/.test(value.inputDigest)
       || typeof value.project !== "string" || typeof value.anchor !== "string" || typeof value.cwd !== "string") throw new Error("Invalid operation record");
     if (value.receipt) validateOperationReceipt(value.receipt);
+    validateSavedProjectAcknowledgment(value);
     return value;
   } finally { closeSync(fd); }
 }
@@ -44,14 +46,18 @@ function update(operation: Live, changes: Partial<Stored>) {
   persist(next); operation.record = next;
 }
 function publicRecord(record: Stored): ProjectOperation {
-  const { inputDigest: _digest, ...value } = structuredClone(record);
-  void _digest;
   const active = live.get(record.id);
+  // Ownership reads await admission; the live card/descriptor may have changed meanwhile.
+  const { inputDigest: _digest, ...value } = structuredClone(active?.record ?? record);
+  void _digest;
   if (!active && !terminal(value.state)) { value.state = "outcome-unknown"; value.error = "Server restarted; saved intent is not an observed outcome. Inspect actual resources. This operation cannot be replayed."; }
   if (value.receipt) value.receipt.card.actions = [];
   const review = value.receipt?.card.review;
   if (review) value.reviewBaseUrl = `/api/plugins/bundled/${encodeURIComponent(value.pluginId)}/project-actions/${value.id}/reviews/${review.id}`;
-  value.card = active?.card && !active.claimed && value.state === "review" ? structuredClone(active.card) : undefined;
+  value.card = active?.card && active.answer && !active.claimed && !active.controller.signal.aborted && value.state === "review"
+    && (active.card.requiredAcknowledgment === undefined || active.cardNonce && value.acknowledgment
+      && value.acknowledgment.label === active.card.requiredAcknowledgment && value.acknowledgment.accepted !== true)
+    ? structuredClone(active.card) : undefined;
   return value;
 }
 async function allowed(cwd: string) {
@@ -131,17 +137,24 @@ async function run(operation: Live, plugin: BundledPlugin, adapter: NonNullable<
       },
       pluginCard: async (id, card, signal) => {
         if (id !== plugin.manifest.id) throw new Error("Card owner mismatch");
-        validatePluginCard(card);
+        validatePluginCard(card, { allowRequiredAcknowledgment: true });
         if (controller.signal.aborted || signal?.aborted) return null;
+        if (operation.claimed) throw new Error("Operation decision already claimed; prepare a new operation");
+        // An unclaimed replacement revokes the old wait and gets a fresh host nonce.
+        operation.answer?.(null);
+        const snapshot = structuredClone(card), nonce = randomUUID();
+        const acknowledgment = snapshot.requiredAcknowledgment === undefined ? undefined : {
+          cardDigest: projectCardDigest(operation.record.id, nonce, snapshot), label: snapshot.requiredAcknowledgment,
+        };
         const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
-        update(operation, { state: "review", expiresAt });
-        operation.card = structuredClone(card);
+        update(operation, { state: "review", expiresAt, acknowledgment });
+        operation.card = snapshot; operation.cardNonce = nonce;
         return new Promise<string | null>((resolve) => {
           let settled = false;
           const finish = (answer: string | null) => {
             if (settled) return; settled = true;
             signal?.removeEventListener("abort", cancel); controller.signal.removeEventListener("abort", cancel);
-            clearTimeout(operation.timer); operation.timer = undefined; operation.answer = undefined; operation.card = undefined;
+            clearTimeout(operation.timer); operation.timer = undefined; operation.answer = undefined; operation.card = undefined; operation.cardNonce = undefined;
             resolve(answer);
           };
           const cancel = () => finish(null);
@@ -158,27 +171,44 @@ async function run(operation: Live, plugin: BundledPlugin, adapter: NonNullable<
   } catch (error) {
     update(operation, { state: controller.signal.aborted && !operation.record.receipt?.effectStarted ? "cancelled" : "failed", error: error instanceof Error ? error.message : String(error), expiresAt: undefined });
   } finally {
-    clearTimeout(operation.timer); operation.card = undefined; operation.answer = undefined;
+    clearTimeout(operation.timer); operation.card = undefined; operation.cardNonce = undefined; operation.answer = undefined;
     // Retain only bounded live results. Saved records never reconstruct authority.
     const settled = [...live].filter(([, item]) => terminal(item.record.state));
     for (const [id] of settled.slice(0, Math.max(0, settled.length - 64))) live.delete(id);
   }
 }
 export async function getProjectOperation(pluginId: string, id: string): Promise<ProjectOperation> { return publicRecord(await owned(pluginId, id)); }
-export async function decideProjectOperation(pluginId: string, id: string, cwd: string, decision: "approve" | "reject" | "stop"): Promise<ProjectOperation> {
-  if (!["approve", "reject", "stop"].includes(decision) || typeof cwd !== "string") throw new Error("Invalid decision");
-  const record = await owned(pluginId, id), operation = live.get(id);
+export async function decideProjectOperation(pluginId: string, id: string, cwd: string, decision: "approve" | "reject" | "stop", acknowledgment?: ProjectAcknowledgmentAnswer): Promise<ProjectOperation> {
+  const input = parseProjectActionDecision({ cwd, decision, ...(acknowledgment !== undefined ? { acknowledgment } : {}) });
+  const record = await owned(pluginId, id);
   if (!samePath(cwd, record.cwd)) throw new Error("Selected invocation checkout changed; discard review");
   await allowed(cwd);
+  const operation = live.get(id);
   if (!operation) throw new Error("Historical operation cannot execute; prepare a new review");
   if (operation.claimed && decision !== "stop") {
     if (operation.record.decision !== decision) throw new Error("Decision already claimed");
+    if (decision === "approve") assertProjectAcknowledgment(operation.record.acknowledgment, input.acknowledgment, true);
     return publicRecord(operation.record);
   }
-  if (terminal(operation.record.state)) return publicRecord(operation.record);
+  if (terminal(operation.record.state)) {
+    if (decision === "approve") assertProjectAcknowledgment(operation.record.acknowledgment, input.acknowledgment, true);
+    return publicRecord(operation.record);
+  }
   if (decision !== "stop" && (operation.record.state !== "review" || !operation.card || !operation.answer || !operation.card.actions.some((a) => a.id === decision))) throw new Error("No live review accepts this decision");
-  if (decision === "approve" && !readPluginSettings(capability(pluginId).plugin.manifest, cwd).enabled) throw new Error("Plugin disabled; review no longer executable");
-  const changes = { decision, decisionAt: new Date().toISOString() };
+  if (decision === "approve") {
+    const card = operation.card!, required = operation.record.acknowledgment;
+    if (card.requiredAcknowledgment !== undefined && (!required || !operation.cardNonce || required.label !== card.requiredAcknowledgment
+      || required.cardDigest !== projectCardDigest(operation.record.id, operation.cardNonce, card))) throw new Error("No current exact-card acknowledgment descriptor");
+    if (card.requiredAcknowledgment === undefined && required) throw new Error("Acknowledgment descriptor does not belong to the live card");
+    assertProjectAcknowledgment(required, input.acknowledgment);
+    if (!readPluginSettings(capability(pluginId).plugin.manifest, cwd).enabled) throw new Error("Plugin disabled; review no longer executable");
+  }
+  const decisionAt = new Date().toISOString();
+  const changes: Partial<Stored> = { decision, decisionAt, expiresAt: undefined,
+    ...(decision === "approve" && operation.record.acknowledgment ? {
+      acknowledgment: { ...operation.record.acknowledgment, accepted: true, acceptedAt: decisionAt },
+    } : {}),
+  };
   if (decision === "approve") {
     // Granting authority always requires a durable claim before confirmation.
     update(operation, changes); operation.claimed = true;

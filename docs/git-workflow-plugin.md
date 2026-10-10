@@ -82,6 +82,13 @@ Each of `commit`, `rebase`, `merge`, `createWorktree`, `attachWorktree`,
   cleanup artifacts missing from the reusable allowlist still require one-time
   approval. Operation Allow never supplies missing artifact authority.
 
+The browser manager additionally declares `discardResources` (**Manual manager
+discard**, browser only), default Ask. It has no agent tool: Deny refuses, while
+Ask **and Allow** require the exact live browser confirmation. Its resolution omits
+session overrides. Agent `cleanupFeature` remains integrated-only; manual discard
+does not inherit completed-feature Keep choices, but cannot waive source, target,
+activity or artifact protections.
+
 Target local branch defaults to null (choose one before rebase/merge). Merge
 method defaults to ordinary non-FF; FF-only is the other choice. Required commit
 and merge checks are named shell commands, default empty arrays. Edit them as JSON,
@@ -358,19 +365,33 @@ expiry, eviction, server restart or unavailable objects remain patch-only; there
 is no durable content backfill or substitution from current working files.
 Context availability does not extend an approval's lifetime or execution authority.
 
-## Standalone project cleanup API
+## Standalone project removal API
 
-The no-chat manager uses the same cleanup engine through a bounded generic
-project-action host (`lib/plugins/project-operations.ts`), not a bare cleanup
-endpoint or a fabricated session. It resolves global/project policy only.
+The no-chat manager uses the shared resource capture/effect engine through a bounded
+generic project-action host (`lib/plugins/project-operations.ts`), not a bare deletion
+endpoint or fabricated session. Global/project policy applies, never session overrides.
+The browser-only `discardResources` adapter permits any containment state, including
+Unknown/no target, and valid clean detached worktrees. The legacy `cleanup` action and
+agent `git_cleanup` remain integrated-only. The public agent executor rejects discard.
+
 Browser preparation **always waits for manual confirmation**, including configured
-Allow with no artifacts or entirely permitted artifacts. Its receipt says User
-approved with configured-policy provenance; tool Ask/Allow behavior is unchanged.
-A non-null designated target cannot be replaced by a temporary comparison.
-Unignored untracked files block browser cleanup; explicit artifact roots are not
-accepted there. Ignored artifact discovery/one-time authority, exact ref deletion,
-main/source/selected/target protections, live-use inspection, reservations and
-partial results reuse the existing executor. Idle chat history is warning-only.
+Allow with no artifacts or entirely permitted artifacts. Its receipt says User approved
+with configured-policy provenance; tool Ask/Allow behavior is unchanged. Manual discard
+bypasses completed-feature cleanup Keep preferences, never operation Deny or artifact
+authority. Both configured and temporary comparison targets remain protected; a missing
+configured target is allowed, an existing symbolic configured target is refused.
+Unignored untracked files block browser removal; explicit artifact roots are not accepted.
+Exact ignored discovery, one-time artifact consent, main/invocation/selected/active
+protections, reservations and partial results reuse the executor. Idle chats warn only.
+
+The plugin computes loss evidence from the frozen review, not client flags. Deleting a
+branch not proven integrated supplies `requiredAcknowledgment`; retaining a branch or
+removing a detached worktree does not fabricate branch-loss consent. Detached removal
+warns that commit retention is not guaranteed. Originally proven branch deletion fails
+closed on proof/ref-binding loss. Git 2.34+ prepared ref transactions bind the current
+direct comparison tip and exact subject deletion; direct-ref, designation, graph,
+registration and policy checks repeat before committing while those ref locks are held.
+Other external filesystem/checkout writers remain uncoordinated.
 
 - GET `/api/worktrees/manage?cwd=…&target=…` captures the whole lightweight local
   branch/registration inventory. No target is necessary to list resources. The
@@ -382,16 +403,29 @@ partial results reuse the existing executor. Idle chat history is warning-only.
   rows first. Reads are local-only and bounded, not cleanup authorization.
 - POST `/api/plugins/bundled/[id]/project-actions` with `{cwd, requestId, action,
   payload}` starts preparation and returns 202 immediately. Git's `action` is
-  `cleanup`; payload contains exact `featureBranch`, `featureTip`,
-  `integrationCommit`, `targetBranch`, `removeWorktree`, `deleteBranch` and optional
-  `worktreePath`. The pinned integration commit can be the captured target tip.
+  `remove`; payload contains `subject: {kind: "branch", branch, tip}` or
+  `{kind: "detached", head}`, `removeWorktree`, `deleteBranch`, optional `worktreePath`,
+  and optional `comparisonTarget: {branch, tip}`. IDs are full captured commit IDs.
+  Detached subjects permit only worktree removal. No acknowledgment flag or artifact
+  root is accepted during preparation. Legacy `cleanup` retains exact `featureBranch`,
+  `featureTip`, `integrationCommit`, `targetBranch` and resource choices.
 - GET that collection with `cwd` lists the latest 50 saved outcomes. GET
   `/project-actions/[operationId]` polls one operation; only its live `card` at
   `state: review` is actionable. `receipt.card` is historical/read-only.
 - POST the operation URL with `{cwd, decision: approve | reject | stop}` claims a
-  single decision. The invocation checkout must remain the selected one. Duplicate
-  identical decisions/prepare request IDs do not replay effects; conflicting input
-  refuses. Stop prevents undispatched steps, never undoes a dispatched deletion.
+  single decision. For a requirement-bearing live card, approval additionally needs
+  `acknowledgment: {cardDigest, accepted: true}` matching the server status descriptor.
+  Missing, false, stale or foreign consent refuses without releasing authority;
+  approval retries must repeat that exact envelope. Reject/Stop never carry it.
+  The host freezes the complete card with a fresh operation-bound nonce; replacement
+  cards get fresh digest identities even if their contents match. Accepted metadata
+  is durable with the decision before authority is released. Legacy cards need no
+  envelope. Unsupported requirement-bearing session cards fail closed, not silently
+  approved through their older transport.
+  The invocation checkout must remain the selected one. Matching decisions/prepare
+  UUIDs do not replay effects; conflicting input refuses. Stop remains available after
+  approval while awaiting outcome and prevents only undispatched steps. Saved consent
+  is read-only evidence; restart cannot recover live authority.
 - Status supplies `reviewBaseUrl`: operation-bound `/reviews/[reviewId]`, with the
   existing `start`, `entry`, `offset`, `download` and `patch` query protocol. No
   session ID is needed. Saved ownership and allowed surviving project access
@@ -405,7 +439,8 @@ cannot distinguish a lost response from abandonment. Live reviews expire after
 are outcome-unknown after restart and cannot execute. Private owner-only records
 and exact reviews are retained without an automatic reaper. Durable pre-effect
 writes fail closed; failed final writes never imply rollback or settlement.
-See [ADR 0021](adr/0021-standalone-project-cleanup.md),
+See [ADR 0021](adr/0021-standalone-project-cleanup.md) and its
+[browser discard revision, ADR 0022](adr/0022-browser-resource-discard.md),
 `lib/worktree-management-types.ts` and `lib/plugins/project-operation-types.ts`.
 
 ## Verification

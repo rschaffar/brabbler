@@ -37,7 +37,8 @@ export function validateOperationReceipt(value: unknown): asserts value is Plugi
     || value.summary !== undefined && (typeof value.summary !== "string" || value.summary.length > 16384)) {
     throw new Error("Invalid operation receipt");
   }
-  validatePluginCard(value.card as unknown as PluginOperationReceipt["card"]);
+  // Receipt metadata is read-only evidence, never a session approval transport.
+  validatePluginCard(value.card as unknown as PluginOperationReceipt["card"], { allowRequiredAcknowledgment: true });
   if (value.card.operationId !== undefined && value.card.operationId !== value.operationId) {
     throw new Error("Operation receipt card correlation mismatch");
   }

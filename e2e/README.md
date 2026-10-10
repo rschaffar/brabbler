@@ -12,10 +12,13 @@ nix develop .#test -c npm run test:e2e -- --keep-workspace
 ```
 
 Focused browser switches: `E2E_WORKTREE_MANAGER_ONLY=1` (no-chat project overview,
-plugin-disabled browsing, whole-inventory dates/paging, designated-target mismatch,
-untracked-file blockers, lost preparation-response reconciliation, rejection,
-combined and branch-only cleanup, and durable reviews after resource removal at
-desktop/mobile sizes; all repositories are disposable), `E2E_TRUST_ONLY=1` (worktree/project grants, revocation and restriction at desktop/mobile sizes), `E2E_RUNNING_FORKS_ONLY=1` (historical-message, root, and quoted-response forks while a real SDK extension prompt waits for input; original question replay and completion at desktop/mobile sizes), `E2E_ASK_USER_ONLY=1`, `E2E_ACTIVITY_ONLY=1`,
+plugin-disabled browsing, whole-inventory dates/paging, protected configured/comparison
+targets without a blanket mismatch veto, untracked-file blockers, lost preparation-response
+reconciliation, rejection, integrated and unintegrated combined/branch-only removal,
+server-enforced missing/false/stale loss acknowledgment, fresh-card checkbox reset,
+worktree-only branch retention, Unknown/no-target and detached-only removal with warning,
+Deny/Keep independence and durable read-only consent/reviews after removal at
+desktop/mobile sizes; all repositories and settings are disposable), `E2E_TRUST_ONLY=1` (worktree/project grants, revocation and restriction at desktop/mobile sizes), `E2E_RUNNING_FORKS_ONLY=1` (historical-message, root, and quoted-response forks while a real SDK extension prompt waits for input; original question replay and completion at desktop/mobile sizes), `E2E_ASK_USER_ONLY=1`, `E2E_ACTIVITY_ONLY=1`,
 `E2E_PROJECT_PRIVACY_ONLY=1` (persistent hidden-project switches, safe loading and
 response failures, project-filter/count concealment, browser-local eye reveal
 persistence across focus/reload/navigation, and independent browser preferences

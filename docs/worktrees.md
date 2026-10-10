@@ -97,14 +97,16 @@ Choose **Manage branches & worktrees…** from the worktree menu. The project-sc
 modal works without an open chat or enabled Git Workflow plugin. Opening it does
 not switch checkout, relocate chats, or change settings. It lists every local
 branch (including **No worktree**) and registered detached, locked, missing or
-prunable worktrees. Diagnostic registrations are read-only here.
+prunable worktrees. Valid clean detached-HEAD worktrees can be removed; locked,
+missing, prunable or invalid registrations remain read-only.
 
-**Integration target** defaults to the existing built-in/global/project Git
-Workflow target setting, never a chat's session override. Without an available
-target, inventory still works; choose a literal local branch to assess containment.
+**Comparison target** defaults to the existing built-in/global/project Git Workflow
+target setting, never a chat's session override. Without an available target,
+integration is **Unknown**, but safe resource removal remains available.
 Alternatives are **Temporary comparison — not saved**. **Open project target
-setting** opens the existing project-scoped field. A temporary comparison does not
-override cleanup policy: the manager shows a configured-target mismatch immediately.
+setting (protected)** opens the existing project-scoped field. Comparison is evidence,
+not disposal authority: both configured and comparison targets stay protected,
+without blocking removal of other safe resources merely because they differ.
 
 The default order is integrated entries first, oldest tip commits first within
 each group. Search, integration/checkout filters and sorting cover the entire
@@ -130,35 +132,50 @@ history; a shallow negative is **Unknown**, not Not integrated.
   merge date. Missing/shallow objects and the 10,000-commit traversal budget produce
   explicit unavailable reasons. Date availability is not cleanup authority.
 
-### Explicit cleanup and recovery
+### Explicit removal and recovery
 
-Browsing works with Git Workflow disabled. Cleanup is owned by the optional plugin
-and its effective project/global policy. Enablement applies to all projects. Choose
-**Remove worktree; keep branch**, **Delete local branch** (only when unchecked out),
-or **Remove worktree and delete local branch**, then **Review cleanup…**.
-Preparation has no deletion effects under either Ask or Allow. Inspect the exact
-resources, captured proof and ignored content before explicitly confirming; unlisted
-ignored artifacts need one-time consent in that same review. No settings are saved
-by confirmation, and there is no force-removal fallback.
+Browsing works with Git Workflow disabled. Removal uses the optional plugin's
+separate **Manual manager discard** permission (`discardResources`, browser only),
+default Ask, with project/global resolution. Deny blocks removal; both Ask and Allow
+require the final explicit browser confirmation. Enablement applies to all projects.
+Completed-feature cleanup Keep preferences do not veto this deliberate manual action;
+agent `git_cleanup` remains integrated-only and keeps its existing lifecycle policy.
 
-Main, target and selected resources are protected; running/starting agents and
-active terminals block removal. An explicit **Select main checkout** action moves
+Choose **Remove worktree; keep branch**, **Delete local branch** (only when unchecked
+out), or **Remove worktree and delete local branch**, then **Review removal…**.
+Any integration state is eligible if structural/source checks pass. Deleting a branch
+not proven integrated requires checking the loss acknowledgment in the final exact
+review. Its consent belongs only to that operation/card; a new review resets it.
+Keeping the branch needs no branch-loss checkbox. **Remove detached worktree only**
+warns that its commit may lose a convenient reference; no branch is deleted and
+reflog/object retention is not guaranteed. Retain any needed reference manually first.
+
+Preparation has no deletion effects under either Ask or Allow. Inspect the whole
+listed resource scope and ignored content; unlisted artifacts need one-time consent
+in that same review. Confirmation saves no settings. There is no force-removal,
+automatic backup, rollback, remote operation or hidden retry. Initially proven branch
+deletion refuses if proof or ref binding is lost; its locked native ref transaction
+requires Git 2.34 or newer.
+
+Main, configured/comparison target, invocation and selected resources are protected;
+running/starting agents and active terminals block removal. An explicit **Select main checkout** action moves
 only the sidebar selection. Idle chats warn but do not block: history stays, while
 continuing from a removed working folder may require moving the chat. Nothing
-relocates or deletes chats automatically. Unignored untracked files block cleanup;
+relocates or deletes chats automatically. Unignored untracked files block removal;
 expanded checkout state shows their paths for manual resolution.
 
 Closing/Escape stops pending preparation/review. After dispatch, Stop prevents
 remaining steps, never undoes effects already started. Outcomes and exact reviews
 are operation-owned and remain accessible under **Recorded project operations**
-after rows disappear, reload, or plugin disablement. Recover a lost preparation
+after rows disappear, reload, or plugin disablement. Recorded loss acknowledgment
+is read-only evidence, never new authority. Recover a lost preparation
 response with the same request; do not create another operation. Failed/partial or
 restart-unknown results require **Refresh actual state** and inspection, not replay.
 Reservations exclude observed managed activity in this server, not external writers
 or other server processes.
 
 The existing individual removal controls below keep their separate behavior;
-they are not the manager's integrated cleanup path.
+they are not the manager's exact-reviewed resource-discard path.
 
 ## Creating a Worktree
 

@@ -6,6 +6,8 @@ export interface ManagedWorktree {
   detached: boolean; locked: string | null; prunable: string | null; missing: boolean;
 }
 export interface WorktreeManagementRow {
+  /** Optional for older inventory fixtures; registrations without valid HEAD metadata are diagnostic. */
+  kind?: "branch" | "detached" | "diagnostic";
   id: string; branch: string | null; tip: string | null; symbolic: boolean;
   tipDate: string | null; authorDate: string | null; subject: string | null;
   worktrees: ManagedWorktree[]; integration: IntegrationState; integrationReason?: string;
@@ -18,9 +20,10 @@ export interface WorktreeManagementInventory {
   targets: Array<{ branch: string; tip: string }>;
   rows: WorktreeManagementRow[];
   counts: { branches: number; worktrees: number; diagnostics: number; integrated: number; notIntegrated: number; unknown: number; target: number };
-  /** Display captures are optimistic, not filesystem locks or cleanup authority. */
+  /** Display captures are optimistic, not filesystem locks or removal authority. */
   complete: true;
-  /** Supplied by HTTP inventory; read-only graph helpers do not depend on enablement. */
+  /** Legacy field name retained for clients/fixtures; permission now describes discardResources.
+   * Supplied by HTTP inventory; read-only graph helpers do not depend on enablement. */
   cleanup?: { pluginId: string; enabled: boolean; permission: "deny" | "ask" | "allow"; targetSelection: "ask" | "configured" };
 }
 export interface WorktreeManagementStatus {

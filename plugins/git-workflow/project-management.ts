@@ -2,8 +2,10 @@ import type { BundledPlugin, PluginUiContext } from "../../lib/plugins/types";
 import { managementCheckout, managementStatus } from "../../lib/worktree-management";
 import { gitWorkflowManifest } from "./manifest";
 import { readPluginSettings } from "../../lib/plugins/settings";
-import { executeGitOperation } from "./server";
+import { executeGitOperation, executeBrowserDiscard } from "./server";
 import type { CleanupOperation } from "./cleanup";
+import { browserDiscardOperation } from "./discard";
+export type { BrowserDiscardPayload, BrowserDiscardOperation } from "./discard";
 
 export interface BrowserCleanupPayload {
   featureBranch: string; featureTip: string; integrationCommit: string; targetBranch: string;
@@ -31,7 +33,21 @@ export const gitProjectActions: NonNullable<BundledPlugin["projectActions"]> = {
     return { identity: project.project, anchor: project.registrations[0].path, relatedDirectories };
   },
   async execute(cwd, action, raw, ui: PluginUiContext, signal, progress) {
+    if (action === "remove") {
+      const op = browserDiscardOperation(raw, cwd);
+      const settings = readPluginSettings(gitWorkflowManifest, cwd);
+      if (!settings.enabled || settings.effective.discardResources === "deny") throw new Error("Git Workflow manual discard is disabled or denied");
+      // The authoritative executor repeats structural/status validation. No raw
+      // acknowledgment, integration/Keep override, or artifact roots are accepted.
+      if (op.worktreePath) {
+        const status = await managementStatus(op.worktreePath, signal);
+        if (status.state === "unavailable") throw new Error(`Checkout status unavailable: ${status.reason}`);
+        if (status.untracked.length) throw new Error(`Unignored untracked files block manager removal; resolve manually: ${status.untracked.join(", ")}`);
+      }
+      return executeBrowserDiscard(cwd, op, ui, signal, progress);
+    }
     if (action !== "cleanup") throw new Error("Unsupported project action");
+    // Compatibility path: legacy cleanup remains verified-integrated only.
     const op = payload(raw, cwd);
     // Explicit comparison is not a policy override: configured targets always win.
     const settings = readPluginSettings(gitWorkflowManifest, cwd);

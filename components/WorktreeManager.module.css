@@ -32,6 +32,9 @@
 .checkout { border-top: 1px solid var(--border); padding: 6px 0; }
 .operation { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 16px; }
 .operation h3 { margin: 0 0 10px; }
+.acknowledgment { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; line-height: 1.6; }
+.acknowledgment input { flex-shrink: 0; margin-top: 4px; }
+.acknowledgment span { overflow-wrap: anywhere; }
 .dialog .danger { background: #b91c1c; color: white; }
 .history { margin-top: 16px; }
 .history summary { cursor: pointer; }

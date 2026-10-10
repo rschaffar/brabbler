@@ -1,4 +1,5 @@
-import { gitText as git, gitOutput, records, outputDigest, run, withPreparationSignal } from "./process";
+import { gitText as git, gitOutput, gitEnvironment, records, outputDigest, run, withPreparationSignal } from "./process";
+import { spawn } from "node:child_process";
 import { buildGitReview, compactGitCard } from "./review";
 import { createReadStream } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
@@ -10,9 +11,10 @@ import { samePath, toNativePath } from "../../lib/paths";
 import { allowFileRoot } from "../../lib/file-access";
 import { onPluginSettingsChange, pluginProjectIdentity, readPluginSettings } from "../../lib/plugins/settings";
 import type { PluginCard, PluginCardField, PluginCardSection, PluginSession, PluginUiContext, PluginOperationReceipt, RequiredCheck } from "../../lib/plugins/types";
-import { gitWorkflowManifest, type GitAction, type GitSettings } from "./manifest";
+import { actions, gitWorkflowManifest, type GitAction, type GitOperationAction, type GitSettings } from "./manifest";
+import { validateBrowserDiscardOperation, type BrowserDiscardOperation } from "./discard";
 
-import { captureCleanup, createCleanupBudget, performCleanup, type CleanupBudget, type CleanupAccess, type CleanupOperation, type CleanupSnapshot } from "./cleanup";
+import { captureCleanup, captureBrowserDiscard, createCleanupBudget, performCleanup, performBrowserDiscard, type CleanupBudget, type CleanupAccess, type CleanupOperation, type CleanupSnapshot, type CleanupGitTransaction, type WorktreeRecord } from "./cleanup";
 
 export type GitOperation =
   | { action: "commit"; checkout: string; mode: "staged" | "files"; files?: string[]; message: string }
@@ -20,6 +22,8 @@ export type GitOperation =
   | { action: "createWorktree" | "attachWorktree"; checkout: string; branch: string; baseBranch: string; path: string }
   | { action: "removeWorktree"; checkout: string; path: string }
   | CleanupOperation;
+/** Internal exact-review union; browser discard is deliberately absent from GitOperation. */
+export type ReviewedGitOperation = GitOperation | BrowserDiscardOperation;
 interface Snapshot { fingerprint: string; card: PluginCard; checks: RequiredCheck[]; args: string[]; cwd: string; comparison?: { before: string; after: string }; cleanup?: CleanupSnapshot }
 async function branchTip(cwd: string, branch: string): Promise<string> {
   if (!branch || branch.startsWith("-") || branch === "HEAD") throw new Error("Select an explicit local branch");
@@ -28,6 +32,13 @@ async function branchTip(cwd: string, branch: string): Promise<string> {
 }
 async function head(cwd: string) {
   return { branch: (await git(cwd, ["symbolic-ref", "--short", "HEAD"])).trim(), tip: (await git(cwd, ["rev-parse", "HEAD"])).trim() };
+}
+/** Reporting may observe a detached invocation checkout without relaxing agent eligibility. */
+async function observedHead(cwd: string) {
+  let branch: string | null = null;
+  try { branch = (await git(cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"])).trim(); }
+  catch (error) { if ((error as { status?: number }).status !== 1) throw error; }
+  return { branch, tip: (await git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"])).trim() };
 }
 function status(cwd: string): Promise<string> { return outputDigest(gitOutput(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])); }
 async function assertIdle(cwd: string) {
@@ -45,11 +56,12 @@ async function idle(cwd: string) {
     if (/^[a-zS]/.test(entry)) throw new Error("Hidden index flags are unsupported");
   }
 }
-async function worktrees(cwd: string): Promise<Array<{ path: string; branch?: string; locked?: string; prunable?: string }>> {
+async function worktrees(cwd: string): Promise<WorktreeRecord[]> {
   return (await git(cwd, ["worktree", "list", "--porcelain", "-z"])).split("\0\0").filter(Boolean).map((record) => {
     const fields = record.split("\0");
     return { path: toNativePath(fields.find((value) => value.startsWith("worktree "))!.slice(9)),
       branch: fields.find((value) => value.startsWith("branch refs/heads/"))?.slice(18),
+      head: fields.find((value) => value.startsWith("HEAD "))?.slice(5), detached: fields.includes("detached"),
       locked: fields.find((value) => value === "locked" || value.startsWith("locked ")),
       prunable: fields.find((value) => value === "prunable" || value.startsWith("prunable ")) };
   });
@@ -68,7 +80,7 @@ async function checkout(selected: string, repositoryCwd?: string): Promise<strin
   await refuseFilters(physical, gitOutput(physical, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]));
   return physical;
 }
-function settings(cwd: string, session?: PluginSession, op?: GitOperation, browserConfirmation = false): GitSettings {
+function settings(cwd: string, session?: PluginSession, op?: ReviewedGitOperation, browserConfirmation = false): GitSettings {
   const snapshot = readPluginSettings(gitWorkflowManifest, cwd, undefined, session);
   if (!snapshot.enabled) throw new Error("Git Workflow plugin is disabled");
   const policy = snapshot.effective as unknown as GitSettings;
@@ -116,7 +128,33 @@ function cleanupAccess(ui: Partial<PluginUiContext>, rejectUnignoredUntracked = 
   return { rejectUnignoredUntracked, git, records: (cwd, args) => records(gitOutput(cwd, args)), checkout, branchTip, worktrees, project: pluginProjectIdentity,
     inUse: (path) => { if (!ui.isDirectoryInUse) throw new Error("Cleanup requires live directory-use inspection"); return ui.isDirectoryInUse(path); } };
 }
-async function preview(callerCwd: string, op: GitOperation, policy: GitSettings, ui: Partial<PluginUiContext> = {}, budget?: CleanupBudget, rejectUnignoredUntracked = false): Promise<Snapshot> {
+async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitSettings, ui: Partial<PluginUiContext> = {}, budget?: CleanupBudget, rejectUnignoredUntracked = false): Promise<Snapshot> {
+  if (op.action === "discardResources") {
+    const cleanup = await captureBrowserDiscard(callerCwd, op, policy, cleanupAccess(ui, true), budget);
+    const subject = op.subject.kind === "branch" ? `${op.subject.branch} at ${op.subject.tip}` : `Detached HEAD at ${op.subject.head}`;
+    const evidence = cleanup.lossEvidence!;
+    const needsAcknowledgment = op.deleteBranch && evidence.state !== "integrated";
+    return { fingerprint: digest([cleanup.fingerprint, op, evidence, relevantPolicy(policy, op.action)]), cleanup,
+      cwd: cleanup.cwd, args: [], checks: [], card: {
+        title: "Remove selected Git resources", subtitle: "Manual browser confirmation required",
+        ...(needsAcknowledgment ? { requiredAcknowledgment: "I understand that deleting this local branch can discard work not proven integrated, and I accept this loss." } : {}),
+        fields: [{ label: "Repository checkout", value: cleanup.cwd, code: true },
+          { label: "Exact subject", value: subject, code: true },
+          { label: "Worktree", value: `${op.removeWorktree ? "Remove" : "Keep"}: ${cleanup.path ?? "none"}` },
+          { label: "Local branch", value: op.deleteBranch ? "Delete this exact local ref" : "Keep (no branch deletion)" },
+          { label: "Integration evidence", value: `${evidence.state}${evidence.reason ? `: ${evidence.reason}` : ""}` },
+          { label: "Captured comparison (not policy authority)", value: op.comparisonTarget ? `${op.comparisonTarget.branch} at ${op.comparisonTarget.tip}` : "None", code: true },
+          { label: "Protected designated target", value: policy.targetBranch ?? "None", code: true }],
+        sections: [{ title: "Generated files and directories to remove", fields: cleanup.artifacts.map((item) => ({ label: item.path,
+          value: `${cleanup.unapprovedArtifacts.includes(item.path) ? "Needs one-time approval" : "Permitted by settings"} · ${item.entries} entries · ${item.bytes} bytes · SHA256 ${item.digest}`, code: true })) },
+          ...(cleanup.unapprovedArtifacts.length ? [{ title: "One-time artifact permission", text: "Approving includes only the exact listed artifacts. Ignored status does not mean disposable; confirmation does not change your reusable allowlist.", notice: true }] : []),
+          ...(needsAcknowledgment ? [{ title: "Branch loss warning", text: "This branch tip is not proven integrated into the captured comparison target. Deleting its local ref may discard unique work. No backup, retry, rollback, or remote operation is performed.", notice: true }] : []),
+          ...(op.subject.kind === "detached" ? [{ title: "Detached commit warning", text: "Removing this detached worktree may remove the convenient reference to its captured HEAD commit. No branch is deleted. Reflogs and unreachable objects do not guarantee permanent commit retention; retain a reference manually if needed.", notice: true }] : []),
+          { title: "Boundaries", text: "Only listed resources. Idle chat history stays, but continuing a chat may require moving it after its working folder disappears. Main, selected/invocation, designated/comparison target, locked/prunable and active resources remain protected. Dirty source or unignored untracked files block removal. Exact HEAD/ref, registration, physical identity and contents are rechecked before each effect. Completed-feature Keep preferences do not govern this deliberate manual operation. External Git/filesystem writers are not locked out. Dispatched effects settle; partial outcomes are reported, never rolled back. Branch config, remote refs and backups remain untouched.", notice: true }],
+        scope: "Approves only these frozen branch/worktree/artifact resources together. It is not future disposal authority.",
+        actions: [{ id: "reject", label: "Keep resources" }, { id: "approve", label: "Remove listed resources", primary: true }],
+      } };
+  }
   if (op.action === "cleanupFeature") {
     if (!op.removeWorktree && !op.deleteBranch && !op.artifactRoots.length) throw new Error("Choose at least one cleanup resource");
     const cleanup = await captureCleanup(callerCwd, op, policy, cleanupAccess(ui, rejectUnignoredUntracked), budget);
@@ -261,15 +299,66 @@ async function preview(callerCwd: string, op: GitOperation, policy: GitSettings,
       actions: [{ id: "reject", label: "Reject" }, { id: "approve", primary: true,
         label: { commit: "Approve commit", rebase: "Approve rebase", merge: "Approve merge", createWorktree: "Create worktree", attachWorktree: "Attach worktree", removeWorktree: "Remove worktree" }[op.action] }] } };
 }
-function relevantPolicy(policy: GitSettings, action: GitAction) {
+function relevantPolicy(policy: GitSettings, action: GitOperationAction) {
+  if (action === "discardResources") return [policy.discardResources, policy.targetBranch, policy.approvedArtifactRoots];
   return [policy[action], action === "commit" ? policy.commitChecks : action === "merge" ? policy.mergeChecks : [],
     action === "merge" || action === "rebase" || action === "cleanupFeature" ? [policy.targetSelection, policy.targetBranch] : null,
     action === "merge" ? [policy.methodSelection, policy.mergeMethod] : null,
     action === "cleanupFeature" ? [policy.cleanupWorktree, policy.cleanupBranch, policy.cleanupArtifacts, policy.approvedArtifactRoots] : null];
 }
-/** Browser transport must opt into unconditional manual confirmation; tool semantics stay unchanged. */
+/** Agent entry point: browser-only actions cannot acquire authority here, even via untyped callers. */
 export async function executeGitOperation(callerCwd: string, operation: GitOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, session?: PluginSession, toolCallId?: string, onProgress?: (text: string) => void, options?: { browserConfirmation: true }) {
+  if (!actions.includes(operation.action as GitAction)) throw new Error("Unsupported agent Git action; manual discard requires the browser project adapter");
+  return executeOperation(callerCwd, operation, ui, signal, session, toolCallId, onProgress, options);
+}
+/** A prepared native transaction owns ref locks through direct-ref verification.
+ * No cancellation/timeout kills the native child; failed verification aborts it,
+ * and the caller waits for close before releasing its directory reservation. */
+async function runPreparedRefTransaction(args: string[], cwd: string, transaction: CleanupGitTransaction): Promise<string> {
+  const child = spawn("git", args, { cwd, env: gitEnvironment(), stdio: ["pipe", "pipe", "pipe"] });
+  let stdout = "", stderr = "", failure: unknown, verification: Promise<void> | undefined;
+  let commitSent = false;
+  const settled = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+    child.on("error", (error) => { failure ??= error; });
+    child.on("close", (code, signal) => resolve({ code, signal }));
+  });
+  child.stdin.on("error", (error) => { failure ??= error; });
+  child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-65536); });
+  child.stdout.on("data", (chunk: Buffer) => {
+    stdout = (stdout + chunk.toString()).slice(-65536);
+    if (!verification && /(?:^|\n)prepare: ok\r?\n/.test(stdout)) {
+      verification = (async () => {
+        try {
+          if (failure) throw failure;
+          await transaction.verifyPrepared();
+          if (failure) throw failure;
+          if (child.stdin.destroyed || !child.stdin.writable) throw new Error("Prepared Git transaction closed before commit; inspect repository");
+          child.stdin.end("commit\0");
+          commitSent = true;
+        } catch (error) {
+          failure ??= error;
+          // Explicit start makes EOF abort too, including an early child exit.
+          child.stdin.end("abort\0");
+        }
+      })().catch((error) => { failure ??= error; child.stdin.destroy(); });
+    }
+  });
+  try { child.stdin.write(transaction.input); }
+  catch (error) { failure ??= error; child.stdin.end(); }
+  const result = await settled;
+  await verification;
+  if (failure) throw failure;
+  if (result.code !== 0) throw Object.assign(new Error(`Command failed: git exited ${result.code ?? result.signal}\n${stderr}`), { status: result.code });
+  if (!commitSent || !/(?:^|\n)commit: ok\r?\n/.test(stdout)) throw new Error("Git ref transaction did not confirm commit; inspect repository before retry");
+  return stdout;
+}
+/** Browser-only entry point. No session overrides, policy-authorized dispatch, or explicit artifact roots. */
+export async function executeBrowserDiscard(callerCwd: string, operation: BrowserDiscardOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, onProgress?: (text: string) => void) {
+  return executeOperation(callerCwd, validateBrowserDiscardOperation(operation), ui, signal, undefined, undefined, onProgress, { browserConfirmation: true });
+}
+async function executeOperation(callerCwd: string, operation: ReviewedGitOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, session?: PluginSession, toolCallId?: string, onProgress?: (text: string) => void, options?: { browserConfirmation: true }) {
   const op = structuredClone(operation);
+  const resourceOperation = op.action === "cleanupFeature" || op.action === "discardResources";
   const currentSettings = () => settings(op.checkout, session, op, options?.browserConfirmation);
   let started = false;
   let checksStarted = false;
@@ -343,7 +432,7 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
     };
     // Cleanup owns a single full revalidation per effect, under its directory
     // reservation. Do not rescan dependency trees at every generic checkpoint.
-    if (op.action !== "cleanupFeature") await revalidate();
+    if (!resourceOperation) await revalidate();
     const checkCwd = op.action === "merge" ? (await worktrees(snapshot.cwd)).find((entry) => entry.branch === op.featureBranch)?.path : snapshot.cwd;
     for (const [index, check] of snapshot.checks.entries()) {
       await revalidate();
@@ -354,7 +443,7 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
       catch (error) { receipt.checks[index].status = "failed"; throw error; }
       record("checking");
     }
-    if (op.action !== "cleanupFeature") await revalidate();
+    if (!resourceOperation) await revalidate();
     const scratch = mkdtempSync(join(tmpdir(), "pi-web-git-effect-"));
     let output: string;
     let releaseReservation: (() => void) | undefined;
@@ -377,22 +466,28 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
       // A durable executing stage is required BEFORE the first native mutation.
       // If persistence fails, started stays false and no Git effect is dispatched.
       record("executing");
-      if (op.action !== "cleanupFeature") { await revalidate(); started = true; }
+      if (!resourceOperation) { await revalidate(); started = true; }
       if (op.action === "createWorktree" || op.action === "attachWorktree") mkdirSync(resolve(op.path, ".."), { recursive: true });
       const commandArgs = ["-c", `core.hooksPath=${scratch}`, "-c", "core.fsmonitor=false", "-c", "commit.gpgSign=false", "-c", "rebase.autoStash=false", "-c", "merge.autoStash=false", "-C", snapshot.cwd, ...args];
-      if (op.action === "cleanupFeature") {
-        output = await withPreparationSignal(signal, () => performCleanup(callerCwd, op, policy, cleanupAccess(ui, options?.browserConfirmation), snapshot.cleanup!, () => {
+      if (op.action === "cleanupFeature" || op.action === "discardResources") {
+        const resourceOp = op;
+        const effectArguments = [policy, cleanupAccess(ui, options?.browserConfirmation), snapshot.cleanup!, () => {
           if (signal?.aborted) throw new Error("Cancelled; remaining cleanup resources retained");
           const current = currentSettings();
           if (digest(relevantPolicy(current, op.action)) !== digest(relevantPolicy(policy, op.action))) throw new Error("Cleanup policy changed; remaining resources retained");
-        }, (args) => run("git", [...commandArgs, ...args], snapshot.cwd), effects,
-          (description) => {
+        }, (args: string[], transaction?: CleanupGitTransaction) => transaction
+          ? runPreparedRefTransaction([...commandArgs, ...args], snapshot.cwd, transaction)
+          : run("git", [...commandArgs, ...args], snapshot.cwd), effects,
+          (description: string) => {
             const previousAttempt = attemptedEffect;
             attemptedEffect = description;
             try { record("executing"); } catch (error) { attemptedEffect = previousAttempt; throw error; }
             started = true;
           }, cleanupBudget,
-          () => record("executing")));
+          () => record("executing")] as const;
+        output = await withPreparationSignal(signal, () => resourceOp.action === "cleanupFeature"
+          ? performCleanup(callerCwd, resourceOp, ...effectArguments)
+          : performBrowserDiscard(callerCwd, resourceOp, ...effectArguments));
       } else if (op.action === "commit" && op.mode === "files") {
         // Own Git's native index.lock only during effects. The private index keeps
         // unrelated staged entries; commit --only reconciles selected entries.
@@ -430,13 +525,13 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
     completed = true;
     if (op.action === "merge" || op.action === "rebase") await idle(snapshot.cwd);
     if (op.action === "createWorktree" || op.action === "attachWorktree") allowFileRoot(op.path);
-    const result = `${op.action} completed.\n${output.slice(0, 12000)}\nObserved HEAD: ${JSON.stringify(await head(snapshot.cwd))}`;
+    const result = `${op.action} completed.\n${output.slice(0, 12000)}\nObserved HEAD: ${JSON.stringify(await observedHead(snapshot.cwd))}`;
     record("succeeded", result);
     return { content: [{ type: "text" as const, text: result }], details: { action: op.action, completed: true, operationId, effects } };
   } catch (error) {
     let observed = "";
     if (started) {
-      try { observed = `\nObserved HEAD: ${JSON.stringify(await head(op.checkout))}\nStatus digest (empty means clean): ${await status(op.checkout)}\nWorktrees: ${JSON.stringify(await worktrees(op.checkout))}`; }
+      try { observed = `\nObserved HEAD: ${JSON.stringify(await observedHead(op.checkout))}\nStatus digest (empty means clean): ${await status(op.checkout)}\nWorktrees: ${JSON.stringify(await worktrees(op.checkout))}`; }
       catch { observed = "\nObserved state could not be read; inspect repository manually."; }
     }
     let text = `${error instanceof Error ? error.message : String(error)}${completed ? "\nNative effect completed, but post-effect reporting failed. Do not repeat the operation." : started ? "\nNative effect started; partial changes or conflict state may remain. No rollback or retry was performed." : checksStarted ? "\nRequired checks started and may have side effects; Git effect did not start." : "\nGit effect did not start."}${attemptedEffect ? `\nLast dispatched cleanup step: ${attemptedEffect}` : ""}${effects.length ? `\nCompleted cleanup steps:\n${effects.join("\n")}` : ""}${observed}`.slice(0, 15000);
