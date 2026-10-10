@@ -16,6 +16,8 @@ export interface PluginManifest {
   id: string;
   name: string;
   schemaVersion: number;
+  /** Allow canonical directory scopes outside Git; Git plugins keep repository-only identity. */
+  directoryProjects?: boolean;
   fields: Readonly<Record<string, PluginField>>;
   /** Explicit UI recipes, never applied by a model or merely by selecting a scope. */
   presets?: Readonly<Record<string, { label: string; values: Overrides }>>;
@@ -80,6 +82,9 @@ export interface PluginCard {
   patchAfter?: string;
   /** Optional plugin-owned, expiring immutable context handle; never execution authority. */
   patchContext?: string;
+  /** Optional feedback, never silently applied to an approved operation. */
+  allowDetails?: boolean;
+  sessionLinks?: Array<{ sessionId: string; label: string }>;
   actions: Array<{ id: string; label: string; primary?: boolean }>;
 }
 export interface PluginOperationReceipt {
@@ -99,6 +104,8 @@ export interface PluginOperationReceipt {
   summary?: string;
 }
 export interface PluginUiContext {
+  /** Ordinary-session lifecycle stays host-owned, not re-imported by extensions. */
+  sessionLaunchHost?: import("../session-launch-types").SessionLaunchHost;
   /** Observed managed RPC/terminal use at this physical directory or below; not an OS lock. */
   isDirectoryInUse(path: string): boolean;
   /** Synchronously reject busy/overlapping use and block new managed admissions until release.
@@ -106,6 +113,7 @@ export interface PluginUiContext {
   reserveDirectory(path: string): () => void;
   prepareReview(pluginId: string, operationId: string, build: (writer: PluginReviewWriter) => Promise<void>): Promise<PluginReviewReference>;
   pluginCard(pluginId: string, card: PluginCard, signal?: AbortSignal): Promise<string | null>;
+  pluginCardWithDetails?(pluginId: string, card: PluginCard, signal?: AbortSignal): Promise<{ action: string; details?: string } | null>;
   /** Synchronous durable append, outside model context. Throws on failure; never gated by abort. */
   operationReceipt(pluginId: string, receipt: PluginOperationReceipt): void;
 }

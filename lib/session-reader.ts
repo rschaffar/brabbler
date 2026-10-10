@@ -226,6 +226,7 @@ function mapScannedSession(
       ? ""
       : scanned.firstMessage || "(no messages)",
     ...(scanned.archived ? { archived: true } : {}),
+    ...(scanned.spawnedBy ? { spawnedBy: scanned.spawnedBy } : {}),
     parentSessionId: originSessionId,
     ...(subagent
       ? { relation: { kind: "subagent" as const, parentSessionId: subagent.parentSessionId, profile: subagent.profile, description: subagent.description, status: subagent.status } }

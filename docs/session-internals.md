@@ -59,6 +59,12 @@ Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `au
 - The row's **Move to project…** action proposes a project and registered worktree/directory, or another existing directory through Browse, without changing the sidebar checkout. The route accepts distinct registered checkout roots within the same repository, but refuses the exact current directory, same-repository subdirectories and running families. A move changes the header cwd and the SDK session-file directory for the selected session and its nested subagents; forks stay in place, but any stored parent path pointing at a moved file is repaired (including subagent metadata).
 - `lib/session-move.ts` stages all rewrites, backs up originals for rollback, installs destination files without overwriting an existing file, evicts idle wrappers, and refreshes both session-path and list caches. Never only change the header or only rename the JSONL: Pi's session discovery and parent references must stay consistent. Other Pi processes writing concurrently are not coordinated with this operation.
 
+### Agent-created ordinary sessions
+- The bundled Session Launch plugin exposes `start_session` only to ordinary coding sessions. It creates an independent wrapper through the host's ordinary startup/prompt admission, never forks/replaces the creator or borrows subagent lifecycle.
+- Defaults copy current model/account, thinking, speed and built-in tool selection; explicit changes are exact proposals. Initial prompts are literal, and final SDK preflight revalidates effective text/configuration and policy before dispatch. Creator cancellation only owns pre-acceptance work.
+- `pi-web:session-spawn` stores stable created/creator/operation IDs outside model context. The created-ID check prevents attribution on copied fork/clone history. It remains a top-level ordinary session with receipt/header links, not a family parent.
+- See [Session Launch](session-launch.md) for permissions, feedback, persistence and verification.
+
 ### Built-in subagents
 - The global `builtInEnabled` switch is persisted in `~/.pi/agent/agents/settings.json` and defaults to `false` when the file or field is absent. Malformed settings fail closed; atomic updates preserve unknown fields.
 - The inline built-in extension factory is always present so reloading an existing wrapper can apply setting changes, but it registers no tools while disabled. After changing the switch, the user must explicitly reload the current session.

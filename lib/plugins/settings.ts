@@ -38,6 +38,11 @@ export function pluginProjectIdentity(cwd: string): string | null {
       { env: gitExecEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()));
   } catch { return null; }
 }
+export function pluginScopeIdentity(manifest: PluginManifest, cwd: string): string | null {
+  const repository = pluginProjectIdentity(cwd);
+  if (repository || !manifest.directoryProjects) return repository;
+  try { return realpathSync(cwd); } catch { return null; }
+}
 export function pluginSettingsPath(manifest: PluginManifest, agentDir = getAgentDir()): string {
   if (!/^[a-z][a-z0-9-]*$/.test(manifest.id)) throw new Error("Invalid plugin ID");
   return join(agentDir, "pi-web", "plugins", manifest.id, "settings.json");
@@ -104,8 +109,8 @@ export function resolvePluginSettings(manifest: PluginManifest, stored: StoredSe
 }
 export function readPluginSettings(manifest: PluginManifest, cwd?: string, path = pluginSettingsPath(manifest), session?: PluginSession): PluginSettings {
   if (session) validateSession(session);
-  return resolvePluginSettings(manifest, read(manifest, path), cwd ? pluginProjectIdentity(cwd) : null,
-    session ? { id: session.id, project: pluginProjectIdentity(session.cwd) } : undefined);
+  return resolvePluginSettings(manifest, read(manifest, path), cwd ? pluginScopeIdentity(manifest, cwd) : null,
+    session ? { id: session.id, project: pluginScopeIdentity(manifest, session.cwd) } : undefined);
 }
 /** Only the authenticated settings route writes overrides; tools never receive this API. */
 export function updatePluginSettings(manifest: PluginManifest, scope: "global" | "project" | "session", cwd: string | undefined,
@@ -115,9 +120,9 @@ export function updatePluginSettings(manifest: PluginManifest, scope: "global" |
   validateOverrides(manifest, set, scope !== "global");
   if (!Array.isArray(reset) || reset.some((key) => typeof key !== "string" || !Object.hasOwn(manifest.fields, key)
     || (scope !== "global" && manifest.fields[key].globalOnly) || Object.hasOwn(set, key))) throw new Error("Invalid reset");
-  const project = cwd ? pluginProjectIdentity(cwd) : null;
-  const ownProject = session ? pluginProjectIdentity(session.cwd) : null;
-  if (scope !== "global" && !project) throw new Error("Select a Git repository for project settings");
+  const project = cwd ? pluginScopeIdentity(manifest, cwd) : null;
+  const ownProject = session ? pluginScopeIdentity(manifest, session.cwd) : null;
+  if (scope !== "global" && !project) throw new Error(manifest.directoryProjects ? "Select an existing project for project settings" : "Select a Git repository for project settings");
   if (scope === "session" && (!session || !ownProject || !project || !samePath(project, ownProject))) throw new Error("Session overrides only apply to the session's own project");
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const release = lockfile.lockSync(path, { realpath: false, stale: 30_000 });

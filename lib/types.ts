@@ -233,7 +233,7 @@ export interface SessionCompletion {
 }
 
 export type ExtensionUiResponse =
-  | { type: "extension_ui_response"; id: string; action: string }
+  | { type: "extension_ui_response"; id: string; action: string; details?: string }
   | { type: "extension_ui_response"; id: string; value: string }
   | { type: "extension_ui_response"; id: string; confirmed: boolean }
   | { type: "extension_ui_response"; id: string; cancelled: true }
@@ -382,6 +382,8 @@ export interface SessionInfo {
   archived?: boolean;
   /** True while the sidebar has only header/stat metadata for this session. */
   detailsPending?: boolean;
+  /** Creator of this fresh ordinary session; not a fork/subagent family relation. */
+  spawnedBy?: string;
   parentSessionId?: string; // source session for a fork, or parent session for a subagent
   /** How this session relates to another session. Forks remain top-level in the
    *  UI; only subagent relations form a visible parent/child tree. */

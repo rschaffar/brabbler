@@ -27,6 +27,7 @@ function Section({ section }: { section: PluginCardSection }) {
 /** Identical supplied fields and patches for live approvals and historical receipts. */
 export function PluginCardContent({ request, sessionId }: { request: Request; sessionId?: string }) {
   return <>
+    {request.sessionLinks?.map((link) => <a key={link.sessionId} className="block break-words text-xs text-accent underline" href={`/?session=${encodeURIComponent(link.sessionId)}`}>{link.label}</a>)}
     {request.fields && <Fields fields={request.fields} />}
     {request.text && <pre className="blocking-card-code">{request.text}</pre>}
     {request.markdown && <MarkdownBody>{request.markdown}</MarkdownBody>}
@@ -41,13 +42,14 @@ export function PluginCardContent({ request, sessionId }: { request: Request; se
 /** Reusable presentation only. Buttons answer a live session request, never execute. */
 export function PluginCard({ request, onRespond, sessionId }: {
   request: Request; sessionId?: string;
-  onRespond: (request: Request, response: { action: string } | { cancelled: true }) => void;
+  onRespond: (request: Request, response: { action: string; details?: string } | { cancelled: true }) => void;
 }) {
   const { t } = useI18n();
+  const [details, setDetails] = useState("");
   const [sent, setSent] = useState(false);
   const sentRef = useRef(false);
   const [collapsed, setCollapsed] = useState(false);
-  const respond = (response: { action: string } | { cancelled: true }) => {
+  const respond = (response: { action: string; details?: string } | { cancelled: true }) => {
     if (sentRef.current) return;
     sentRef.current = true; setSent(true); onRespond(request, response);
   };
@@ -59,9 +61,14 @@ export function PluginCard({ request, onRespond, sessionId }: {
         {request.scope && <p className="blocking-card-scope">{request.scope}</p>}
         <button type="button" autoFocus disabled={sent} className="mr-auto" onClick={() => respond({ cancelled: true })}>{t("chat.cancel")}</button>
         {request.actions.map((action) => <button key={action.id} type="button" disabled={sent} data-primary={action.primary || undefined}
-          onClick={() => respond({ action: action.id })}>{action.label}</button>)}
+          onClick={() => respond({ action: action.id, ...(request.allowDetails ? { details } : {}) })}>{action.label}</button>)}
       </>}>
       <PluginCardContent request={request} sessionId={sessionId} />
+      {request.allowDetails && <label className="grid gap-2 text-xs">Additional details
+        <textarea aria-label="Additional details" value={details} maxLength={20000} disabled={sent} onChange={(event) => setDetails(event.target.value)}
+          placeholder="Explain what you want changed. Request changes sends this back without launching."
+          className="min-h-20 w-full rounded border border-border bg-background p-2" />
+      </label>}
     </BlockingCard>
   </div>;
 }

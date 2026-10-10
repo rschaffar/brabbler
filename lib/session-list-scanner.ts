@@ -12,6 +12,7 @@ import { createInterface } from "node:readline";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { SESSION_ARCHIVE_TYPE } from "./session-archive";
+import { SESSION_SPAWN_TYPE, readSessionSpawn } from "./session-spawn";
 
 export interface ScannedSessionInfo {
 	path: string;
@@ -24,6 +25,7 @@ export interface ScannedSessionInfo {
 	firstMessage: string;
 	archived?: boolean;
 	parentSessionPath?: string;
+	spawnedBy?: string;
 	/** True when only header/stat metadata was available for this listing. */
 	detailsPending?: boolean;
 }
@@ -180,6 +182,7 @@ export async function scanSessionFileInfo(
 		let firstMessage = "";
 		let lastActivityTime: number | undefined;
 		let archived = false;
+		let spawnedBy: string | undefined;
 
 		const rl = createInterface({
 			input: createReadStream(filePath, { encoding: "utf8" }),
@@ -199,6 +202,9 @@ export async function scanSessionFileInfo(
 			if (entry.type === "custom" && entry.customType === SESSION_ARCHIVE_TYPE) {
 				const data = entry.data as RawEntry | undefined;
 				if (data?.version === 1 && typeof data.archived === "boolean") archived = data.archived;
+			}
+			if (entry.type === "custom" && entry.customType === SESSION_SPAWN_TYPE) {
+				spawnedBy ??= readSessionSpawn(entry.data, header.id as string)?.creatorSessionId;
 			}
 			if (entry.type === "session_info") {
 				name =
@@ -252,6 +258,7 @@ export async function scanSessionFileInfo(
 			cwd,
 			name,
 			parentSessionPath,
+			...(spawnedBy ? { spawnedBy } : {}),
 			created: new Date(header.timestamp as string),
 			modified,
 			messageCount,
@@ -334,6 +341,7 @@ function loadPersistedIndex(): void {
 				(info.name !== undefined && typeof info.name !== "string") ||
 				(info.archived !== undefined && typeof info.archived !== "boolean") ||
 				(info.parentSessionPath !== undefined && typeof info.parentSessionPath !== "string") ||
+				(info.spawnedBy !== undefined && (typeof info.spawnedBy !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(info.spawnedBy))) ||
 				typeof info.messageCount !== "number" || !Number.isSafeInteger(info.messageCount) || info.messageCount < 0 ||
 				typeof info.created !== "string" || typeof info.modified !== "string"
 			) continue;
@@ -349,6 +357,7 @@ function loadPersistedIndex(): void {
 					name: info.name,
 					...(info.archived ? { archived: true } : {}),
 					parentSessionPath: info.parentSessionPath,
+					...(typeof info.spawnedBy === "string" ? { spawnedBy: info.spawnedBy } : {}),
 					firstMessage: info.firstMessage,
 					messageCount: info.messageCount,
 					created,

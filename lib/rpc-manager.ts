@@ -14,6 +14,8 @@ import { appendSessionModelSpeed, readSessionModelSpeed } from "./session-model-
 import { withSessionModelSpeed } from "./session-model-speed-runtime";
 import { samePath } from "./paths";
 import { readSessionHeader } from "./session-reader";
+import { SESSION_SPAWN_TYPE, sessionSpawnFromEntries } from "./session-spawn";
+import { sessionLaunchHost } from "./session-launch-runtime";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import {
@@ -204,6 +206,10 @@ export interface RpcSessionStartOptions {
   allowInitialModelFallback?: boolean;
   thinkingLevel?: ThinkingLevel;
   modelSpeed?: ModelSpeed;
+  /** Inherited agent-launch preferences are session-local, not new user defaults. */
+  persistPreferences?: boolean;
+  /** Host-only observer for exact initial launch prompt validation after input handlers. */
+  observePrompt?: (prompt: string) => void;
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
@@ -547,6 +553,14 @@ export class AgentSessionWrapper {
     }, SESSION_IDLE_TIMEOUT_MS);
   }
 
+  recordSpawnOrigin(creatorSessionId: string, operationId: string): void {
+    this.inner.sessionManager.appendCustomEntry(SESSION_SPAWN_TYPE, {
+      version: 1, sessionId: this.sessionId, creatorSessionId, operationId,
+    });
+    this.persistSessionWithoutAssistant();
+    invalidateSessionListCache();
+  }
+
   private persistSessionWithoutAssistant(): void {
     const manager = this.inner.sessionManager;
     const sessionFile = manager.getSessionFile();
@@ -611,7 +625,7 @@ export class AgentSessionWrapper {
     }
   }
 
-  async send(command: Record<string, unknown>): Promise<unknown> {
+  async send(command: Record<string, unknown>, promptGuard?: { validate: (disposition?: string) => void; literal?: boolean }): Promise<unknown> {
     const type = command.type as string;
     const allowedDuringReplacement = COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT.has(type);
     if (this.sessionReplacement && !allowedDuringReplacement) {
@@ -647,6 +661,9 @@ export class AgentSessionWrapper {
           // Recheck after extension binding and the serialized admission wait.
           // No await may separate this check from publishing pendingPromptCount.
           assertDirectoryAdmissionAllowed(this.cwd);
+          // Trusted host-only launch guard, after extension binding and admission awaits.
+          // HTTP/tool arguments cannot supply a callable guard.
+          promptGuard?.validate();
           if (this.inner.isBashRunning) {
             throw new Error("Cannot send a prompt while a shell command is running");
           }
@@ -656,6 +673,7 @@ export class AgentSessionWrapper {
           const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
           const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
           let preflightAccepted = false;
+          let guardedPreflightRefused = false;
           const journalSessionId = this.inner.sessionId;
           let journalRunId: string | null = null;
           let preflightSettled = false;
@@ -704,9 +722,16 @@ export class AgentSessionWrapper {
               ...(promptImages?.length ? { images: promptImages } : {}),
               ...(streamingBehavior ? { streamingBehavior } : {}),
               source: "rpc",
+              ...(promptGuard?.literal ? { expandPromptTemplates: false } : {}),
               // The SDK calls this with "started", "queued" or "handled" only
               // after accepting the submission; preflight failures reject instead.
-              preflightResult: () => acceptPreflight(),
+              preflightResult: (disposition) => {
+                // The SDK invokes this after awaited input/auth/before_agent_start hooks
+                // and immediately before the agent loop. Throwing rejects preflight.
+                if (guardedPreflightRefused) throw new Error("Deferred launch was already refused; propose again");
+                promptGuard?.validate(disposition);
+                acceptPreflight();
+              },
             });
           } catch (error) {
             finishPrompt();
@@ -714,6 +739,15 @@ export class AgentSessionWrapper {
           }
 
           void prompt.then(() => {
+            if (promptGuard && !preflightSettled) {
+              // SDK agent_settled deferral can resolve before actual dispatch.
+              // Never certify guarded launches from that early resolution, and
+              // refuse any later deferred callback instead of launching unobserved.
+              guardedPreflightRefused = true;
+              rejectPreflight(new Error("SDK did not confirm launch admission; deferred launch refused"));
+              finishPrompt();
+              return;
+            }
             // Compatibility fallback if a future SDK resolves without invoking
             // the internal callback. This waits for the run, but never acks early.
             acceptPreflight();
@@ -1651,6 +1685,7 @@ export class AgentSessionWrapper {
 
   private createExtensionUiContext(): ExtensionUiContextLike & AskUserUiContext & PluginUiContext {
     return {
+      sessionLaunchHost,
       isDirectoryInUse: (directory) => hasBusyRpcSessionWithin(directory) || hasActiveTerminalWithin(directory),
       reserveDirectory: (directory) => acquireDirectoryReservation(directory,
         (physical) => hasBusyRpcSessionWithin(physical) || hasActiveTerminalWithin(physical)),
@@ -1669,6 +1704,14 @@ export class AgentSessionWrapper {
         invalidateSessionListCache();
         // No abort check here: effects that already started must record their outcome.
         this.emit({ type: "operation_receipt", entry: manager.getEntry(entryId) });
+      },
+      pluginCardWithDetails: (pluginId, card, signal) => {
+        validatePluginCard(card);
+        return this.requestExtensionUi(
+          { method: "plugin_card", pluginId, ...card }, null,
+          (response) => "action" in response ? { action: response.action, ...(response.details !== undefined ? { details: response.details } : {}) } : null,
+          undefined, signal,
+        );
       },
       pluginCard: (pluginId, card, signal) => {
         validatePluginCard(card);
@@ -2151,6 +2194,7 @@ export function getRpcSessionInfos(options: { includeTransient?: boolean } = {})
     const sessionFile = manager.getSessionFile() ?? session.sessionFile;
     const persisted = Boolean(sessionFile && existsSync(sessionFile));
     const subagent = readSubagentRun(entries as unknown as SessionEntry[], header?.id ?? session.sessionId, sessionFile ?? "");
+    const spawn = sessionSpawnFromEntries(entries as unknown as SessionEntry[], header?.id ?? session.sessionId);
 
     // An ensure_session call creates an idle, empty runtime while the composer
     // loads commands. Do not leak it into history before a prompt is accepted.
@@ -2175,6 +2219,7 @@ export function getRpcSessionInfos(options: { includeTransient?: boolean } = {})
       modified: new Date(lastActivityMs).toISOString(),
       messageCount: messages.length,
       firstMessage: firstUserMessage ? runtimeMessageText(firstUserMessage) || "(no messages)" : "(no messages)",
+      ...(spawn ? { spawnedBy: spawn.creatorSessionId } : {}),
       ...(subagent ? {
         parentSessionId: subagent.parentSessionId,
         relation: {
@@ -2371,6 +2416,11 @@ async function startRpcSessionInternal(
     const exactSystemPromptRef: { current?: () => string } = {};
     const exactSystemPromptExtension = createExactSystemPromptExtension(() => exactSystemPromptRef.current?.());
     const usesExactSystemPrompt = chatOnly || subagentResources?.exactSystemPrompt !== undefined;
+    const promptObserver = options.observePrompt ? [{ name: "pi-web-launch-prompt-observer", hidden: true,
+      factory: (pi: import("@earendil-works/pi-coding-agent").ExtensionAPI) => {
+        pi.on("before_agent_start", (event) => { options.observePrompt?.(event.prompt); });
+      },
+    }] : [];
     const accountRuntime = Object.keys(accounts).length > 0
       ? await ModelRuntime.create({
           credentials: accountCredentialStore(accounts),
@@ -2404,7 +2454,7 @@ async function startRpcSessionInternal(
             ...(subagentResources.loadExtensions ? { extensionsOverride: preferPiWebAskUserExtension } : {}),
           }
         : chatOnly
-          ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension, createSessionReferenceExtension()] }
+          ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension, createSessionReferenceExtension(), ...promptObserver] }
         : {
             extensionFactories: [
               createSessionReferenceExtension(),
@@ -2420,6 +2470,7 @@ async function startRpcSessionInternal(
               ),
               createAskUserExtension(),
               ...bundledPluginExtensions(sessionCwd),
+              ...promptObserver,
             ],
             extensionsOverride: (base) => preferUserBashExtension(preferPiWebAskUserExtension(preferPiWebSubagentExtension(base))),
           },
@@ -2469,7 +2520,7 @@ async function startRpcSessionInternal(
     });
     speedAgent.current = inner.agent;
 
-    const persistedPreferences = await persistExplicitStartupPreferences(
+    const persistedPreferences = options.persistPreferences === false ? { modelDefaultChanged: false } : await persistExplicitStartupPreferences(
       services.settingsManager,
       {
         ...(effectiveInitialModel ? { model: effectiveInitialModel } : {}),

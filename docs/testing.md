@@ -54,6 +54,7 @@ preparation is a separate prerequisite, not an application production build.
 | Browser flow | Affected flow through `npm run test:e2e`; choose documented focused switches during iteration, broaden for shared UI/runtime changes |
 | Activity review/navigation | Include `E2E_ACTIVITY_ONLY=1`; the default browser run has only partial Activity coverage |
 | Optional Git plugin | Separate integration command and plugin-focused browser selection in the [plugin guide](git-workflow-plugin.md#verification); core discovery does not include `plugins/**/*.test.mjs` |
+| Session Launch plugin | Separate real SDK tool acceptance and `E2E_SESSION_LAUNCH_ONLY=1` browser selection in [Session Launch](session-launch.md#verification); broaden browser coverage for shared cards/runtime changes |
 | Terminal integration or shared browser/terminal harness | `npm run test:terminal`; shared harness changes also need general and plugin-focused browser acceptance |
 | Documentation only | Review commands, links and preserved contracts; check any changed executable instructions. Do not rerun unaffected application suites solely for an evidence/status commit |
 
