@@ -7,13 +7,14 @@ import { setImmediate } from "node:timers/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { samePath } from "../../lib/paths";
 import type { GitSettings } from "./manifest";
+import type { BrowserDiscardOperation, DiscardLossEvidence, DiscardSubject } from "./discard";
 
 export interface CleanupOperation {
   action: "cleanupFeature"; checkout: string; featureBranch: string; featureTip: string;
   integrationCommit: string; targetBranch?: string; worktreePath?: string;
   removeWorktree: boolean; deleteBranch: boolean; artifactRoots: string[];
 }
-export interface WorktreeRecord { path: string; branch?: string; locked?: string; prunable?: string }
+export interface WorktreeRecord { path: string; branch?: string; head?: string; detached?: boolean; locked?: string; prunable?: string }
 export interface CleanupAccess {
   /** Trusted browser adapter restriction, never supplied through operation JSON. */
   rejectUnignoredUntracked?: boolean;
@@ -33,7 +34,16 @@ export interface CleanupSnapshot {
   artifactParentMetadata: Array<{ path: string; digest: string }>;
   artifactParentIdentities: CleanupDirectoryIdentity[];
   path?: string; cwd: string; target: string;
+  lossEvidence?: DiscardLossEvidence;
+  /** Fresh direct tip supporting this capture's proof, not the approval's pinned comparison. */
+  verifiedComparison?: { branch: string; tip: string };
 }
+export interface CleanupGitTransaction {
+  /** NUL-framed commands ending at prepare; commit is sent only after verification under ref locks. */
+  input: string;
+  verifyPrepared(): Promise<void>;
+}
+export type CleanupGitRunner = (args: string[], transaction?: CleanupGitTransaction) => Promise<string>;
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const oid = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const rootName = /^[a-zA-Z0-9_.-]+$/;
@@ -200,28 +210,59 @@ async function assertSourceClean(access: CleanupAccess, path: string, roots: str
     if (access.rejectUnignoredUntracked || !change.startsWith("?? ") || !selectedArtifact(change.slice(3), roots)) throw new Error("Cleanup worktree has source changes or unapproved untracked files");
   }
 }
-export async function captureCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess, budget = createCleanupBudget(), discoverArtifacts = true, frozenStructure?: Pick<CleanupSnapshot, "artifactParents" | "artifactParentMetadata">): Promise<CleanupSnapshot> {
-  if (!oid.test(op.featureTip) || !oid.test(op.integrationCommit)) throw new Error("Cleanup requires full exact feature and integration commit IDs");
+interface ResourceOperation {
+  checkout: string; subject: DiscardSubject; worktreePath?: string;
+  removeWorktree: boolean; deleteBranch: boolean; artifactRoots: string[];
+}
+type FrozenStructure = Pick<CleanupSnapshot, "artifactParents" | "artifactParentMetadata" | "lossEvidence">;
+interface ResourceRules {
+  target: string;
+  binding: unknown;
+  protectedBranches: string[];
+  verify(cwd: string): Promise<void>;
+  artifacts(roots: string[]): void;
+}
+function cleanupResources(op: CleanupOperation): ResourceOperation {
+  return { ...op, subject: { kind: "branch", branch: op.featureBranch, tip: op.featureTip } };
+}
+async function assertWorktreeSubject(access: CleanupAccess, path: string, entry: WorktreeRecord, subject: DiscardSubject) {
+  let ref: string | undefined;
+  try { ref = (await access.git(path, ["symbolic-ref", "--quiet", "HEAD"])).trim(); }
+  catch (error) { if ((error as { status?: number }).status !== 1) throw error; }
+  const tip = (await access.git(path, ["rev-parse", "--verify", "HEAD^{commit}"])).trim();
+  if (!oid.test(tip) || entry.head !== tip) throw new Error("Worktree HEAD or registration is invalid or changed");
+  if (subject.kind === "detached") {
+    if (ref !== undefined || entry.branch !== undefined || !entry.detached || tip !== subject.head) throw new Error("Detached HEAD moved or reattached; resources retained");
+  } else if (ref !== `refs/heads/${subject.branch}` || entry.branch !== subject.branch || entry.detached || tip !== subject.tip) {
+    throw new Error("Feature worktree HEAD or branch changed; resources retained");
+  }
+}
+/** Structural safety is shared; eligibility rules are trusted plugin code, never JSON switches. */
+async function captureResources(callerCwd: string, op: ResourceOperation, policy: GitSettings, access: CleanupAccess, rules: ResourceRules,
+  budget: CleanupBudget, discoverArtifacts: boolean, frozenStructure?: FrozenStructure): Promise<CleanupSnapshot> {
+  if (!oid.test(op.subject.kind === "branch" ? op.subject.tip : op.subject.head)) throw new Error("Cleanup requires full exact subject commit IDs");
   validateRoots(op.artifactRoots);
   let roots = [...op.artifactRoots];
   const permitted = permittedRoots(policy);
   if (typeof op.removeWorktree !== "boolean" || typeof op.deleteBranch !== "boolean") throw new Error("Cleanup resource choices must be explicit");
-  if (op.removeWorktree && policy.cleanupWorktree === "keep" || op.deleteBranch && policy.cleanupBranch === "keep"
-    || op.artifactRoots.length && policy.cleanupArtifacts === "keep") throw new Error("Cleanup conflicts with a configured Keep choice");
+  if (op.subject.kind === "detached" && (!op.removeWorktree || op.deleteBranch || !op.worktreePath)) throw new Error("Detached discard removes only its exact worktree");
+  rules.artifacts(roots);
   // Arguments/discovery propose resources, never grant permission. The server
   // requires a live one-time approval for every root absent from the allowlist,
   // including when the operation's configured permission is Allow.
   const cwd = await access.checkout(op.checkout);
   if (!samePath(cwd, resolve(op.checkout))) throw new Error("Cleanup checkout must be physical, without symlink aliases");
   const repositoryIdentity = repositoryIdentityOf(access, cwd);
-  const target = policy.targetBranch;
-  if (!target || target === op.featureBranch) throw new Error("Select a distinct integration target");
-  if (await directBranch(access, cwd, op.featureBranch) !== op.featureTip) throw new Error("Feature branch changed; cleanup refused");
-  const targetTip = await directBranch(access, cwd, target);
-  await access.git(cwd, ["merge-base", "--is-ancestor", op.featureTip, op.integrationCommit]);
-  await access.git(cwd, ["merge-base", "--is-ancestor", op.integrationCommit, targetTip]);
+  const verifySubject = async () => {
+    if (op.subject.kind === "branch" && await directBranch(access, cwd, op.subject.branch) !== op.subject.tip) throw new Error("Feature branch changed; cleanup refused");
+    await rules.verify(cwd);
+  };
+  await verifySubject();
   const registrations = await access.worktrees(cwd);
+  if (!registrations.length) throw new Error("Cleanup registration inventory is unavailable");
+  if (op.subject.kind === "branch" && rules.protectedBranches.includes(op.subject.branch)) throw new Error("Never discard the designated or comparison target branch");
   let path: string | undefined; let files: Awaited<ReturnType<typeof inventory>> | undefined; let identity: unknown;
+  let capturedEntry: WorktreeRecord | undefined;
   let artifactParents = frozenStructure?.artifactParents ?? artifactParentsOf(roots);
   let metadataParents = frozenStructure?.artifactParentMetadata.map((item) => item.path) ?? directArtifactParents(roots);
   if (op.worktreePath) {
@@ -230,9 +271,11 @@ export async function captureCleanup(callerCwd: string, op: CleanupOperation, po
     if (!samePath(path, resolve(op.worktreePath))) throw new Error("Cleanup path must be physical, without symlink parents");
     const entry = registrations.find((item) => samePath(item.path, path!));
     const callerWithin = cleanupPathWithin(path, existsSync(callerCwd) ? realpathSync(callerCwd) : resolve(callerCwd));
-    if (!entry || entry.branch !== op.featureBranch || entry.locked !== undefined || entry.prunable !== undefined
+    if (!entry || entry.locked !== undefined || entry.prunable !== undefined
       || samePath(path, registrations[0].path) || samePath(path, cwd)
       || callerWithin) throw new Error("Never clean main/caller, locked, prunable or changed worktrees");
+    capturedEntry = entry;
+    await assertWorktreeSubject(access, path, entry, op.subject);
     if (access.inUse(path)) throw new Error("Cleanup worktree is in active use");
     if (op.removeWorktree && discoverArtifacts) {
       // Preserve exact Git paths, including nested caches. Git may collapse a
@@ -249,7 +292,7 @@ export async function captureCleanup(callerCwd: string, op: CleanupOperation, po
       artifactParents = artifactParentsOf(roots);
       metadataParents = directArtifactParents(roots);
     }
-    if (roots.length && policy.cleanupArtifacts === "keep") throw new Error("Cleanup conflicts with a configured Keep choice; artifact resources retained");
+    rules.artifacts(roots);
     if (roots.some((root) => root.includes("/")) && !supportsNestedCleanup()) throw new Error("Nested cleanup requires Linux no-follow directory handles; resources retained");
     await assertSourceClean(access, path, roots);
     const tracked = new Set<string>();
@@ -257,32 +300,138 @@ export async function captureCleanup(callerCwd: string, op: CleanupOperation, po
     files = await inventory(path, roots, tracked, budget, artifactParents, metadataParents, op.artifactRoots);
     if (access.inUse(path)) throw new Error("Cleanup worktree became active during inventory");
     const currentEntry = (await access.worktrees(cwd)).find((item) => samePath(item.path, path!));
-    if (digest(currentEntry) !== digest(entry) || !samePath(await access.checkout(path, cwd), path)) throw new Error("Worktree registration changed during inventory");
+    if (!currentEntry || digest(currentEntry) !== digest(entry) || !samePath(await access.checkout(path, cwd), path)) throw new Error("Worktree registration changed during inventory");
+    await assertWorktreeSubject(access, path, currentEntry, op.subject);
     await assertSourceClean(access, path, roots);
     const admin = (await access.git(path, ["rev-parse", "--absolute-git-dir"])).trim();
     identity = [path, entry, statIdentity(path), realpathSync(admin), statIdentity(admin), files.tree];
   } else if (op.removeWorktree || op.artifactRoots.length) throw new Error("Select the feature worktree for artifact cleanup");
-  if (op.deleteBranch && registrations.some((entry) => entry.branch === op.featureBranch && (!op.removeWorktree || !path || !samePath(entry.path, path)))) throw new Error("Cannot delete a branch retained in a registered worktree");
-  // Target tip deliberately excluded: reachability above is the invariant, not
+  const selectedBranch = op.subject.kind === "branch" ? op.subject.branch : undefined;
+  if (op.deleteBranch && registrations.some((entry) => entry.branch === selectedBranch && (!op.removeWorktree || !path || !samePath(entry.path, path)))) throw new Error("Cannot delete a branch retained in a registered worktree");
+  // Target tip deliberately excluded: eligibility proves reachability, not an
   // unrelated advancement of a target that this operation never writes.
-  if (!samePath(await access.checkout(op.checkout), cwd) || repositoryIdentity !== repositoryIdentityOf(access, cwd)
-    || await directBranch(access, cwd, op.featureBranch) !== op.featureTip) throw new Error("Repository or feature changed during inventory");
-  await access.git(cwd, ["merge-base", "--is-ancestor", op.integrationCommit, await directBranch(access, cwd, target)]);
-  const bound = digest([repositoryIdentity, target, op.featureBranch, op.featureTip, op.integrationCommit, identity]);
-  return { cwd, target, path, repositoryIdentity, identity: bound, artifacts: files?.artifacts ?? [],
+  if (!samePath(await access.checkout(op.checkout), cwd) || repositoryIdentity !== repositoryIdentityOf(access, cwd)) throw new Error("Repository changed during inventory");
+  await verifySubject();
+  if (path) {
+    const finalEntry = (await access.worktrees(cwd)).find((entry) => samePath(entry.path, path!));
+    if (!finalEntry || digest(finalEntry) !== digest(capturedEntry)) throw new Error("Worktree registration changed during capture");
+    await assertWorktreeSubject(access, path, finalEntry, op.subject);
+    if (access.inUse(path)) throw new Error("Cleanup worktree became active during capture");
+  }
+  const bound = digest([repositoryIdentity, rules.binding, op.subject, identity]);
+  return { cwd, target: rules.target, path, repositoryIdentity, identity: bound, artifacts: files?.artifacts ?? [],
     artifactParents, artifactParentMetadata: files?.artifactParentMetadata ?? [], artifactParentIdentities: files?.artifactParentIdentities ?? [],
     unapprovedArtifacts: roots.filter((root) => !permitted.includes(root)), fingerprint: digest([bound, files?.artifacts ?? [], files?.artifactParentMetadata ?? []]) };
 }
-export async function performCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess,
-  snapshot: CleanupSnapshot, guardPolicy: () => void, runGit: (args: string[]) => Promise<string>, effects: string[],
-  onDispatch: (description: string) => void, budget: CleanupBudget, onCompleted?: () => void): Promise<string> {
+export async function captureCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess,
+  budget = createCleanupBudget(), discoverArtifacts = true, frozenStructure?: FrozenStructure): Promise<CleanupSnapshot> {
+  if (!oid.test(op.featureTip) || !oid.test(op.integrationCommit)) throw new Error("Cleanup requires full exact feature and integration commit IDs");
+  const target = policy.targetBranch;
+  if (!target || target === op.featureBranch) throw new Error("Select a distinct integration target");
+  if (op.removeWorktree && policy.cleanupWorktree === "keep" || op.deleteBranch && policy.cleanupBranch === "keep"
+    || op.artifactRoots.length && policy.cleanupArtifacts === "keep") throw new Error("Cleanup conflicts with a configured Keep choice");
+  return captureResources(callerCwd, cleanupResources(op), policy, access, {
+    target, binding: [target, op.integrationCommit], protectedBranches: [target],
+    verify: async (cwd) => {
+      await access.git(cwd, ["merge-base", "--is-ancestor", op.featureTip, op.integrationCommit]);
+      await access.git(cwd, ["merge-base", "--is-ancestor", op.integrationCommit, await directBranch(access, cwd, target)]);
+    },
+    artifacts: (roots) => { if (roots.length && policy.cleanupArtifacts === "keep") throw new Error("Cleanup conflicts with a configured Keep choice; artifact resources retained"); },
+  }, budget, discoverArtifacts, frozenStructure);
+}
+/** A configured symbolic target can alias a different subject spelling. Refuse
+ * conservatively, including dangling symbolic refs; an absent direct ref is OK.
+ * This checks designation safety, not graph availability or target existence. */
+async function assertDirectDesignatedTarget(access: CleanupAccess, cwd: string, branch: string | null) {
+  if (!branch) return;
+  let referent: string;
+  try { referent = (await access.git(cwd, ["symbolic-ref", "--quiet", `refs/heads/${branch}`])).trim(); }
+  catch (error) {
+    if ((error as { status?: number }).status === 1) return; // Direct or missing.
+    throw error; // Cancellation/read failures cannot silently relax protection.
+  }
+  throw new Error(`Manual discard refuses symbolic designated targets (${branch} -> ${referent}); resources retained`);
+}
+/** Comparison ref identity does not require its graph objects to be readable. */
+async function comparisonRefTip(access: CleanupAccess, cwd: string, branch: string): Promise<string> {
+  await access.git(cwd, ["check-ref-format", `refs/heads/${branch}`]);
+  const row = (await access.git(cwd, ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)", `refs/heads/${branch}`])).split("\n")
+    .map((line) => line.split("\0")).find((parts) => parts[0] === `refs/heads/${branch}`);
+  if (!row || !oid.test(row[1]) || row[2]) throw new Error("Comparison target ref changed or is symbolic; refresh inventory");
+  return row[1];
+}
+async function contains(access: CleanupAccess, cwd: string, feature: string, target: string): Promise<"yes" | "no" | "unknown"> {
+  try { await access.git(cwd, ["merge-base", "--is-ancestor", feature, target]); return "yes"; }
+  catch (error) {
+    if ((error as { status?: number }).status === 1) {
+      try { if ((await access.git(cwd, ["rev-parse", "--is-shallow-repository"])).trim() === "false") return "no"; } catch { /* Evidence unavailable, not deletion authority. */ }
+    }
+    return "unknown";
+  }
+}
+export async function captureBrowserDiscard(callerCwd: string, op: BrowserDiscardOperation, policy: GitSettings, access: CleanupAccess,
+  budget = createCleanupBudget(), discoverArtifacts = true, frozenStructure?: FrozenStructure): Promise<CleanupSnapshot> {
+  const comparison = op.comparisonTarget;
+  const requiresProof = op.deleteBranch && frozenStructure?.lossEvidence?.state === "integrated";
+  const preparedComparison = frozenStructure?.lossEvidence?.comparisonTarget;
+  if (requiresProof && (!comparison || !preparedComparison || digest(comparison) !== digest(preparedComparison))) {
+    throw new Error("Originally proven comparison ref binding changed; remaining resources retained");
+  }
+  let lossEvidence: DiscardLossEvidence = { state: "unknown", reason: "no-comparison-target" };
+  let verifiedComparison: CleanupSnapshot["verifiedComparison"];
+  const protectedBranches = [policy.targetBranch, comparison?.branch].filter((branch): branch is string => !!branch);
+  const snapshot = await captureResources(callerCwd, op, policy, access, {
+    target: comparison?.branch ?? "", binding: ["browser-discard", comparison, protectedBranches], protectedBranches,
+    verify: async (cwd) => {
+      budget.guard?.();
+      await assertDirectDesignatedTarget(access, cwd, policy.targetBranch);
+      if (comparison) {
+        const targetTip = await comparisonRefTip(access, cwd, comparison.branch);
+        if (!frozenStructure && targetTip !== comparison.tip) throw new Error("Captured comparison target changed; refresh inventory");
+        const tip = op.subject.kind === "branch" ? op.subject.tip : op.subject.head;
+        const contained = await contains(access, cwd, tip, comparison.tip);
+        const retained = await contains(access, cwd, comparison.tip, targetTip);
+        lossEvidence = { comparisonTarget: comparison,
+          state: retained === "yes" && contained === "yes" ? "integrated" : retained === "yes" && contained === "no" ? "not-integrated" : "unknown",
+          ...(retained !== "yes" ? { reason: "comparison-proof-lost" } : contained === "unknown" ? { reason: "graph-unavailable-or-incomplete" } : {}) };
+        verifiedComparison = lossEvidence.state === "integrated" ? { branch: comparison.branch, tip: targetTip } : undefined;
+      }
+      budget.guard?.();
+      if (requiresProof && lossEvidence.state !== "integrated") throw new Error("Originally proven branch integration is no longer reachable; remaining resources retained");
+      const registrations = await access.worktrees(cwd);
+      const subject = op.subject;
+      if (subject.kind === "branch" && registrations.some((entry, index) => entry.branch === subject.branch && (index === 0 || samePath(entry.path, cwd)
+        || cleanupPathWithin(entry.path, existsSync(callerCwd) ? realpathSync(callerCwd) : resolve(callerCwd))))) throw new Error("Never discard main, selected or invocation resources");
+      // This list is fresh at the end of capture too. The structural inventory's
+      // earlier list cannot authorize deletion after another checkout appears.
+      if (op.deleteBranch && subject.kind === "branch" && registrations.some((entry) => entry.branch === subject.branch
+        && (!op.removeWorktree || !op.worktreePath || !samePath(entry.path, op.worktreePath)))) throw new Error("Cannot delete a branch retained in a registered worktree");
+    },
+    // Completed-feature Keep preferences are not manual discard permissions.
+    artifacts: () => {},
+  }, budget, discoverArtifacts, frozenStructure);
+  if (op.deleteBranch && lossEvidence.state === "integrated" && (!frozenStructure || requiresProof)) {
+    // prepare/commit exist since 2.27, but pre-2.34 versions can fail to flush
+    // prepare acknowledgments. Refuse conservatively without a no-op write probe.
+    const version = /\bgit version (\d+)\.(\d+)\./.exec(await access.git(snapshot.cwd, ["--version"]));
+    if (!version || Number(version[1]) < 2 || Number(version[1]) === 2 && Number(version[2]) < 34) {
+      throw new Error("Proven browser branch deletion requires Git 2.34 or newer for prepared no-deref ref verification; resources retained");
+    }
+    budget.guard?.();
+  }
+  return { ...snapshot, lossEvidence, verifiedComparison };
+}
+async function performResources(op: ResourceOperation, access: CleanupAccess,
+  snapshot: CleanupSnapshot, guardPolicy: () => void, runGit: CleanupGitRunner, effects: string[],
+  onDispatch: (description: string) => void, onCompleted: (() => void) | undefined,
+  recapture: (remaining: string[], branchOnly?: boolean) => Promise<CleanupSnapshot>, designatedTarget: string | null = null): Promise<string> {
   // Freeze the exact prepared list. Later ignored files are NOT discovered or
   // implicitly added under an earlier approval.
   let remaining = snapshot.artifacts.map((item) => item.path);
   const changedParents = new Set<string>();
   const revalidate = async () => {
     guardPolicy();
-    const current = await captureCleanup(callerCwd, { ...op, artifactRoots: remaining }, policy, access, budget, false, snapshot);
+    const current = await recapture(remaining);
     if (current.identity !== snapshot.identity || current.artifactParentMetadata.some((item) =>
       !changedParents.has(item.path) && item.digest !== snapshot.artifactParentMetadata.find((original) => original.path === item.path)?.digest)
       || current.artifacts.some((item) =>
@@ -314,16 +463,64 @@ export async function performCleanup(callerCwd: string, op: CleanupOperation, po
   }
   if (op.deleteBranch) {
     guardPolicy();
-    const current = await captureCleanup(callerCwd, { ...op, worktreePath: undefined, removeWorktree: false, artifactRoots: [] }, policy, access, budget);
+    const current = await recapture([], true);
     if (current.target !== snapshot.target || current.repositoryIdentity !== snapshot.repositoryIdentity) throw new Error("Cleanup repository or target changed");
     guardPolicy();
-    // Conditional ref deletion binds the exact integrated commit. No -D fallback,
-    // no upstream-dependent branch -d heuristic, and no Git configuration writes.
-    onDispatch(`Delete local branch: ${op.featureBranch}`);
-    await runGit(["update-ref", "--no-deref", "-d", `refs/heads/${op.featureBranch}`, op.featureTip]);
-    effects.push(`Deleted local branch: ${op.featureBranch} at ${op.featureTip}`);
+    if (op.subject.kind !== "branch") throw new Error("Detached worktrees have no branch deletion effect");
+    const subject = op.subject;
+    let transaction: CleanupGitTransaction | undefined;
+    if (snapshot.lossEvidence?.state === "integrated") {
+      // Only browser approvals exempted from the loss checkbox require this
+      // extra proof binding. Agent cleanup's native conditional deletion stays unchanged.
+      const comparison = current.verifiedComparison;
+      const approvedComparison = snapshot.lossEvidence.comparisonTarget;
+      if (!comparison || !approvedComparison || current.lossEvidence?.state !== "integrated") throw new Error("Originally proven comparison ref binding lost; remaining resources retained");
+      transaction = {
+        input: ["start", `verify refs/heads/${comparison.branch}`, comparison.tip,
+          `delete refs/heads/${subject.branch}`, subject.tip, "prepare", ""].join("\0"),
+        verifyPrepared: async () => {
+          guardPolicy();
+          await assertDirectDesignatedTarget(access, snapshot.cwd, designatedTarget);
+          // --no-deref OID verification alone accepts a same-tip symref.
+          // Native prepare holds both ref locks while these direct-ref checks
+          // reject symbolic replacements, including same-tip and dangling refs.
+          if (await comparisonRefTip(access, snapshot.cwd, comparison.branch) !== comparison.tip
+            || await directBranch(access, snapshot.cwd, subject.branch) !== subject.tip) throw new Error("Prepared branch or comparison ref changed; remaining resources retained");
+          if (await contains(access, snapshot.cwd, subject.tip, approvedComparison.tip) !== "yes"
+            || await contains(access, snapshot.cwd, approvedComparison.tip, comparison.tip) !== "yes") throw new Error("Originally proven branch integration is no longer reachable; remaining resources retained");
+          if ((await access.worktrees(snapshot.cwd)).some((entry) => entry.branch === subject.branch)) throw new Error("Cannot delete a branch retained in a registered worktree");
+          guardPolicy();
+        },
+      };
+    }
+    // Exact local ref CAS only: no -D fallback, upstream heuristic or config cleanup.
+    onDispatch(`Delete local branch: ${subject.branch}`);
+    if (!transaction && snapshot.lossEvidence) {
+      // Loss acknowledgment does not waive designated-target protection. Check
+      // after the receipt callback, which can outlive the final recapture.
+      guardPolicy();
+      await assertDirectDesignatedTarget(access, snapshot.cwd, designatedTarget);
+      guardPolicy();
+    }
+    await runGit(transaction ? ["update-ref", "--no-deref", "--stdin", "-z"]
+      : ["update-ref", "--no-deref", "-d", `refs/heads/${subject.branch}`, subject.tip], transaction);
+    effects.push(`Deleted local branch: ${op.subject.branch} at ${op.subject.tip}`);
     onCompleted?.();
-    if ((await access.git(snapshot.cwd, ["for-each-ref", "--format=%(refname)", `refs/heads/${op.featureBranch}`])).split("\n").includes(`refs/heads/${op.featureBranch}`)) throw new Error("Branch deletion did not settle as expected");
+    if ((await access.git(snapshot.cwd, ["for-each-ref", "--format=%(refname)", `refs/heads/${op.subject.branch}`])).split("\n").includes(`refs/heads/${op.subject.branch}`)) throw new Error("Branch deletion did not settle as expected");
   }
   return effects.join("\n");
+}
+export async function performCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess,
+  snapshot: CleanupSnapshot, guardPolicy: () => void, runGit: CleanupGitRunner, effects: string[],
+  onDispatch: (description: string) => void, budget: CleanupBudget, onCompleted?: () => void): Promise<string> {
+  return performResources(cleanupResources(op), access, snapshot, guardPolicy, runGit, effects, onDispatch, onCompleted,
+    (remaining, branchOnly) => captureCleanup(callerCwd, { ...op, artifactRoots: remaining,
+      ...(branchOnly ? { worktreePath: undefined, removeWorktree: false } : {}) }, policy, access, budget, false, snapshot));
+}
+export async function performBrowserDiscard(callerCwd: string, op: BrowserDiscardOperation, policy: GitSettings, access: CleanupAccess,
+  snapshot: CleanupSnapshot, guardPolicy: () => void, runGit: CleanupGitRunner, effects: string[],
+  onDispatch: (description: string) => void, budget: CleanupBudget, onCompleted?: () => void): Promise<string> {
+  return performResources(op, access, snapshot, guardPolicy, runGit, effects, onDispatch, onCompleted,
+    (remaining, branchOnly) => captureBrowserDiscard(callerCwd, { ...op, artifactRoots: remaining,
+      ...(branchOnly ? { worktreePath: undefined, removeWorktree: false } : {}) }, policy, access, budget, false, snapshot), policy.targetBranch);
 }

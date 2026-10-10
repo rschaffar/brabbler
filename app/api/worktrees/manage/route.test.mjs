@@ -28,13 +28,31 @@ test("inventory route is read-only, works disabled/no target, and rejects origin
   assert.equal((await request({ cwd: join(cwd, ".git") })).status, 400);
   const alias = join(root, "alias"); symlinkSync(cwd, alias); allowFileRoot(alias); assert.equal((await request({ cwd: alias })).status, 400);
   const response = await request({ cwd }); assert.equal(response.status, 200); const inventory = await response.json();
-  assert.equal(inventory.cleanup.enabled, false); assert.equal(inventory.target.tip, null); assert.equal(inventory.rows.length, 2);
+  assert.equal(inventory.cleanup.enabled, false); assert.equal(inventory.cleanup.permission, "ask"); assert.equal(inventory.target.tip, null); assert.equal(inventory.rows.length, 2);
   const comparison = await (await request({ cwd, target: "main" })).json(); assert.equal(comparison.rows.find((r) => r.branch === "feature").integration, "integrated");
   assert.equal((await request({ cwd, captureId: comparison.captureId, details: "1", rows: JSON.stringify(["branch:feature"]) })).status, 200);
   assert.equal((await request({ cwd, captureId: comparison.captureId, details: "1", rows: JSON.stringify(["branch:made-up"]) })).status, 400);
   git(cwd, "branch", "later");
   assert.equal((await request({ cwd, captureId: comparison.captureId, details: "1", rows: JSON.stringify(["branch:feature"]) })).status, 409);
   assert.deepEqual(readFileSync(join(cwd, ".git/config")), before);
+});
+test("manager permission is discardResources, independently of legacy cleanup and session overrides", async (t) => {
+  const { cwd } = fixture(t);
+  updatePluginSettings(gitWorkflowManifest, "global", cwd, { enabled: true, cleanupFeature: "deny", discardResources: "allow" }, []);
+  updatePluginSettings(gitWorkflowManifest, "session", cwd, { discardResources: "deny" }, [], undefined, { id: "session-discard", cwd });
+  let inventory = await (await request({ cwd })).json();
+  assert.equal(inventory.cleanup.enabled, true); assert.equal(inventory.cleanup.permission, "allow");
+  updatePluginSettings(gitWorkflowManifest, "project", cwd, { cleanupFeature: "allow", discardResources: "deny" }, []);
+  inventory = await (await request({ cwd })).json(); assert.equal(inventory.cleanup.permission, "deny");
+});
+test("related detached checkout is admitted for narrow clean status without a comparison target", async (t) => {
+  const { root, cwd } = fixture(t); const detached = join(root, "detached");
+  git(cwd, "worktree", "add", "--detach", detached);
+  const inventory = await (await request({ cwd })).json();
+  const row = inventory.rows.find((r) => r.worktrees.some((w) => w.path === detached));
+  assert.equal(inventory.target.branch, null); assert.equal(row.kind, "detached"); assert.deepEqual(row.blockers, []);
+  const response = await request({ cwd, captureId: inventory.captureId, details: "1", rows: JSON.stringify([row.id]) });
+  assert.equal(response.status, 200); assert.equal((await response.json()).rows[0].statuses[0].state, "clean");
 });
 test("inventory defaults use project/global settings only, never session overrides; missing targets still list branches", async (t) => {
   const { cwd } = fixture(t);
@@ -43,6 +61,8 @@ test("inventory defaults use project/global settings only, never session overrid
   let inventory = await (await request({ cwd })).json(); assert.equal(inventory.target.branch, "main"); assert.equal(inventory.target.source, "global");
   updatePluginSettings(gitWorkflowManifest, "project", cwd, { targetBranch: "feature" }, []);
   inventory = await (await request({ cwd, target: "main" })).json(); assert.equal(inventory.target.branch, "main"); assert.equal(inventory.target.configured, "feature"); assert.equal(inventory.target.temporary, true);
+  assert.ok(inventory.rows.find((r) => r.branch === "main").blockers.includes("comparison-target"));
+  assert.ok(inventory.rows.find((r) => r.branch === "feature").blockers.includes("configured-target"));
   updatePluginSettings(gitWorkflowManifest, "project", cwd, { targetBranch: "missing" }, []);
   inventory = await (await request({ cwd })).json(); assert.equal(inventory.target.branch, null); assert.equal(inventory.target.missingConfigured, true); assert.equal(inventory.rows.length, 2);
 });

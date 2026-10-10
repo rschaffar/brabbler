@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useI18n } from "@/hooks/useI18n";
 import type { WorktreeManagementInventory, WorktreeManagementRow, WorktreeManagementDetails, MergeDate } from "@/lib/worktree-management-types";
 import type { ProjectOperation } from "@/lib/plugins/project-operation-types";
-import { managementRows, managementPendingOrder, managementPage, managementDatesComplete, type ManagementFilter, type ManagementCheckoutFilter, type ManagementSort } from "@/lib/worktree-management-view";
+import { managementRows, managementPendingOrder, managementPage, managementDatesComplete, managementRowKind, managementSelection, managementRemovalBlockers, managementRemovalPayload, managementAcknowledgmentKey, managementOperationPresentation, type ManagementFilter, type ManagementCheckoutFilter, type ManagementSort, type ManagementResource } from "@/lib/worktree-management-view";
 import { BundledPluginSettings } from "./plugin-ui/BundledPluginSettings";
 import { PluginCardContent } from "./plugin-ui/PluginCard";
 import styles from "./WorktreeManager.module.css";
@@ -59,7 +59,10 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
   const operationRef = useRef(operation); operationRef.current = operation;
   const operationReads = useRef<AbortController | null>(null), operationLoadSequence = useRef(0);
   const [sending, setSending] = useState(false);
-  const [resource, setResource] = useState<"both" | "worktree" | "branch">("both"), [worktreePath, setWorktreePath] = useState("");
+  const [resource, setResource] = useState<ManagementResource>("both"), [worktreePath, setWorktreePath] = useState("");
+  const [acknowledgedKey, setAcknowledgedKey] = useState<string | null>(null);
+  const acknowledgmentKey = managementAcknowledgmentKey(JSON.stringify([contextKey, currentContext.current]), operation);
+  useEffect(() => { setAcknowledgedKey(null); }, [acknowledgmentKey]);
   const outcomeHandled = useRef(new Set<string>()), mounted = useRef(true);
   const cancelOperation = useCallback(() => {
     const op = operationRef.current, request = preparation.current?.body;
@@ -105,7 +108,7 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
     selectionRead.current?.abort(); const controller = new AbortController(); selectionRead.current = controller;
     const sequence = ++selectionSequence.current, expectedContext = currentContext.current;
     const current = () => mounted.current && !controller.signal.aborted && sequence === selectionSequence.current && expectedContext === currentContext.current;
-    setSelectingOperation(true);
+    setSelectingOperation(true); setAcknowledgedKey(null);
     try {
       const latest = await json<ProjectOperation>(`${ACTIONS}/${op.id}`, { signal: controller.signal });
       if (!current()) return;
@@ -212,12 +215,12 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
     if (["succeeded", "failed", "outcome-unknown"].includes(operation.state)) { setRefresh((v) => v + 1); onChanged(); }
   }, [operation, reloadOperations, onChanged]);
   const expandedRow = rows.find((row) => row.id === expanded);
-  const expandedPaths = JSON.stringify(expandedRow?.worktrees.map((w) => w.path) ?? []);
+  const selectionIdentity = JSON.stringify([expandedRow?.id, expandedRow && managementRowKind(expandedRow), expandedRow?.worktrees.map((w) => w.path)]);
+  const selectedResources = expandedRow ? managementSelection(expandedRow, { resource, worktreePath }) : { resource, worktreePath };
   useEffect(() => {
-    const paths: string[] = JSON.parse(expandedPaths);
-    if (!paths.length) { setResource("branch"); setWorktreePath(""); }
-    else { setWorktreePath((path) => paths.includes(path) ? path : paths[0]); setResource((value) => value === "branch" ? "both" : value); }
-  }, [expandedPaths]);
+    // Row kind can change without the path changing (detach/reattach on refresh).
+    setResource(selectedResources.resource); setWorktreePath(selectedResources.worktreePath);
+  }, [selectionIdentity, selectedResources.resource, selectedResources.worktreePath]);
   const submitPreparation = async () => {
     const request = preparation.current; if (!request || sending) return;
     setSending(true); setError("");
@@ -231,23 +234,25 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
     finally { if (mounted.current && request.context === currentContext.current) setSending(false); }
   };
   const prepare = (row: WorktreeManagementRow) => {
-    if (!captureReady || !operationsReady || selectingOperation || !inventory?.target.tip || !row.branch || !row.tip || sending || preparation.current || operation && pending(operation)) return;
-    if (resource !== "branch" && !row.worktrees.some((w) => w.path === worktreePath)) return;
+    if (row.id !== expanded || !canReview(row) || preparation.current || !inventory) return;
+    const payload = managementRemovalPayload(row, selectedResources, inventory.target);
+    if (!payload) return;
     selectionRead.current?.abort(); selectionRead.current = null; selectionSequence.current++;
     focusRow.current = row.id;
-    setOperation(null);
-    preparation.current = { context: currentContext.current, body: { cwd, requestId: crypto.randomUUID(), action: "cleanup", payload: {
-      featureBranch: row.branch, featureTip: row.tip, integrationCommit: inventory.target.tip, targetBranch: inventory.target.branch,
-      ...(resource !== "branch" ? { worktreePath } : {}), removeWorktree: resource !== "branch", deleteBranch: resource !== "worktree",
-    } } };
+    setOperation(null); setAcknowledgedKey(null);
+    preparation.current = { context: currentContext.current, body: { cwd, requestId: crypto.randomUUID(), action: "remove", payload } };
     void submitPreparation();
   };
   const decide = async (decision: "approve" | "reject" | "stop") => {
     if (!operation || sending) return;
+    if (decision === "approve" && (operation.state !== "review" || !operation.card || operation.cwd !== cwd ||
+      operation.card.requiredAcknowledgment && (!acknowledgmentKey || acknowledgedKey !== acknowledgmentKey))) return;
     const expectedContext = currentContext.current;
     setSending(true); setError("");
     try {
-      const next = await post<ProjectOperation>(`${ACTIONS}/${operation.id}`, { cwd: operation.cwd, decision });
+      const next = await post<ProjectOperation>(`${ACTIONS}/${operation.id}`, { cwd: operation.cwd, decision,
+        ...(decision === "approve" && operation.card?.requiredAcknowledgment ? { acknowledgment: { cardDigest: operation.acknowledgment!.cardDigest, accepted: true } } : {}),
+      });
       if (mounted.current && expectedContext === currentContext.current) setOperation(next);
     } catch (cause) { if (mounted.current && expectedContext === currentContext.current) setError(String(cause)); }
     finally { if (mounted.current && expectedContext === currentContext.current) setSending(false); }
@@ -257,9 +262,13 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
   const dateText = (value: string | null) => value ? new Date(value).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" }) : t("manager.unavailable");
   const fullDate = (value: string | null) => value ? new Date(value).toLocaleString(locale, { timeZoneName: "short" }) : t("manager.unavailable");
   const mergeText = (value: MergeDate) => value.state === "available" ? dateText(value.date) : t(`manager.date.${value.state}`);
-  const targetMismatch = Boolean(inventory?.target.temporary && inventory.target.configured && inventory.cleanup?.targetSelection === "configured");
+  const targetMismatch = Boolean(inventory?.target.temporary && inventory.target.configured);
   const busy = sending || selectingOperation || uncertainPreparation || Boolean(operation && pending(operation));
-  const canReview = (row: WorktreeManagementRow) => captureReady && operationsReady && !loading && !busy && inventory?.checkout === cwd && row.integration === "integrated" && !row.blockers.length && inventory?.cleanup?.enabled && inventory.cleanup.permission !== "deny" && !targetMismatch;
+  const operationPresentation = operation ? managementOperationPresentation(operation, cwd) : null;
+  const displayedCard = operation?.card ?? operation?.receipt?.card;
+  const removalBlockers = (row: WorktreeManagementRow) => managementRemovalBlockers(row,
+    row.id === expanded ? selectedResources : managementSelection(row, { resource: "both", worktreePath: "" }), details[row.id]?.statuses);
+  const canReview = (row: WorktreeManagementRow) => captureReady && operationsReady && !loading && !busy && inventory?.checkout === cwd && !removalBlockers(row).length && inventory?.cleanup?.enabled && inventory.cleanup.permission !== "deny";
   const resetFilters = () => { setSearch(""); setFilter("all"); setCheckoutFilter("all"); setPage(0); };
   return <dialog ref={dialog} aria-labelledby="worktree-manager-title" className={styles.dialog} onCancel={(event) => { event.preventDefault(); close(); }}>
     <header className={styles.header}>
@@ -306,15 +315,29 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
           <h3>{t("manager.operation")}</h3>
           {!operation && <><p role="status">{t(uncertainPreparation ? "manager.preparationUncertain" : "manager.operation.preparing")}</p>{uncertainPreparation && <button type="button" disabled={sending} onClick={() => void submitPreparation()}>{t("manager.reconcilePreparation")}</button>}</>}
           {operation && <>
-            <p role="status">{t(`manager.operation.${operation.state}`)}</p>
+            <p role="status">{t(`manager.operation.${operationPresentation!.state}`)}</p>
             {operation.progress && <p>{operation.progress}</p>}{operation.error && <p role="alert" className={styles.error}>{operation.error}</p>}{operation.persistenceError && <p role="alert">{operation.persistenceError}</p>}
-            {(operation.card ?? operation.receipt?.card) && <PluginCardContent reviewBaseUrl={operation.reviewBaseUrl} request={{ ...(operation.card ?? operation.receipt!.card), id: operation.id, type: "extension_ui_request", method: "plugin_card", pluginId: operation.pluginId }} />}
+            {displayedCard && <>
+              <h4>{displayedCard.title}</h4>
+              {displayedCard.subtitle && <p>{displayedCard.subtitle}</p>}
+              <PluginCardContent reviewBaseUrl={operation.reviewBaseUrl} request={{ ...displayedCard, id: operation.id, type: "extension_ui_request", method: "plugin_card", pluginId: operation.pluginId }} />
+              {displayedCard.scope && <p className={styles.notice}>{displayedCard.scope}</p>}
+            </>}
             {operation.result !== undefined && <pre className={styles.result}>{JSON.stringify(operation.result, null, 2)}</pre>}
+            {operation.state === "review" && operation.card && operation.cwd === cwd && operation.card.requiredAcknowledgment && <label className={styles.acknowledgment}>
+              <input type="checkbox" checked={Boolean(acknowledgmentKey && acknowledgedKey === acknowledgmentKey)} disabled={sending || !acknowledgmentKey}
+                onChange={(event) => setAcknowledgedKey(event.target.checked ? acknowledgmentKey : null)} />
+              <span>{operation.card.requiredAcknowledgment}</span>
+            </label>}
+            {!pending(operation) && operation.acknowledgment && <label className={styles.acknowledgment}>
+              <input type="checkbox" checked={operation.acknowledgment.accepted === true} disabled readOnly />
+              <span>{operation.acknowledgment.label} · {t("manager.recordedAcknowledgment")}</span>
+            </label>}
             {operation.state === "review" && operation.card && operation.cwd === cwd && <div className={styles.controls}>
               <button type="button" disabled={sending} onClick={() => void decide("reject")}>{t("manager.keepResources")}</button>
-              <button type="button" disabled={sending} className={styles.danger} onClick={() => void decide("approve")}>{operation.card.actions.find((action) => action.primary)?.label ?? t("manager.confirmCleanup")}</button>
+              <button type="button" disabled={sending || Boolean(operation.card.requiredAcknowledgment && (!acknowledgmentKey || acknowledgedKey !== acknowledgmentKey))} className={styles.danger} onClick={() => void decide("approve")}>{operation.card.actions.find((action) => action.primary)?.label ?? t("manager.confirmCleanup")}</button>
             </div>}
-            {pending(operation) && (operation.state !== "review" || operation.cwd !== cwd) && <><p>{t("manager.stopNote")}</p><button type="button" disabled={sending} onClick={() => void decide("stop")}>{t("manager.stop")}</button></>}
+            {operationPresentation?.stop && <><p>{t("manager.stopNote")}</p><button type="button" disabled={sending} onClick={() => void decide("stop")}>{t("manager.stop")}</button></>}
             {!pending(operation) && <button type="button" onClick={() => { setOperation(null); setRefresh((v) => v + 1); restoreInteractionFocus(); }}>{t("manager.refreshActual")}</button>}
           </>}
         </section>}
@@ -325,14 +348,14 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
             <thead><tr><th aria-sort={effectiveSort === "name" ? descending ? "descending" : "ascending" : undefined}>{t("manager.branch")}</th><th>{t("manager.integration")}</th><th aria-sort={effectiveSort === "tip" ? descending ? "descending" : "ascending" : undefined}>{t("manager.tipDate")}</th><th aria-sort={effectiveSort === "merge" ? descending ? "descending" : "ascending" : undefined}>{t("manager.mergeDate")}</th><th>{t("manager.cleanup")}</th></tr></thead>
             <tbody>{visible.map((row) => <Fragment key={row.id}>
               <tr data-branch={row.branch ?? ""}>
-                <td data-label={t("manager.branch")}><button data-manager-row={row.id} type="button" aria-expanded={expanded === row.id} onClick={() => { setExpanded(expanded === row.id ? null : row.id); setResource(row.worktrees.length ? "both" : "branch"); setWorktreePath(row.worktrees[0]?.path ?? ""); }}>{row.branch ?? t("manager.detached")}</button>
+                <td data-label={t("manager.branch")}><button data-manager-row={row.id} type="button" aria-expanded={expanded === row.id} onClick={() => { setExpanded(expanded === row.id ? null : row.id); const next = managementSelection(row, { resource: "both", worktreePath: "" }); setResource(next.resource); setWorktreePath(next.worktreePath); }}>{row.branch ?? t("manager.detached")}</button>
                   <small>{row.worktrees.length ? t("manager.worktreeCount", { count: row.worktrees.length }) : t("manager.noWorktree")}</small>
                   {row.worktrees.some((w) => w.main) && <small> · {t("manager.main")}</small>}{row.worktrees.some((w) => w.selected) && <small> · {t("manager.selected")}</small>}
                 </td>
                 <td data-label={t("manager.integration")}>{t(`manager.integration.${row.integration}`)}</td>
                 <td data-label={t("manager.tipDate")}><time dateTime={row.tipDate ?? undefined} title={fullDate(row.tipDate)}>{dateText(row.tipDate)}</time></td>
                 <td data-label={t("manager.mergeDate")}>{mergeText(row.mergeDate)}</td>
-                <td data-label={t("manager.cleanup")}><span>{row.blockers.length ? row.blockers.map((v) => t(`manager.blocker.${v}`)).join(" · ") : t("manager.reviewNeeded")}</span></td>
+                <td data-label={t("manager.cleanup")}><span>{removalBlockers(row).length ? removalBlockers(row).map((v) => t(`manager.blocker.${v}`)).join(" · ") : t("manager.reviewNeeded")}</span></td>
               </tr>
               {expanded === row.id && <tr><td colSpan={5} className={styles.details}>
                 <section><h3>{t("manager.evidence")}</h3><p className={styles.path}>HEAD: {row.tip ?? t("manager.unavailable")}</p><p>{row.subject}</p><p>{t("manager.tipDate")}: {fullDate(row.tipDate)} · {t("manager.authorDate")}: {fullDate(row.authorDate)}</p>
@@ -354,13 +377,19 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
                   </div>; })}
                 </section>
                 <section><h3>{t("manager.cleanupOptions")}</h3><p>{t("manager.idleWarning")}</p>
-                  <label>{t("manager.resources")} <select aria-label={t("manager.resources")} value={resource} disabled={busy} onChange={(event) => setResource(event.target.value as typeof resource)}>
-                    {row.worktrees.length > 0 && <><option value="both">{t("manager.removeBoth")}</option><option value="worktree">{t("manager.removeWorktree")}</option></>}
-                    <option value="branch" disabled={row.worktrees.length > 0}>{t("manager.deleteBranch")}</option>
+                  {managementRowKind(row) === "detached" && <p className={styles.notice}>{t("manager.detachedWarning")}</p>}
+                  {managementRowKind(row) === "branch" && row.integration !== "integrated" && <p className={styles.notice}>{t("manager.unprovenWarning")}</p>}
+                  {managementRowKind(row) === "branch" && row.worktrees.length > 1 && <p>{t("manager.branchRetention")}</p>}
+                  <label>{t("manager.resources")} <select aria-label={t("manager.resources")} value={selectedResources.resource} disabled={busy || managementRowKind(row) === "diagnostic"} onChange={(event) => setResource(event.target.value as ManagementResource)}>
+                    {row.worktrees.length > 0 && <>
+                      {managementRowKind(row) === "branch" && <option value="both" disabled={row.worktrees.length > 1}>{t("manager.removeBoth")}</option>}
+                      <option value="worktree">{t(managementRowKind(row) === "branch" ? "manager.removeWorktree" : "manager.removeDetached")}</option>
+                    </>}
+                    {managementRowKind(row) === "branch" && <option value="branch" disabled={row.worktrees.length > 0}>{t("manager.deleteBranch")}</option>}
                   </select></label>
-                  {row.worktrees.length > 1 && resource !== "branch" && <label>{t("manager.worktreePath")} <select aria-label={t("manager.worktreePath")} value={worktreePath} disabled={busy} onChange={(event) => setWorktreePath(event.target.value)}>{row.worktrees.map((w) => <option key={w.path}>{w.path}</option>)}</select></label>}
-                  <button type="button" disabled={!canReview(row) || row.worktrees.length > 0 && (details[row.id]?.statuses.length !== row.worktrees.length || details[row.id]?.statuses.some((status) => status.state !== "clean"))} onClick={() => prepare(row)}>{t("manager.reviewCleanup")}</button>
-                  {row.blockers.length > 0 && <p>{row.blockers.map((v) => t(`manager.blocker.${v}`)).join(" · ")}</p>}
+                  {row.worktrees.length > 1 && selectedResources.resource !== "branch" && <label>{t("manager.worktreePath")} <select aria-label={t("manager.worktreePath")} value={selectedResources.worktreePath} disabled={busy} onChange={(event) => setWorktreePath(event.target.value)}>{row.worktrees.map((w) => <option key={w.path}>{w.path}</option>)}</select></label>}
+                  <button type="button" disabled={!canReview(row)} onClick={() => prepare(row)}>{t("manager.reviewCleanup")}</button>
+                  {removalBlockers(row).length > 0 && <p>{removalBlockers(row).map((v) => t(`manager.blocker.${v}`)).join(" · ")}</p>}
                 </section>
               </td></tr>}
             </Fragment>)}</tbody>
