@@ -239,7 +239,7 @@ Refresh inventory and sidebar worktrees after observed success or partial effect
 
 - [x] Update `docs/worktrees.md` with date evidence, target setup, idle-chat warnings/blockers and recovery; update focused source/plugin/browser guides and README only where needed, not AGENTS.md. Clarify switcher wording as Current tip contained in rst-main and Main checkout in the shipped English interface, without changing its existing badge target; manager always names its selected target.
 - [x] Run focused selections while editing, then full offline/core acceptance and separate plugin/browser acceptance on stable source; record captured input identity, commands, selections, outcomes, artifact paths and actual command runtime separately from preparation/review.
-- [ ] Review and create coherent local feature commits after source approval; reassess the rebased candidate against current local `rst-main`. Present exact candidate/target IDs and verification for separately approved unsigned non-FF integration. Retain resources if approval or acceptance is blocked.
+- [x] Review and create coherent local feature commits after source approval; reassess the rebased candidate against current local `rst-main`. Present exact candidate/target IDs and verification for separately approved unsigned non-FF integration. Retain resources if approval or acceptance is blocked.
 
 ## Verification commands and evidence
 
@@ -295,7 +295,7 @@ All deletion tests use disposable harness repositories, never the accumulated re
 - [x] Durable standalone reviews/outcomes survive reload; restart/partial/cancelled operations never replay and unknown results remain explicit.
 - [x] Desktop/mobile, English messages, keyboard access, stale-response cancellation and required common/plugin/browser acceptance passed with recorded artifacts; conditional terminal evidence is resolved.
 - [x] Owning guides/new ADR reflect delivered contracts, independent safety review is resolved and feature commits are reviewable.
-- [ ] Exact-state local integration into `rst-main` is separately approved and verified, or its blocker is retained explicitly. Publication/deployment and feature-resource cleanup remain separately authorized.
+- [x] Exact-state local integration into `rst-main` is separately approved and verified, or its blocker is retained explicitly. Publication/deployment and feature-resource cleanup remain separately authorized.
 
 ## Historical pre-rebase implementation checkpoint — 2026-10-10
 
@@ -438,3 +438,28 @@ backup independently. The plan remains active until its integration handoff.
 
 **Known gaps:** no native Windows/UNC or privileged-mount acceptance was run.
 Recorded commit dates do not prove exact historical target-ref integration times.
+
+## Local integration and archival checkpoint — 2026-10-10
+
+Approved unsigned non-FF merge into local `rst-main`:
+`d9d3f148b36e1a3a77719f6eb0b90c3748cfb485`.
+Verified exact parents:
+`3f1bce8af835c9acb01f62a8a5b70854cbfe6df3` and
+`b7e71f742bccbe5e828e85c5446f6604451065f7`;
+verified tree `3b98c45e3fdb8f9f1dc801f0d449a514cbe98c22` equals the approved
+feature tree. No signature header was present; both checkouts were clean.
+Actual merge author email: `robert@projektbuero.at`.
+
+All implementation/acceptance/handoff tasks are complete. Durable behavior is
+maintained in `docs/worktrees.md`, `docs/git-workflow-plugin.md`,
+`docs/adr/0021-standalone-project-cleanup.md` and `e2e/README.md`; this plan is
+archived as historical decisions and acceptance evidence, not an active queue.
+The pre-rebase backup remains independently retained. Feature-resource cleanup,
+publication, deployment and service activation remain separate operations;
+this archive records no authority or success for them.
+
+The existing feature checkout was advanced to that already-approved merge with
+identical source/tree. This archival follow-up changes only this document's
+status/path: acceptance inputs remain unchanged. Documentation checks and exact
+state approval govern its separate local integration; no earlier application
+checks are relabeled as executions on this follow-up.
