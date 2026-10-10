@@ -7,6 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
+import { closeTerminalDisconnect, terminalDisconnectFixture } from "./terminal-disconnect-fixture.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 assert.ok(!existsSync(join(root, ".next/dev/lock")), "Run in a checkout without an active dev server");
@@ -61,6 +62,7 @@ let browser;
     page.setDefaultTimeout(30_000);
     const errors = harness.errorsFor(context);
     const created = new Set();
+    let disconnect;
     page.on("request", (request) => {
       if (new URL(request.url()).pathname === "/api/terminal" && request.method() === "POST") created.add(request.postDataJSON().id);
     });
@@ -144,6 +146,8 @@ let browser;
       await page.waitForFunction(() => JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs") ?? "{}").open === true);
       const savedTabs = await page.evaluate(() => JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs")));
       assert.ok(savedTabs.tabs.some((tab) => tab.id === savedTabs.activeId), "the active terminal is persisted before reload");
+      disconnect = await terminalDisconnectFixture(base, id);
+      await page.route(disconnect.matches, disconnect.route);
       await page.reload();
       // Terminal storage restores before the asynchronous sidebar/session load,
       // which can close the panel again. Observe both restores before opening.
@@ -163,10 +167,13 @@ let browser;
       await waitOutput(`REFRESH:alive:${pid}`);
       assert.equal(created.size, 1, "refresh must reconnect, not create");
 
-      await context.setOffline(true);
+      // End only the actual terminal SSE stream: unrelated browser polls stay online.
+      disconnect.endStream();
       await page.locator(".terminal-panel:visible .is-connecting").waitFor();
-      await context.setOffline(false);
+      disconnect.releaseReconnect();
       await ready();
+      await closeTerminalDisconnect(page, disconnect); disconnect = undefined;
+      assert.equal(created.size, 1, "native SSE retry retains the original shell");
       await run("printf '\\nRECONNECT:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput(`RECONNECT:alive:${pid}`);
       assert.equal(((await text()).match(new RegExp(`REFRESH:alive:${pid}`, "g")) ?? []).length, 1, "reconnect must not replay delivered output");
@@ -244,7 +251,8 @@ let browser;
       // do not issue unbounded page.evaluate diagnostics after a browser failure.
       throw error;
     } finally {
-      await harness.closeContext(context);
+      try { if (disconnect) await closeTerminalDisconnect(page, disconnect); }
+      finally { await harness.closeContext(context); }
     }
   }
 } catch (error) {

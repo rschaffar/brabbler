@@ -128,6 +128,13 @@ context retains trace, console/pageerror and local-5xx safeguards.
 
 Terminal checks execute a real local shell at desktop/mobile sizes and cover
 fonts, reconnect/restart, exit, close-during-creation and workspace isolation.
+`terminal-disconnect-fixture.mjs` forwards one actual terminal SSE stream and
+ends it with controlled EOF, holding the native retry until the connecting UI
+is observed. It preserves the actual shell/PID, stream bytes and replay cursor;
+unrelated browser polling stays online. This tests native stream retry, not a
+whole-browser offline outage. Its owned listener/connections settle on teardown,
+and unexpected upstream errors still fail. Unit coverage is in
+`lib/terminal-disconnect-fixture.test.mjs`; console/5xx safeguards are unchanged.
 
 ## Diagnostics, shutdown and retention
 
