@@ -987,11 +987,13 @@ export class AgentSessionWrapper {
       }
 
       case "compact": {
+        const releaseAdmission = this.beginCheckoutPromptAdmission();
         try {
           return await this.withFinalIdleReset(() =>
             this.inner.compact(command.customInstructions as string | undefined)
           );
         } finally {
+          releaseAdmission();
           invalidateSessionListCache();
         }
       }
@@ -1028,13 +1030,17 @@ export class AgentSessionWrapper {
 
       case "steer": {
         const steerImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
-        await this.inner.steer(command.message as string, steerImages?.length ? steerImages : undefined);
+        const releaseAdmission = this.beginCheckoutPromptAdmission();
+        try { await this.inner.steer(command.message as string, steerImages?.length ? steerImages : undefined); }
+        finally { releaseAdmission(); }
         return null;
       }
 
       case "follow_up": {
         const followImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
-        await this.inner.followUp(command.message as string, followImages?.length ? followImages : undefined);
+        const releaseAdmission = this.beginCheckoutPromptAdmission();
+        try { await this.inner.followUp(command.message as string, followImages?.length ? followImages : undefined); }
+        finally { releaseAdmission(); }
         return null;
       }
 

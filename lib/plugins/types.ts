@@ -25,6 +25,12 @@ export interface PluginManifest {
 export interface BundledPlugin {
   manifest: PluginManifest;
   extension(cwd: string): InlineExtension;
+  /** Bounded browser project actions. Core transports opaque payloads; plugin owns semantics. */
+  projectActions?: {
+    /** Read-only identity/admission, available even while execution is disabled. */
+    resolveProject(cwd: string): Promise<{ identity: string; anchor: string; relatedDirectories: string[] }>;
+    execute(cwd: string, action: string, payload: unknown, ui: PluginUiContext, signal: AbortSignal, progress: (text: string) => void): Promise<unknown>;
+  };
   /** Read-only opaque display resources; repository semantics remain plugin-owned. */
   readPatchContext?(handle: string, fileId: string): Promise<import("../diff-context").DiffContext>;
 }
@@ -101,6 +107,8 @@ export interface PluginOperationReceipt {
   };
   checks: Array<{ name: string; status: "pending" | "running" | "passed" | "failed" }>;
   effectStarted: boolean;
+  completedEffects?: string[];
+  attemptedEffect?: string;
   summary?: string;
 }
 export interface PluginUiContext {

@@ -358,6 +358,56 @@ expiry, eviction, server restart or unavailable objects remain patch-only; there
 is no durable content backfill or substitution from current working files.
 Context availability does not extend an approval's lifetime or execution authority.
 
+## Standalone project cleanup API
+
+The no-chat manager uses the same cleanup engine through a bounded generic
+project-action host (`lib/plugins/project-operations.ts`), not a bare cleanup
+endpoint or a fabricated session. It resolves global/project policy only.
+Browser preparation **always waits for manual confirmation**, including configured
+Allow with no artifacts or entirely permitted artifacts. Its receipt says User
+approved with configured-policy provenance; tool Ask/Allow behavior is unchanged.
+A non-null designated target cannot be replaced by a temporary comparison.
+Unignored untracked files block browser cleanup; explicit artifact roots are not
+accepted there. Ignored artifact discovery/one-time authority, exact ref deletion,
+main/source/selected/target protections, live-use inspection, reservations and
+partial results reuse the existing executor. Idle chat history is warning-only.
+
+- GET `/api/worktrees/manage?cwd=…&target=…` captures the whole lightweight local
+  branch/registration inventory. No target is necessary to list resources. The
+  default comes from effective project/global `targetBranch`, never session policy.
+- GET the same route with `captureId`, `details=1` and `rows` (JSON array of up to
+  50 captured row IDs) loads narrow status and graph-date evidence. Handles expire
+  after 15 minutes/restart; moved refs/registrations require refresh (409). Client
+  filtering/sorting covers the whole capture; date sorting must settle all matching
+  rows first. Reads are local-only and bounded, not cleanup authorization.
+- POST `/api/plugins/bundled/[id]/project-actions` with `{cwd, requestId, action,
+  payload}` starts preparation and returns 202 immediately. Git's `action` is
+  `cleanup`; payload contains exact `featureBranch`, `featureTip`,
+  `integrationCommit`, `targetBranch`, `removeWorktree`, `deleteBranch` and optional
+  `worktreePath`. The pinned integration commit can be the captured target tip.
+- GET that collection with `cwd` lists the latest 50 saved outcomes. GET
+  `/project-actions/[operationId]` polls one operation; only its live `card` at
+  `state: review` is actionable. `receipt.card` is historical/read-only.
+- POST the operation URL with `{cwd, decision: approve | reject | stop}` claims a
+  single decision. The invocation checkout must remain the selected one. Duplicate
+  identical decisions/prepare request IDs do not replay effects; conflicting input
+  refuses. Stop prevents undispatched steps, never undoes a dispatched deletion.
+- Status supplies `reviewBaseUrl`: operation-bound `/reviews/[reviewId]`, with the
+  existing `start`, `entry`, `offset`, `download` and `patch` query protocol. No
+  session ID is needed. Saved ownership and allowed surviving project access
+  authorize historical reads even when the plugin is disabled or a feature
+  checkout is gone; integrity checks still apply.
+
+An operation owns preparation/confirmation/effect lifetime independently of HTTP
+requests. Closing pending review explicitly sends Stop; transport loss alone
+cannot distinguish a lost response from abandonment. Live reviews expire after
+15 minutes. Process-wide authority survives HMR, but persisted unfinished records
+are outcome-unknown after restart and cannot execute. Private owner-only records
+and exact reviews are retained without an automatic reaper. Durable pre-effect
+writes fail closed; failed final writes never imply rollback or settlement.
+See [ADR 0021](adr/0021-standalone-project-cleanup.md),
+`lib/worktree-management-types.ts` and `lib/plugins/project-operation-types.ts`.
+
 ## Verification
 
 Core tests remain separate from expensive Git integration tests. See

@@ -62,18 +62,20 @@ async function checkout(selected: string, repositoryCwd?: string): Promise<strin
     || !(await worktrees(physical)).some((entry) => samePath(entry.path, physical))) throw new Error("Selected checkout is not registered in the selected repository");
   if (!samePath(toNativePath((await git(physical, ["rev-parse", "--show-toplevel"])).trim()), physical)) throw new Error("Select the checkout root");
   await idle(physical);
+  if (existsSync(toNativePath((await git(physical, ["rev-parse", "--path-format=absolute", "--git-path", "info/grafts"])).trim()))) throw new Error("Legacy Git grafts are unsupported");
   // Even git status can invoke clean filters. Refuse before any content-based
   // preflight so an Ask/decline never executes project filter commands.
   await refuseFilters(physical, gitOutput(physical, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]));
   return physical;
 }
-function settings(cwd: string, session?: PluginSession, op?: GitOperation): GitSettings {
+function settings(cwd: string, session?: PluginSession, op?: GitOperation, browserConfirmation = false): GitSettings {
   const snapshot = readPluginSettings(gitWorkflowManifest, cwd, undefined, session);
   if (!snapshot.enabled) throw new Error("Git Workflow plugin is disabled");
   const policy = snapshot.effective as unknown as GitSettings;
   if (op?.action === "rebase" || op?.action === "merge" || op?.action === "cleanupFeature") {
     // An Ask answer is an invocation choice, never a settings write or permission override.
     if (op.targetBranch !== undefined) {
+      if (browserConfirmation && policy.targetBranch && op.targetBranch !== policy.targetBranch) throw new Error("Cleanup target differs from designated project target");
       if (policy.targetSelection !== "ask" && policy.targetBranch && op.targetBranch !== policy.targetBranch) throw new Error("Target differs from configured policy");
       policy.targetBranch = op.targetBranch;
     }
@@ -110,14 +112,14 @@ async function refuseFilters(cwd: string, paths: string | AsyncIterable<Uint8Arr
     if (i++ % 3 === 2 && attribute !== "unspecified" && attribute !== "unset") throw new Error("Git plugin preflight refuses clean/process filter attributes; use ordinary Git tools for this repository");
   }
 }
-function cleanupAccess(ui: Partial<PluginUiContext>): CleanupAccess {
-  return { git, records: (cwd, args) => records(gitOutput(cwd, args)), checkout, branchTip, worktrees, project: pluginProjectIdentity,
+function cleanupAccess(ui: Partial<PluginUiContext>, rejectUnignoredUntracked = false): CleanupAccess {
+  return { rejectUnignoredUntracked, git, records: (cwd, args) => records(gitOutput(cwd, args)), checkout, branchTip, worktrees, project: pluginProjectIdentity,
     inUse: (path) => { if (!ui.isDirectoryInUse) throw new Error("Cleanup requires live directory-use inspection"); return ui.isDirectoryInUse(path); } };
 }
-async function preview(callerCwd: string, op: GitOperation, policy: GitSettings, ui: Partial<PluginUiContext> = {}, budget?: CleanupBudget): Promise<Snapshot> {
+async function preview(callerCwd: string, op: GitOperation, policy: GitSettings, ui: Partial<PluginUiContext> = {}, budget?: CleanupBudget, rejectUnignoredUntracked = false): Promise<Snapshot> {
   if (op.action === "cleanupFeature") {
     if (!op.removeWorktree && !op.deleteBranch && !op.artifactRoots.length) throw new Error("Choose at least one cleanup resource");
-    const cleanup = await captureCleanup(callerCwd, op, policy, cleanupAccess(ui), budget);
+    const cleanup = await captureCleanup(callerCwd, op, policy, cleanupAccess(ui, rejectUnignoredUntracked), budget);
     const fields = [{ label: "Repository checkout", value: cleanup.cwd, code: true },
       { label: "Integrated feature", value: `${op.featureBranch} at ${op.featureTip}`, code: true },
       { label: "Verified integration", value: `${op.integrationCommit} remains reachable from ${cleanup.target}`, code: true },
@@ -128,7 +130,7 @@ async function preview(callerCwd: string, op: GitOperation, policy: GitSettings,
         sections: [{ title: "Generated files and directories to remove", fields: cleanup.artifacts.map((item) => ({ label: item.path,
           value: `${cleanup.unapprovedArtifacts.includes(item.path) ? "Needs one-time approval" : "Permitted by settings"} · ${item.entries} entries · ${item.bytes} bytes · SHA256 ${item.digest}`, code: true })) },
         ...(cleanup.unapprovedArtifacts.length ? [{ title: "One-time artifact permission", text: "The listed unpermitted artifacts require your approval for this operation, even when cleanup is set to Allow. Ignored status does not mean disposable. Approving does not change your reusable allowlist.", notice: true }] : []),
-        { title: "Boundaries", text: "Only listed resources. Content/identity rechecked before each effect. Unknown files, source changes, locked or active worktrees block cleanup. Target advancement is allowed only while integration remains reachable. External filesystem/Git writers are not locked out; partial effects are reported, never rolled back. Local branch config is retained; remote branches and backups are untouched.", notice: true }],
+        { title: "Boundaries", text: "Only listed resources. Idle chat history stays, but continuing a chat may require moving it after its working folder disappears. Running/starting sessions and active terminals block cleanup. Content/identity rechecked before each effect. Unknown files, source changes, locked or active worktrees block cleanup. Target advancement is allowed only while integration remains reachable. External filesystem/Git writers are not locked out; partial effects are reported, never rolled back. Local branch config is retained; remote branches and backups are untouched.", notice: true }],
         scope: "Approves all listed cleanup resources together, not an arbitrary ignored-file deletion.",
         actions: [{ id: "reject", label: "Keep resources" }, { id: "approve", label: "Clean up listed resources", primary: true }] } };
   }
@@ -265,8 +267,10 @@ function relevantPolicy(policy: GitSettings, action: GitAction) {
     action === "merge" ? [policy.methodSelection, policy.mergeMethod] : null,
     action === "cleanupFeature" ? [policy.cleanupWorktree, policy.cleanupBranch, policy.cleanupArtifacts, policy.approvedArtifactRoots] : null];
 }
-export async function executeGitOperation(callerCwd: string, operation: GitOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, session?: PluginSession, toolCallId?: string, onProgress?: (text: string) => void) {
+/** Browser transport must opt into unconditional manual confirmation; tool semantics stay unchanged. */
+export async function executeGitOperation(callerCwd: string, operation: GitOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, session?: PluginSession, toolCallId?: string, onProgress?: (text: string) => void, options?: { browserConfirmation: true }) {
   const op = structuredClone(operation);
+  const currentSettings = () => settings(op.checkout, session, op, options?.browserConfirmation);
   let started = false;
   let checksStarted = false;
   let completed = false;
@@ -278,22 +282,22 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
     if (Date.now() - lastInventoryPolicyCheck > 500) {
       lastInventoryPolicyCheck = Date.now();
       if (!started) onProgress?.(`Inventory: ${cleanupBudget.entries} entries, ${cleanupBudget.bytes} bytes checked. No new authority is granted by this scan.`);
-      if (settings(op.checkout, session, op)[op.action] === "deny") throw new Error("Operation denied during inventory");
+      if (currentSettings()[op.action] === "deny") throw new Error("Operation denied during inventory");
     }
   });
   let attemptedEffect: string | undefined;
   const record = (phase: PluginOperationReceipt["phase"], summary?: string) => {
     if (!receipt || !ui.operationReceipt) throw new Error("Git operations require durable Pi Web operation receipts");
-    receipt = { ...receipt, phase, effectStarted: started, ...(summary ? { summary: summary.slice(0, 16000) } : {}) };
+    receipt = { ...receipt, phase, effectStarted: started, completedEffects: [...effects], attemptedEffect, ...(summary ? { summary: summary.slice(0, 16000) } : {}) };
     ui.operationReceipt(gitWorkflowManifest.id, structuredClone(receipt));
   };
   try {
     // Foreign repositories never inherit caller/session overrides. Deny still
     // precedes preview and checks. Identity is supplied by the host, not the model.
-    const policy = settings(op.checkout, session, op);
+    const policy = currentSettings();
     if (policy[op.action] === "deny") throw new Error(`${op.action} is denied by current settings`);
     onProgress?.("Capturing exact Git state; large repositories are processed incrementally. Stop cancels preparation.");
-    const snapshot = await withPreparationSignal(signal, () => preview(callerCwd, op, policy, ui, cleanupBudget));
+    const snapshot = await withPreparationSignal(signal, () => preview(callerCwd, op, policy, ui, cleanupBudget, options?.browserConfirmation));
     const origin = readPluginSettings(gitWorkflowManifest, op.checkout, undefined, session);
     if (origin.effective[op.action] !== policy[op.action]) throw new Error("Policy changed during preparation");
     const operationId = randomUUID();
@@ -302,11 +306,12 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
     const review = await ui.prepareReview(gitWorkflowManifest.id, operationId, (writer) => buildGitReview(writer, op, snapshot, signal, onProgress));
     snapshot.card = { ...compactGitCard(snapshot.card), review };
     const artifactApproval = !!snapshot.cleanup?.unapprovedArtifacts.length;
-    const mode = artifactApproval ? "ask" : policy[op.action] as "ask" | "allow";
-    if (artifactApproval) snapshot.card.subtitle = "One-time artifact approval required";
+    const mode = options?.browserConfirmation || artifactApproval ? "ask" : policy[op.action] as "ask" | "allow";
+    if (options?.browserConfirmation) snapshot.card.subtitle = "Manual browser confirmation required";
+    else if (artifactApproval) snapshot.card.subtitle = "One-time artifact approval required";
     else if (mode === "allow") snapshot.card.subtitle = "Policy-authorized operation";
     receipt = { version: 1, operationId, ...(toolCallId ? { toolCallId } : {}), card: snapshot.card, phase: "prepared", effectStarted: false,
-      authorization: { mode, source: artifactApproval ? `one-time artifacts (${origin.sources[op.action]} ${policy[op.action]})` : origin.sources[op.action], revision: digest(origin),
+      authorization: { mode, source: options?.browserConfirmation ? `manual browser confirmation (${origin.sources[op.action]} ${policy[op.action]})` : artifactApproval ? `one-time artifacts (${origin.sources[op.action]} ${policy[op.action]})` : origin.sources[op.action], revision: digest(origin),
         decision: mode === "allow" ? "policy-authorized" : "pending" },
       checks: snapshot.checks.map((check) => ({ name: check.name.slice(0, 240), status: "pending" })) };
     record("prepared");
@@ -318,7 +323,7 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
       const unsubscribe = onPluginSettingsChange((id) => {
         if (id !== gitWorkflowManifest.id) return;
         try {
-          const current = settings(op.checkout, session, op);
+          const current = currentSettings();
           if (digest(relevantPolicy(current, op.action)) !== digest(relevantPolicy(policy, op.action))) cancellation.abort();
         } catch { cancellation.abort(); }
       });
@@ -332,9 +337,9 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
     record("authorized");
     const revalidate = async () => {
       if (signal?.aborted) throw new Error("Cancelled before native effect");
-      const current = settings(op.checkout, session, op);
-      if (current[op.action] === "deny" || (await withPreparationSignal(signal, () => preview(callerCwd, op, current, ui, cleanupBudget))).fingerprint !== snapshot.fingerprint
-        || digest(relevantPolicy(settings(op.checkout, session, op), op.action)) !== digest(relevantPolicy(policy, op.action))) throw new Error("Stale operation: relevant settings or repository state changed; invoke again");
+      const current = currentSettings();
+      if (current[op.action] === "deny" || (await withPreparationSignal(signal, () => preview(callerCwd, op, current, ui, cleanupBudget, options?.browserConfirmation))).fingerprint !== snapshot.fingerprint
+        || digest(relevantPolicy(currentSettings(), op.action)) !== digest(relevantPolicy(policy, op.action))) throw new Error("Stale operation: relevant settings or repository state changed; invoke again");
     };
     // Cleanup owns a single full revalidation per effect, under its directory
     // reservation. Do not rescan dependency trees at every generic checkpoint.
@@ -376,12 +381,18 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
       if (op.action === "createWorktree" || op.action === "attachWorktree") mkdirSync(resolve(op.path, ".."), { recursive: true });
       const commandArgs = ["-c", `core.hooksPath=${scratch}`, "-c", "core.fsmonitor=false", "-c", "commit.gpgSign=false", "-c", "rebase.autoStash=false", "-c", "merge.autoStash=false", "-C", snapshot.cwd, ...args];
       if (op.action === "cleanupFeature") {
-        output = await withPreparationSignal(signal, () => performCleanup(callerCwd, op, policy, cleanupAccess(ui), snapshot.cleanup!, () => {
+        output = await withPreparationSignal(signal, () => performCleanup(callerCwd, op, policy, cleanupAccess(ui, options?.browserConfirmation), snapshot.cleanup!, () => {
           if (signal?.aborted) throw new Error("Cancelled; remaining cleanup resources retained");
-          const current = settings(op.checkout, session, op);
+          const current = currentSettings();
           if (digest(relevantPolicy(current, op.action)) !== digest(relevantPolicy(policy, op.action))) throw new Error("Cleanup policy changed; remaining resources retained");
         }, (args) => run("git", [...commandArgs, ...args], snapshot.cwd), effects,
-          (description) => { started = true; attemptedEffect = description; }, cleanupBudget));
+          (description) => {
+            const previousAttempt = attemptedEffect;
+            attemptedEffect = description;
+            try { record("executing"); } catch (error) { attemptedEffect = previousAttempt; throw error; }
+            started = true;
+          }, cleanupBudget,
+          () => record("executing")));
       } else if (op.action === "commit" && op.mode === "files") {
         // Own Git's native index.lock only during effects. The private index keeps
         // unrelated staged entries; commit --only reconciles selected entries.
@@ -430,13 +441,14 @@ export async function executeGitOperation(callerCwd: string, operation: GitOpera
     }
     let text = `${error instanceof Error ? error.message : String(error)}${completed ? "\nNative effect completed, but post-effect reporting failed. Do not repeat the operation." : started ? "\nNative effect started; partial changes or conflict state may remain. No rollback or retry was performed." : checksStarted ? "\nRequired checks started and may have side effects; Git effect did not start." : "\nGit effect did not start."}${attemptedEffect ? `\nLast dispatched cleanup step: ${attemptedEffect}` : ""}${effects.length ? `\nCompleted cleanup steps:\n${effects.join("\n")}` : ""}${observed}`.slice(0, 15000);
     if (receipt) {
-      try { record(completed ? "succeeded" : receipt.authorization.decision === "not-approved" || signal?.aborted && !started ? "cancelled" : "failed", text); }
+      const terminalPhase = completed ? "succeeded" : receipt.authorization.decision === "not-approved" || signal?.aborted && !started ? "cancelled" : "failed";
+      try { record(terminalPhase, text); }
       catch {
         // A presentation bug must not be retried verbatim as the failure card.
         // This minimal record reports outcome only; it never grants authority.
-        receipt.card = { title: "Git operation outcome", operationId: receipt.operationId,
+        receipt.card = { title: "Git operation outcome", operationId: receipt.operationId, review: receipt.card.review,
           text: "The full operation card could not be persisted. See the tool result for the observed outcome.", actions: [] };
-        try { record(completed ? "succeeded" : "failed", text); }
+        try { record(terminalPhase, text); }
         catch { text += "\nTerminal receipt could not be persisted; saved outcome remains unknown. Inspect the repository before any retry."; }
       }
     }
