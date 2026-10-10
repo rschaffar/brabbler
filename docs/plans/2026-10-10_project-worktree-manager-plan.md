@@ -8,6 +8,23 @@ The user approved implementation with “alright. implement” on 2026-10-10, af
 
 Workspace: `/home/robert/projects/3rdparty/pi-web-worktrees/project-worktree-manager`, branch `feat/project-worktree-manager`, based on local `rst-main` at `6e337e5681c187c13e65b87cbcc7a2cde8d3d000`. CodeGraph initialized successfully. Planning initially changed only this document; implementation subsequently stayed in this linked worktree.
 
+## Post-rebase adaptation
+
+After the first implementation checkpoint, the user requested rebasing onto current
+local `rst-main` and rerunning **all** acceptance, not only browser checks. The
+initial conflict was aborted and the clean original tip retained in
+`backup/project-worktree-manager-pre-rebase-20261010T151655Z`. The user explicitly
+approved following `rst-main`'s newly English-only interface instead of the
+original three-language plan. Chinese catalog deletions were preserved; the
+manager contributes only English messages, and its catalog test now verifies the
+shipped English keys. Session-launch and manager browser-suite wiring were combined.
+
+The feature was rebased onto `3f1bce8af835c9acb01f62a8a5b70854cbfe6df3`, which
+includes stale-idle-history recovery and ordinary-session launch changes. The
+historical checkpoint below remains evidence for the pre-rebase source only.
+Fresh common, plugin, manager/general/plugin-browser and terminal acceptance is
+required before integration; no earlier pass is relabeled as rebased acceptance.
+
 ## Independent review and accepted adaptations
 
 Two independent read-only reviews were completed on 2026-10-10: technical correctness/cleanup safety and user experience. They inspected the plan and relevant current source; neither ran application tests or built a prototype. Findings are incorporated below, not claimed resolved by runtime evidence.
@@ -209,7 +226,7 @@ Refresh inventory and sidebar worktrees after observed success or partial effect
 - [ ] Add the launch entry and separate responsive dialog, leaving switcher selection/create/attach behavior intact; execute component/state tests and verify opening needs no chat and never switches cwd.
 - [ ] Render compact inventory/details, target provenance/temporary-comparison labels, immediate mismatch guidance and direct project-field settings navigation; verify whole-inventory filters/counts, integrated-first oldest-tip default, global date-sort preparation, retained position, stale cancellation and distinct empty/error/loading/unavailable states.
 - [ ] Add resource choices and Review cleanup stages/confirmation/outcomes; test rejection/no effects, ignored inventory, unignored-file refusal, selected protection, warning-only idle chats and outcomes after row disappearance.
-- [ ] Translate visible/accessibility text in `en.ts`, `zh-CN.ts`, `zh-TW.ts`; verify parity, absolute dates/timezones, modal/focus containment/restoration, expansion/sort semantics, keyboard blockers, stage-specific Escape, announcements and zoom/wrap/narrow-screen containment.
+- [ ] Maintain visible/accessibility text in the English catalog (user-approved post-rebase adaptation); verify message completeness, absolute dates/timezones, modal/focus containment/restoration, expansion/sort semantics, keyboard blockers, stage-specific Escape, announcements and zoom/wrap/narrow-screen containment.
 
 ### 5. Adversarial and browser acceptance
 
@@ -276,7 +293,7 @@ All deletion tests use disposable harness repositories, never the accumulated re
 - [x] Plugin-disabled overview works; enabled cleanup respects project policy, one exact review, complete artifact authority and existing safety restrictions without a force fallback.
 - [x] Worktree-only/branch-only/combined cleanup pass disposable tests; main/target/selected/active resources remain protected, idle chats warn but do not block, and unignored untracked files refuse manager cleanup.
 - [x] Durable standalone reviews/outcomes survive reload; restart/partial/cancelled operations never replay and unknown results remain explicit.
-- [ ] Desktop/mobile, translations, keyboard access, stale-response cancellation and required common/plugin/browser acceptance passed with recorded artifacts; conditional terminal evidence is resolved.
+- [ ] Desktop/mobile, English messages, keyboard access, stale-response cancellation and required common/plugin/browser acceptance passed with recorded artifacts; conditional terminal evidence is resolved.
 - [ ] Owning guides/new ADR reflect delivered contracts, independent safety review is resolved and feature commits are reviewable.
 - [ ] Exact-state local integration into `rst-main` is separately approved and verified, or its blocker is retained explicitly. Publication/deployment and feature-resource cleanup remain separately authorized.
 
