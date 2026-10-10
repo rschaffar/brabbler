@@ -1099,7 +1099,7 @@ let context;
       // Finish reopening/reconciliation before testing restore. The notice can
       // render while SSE is still starting an old wrapper; restoring then races
       // that startup against the newly appended restore entry (Branch changed).
-      const archivedSnapshot = await api(`/api/sessions/${ARCHIVE}`);
+      const archivedSnapshot = await api(`/api/sessions/${ARCHIVE}?force=1`);
       const archivedAnchor = archivedSnapshot.leafId;
       const reopenedContext = page.waitForResponse((response) => {
         const address = new URL(response.url());

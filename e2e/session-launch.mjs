@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { checkBlockingCard } from "./blocking-card.mjs";
 import { MODEL_SPEED_IDS } from "./model-speed.mjs";
 
-/** Real production launch service and SDK wrappers; slash commands avoid provider calls. */
+/** Real production launch service and SDK wrappers with deterministic faux-provider turns. */
 export function sessionLaunchFixtureSource(root) {
   return `import { executeSessionLaunch } from ${JSON.stringify(join(root, "plugins/session-launch/server.ts"))};
 import { fauxProvider, fauxAssistantMessage, fauxToolCall } from ${JSON.stringify(join(root, "node_modules/@earendil-works/pi-ai/dist/providers/faux.js"))};
@@ -20,7 +20,7 @@ export default function (pi) {
     ]);
   });
   pi.registerCommand("e2e-launch-session", { handler: async (mode, ctx) => {
-    const result = await executeSessionLaunch({ prompt: "Do the independent child task", cwd: join(ctx.cwd, "session-launch-destination"),
+    const result = await executeSessionLaunch({ prompt: "Do the independent child task", cwd: join(ctx.cwd, "..", "other-project", "session-launch-destination"),
       provider: "e2e-session-launch", modelId: faux.getModel().id, thinkingLevel: "off", modelSpeed: "standard" },
       { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, ctx.ui);
     pi.appendEntry("e2e:launch-result", { mode, ...result.details });
@@ -30,7 +30,9 @@ export default function (pi) {
 }
 export async function checkSessionLaunch(page, { base, api, post, project, agentDir, artifacts, width }) {
   const parentId = MODEL_SPEED_IDS[width > 600 ? 0 : 1];
-  const destination = join(project, "session-launch-destination");
+  // Keep the independent destination outside the private project's path prefix.
+  // Project concealment uses exact workspace identity, not ordinary creator ancestry.
+  const destination = join(project, "..", "other-project", "session-launch-destination");
   mkdirSync(destination, { recursive: true });
   // Controlled global fixture scope, not an implicit trust grant for local settings.
   const settingsPath = join(agentDir, "settings.json"), modelSettings = JSON.parse(readFileSync(settingsPath, "utf8"));
