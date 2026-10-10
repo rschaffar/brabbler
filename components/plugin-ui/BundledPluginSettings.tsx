@@ -87,7 +87,7 @@ function Settings({ cwd, id, sessionId, initialScope = "global" }: Props) {
       <option value="session" disabled={!ownProject}>This session</option>
     </select></label>
     {scope !== "global" && <p className="break-all text-xs text-text-muted">Repository identity: {settings.project}</p>}
-    {sessionId && <p className="text-xs text-text-muted">Session overrides apply only to this session’s own repository, including its linked worktrees. Operations in another repository use that project’s settings instead.</p>}
+    {sessionId && <p className="text-xs text-text-muted">Session overrides apply only to this session’s own project, including its linked worktrees. Operations in another project use that project’s settings instead.</p>}
     {manifest.presets && <div className="space-y-2 rounded border border-border p-3">
       <label className="block">Workflow preset <select aria-label="Workflow preset" value={preset} disabled={busy || unavailable} onChange={(event) => setPreset(event.target.value)} className="ml-2 rounded border border-border bg-bg p-2">
         <option value="">Choose a preset…</option>{Object.entries(manifest.presets).map(([key, recipe]) => <option key={key} value={key}>{recipe.label}</option>)}

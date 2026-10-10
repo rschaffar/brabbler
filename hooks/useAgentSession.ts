@@ -1064,7 +1064,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const respondToExtensionUi = useCallback(async (
     request: ExtensionUiDialogRequest,
-    response: { value: string } | { confirmed: boolean } | { action: string } | { cancelled: true } | { answer: import("@/lib/ask-user").AskUserAnswer } | { answers: import("@/lib/question-set").SetAnswer[] },
+    response: { value: string } | { confirmed: boolean } | { action: string; details?: string } | { cancelled: true } | { answer: import("@/lib/ask-user").AskUserAnswer } | { answers: import("@/lib/question-set").SetAnswer[] },
   ) => {
     const sid = sessionIdRef.current;
     const batch = request.method === "ask_user_batch";

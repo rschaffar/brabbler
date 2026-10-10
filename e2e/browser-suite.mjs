@@ -26,6 +26,7 @@ import { contextContents, changedContextContents } from "./git-diff-context.mjs"
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
 import { checkSessionMovePicker } from "./session-move.mjs";
 import { checkGitWorkflowPlugin, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
+import { checkSessionLaunch, sessionLaunchFixtureSource } from "./session-launch.mjs";
 
 // Test-process isolation only: the disposable child server inherits private file
 // creation from startup. Never repair SDK files or change umask inside a hook.
@@ -98,6 +99,7 @@ let context;
   seedRunningForkFixtures({ agentDir, writeSession, message });
   mkdirSync(join(agentDir, "extensions"));
   writeFileSync(join(agentDir, "extensions", "e2e-dialog.js"), extensionSource);
+  writeFileSync(join(agentDir, "extensions", "e2e-session-launch.js"), sessionLaunchFixtureSource(root));
   if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") writeFileSync(join(agentDir, "extensions", "e2e-git-plugin.js"), gitPluginFixtureSource(root));
   // Simulate the recognized external package so the browser owns ask_user exactly once.
   mkdirSync(join(agentDir, "extensions", "pi-ask-user"));
@@ -342,7 +344,21 @@ let context;
     }
   }
 
-  if (process.env.E2E_RUNNING_FORKS_ONLY === "1") {
+  async function runSessionLaunchChecks() {
+    browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+      page = await context.newPage(); page.setDefaultTimeout(30_000);
+      const errors = harness.errorsFor(context);
+      await checkSessionLaunch(page, { base, api, post, project, agentDir, artifacts, width: viewport.width });
+      assert.deepEqual(errors, [], `Session-launch browser/server errors at ${viewport.width}px`);
+      await harness.closeContext(context); context = undefined; page = undefined;
+    }
+  }
+
+  if (process.env.E2E_SESSION_LAUNCH_ONLY === "1") {
+    await runSessionLaunchChecks();
+  } else if (process.env.E2E_RUNNING_FORKS_ONLY === "1") {
     await runRunningForkChecks();
   } else if (process.env.E2E_MODEL_SPEED_ONLY === "1") {
     await runModelSpeedChecks();
@@ -506,6 +522,7 @@ let context;
   if (!Object.keys(process.env).some((key) => /^E2E_.*_ONLY$/.test(key) && process.env[key] === "1")) {
     await runModelSpeedChecks();
     await runRunningForkChecks();
+    await runSessionLaunchChecks();
   }
   // A live session keeps the context files it loaded until explicitly reloaded.
   {

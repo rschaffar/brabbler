@@ -9,7 +9,7 @@ export type InteractionRequest = Extract<ExtensionUiRequest, {
   method: "select" | "confirm" | "input" | "editor" | "ask_user" | "ask_user_batch" | "plugin_card";
 }>;
 export type InteractionResponse =
-  | { value: string } | { confirmed: boolean } | { action: string }
+  | { value: string } | { confirmed: boolean } | { action: string; details?: string }
   | { answer: import("./ask-user").AskUserAnswer } | { answers: SetAnswer[] } | { cancelled: true };
 export type InteractionOutcome = "answered" | "cancelled" | "timed_out" | "aborted";
 export interface InteractionReceipt {
@@ -37,7 +37,9 @@ export function normalizeInteractionResponse(request: InteractionRequest, respon
       return answer ? { answer } : null;
     }
     case "plugin_card":
-      return validPluginAction(request, response.action) ? { action: response.action } : null;
+      if (!validPluginAction(request, response.action)) return null;
+      if (response.details !== undefined && (!request.allowDetails || typeof response.details !== "string" || response.details.length > 20000)) return null;
+      return { action: response.action, ...(typeof response.details === "string" ? { details: response.details } : {}) };
     case "confirm":
       return typeof response.confirmed === "boolean" ? { confirmed: response.confirmed } : null;
     case "select":
@@ -106,7 +108,8 @@ export function interactionAnswer(receipt: InteractionReceipt): string | null {
   if ("answers" in response && receipt.request.method === "ask_user_batch") return questionSetSummary(receipt.request, response.answers);
   if ("value" in response) return response.value;
   if ("action" in response && receipt.request.method === "plugin_card") {
-    return receipt.request.actions.find((action) => action.id === response.action)?.label ?? response.action;
+    const label = receipt.request.actions.find((action) => action.id === response.action)?.label ?? response.action;
+    return response.details ? `${label}\n${response.details}` : label;
   }
   return null;
 }

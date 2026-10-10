@@ -29,6 +29,10 @@ export function validatePluginCard(card: PluginCard): void {
     || [card.patchBefore, card.patchAfter].some((value) => !text(value, 256))
     || card.patchContext !== undefined && (typeof card.patch !== "string" && card.review === undefined || typeof card.patchContext !== "string"
       || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(card.patchContext))
+    || !flag(card.allowDetails)
+    || card.sessionLinks !== undefined && (!Array.isArray(card.sessionLinks) || card.sessionLinks.length > 16
+      || card.sessionLinks.some((link) => !link || typeof link.sessionId !== "string"
+        || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(link.sessionId) || !text(link.label, 256, false) || !link.label.trim()))
     || !text(card.subtitle, 4096) || !text(card.scope, 4096) || !fields(card.fields)
     || card.sections !== undefined && (!Array.isArray(card.sections) || card.sections.length > 16 || card.sections.some((section) =>
       !section || !text(section.title, 128, false) || !section.title.trim() || !text(section.text, 1_000_000)
@@ -39,8 +43,8 @@ export function validatePluginCard(card: PluginCard): void {
     || new Set(card.actions.map((action) => action.id)).size !== card.actions.length
     || card.actions.filter((action) => action.primary).length > 1) throw new Error("Invalid plugin card");
   // Keep the existing separately bounded patch; cap all other presentation together.
-  const { title, operationId, text: body, markdown, subtitle, scope, fields: rows, sections, patchBefore, patchAfter, patchContext, review, actions } = card;
-  if (JSON.stringify({ title, operationId, text: body, markdown, subtitle, scope, fields: rows, sections, patchBefore, patchAfter, patchContext, review, actions }).length > 1_100_000) {
+  const { title, operationId, text: body, markdown, subtitle, scope, fields: rows, sections, patchBefore, patchAfter, patchContext, review, actions, allowDetails, sessionLinks } = card;
+  if (JSON.stringify({ title, operationId, text: body, markdown, subtitle, scope, fields: rows, sections, patchBefore, patchAfter, patchContext, review, actions, allowDetails, sessionLinks }).length > 1_100_000) {
     throw new Error("Invalid plugin card: presentation exceeds 1,100,000 characters; use durable review attachments");
   }
 }

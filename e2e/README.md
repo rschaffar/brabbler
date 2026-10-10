@@ -18,6 +18,7 @@ at desktop/compact/mobile sizes),
 `E2E_CHAT_APPEARANCE_ONLY=1` (full-width default including legacy numeric preferences, desktop/mobile width controls, reading-width restoration, reload persistence, draft resizing and typography),
 `E2E_TIMESTAMPS_ONLY=1`, `E2E_MODEL_SPEED_ONLY=1` (native ChatGPT subscription speed),
 `E2E_MOVE_ONLY=1` (destination picker at desktop/mobile sizes),
+`E2E_SESSION_LAUNCH_ONLY=1` (ordinary agent-created sessions: scoped settings, exact Ask, feedback/reject, Allow, durable navigation/reload and independent child runs at desktop/mobile sizes),
 `E2E_DIFF_CONTEXT_ONLY=1` (Git Explorer + Files-panel 5,000-line diff fixtures at
 desktop/mobile sizes), `E2E_GIT_WORKFLOW_PLUGIN_ONLY=1` (optional bundled plugin
 settings, all six approval layouts, multi-file diff/collapse controls, snapshots,
@@ -76,6 +77,14 @@ OAuth/SSE account responses are mocked; no provider credentials are
 used. Slash commands exercise ordinary session/UI paths without a live model.
 
 Running-fork checks run in the full suite and via `E2E_RUNNING_FORKS_ONLY=1`.
+Session-launch checks run in the full suite and through their focused switch.
+`e2e/session-launch.mjs` uses the production launch service through the ordinary
+RPC host, with deterministic faux-provider child turns (no live provider calls).
+The new session remains an ordinary sidebar row; approval receipts link forward
+and its header links back. Reload replays live cards but never re-executes saved
+receipts. SDK admission/cancellation/configuration regressions run separately in
+`plugins/session-launch/runtime.test.mjs`.
+
 Real blocked SDK extension commands verify historical/root/quoted copies, independent
 child completion and original question replay/completion without a provider. A
 replayed question can precede the source's warm-state GET; wait for visible **Steer**

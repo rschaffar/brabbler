@@ -2106,6 +2106,11 @@ export function AppShell() {
               <SubagentIcon size={16} />
             </span>
           )}
+          {showChat && selectedSession?.spawnedBy && <a
+            href={`/?session=${encodeURIComponent(selectedSession.spawnedBy)}`}
+            title={`Started by session ${selectedSession.spawnedBy}`}
+            className="shrink-0 border-r border-border px-2 text-xs text-accent underline"
+            style={{ display: "flex", alignItems: "center" }}>Started by…</a>}
           {isMobile && !(activeOverview && overviewMobileList) && (
             <div data-mobile-toolbar="true" style={{ display: "flex", alignItems: "stretch", height: "100%", flexShrink: 0 }}>
               {renderChatToolbarActions(true)}
