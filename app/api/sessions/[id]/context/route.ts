@@ -27,7 +27,17 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const sm = liveRpc?.inner.sessionManager ?? openSessionManager(filePath!);
+    let sm = liveRpc?.inner.sessionManager ?? openSessionManager(filePath!);
+    // Restore can append while startup is still opening the old file, before
+    // its wrapper enters the registry. A reconnect anchored to the saved marker
+    // must not read that stale index (or let a later prompt overwrite the marker).
+    // Probe only a missing anchor, never ordinary reads or sibling navigation;
+    // evictIfDiskAhead proves disk advancement and refuses active wrappers.
+    if (ancestorId && liveRpc && !sm.getEntry(ancestorId) && liveRpc.evictIfDiskAhead()) {
+      const freshPath = await resolveSessionPath(id);
+      if (!freshPath) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      sm = openSessionManager(freshPath);
+    }
     // Receipt reconnects may follow a growing branch, but never a different
     // browser's navigation to a sibling branch. Check the full raw ancestry,
     // not the bounded visible page (which may no longer contain the anchor).

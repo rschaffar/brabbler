@@ -351,7 +351,10 @@ test("session reads use the live SessionManager before requiring a JSONL path", 
 test("detail reads probe disk only on force/mount and evict a stale idle wrapper", () => {
   assert.match(detailRoute, /searchParams\.get\("force"\) === "1"/);
   assert.match(detailRoute, /force && liveWrapper\?\.evictIfDiskAhead\(\)/);
-  assert.doesNotMatch(contextRoute, /evictIfDiskAhead|readLatestSessionEntryId/);
+  // Anchored reconnect may recover a restore marker missed by idle startup;
+  // ordinary context reads and known sibling anchors retain the live snapshot.
+  assert.match(contextRoute, /ancestorId && liveRpc && !sm\.getEntry\(ancestorId\) && liveRpc\.evictIfDiskAhead\(\)/);
+  assert.doesNotMatch(contextRoute, /readLatestSessionEntryId/);
 });
 
 test("live agent state is available before the session file is persisted", () => {
