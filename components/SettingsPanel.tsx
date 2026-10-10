@@ -75,7 +75,7 @@ export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: {
 function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onManageTrust, quoteSelectionEnabled, onQuoteSelectionChange, sessions, privacy }: Pick<Props, "cwd" | "sessionId" | "onSessionReloaded" | "trustStatus" | "onManageTrust" | "quoteSelectionEnabled" | "onQuoteSelectionChange" | "sessions" | "privacy">) {
   const { locale, t } = useI18n();
   const { preference, setThemePreference } = useTheme();
-  const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
+  const { width: chatContentWidth, setWidth: setChatContentWidth, fullWidth, setFullWidth, fontSize, setFontSize } = useChatAppearance();
   const [shellSettings, setShellSettings] = useState<ShellToolSettingsResponse | null>(null);
   const [shellSaving, setShellSaving] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
@@ -307,6 +307,14 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
             />
           </div>
           <div className="settings-chat-option settings-chat-range-option">
+            <div className="settings-chat-range-header">
+              <span>{t("settings.chatFullWidth")}</span>
+              <ConfigSwitch
+                checked={fullWidth}
+                label={t("settings.chatFullWidth")}
+                onChange={setFullWidth}
+              />
+            </div>
             <div className="settings-chat-range-header">
               <label htmlFor="settings-chat-content-width">{t("settings.chatContentWidth")}</label>
               <output htmlFor="settings-chat-content-width">{chatContentWidth}px</output>

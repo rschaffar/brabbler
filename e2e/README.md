@@ -15,6 +15,7 @@ Focused browser switches: `E2E_TRUST_ONLY=1` (worktree/project grants, revocatio
 response failures, project-filter/count concealment, browser-local eye reveal
 persistence across focus/reload/navigation, and independent browser preferences
 at desktop/compact/mobile sizes),
+`E2E_CHAT_APPEARANCE_ONLY=1` (full-width default including legacy numeric preferences, desktop/mobile width controls, reading-width restoration, reload persistence, draft resizing and typography),
 `E2E_TIMESTAMPS_ONLY=1`, `E2E_MODEL_SPEED_ONLY=1` (native ChatGPT subscription speed),
 `E2E_MOVE_ONLY=1` (destination picker at desktop/mobile sizes),
 `E2E_DIFF_CONTEXT_ONLY=1` (Git Explorer + Files-panel 5,000-line diff fixtures at

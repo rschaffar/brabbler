@@ -47,6 +47,30 @@ export async function checkChatAppearance(page) {
     return textarea.evaluate((el) => el.clientHeight);
   };
 
+  // Fresh browsers (including those with the old numeric width preference)
+  // expand messages and the composer beyond the old 2000px ceiling.
+  await page.getByRole("button", { name: "Use reading width", exact: true }).waitFor();
+  const columns = () => page.evaluate(() => {
+    const input = document.querySelector(".chat-input-textarea");
+    let composer = input;
+    while (composer && !composer.style.maxWidth) composer = composer.parentElement;
+    const message = document.querySelector("[data-chat-message-column]");
+    return [message, composer].map((el) => ({
+      width: el.getBoundingClientRect().width,
+      maxWidth: getComputedStyle(el).maxWidth,
+    }));
+  });
+  assert.ok((await columns()).every((column) => column.width > 2000 && column.maxWidth === "none"));
+  await page.getByRole("button", { name: "Use reading width", exact: true }).click();
+  assert.ok((await columns()).every((column) => column.width <= 820));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Use full width", exact: true }).waitFor();
+  assert.ok((await columns()).every((column) => column.maxWidth === "820px"));
+  await page.getByRole("button", { name: "Use full width", exact: true }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Use reading width", exact: true }).waitFor();
+  assert.ok((await columns()).every((column) => column.width > 2000 && column.maxWidth === "none"));
+
   await openSettings();
   assert.equal(await page.getByRole("radiogroup", { name: "Language", exact: true }).count(), 0);
   assert.equal(await page.locator("html").getAttribute("lang"), "en");
@@ -108,6 +132,11 @@ export async function checkChatAppearance(page) {
   await closeSettings();
   assert.equal(await textarea.inputValue(), draft);
   assert.ok(await fittedHeight() < narrowHeight, "Widening must shrink the existing draft");
+  await page.getByRole("button", { name: "Use full width", exact: true }).click();
+  assert.ok((await columns()).every((column) => column.width > 2000));
+  await page.getByRole("button", { name: "Use reading width", exact: true }).click();
+  assert.ok((await columns()).every((column) => column.maxWidth === "2000px"), "The toggle must preserve the custom reading width");
+  assert.equal(await textarea.inputValue(), draft, "Width toggles must preserve the draft");
   // Activity polls in the background, so networkidle is not a reliable page-ready signal.
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator(".markdown-code-block pre").waitFor();
@@ -135,5 +164,15 @@ export async function checkChatAppearance(page) {
   await textarea.fill("A mobile draft wraps and resizes within the available space.");
   await fittedHeight();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  const expand = page.getByRole("button", { name: "Use full width", exact: true });
+  await expand.focus();
+  await page.keyboard.press("Enter");
+  const narrow = page.getByRole("button", { name: "Use reading width", exact: true });
+  await narrow.waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue("--chat-content-max-width")), "none");
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await narrow.click();
+  await expand.waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue("--chat-content-max-width")), "820px");
   console.log("PASS: chat appearance persistence, typography, draft resizing, and short settings panels");
 }

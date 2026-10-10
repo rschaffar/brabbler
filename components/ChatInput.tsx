@@ -569,7 +569,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   compact = false,
 }: Props, ref) {
   const { t } = useI18n();
-  const { fontSize } = useChatAppearance();
+  const { fontSize, fullWidth, setFullWidth } = useChatAppearance();
   const modelSpeedHelpId = React.useId();
   const isMobile = useIsMobile();
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey)?.value ?? "" : ""));
@@ -1610,7 +1610,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           e.target.value = "";
         }}
       />}
-      <div style={{ maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
+      <div style={{ maxWidth: "var(--chat-content-max-width, none)", margin: "0 auto" }}>
         <ModelErrorBanner error={modelError} />
         <ModelScopeWarningBanner warnings={modelScopeWarnings} />
         {onModelSpeedChange && modelSpeedChanging && (
@@ -2350,6 +2350,20 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             position: "relative",
             marginLeft: isMobile ? 0 : "auto",
           }}>
+            <button
+              type="button"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-muted hover:bg-bg-hover hover:text-text"
+              title={fullWidth ? t("chat.useReadingWidth") : t("chat.useFullWidth")}
+              aria-label={fullWidth ? t("chat.useReadingWidth") : t("chat.useFullWidth")}
+              onClick={() => setFullWidth(!fullWidth)}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3 4v16M21 4v16" />
+                {fullWidth
+                  ? <path d="m5 9 3 3-3 3m14-6-3 3 3 3M8 12H5m11 0h3" />
+                  : <path d="m9 9-3 3 3 3m6-6 3 3-3 3M6 12h12" />}
+              </svg>
+            </button>
             {isMobile && (
               <button
                 type="button"

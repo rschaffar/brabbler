@@ -366,6 +366,20 @@ let context;
       assert.deepEqual(errors, [], "Plugin browser/server errors");
       await harness.closeContext(context); context = undefined; page = undefined;
     }
+  } else if (process.env.E2E_CHAT_APPEARANCE_ONLY === "1") {
+    browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    context = await harness.newContext(browser, { viewport: { width: 2560, height: 1100 }, locale: "en-US" }, base);
+    page = await context.newPage();
+    const errors = harness.errorsFor(context);
+    // A pre-existing numeric preference must not opt out of full width.
+    await context.addInitScript(() => {
+      if (localStorage.getItem("pi-chat-content-width") === null) localStorage.setItem("pi-chat-content-width", "820");
+    });
+    await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+    await page.locator(".markdown-code-block pre").waitFor();
+    await checkChatAppearance(page);
+    assert.deepEqual(errors, [], "Chat appearance browser/server errors");
+    await harness.closeContext(context); context = undefined; page = undefined;
   } else if (process.env.E2E_TIMESTAMPS_ONLY === "1") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
     for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
