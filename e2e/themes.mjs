@@ -149,13 +149,8 @@ try {
     await page.keyboard.press("Tab");
     await menu.waitFor({ state: "detached" });
 
-    // Both selectors share positioning, dismissal, and focus handling.
     await showToolbar();
-    await page.getByRole("button", { name: "Language", exact: true }).click();
-    const languageMenu = page.getByRole("menu", { name: "Language", exact: true });
-    await languageMenu.waitFor();
-    await page.keyboard.press("Escape");
-    await languageMenu.waitFor({ state: "detached" });
+    assert.equal(await page.getByRole("button", { name: "Language", exact: true }).count(), 0);
     if (width === 1440) {
       await page.emulateMedia({ reducedMotion: "no-preference" });
       await openThemeMenu();

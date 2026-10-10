@@ -98,7 +98,7 @@ flowchart LR
 2. **Open files.** Click \`package.json\` or \`app/page.tsx\` in the explorer. Markdown opens as a rendered preview; code opens with syntax highlighting. The **changed files** button (the small commit icon next to *Explorer*) lists what Git sees as modified.
 3. **Type in the composer.** Try \`@READ\` to mention a file, \`/\` for slash commands, or \`!git log\` to run a shell command. Send any message and I'll answer with a streamed demo reply.
 4. **Look behind the curtain.** Click **System** or **Tools** in the top bar to see exactly what the model receives.
-5. **Check the settings.** **Models** shows a signed-in ChatGPT (Codex) account, a DeepSeek API key and a custom provider; **Settings** has themes, languages and chat preferences.
+5. **Check the settings.** **Models** shows a signed-in ChatGPT (Codex) account, a DeepSeek API key and a custom provider; **Settings** has themes, generated title languages and chat preferences.
 
 > This page is a static demo — the replies are canned. To use Pi Web with your own agent, run:
 >

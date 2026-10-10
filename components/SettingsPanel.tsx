@@ -73,7 +73,7 @@ export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: {
 }
 
 function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onManageTrust, quoteSelectionEnabled, onQuoteSelectionChange, sessions, privacy }: Pick<Props, "cwd" | "sessionId" | "onSessionReloaded" | "trustStatus" | "onManageTrust" | "quoteSelectionEnabled" | "onQuoteSelectionChange" | "sessions" | "privacy">) {
-  const { locale, setLocale, supportedLocales, t } = useI18n();
+  const { locale, t } = useI18n();
   const { preference, setThemePreference } = useTheme();
   const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
   const [shellSettings, setShellSettings] = useState<ShellToolSettingsResponse | null>(null);
@@ -461,31 +461,6 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
             {pushStatus.message}
           </p>
         )}
-      </section>
-
-      <section className="settings-general-section">
-        <h3 className="settings-general-heading">{t("common.language")}</h3>
-        <div role="radiogroup" aria-label={t("common.language")} className="settings-language-options">
-          {supportedLocales.map((plugin) => {
-            const selected = locale === plugin.id;
-            return (
-              <button
-                key={plugin.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => setLocale(plugin.id as typeof locale)}
-                className="settings-language-option"
-              >
-                <span className="settings-language-radio">
-                  {selected && <span className="settings-language-radio-dot" />}
-                </span>
-                <span className="settings-language-label">{plugin.label}</span>
-                <span className="settings-language-code">{plugin.id}</span>
-              </button>
-            );
-          })}
-        </div>
       </section>
 
       <ProjectPrivacySettings sessions={sessions} privacy={privacy} />

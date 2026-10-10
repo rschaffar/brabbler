@@ -191,7 +191,7 @@ For Nix dependency changes, use `nix develop .#update` and `npm install --packag
 - [Worktrees and Git Explorer](./docs/worktrees.md)
 - [Optional Git Workflow plugin](./docs/git-workflow-plugin.md)
 - [Workspace terminal](./docs/terminal.md)
-- [Internationalization](./docs/i18n.md)
+- [English interface messages](./docs/i18n.md)
 - [Inherited release tooling](./docs/release.md)—not an authorization to publish under upstream's package name
 
 Some guides still use the Pi Web name. They describe the inherited implementation and the independently maintained changes in this checkout.

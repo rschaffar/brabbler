@@ -11,7 +11,6 @@ const subagentIconSource = await readFile(new URL("./SubagentIcon.tsx", import.m
 const themeSource = await readFile(new URL("../hooks/useTheme.ts", import.meta.url), "utf8");
 const themeOptionsSource = await readFile(new URL("../lib/theme.ts", import.meta.url), "utf8");
 const enSource = await readFile(new URL("../lib/i18n/messages/en.ts", import.meta.url), "utf8");
-const zhSource = await readFile(new URL("../lib/i18n/messages/zh-CN.ts", import.meta.url), "utf8");
 const loginSource = await readFile(new URL("../app/login/page.tsx", import.meta.url), "utf8");
 
 test("opens one settings panel from direct sidebar shortcuts", () => {
@@ -72,10 +71,9 @@ test("offers a server-stored title model in General without changing the chat se
   assert.match(panelSource, /id="settings-title-model"/);
 });
 
-test("keeps language selection in General settings", () => {
-  assert.match(panelSource, /t\("common\.language"\)/);
-  assert.match(panelSource, /className="settings-language-options"/);
-  assert.match(panelSource, /setLocale\(plugin\.id/);
+test("omits interface language selection but keeps generated title languages", () => {
+  assert.doesNotMatch(panelSource, /common\.language|settings-language-options|setLocale|supportedLocales/);
+  assert.match(panelSource, /TITLE_LANGUAGES\.map/);
 });
 
 test("groups chat display controls together without row backgrounds", () => {
@@ -130,8 +128,6 @@ test("uses top navigation on desktop and one compact section picker on mobile", 
 test("labels agent profiles as sub-agents", () => {
   assert.match(enSource, /"common\.agents": "Sub-agents"/);
   assert.match(enSource, /"agents\.new": "New sub-agent"/);
-  assert.match(zhSource, /"common\.agents": "子代理"/);
-  assert.match(zhSource, /"agents\.new": "新建子代理"/);
 });
 
 test("uses the child-session robot glyph for the sub-agents tab", () => {

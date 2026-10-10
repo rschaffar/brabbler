@@ -48,6 +48,8 @@ export async function checkChatAppearance(page) {
   };
 
   await openSettings();
+  assert.equal(await page.getByRole("radiogroup", { name: "Language", exact: true }).count(), 0);
+  assert.equal(await page.locator("html").getAttribute("lang"), "en");
   const titleLanguage = page.getByRole("combobox", { name: "Generated title language" });
   await titleLanguage.selectOption("en");
   await page.waitForFunction(async () => {
@@ -119,13 +121,13 @@ export async function checkChatAppearance(page) {
   await checkChatAppearanceReset(page);
   for (const viewport of [{ width: 1280, height: 600 }, { width: 320, height: 568 }]) {
     await page.setViewportSize(viewport);
-    // Privacy follows language controls now. Scroll to the actual target, not
-    // the panel bottom; retain the hit-test so clipping still fails acceptance.
-    await page.locator(".settings-language-options button:last-child").scrollIntoViewIfNeeded();
-    assert.equal(await page.locator(".settings-language-options button:last-child").evaluate((el) => {
+    // The title-language setting remains independent from the English-only UI.
+    // Retain the hit-test so clipping still fails acceptance.
+    await titleLanguage.scrollIntoViewIfNeeded();
+    assert.equal(await titleLanguage.evaluate((el) => {
       const rect = el.getBoundingClientRect();
       return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
-    }), true, "Every language option must remain reachable in a short settings panel");
+    }), true, "Title language must remain reachable in a short settings panel");
   }
   await fontSize.press("Home");
   await closeSettings();
