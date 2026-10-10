@@ -25,14 +25,14 @@ function Section({ section }: { section: PluginCardSection }) {
   </section>;
 }
 /** Identical supplied fields and patches for live approvals and historical receipts. */
-export function PluginCardContent({ request, sessionId }: { request: Request; sessionId?: string }) {
+export function PluginCardContent({ request, sessionId, reviewBaseUrl }: { request: Request; sessionId?: string; reviewBaseUrl?: string }) {
   return <>
     {request.sessionLinks?.map((link) => <a key={link.sessionId} className="block break-words text-xs text-accent underline" href={`/?session=${encodeURIComponent(link.sessionId)}`}>{link.label}</a>)}
     {request.fields && <Fields fields={request.fields} />}
     {request.text && <pre className="blocking-card-code">{request.text}</pre>}
     {request.markdown && <MarkdownBody>{request.markdown}</MarkdownBody>}
     {request.sections?.filter((section) => !section.collapsible).map((section, index) => <Section key={index} section={section} />)}
-    {request.review && <ReviewAttachment key={`${sessionId}:${request.review.id}`} review={request.review} sessionId={sessionId} before={request.patchBefore} after={request.patchAfter} contextHandle={request.patchContext} pluginId={request.pluginId} />}
+    {request.review && <ReviewAttachment key={`${sessionId}:${request.review.id}`} review={request.review} sessionId={sessionId} reviewBaseUrl={reviewBaseUrl} before={request.patchBefore} after={request.patchAfter} contextHandle={request.patchContext} pluginId={request.pluginId} />}
     {request.patch && <SuppliedPatchStack patch={request.patch} before={request.patchBefore ?? "Current"} after={request.patchAfter ?? "Proposed"}
       contextHandle={request.patchContext} pluginId={request.pluginId} />}
     {request.sections?.filter((section) => section.collapsible).map((section, index) => <Section key={index} section={section} />)}

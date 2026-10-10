@@ -9,27 +9,30 @@ interface Page { entries: Entry[]; total: number; next: number | null }
 interface Preview { text: string; offset: number; next: number | null; complete: boolean }
 function EntryContent({ entry, url, before, after }: { entry: Entry; url: string; before: string; after: string }) {
   const [offset, setOffset] = useState(0);
-  const [value, setValue] = useState<Preview | null>(null);
+  const [value, setValue] = useState<(Preview & { url: string }) | null>(null);
+  const [retry, setRetry] = useState(0);
   const [error, setError] = useState("");
   useEffect(() => {
     const controller = new AbortController();
     void fetch(`${url}?entry=${entry.id}&offset=${offset}`, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error); return body as Preview; })
-      .then((body) => { if (!controller.signal.aborted) { setValue(body); setError(""); } }, (cause) => { if (!controller.signal.aborted) setError(String(cause)); });
+      .then((body) => { if (!controller.signal.aborted) { setValue({ ...body, url }); setError(""); } }, (cause) => { if (!controller.signal.aborted) setError(String(cause)); });
     return () => controller.abort();
-  }, [url, entry.id, offset]);
+  }, [url, entry.id, offset, retry]);
+  const current = value?.offset === offset && value.url === url ? value : null;
   return <div className="min-w-0 space-y-2 p-2">
     <a className="text-accent underline" href={`${url}?entry=${entry.id}&download=1`}>Download exact entry ({entry.bytes.toLocaleString()} bytes)</a>
-    {error && <p role="alert" className="break-words">{error}</p>}
-    {!value && !error && <p role="status">Loading review…</p>}
-    {value && (value.complete && entry.kind === "patch"
-      ? <SuppliedPatchStack patch={value.text} before={before} after={after} />
-      : <><p className="text-text-muted">{value.complete ? "Exact details" : `Raw preview at byte ${value.offset.toLocaleString()}. Display is paged; download contains every byte.`}</p>
-        <pre className="max-h-[44vh] overflow-auto whitespace-pre font-mono text-xs">{value.text}</pre>
-        <div className="flex gap-3">
-          {offset > 0 && <button type="button" onClick={() => setOffset(Math.max(0, offset - 256 * 1024))}>Previous content</button>}
-          {value.next !== null && <button type="button" onClick={() => setOffset(value.next!)}>Next content</button>}
-        </div></>)}
+    {error && <div role="alert" className="break-words">{error} <button type="button" onClick={() => setRetry((value) => value + 1)}>Retry content</button></div>}
+    {!current && !error && <p role="status">Loading review…</p>}
+    {current && (current.complete && entry.kind === "patch"
+      ? <SuppliedPatchStack patch={current.text} before={before} after={after} />
+      : <><p className="text-text-muted">{current.complete ? "Exact details" : `Raw preview at byte ${current.offset.toLocaleString()}. Display is paged; download contains every byte.`}</p>
+        <pre className="max-h-[44vh] overflow-auto whitespace-pre font-mono text-xs">{current.text}</pre>
+      </>)}
+    <div className="flex gap-3">
+      {offset > 0 && <button type="button" onClick={() => setOffset(Math.max(0, offset - 256 * 1024))}>Previous content</button>}
+      {current?.next != null && <button type="button" onClick={() => setOffset(current.next!)}>Next content</button>}
+    </div>
   </div>;
 }
 function EntryRow(props: { entry: Entry; url: string; before: string; after: string }) {
@@ -40,38 +43,44 @@ function EntryRow(props: { entry: Entry; url: string; before: string; after: str
   </details>;
 }
 /** Small bounded pages; review failures never replace a live card's action footer. */
-export function ReviewAttachment({ review, sessionId, before = "Before", after = "After", contextHandle, pluginId }: {
+export function ReviewAttachment({ review, sessionId, before = "Before", after = "After", contextHandle, pluginId, reviewBaseUrl }: {
   review: PluginReviewReference; sessionId?: string; before?: string; after?: string; contextHandle?: string; pluginId?: string;
+  /** Host-authorized operation review endpoint, never an arbitrary resource URL. */
+  reviewBaseUrl?: string;
 }) {
   const [start, setStart] = useState(0), [retry, setRetry] = useState(0);
-  const [page, setPage] = useState<Page | null>(null), [error, setError] = useState("");
-  const [patch, setPatch] = useState<string | null>(null);
+  const [loadedPage, setPage] = useState<(Page & { start: number; url: string }) | null>(null), [error, setError] = useState("");
+  const [loadedPatch, setPatch] = useState<{ url: string; text: string } | null>(null);
   const inline = review.bytes <= 256 * 1024;
-  const url = `/api/sessions/${encodeURIComponent(sessionId ?? "")}/reviews/${review.id}`;
+  const url = reviewBaseUrl ?? `/api/sessions/${encodeURIComponent(sessionId ?? "")}/reviews/${review.id}`;
+  const available = Boolean(sessionId || reviewBaseUrl);
+  const page = loadedPage?.start === start && loadedPage.url === url ? loadedPage : null;
+  const patch = loadedPatch?.url === url ? loadedPatch.text : null;
   useEffect(() => {
-    if (!sessionId) return;
+    if (!available) return;
     const controller = new AbortController();
     void fetch(`${url}?start=${start}`, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error); return body as Page; })
-      .then((body) => { if (!controller.signal.aborted) { setPage(body); setError(""); } }, (cause) => { if (!controller.signal.aborted) setError(String(cause)); });
+      .then((body) => { if (!controller.signal.aborted) { setPage({ ...body, start, url }); setError(""); } }, (cause) => { if (!controller.signal.aborted) setError(String(cause)); });
     return () => controller.abort();
-  }, [url, sessionId, start, retry]);
+  }, [url, available, start, retry]);
   useEffect(() => {
-    if (!sessionId || !inline) return;
+    if (!available || !inline) return;
     const controller = new AbortController();
     void fetch(`${url}?patch=1`, { signal: controller.signal, cache: "no-store" }).then(async (response) => {
       if (!response.ok) throw new Error("Exact patch unavailable");
       return response.text();
-    }).then((text) => { if (!controller.signal.aborted) setPatch(text); }, (cause) => { if (!controller.signal.aborted) setError(String(cause)); });
+    }).then((text) => { if (!controller.signal.aborted) setPatch({ url, text }); }, (cause) => { if (!controller.signal.aborted) setError(String(cause)); });
     return () => controller.abort();
-  }, [url, sessionId, inline, retry]);
+  }, [url, available, inline, retry]);
   return <section aria-label="Exact operation review" className="min-w-0 space-y-2 text-xs">
     <h3 className="blocking-card-section-title">Exact operation review</h3>
     <p>{review.entries.toLocaleString()} review entries · {review.bytes.toLocaleString()} bytes. Approval covers the entire operation, not just this page.</p>
-    {sessionId ? <div className="flex flex-wrap gap-3"><a className="text-accent underline" href={`${url}?download=1`}>Download complete exact review</a>
+    {available ? <div className="flex flex-wrap gap-3"><a className="text-accent underline" href={`${url}?download=1`}>Download complete exact review</a>
       <a className="text-accent underline" href={`${url}?patch=1&download=1`}>Download complete exact patch</a></div> : <p>Open the saved session to read its review attachments.</p>}
     {patch && <SuppliedPatchStack patch={patch} before={before} after={after} contextHandle={contextHandle} pluginId={pluginId} />}
     {error && <div role="alert"><p className="break-words">{error}</p><button type="button" onClick={() => setRetry((value) => value + 1)}>Retry review</button></div>}
+    {available && !page && !error && <p role="status">Loading review…</p>}
     {page && <><p>Showing entries {start + 1}–{start + page.entries.length} of {page.total}.</p>
       {page.entries.filter((entry) => !patch || entry.kind !== "patch").map((entry) => <EntryRow key={`${review.id}:${entry.id}`} entry={entry} url={url} before={before} after={after} />)}
       <div className="flex gap-3">

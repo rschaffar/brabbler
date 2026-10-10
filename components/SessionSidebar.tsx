@@ -25,7 +25,11 @@ import { DirectoryPicker } from "./DirectoryPicker";
 import { SessionMoveDestinationPicker } from "./SessionMoveDestinationPicker";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import { SessionSearch } from "./SessionSearch";
+import dynamic from "next/dynamic";
 import { SubagentIcon } from "./SubagentIcon";
+
+// Housekeeping is optional; do not load its review UI/CSS into every sidebar.
+const WorktreeManager = dynamic(() => import("./WorktreeManager").then((module) => module.WorktreeManager), { ssr: false });
 
 // Fixed row height for the session list. SessionItem renders at exactly this
 // height, so the list can be windowed (only the visible slice is mounted).
@@ -445,6 +449,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [worktreeState, setWorktreeState] = useState<WorktreeState | null>(null);
   const [wtDropdownOpen, setWtDropdownOpen] = useState(false);
   const [wtNewOpen, setWtNewOpen] = useState(false);
+  const [managerProject, setManagerProject] = useState<string | null>(null);
   const [wtNewBranch, setWtNewBranch] = useState("");
   const [wtMode, setWtMode] = useState<"create" | "attach">("create");
   // Capture the selected OIDs rather than following a later GET response silently.
@@ -1385,6 +1390,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         "--sidebar-session-pane-height": `${sessionPaneResizer.width}px`,
       } as CSSProperties}
     >
+      {managerProject && worktreeState?.projectKey === managerProject && currentWorktreePath && (
+        <WorktreeManager key={managerProject} cwd={currentWorktreePath}
+          onClose={() => setManagerProject(null)}
+          onChanged={() => { setWtRefreshKey((key) => key + 1); setExplorerKey((key) => key + 1); }}
+          onSelectCheckout={(path) => setSelectedCwd(path)}
+          onReturnFocus={() => wtDropdownRef.current?.querySelector("button")?.focus({ preventScroll: true })} />
+      )}
       {movingSession && (
         <div role="presentation" onClick={() => { if (!moveBusy) setMovingSession(null); }} style={{ position: "fixed", inset: 0, zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)" }}>
           <div role="dialog" aria-modal="true" aria-label={t("sidebar.moveSession")} onClick={(event) => event.stopPropagation()} style={{ width: 440, maxWidth: "calc(100vw - 24px)", background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10, padding: 20, display: "grid", gap: 12 }}>
@@ -1944,6 +1956,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     )}
                   </div>
 
+                  <button type="button" onClick={() => { setManagerProject(worktreeState.projectKey); setWtDropdownOpen(false); }}
+                    style={{ width: "100%", padding: "9px 10px", textAlign: "left", fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", borderTop: "1px solid var(--border)", cursor: "pointer" }}>
+                    {t("manager.open")}
+                  </button>
                   {!wtNewOpen ? (
                     <button
                       onClick={(e) => {

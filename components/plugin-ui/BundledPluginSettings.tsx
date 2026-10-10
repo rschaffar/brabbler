@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Overrides, PluginManifest, PluginSettings, SettingValue } from "@/lib/plugins/types";
 import { ConfigSidebarGroupLabel, ConfigSidebarItem, ConfigSidebarText, ConfigStatusDot } from "../SettingsUi";
 interface Entry { manifest: PluginManifest; settings: PluginSettings }
@@ -31,12 +31,12 @@ export function BundledPluginSidebar({ cwd, sessionId, selected, onSelect }: { c
     </ConfigSidebarItem>)}
   </div>;
 }
-interface Props { cwd: string; id: string; sessionId?: string | null; initialScope?: Scope }
+interface Props { cwd: string; id: string; sessionId?: string | null; initialScope?: Scope; initialField?: string }
 export function BundledPluginSettings(props: Props) {
   // A response or unsaved editor draft for one session must never enter another.
   return <Settings key={`${props.cwd}:${props.id}:${props.sessionId ?? ""}`} {...props} />;
 }
-function Settings({ cwd, id, sessionId, initialScope = "global" }: Props) {
+function Settings({ cwd, id, sessionId, initialScope = "global", initialField }: Props) {
   const [entry, setEntry] = useState<Entry | null>(null);
   const [scope, setScope] = useState<Scope>(initialScope);
   const [preset, setPreset] = useState("");
@@ -51,6 +51,14 @@ function Settings({ cwd, id, sessionId, initialScope = "global" }: Props) {
     }).catch((error) => { if (active) setError(String(error)); });
     return () => { active = false; };
   }, [cwd, id, sessionId]);
+  const focusedField = useRef<string | null>(null);
+  useEffect(() => {
+    if (!entry || !initialField || focusedField.current === initialField) return;
+    focusedField.current = initialField;
+    const field = document.getElementById(`plugin-${initialField}`);
+    field?.focus({ preventScroll: true });
+    field?.scrollIntoView({ block: "center" });
+  }, [entry, initialField]);
   const save = async (set: Overrides, reset: string[] = [], saveScope = scope) => {
     if (!entry || busy) return;
     setBusy(true); setError("");

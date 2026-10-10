@@ -91,6 +91,75 @@ The in-memory working-revision registry
 retains at most **512 entries for one hour**; expiry, eviction or server restart
 requires a fresh diff.
 
+## Managing accumulated branches and worktrees
+
+Choose **Manage branches & worktrees…** from the worktree menu. The project-scoped
+modal works without an open chat or enabled Git Workflow plugin. Opening it does
+not switch checkout, relocate chats, or change settings. It lists every local
+branch (including **No worktree**) and registered detached, locked, missing or
+prunable worktrees. Diagnostic registrations are read-only here.
+
+**Integration target** defaults to the existing built-in/global/project Git
+Workflow target setting, never a chat's session override. Without an available
+target, inventory still works; choose a literal local branch to assess containment.
+Alternatives are **Temporary comparison — not saved**. **Open project target
+setting** opens the existing project-scoped field. A temporary comparison does not
+override cleanup policy: the manager shows a configured-target mismatch immediately.
+
+The default order is integrated entries first, oldest tip commits first within
+each group. Search, integration/checkout filters and sorting cover the entire
+capture, with 50 rows per page. Status and merge evidence load progressively;
+merge-date sorting loads all matching dates before reordering. Target/checkout
+changes cancel old reads and invalidate live proposals. Refresh if captured refs
+or registrations move.
+
+### Reading integration and dates
+
+**Integrated** means the captured current tip is contained in the captured target;
+it does not mean files are equivalent or safe to discard. Squash/cherry-pick
+integration is not inferred. A proven path establishes containment even in shallow
+history; a shallow negative is **Unknown**, not Not integrated.
+
+- **Latest tip commit** is the tip's recorded committer date, not branch activity,
+  filesystem modification time, or the greatest ancestor date. Full timestamps,
+  timezone, author date, subject and captured IDs appear in expanded evidence.
+- **Merge commit date** is the recorded committer date of a merge introducing the
+  tip along the captured target's first-parent graph. It is **not** when the target
+  ref received it: fast-forwarding onto an existing merge or rewriting history can
+  change that interpretation. Ordinary/root introductions have no recoverable
+  merge date. Missing/shallow objects and the 10,000-commit traversal budget produce
+  explicit unavailable reasons. Date availability is not cleanup authority.
+
+### Explicit cleanup and recovery
+
+Browsing works with Git Workflow disabled. Cleanup is owned by the optional plugin
+and its effective project/global policy. Enablement applies to all projects. Choose
+**Remove worktree; keep branch**, **Delete local branch** (only when unchecked out),
+or **Remove worktree and delete local branch**, then **Review cleanup…**.
+Preparation has no deletion effects under either Ask or Allow. Inspect the exact
+resources, captured proof and ignored content before explicitly confirming; unlisted
+ignored artifacts need one-time consent in that same review. No settings are saved
+by confirmation, and there is no force-removal fallback.
+
+Main, target and selected resources are protected; running/starting agents and
+active terminals block removal. An explicit **Select main checkout** action moves
+only the sidebar selection. Idle chats warn but do not block: history stays, while
+continuing from a removed working folder may require moving the chat. Nothing
+relocates or deletes chats automatically. Unignored untracked files block cleanup;
+expanded checkout state shows their paths for manual resolution.
+
+Closing/Escape stops pending preparation/review. After dispatch, Stop prevents
+remaining steps, never undoes effects already started. Outcomes and exact reviews
+are operation-owned and remain accessible under **Recorded project operations**
+after rows disappear, reload, or plugin disablement. Recover a lost preparation
+response with the same request; do not create another operation. Failed/partial or
+restart-unknown results require **Refresh actual state** and inspection, not replay.
+Reservations exclude observed managed activity in this server, not external writers
+or other server processes.
+
+The existing individual removal controls below keep their separate behavior;
+they are not the manager's integrated cleanup path.
+
 ## Creating a Worktree
 
 Choose `New worktree...` from the worktree menu. **Select a local base branch** and review its full expected HEAD commit ID, then choose **Create new branch** and enter a new branch name. There is no default base: existing switcher users must make a selection before creating. The base and expected commit are checked again on the server; if the branch moved, refresh the switcher and select it again. Pi Web does not fetch or select remote-tracking refs automatically. Creation is explicit and never moves or forks a chat.
