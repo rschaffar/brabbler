@@ -6,6 +6,7 @@ import { gitWorkflowManifest } from "./manifest";
 import { executeGitOperation } from "./server";
 import { readGitPatchContext } from "./context";
 import { gitPolicy, gitPolicyGuidance } from "./policy";
+import { gitProjectActions } from "./project-management";
 
 type ProgressUpdate = (result: { content: Array<{ type: "text"; text: string }>; details: { action: string; completed: boolean; effectStarted: boolean; checksStarted: boolean; operationId?: string; effects: string[] } }) => void;
 const progress = (action: string, update?: ProgressUpdate) => (text: string) => update?.({ content: [{ type: "text", text }],
@@ -13,6 +14,7 @@ const progress = (action: string, update?: ProgressUpdate) => (text: string) => 
 const checkout = Type.String({ description: "Absolute registered checkout root in any local repository; the selected repository's settings apply, independently of the session cwd" });
 export const gitWorkflowPlugin: BundledPlugin = {
   manifest: gitWorkflowManifest,
+  projectActions: gitProjectActions,
   readPatchContext: readGitPatchContext,
   extension(cwd) {
     const commit = defineTool({

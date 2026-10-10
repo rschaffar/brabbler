@@ -5,12 +5,17 @@ nix develop .#test -c npm run test:e2e
 nix develop .#test -c env E2E_DIFF_CONTEXT_ONLY=1 npm run test:e2e
 nix develop .#test -c env E2E_MODEL_SPEED_ONLY=1 npm run test:e2e
 nix develop .#test -c env E2E_RUNNING_FORKS_ONLY=1 npm run test:e2e
+nix develop .#test -c env E2E_WORKTREE_MANAGER_ONLY=1 npm run test:e2e
 nix develop .#test -c npm run test:terminal
 # Retain copied dependencies and generated files for debugging:
 nix develop .#test -c npm run test:e2e -- --keep-workspace
 ```
 
-Focused browser switches: `E2E_TRUST_ONLY=1` (worktree/project grants, revocation and restriction at desktop/mobile sizes), `E2E_RUNNING_FORKS_ONLY=1` (historical-message, root, and quoted-response forks while a real SDK extension prompt waits for input; original question replay and completion at desktop/mobile sizes), `E2E_ASK_USER_ONLY=1`, `E2E_ACTIVITY_ONLY=1`,
+Focused browser switches: `E2E_WORKTREE_MANAGER_ONLY=1` (no-chat project overview,
+plugin-disabled browsing, whole-inventory dates/paging, designated-target mismatch,
+untracked-file blockers, lost preparation-response reconciliation, rejection,
+combined and branch-only cleanup, and durable reviews after resource removal at
+desktop/mobile sizes; all repositories are disposable), `E2E_TRUST_ONLY=1` (worktree/project grants, revocation and restriction at desktop/mobile sizes), `E2E_RUNNING_FORKS_ONLY=1` (historical-message, root, and quoted-response forks while a real SDK extension prompt waits for input; original question replay and completion at desktop/mobile sizes), `E2E_ASK_USER_ONLY=1`, `E2E_ACTIVITY_ONLY=1`,
 `E2E_PROJECT_PRIVACY_ONLY=1` (persistent hidden-project switches, safe loading and
 response failures, project-filter/count concealment, browser-local eye reveal
 persistence across focus/reload/navigation, and independent browser preferences
@@ -76,6 +81,11 @@ footer as well as keyboard/draft/cancellation/expiry contracts. `e2e/question-se
 OAuth/SSE account responses are mocked; no provider credentials are
 used. Slash commands exercise ordinary session/UI paths without a live model.
 
+Worktree-manager checks run in the full suite and through their focused switch.
+An intentionally malformed successful preparation response verifies recovery using
+the same request ID after a real server preparation. It does not suppress browser
+errors, replace cleanup with a mock, or authorize deletion of existing resources.
+
 Running-fork checks run in the full suite and via `E2E_RUNNING_FORKS_ONLY=1`.
 Session-launch checks run in the full suite and through their focused switch.
 `e2e/session-launch.mjs` uses the production launch service through the ordinary
@@ -118,6 +128,13 @@ context retains trace, console/pageerror and local-5xx safeguards.
 
 Terminal checks execute a real local shell at desktop/mobile sizes and cover
 fonts, reconnect/restart, exit, close-during-creation and workspace isolation.
+`terminal-disconnect-fixture.mjs` forwards one actual terminal SSE stream and
+ends it with controlled EOF, holding the native retry until the connecting UI
+is observed. It preserves the actual shell/PID, stream bytes and replay cursor;
+unrelated browser polling stays online. This tests native stream retry, not a
+whole-browser offline outage. Its owned listener/connections settle on teardown,
+and unexpected upstream errors still fail. Unit coverage is in
+`lib/terminal-disconnect-fixture.test.mjs`; console/5xx safeguards are unchanged.
 
 ## Diagnostics, shutdown and retention
 

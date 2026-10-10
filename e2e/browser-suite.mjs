@@ -27,6 +27,7 @@ import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
 import { checkSessionMovePicker } from "./session-move.mjs";
 import { checkGitWorkflowPlugin, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
 import { checkSessionLaunch, sessionLaunchFixtureSource } from "./session-launch.mjs";
+import { WORKTREE_MANAGER_IDS, seedWorktreeManagerFixtures, checkWorktreeManager } from "./worktree-manager.mjs";
 
 // Test-process isolation only: the disposable child server inherits private file
 // creation from startup. Never repair SDK files or change umask inside a hook.
@@ -97,6 +98,7 @@ let context;
   // Seed before startup so the first catalogue scan sees every fixture.
   seedModelSpeedFixtures({ agentDir, writeSession, message, timestamp });
   seedRunningForkFixtures({ agentDir, writeSession, message });
+  const managerFixtures = seedWorktreeManagerFixtures({ agentDir, env: fixtureEnv, writeSession, message });
   mkdirSync(join(agentDir, "extensions"));
   writeFileSync(join(agentDir, "extensions", "e2e-dialog.js"), extensionSource);
   writeFileSync(join(agentDir, "extensions", "e2e-session-launch.js"), sessionLaunchFixtureSource(root));
@@ -300,7 +302,7 @@ let context;
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...ACTIVITY_SUBAGENTS,
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...WORKTREE_MANAGER_IDS, ...ACTIVITY_SUBAGENTS,
         ...(process.env.E2E_TRUST_ONLY === "1" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
       for (const id of ACTIVITY_SUBAGENTS) {
         assert.equal(sessions.find((session) => session.id === id)?.relation?.kind, "subagent", `${id} must have real subagent metadata`);
@@ -355,8 +357,20 @@ let context;
       await harness.closeContext(context); context = undefined; page = undefined;
     }
   }
-
-  if (process.env.E2E_SESSION_LAUNCH_ONLY === "1") {
+  async function runWorktreeManagerChecks() {
+    browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const [index, viewport] of [{ width: 1280, height: 800 }, { width: 390, height: 844 }].entries()) {
+      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+      page = await context.newPage(); page.setDefaultTimeout(30_000);
+      const errors = harness.errorsFor(context);
+      await checkWorktreeManager(page, { base, fixture: managerFixtures[index], artifacts, width: viewport.width });
+      assert.deepEqual(errors, [], `Worktree-manager errors at ${viewport.width}px`);
+      await harness.closeContext(context); context = undefined; page = undefined;
+    }
+  }
+  if (process.env.E2E_WORKTREE_MANAGER_ONLY === "1") {
+    await runWorktreeManagerChecks();
+  } else if (process.env.E2E_SESSION_LAUNCH_ONLY === "1") {
     await runSessionLaunchChecks();
   } else if (process.env.E2E_RUNNING_FORKS_ONLY === "1") {
     await runRunningForkChecks();
@@ -523,6 +537,7 @@ let context;
     await runModelSpeedChecks();
     await runRunningForkChecks();
     await runSessionLaunchChecks();
+    await runWorktreeManagerChecks();
   }
   // A live session keeps the context files it loaded until explicitly reloaded.
   {

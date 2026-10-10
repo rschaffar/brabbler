@@ -32,6 +32,8 @@ export function validateOperationReceipt(value: unknown): asserts value is Plugi
     || !Array.isArray(value.checks)
     || value.checks.some((check) => !record(check) || !text(check.name, 256) || !checkStatuses.includes(check.status as string))
     || typeof value.effectStarted !== "boolean"
+    || value.completedEffects !== undefined && (!Array.isArray(value.completedEffects) || value.completedEffects.some((step) => typeof step !== "string"))
+    || value.attemptedEffect !== undefined && typeof value.attemptedEffect !== "string"
     || value.summary !== undefined && (typeof value.summary !== "string" || value.summary.length > 16384)) {
     throw new Error("Invalid operation receipt");
   }
@@ -57,12 +59,12 @@ export function snapshotOperationReceipt(pluginId: string, receipt: PluginOperat
     throw new Error("Invalid operation receipt metadata");
   }
   validateOperationReceipt(receipt);
-  const { version, operationId, toolCallId, card, phase, authorization, checks, effectStarted, summary } = receipt;
+  const { version, operationId, toolCallId, card, phase, authorization, checks, effectStarted, completedEffects, attemptedEffect, summary } = receipt;
   return JSON.parse(JSON.stringify({
     version, pluginId, sequence, operationId, toolCallId,
     card: { ...card, operationId, actions: [] }, phase,
     authorization: { mode: authorization.mode, source: authorization.source, revision: authorization.revision, decision: authorization.decision },
-    checks: checks.map(({ name, status }) => ({ name, status })), effectStarted, summary,
+    checks: checks.map(({ name, status }) => ({ name, status })), effectStarted, completedEffects, attemptedEffect, summary,
   })) as OperationReceiptSnapshot;
 }
 

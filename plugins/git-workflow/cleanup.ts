@@ -15,6 +15,8 @@ export interface CleanupOperation {
 }
 export interface WorktreeRecord { path: string; branch?: string; locked?: string; prunable?: string }
 export interface CleanupAccess {
+  /** Trusted browser adapter restriction, never supplied through operation JSON. */
+  rejectUnignoredUntracked?: boolean;
   git(cwd: string, args: string[]): string | Promise<string>;
   records?(cwd: string, args: string[]): AsyncIterable<string>;
   checkout(path: string, repository?: string): string | Promise<string>;
@@ -195,7 +197,7 @@ async function* gitRecords(access: CleanupAccess, cwd: string, args: string[]) {
 }
 async function assertSourceClean(access: CleanupAccess, path: string, roots: string[]) {
   for await (const change of gitRecords(access, path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])) {
-    if (!change.startsWith("?? ") || !selectedArtifact(change.slice(3), roots)) throw new Error("Cleanup worktree has source changes or unapproved untracked files");
+    if (access.rejectUnignoredUntracked || !change.startsWith("?? ") || !selectedArtifact(change.slice(3), roots)) throw new Error("Cleanup worktree has source changes or unapproved untracked files");
   }
 }
 export async function captureCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess, budget = createCleanupBudget(), discoverArtifacts = true, frozenStructure?: Pick<CleanupSnapshot, "artifactParents" | "artifactParentMetadata">): Promise<CleanupSnapshot> {
@@ -273,7 +275,7 @@ export async function captureCleanup(callerCwd: string, op: CleanupOperation, po
 }
 export async function performCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess,
   snapshot: CleanupSnapshot, guardPolicy: () => void, runGit: (args: string[]) => Promise<string>, effects: string[],
-  onDispatch: (description: string) => void, budget: CleanupBudget): Promise<string> {
+  onDispatch: (description: string) => void, budget: CleanupBudget, onCompleted?: () => void): Promise<string> {
   // Freeze the exact prepared list. Later ignored files are NOT discovered or
   // implicitly added under an earlier approval.
   let remaining = snapshot.artifacts.map((item) => item.path);
@@ -298,6 +300,7 @@ export async function performCleanup(callerCwd: string, op: CleanupOperation, po
       await rm(held?.path ?? join(snapshot.path!, root), { recursive: true });
     } finally { held?.close(); }
     effects.push(`Removed generated artifact: ${root}`);
+    onCompleted?.();
     if (root.includes("/")) changedParents.add(root.slice(0, root.lastIndexOf("/")));
     remaining = remaining.filter((name) => name !== root);
   }
@@ -306,6 +309,7 @@ export async function performCleanup(callerCwd: string, op: CleanupOperation, po
     onDispatch(`Remove worktree: ${snapshot.path}`);
     await runGit(["worktree", "remove", snapshot.path!]);
     effects.push(`Removed worktree: ${snapshot.path}`);
+    onCompleted?.();
     if (existsSync(snapshot.path!) || (await access.worktrees(snapshot.cwd)).some((entry) => samePath(entry.path, snapshot.path!))) throw new Error("Worktree removal did not settle as expected");
   }
   if (op.deleteBranch) {
@@ -318,6 +322,7 @@ export async function performCleanup(callerCwd: string, op: CleanupOperation, po
     onDispatch(`Delete local branch: ${op.featureBranch}`);
     await runGit(["update-ref", "--no-deref", "-d", `refs/heads/${op.featureBranch}`, op.featureTip]);
     effects.push(`Deleted local branch: ${op.featureBranch} at ${op.featureTip}`);
+    onCompleted?.();
     if ((await access.git(snapshot.cwd, ["for-each-ref", "--format=%(refname)", `refs/heads/${op.featureBranch}`])).split("\n").includes(`refs/heads/${op.featureBranch}`)) throw new Error("Branch deletion did not settle as expected");
   }
   return effects.join("\n");

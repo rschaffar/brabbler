@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { gitExecEnv } from "../../lib/git-exec";
 
 export function gitEnvironment(index?: string) {
-  return { ...gitExecEnv(index), GIT_NO_LAZY_FETCH: "1", GIT_NO_REPLACE_OBJECTS: "1", GIT_LITERAL_PATHSPECS: "1",
+  return { ...gitExecEnv(index), GIT_NO_LAZY_FETCH: "1", GIT_NO_REPLACE_OBJECTS: "1", GIT_ALLOW_PROTOCOL: "", GIT_LITERAL_PATHSPECS: "1",
     GIT_EDITOR: "true", GIT_SEQUENCE_EDITOR: "true" };
 }
 interface Options { index?: string; input?: string | AsyncIterable<Uint8Array>; signal?: AbortSignal; shell?: boolean; timeoutMs?: number }

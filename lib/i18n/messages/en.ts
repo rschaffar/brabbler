@@ -1,10 +1,12 @@
 import type { LocalePlugin } from "../types";
+import { worktreeManagerEnglish } from "../worktree-manager-messages";
 
 /** Pi Web 内置英语语言包。 */
 export const enLocale: LocalePlugin = {
   id: "en",
   label: "English",
   messages: {
+    ...worktreeManagerEnglish,
     "chat.useReadingWidth": "Use reading width",
     "chat.useFullWidth": "Use full width",
     "settings.chatFullWidth": "Full-width chat",
@@ -305,7 +307,7 @@ export const enLocale: LocalePlugin = {
     "sidebar.open": "Open",
     "sidebar.cancel": "Cancel",
     "sidebar.openRepoRoot": "Open repo root",
-    "sidebar.openRepoRootTitle": "Open the repository root to manage worktrees.",
+    "sidebar.openRepoRootTitle": "Open the repository root to manage branches and worktrees.",
     "sidebar.gitRepoRootOnly": "Git repo root only",
     "sidebar.gitRepoRootOnlyTitle": "Worktrees are available in Git repository roots.",
     "sidebar.worktrees": "Worktrees...",
@@ -314,8 +316,8 @@ export const enLocale: LocalePlugin = {
     "sidebar.noMatchingWorktrees": "No matching worktrees",
     "sidebar.switchWorktree": "Switch worktree",
     "sidebar.switchWorktreeTitle": "Switch worktree: {path}",
-    "sidebar.mergedIntoMain": "Merged into rst-main",
-    "sidebar.main": "main",
+    "sidebar.mergedIntoMain": "Current tip contained in rst-main",
+    "sidebar.main": "Main checkout",
     "sidebar.confirmRemoveCheckout": "Remove this checkout? The branch and chats are kept.",
     "sidebar.removeCheckout": "Remove",
     "sidebar.forceRemoveCheckout": "Uncommitted changes. Force remove checkout?",
