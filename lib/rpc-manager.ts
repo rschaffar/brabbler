@@ -364,10 +364,10 @@ export class AgentSessionWrapper {
    * prompt that started during the probe cannot be disposed.
    */
   evictIfDiskAhead(): boolean {
-    if (!this.isAlive() || this.isRunning()) return false;
+    if (!this.isAlive() || this.isRunning() || this.activeMutatingCommands > 0) return false;
     const diskLatestId = readLatestSessionEntryId(this.sessionFile);
     if (!diskLatestId || this.inner.sessionManager.getEntry(diskLatestId)) return false;
-    if (this.isRunning()) return false;
+    if (this.isRunning() || this.activeMutatingCommands > 0) return false;
     this.destroy();
     invalidateSessionListCache();
     return true;
@@ -1904,7 +1904,10 @@ function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
   const registry = getRegistry();
   const sessionId = wrapper.sessionId;
   if (wrapper.sessionFile) cacheSessionPath(sessionId, wrapper.sessionFile);
-  wrapper.onDestroy(() => registry.delete(sessionId));
+  wrapper.onDestroy(() => {
+    // Extension shutdown can finish after a replacement was registered.
+    if (registry.get(sessionId) === wrapper) registry.delete(sessionId);
+  });
   registry.set(sessionId, wrapper);
   wrapper.start();
   if (!wrapper.isChatOnly()) wrapper.beginExtensionBinding();

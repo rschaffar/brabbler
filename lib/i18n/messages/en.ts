@@ -5,6 +5,9 @@ export const enLocale: LocalePlugin = {
   id: "en",
   label: "English",
   messages: {
+    "chat.useReadingWidth": "Use reading width",
+    "chat.useFullWidth": "Use full width",
+    "settings.chatFullWidth": "Full-width chat",
     "common.ok": "OK",
     "common.language": "Language",
     "common.models": "Models",

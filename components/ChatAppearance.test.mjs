@@ -11,12 +11,14 @@ const chatAppearanceHook = await readFile(new URL("../hooks/useChatAppearance.ts
 const jiti = createJiti(import.meta.url);
 const { clampChatContentWidth, clampChatContentFontSize } = await jiti.import("../hooks/useChatAppearance.ts");
 
-const widthVariable = /var\(--chat-content-max-width, 820px\)/g;
+const widthVariable = /var\(--chat-content-max-width, none\)/g;
 
-test("chat content keeps the existing 820px default behind one shared variable", () => {
+test("chat content defaults to full available width behind one shared variable", () => {
   assert.equal((chatWindow.match(widthVariable) ?? []).length, 2);
   assert.equal((chatInput.match(widthVariable) ?? []).length, 1);
-  assert.match(globals, /--chat-content-max-width: 820px;/);
+  assert.match(globals, /--chat-content-max-width: none;/);
+  assert.match(chatAppearanceHook, /fullWidth: true/);
+  assert.match(chatAppearanceHook, /fullWidth \? "none" : `\$\{width\}px`/);
   assert.doesNotMatch(chatWindow, /max-w-\[820px\]|maxWidth: 820/);
   assert.doesNotMatch(chatInput, /maxWidth: 820/);
 });
@@ -30,6 +32,16 @@ test("General chat settings own the chat width preference", () => {
   assert.match(settingsPanel, /step=\{10\}/);
   assert.match(chatAppearanceHook, /pi-chat-content-width/);
   assert.match(chatAppearanceHook, /localStorage\.setItem/);
+});
+
+test("the composer and Settings share a persisted full-width toggle", () => {
+  assert.match(chatAppearanceHook, /pi-chat-content-full-width/);
+  assert.match(chatAppearanceHook, /readStoredPreference\(CHAT_CONTENT_FULL_WIDTH_STORAGE_KEY\) !== "false"/);
+  assert.match(chatInput, /aria-label=\{fullWidth \? t\("chat.useReadingWidth"\) : t\("chat.useFullWidth"\)\}/);
+  assert.match(settingsPanel, /<span>\{t\("settings.chatFullWidth"\)\}<\/span>/);
+  assert.match(chatInput, /onClick=\{\(\) => setFullWidth\(!fullWidth\)\}/);
+  assert.match(settingsPanel, /checked=\{fullWidth\}/);
+  assert.match(settingsPanel, /onChange=\{setFullWidth\}/);
 });
 
 test("chat width validation preserves the default and supported range", () => {
