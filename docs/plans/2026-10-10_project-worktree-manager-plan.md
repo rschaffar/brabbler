@@ -203,42 +203,42 @@ Refresh inventory and sidebar worktrees after observed success or partial effect
 
 ### 1. Resolve the standalone boundary and date algorithm before UI integration
 
-- [ ] Add graph fixtures for ordinary/non-FF/nested/octopus merges, fast-forwards onto ordinary/pre-existing merge commits, equal merge tips, rewritten history, reverts, new commits after integration, squash/cherry-pick, nonmonotonic dates and shallow hidden ancestry with both endpoints present; prove containment/date-evidence/Unknown rules.
-- [ ] Audit executor/host and record the narrow ADR covering prepare-without-effects under Ask/Allow, browser confirmation provenance, request/decision claims, operation cancellation, expiry/HMR/restart, failed final writes, historical access and related-checkout admission. Acceptance: reviewed sketch plus no-effects preparation spike; no fabricated sessions, permission bypass, presence tracker or task registry.
-- [ ] Specify DTOs, literal branch/path identities, first-parent traversal budget and project-action states. Acceptance: executed fixture spike distinguishes stale/unknown from negative containment, and a prepare/confirm/status design maps onto existing cleanup protections.
+- [x] Add graph fixtures for ordinary/non-FF/nested/octopus merges, fast-forwards onto ordinary/pre-existing merge commits, equal merge tips, rewritten history, reverts, new commits after integration, squash/cherry-pick, nonmonotonic dates and shallow hidden ancestry with both endpoints present; prove containment/date-evidence/Unknown rules.
+- [x] Audit executor/host and record the narrow ADR covering prepare-without-effects under Ask/Allow, browser confirmation provenance, request/decision claims, operation cancellation, expiry/HMR/restart, failed final writes, historical access and related-checkout admission. Acceptance: reviewed sketch plus no-effects preparation spike; no fabricated sessions, permission bypass, presence tracker or task registry.
+- [x] Specify DTOs, literal branch/path identities, first-parent traversal budget and project-action states. Acceptance: executed fixture spike distinguishes stale/unknown from negative containment, and a prepare/confirm/status design maps onto existing cleanup protections.
 
 ### 2. Implement captured read-only inventory
 
-- [ ] Add rich NUL-safe worktree registration parsing without changing the switcher's existing filtered list; test branch-only, detached, missing/prunable, locked, main/selected and unusual path/name rows.
-- [ ] Implement ref capture, tip metadata and containment against the selected local target; test missing configured targets, target self-row, new branch commits, independent project identities, SHA-256 and unavailable/shallow object reads.
-- [ ] Implement progressive merge-date/narrow-status reads with hardened dispatch, bounded concurrency/captured-target caching and incomplete-history reasons; test filter/fsmonitor sentinels, submodules, ignored/dirty state and timeout/cancellation. Measure many-ref/deep-history fixtures and prove global date-sort completeness.
-- [ ] Add the management GET route with allowed-root/physical-registration authorization and captured-tip revalidation; run route tests proving no writes/remotes, rejected revision expressions, path alias/UNC handling and stale-ref conflicts.
+- [x] Add rich NUL-safe worktree registration parsing without changing the switcher's existing filtered list; test branch-only, detached, missing/prunable, locked, main/selected and unusual path/name rows.
+- [x] Implement ref capture, tip metadata and containment against the selected local target; test missing configured targets, target self-row, new branch commits, independent project identities, SHA-256 and unavailable/shallow object reads.
+- [x] Implement progressive merge-date/narrow-status reads with hardened dispatch, bounded concurrency/captured-target caching and incomplete-history reasons; test filter/fsmonitor sentinels, submodules, ignored/dirty state and timeout/cancellation. Measure many-ref/deep-history fixtures and prove global date-sort completeness.
+- [x] Add the management GET route with allowed-root/physical-registration authorization and captured-tip revalidation; run route tests proving no writes/remotes, rejected revision expressions, path alias/UNC handling and stale-ref conflicts.
 
 ### 3. Add no-chat operation host and plugin adapter
 
-- [ ] Extend generic bundled-plugin capabilities/registry and add project-action routes without Git conditionals in core; test unknown/disabled capabilities, malformed payloads, allowed-root/origin checks and project-only settings scope.
-- [ ] Implement private durable standalone operation records and operation-bound exact review reads; test atomic persistence, failed pre-effect writes, integrity/ref authorization, reload and restart-unknown state. Preserve existing session-review access and retention.
-- [ ] Adapt the existing Git cleanup preparation/execution to the standalone host, sharing—not copying—policy checks, capture/effect machinery and partial-result reporting; run the separate plugin tests and demonstrate identical safety refusals for tool/browser callers.
-- [ ] Implement single-use decisions, idempotent preparation, policy/selection invalidation and reservations; test concurrent duplicate decisions, zero-effect artifact-free/allowlisted Allow preparation, disable/Deny, target mismatch, Stop/disconnect/restart and new admission. Prove idle displayed chats warn without blocking, while active sessions/terminals still block.
+- [x] Extend generic bundled-plugin capabilities/registry and add project-action routes without Git conditionals in core; test unknown/disabled capabilities, malformed payloads, allowed-root/origin checks and project-only settings scope.
+- [x] Implement private durable standalone operation records and operation-bound exact review reads; test atomic persistence, failed pre-effect writes, integrity/ref authorization, reload and restart-unknown state. Preserve existing session-review access and retention.
+- [x] Adapt the existing Git cleanup preparation/execution to the standalone host, sharing—not copying—policy checks, capture/effect machinery and partial-result reporting; run the separate plugin tests and demonstrate identical safety refusals for tool/browser callers.
+- [x] Implement single-use decisions, idempotent preparation, policy/selection invalidation and reservations; test concurrent duplicate decisions, zero-effect artifact-free/allowlisted Allow preparation, disable/Deny, target mismatch, Stop/disconnect/restart and new admission. Prove idle displayed chats warn without blocking, while active sessions/terminals still block.
 
 ### 4. Build the manager view
 
-- [ ] Add the launch entry and separate responsive dialog, leaving switcher selection/create/attach behavior intact; execute component/state tests and verify opening needs no chat and never switches cwd.
-- [ ] Render compact inventory/details, target provenance/temporary-comparison labels, immediate mismatch guidance and direct project-field settings navigation; verify whole-inventory filters/counts, integrated-first oldest-tip default, global date-sort preparation, retained position, stale cancellation and distinct empty/error/loading/unavailable states.
-- [ ] Add resource choices and Review cleanup stages/confirmation/outcomes; test rejection/no effects, ignored inventory, unignored-file refusal, selected protection, warning-only idle chats and outcomes after row disappearance.
-- [ ] Maintain visible/accessibility text in the English catalog (user-approved post-rebase adaptation); verify message completeness, absolute dates/timezones, modal/focus containment/restoration, expansion/sort semantics, keyboard blockers, stage-specific Escape, announcements and zoom/wrap/narrow-screen containment.
+- [x] Add the launch entry and separate responsive dialog, leaving switcher selection/create/attach behavior intact; execute component/state tests and verify opening needs no chat and never switches cwd.
+- [x] Render compact inventory/details, target provenance/temporary-comparison labels, immediate mismatch guidance and direct project-field settings navigation; verify whole-inventory filters/counts, integrated-first oldest-tip default, global date-sort preparation, retained position, stale cancellation and distinct empty/error/loading/unavailable states.
+- [x] Add resource choices and Review cleanup stages/confirmation/outcomes; test rejection/no effects, ignored inventory, unignored-file refusal, selected protection, warning-only idle chats and outcomes after row disappearance.
+- [x] Maintain visible/accessibility text in the English catalog (user-approved post-rebase adaptation); verify message completeness, absolute dates/timezones, modal/focus containment/restoration, expansion/sort semantics, keyboard blockers, stage-specific Escape, announcements and zoom/wrap/narrow-screen containment.
 
 ### 5. Adversarial and browser acceptance
 
-- [ ] Extend disposable cleanup regressions for unchanged/moved/deleted/symbolic refs, registration changes, checked-out retained branches, dirty/untracked/ignored source, symlinks, mounts, locked/prunable paths and supported/unsupported nested deletion; assert unchanged resources on each pre-effect refusal.
-- [ ] Test active/starting sessions, descendant cwd terminals, current-selection changes and new admission during reservation; preserve honest partial-effect and failed-final-receipt evidence rather than resetting fixture state to hide it.
-- [ ] Add `e2e/worktree-manager.mjs` through the existing browser-suite entry point, plus a documented `E2E_WORKTREE_MANAGER_ONLY=1` switch. Verify no-chat browsing and plugin-disabled overview, integrated/unintegrated branch-only rows, date evidence, target change/stale reads, explicit artifact review and reject/success/partial recovery at desktop/mobile widths. Include the flow in general browser acceptance.
-- [ ] Run an independent read-only safety review of capture/approval/effect boundaries and address findings with targeted regressions. Keep one writer and coordinate acceptance budgets.
+- [x] Extend disposable cleanup regressions for unchanged/moved/deleted/symbolic refs, registration changes, checked-out retained branches, dirty/untracked/ignored source, symlinks, mounts, locked/prunable paths and supported/unsupported nested deletion; assert unchanged resources on each pre-effect refusal.
+- [x] Test active/starting sessions, descendant cwd terminals, current-selection changes and new admission during reservation; preserve honest partial-effect and failed-final-receipt evidence rather than resetting fixture state to hide it.
+- [x] Add `e2e/worktree-manager.mjs` through the existing browser-suite entry point, plus a documented `E2E_WORKTREE_MANAGER_ONLY=1` switch. Verify no-chat browsing and plugin-disabled overview, integrated/unintegrated branch-only rows, date evidence, target change/stale reads, explicit artifact review and reject/success/partial recovery at desktop/mobile widths. Include the flow in general browser acceptance.
+- [x] Run an independent read-only safety review of capture/approval/effect boundaries and address findings with targeted regressions. Keep one writer and coordinate acceptance budgets.
 
 ### 6. Documentation, verification and handoff
 
-- [ ] Update `docs/worktrees.md` with date evidence, target setup, idle-chat warnings/blockers and recovery; update focused source/plugin/browser guides and README only where needed, not AGENTS.md. Clarify switcher wording as Current tip contained in rst-main and Main checkout (including translations), without changing its existing badge target; manager always names its selected target.
-- [ ] Run focused selections while editing, then full offline/core acceptance and separate plugin/browser acceptance on stable source; record captured input identity, commands, selections, outcomes, artifact paths and actual command runtime separately from preparation/review.
+- [x] Update `docs/worktrees.md` with date evidence, target setup, idle-chat warnings/blockers and recovery; update focused source/plugin/browser guides and README only where needed, not AGENTS.md. Clarify switcher wording as Current tip contained in rst-main and Main checkout in the shipped English interface, without changing its existing badge target; manager always names its selected target.
+- [x] Run focused selections while editing, then full offline/core acceptance and separate plugin/browser acceptance on stable source; record captured input identity, commands, selections, outcomes, artifact paths and actual command runtime separately from preparation/review.
 - [ ] Review and create coherent local feature commits after source approval; reassess the rebased candidate against current local `rst-main`. Present exact candidate/target IDs and verification for separately approved unsigned non-FF integration. Retain resources if approval or acceptance is blocked.
 
 ## Verification commands and evidence
@@ -288,16 +288,16 @@ All deletion tests use disposable harness repositories, never the accumulated re
 - [x] User approved this plan before source implementation started.
 - [x] Manager opens from the project worktree menu without a chat or checkout change, and lists local branches plus registered worktree diagnostics.
 - [x] Comparison defaults from existing designated-target settings when valid, allows explicit local alternatives, and never imports session policy or silently writes settings.
-- [ ] Containment/date evidence pass shallow/rewrite/fast-forward/revert fixtures; tip/merge dates never claim target-ref timing. Global date sorting covers matching rows with distinct loading/unavailable/not-applicable states.
+- [x] Containment/date evidence pass shallow/rewrite/fast-forward/revert fixtures; tip/merge dates never claim target-ref timing. Global date sorting covers matching rows with distinct loading/unavailable/not-applicable states.
 - [x] Integration and source cleanliness/ignored content are visibly separate; unavailable/stale state cannot imply cleanup eligibility.
 - [x] Plugin-disabled overview works; enabled cleanup respects project policy, one exact review, complete artifact authority and existing safety restrictions without a force fallback.
 - [x] Worktree-only/branch-only/combined cleanup pass disposable tests; main/target/selected/active resources remain protected, idle chats warn but do not block, and unignored untracked files refuse manager cleanup.
 - [x] Durable standalone reviews/outcomes survive reload; restart/partial/cancelled operations never replay and unknown results remain explicit.
-- [ ] Desktop/mobile, English messages, keyboard access, stale-response cancellation and required common/plugin/browser acceptance passed with recorded artifacts; conditional terminal evidence is resolved.
-- [ ] Owning guides/new ADR reflect delivered contracts, independent safety review is resolved and feature commits are reviewable.
+- [x] Desktop/mobile, English messages, keyboard access, stale-response cancellation and required common/plugin/browser acceptance passed with recorded artifacts; conditional terminal evidence is resolved.
+- [x] Owning guides/new ADR reflect delivered contracts, independent safety review is resolved and feature commits are reviewable.
 - [ ] Exact-state local integration into `rst-main` is separately approved and verified, or its blocker is retained explicitly. Publication/deployment and feature-resource cleanup remain separately authorized.
 
-## Implementation checkpoint — 2026-10-10
+## Historical pre-rebase implementation checkpoint — 2026-10-10
 
 Delivered captured inventory/details, the generic no-chat operation host and Git
 Workflow adapter, responsive localized manager, explicit exact confirmation under
@@ -355,11 +355,86 @@ are `/tmp/pi-worktree-manager-ui-check.log`,
 `/tmp/pi-worktree-manager-full-core.log`; artifacts are retained. Successful
 replacements are scoped above, not claimed to erase those failures.
 
-**Acceptance/integration blocker:** general browser acceptance has not passed.
+**Pre-rebase acceptance/integration blocker:** general browser acceptance had not passed.
 Retain the feature branch/worktree; no rebase, integration, deployment, remote
 operation or real accumulated-resource cleanup has occurred. The unchecked
 acceptance/completion items remain open, not silently waived.
 
-**Known gaps:** general browser's archive-context conflict is unresolved; no native
-Windows/UNC or privileged mount acceptance was run. Recorded Git commit dates
-cannot establish exact historical target-ref integration times.
+**Known gaps at that checkpoint:** general browser's archive-context conflict was
+unresolved; no native Windows/UNC or privileged mount acceptance was run. Recorded
+Git commit dates cannot establish exact historical target-ref integration times.
+
+## Post-rebase acceptance checkpoint — 2026-10-10
+
+Rebased implementation/adaptation candidate:
+`a5659171ec2012642c2ded40beac83ac1df3ffb6`, based on current local `rst-main`
+`3f1bce8af835c9acb01f62a8a5b70854cbfe6df3`. Fresh browser source export:
+`cc9e7691b293d939a4d0edeeead5468f0a3275d78dd2af7ea554481dbe262cca`.
+All requested selections ran again after the rebase. The general suite passed,
+including both session-launch/manager flows and mobile archive/restore/move;
+the earlier archive-context failure did not recur. This is not a claim that
+manager changes caused or fixed that historical failure.
+
+The first fresh terminal run failed during its intentional whole-browser offline
+phase: `terminal-ZAX5NJ/events.jsonl` records an unrelated
+`GET /api/agent/running` failing `net::ERR_INTERNET_DISCONNECTED` at
+`2026-10-10T15:52:20.506Z`, followed by the strict console assertion failure.
+Evidence remains in `test-results/e2e/terminal-ZAX5NJ` and
+`/tmp/pi-worktree-manager-rebased-terminal.log` (46 s command wall).
+
+Commit `c3ee2ad34a7b9478e938f3695f0215224391e76d` replaces only that fixture's
+browser-wide outage with controlled EOF of one forwarded **actual terminal SSE
+stream**. Native EventSource retry is held until the connecting UI is observed,
+then continues unchanged to the actual backend. Real shell/PID, exact output and
+no-replay assertions remain; console/5xx safeguards and application deadlines
+are unchanged. This is stream-retry coverage, not whole-browser offline coverage.
+Owned listener cleanup now survives browser-unroute failure, with an executed
+real-listener regression. The independent review's P2 cleanup finding was fixed;
+its follow-up found no blocking residual. The separate rebase-interaction review
+found no blocking regression in launch admission, reservations, generic hosting
+or combined browser wiring. Reviews were static/read-only, not runtime evidence.
+
+Final source export before this evidence-only update:
+`cb412b53b1d3c849f5ff9dde9eb80ee8aca44911f490212fb70256ca37340b35`;
+offline normalized inner export:
+`b20f98aab2d8d50a79e8d85e7e84057c78525671c4832d66da4f92d22b4fdb55`.
+The only changes after `a5659171` are the terminal-only fixture, its unit tests,
+and its focused guide. Application, plugin, general/focused browser modules and
+shared harness inputs are unchanged, so earlier fresh browser/plugin passes
+remain applicable; they are not relabeled as executions on `c3ee2ad3` or this
+subsequent evidence commit. The full common pipeline and terminal acceptance
+were repeated after the final fixture correction.
+
+Commands use `nix develop --offline --no-write-lock-file .#test -c`.
+All successful browser/terminal runs below recorded empty errors and settled
+resources; their current-run bulk was removed by the normal bounded launcher.
+
+| Selection/command after shell prefix | Fresh result | Exact evidence | Runtime |
+| --- | --- | --- | --- |
+| `node nix/test-offline.mjs` | PASS: 278 files, 1,786 tests, complete coverage; typegen/typecheck/lint included | `/tmp/pi-worktree-manager-rebased-core-3.log`, `/tmp/pi-web-test-offline.8Ztakyvb/lifecycle.json` | 152 s command wall |
+| `sh -c 'env -i PATH="$PATH" LANG=C.UTF-8 PI_OFFLINE=1 node --experimental-strip-types --test "plugins/**/*.test.mjs"'` | PASS: 238 tests, no failures/skips | `/tmp/pi-worktree-manager-rebased-plugin.log` | 88 s command wall; TAP 85.7 s |
+| `env E2E_WORKTREE_MANAGER_ONLY=1 npm run test:e2e` | PASS: 1280px/390px | `test-results/e2e/browser-tkL21r/run.json`, `/tmp/pi-worktree-manager-rebased-manager-browser.log` | 182 s command wall; 178.0 s inner suite |
+| `npm run test:e2e` | PASS: full general suite including manager, session launch and archive/move | `test-results/e2e/browser-EFkhDH/run.json`, `/tmp/pi-worktree-manager-rebased-general-browser.log` | 709 s command wall; 704.4 s inner suite |
+| `env E2E_GIT_WORKFLOW_PLUGIN_ONLY=1 npm run test:e2e` | PASS: 1280px/390px | `test-results/e2e/browser-IB0Jd2/run.json`, `/tmp/pi-worktree-manager-rebased-plugin-browser.log` | 380 s command wall; 374.6 s inner suite |
+| `npm run test:terminal` | PASS: 1440px/390px, final scoped-EOF fixture and teardown correction | `test-results/e2e/terminal-gbbiId/run.json`, `/tmp/pi-worktree-manager-rebased-terminal-4.log` | 54 s command wall; 47.3 s inner suite |
+
+The first fresh common run additionally passed 277 files/1,783 tests at
+`a5659171` (`/tmp/pi-worktree-manager-rebased-core.log`, 142 s command wall).
+Intermediate fixture passes remain recorded in
+`/tmp/pi-worktree-manager-rebased-core-2.log` and
+`/tmp/pi-worktree-manager-rebased-terminal-{2,3}.log`; they are not substitutes
+for the final corrected-input runs above. Runtime excludes model/review/
+coordination; command wall includes preparation, while browser/terminal inner
+suite times begin after export/dependency copying.
+
+**Current handoff:** application acceptance is complete. This evidence/status
+update needs proportional documentation review and unchanged-input confirmation,
+not another application acceptance loop. Exact-state unsigned non-FF integration
+into local `rst-main` still requires separate approval and execution verification.
+No integration, remote publication, deployment, installed-service changes or
+real accumulated-resource cleanup has occurred at this checkpoint. Retain the
+feature resources until separately authorized cleanup; retain the pre-rebase
+backup independently. The plan remains active until its integration handoff.
+
+**Known gaps:** no native Windows/UNC or privileged-mount acceptance was run.
+Recorded commit dates do not prove exact historical target-ref integration times.
