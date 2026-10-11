@@ -66,8 +66,8 @@ local `rst-main` `d558a88e03ce5e89a09a5a41e42d393067ea7b41`; CodeGraph initializ
 - [x] Record independent safety review and complete applicable core, plugin and
   browser acceptance at stable source; preserve exact identities/logs/failures.
 - [x] Update maintained worktree/plugin/feature guides and ADR 0022.
-- [ ] Create reviewable commits and resolve completion intent plus separate exact
-  non-FF integration (or explicit retention).
+- [x] Create reviewable commit `134eaf847ac481e39d8ca19529de3a68b838dda1`;
+  the user selected local integration, separately approved and verified below.
 
 ## Verification
 
@@ -145,6 +145,31 @@ Native Windows/UNC and privileged-mount acceptance were not run. External writer
 other servers remain outside managed reservations; no historical integration-time or
 permanent detached-commit retention claim is made.
 
+## Verified local integration
+
+The completion Ask was answered **Proceed toward local integration**. Rebase onto
+current local `rst-main` was already up to date. At exact feature candidate
+`134eaf847ac481e39d8ca19529de3a68b838dda1`, focused project-host/view verification
+passed 2 files / 23 tests plus typegen/typecheck/lint in 36 s:
+`/tmp/pi-discard-exact-candidate.log`,
+`/tmp/pi-web-test-offline.mZEIlM9H/lifecycle.json`.
+Comparison of 921 tracked exported files against the full accepted browser snapshot
+found only this plan's evidence/status delta; application acceptance inputs did not change.
+
+The separately approved unsigned ordinary non-FF implementation merge is
+`6a36c1da5565b7fdddc136b5e1c6055d15027296`, with exact parents:
+
+1. local target `d558a88e03ce5e89a09a5a41e42d393067ea7b41`;
+2. feature `134eaf847ac481e39d8ca19529de3a68b838dda1`.
+
+Verified tree `183234d2636cbebfb5291653b9958942501db48f` equals the approved feature;
+no signature header, actual author `robert@projektbuero.at`, clean target/feature.
+The feature checkout was advanced to that integrated merge for this documentation-only
+plan closure/archive. Owning guides and ADR 0022 hold the durable behavior. Archival
+integration and removal of named feature resources remain exact separately gated
+operations; no remote publication, deployment, installed-service activation, backup
+deletion or accumulated-resource cleanup is authorized by this plan.
+
 ## Risks and Recovery
 
 Commit/ref deletion and ignored-content removal are irreversible here; no force,
@@ -163,5 +188,6 @@ it never replays records or restores deleted resources automatically.
 - [x] Source/target/activity/artifact protections and honest partial/no-replay
   behavior pass disposable tests and independent safety review.
 - [x] Required acceptance and maintained documentation are recorded honestly.
-- [ ] Final local integration is separately approved/verified or resources are
-  retained; cleanup, publication and activation remain separately authorized.
+- [x] Implementation integration is separately approved and verified; plan closure
+  is documentation-only. Feature cleanup, publication and activation remain
+  separately authorized, never implied by implementation or integration.
