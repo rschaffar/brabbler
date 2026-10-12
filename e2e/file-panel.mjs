@@ -8,6 +8,73 @@ export const filePanelFixture = `<!doctype html><html><body style="margin:20px;m
 <p>HTML preview state must survive layout changes.</p>
 <script>window.previewInstance = Math.random();</script></body></html>`;
 
+export const markdownPanelFixture = "# Diagram walkthrough\n\n```mermaid\nflowchart TD\n"
+  + Array.from({ length: 25 }, (_, i) => `N${i}[Step ${i}] --> N${i + 1}`).join("\n")
+  + "\n```\n\n```mermaid\nflowchart LR\nA[Original label] --> B[Finish]\n```\n";
+
+export async function checkMarkdownPreview(page, filePath) {
+  writeFileSync(filePath, markdownPanelFixture);
+  const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
+  if (await showSidebar.isVisible()) await showSidebar.click();
+  await page.getByTitle(filePath.replace(/\\/g, "/"), { exact: true }).click();
+  const panel = page.locator("#file-panel");
+  const blocks = panel.locator(".markdown-file-preview .markdown-code-block");
+  const diagram = blocks.first().locator(".mermaid-preview-button");
+  await diagram.locator("svg").waitFor();
+  await blocks.nth(1).locator("svg").waitFor();
+  await panel.getByLabel("Live sync active").waitFor();
+  const originalSvg = await diagram.locator("svg").elementHandle();
+  const scrollTop = await diagram.evaluate(el => { el.scrollTop = 120; return el.scrollTop; });
+  assert.ok(scrollTop > 0, "fixture scrolls inside the diagram");
+
+  // An unchanged watcher read still updates FileViewer state. It must not
+  // replace React component types and destroy the nested diagram state.
+  const read = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname.startsWith("/api/files/") && url.searchParams.get("type") === "read";
+  });
+  writeFileSync(filePath, markdownPanelFixture);
+  await read;
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await originalSvg.evaluate(el => el.isConnected), true, "unchanged refresh retains the SVG node");
+  assert.equal(await diagram.evaluate(el => el.scrollTop), scrollTop, "unchanged refresh retains diagram scroll");
+
+  // This source choice and an open zoom dialog must survive real background
+  // polling, not just an isolated component render.
+  await blocks.nth(1).getByRole("button", { name: "Source", exact: true }).click();
+  await diagram.click();
+  const dialog = page.getByRole("dialog", { name: "Mermaid diagram viewer", exact: true });
+  await dialog.waitFor();
+  await dialog.getByRole("button", { name: "Zoom in", exact: true }).click();
+  const viewport = dialog.locator(".mermaid-zoom-viewport");
+  const zoomScroll = await viewport.evaluate(el => { el.scrollTop = 120; return el.scrollTop; });
+  assert.ok(zoomScroll > 0);
+  const dialogHandle = await dialog.elementHandle();
+  await page.waitForTimeout(16_000); // covers the real sidebar and privacy polls
+  assert.equal(await dialogHandle.evaluate(el => el.isConnected && el.open), true, "background polls retain the open viewer");
+  assert.equal(await dialog.locator(".mermaid-zoom-value").textContent(), "125%");
+  assert.equal(await viewport.evaluate(el => el.scrollTop), zoomScroll);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await blocks.nth(1).getByRole("button", { name: "Preview", exact: true }).waitFor();
+  assert.equal(await blocks.nth(1).locator("svg").count(), 0, "source choice survives polling");
+  // Opening the zoom viewer intentionally hides the inline button. Capture
+  // its restored SVG now rather than comparing that legitimately removed node.
+  const restoredSvg = await diagram.locator("svg").elementHandle();
+
+  writeFileSync(filePath, markdownPanelFixture.replace("Original label", "Updated label"));
+  await blocks.nth(1).getByText("Updated label", { exact: false }).waitFor();
+  await blocks.nth(1).getByRole("button", { name: "Preview", exact: true }).click();
+  await blocks.nth(1).locator("svg").getByText("Updated label", { exact: true }).waitFor();
+  assert.equal(await restoredSvg.evaluate(el => el.isConnected), true, "changing another diagram retains the first SVG");
+  writeFileSync(filePath, markdownPanelFixture.replace("Step 0", "Changed start").replace("Original label", "Updated label"));
+  await diagram.locator("svg").getByText("Changed start", { exact: true }).waitFor();
+  await panel.getByRole("button", { name: "Close diagram.md", exact: true }).click();
+  // Closing the last tab already hides the panel in the focused selection.
+  const hidePanel = panel.getByRole("button", { name: "Hide file panel", exact: true });
+  if (await hidePanel.getAttribute("aria-expanded") === "true") await hidePanel.click();
+  console.log(`PASS: Mermaid scroll, zoom/source state, polling and live updates at ${page.viewportSize().width}px`);
+}
+
 // Mock only the bounded Git response; exercise the real explorer, file tab and renderer.
 export async function checkFileDiffViews(page, filePath) {
   const panel = page.locator("#file-panel");

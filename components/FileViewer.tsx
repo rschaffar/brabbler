@@ -8,7 +8,7 @@ import {
 } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import {
   DOCX_PREVIEW_MAX_BYTES,
@@ -65,6 +65,28 @@ interface FileData {
   nextOffset: number;
   truncated: boolean;
 }
+
+// These functions are React element types, not render callbacks. Keep both
+// code and its pre ancestor stable so viewer/parent updates do not remount
+// MermaidBlock and reset its rendered SVG, scroll, source choice or zoom dialog.
+const markdownCodeComponents: Components = {
+  code({ className, children, ...props }) {
+    const lang = className?.replace("language-", "").toLowerCase() ?? "";
+    const raw = String(children);
+    const isBlock = className?.includes("language-") || raw.includes("\n");
+    if (isBlock) {
+      if (lang === "mermaid") {
+        return <MermaidBlock code={raw.replace(/\n$/, "")} defaultPreview />;
+      }
+      return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} />;
+    }
+    return <code className={className} {...props}>{children}</code>;
+  },
+  pre({ children }) {
+    // CodeBlock and MermaidBlock provide their own wrapping.
+    return <>{children}</>;
+  },
+};
 
 const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
 const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
@@ -1706,27 +1728,7 @@ function TextFileViewer({
               rehypePlugins={markdownPreviewRehypePlugins}
               urlTransform={onOpenFile ? markdownUrlTransform : undefined}
               components={{
-                code({ className, children, ...props }) {
-                  const lang = className?.replace("language-", "").toLowerCase() ?? "";
-                  const raw = String(children);
-                  const isBlock = className?.includes("language-") || raw.includes("\n");
-                  if (isBlock) {
-                    if (lang === "mermaid") {
-                      return <MermaidBlock code={raw.replace(/\n$/, "")} defaultPreview />;
-                    }
-                    return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} />;
-                  }
-                  return (
-                    <code className={className} {...props}>
-                      {children}
-                    </code>
-                  );
-                },
-                pre({ children }) {
-                  // Render the code block directly — CodeBlock provides its own wrapping.
-                  // For non-mermaid blocks, pass through to default pre rendering.
-                  return <>{children}</>;
-                },
+                ...markdownCodeComponents,
                 a({ href, children, ...props }) {
                   delete props.node;
                   const linkedFile = onOpenFile
