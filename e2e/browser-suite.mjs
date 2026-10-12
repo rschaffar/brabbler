@@ -9,7 +9,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { createJiti } from "jiti";
-import { checkFilePanel, checkFileDiffViews, checkEditableFile, filePanelFixture } from "./file-panel.mjs";
+import { checkFilePanel, checkFileDiffViews, checkEditableFile, checkMarkdownPreview, markdownPanelFixture, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
@@ -49,6 +49,8 @@ const previewFile = join(project, "preview.html");
 const editableFile = join(project, "editable.txt");
 writeFileSync(previewFile, filePanelFixture);
 writeFileSync(editableFile, "Initial text\n");
+const markdownFile = join(project, "diagram.md");
+writeFileSync(markdownFile, markdownPanelFixture);
 mkdirSync(sessionDir, { recursive: true });
 const timestamp = "2026-08-23T00:00:00.000Z";
 const LONG = "e2e-long-session";
@@ -593,6 +595,14 @@ let context;
       await harness.closeContext(context); context = undefined;
       continue;
     }
+    if (process.env.E2E_MARKDOWN_ONLY === "1") {
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await page.locator(".markdown-code-block pre").waitFor();
+      await checkMarkdownPreview(page, markdownFile);
+      assert.deepEqual(errors, [], "Browser errors during Markdown preview");
+      await harness.closeContext(context); context = undefined;
+      continue;
+    }
     if (process.env.E2E_FILE_EDIT_ONLY === "1") {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
@@ -1041,6 +1051,7 @@ let context;
     await checkFilePanel(page, previewFile);
     await checkFileDiffViews(page, editableFile);
     await checkEditableFile(page, editableFile);
+    await checkMarkdownPreview(page, markdownFile);
     await checkExtensionDialogs(page, artifacts, viewport.width);
     await checkAskUserDialog(page, viewport.width);
     if (viewport.width <= 600) {
