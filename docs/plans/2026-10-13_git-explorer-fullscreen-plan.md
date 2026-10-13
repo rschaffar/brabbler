@@ -4,7 +4,7 @@
 
 Let the entire Git Explorer fill the Pi Web app viewport, like the existing terminal/files-panel expand control, and restore its normal side-panel layout without losing the selected branch, commit or reading state.
 
-The user explicitly selected **the whole Git Explorer**, not just commit diffs and not browser-native fullscreen. The initial request authorized this plan only. The user subsequently requested implementation and explicitly chose to keep the work on its dedicated branch, without local integration.
+The user explicitly selected **the whole Git Explorer**, not just commit diffs and not browser-native fullscreen. The initial request authorized this plan only. The user subsequently requested implementation on its dedicated branch, initially without local integration, then explicitly requested a local merge.
 
 ## Context
 
@@ -90,17 +90,17 @@ The complete offline pipeline satisfies common tests/typegen/typecheck/lint; do 
 - [x] Branch/commit and loaded review state survive layout toggles without a new repository capture; actual checkout/branch changes retain their existing resets and stale-read safeguards. Retained graph identity protects its local page state; dedicated paginated browser coverage remains above.
 - [x] Covered panes remain mounted but inaccessible; drafts, live terminal process identity, active chat and saved pane widths remain intact. Nested Wide view restores independently and Escape never aborts hidden work.
 - [x] Desktop, compact, mobile transition and no-chat browser acceptance plus empty-cwd component checks pass; focused and full required checks have the candidate/input evidence below. The two additional browser cases above remain open.
-- [x] Maintained documentation is updated and implementation is authorized and committed. Not applicable: integration into `rst-main`, publication and feature-resource cleanup; the user explicitly selected retention on this branch. No rebase, merge, remote operation, production build or installed-service activation was performed.
+- [x] Maintained documentation is updated and implementation is authorized and committed. The user subsequently requested local integration into `rst-main`; the candidate is rebased and verified as recorded below. Exact-state non-FF merge and separate resource-cleanup approval are handled by the Git tools and their durable receipts, not this plan's saved status. Remote publication, production builds and installed-service activation remain unauthorized.
 
 ## Planning Handoff
 
-This artifact records researched scope and the user's fullscreen choice. Implementation is authorized; completed tasks are checked only against the evidence below. This plan stays active because dedicated pagination/unsupported-checkout browser coverage remains open. Work stays on `docs/git-explorer-fullscreen-plan` in the linked worktree `git-explorer-fullscreen-plan`; integration and activation are not authorized.
+This artifact records researched scope and the user's fullscreen choice. Implementation is authorized; completed tasks are checked only against the evidence below. This plan stays active because dedicated pagination/unsupported-checkout browser coverage remains open. Implementation used `docs/git-explorer-fullscreen-plan` in the linked worktree `git-explorer-fullscreen-plan`. The later merge request authorizes preparing local integration, subject to the exact-action approval gate. Activation/publication are not authorized; cleanup is a separate exact-resource approval.
 
 Focused iteration passed: `nix develop --offline --no-write-lock-file .#test -c node nix/test-offline.mjs --file components/GitExplorerPanel.test.mjs --file components/AppShell.terminal.test.mjs` completed all static phases and 7/7 tests across 2 files. Evidence: `/tmp/pi-web-test-offline.glwzruY5/artifacts/run-g3kMWX` and `/tmp/pi-web-test-offline.glwzruY5/lifecycle.json`. This predates browser fixture/documentation changes and is not final acceptance.
 
-### Acceptance evidence
+### Historical pre-rebase acceptance evidence
 
-Implementation candidate: `b874d07af1cd40e3859c8695cba0913f9c87c65b`; separate bounded account-fixture repair: `1c42e47fbde9e9c0129dafd71457f65bd3e28170`. Final checkout/browser-export content-mode digest: `f16580ae75c3e94867f5d72f8267d456e2d8377768eee799d5d27ef523186882`. All runs used Linux Nix test tooling and private snapshots; browser/terminal acceptance used isolated Chromium contexts and owned free-port Turbopack servers. No live model or provider credentials were used.
+Pre-rebase implementation candidate: `b874d07af1cd40e3859c8695cba0913f9c87c65b`; separate bounded account-fixture repair: `1c42e47fbde9e9c0129dafd71457f65bd3e28170`. Then-current checkout/browser-export content-mode digest: `f16580ae75c3e94867f5d72f8267d456e2d8377768eee799d5d27ef523186882`. All runs used Linux Nix test tooling and private snapshots; browser/terminal acceptance used isolated Chromium contexts and owned free-port Turbopack servers. No live model or provider credentials were used.
 
 | Command / selection | Result and input scope | Command wall time | Retained evidence |
 | --- | --- | --- | --- |
@@ -114,6 +114,25 @@ Implementation candidate: `b874d07af1cd40e3859c8695cba0913f9c87c65b`; separate b
 Times above measure each command, not model work, review or coordination. Browser suite times excluding outer preparation were 103.3s focused and 1,055.3s full; terminal suite time was 48.4s. The full core inner pipeline took approximately 161.6s, with the remaining command time in outer shell/export preparation. These are run observations, not hardware-independent benchmarks.
 
 Content-hash comparison of full-core and final-browser source manifests found only `e2e/browser-suite.mjs` and `e2e/terminal-suite.mjs` changed: application source, core-discovered tests, manifests, lockfile and toolchain inputs were unchanged. Do not relabel the earlier full baseline as a new-tip run; final-tip static/focused and full browser checks are separate evidence. Terminal application inputs are likewise unchanged by the later account-fixture-only commit. The evidence-only follow-up needs document review, not another application acceptance cycle.
+
+### Rebased integration acceptance
+
+The local target advanced through a dependency/toolchain/Pi SDK refresh, invalidating reuse of the earlier acceptance as sufficient combined-candidate evidence. Rebase succeeded without conflicts onto `rst-main` at `2f04b78255f9a667e9f6f732b00351db18ea9419`. Tested feature tip: `670897bd62fdabf3c36015910f9aa64916676d9c`. Fullscreen application source and focused tests are byte-identical to their pre-rebase versions, but the changed dependencies/shared runtime warranted complete acceptance again.
+
+All four commands used `nix develop --offline --no-write-lock-file .#test -c`. Browser/terminal exports share source content-mode digest `c961404da3a7312b0f17d588ae993364f2c60dd53f42c46e05d70cf189806771`; offline inner digest is `ebdc25a80f3ba97393607b67731c55cb396be8e2c4bc704c6f646add52d06e7d`.
+
+| Command following the shared prefix | Result | Command wall time | Retained evidence |
+| --- | --- | --- | --- |
+| `node nix/test-offline.mjs` | PASS: all 287 files and 1,886 tests; typegen, typecheck and lint each status 0. | 191s | `/tmp/pi-web-test-offline.ziTLZQg9/artifacts/run-TvRXuD`; source manifest/lifecycle in parent root |
+| `npm run test:e2e` | PASS: complete ordinary browser suite including Explorer fullscreen and real blocked-agent Escape isolation under the updated SDK. | 1,415s | `test-results/e2e/browser-VzkfHQ`; fixtures `/tmp/pwe-RVK5SX/fixtures` |
+| `env E2E_DIFF_CONTEXT_ONLY=1 npm run test:e2e` | PASS: focused Explorer/Files long-context, retained anchors, quote draft and shadow-control acceptance. | 119s | `test-results/e2e/browser-R4xGUr`; fixtures `/tmp/pwe-pcGq4J/fixtures` |
+| `bash -c 'export PI_WEB_TEST_SHELL="$(command -v bash)"; npm run test:terminal'` | PASS: real shell at 1440px and 390px, including retained terminal identity across Explorer round trips. | 62s | `test-results/e2e/terminal-eCZEmh`; fixtures `/tmp/pwe-TVHQ3s/fixtures` |
+
+Command times include outer preparation but exclude model work/coordination. Recorded suite-only times are 1,409.9s ordinary browser, 113.9s focused context and 56.1s terminal. All completed run lifecycles report observed-owned settlement and removal of only regenerable current-run bulk. This evidence/status-only update then receives document/whitespace checks and confirmation that application, dependency and fixture inputs remain unchanged; do not describe those prior runs as executed on the new documentation commit.
+
+The first browser attempt, `test-results/e2e/browser-bEdTUl` (`/tmp/pwe-Vbr9nc`), was interrupted by the user before completion and is not acceptance. Its original running lifecycle remains unchanged. The recorded server leader PID/start ticks and exact owned server group/cwds were verified; SIGTERM settled all three observed server identities before starting the replacement isolated run. `interruption-recovery.json` records this bounded recovery, with artifacts retained and no certification of unobserved/escaped descendants. The successful replacement is not presented as fixing an application failure.
+
+The dedicated fullscreen pagination/unsupported-checkout browser task remains open above and disclosed for integration. No application source edits or deadline increases were made during merge preparation.
 
 ### Review and retained failures
 
