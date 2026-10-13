@@ -71,7 +71,7 @@ export async function checkMarkdownPreview(page, filePath) {
   await panel.getByRole("button", { name: "Close diagram.md", exact: true }).click();
   // Closing the last tab already hides the panel in the focused selection.
   const hidePanel = panel.getByRole("button", { name: "Hide file panel", exact: true });
-  if (await hidePanel.getAttribute("aria-expanded") === "true") await hidePanel.click();
+  if (await hidePanel.count() && await hidePanel.getAttribute("aria-expanded") === "true") await hidePanel.click();
   console.log(`PASS: Mermaid scroll, zoom/source state, polling and live updates at ${page.viewportSize().width}px`);
 }
 

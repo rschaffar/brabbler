@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useMemo, type ComponentProps, type MouseEvent } from "react";
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
-import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
+import { parseFileLineTarget, parsePdfPageFragment, resolveInlineFileReference, resolveLocalFileHref, shouldOpenLocalFileInApp, type OpenFileLink } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
 import { markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
 import { ImagePreview } from "./ImagePreview";
@@ -15,7 +15,21 @@ interface MarkdownBodyProps {
   className?: string;
   isStreaming?: boolean;
   cwd?: string;
-  onOpenFile?: (filePath: string, page?: number) => void;
+  onOpenFile?: OpenFileLink;
+}
+
+function InlineFileCode({ children, className, cwd, onOpenFile, ...props }: ComponentProps<"code"> & { cwd?: string; onOpenFile?: OpenFileLink }) {
+  const insideLink = useContext(MarkdownLinkContext);
+  const reference = !insideLink && onOpenFile && typeof children === "string"
+    ? resolveInlineFileReference(children, cwd)
+    : null;
+  const code = <code className={className} {...props}>{children}</code>;
+  if (!reference || !onOpenFile) return code;
+  return <a href={String(children)} onClick={(event) => {
+    if (!shouldOpenLocalFileInApp(event)) return;
+    event.preventDefault();
+    onOpenFile(reference.filePath, undefined, reference.lineTarget);
+  }}>{code}</a>;
 }
 
 function MarkdownImage({
@@ -47,6 +61,7 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
   // Stable renderer identities keep stateful blocks mounted across message hover updates.
   const components = useMemo<Components>(() => ({
     code({ className, children, ...props }) {
+      delete props.node;
       const lang = className?.replace("language-", "").toLowerCase() ?? "";
       const raw = String(children);
       const isBlock = className?.includes("language-") || raw.includes("\n");
@@ -63,12 +78,9 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
         return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} isStreaming={isStreaming} />;
       }
       return (
-        <code
-          className="markdown-inline-code"
-          {...props}
-        >
+        <InlineFileCode className="markdown-inline-code" cwd={cwd} onOpenFile={onOpenFile} {...props}>
           {children}
-        </code>
+        </InlineFileCode>
       );
     },
     pre({ children }) {
@@ -94,7 +106,7 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
         const target = event.currentTarget.getAttribute("target");
         if (target && target !== "_self") return;
         event.preventDefault();
-        openFile(filePath, parsePdfPageFragment(href) ?? undefined);
+        openFile(filePath, parsePdfPageFragment(href) ?? undefined, parseFileLineTarget(href));
       };
 
       return (

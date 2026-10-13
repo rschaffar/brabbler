@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { createJiti } from "jiti";
 import { checkFilePanel, checkFileDiffViews, checkEditableFile, checkMarkdownPreview, markdownPanelFixture, filePanelFixture } from "./file-panel.mjs";
+import { seedFileLineLinks, checkFileLineLinks } from "./file-line-links.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
@@ -159,6 +160,7 @@ let context;
     usage: { input: 100, output: 20, cacheRead: 30, cacheWrite: 0, cost: { total: 0.0123 } },
   });
   writeSession(RICH, richEntries);
+  const fileLineFixtures = seedFileLineLinks({ project, writeSession, message });
   // The default page is 50 *visible* messages (user / assistant / compaction).
   // toolResults ride along free after #810, so 48 tool-call assistants + the
   // final answer + the divider fill that window; the user prompt is the 51st
@@ -304,7 +306,7 @@ let context;
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...WORKTREE_MANAGER_IDS, ...ACTIVITY_SUBAGENTS,
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...WORKTREE_MANAGER_IDS, ...ACTIVITY_SUBAGENTS,
         ...(process.env.E2E_TRUST_ONLY === "1" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
       for (const id of ACTIVITY_SUBAGENTS) {
         assert.equal(sessions.find((session) => session.id === id)?.relation?.kind, "subagent", `${id} must have real subagent metadata`);
@@ -599,7 +601,8 @@ let context;
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       await checkMarkdownPreview(page, markdownFile);
-      assert.deepEqual(errors, [], "Browser errors during Markdown preview");
+      await checkFileLineLinks(page, base, fileLineFixtures);
+      assert.deepEqual(errors, [], "Browser errors during Markdown preview and line links");
       await harness.closeContext(context); context = undefined;
       continue;
     }
@@ -1052,6 +1055,9 @@ let context;
     await checkFileDiffViews(page, editableFile);
     await checkEditableFile(page, editableFile);
     await checkMarkdownPreview(page, markdownFile);
+    await checkFileLineLinks(page, base, fileLineFixtures);
+    await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+    await page.locator(".markdown-code-block pre").waitFor();
     await checkExtensionDialogs(page, artifacts, viewport.width);
     await checkAskUserDialog(page, viewport.width);
     if (viewport.width <= 600) {

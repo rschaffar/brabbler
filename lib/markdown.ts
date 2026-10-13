@@ -19,6 +19,21 @@ const markdownSanitizeSchema = {
   strip: [...(defaultSchema.strip || []), "iframe", "object", "style", "form"],
 };
 
+/** Neutralize local path syntax that URL sanitizers otherwise mistake for a scheme. */
+function rehypeLocalPathLinks() {
+  return (tree: import("hast").Root) => {
+    const visit = (node: import("hast").Root | import("hast").Element) => {
+      if (node.type === "element" && node.tagName === "a" && typeof node.properties.href === "string") {
+        const href = node.properties.href;
+        if (/^[a-zA-Z]:[\\/]/.test(href)) node.properties.href = `file:///${href.replace(/\\/g, "/")}`;
+        else if (/^[^/\\:#?\s]+\.[^/\\:#?\s]+:\d+(?::\d+)?(?:[?#]|$)/.test(href)) node.properties.href = `./${href}`;
+      }
+      for (const child of node.children) if (child.type === "element") visit(child);
+    };
+    visit(tree);
+  };
+}
+
 export function markdownUrlTransform(value: string): string {
   return /^file:/i.test(value) ? value : defaultUrlTransform(value);
 }
@@ -35,9 +50,20 @@ function rewriteEscapedInlineCodeBackticks(line: string): string {
 }
 
 export function normalizeDisplayMath(markdown: string): string {
+  return normalizeDisplayMathWithSourceMap(markdown).markdown;
+}
+
+/** Map normalized lines back to original source coordinates. */
+export function normalizeDisplayMathWithSourceMap(markdown: string): { markdown: string; sourceLines: number[] } {
   const lineBreak = markdown.includes("\r\n") ? "\r\n" : "\n";
   const lines = markdown.split(/\r?\n/);
   const normalized: string[] = [];
+  const sourceLines: number[] = [];
+  const append = (start: number, end: number, ...output: string[]) => {
+    normalized.push(...output);
+    output.forEach((_, i) => sourceLines.push(start + (output.length > 1
+      ? Math.floor(i * (end - start) / (output.length - 1)) : 0)));
+  };
   let fence: { marker: string; size: number } | null = null;
   let inlineCodeMarkerSize = 0;
   let rawCodeTag: string | null = null;
@@ -47,7 +73,7 @@ export function normalizeDisplayMath(markdown: string): string {
     let line = lines[index];
 
     if (rawCodeTag) {
-      normalized.push(line);
+      append(index + 1, index + 1, line);
       if (new RegExp(`</${rawCodeTag}\\s*>`, "i").test(line)) rawCodeTag = null;
       continue;
     }
@@ -59,12 +85,12 @@ export function normalizeDisplayMath(markdown: string): string {
       if (!fence) fence = { marker, size };
       else if (marker === fence.marker && size >= fence.size) fence = null;
       inlineCodeMarkerSize = 0;
-      normalized.push(line);
+      append(index + 1, index + 1, line);
       continue;
     }
 
     if (fence) {
-      normalized.push(line);
+      append(index + 1, index + 1, line);
       continue;
     }
 
@@ -74,13 +100,13 @@ export function normalizeDisplayMath(markdown: string): string {
       const remainder = line.slice((rawCodeOpen.index ?? 0) + rawCodeOpen[0].length);
       if (!new RegExp(`</${tag}\\s*>`, "i").test(remainder)) rawCodeTag = tag;
       inlineCodeMarkerSize = 0;
-      normalized.push(line);
+      append(index + 1, index + 1, line);
       continue;
     }
 
     if (/^(?: {4}|\t)/.test(line) || line.trim() === "") {
       inlineCodeMarkerSize = 0;
-      normalized.push(line);
+      append(index + 1, index + 1, line);
       continue;
     }
 
@@ -88,7 +114,7 @@ export function normalizeDisplayMath(markdown: string): string {
 
     if (inlineCodeMarkerSize || line.includes("`")) {
       inlineCodeMarkerSize = updateInlineCodeMarker(line, inlineCodeMarkerSize);
-      normalized.push(line);
+      append(index + 1, index + 1, line);
       continue;
     }
 
@@ -101,7 +127,7 @@ export function normalizeDisplayMath(markdown: string): string {
         // at column 0 becomes a "lazy continuation" line, which makes remark-math
         // mis-parse the fence pair: the opening `$$` turns into an empty math node
         // and the closing one swallows the rest of the document as math content.
-        normalized.push(
+        append(index + 1, index + 1,
           `${bracketDisplayOneLine[1]}$$`,
           `${bracketDisplayOneLine[1]}${math}`,
           `${bracketDisplayOneLine[1]}$$`,
@@ -114,7 +140,7 @@ export function normalizeDisplayMath(markdown: string): string {
     if (looseBracketDisplayOneLine) {
       const math = looseBracketDisplayOneLine[2].trim();
       if (isLikelyMathExpression(math)) {
-        normalized.push(
+        append(index + 1, index + 1,
           `${looseBracketDisplayOneLine[1]}$$`,
           `${looseBracketDisplayOneLine[1]}${math}`,
           `${looseBracketDisplayOneLine[1]}$$`,
@@ -129,7 +155,7 @@ export function normalizeDisplayMath(markdown: string): string {
       if (closingIndex !== -1) {
         // Same lazy-continuation guard as above: indent content lines that sit at
         // column 0 so the block stays parseable when nested inside a list item.
-        normalized.push(
+        append(index + 1, closingIndex + 1,
           `${bracketDisplayStart[1]}$$`,
           ...lines.slice(index + 1, closingIndex).map((mathLine) =>
             indentDisplayMathContent(mathLine, bracketDisplayStart[1]),
@@ -148,7 +174,7 @@ export function normalizeDisplayMath(markdown: string): string {
         // See the comment on bracketDisplayOneLine: without matching indentation,
         // a formula nested in a GFM list item is mis-parsed by remark-math and the
         // text after the formula renders as a garbled KaTeX error block.
-        normalized.push(
+        append(index + 1, index + 1,
           `${displayMathMatch[1]}$$`,
           `${displayMathMatch[1]}${math}`,
           `${displayMathMatch[1]}$$`,
@@ -176,12 +202,12 @@ export function normalizeDisplayMath(markdown: string): string {
           unmatchedDisplayMathUntil,
         );
         if (closing) {
-          normalized.push(`${indent}$$`, `${indent}${firstLine}`);
+          append(index + 1, index + 1, `${indent}$$`, `${indent}${firstLine}`);
           for (let j = index + 1; j < closing.index; j++) {
-            normalized.push(indentDisplayMathContent(lines[j], indent));
+            append(j + 1, j + 1, indentDisplayMathContent(lines[j], indent));
           }
-          if (closing.content) normalized.push(`${indent}${closing.content}`);
-          normalized.push(`${indent}$$`);
+          if (closing.content) append(closing.index + 1, closing.index + 1, `${indent}${closing.content}`);
+          append(closing.index + 1, closing.index + 1, `${indent}$$`);
           index = closing.index;
           continue;
         }
@@ -206,21 +232,21 @@ export function normalizeDisplayMath(markdown: string): string {
         unmatchedDisplayMathUntil,
       );
       if (closing && (closing.glued || indent !== "")) {
-        normalized.push(`${indent}$$`);
+        append(index + 1, index + 1, `${indent}$$`);
         for (let j = index + 1; j < closing.index; j++) {
-          normalized.push(indentDisplayMathContent(lines[j], indent));
+          append(j + 1, j + 1, indentDisplayMathContent(lines[j], indent));
         }
-        if (closing.content) normalized.push(`${indent}${closing.content}`);
-        normalized.push(`${indent}$$`);
+        if (closing.content) append(closing.index + 1, closing.index + 1, `${indent}${closing.content}`);
+        append(closing.index + 1, closing.index + 1, `${indent}$$`);
         index = closing.index;
         continue;
       }
     }
 
-    normalized.push(normalizeInlineLatexMath(line));
+    append(index + 1, index + 1, normalizeInlineLatexMath(line));
   }
 
-  return normalized.join(lineBreak);
+  return { markdown: normalized.join(lineBreak), sourceLines };
 }
 
 interface DisplayMathClose {
@@ -374,12 +400,14 @@ export const markdownPreviewRemarkPlugins: ReactMarkdownOptions["remarkPlugins"]
 
 export const markdownRehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [
   rehypeRaw,
+  rehypeLocalPathLinks,
   [rehypeSanitize, markdownSanitizeSchema],
   [rehypeKatex, { throwOnError: false, strict: false }],
 ];
 
 export const markdownPreviewRehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [
   rehypeRaw,
+  rehypeLocalPathLinks,
   [rehypeSanitize, markdownSanitizeSchema],
   [rehypeKatex, { throwOnError: false, strict: false }],
 ];
