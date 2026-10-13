@@ -6,6 +6,14 @@ pins and native PTY pin unless their contracts have been evaluated separately.
 Lockfile changes also require updating `nix/npm-deps.nix` and preparing matching
 Nix-managed dependencies; never bypass the checkout dependency marker.
 
+## Mermaid migration
+
+Root/demo resolve Mermaid **12.2.0**. Its Node >=22.12 requirement fits the
+application's existing >=22.19 requirement. The existing initialize/parse/render
+adapter required no API changes; desktop/mobile browser coverage exercises math,
+themes, source/preview, zoom, SVG exports, polling and live diagram updates.
+This does not certify every Mermaid diagram grammar or optional layout engine.
+
 ## KaTeX compatibility exception
 
 Both manifests pin KaTeX **0.19.0** and use `"katex": "$katex"` in `overrides`.
@@ -16,7 +24,7 @@ vulnerable nested copies. The conditional inherited-trust vulnerability
 is fixed from 0.18.2; it requires pre-existing prototype pollution.
 
 This is **outside the adapters' declared upstream ranges**: rehype-katex 7.0.1
-requests `^0.16.0`, and Mermaid requests `^0.16.47`. It is a narrowly tested local
+requests `^0.16.0`, and Mermaid 12.2.0 requests `^0.18.0`. It is a narrowly tested local
 compatibility exception, not upstream support or proof that all formulas work.
 Keep the exact pin until adapter releases support a fixed renderer, then remove
 the override after verifying every resolved copy and CSS alignment again.
