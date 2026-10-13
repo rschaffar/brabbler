@@ -1186,7 +1186,19 @@ let context;
   await page.getByRole("button", { name: /^Account for/ }).click();
   await page.getByLabel("Account provider").selectOption("anthropic");
   const accountPicker = page.getByLabel("Session account", { exact: true });
+  const waitForAccountSave = (accountId) => {
+    const pending = page.waitForResponse((response) => {
+      if (new URL(response.url()).pathname !== "/api/auth/accounts/selection" || response.request().method() !== "PUT") return false;
+      const body = response.request().postDataJSON();
+      return body.scope === "session" && body.sessionId === RICH && body.provider === "anthropic" && body.accountId === accountId;
+    });
+    void pending.catch(() => {});
+    return pending;
+  };
+  // selectOption dispatches change, not completion of the asynchronous durable write.
+  const accountSaved = waitForAccountSave(secondaryAccountId);
   await accountPicker.selectOption(secondaryAccountId);
+  assert.equal((await accountSaved).status(), 200);
   assert.equal((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${RICH}`)).session.anthropic, secondaryAccountId);
   console.log("PASS: browser session account selector persists an idle-session switch");
   const removed = await fetch(`${base}/api/auth/accounts`, {
@@ -1202,7 +1214,9 @@ let context;
   // rejected PUT, rather than testing restoration/display of the saved binding.
   assert.equal(await unavailablePicker.inputValue(), secondaryAccountId);
   assert.equal(await unavailablePicker.locator("option:checked").innerText(), "Unavailable account");
+  const accountCleared = waitForAccountSave(null);
   await unavailablePicker.selectOption("");
+  assert.equal((await accountCleared).status(), 200);
   assert.deepEqual((await api(`/api/auth/accounts/selection?cwd=${encodeURIComponent(project)}&sessionId=${RICH}`)).session, {});
   console.log("PASS: deleted account remains visible and can be explicitly switched to Pi default");
   await harness.closeContext(context);
