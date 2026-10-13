@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { accountCredentialStore, listProviderAccounts } from "@/lib/provider-accounts";
+import { listProviderAccounts } from "@/lib/provider-accounts";
+import { prepareAccountModelRuntime } from "@/lib/account-model-runtime";
 import { createModelRuntimeWithExtensions } from "@/lib/model-runtime";
 import { invalidateModelsCache } from "@/lib/models-cache";
 
@@ -12,8 +13,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     const { apiKey } = await req.json() as { apiKey?: string };
     if (typeof apiKey !== "string" || !apiKey.trim()) return NextResponse.json({ error: "API key is required" }, { status: 400 });
-    const store = accountCredentialStore({ [account.provider]: id }, undefined, undefined, { allowPendingLogin: true });
-    const runtime = await createModelRuntimeWithExtensions(store);
+    const binding = prepareAccountModelRuntime({ [account.provider]: id }, { allowPendingLogin: true });
+    const store = binding.runtimeOptions.credentials!;
+    const runtime = await createModelRuntimeWithExtensions(binding);
     const login = runtime.getProvider(account.provider)?.auth.apiKey?.login;
     if (!login) return NextResponse.json({ error: "Provider does not support API key login" }, { status: 400 });
     let submitted = false;

@@ -56,6 +56,7 @@ export function createSessionReferenceExtension(
     hidden: true,
     factory: (pi) => {
       pi.on("before_agent_start", async (event) => {
+        if (event.messageType !== "user") return;
         const ids = referencedSessionIds(event.prompt);
         if (!ids.length) return;
         const excerpts = await Promise.all(ids.map(async (id) => {

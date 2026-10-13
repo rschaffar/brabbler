@@ -25,6 +25,21 @@ protocol; the SDK uses the same package/version. Release age alone does not
 justify a replacement. Any future replacement must prove cross-process and SDK
 interoperability, including the existing stale-delete/concurrent-login regression.
 
+## Pi SDK 1.2.0 catalog compatibility
+
+The Pi package pins remain exact. SDK 1.2.0 personalizes OpenRouter catalogs via
+`/models/user` and persists the resulting model list, limits and prices. Additional
+accounts must therefore bind both credentials and a catalog store to the same
+immutable complete account-ID snapshot, never reuse or seed from the Pi-default
+store. `lib/account-model-runtime.ts` owns this boundary; ordinary Pi-default
+routes retain CLI-compatible storage. See [Model/account contracts](model-internals.md).
+
+Focused regressions extend `lib/provider-accounts.test.mjs` and
+`lib/model-catalog-refresh*.test.mjs`: synthetic disk-backed A/B/default catalogs,
+offline reopening, pending-login ownership, refresh joining/serialization and
+metadata-only invalidation. All catalog HTTP is stubbed; these tests do not replace
+parent-owned static, session, browser, terminal or plugin acceptance on SDK upgrades.
+
 ## Deferred compiler/linter majors
 
 **Retraction of the immediate ESLint 10 recommendation:** Next 16.4's current

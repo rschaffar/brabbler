@@ -34,6 +34,7 @@ function loginFixture(t) {
     "@/lib/models-cache": { invalidateModelsCache() { invalidations++; } },
     "@/lib/model-runtime": { createModelRuntimeWithExtensions() { initCalls++; return initialization.promise; } },
     "@/lib/provider-accounts": { listProviderAccounts: () => [] },
+    "@/lib/account-model-runtime": { prepareAccountModelRuntime() { throw new Error("Default OAuth must not select an extra-account binding"); } },
     "@/lib/sse-stream": sse,
   };
   const loaded = loadTsModule(new URL("./[provider]/route.ts", import.meta.url), mocks);

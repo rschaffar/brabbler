@@ -103,10 +103,18 @@ export async function setProjectAccount(cwd: string, provider: string, accountId
   });
 }
 
-export function validateAccountSelection(selection: AccountSelection, path = defaultPath()): void {
+export function validateAccountSelection(
+  selection: Readonly<AccountSelection>,
+  path = defaultPath(),
+  config: { allowPendingLogin?: boolean } = {},
+): void {
+  if (!selection || typeof selection !== "object" || Array.isArray(selection)) throw new Error("Invalid account selection");
+  // Pi default has no extra-account dependency, even if that separate file is broken.
+  if (Object.keys(selection).length === 0) return;
   const data = parseFile(path);
   for (const [provider, id] of Object.entries(selection)) {
-    if (typeof id !== "string" || !own(data.accounts, id) || data.accounts[id].provider !== provider || !data.accounts[id].credential) {
+    if (!provider || typeof id !== "string" || !id || !own(data.accounts, id) || data.accounts[id].provider !== provider
+      || (!data.accounts[id].credential && !config.allowPendingLogin)) {
       throw new Error(`Selected account is unavailable for ${provider}`);
     }
   }
@@ -138,12 +146,12 @@ function legacyStore(path = join(getAgentDir(), "auth.json")): CredentialStore {
 }
 
 export function accountCredentialStore(
-  selection: AccountSelection,
+  selection: Readonly<AccountSelection>,
   path = defaultPath(),
   legacy: CredentialStore = legacyStore(),
   config: { allowPendingLogin?: boolean } = {},
 ): CredentialStore {
-  const bound = { ...selection };
+  const bound = Object.isFrozen(selection) ? selection : Object.freeze({ ...selection });
   const accountFor = (provider: string, data: AccountFile) => {
     const id = bound[provider];
     const account = id && own(data.accounts, id) ? data.accounts[id] : undefined;

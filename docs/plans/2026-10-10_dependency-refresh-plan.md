@@ -22,7 +22,13 @@ The Nix-native development/service plan owns the existing environment and servic
 - [x] Remove redundant YAML typings, align Node typings with Node 22, move the 12 shipped renderers into runtime dependencies, and retain proper-lockfile for proven SDK locking interoperability. Classification comparison, realized cache and focused/static checks passed.
 - [x] Refresh both advisory inventories and document remaining exposure, compatibility debt and license/notice obligations in the maintained owner `docs/dependencies.md`.
 - [x] Separately authorized demo repair: fix pre-existing archived/search-result type contracts, add two regressions, and adapt remaining demo hook captures to the enabled compiler rules. Independent demo static checks passed.
-- [ ] Run complete acceptance on the settled candidate, independently review the diff, and record exact source identities, commands, results, runtimes and retained artifact paths.
+- [x] Repair the separately authorized same-branch receipt reconciliation race and fixture settings transport; commits `10925c2` and `dfc10a8`, evidence below.
+- [x] Diagnose cleanup subprocess scheduling and commit fresh marker-path batching with fail-closed status handling in `37e7df6`; preserve all validation checkpoints and unchanged deadlines.
+- [x] Confirm and prepare the newly user-requested Pi SDK 1.2.0 release, replacing the earlier decision to retain 1.1.0. Registry metadata and matching Nix cache are retained; compatibility acceptance passed on the recorded source snapshot.
+- [x] Adapt user/custom `before_agent_start` handlers; complete core/static and real-SDK plugin acceptance verifies user references, custom notifications, exact prompts and launch observers on SDK 1.2.0.
+- [x] Recover failed exclusively launch-owned admission with unchanged final guards, public bounded disposal and canonical-ID retirement barriers; 78 focused lifecycle/real-SDK cases and complete plugin/browser acceptance passed.
+- [x] Isolate personalized catalogs by immutable account snapshot, retaining Pi-default CLI storage; 29 focused catalog/boundary cases and complete core/browser acceptance passed.
+- [x] Complete settled-candidate application acceptance and independent review; exact source identities, commands, results, runtimes and retained paths are recorded below.
 
 ## Nix-only checkpoint evidence
 
@@ -79,13 +85,146 @@ initial type generation needed the public parent manifest; then existing type an
 compiler-memoization issues were diagnosed rather than suppressed. This evidence
 predates the demo README-only verification guidance update in `d02beb3`.
 
+## Receipt, fixture transport and cleanup checkpoints
+
+The receipt race was same-branch advancement: retry paired a newer ancestor with
+an older captured receipt leaf. `10925c2` rereads the current canonical branch on
+movement and merges only returned durable cards, retaining navigation/live-view
+and revision guards. Core/static passed 1,838 cases; focused Session Launch and
+real-PTY acceptance passed. Subsequent failures remain retained, not erased by
+later passes.
+
+`dfc10a8` extends the existing one-shot `Connection: close` fixture discipline to
+settings PATCH calls. The precise preceding ECONNRESET cause was not established.
+Core/static passed 284 files / 1,841 cases; complete desktop/mobile browser passed
+(`browser-GbXtqz`); plugin integration passed 335 cases in 98.59 s.
+
+Cleanup profiling (`browser-28XfIk`, diagnostic only) measured 81 Git calls and
+4–5 seconds per artifact stage; receipt callbacks were at most 1.4 ms. Scalar
+summary: `test-results/dependency-refresh/cleanup-profile-summary.txt`.
+Temporary instrumentation was removed. Batching checkpoint export
+`5220feab5b55789a0f4e023542cba6ea0b7c6dc0032c7a1f8e63dae0f8b97086`
+passed core/static 284 files / 1,841 cases (156.01 s), plugin integration 358 cases
+(79.42 s), and plugin-only desktop/mobile browser under unchanged 30-second
+completion waits (369.52 s, `browser-TF9CRK`, `/tmp/pwe-v06bvm`). Inner and outer
+lifecycle both settled. Independent review then found the pre-existing broad
+status-1 catch: two production-boundary regressions failed before narrowing it
+to the optional config read, and all 17 focused cases passed afterward.
+`37e7df6128393b5391a951c7e6765abe185f747e` commits both changes; the earlier broad
+passes are not relabelled as runs on that final error-handling delta.
+
+## Newly authorized SDK 1.2.0 compatibility work
+
+The user requested the release published approximately 13 hours earlier and then
+explicitly chose to retain 1.2.0 with bounded compatibility fixes. All four direct
+Pi packages are exact 1.2.0; MCP/codemode/telemetry transitives also resolve 1.2.0.
+Native PTY and proper-lockfile pins remain unchanged. Demo does not depend on Pi.
+Registry evidence: `test-results/dependency-refresh/pi-mono-latest.json`; all
+researched public tarballs were SHA512-verified before extraction. New npm cache:
+`sha256-N6uwL/EZ2XG+8ZC8HYMrLz10/5fciB/hP+jr0uzbeoA=`. Dependency derivation
+preparation took 44.35 s; after explicit user approval, only the outdated managed
+feature-worktree `node_modules` was removed and regenerated (7.51 s), without a
+backup, source deletion or installed-service changes.
+
+Static verification reproduced two new `BeforeAgentStartEvent.prompt` type errors
+(`/tmp/pi-web-test-offline.jPPpEfn3`); prompt-only handlers now narrow to user events,
+while exact-system-prompt handling must continue to apply to custom-triggered runs.
+Complete core/static, real-SDK plugin and browser acceptance now cover those edits;
+source identities and retained evidence are recorded below.
+
+Real SDK diagnostic, not acceptance:
+`/tmp/pi-upgrade-readonly-cw7vf2qr/preflight-throw-run/evidence.json`. A final
+admission callback rejection after an awaited hook leaves SDK 1.2.0 busy despite
+zero faux provider calls, prevents an ordinary next prompt and leaves abort
+unsettled within the observed bound. The host now owns a fresh launch destination
+exclusively before publishing its wrapper. Failed final admission permanently
+refuses that wrapper, rejects acknowledgement promptly and runs bounded exactly-once
+public disposal; successful admission releases ownership. Direct pending-owned
+destroy/shutdown also refuse. A canonical persisted SDK-ID barrier prevents alias
+or HMR reopen until disposal succeeds; failure blocks same-ID reuse. Final guards
+still throw, no SDK fields are repaired and no prompt is replayed. Failed launch
+identity/history and honest receipts remain.
+
+OpenRouter now persists authenticated `/models/user` results with account-specific
+limits/prices. The initial upgrade exposed a provider-keyed shared store;
+`lib/account-model-runtime.ts` now binds credentials and storage to one branded,
+immutable complete account snapshot. Additional scopes use a canonical-selection
+hash beneath `pi-web/model-stores/v1`, never credential-derived paths or copied
+unknown-owner caches. Empty/Pi-default scope keeps CLI-compatible storage. Refresh
+joining/serialization is scope/provider-aware and metadata changes invalidate
+caches. Independent review found malformed supplied bindings could select default
+storage and invalid present provider filters could widen refresh; both now fail
+closed. Synthetic A/B/default disk-backed catalogs, offline reopening and route
+boundary regressions passed without live provider calls.
+
+Final acceptance must cover the resulting SDK/runtime candidate: complete common
+baseline, separate plugin/real-SDK cases, complete browser and real-PTY coverage.
+Retain older failures and identify actual input digests; do not reuse earlier
+passes as new-input evidence. `docs/dependencies.md`, `docs/model-internals.md` and
+session guides remain the maintained contract owners. Integration, publication
+and historical-resource cleanup are still separate decisions.
+
+## SDK 1.2.0 final acceptance evidence
+
+The stable application snapshot exported as
+`0e3b4185ae2b0e194a58fae1850fe2fa461d671fac906ca3acdedff1eefbb55c`.
+Commands used `nix develop --offline --no-write-lock-file`; core/browser/terminal
+used `.#test`. Times below are command wall times, separate from dependency
+preparation, reviews and coordination. These passes precede the status-only plan
+update recording them, not relabelled runs on a later documentation revision.
+
+- `node nix/test-offline.mjs`: complete exporter contracts, route type generation,
+  typecheck, lint and **285 files / 1,877 cases** passed in **149.90 s**.
+  Executed inner source digest
+  `8863a53180a29de634dddb97c8e282d631880de738d802034e2e31c2ffea482a`;
+  artifacts `/tmp/pi-web-test-offline.wUbFN8bf/artifacts/run-xb4E0I`.
+- Default-shell `env -i PATH="$PATH" LANG=C.UTF-8 PI_OFFLINE=1 node
+  --experimental-strip-types --test "plugins/**/*.test.mjs"`: **374 cases** passed
+  in **72.16 s**, including real-SDK Session Launch acceptance.
+- `npm run test:e2e`: complete desktop/mobile acceptance passed in **1,132.18 s**;
+  `test-results/e2e/browser-vv96u5`, source/fixtures `/tmp/pwe-JpGbik`.
+- `env E2E_GIT_WORKFLOW_PLUGIN_ONLY=1 npm run test:e2e`: both viewports passed,
+  including cleanup under unchanged completion deadlines, in **345.36 s**;
+  `test-results/e2e/browser-osjWUE`, source/fixtures `/tmp/pwe-vE457H`.
+- `npm run test:terminal`: real PTY desktop/mobile acceptance passed in **46.61 s**;
+  `test-results/e2e/terminal-tCV22f`, source/fixtures `/tmp/pwe-E6487P`.
+- `nix flake check --offline --no-write-lock-file --no-build`: x86_64-linux
+  evaluation passed in **2.22 s**; other systems were not checked.
+
+All three passing browser/terminal manifests report no errors, resources settled
+and successful settled outer suite phases. Owned regenerable bulk was removed;
+source, reports and fixtures remain. Logs are
+`test-results/dependency-refresh/pi-mono-final-{core,plugin-core,browser,plugin-browser,terminal,evaluation}.log`.
+Independent account/lifecycle reviews found no further concrete defect after the
+fail-closed binding/filter and retirement-race repairs. Focused follow-ups passed
+56 cases for catalog/auth/reference coverage and 22 extension-UI cases, including
+live expired-response idempotence and post-teardown refusal without new receipts.
+
+Earlier failures remain visible: `pi-mono-core-before-const.log` (lint),
+`pi-mono-core-before-oauth-fixture.log` (strict fixture missing its new import),
+`pi-mono-core-before-ui-teardown.log` (fixture expected a disposed wrapper to
+accept a response). Assertions were repaired/strengthened, not disabled.
+`browser-l1lVeX` is incomplete, not acceptance: the 700-second tool wait expired
+before the documented full-suite runtime; launcher settlement was absent and its
+orphaned exact dev server was subsequently stopped with SIGTERM after identity
+checks. Its process group was observed absent; bulk remains. Logs and bounded
+observation are `pi-mono-browser-tool-timeout.{log,json}`. The fresh full run used
+an adequate tool wait only; application deadlines and assertions were unchanged.
+
+The new root lock advisory query still matches only braces and sprintf-js;
+registry license metadata for all seven resolved Pi packages is MIT. Remaining
+advisory and artifact-wide licensing obligations stay with `docs/dependencies.md`.
+Public disposal does not certify arbitrary extension/process settlement;
+pre-wrapper startup cancellation is outside owned-wrapper retirement. No
+production build, service activation, integration or publication occurred.
+
 ## Non-Goals
 
 No application production builds, releases, pushes, system activation, live configuration/credential changes, test deadline inflation or weakening of security assertions. No dependency replacement solely because a small mature package has infrequent releases.
 
 ## Risks
 
-An unstable toolchain update changes native PTY and browser inputs. New compiler/lint releases can change contracts. Updating direct KaTeX alone can leave old nested renderers because upstream adapters constrain 0.16.x. Root runtime libraries currently classed as dev dependencies may be intentionally bundled; classification changes need packaging evidence.
+An unstable toolchain update changes native PTY and browser inputs. New compiler/lint releases can change contracts. Updating direct KaTeX alone can leave old nested renderers because upstream adapters constrain 0.16.x. Runtime classification changes downstream npm installs; distributed artifacts still require release-time license/notice review. SDK catalog and admission behavior require account-isolation and real-SDK lifecycle acceptance, not just type compatibility.
 
 ## Rollback / Recovery
 
@@ -94,7 +233,7 @@ Keep coherent feature commits and failed verification artifacts. Do not overwrit
 ## Completion Checklist
 
 - [x] Nix-only checkpoint passes required evaluation, core/static, browser and terminal checks before npm changes.
-- [ ] Dependency updates and any retracted recommendations have explicit evidence and risk dispositions.
-- [ ] Final acceptance and independent review cover the exact candidate without a production build.
-- [ ] Remaining security/compatibility limits have a maintained owner and are reported honestly.
+- [x] Dependency updates and retracted recommendations have explicit evidence and risk dispositions.
+- [x] Final application acceptance and independent review cover the recorded source snapshot without a production build; the evidence/status-only follow-up retains separately identified checks.
+- [x] Remaining security/compatibility limits have maintained owners and are reported honestly.
 - [ ] Completion intent is resolved; any local integration/cleanup receives the applicable tool approval.

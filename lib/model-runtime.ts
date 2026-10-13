@@ -3,8 +3,7 @@ import {
   getAgentDir,
   ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
-import type { CredentialStore } from "@earendil-works/pi-ai";
-import { join } from "node:path";
+import { accountModelRuntimeOptions, type AccountModelRuntimeBinding } from "./account-model-runtime";
 
 /**
  * ModelRuntime that also includes providers registered by extensions (an
@@ -17,13 +16,12 @@ import { join } from "node:path";
  * package extensions always load. Not cached: these routes need fresh
  * credentials for auth status and login/logout to be truthful.
  */
-export async function createModelRuntimeWithExtensions(credentials?: CredentialStore): Promise<ModelRuntime> {
+export async function createModelRuntimeWithExtensions(binding?: AccountModelRuntimeBinding): Promise<ModelRuntime> {
+  // Validate before even asking the SDK for its default paths. Never let a supplied
+  // null, legacy CredentialStore or partial object silently select Pi default.
+  const runtimeOptions = binding === undefined ? undefined : accountModelRuntimeOptions(binding);
   const agentDir = getAgentDir();
-  const modelRuntime = credentials ? await ModelRuntime.create({
-    credentials,
-    modelsPath: join(agentDir, "models.json"),
-    modelsStorePath: join(agentDir, "models-store.json"),
-  }) : undefined;
+  const modelRuntime = runtimeOptions === undefined ? undefined : await ModelRuntime.create(runtimeOptions);
   const services = await createAgentSessionServices({ cwd: agentDir, agentDir, ...(modelRuntime ? { modelRuntime } : {}) });
   return services.modelRuntime;
 }

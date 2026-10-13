@@ -1,6 +1,8 @@
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createModelRuntimeWithExtensions } from "@/lib/model-runtime";
 import { invalidateModelsCache } from "@/lib/models-cache";
+import { prepareAccountModelRuntime, type AccountModelRuntimeBinding } from "./account-model-runtime";
+import type { AccountSelection } from "./provider-accounts";
 
 /**
  * On-demand refresh of pi's remote provider catalogs.
@@ -10,7 +12,8 @@ import { invalidateModelsCache } from "@/lib/models-cache";
  * invisible until pi-web itself publishes a new version (#914: Kimi for
  * Coding's K2.8). The SDK already carries the missing half: every built-in
  * provider is wrapped in a pi.dev catalog overlay that `ModelRuntime.refresh()`
- * fetches and persists to `~/.pi/agent/models-store.json`, keyed by provider.
+ * fetches and persists to a scope-local `models-store.json`, keyed by provider.
+ * Pi default keeps the CLI-shared file; selected accounts use isolated stores.
  * Restoring that overlay needs no network, which is why "run the pi CLI once"
  * was the known workaround — the CLI refreshes with the network on, and every
  * pi-web request then reads what the CLI left behind. Both of pi-web's own
@@ -33,10 +36,19 @@ import { invalidateModelsCache } from "@/lib/models-cache";
 const CATALOG_REFRESH_TIMEOUT_MS = 15_000;
 
 /** The parts of a model that decide whether the Models panel has something new to show. */
-export interface CatalogModel {
-  id: string;
-  name: string;
-  provider: string;
+const CATALOG_METADATA = ["type", "api", "input", "output", "reasoning", "thinkingLevelMap", "promptCache",
+  "inputLimits", "contextWindow", "maxTokens", "cost", "compat", "samplingParams", "samplingParamsByThinkingLevel"] as const;
+export type CatalogModel = { id: string; name: string; provider: string }
+  & Partial<Record<typeof CATALOG_METADATA[number], unknown>>;
+
+/** Sort nested object keys, preserving array order; never serialize request headers. */
+function structuredMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(structuredMetadata);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => key.toLowerCase() !== "headers")
+    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([key, item]) => [key, structuredMetadata(item)]));
+  return value;
 }
 
 export interface CatalogRefreshResult {
@@ -51,6 +63,8 @@ export interface CatalogRefreshResult {
 export interface CatalogRefreshOptions {
   /** Restrict the pass to these provider ids. Defaults to every refreshable provider. */
   providers?: readonly string[];
+  /** Complete selected identity snapshot. Missing or empty means Pi default. */
+  accounts?: Readonly<AccountSelection>;
   signal?: AbortSignal;
 }
 
@@ -61,10 +75,10 @@ export interface CatalogRefreshOptions {
  * every pass, so comparing stored bytes would report a change each time.
  */
 export function modelCatalogSignature(models: readonly CatalogModel[]): string {
-  return models
-    .map((model) => `${model.provider}\u0000${model.id}\u0000${model.name}`)
-    .sort()
-    .join("\n");
+  return JSON.stringify(models.map((model) => JSON.stringify(structuredMetadata({
+    provider: model.provider, id: model.id, name: model.name,
+    ...Object.fromEntries(CATALOG_METADATA.map((key) => [key, key === "type" ? model[key] ?? "chat" : model[key]])),
+  }))).sort());
 }
 
 /** pi reads any `PI_OFFLINE` value, empty included, as "never touch the network". */
@@ -79,10 +93,11 @@ export function isModelNetworkDisabled(): boolean {
  * `PI_OFFLINE` rule instead of pi-web overriding it, and always with
  * `force: true`: someone who pressed the button is asking past the SDK's
  * four-hour freshness window, which is the whole point of a manual refresh.
- * Never rejects — a provider that cannot be reached is reported, not thrown.
+ * Provider failures are reported rather than thrown; identity validation fails closed.
  */
-export async function refreshModelCatalogs(
-  options: CatalogRefreshOptions = {},
+async function runModelCatalogRefresh(
+  options: CatalogRefreshOptions,
+  binding: AccountModelRuntimeBinding,
 ): Promise<CatalogRefreshResult> {
   if (isModelNetworkDisabled()) return { completed: false, changed: false, reason: "offline" };
 
@@ -91,7 +106,7 @@ export async function refreshModelCatalogs(
 
   let runtime: ModelRuntime;
   try {
-    runtime = await createModelRuntimeWithExtensions();
+    runtime = await createModelRuntimeWithExtensions(Object.keys(binding.accounts).length ? binding : undefined);
   } catch {
     return { completed: false, changed: false, reason: "runtime" };
   }
@@ -120,31 +135,43 @@ export async function refreshModelCatalogs(
 
 declare global {
   var __piModelCatalogRefreshPasses: Map<string, Promise<CatalogRefreshResult>> | undefined;
+  var __piModelCatalogRefreshScopes: Map<string, Promise<CatalogRefreshResult>> | undefined;
 }
 
-function getPasses(): Map<string, Promise<CatalogRefreshResult>> {
-  if (!globalThis.__piModelCatalogRefreshPasses) globalThis.__piModelCatalogRefreshPasses = new Map();
-  return globalThis.__piModelCatalogRefreshPasses;
+function captureRefresh(options: CatalogRefreshOptions) {
+  const binding = prepareAccountModelRuntime(options.accounts);
+  const providers = options.providers === undefined ? undefined : Object.freeze([...new Set(options.providers)].sort());
+  return { binding, options: Object.freeze({ ...options, accounts: binding.accounts, providers }) };
 }
 
-/**
- * Run a pass, or join the one already running for the same providers.
- *
- * A double-click, or two browser tabs on the same panel, must not start two
- * passes racing over the same store file. Passes for different providers are
- * independent, so they are keyed rather than globally serialized.
- */
-export function shareModelCatalogRefresh(
-  options: CatalogRefreshOptions = {},
-): Promise<CatalogRefreshResult> {
-  const key = options.providers ? [...options.providers].sort().join(",") : "";
-  const passes = getPasses();
+/** Serialize whole passes per store, including all-provider/subset overlaps. */
+function enqueueRefresh(options: CatalogRefreshOptions, binding: AccountModelRuntimeBinding): Promise<CatalogRefreshResult> {
+  const scopes = globalThis.__piModelCatalogRefreshScopes ??= new Map();
+  const scope = binding.modelsStorePath;
+  const previous = scopes.get(scope);
+  const pass = (previous ? previous.catch(() => undefined) : Promise.resolve())
+    .then(() => runModelCatalogRefresh(options, binding)).finally(() => {
+      if (scopes.get(scope) === pass) scopes.delete(scope);
+    });
+  scopes.set(scope, pass);
+  return pass;
+}
+
+/** Unjoined explicit pass; invalid identities reject before any SDK work. */
+export function refreshModelCatalogs(options: CatalogRefreshOptions = {}): Promise<CatalogRefreshResult> {
+  const captured = captureRefresh(options);
+  return enqueueRefresh(captured.options, captured.binding);
+}
+
+/** Join only identical identity/provider sets; different identities never share work. */
+export function shareModelCatalogRefresh(options: CatalogRefreshOptions = {}): Promise<CatalogRefreshResult> {
+  const captured = captureRefresh({ ...options, signal: undefined });
+  const key = JSON.stringify([captured.binding.modelsStorePath, captured.options.providers ?? null]);
+  const passes = globalThis.__piModelCatalogRefreshPasses ??= new Map();
   const running = passes.get(key);
   if (running) return running;
-
-  // Deliberately without the caller's signal: a viewer who navigated away must
-  // not abort the pass a second viewer is now waiting on.
-  const pass = refreshModelCatalogs({ ...options, signal: undefined }).finally(() => {
+  // A disconnected viewer must not abort work another viewer joined.
+  const pass = enqueueRefresh(captured.options, captured.binding).finally(() => {
     if (passes.get(key) === pass) passes.delete(key);
   });
   passes.set(key, pass);

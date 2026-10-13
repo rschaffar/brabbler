@@ -24,11 +24,18 @@ async function fixture(t) {
   writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ defaultProvider: faux.provider.id, defaultModel: faux.getModel().id,
     cacheWarming: "off", compaction: { enabled: false }, retry: { enabled: false } }));
   writeFileSync(join(agentDir, "extensions", "launch-fixture.js"), `export default function (pi) {
+    globalThis.__sessionLaunchConstruct?.();
+    pi.on("session_start", async (_event, ctx) => {
+      globalThis.__sessionLaunchObserve?.(ctx);
+      await globalThis.__sessionLaunchBinding?.(ctx);
+    });
     pi.registerProvider(globalThis.__sessionLaunchFaux.provider);
     pi.on("before_agent_start", async (event, ctx) => {
+      globalThis.__sessionLaunchObserve?.(ctx);
       if (globalThis.__sessionLaunchHook) await globalThis.__sessionLaunchHook(event, ctx, pi);
     });
     pi.on("input", async (event, ctx) => {
+      globalThis.__sessionLaunchObserve?.(ctx);
       if (globalThis.__sessionLaunchInputHook) return await globalThis.__sessionLaunchInputHook(event, ctx);
     });
     pi.registerCommand("launch-child", { handler: async (_args, ctx) => {
@@ -37,6 +44,10 @@ async function fixture(t) {
     } });
   }`);
   const wrappers = [];
+  globalThis.__sessionLaunchObserve = (ctx) => {
+    const wrapper = getRpcSession(ctx.sessionManager.getSessionId());
+    if (wrapper && !wrappers.includes(wrapper)) wrappers.push(wrapper);
+  };
   const start = async (tools) => {
     const started = await startRpcSession("__fixture__" + Math.random(), "", cwd, { initialModel: { provider: faux.provider.id, modelId: faux.getModel().id }, thinkingLevel: "off", ...(tools ? { toolNames: tools } : {}) });
     wrappers.push(started.session); return started.session;
@@ -49,6 +60,7 @@ async function fixture(t) {
     while (sessions.some((wrapper) => wrapper.pendingPromptCount > 0) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(sessions.some((wrapper) => wrapper.pendingPromptCount > 0), false, "owned prompts settled before fixture/environment removal");
     delete globalThis.__sessionLaunchFaux; delete globalThis.__sessionLaunchHook; delete globalThis.__sessionLaunchInputHook;
+    delete globalThis.__sessionLaunchObserve; delete globalThis.__sessionLaunchBinding; delete globalThis.__sessionLaunchConstruct;
     if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous;
     if (previousOffline === undefined) delete process.env.PI_OFFLINE; else process.env.PI_OFFLINE = previousOffline;
     rmSync(root, { recursive: true, force: true });
@@ -94,6 +106,7 @@ test("real model-issued launch uses ordinary independent SDK sessions, exact app
   const replay = []; child.onEvent((event) => replay.push(event))();
   const request = replay.find((event) => event.method === "ask_user");
   assert.ok(request);
+  await parent.send({ type: "abort" }); assert.equal(child.isAlive(), true); assert.equal(child.isRunning(), true);
   await parent.shutdown(); assert.equal(child.isAlive(), true); assert.equal(child.isRunning(), true);
   await child.send({ type: "extension_ui_response", id: request.id, answer: { kind: "freeform", text: "Independent" } }); await settled(child);
   const file = child.sessionFile, id = child.sessionId; await child.shutdown();
@@ -130,6 +143,30 @@ test("Chat-only callers have no launch tool; missing selected account and unavai
   await assert.rejects(sessionLaunchHost.resolve({ prompt: "Task", cwd: f.cwd, provider: "missing", modelId: "missing" }, { id: parent.sessionId, cwd: f.cwd }), /not available/);
 });
 
+async function assertRetiredLaunch(f, result, { reopen = true } = {}) {
+  assert.equal(result.isError, true); assert.equal(result.details.accepted, false); assert.ok(result.details.sessionId);
+  assert.equal(f.faux.state.callCount, 0, "zero conversational faux calls for refused launch");
+  const child = f.wrappers.find((wrapper) => wrapper.sessionId === result.details.sessionId);
+  assert.ok(child, "fixture observed the owned destination");
+  assert.equal(child.isAlive(), false); assert.equal(child.isRunning(), false); assert.equal(child.pendingPromptCount, 0);
+  const file = child.sessionFile, entries = getSessionEntries(file);
+  assert.ok(entries.some((entry) => entry.customType === "pi-web:session-spawn" && entry.data.sessionId === child.sessionId));
+  assert.equal(entries.some((entry) => entry.type === "message" && ["user", "assistant"].includes(entry.message.role)), false);
+  assert.ok(readFileSync(file, "utf8"), "failed creation retains its file");
+  if (!reopen) {
+    await assert.rejects(startRpcSession(child.sessionId, file, undefined), /Selected account is unavailable/);
+    assert.equal(f.faux.state.callCount, 0, "unavailable accounts cannot authorize reopen or replay");
+    return;
+  }
+  delete globalThis.__sessionLaunchHook; delete globalThis.__sessionLaunchInputHook;
+  f.faux.setResponses([fauxAssistantMessage("Explicit fresh reopen works.")]);
+  const reopened = await startRpcSession(child.sessionId, file, undefined); f.wrappers.push(reopened.session);
+  assert.notEqual(reopened.session, child); assert.equal(reopened.realSessionId, child.sessionId);
+  assert.equal(f.faux.state.callCount, 0, "reopen never replays refused prompt");
+  await reopened.session.send({ type: "prompt", message: "Fresh ordinary prompt" }); await settled(reopened.session);
+  assert.equal(f.faux.state.callCount, 1);
+  assert.deepEqual(reopened.session.inner.sessionManager.getEntries().filter((entry) => entry.type === "message" && entry.message.role === "user").map((entry) => entry.message.content[0].text), ["Fresh ordinary prompt"]);
+}
 function deferred() { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; }
 test("launch revalidates Stop and permission after delayed SDK hooks, before any provider call", async (t) => {
   for (const mode of ["stop", "deny"]) await t.test(mode, async (st) => {
@@ -143,25 +180,92 @@ test("launch revalidates Stop and permission after delayed SDK hooks, before any
     await entered.promise;
     if (mode === "stop") controller.abort();
     else updatePluginSettings(sessionLaunchManifest, "global", undefined, { launch: "deny" }, []);
-    gate.resolve();
-    const result = await pending;
-    assert.equal(result.isError, true); assert.equal(result.details.accepted, false); assert.ok(result.details.sessionId);
-    assert.equal(f.faux.state.callCount, 0, "no provider request after stale admission");
+    const child = f.wrappers.find((wrapper) => wrapper !== parent);
+    if (mode !== "stop") gate.resolve();
+    const result = await pending; // Stop must settle while before_agent_start is still blocked.
     assert.equal(receipts.at(-1).phase, "failed");
+    assert.equal(child.isAlive(), false);
+    gate.resolve();
+    await new Promise((resolve) => setImmediate(resolve)); // Observe the permanently refused late SDK callback.
+    await assertRetiredLaunch(f, result);
   });
 });
+test("owned shutdown/destruction during real SDK binding or before_agent_start cannot dispatch late", async (t) => {
+  for (const method of ["destroy", "shutdown"]) for (const phase of ["binding", "before_agent_start"]) await t.test(`${method}: ${phase}`, async (st) => {
+    const f = await fixture(st), parent = await f.start(["read"]), entered = deferred(), gate = deferred();
+    await parent.waitUntilReady();
+    updatePluginSettings(sessionLaunchManifest, "global", undefined, { launch: "allow" }, []);
+    const block = async () => { entered.resolve(); await gate.promise; };
+    if (phase === "binding") globalThis.__sessionLaunchBinding = block; else globalThis.__sessionLaunchHook = block;
+    const receipts = [];
+    const launch = executeSessionLaunch({ prompt: "Must not dispatch after deletion" }, { id: parent.sessionId, cwd: f.cwd }, {
+      sessionLaunchHost, operationReceipt(_id, receipt) { receipts.push(structuredClone(receipt)); },
+    });
+    await entered.promise;
+    const child = f.wrappers.find((wrapper) => wrapper !== parent), events = [];
+    child.onEvent((event) => events.push(event.type));
+    const retiring = child[method]();
+    assert.equal(child.isAlive(), false);
+    const result = await launch; // Neither binding nor the SDK prompt needs to settle first.
+    assert.equal(receipts.at(-1).phase, "failed");
+    gate.resolve(); await retiring; await new Promise((resolve) => setImmediate(resolve));
+    delete globalThis.__sessionLaunchBinding;
+    assert.equal(events.includes("prompt_done"), false); assert.equal(events.includes("agent_start"), false);
+    assert.equal(getSessionEntries(child.sessionFile).some((entry) => entry.type === "message" && entry.message.role === "user"), false);
+    await assertRetiredLaunch(f, result);
+  });
+});
+
+test("canonical same-ID reopen waits for owned public disposal before resource construction, independent IDs do not wait", async (t) => {
+  const f = await fixture(t), owner = Symbol("owner");
+  const { session: old } = await startRpcSession("__owned__" + Math.random(), "", f.cwd, {
+    initialPromptOwner: owner, initialModel: { provider: f.faux.provider.id, modelId: f.faux.getModel().id }, toolNames: ["read"],
+  });
+  f.wrappers.push(old); await old.waitUntilReady(); old.recordSpawnOrigin("fixture-creator", "fixture-operation");
+  const shutdownGate = deferred(), entered = deferred(), calls = [];
+  const emit = old.inner.extensionRunner.emit;
+  t.mock.method(old.inner.extensionRunner, "emit", function (event) {
+    if (event.type === "session_shutdown") { entered.resolve(); return shutdownGate.promise.then(() => emit.call(this, event)); }
+    return emit.call(this, event);
+  });
+  const dispose = old.inner.dispose;
+  t.mock.method(old.inner, "dispose", function () { dispose.call(this); calls.push("old public dispose finished"); });
+  const retiring = old.shutdown(); await entered.promise;
+  globalThis.__sessionLaunchConstruct = () => calls.push("construct SDK resources");
+  let reopened = false;
+  const pending = startRpcSession("__url_alias__", old.sessionFile, undefined).then((result) => { reopened = true; return result; });
+  const samePending = startRpcSession(old.sessionId, old.sessionFile, undefined);
+  const hmr = await createJiti(import.meta.url, { moduleCache: false }).import("../../lib/rpc-manager.ts");
+  const hmrPending = hmr.startRpcSession("__hmr_alias__", old.sessionFile, undefined);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(reopened, false); assert.deepEqual(calls, []);
+  const independent = await f.start(["read"]);
+  assert.notEqual(independent.sessionId, old.sessionId); assert.deepEqual(calls, ["construct SDK resources"]);
+  calls.length = 0;
+  shutdownGate.resolve(); await retiring;
+  const replacement = await pending; f.wrappers.push(replacement.session);
+  assert.equal((await samePending).session, replacement.session); assert.equal((await hmrPending).session, replacement.session);
+  assert.equal(replacement.realSessionId, old.sessionId);
+  assert.deepEqual(calls, ["old public dispose finished", "construct SDK resources"]);
+  await new Promise((resolve) => setImmediate(resolve)); old.destroy(); await old.shutdown();
+  assert.deepEqual(calls, ["old public dispose finished", "construct SDK resources"], "old disposal cannot run after replacement resource construction");
+  assert.equal(getRpcSession(old.sessionId), replacement.session);
+  assert.equal(f.faux.state.callCount, 0, "explicit reopen never replays initial prompt");
+});
+
 test("literal launch refuses transformed/intercepted prompts and late model/tool changes", async (t) => {
-  for (const mode of ["transform", "handled", "tools", "thinking", "model"]) await t.test(mode, async (st) => {
+  for (const mode of ["transform", "handled", "tools", "thinking", "model", "speed", "account"]) await t.test(mode, async (st) => {
     const f = await fixture(st), parent = await f.start(["read"]);
     updatePluginSettings(sessionLaunchManifest, "global", undefined, { launch: "allow" }, []);
     if (mode === "transform") globalThis.__sessionLaunchInputHook = () => ({ action: "transform", text: "Different prompt" });
     if (mode === "handled") globalThis.__sessionLaunchInputHook = () => ({ action: "handled" });
     if (mode === "tools") globalThis.__sessionLaunchHook = (_event, _ctx, pi) => { pi.setActiveTools(["bash"]); };
     if (mode === "thinking") globalThis.__sessionLaunchHook = (_event, _ctx, pi) => { pi.setThinkingLevel("high"); };
-    if (mode === "model") globalThis.__sessionLaunchHook = async (_event, ctx, pi) => { await pi.setModel(ctx.modelRegistry.find("session-launch-sdk", "faux-2")); };
+    if (mode === "model") globalThis.__sessionLaunchHook = async (_event, ctx, pi) => { assert.equal(await pi.setModel(ctx.modelRegistry.find("session-launch-sdk", "faux-2")), true); };
+    if (mode === "speed") globalThis.__sessionLaunchHook = (_event, ctx) => { getRpcSession(ctx.sessionManager.getSessionId()).inner.sessionManager.appendCustomEntry("pi-web:model-speed", { version: 1, modelSpeed: "fast" }); };
+    if (mode === "account") globalThis.__sessionLaunchHook = (_event, ctx) => { getRpcSession(ctx.sessionManager.getSessionId()).inner.sessionManager.appendCustomEntry("pi-web:provider-accounts", { version: 1, accounts: { "session-launch-sdk": "changed-account" } }); };
     const result = await executeSessionLaunch({ prompt: "Exact task" }, { id: parent.sessionId, cwd: f.cwd }, { sessionLaunchHost, operationReceipt() {} });
-    assert.equal(result.isError, true); assert.equal(result.details.accepted, false); assert.ok(result.details.sessionId);
-    assert.equal(f.faux.state.callCount, 0);
+    await assertRetiredLaunch(f, result, { reopen: mode !== "account" }); // An unavailable account remains fail-closed on explicit reopen.
   });
 });
 test("first launch prompt is literal even if its text names an extension command", async (t) => {
