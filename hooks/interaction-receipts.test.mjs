@@ -138,7 +138,8 @@ function reconnectHarness(history, ok = true) {
     sessionHookMountedRef: { current: true }, sessionIdRef: { current: "session" },
     fetch: async (url) => {
       requests.push(url);
-      return { ok, json: () => new Promise((resolve) => { finishRead = () => resolve({ context: history }); }) };
+      const context = typeof history === "function" ? history(new URL(url, "http://localhost").searchParams) : history;
+      return { ok: ok && context !== null, json: () => new Promise((resolve) => { finishRead = () => resolve({ context }); }) };
     },
     setTranscript: (update) => { transcript = update(transcript); },
     mergeInteractionReceiptHistory: helpers.mergeInteractionReceiptHistory,
@@ -148,6 +149,8 @@ function reconnectHarness(history, ok = true) {
   const js = ts.transpileModule(callback + "\nreturn reconcileInteractionReceipts;", { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const reconcile = new Function(...Object.keys(bindings), js)(...Object.values(bindings));
   return { reconcile, activeLeafIdRef, dataRef, requests, finish: () => finishRead(),
+    branchViewRevisionRef: bindings.branchViewRevisionRef,
+    sessionHookMountedRef: bindings.sessionHookMountedRef, sessionIdRef: bindings.sessionIdRef,
     get: () => transcript, update: (next) => { transcript = next; } };
 }
 
@@ -184,20 +187,94 @@ test("slow reconnect history cannot downgrade terminal operations; missed termin
   assert.deepEqual(replay.get().entryIds, ["terminal"]);
 });
 
-test("canonical branch advancement revalidates a newer live receipt instead of dropping it", async () => {
-  const harness = reconnectHarness({ messages: [], entryIds: [] });
+for (const [kind, receipt] of [["interaction", entry], ["operation", operation("terminal", 2, "succeeded")]]) {
+  test(`canonical advancement rereads ${kind} receipts without pairing a descendant anchor with an older leaf`, async () => {
+    const saved = helpers.appendInteractionReceipt({ messages: [], entryIds: [] }, receipt);
+    const ordinary = { role: "user", content: "SSE message", timestamp: Date.parse(receipt.timestamp) + 1000 };
+    const harness = reconnectHarness((params) => {
+      if (params.get("ancestorId") === "new-canonical-leaf") {
+        // The new canonical leaf is below the receipt, just as in the retained
+        // browser failure. That inverted anchor/leaf pair must be rejected.
+        if (params.has("leafId")) return null;
+        return { messages: [...saved.messages, ordinary], entryIds: [...saved.entryIds, "ordinary"] };
+      }
+      return saved;
+    });
+    const pending = harness.reconcile("session", receipt);
+    await Promise.resolve();
+    harness.activeLeafIdRef.current = "new-canonical-leaf";
+    harness.dataRef.current = { leafId: "new-canonical-leaf" };
+    harness.finish();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(harness.requests.length, 2);
+    const params = new URL(harness.requests[1], "http://localhost").searchParams;
+    assert.equal(params.get("ancestorId"), "new-canonical-leaf");
+    assert.equal(params.has("leafId"), false);
+    harness.finish(); await pending;
+    assert.deepEqual(harness.get().entryIds, [receipt.id]);
+    assert.equal(harness.get().messages.includes(ordinary), false);
+  });
+}
+
+test("canonical reread never appends an old receipt absent from the revalidated branch", async () => {
+  const sibling = { ...entry, id: "sibling-receipt", data: { ...entry.data,
+    request: { ...entry.data.request, id: "sibling-request" } } };
+  const oldHistory = helpers.appendInteractionReceipt({ messages: [], entryIds: [] }, entry);
+  const siblingHistory = helpers.appendInteractionReceipt({ messages: [], entryIds: [] }, sibling);
+  const harness = reconnectHarness((params) => params.has("leafId") ? oldHistory : siblingHistory);
   const pending = harness.reconcile("session", entry);
+  await Promise.resolve();
+  // Canonical state can change externally without a browser navigation event.
+  harness.activeLeafIdRef.current = "sibling-leaf";
+  harness.dataRef.current = { leafId: "sibling-leaf" };
+  harness.finish();
+  await new Promise((resolve) => setImmediate(resolve));
+  harness.finish(); await pending;
+  assert.deepEqual(harness.get().entryIds, ["sibling-receipt"]);
+});
+
+for (const [reason, invalidate] of [
+  ["session switch", (harness) => { harness.sessionIdRef.current = "other-session"; }],
+  ["unmount", (harness) => { harness.sessionHookMountedRef.current = false; }],
+  ["navigation revision", (harness) => { harness.branchViewRevisionRef.current += 1; }],
+  ["independently browsed leaf", (harness) => { harness.activeLeafIdRef.current = "browsed"; }],
+]) {
+  test(`canonical receipt retry discards its response after ${reason}`, async () => {
+    const history = helpers.appendInteractionReceipt({ messages: [], entryIds: [] }, entry);
+    const harness = reconnectHarness(history);
+    const pending = harness.reconcile("session", entry);
+    await Promise.resolve();
+    harness.activeLeafIdRef.current = "new-canonical-leaf";
+    harness.dataRef.current = { leafId: "new-canonical-leaf" };
+    harness.finish();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(harness.requests.length, 2);
+    invalidate(harness);
+    harness.finish(); await pending;
+    assert.deepEqual(harness.get(), { messages: [], entryIds: [] });
+    assert.equal(harness.requests.length, 2);
+  });
+}
+
+test("canonical receipt retry preserves newer live cards and terminal operations", async () => {
+  const prepared = operation("prepared", 1, "prepared");
+  const terminal = operation("terminal", 2, "succeeded");
+  const history = helpers.appendInteractionReceipt(
+    helpers.appendInteractionReceipt({ messages: [], entryIds: [] }, prepared), entry);
+  const harness = reconnectHarness(history);
+  const pending = harness.reconcile("session", prepared);
   await Promise.resolve();
   harness.activeLeafIdRef.current = "new-canonical-leaf";
   harness.dataRef.current = { leafId: "new-canonical-leaf" };
   harness.finish();
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(harness.requests.length, 2);
-  const params = new URL(harness.requests[1], "http://localhost").searchParams;
-  assert.equal(params.get("ancestorId"), "new-canonical-leaf");
-  assert.equal(params.get("leafId"), "entry");
+  const newer = { ...entry, id: "newer", timestamp: "2026-10-06T10:00:02.000Z", data: {
+    ...entry.data, request: { ...entry.data.request, id: "newer-request" },
+  } };
+  harness.update(helpers.appendInteractionReceipt(
+    helpers.appendInteractionReceipt(harness.get(), terminal), newer));
   harness.finish(); await pending;
-  assert.deepEqual(harness.get().entryIds, ["entry"]);
+  assert.deepEqual(harness.get().entryIds, ["terminal", "entry", "newer"]);
 });
 
 test("live receipt branch verification is bound to its exact entry and fails closed", async () => {

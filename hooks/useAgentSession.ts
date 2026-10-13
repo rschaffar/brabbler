@@ -770,10 +770,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!sessionHookMountedRef.current || sessionIdRef.current !== sid || branchViewRevisionRef.current !== viewRevision
         || activeLeafIdRef.current !== (dataRef.current?.leafId ?? null)) return;
       if (activeLeafIdRef.current !== viewLeaf) {
-        // A canonical read can advance the same branch while verification is
-        // in flight. Revalidate against that new anchor instead of losing a
-        // newer receipt or assuming the server stayed on the same branch.
-        await reconcileReceipts(sid, receiptEntry);
+        // A canonical read can advance past the receipt while verification is
+        // in flight. Read the current branch from its new anchor: retaining the
+        // old receipt leaf would invert ancestry. Only merge receipts returned
+        // by that verified branch, never blindly append the captured entry.
+        await reconcileReceipts(sid);
         return;
       }
       // Merge only durable cards. Ordinary live messages must not be loaded
