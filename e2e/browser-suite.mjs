@@ -118,11 +118,19 @@ let context;
     message(`e${i}`, i ? `e${i - 1}` : null, i % 2 ? "assistant" : "user", text(i)));
   longEntries.splice(1, 0, message("alternate", "e0", "user", "E2E alternate history branch"));
   writeSession(LONG, longEntries);
+  let branchCwd = project;
+  if (process.env.E2E_ACTIVITY_ONLY === "1") {
+    const git = (...args) => execFileSync("git", ["-C", project, ...args], { encoding: "utf8", env: fixtureEnv }).trim();
+    git("init", "-qb", "main");
+    git("-c", "user.name=E2E", "-c", "user.email=e2e@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "Activity worktree fixture");
+    branchCwd = join(agentDir, "activity-linked");
+    git("worktree", "add", "-qb", "feature/activity-worktree", branchCwd);
+  }
   writeSession(BRANCH, [
     message("root", null, "user", "Branch root"),
     message("old", "root", "assistant", "Inactive branch answer"),
     message("new", "root", "assistant", "Active branch answer"),
-  ]);
+  ], branchCwd);
   const recoveryDir = join(agentDir, "pi-web", "run-journal", "v1", BRANCH);
   mkdirSync(recoveryDir, { recursive: true });
   const seedRecoveryRun = (runId) => writeFileSync(join(recoveryDir, `${runId}.start.json`), JSON.stringify({

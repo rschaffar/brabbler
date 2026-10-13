@@ -4,6 +4,27 @@ import { setTimeout as delay } from "node:timers/promises";
 
 export async function checkActivityOverview(page, width, { base, api, post, waitingSessionId, selectedSessionId, otherSessionId, artifacts, harness, seedInterruptedRun, subagentIds, seedSubagentCompletions }) {
   const mobile = width <= 640;
+  const { sessions } = await api("/api/sessions?force=1");
+  const selected = sessions.find((session) => session.id === selectedSessionId);
+  assert.ok(selected);
+  const checkWorktreeBadge = async (row) => {
+    const badge = row.locator('span[title^="Worktree: "]');
+    if (selected.isWorktree && selected.branch) {
+      await badge.waitFor({ state: "visible" });
+      assert.equal(await badge.textContent(), selected.branch);
+      assert.equal(await badge.getAttribute("title"), `Worktree: ${selected.cwd}`);
+      const button = row.locator("button.activity-item");
+      if (await button.count()) assert.ok((await button.getAttribute("aria-label")).includes(selected.branch), "accessible row name includes the worktree branch");
+      const bounds = await badge.boundingBox();
+      assert.ok(bounds.width > 0 && bounds.x + bounds.width <= width, "worktree badge fits the viewport");
+    } else {
+      assert.equal(await badge.count(), 0, "main-checkout sessions have no worktree badge");
+    }
+  };
+  if (process.env.E2E_ACTIVITY_ONLY === "1") {
+    assert.equal(selected.isWorktree, true, "focused Activity uses a real linked checkout");
+    assert.equal(selected.branch, "feature/activity-worktree");
+  }
   const dotColor = (row) => row.locator(".activity-item-top .activity-dot")
     .evaluate((dot) => getComputedStyle(dot).backgroundColor);
   await page.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
@@ -21,6 +42,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
     "idle transcript history must not become a completed-run backlog");
   const interrupted = recoveryOverview.locator(".activity-item-interrupted").filter({ hasText: "Branch root" });
   await interrupted.waitFor();
+  await checkWorktreeBadge(interrupted);
   await interrupted.click();
   await page.getByText("A previous run may have been interrupted", { exact: false }).waitFor();
   if (mobile) await recoveryOverview.waitFor({ state: "hidden" });
@@ -46,6 +68,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   }
   const sessionRow = page.locator(`[data-session-id="${selectedSessionId}"]`);
   await sessionRow.waitFor({ state: "visible" });
+  await checkWorktreeBadge(sessionRow);
   if (mobile) await sessionRow.getByRole("button", { name: "Session actions" }).click();
   else await sessionRow.hover();
   await sessionRow.getByRole("button", { name: "Star session" }).click();
@@ -65,6 +88,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   const starredOverview = page.getByRole("region", { name: "Starred" });
   const starredBranch = starredOverview.locator(".activity-starred-item").filter({ hasText: "Branch root" });
   await starredBranch.getByRole("button", { name: /Branch root/ }).waitFor();
+  await checkWorktreeBadge(starredBranch);
   assert.equal(await starredBranch.locator(".activity-dot").count(), 0, "idle stars have no activity dot");
   // Simulate a live registry snapshot to verify that Starred tracks the same
   // visible-tab running poll as Activity, without starting a model request.
@@ -81,6 +105,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await page.getByRole("button", { name: /^Activity/ }).click();
   const working = page.getByRole("region", { name: "Activity" }).locator(".activity-item-working").filter({ hasText: "Branch root" });
   await working.waitFor();
+  await checkWorktreeBadge(working);
   assert.equal(workingColor, await dotColor(working), "Starred and Activity use the same working dot");
   await page.getByRole("button", { name: "Starred", exact: true }).click();
   await page.unroute("**/api/agent/running");
@@ -101,6 +126,8 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   if (mobile) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
   await page.getByRole("button", { name: "Starred", exact: true }).click();
   const restoredStarred = page.getByRole("region", { name: "Starred" });
+  await restoredStarred.getByRole("button", { name: /Branch root/ }).waitFor();
+  await checkWorktreeBadge(restoredStarred.locator(".activity-starred-item").filter({ hasText: "Branch root" }));
   await restoredStarred.getByRole("button", { name: /Branch root/ }).click();
   if (mobile) {
     await restoredStarred.waitFor({ state: "hidden" });
@@ -226,7 +253,21 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await page.waitForURL((url) => url.searchParams.get("session") === otherSessionId);
   if (mobile) await page.getByRole("button", { name: "Back to Activity" }).click();
   await otherReady.waitFor();
+  // Local disappearance is optimistic; wait for persistence before reload can
+  // cancel the acknowledgement (compact/mobile have no peer poll to wait for).
+  const acknowledged = page.waitForResponse((response) => {
+    const request = response.request();
+    if (!response.url().endsWith("/api/activity/review") || request.method() !== "POST") return false;
+    const body = request.postDataJSON();
+    return body.op === "ack" && body.entries.some((entry) => entry.sessionId === otherSessionId);
+  });
+  void acknowledged.catch(() => {});
   await overview.getByRole("button", { name: "Mark Other workspace task as read" }).click();
+  const acknowledgement = await acknowledged;
+  assert.equal(acknowledgement.status(), 200);
+  const persisted = await acknowledgement.json();
+  const completion = persisted.completedRuns.find((entry) => entry.sessionId === otherSessionId);
+  assert.ok(completion && persisted.reviewedRuns.some((entry) => entry.sessionId === otherSessionId && entry.at >= completion.at));
   if (peer) {
     await peer.getByRole("region", { name: "Activity" }).locator(".activity-item-ready")
       .filter({ hasText: "Other workspace task" }).waitFor({ state: "hidden", timeout: 15000 });

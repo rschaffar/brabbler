@@ -6,6 +6,7 @@ import { activityProjectName, activitySessionName, getActivitySections, hiddenAc
 import type { SessionAttention, SessionInfo } from "@/lib/types";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { SubagentIcon } from "./SubagentIcon";
+import { SessionWorktreeBadge } from "./SessionWorktreeBadge";
 import { PrivacyEyeIcon } from "./PrivacyEyeIcon";
 import type { ProjectPrivacy } from "@/hooks/useHiddenProjects";
 import { getShowHiddenProjects, saveShowHiddenProjects } from "@/lib/show-hidden-projects-preference";
@@ -176,7 +177,7 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
                       type="button"
                       className={`activity-item activity-item-${status}${item.nested ? " activity-nested" : ""}${selectedId === session.id ? " activity-selected" : ""}`}
                       onClick={() => onSelect(session, status)}
-                      aria-label={`${label} · ${activityProjectName(session)}${item.parentName ? ` · ${t("activity.childOf", { name: item.parentName })}` : ""}${session.relation?.kind === "subagent" ? ` · ${t("activity.subagent")}` : ""} · ${sectionTitle[status]}${status === "needs-you" ? ` · ${methodLabel(item)}${item.attention?.summary ? ` · ${item.attention.summary}` : ""}` : ""} · ${action}`}
+                      aria-label={`${label} · ${activityProjectName(session)}${session.isWorktree && session.branch ? ` · ${session.branch}` : ""}${item.parentName ? ` · ${t("activity.childOf", { name: item.parentName })}` : ""}${session.relation?.kind === "subagent" ? ` · ${t("activity.subagent")}` : ""} · ${sectionTitle[status]}${status === "needs-you" ? ` · ${methodLabel(item)}${item.attention?.summary ? ` · ${item.attention.summary}` : ""}` : ""} · ${action}`}
                     >
                       <span className="activity-item-top">
                         <span className="activity-dot" aria-hidden="true" />
@@ -191,6 +192,7 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
                         {activityProjectName(session)}
                         {item.parentName && !item.nested ? ` · ${t("activity.childOf", { name: item.parentName })}` : ""}
                       </span>
+                      <SessionWorktreeBadge session={session} className="activity-item-meta" />
                       {status === "needs-you" && <span className="activity-item-reason">
                         {methodLabel(item)}{item.attention?.summary ? ` · ${item.attention.summary}` : ""}
                         {item.attention?.since ? ` · ${new Date(item.attention.since).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}` : ""}

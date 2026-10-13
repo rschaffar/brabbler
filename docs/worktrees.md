@@ -230,6 +230,8 @@ You are responsible for not deleting a worktree still needed by a chat or termin
 
 Pi Web groups sessions by project root, so sessions from the main checkout and linked worktrees appear together.
 
+Linked-worktree sessions with a known branch show the same branch icon and branch name in the normal session list, Activity, and Starred. Hover over the badge to see the full worktree path. Main-checkout sessions and sessions without a known branch do not show this badge.
+
 Each session still remembers the working directory it was created with. That means:
 
 - A session started in a worktree continues to use that worktree path.
