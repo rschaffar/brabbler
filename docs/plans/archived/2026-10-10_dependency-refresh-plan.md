@@ -218,6 +218,18 @@ Public disposal does not certify arbitrary extension/process settlement;
 pre-wrapper startup cancellation is outside owned-wrapper retirement. No
 production build, service activation, integration or publication occurred.
 
+## Completion intent
+
+Implementation and application acceptance are complete at SDK commit
+`c945142db894b23739313dbbcaaa1a25772892bc`. The user selected preparation for
+local integration into `rst-main`; its inspected tip remains
+`ed89fd5a0f3cb69ae66f0c9742d0303280932f2a`. The required unsigned non-fast-forward
+merge and any verified feature cleanup use their separate exact-action tool
+approval cards. Archiving this completed implementation plan is a status-only
+follow-up, not a claim those Git operations have already executed. Durable
+operation receipts own their eventual results. Maintained contracts remain in
+`docs/dependencies.md`, model/session guides and `docs/git-workflow-plugin.md`.
+
 ## Non-Goals
 
 No application production builds, releases, pushes, system activation, live configuration/credential changes, test deadline inflation or weakening of security assertions. No dependency replacement solely because a small mature package has infrequent releases.
@@ -236,4 +248,4 @@ Keep coherent feature commits and failed verification artifacts. Do not overwrit
 - [x] Dependency updates and retracted recommendations have explicit evidence and risk dispositions.
 - [x] Final application acceptance and independent review cover the recorded source snapshot without a production build; the evidence/status-only follow-up retains separately identified checks.
 - [x] Remaining security/compatibility limits have maintained owners and are reported honestly.
-- [ ] Completion intent is resolved; any local integration/cleanup receives the applicable tool approval.
+- [x] Completion intent is resolved: prepare local `rst-main` integration; merge and feature cleanup remain separately exact-action gated.
