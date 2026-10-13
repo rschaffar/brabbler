@@ -245,6 +245,14 @@ There is no forced removal, rollback, hidden retry or backup cleanup. Target
 advancement alone does not stale cleanup while the pinned integration remains
 reachable; moving exact merge IDs still stales merge approval.
 
+Checkout validation resolves the six per-worktree operation-marker paths in one
+Git invocation, then checks every marker afresh. `operation-paths.ts` validates
+the complete response framing without splitting legal embedded POSIX newlines;
+unusual output/layouts fall back to individual successful path resolutions.
+Command errors still propagate. This batches path lookup only: policy, refs,
+registration, source/filter/index state, inventories and no-follow/mount checks
+remain fresh at their existing checkpoints, without cross-stage caching.
+
 Effects are unsigned and hook-free, as disclosed in previews. Rebase/merge use
 Git's native conflict behavior; conflict state remains for explicit human/agent
 resolution. Sparse checkouts, hidden index flags and clean/process filter
