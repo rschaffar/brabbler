@@ -1,9 +1,9 @@
 {
   description = "Pi Web package and local development tools";
 
-  # Keep the local browser close to the Chromium revision pinned by Playwright.
-  # Update this with the npm Playwright version, not implicitly with a channel.
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/44a91898084f46797b5fac650c7e8c9ac38c43d4";
+  # Track the development toolchain on nixos-unstable; flake.lock pins each
+  # checkout. Verify Chromium/Playwright compatibility after input updates.
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs =
     { self, nixpkgs }:
