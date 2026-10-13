@@ -75,7 +75,11 @@ extension questions, browser-native `ask_user`, Activity, provider-account
 controls, session-local model speed, and independent Git Explorer. It checks the
 absence of Workflow controls. Git Explorer checks first-file expansion, lazy
 per-file patch/cache behavior, one shared split/unified/raw toolbar and
-first-parent merge inspection. The focused diff-context selection exercises
+first-parent merge inspection. Explorer fullscreen acceptance checks whole-panel
+viewport geometry, inert siblings, keyboard/focus restoration, retained loaded
+context/reading anchors, compact/mobile transitions and no-chat close/reopen.
+A real blocked SDK confirm verifies that restore Escape and nested Wide view
+cannot stop or answer the hidden chat. The focused diff-context selection exercises
 on-demand context, keyboard gap and full-file controls, virtualized split/unified
 and clean Before/After views, change navigation/search/side-aware line jump,
 retained state, wrapping/horizontal scroll and Wide view Escape/focus. Plugin-only
@@ -134,6 +138,8 @@ context retains trace, console/pageerror and local-5xx safeguards.
 
 Terminal checks execute a real local shell at desktop/mobile sizes and cover
 fonts, reconnect/restart, exit, close-during-creation and workspace isolation.
+A disposable local Git history also checks Explorer expansion/restore alongside
+the mounted terminal, retaining its shell PID, environment and terminal ID.
 `terminal-disconnect-fixture.mjs` forwards one actual terminal SSE stream and
 ends it with controlled EOF, holding the native retry until the connecting UI
 is observed. It preserves the actual shell/PID, stream bytes and replay cursor;

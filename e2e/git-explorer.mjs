@@ -2,11 +2,18 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { withExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
 import { checkDiffContext } from "./git-diff-context.mjs";
+import { checkGitExplorerFullscreen } from "./git-explorer-fullscreen.mjs";
 
 /** Visual history tracks the selected checkout and branch, independently of the open chat. */
 export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorktree }) {
   const checkoutHead = execFileSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   await page.goto(`${base}/?session=${sessionId}`, { waitUntil: "domcontentloaded" });
+  const quotePreference = await page.evaluate(() => {
+    const saved = localStorage.getItem("pi-quote-selection-enabled");
+    localStorage.setItem("pi-quote-selection-enabled", "true");
+    return saved;
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByText("Ready to browse Git history", { exact: true }).waitFor();
   const gitButton = page.getByRole("button", { name: "Git Explorer", exact: true });
   const initialViewport = page.viewportSize();
@@ -139,6 +146,11 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await longFile.getByRole("alert").waitFor({ state: "hidden" });
   await checkDiffContext(page, longFile, detail, { toggleFile: toggleLongFile });
   assert.deepEqual(contextReads, ["z-context.txt", "z-context.txt"], "Failure retries once, then layouts/expansion/reading reuse the same snapshot");
+  await checkGitExplorerFullscreen(page, { base, sessionId, explorer, graph, detail, file: longFile });
+  await page.evaluate((saved) => {
+    if (saved === null) localStorage.removeItem("pi-quote-selection-enabled");
+    else localStorage.setItem("pi-quote-selection-enabled", saved);
+  }, quotePreference);
   const oldViewport = page.viewportSize();
   await page.setViewportSize({ width: 390, height: 844 });
   await longFile.getByRole("textbox", { name: "Line number", exact: true }).fill("5000");
@@ -242,6 +254,15 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await page.getByRole("button", { name: "New", exact: true }).click();
   assert.equal(await page.getByText("Ready to browse Git history", { exact: true }).count(), 0,
     "Git Explorer works without an open session");
+  await explorer.getByRole("button", { name: "Expand Git Explorer", exact: true }).click();
+  assert.equal(Math.round((await explorer.boundingBox()).width), page.viewportSize().width, "No-chat Explorer fills the viewport too");
+  await explorer.getByRole("button", { name: "Close Git Explorer", exact: true }).click();
+  await explorer.waitFor({ state: "detached" });
+  assert.equal(await gitButton.evaluate((button) => button === document.activeElement), true, "Close returns focus to the Git Explorer trigger");
+  await gitButton.click();
+  assert.equal(await explorer.getByRole("button", { name: "Expand Git Explorer", exact: true }).getAttribute("aria-pressed"), "false", "Reopening starts in the normal sidecar");
+  await graph.getByRole("button", { name: /base fixture/ }).click();
+  await detail.getByRole("region", { name: "Side-by-side diff" }).waitFor();
 
   const viewport = page.viewportSize();
   try {

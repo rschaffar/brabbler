@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { once } from "node:events";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -21,6 +22,10 @@ mkdirSync(join(agentDir, "sessions", "test"), { recursive: true });
 mkdirSync(workspace);
 mkdirSync(otherWorkspace);
 writeFileSync(join(workspace, "note.txt"), "File viewer fixture\n");
+// A disposable local history lets Explorer coexist with the real shell without mocked reads.
+execFileSync("git", ["init", "-q", "-b", "fixture", workspace]);
+execFileSync("git", ["-C", workspace, "add", "note.txt"]);
+execFileSync("git", ["-C", workspace, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "-qm", "Terminal Explorer fixture"]);
 const timestamp = "2026-09-05T00:00:00.000Z";
 for (const [id, cwd, name] of [
   ["terminal-a1", workspace, "Terminal session one"],
@@ -124,6 +129,30 @@ let browser;
       const pid = (await text()).match(/TOKEN:alive:(\d+)/)[1];
       const [id] = created;
       assert.equal(created.size, 1);
+      const terminalNode = await page.locator(".terminal-panel").elementHandle();
+      // Mobile's existing full-width terminal covers the top bar; hide, never terminate it.
+      await hidePanel();
+      await page.getByRole("button", { name: "Git Explorer", exact: true }).click();
+      const explorer = page.locator("#git-explorer-panel");
+      await explorer.getByRole("combobox", { name: "History branch" }).waitFor();
+      if (viewport.width > 640) {
+        await visiblePanel();
+        await explorer.getByRole("button", { name: "Expand Git Explorer", exact: true }).click();
+        assert.equal(await page.locator("#file-panel").evaluate((node) => node.inert), true);
+        assert.equal(await terminalNode.evaluate((node) => node.isConnected), true, "Fullscreen never unmounts the real terminal");
+        assert.equal((await fetch(`${base}/api/terminal/${id}`)).status, 200);
+        await explorer.getByRole("button", { name: "Restore Git Explorer", exact: true }).press("Enter");
+        assert.equal(await page.locator("#file-panel").evaluate((node) => node.inert), false);
+        assert.equal(created.size, 1, "Restore must not create another shell");
+      } else {
+        assert.equal(await explorer.getByRole("button", { name: "Expand Git Explorer", exact: true }).count(), 0);
+        await hidePanel();
+      }
+      await explorer.getByRole("button", { name: "Close Git Explorer", exact: true }).click();
+      await visiblePanel();
+      await run("printf '\\nEXPLORER:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
+      await waitOutput(`EXPLORER:alive:${pid}`);
+      assert.equal(created.size, 1, "Explorer round trip retains shell identity and environment");
 
       await hidePanel();
       await showSidebar();

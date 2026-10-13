@@ -107,8 +107,19 @@ test("places trust warnings below the mobile toolbar and the file toggle in tool
 test("closes top-bar dropdowns when the file panel expands to full width", () => {
   assert.match(
     source,
-    /const handleRightPanelExpandToggle = useCallback\(\(\) => \{\s*setActiveTopPanel\(null\);\s*setRightPanelExpanded\(\(expanded\) => !expanded\);/,
+    /const handleRightPanelExpandToggle = useCallback\(\(\) => \{\s*setGitExplorerExpanded\(false\);\s*setActiveTopPanel\(null\);\s*setRightPanelExpanded\(\(expanded\) => !expanded\);/,
   );
   assert.match(source, /onClick=\{handleRightPanelExpandToggle\}/);
   assert.match(source, /if \(rightPanelFullWidth\) setActiveTopPanel\(null\);/);
+});
+
+test("Explorer expansion disables covered siblings, not its center ancestor, and stays transient", () => {
+  assert.match(source, /gitExplorerFullWidth = activeOverview === "git" && gitExplorerExpanded && !isMobile && !rightPanelFullWidth/);
+  assert.match(source, /if \(activeOverview !== "git" \|\| isMobile \|\| rightPanelFullWidth\) setGitExplorerExpanded\(false\)/);
+  assert.match(source, /<div inert=\{rightPanelFullWidth\} style=\{\{ flex: 1, display: "flex", flexDirection: "column"/);
+  assert.match(source, /ref=\{topBarRef\} inert=\{gitExplorerFullWidth\}/);
+  assert.match(source, /id="file-panel"\s*inert=\{gitExplorerFullWidth\}/);
+  assert.match(source, /covered=\{gitExplorerFullWidth \|\| rightPanelFullWidth\}/);
+  assert.match(source, /GitExplorerPanel key=\{activeCwd \?\? "no-worktree"\}/);
+  assert.match(source, /const handleGitExplorerExpandToggle[\s\S]*?setRightPanelExpanded\(false\)/);
 });

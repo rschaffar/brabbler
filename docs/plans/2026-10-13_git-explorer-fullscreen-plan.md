@@ -4,7 +4,7 @@
 
 Let the entire Git Explorer fill the Pi Web app viewport, like the existing terminal/files-panel expand control, and restore its normal side-panel layout without losing the selected branch, commit or reading state.
 
-The user explicitly selected **the whole Git Explorer**, not just commit diffs and not browser-native fullscreen. This request authorizes this plan only; implementation requires a later request.
+The user explicitly selected **the whole Git Explorer**, not just commit diffs and not browser-native fullscreen. The initial request authorized this plan only. The user subsequently requested implementation and explicitly chose to keep the work on its dedicated branch, without local integration.
 
 ## Context
 
@@ -93,4 +93,6 @@ The complete offline pipeline satisfies common tests/typegen/typecheck/lint; do 
 
 ## Planning Handoff
 
-This artifact records researched scope and the user's fullscreen choice. Implementation and acceptance tasks deliberately remain unchecked. Saving or integrating this document does not implement, verify or activate the feature.
+This artifact records researched scope and the user's fullscreen choice. Implementation is now authorized; tasks remain unchecked until their acceptance evidence passes. Work stays on `docs/git-explorer-fullscreen-plan` in the linked worktree `git-explorer-fullscreen-plan`; integration and activation are not authorized.
+
+Focused iteration passed: `nix develop --offline --no-write-lock-file .#test -c node nix/test-offline.mjs --file components/GitExplorerPanel.test.mjs --file components/AppShell.terminal.test.mjs` completed all static phases and 7/7 tests across 2 files. Evidence: `/tmp/pi-web-test-offline.glwzruY5/artifacts/run-g3kMWX` and `/tmp/pi-web-test-offline.glwzruY5/lifecycle.json`. This predates browser fixture/documentation changes and is not final acceptance.

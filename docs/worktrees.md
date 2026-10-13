@@ -36,6 +36,17 @@ A new worktree is **not** trusted merely because an agent or the sidebar created
 
 Open the **Git Explorer** icon beside Activity and Starred. Its wide panel places the graph to the left of commit details and file diffs, alongside the chat; on mobile select a commit to see its details and use **Back to commits** to return to the graph. It follows the checkout selected by the sidebar worktree switcher, even when a chat from another checkout remains open, and needs no open chat. By default it shows that checkout's branch. The **History branch** selector can browse any local branch in the same repository without checking it out. Its read-only graph shows commits reachable from the selected branch's captured tip in topological order, with merge lanes, local branch labels, distinguishable local **tag** labels and older-history pages. Lightweight and annotated tags label their commits; tags do not become branch-selector options or authorize browsing unrelated objects. No tags are fetched or created by the explorer. Select a commit to inspect its author, message and changed files next to the graph; copy its full message or ID with the separate hover/focus buttons.
 
+On desktop and compact desktop, **Expand Git Explorer** beside Close fills the app
+viewport with the entire Explorer, not just one diff. **Restore Git Explorer** or
+Escape returns to the side panel, preserving branch/commit selection, loaded review
+state and reading position. Covered chat, sidebar and terminal/files panes stay
+mounted but cannot receive input; expansion does not stop an agent or shell.
+Escape inside an individual file's **Wide view** closes only that reader first.
+Close dismisses Explorer; reopening starts unexpanded. On mobile the existing
+full-width list/detail navigation remains, without an expand button. Resizing
+into mobile exits expanded mode; returning to desktop does not re-expand it.
+This is in-app expansion, not browser-native fullscreen.
+
 Changed files appear as stacked collapsible diffs, with the first file expanded.
 **Expand all files / Collapse all files** open or close file sections, never eagerly
 load full-file context. One shared sticky toolbar selects **Side by side**, **Unified**

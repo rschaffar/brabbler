@@ -42,6 +42,8 @@ import {
 
 interface Props {
   session: SessionInfo | null;
+  /** A fullscreen sibling covers this chat, including its body-portaled composer. */
+  covered?: boolean;
   searchTarget?: { sessionId: string; entryId: string; blockIndex?: number } | null;
   onSearchTargetHandled?: (target: { sessionId: string; entryId: string }) => void;
   initialScrollPosition?: ChatScrollPosition | null;
@@ -257,7 +259,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, archivedRootSessionId, archiveActionBusy, onSessionRestored, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, covered = false, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, archivedRootSessionId, archiveActionBusy, onSessionRestored, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
@@ -383,7 +385,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
 
   useLayoutEffect(() => {
     const popover = quotePopoverRef.current;
-    if (!popover || !quotedSelection) return;
+    if (!popover || !quotedSelection || covered) return;
     const viewport = window.visualViewport;
     const position = () => {
       const rect = popover.getBoundingClientRect();
@@ -404,10 +406,10 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       viewport?.removeEventListener("resize", position);
       viewport?.removeEventListener("scroll", position);
     };
-  }, [quotedSelection, quoteInputOpen, quoteError]);
+  }, [quotedSelection, quoteInputOpen, quoteError, covered]);
 
   useEffect(() => {
-    if (!quotedSelection) return;
+    if (!quotedSelection || covered) return;
     const onPointerDown = (event: PointerEvent) => {
       if (!quoteInputOpen && !quotePopoverRef.current?.contains(event.target as Node)) closeQuotedSelection();
     };
@@ -423,7 +425,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [quotedSelection, quoteInputOpen, quoteSubmitting, closeQuotedSelection]);
+  }, [quotedSelection, quoteInputOpen, quoteSubmitting, closeQuotedSelection, covered]);
 
   const askSelectionHere = useCallback(() => {
     if (!quotedSelection) return;
@@ -1299,6 +1301,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       {quoteSelectionEnabled && quotedSelection && createPortal(
         <div
           ref={quotePopoverRef}
+          inert={covered}
           role={quoteInputOpen ? "dialog" : "toolbar"}
           aria-label={t(quoteInputOpen ? "chat.newQuoteChat" : "chat.askSelection")}
           style={{
@@ -1306,7 +1309,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
             top: quotedSelection.top,
             left: quotedSelection.left,
             zIndex: 260,
-            display: "flex",
+            display: covered ? "none" : "flex",
             flexWrap: "wrap",
             gap: 3,
             width: quoteInputOpen ? "min(420px, calc(100vw - 16px))" : undefined,
