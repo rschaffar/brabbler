@@ -4,6 +4,6 @@
 # is needed when installing packages from the completed cache derivation.
 fetchNpmDeps {
   inherit src;
-  hash = "sha256-VD90JIBBlOTGirfPF/OKSvhT9uOKYk60rSM8+pCyKxg=";
+  hash = "sha256-/MTF6T7a6F6N4vlyYeXMBbWURkiOVtdWXdjtkS698EE=";
   fetcherVersion = 2;
 }
