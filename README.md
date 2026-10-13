@@ -189,6 +189,7 @@ For npm dependency changes, use `nix develop .#update` and `npm install --packag
 ### Further reading
 
 - [Testing and isolation](./docs/testing.md)
+- [Dependency maintenance, compatibility exceptions and advisory dispositions](./docs/dependencies.md)
 - [Browser tests](./e2e/README.md)
 - [Worktrees and Git Explorer](./docs/worktrees.md)
 - [Optional Git Workflow plugin](./docs/git-workflow-plugin.md)
