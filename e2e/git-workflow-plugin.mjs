@@ -53,7 +53,9 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     assert.ok(response.ok(), await response.text()); return (await response.json()).data;
   };
   const patch = async (set, scope = "global", reset = [], cwd = repo) => {
-    const response = await page.request.patch(`${base}/api/plugins/bundled`, { data: { pluginId: "git-workflow", cwd, sessionId, scope, set, reset } });
+    // Settings writes also bracket long browser interactions; use the same
+    // one-shot socket discipline as command probes, without retrying failures.
+    const response = await page.request.patch(`${base}/api/plugins/bundled`, { data: { pluginId: "git-workflow", cwd, sessionId, scope, set, reset }, headers: { Connection: "close" } });
     assert.ok(response.ok(), await response.text()); return (await response.json()).settings;
   };
   const tip = () => execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
