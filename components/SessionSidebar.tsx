@@ -1021,13 +1021,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Prefer an exact UI selection while a refetch is in flight. Once the
   // response catches up, the server-resolved path handles Windows case and
   // separator differences without teaching the browser OS path semantics.
-  const currentWorktree = worktreeState
+  const currentWorktree = useMemo(() => worktreeState
     ? worktreeState.worktrees.find((worktree) => worktree.path === selectedCwd)
       ?? (worktreeState.forCwd === selectedCwd && worktreeState.currentWorktreePath
         ? worktreeState.worktrees.find((worktree) => worktree.path === worktreeState.currentWorktreePath)
         : undefined)
       ?? worktreeState.worktrees.find((worktree) => worktree.isMain)
-    : undefined;
+    : undefined, [worktreeState, selectedCwd]);
   const currentWorktreePath = currentWorktree?.path ?? null;
 
   const commitCustomPath = useCallback(async (candidate?: string) => {
@@ -1214,7 +1214,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const proposeMoveDestination = useCallback((path: string) => {
     setMoveDestination(path);
     setMoveError(null);
-  }, []);
+  }, [setMoveDestination, setMoveError]);
 
   const confirmMove = useCallback(async () => {
     if (!movingSession || !moveDestination || moveBusy) return;
@@ -1238,7 +1238,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } finally {
       setMoveBusy(false);
     }
-  }, [movingSession, moveDestination, moveBusy, selectedSessionId, onSessionDeleted, loadSessions]);
+  }, [movingSession, moveDestination, moveBusy, selectedSessionId, onSessionDeleted, loadSessions, setMovingSession, setMoveError]);
 
   const recentProjects = useMemo(() => {
     const projects = getRecentProjects(allSessions);

@@ -162,7 +162,7 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
       for (const row of data.rows) next[row.id] = datesOnly && next[row.id] ? { ...row, statuses: next[row.id].statuses } : row;
       return next;
     });
-  }, [cwd, captureId]);
+  }, [cwd, captureId, setDetails]);
   useEffect(() => {
     if (loading || !captureReady || settings || dateLoading || !captureId) return;
     const ids: string[] = JSON.parse(visibleIds); if (!ids.length) return;

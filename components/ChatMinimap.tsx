@@ -242,7 +242,7 @@ function layoutNodes(allNodes: NodeInfo[], minimapHeight: number): NodeLayout {
 export function ChatMinimap({
   messages,
   streamingMessage,
-  scrollContainer,
+  scrollContainer: scrollContainerRef,
   messageRefs,
   onRevealHistory,
 }: Props) {
@@ -318,20 +318,20 @@ export function ChatMinimap({
   }, []);
 
   const updateScroll = useCallback(() => {
-    const scrollEl = scrollContainer.current;
+    const scrollEl = scrollContainerRef.current;
     if (!scrollEl) return;
     const scrollable = scrollEl.scrollHeight - scrollEl.clientHeight;
     const currentNodes = allNodesRef.current;
     setVisible(scrollable > 20);
     syncActiveNode(scrollEl, currentNodes);
-  }, [scrollContainer, syncActiveNode]);
+  }, [scrollContainerRef, syncActiveNode]);
 
   const measureThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measureNodes = useCallback(() => {
     if (measureThrottleRef.current) return;
     measureThrottleRef.current = setTimeout(() => {
       measureThrottleRef.current = null;
-      const scrollEl = scrollContainer.current;
+      const scrollEl = scrollContainerRef.current;
       const minimapEl = containerRef.current;
       if (!scrollEl || !minimapEl) return;
 
@@ -414,17 +414,17 @@ export function ChatMinimap({
         scrollEl.scrollTo({ top: Math.max(0, targetTop - targetOffset), behavior: "smooth" });
       }
     }, 150);
-  }, [lockActiveNode, messageRefs, scrollContainer, syncActiveNode]);
+  }, [lockActiveNode, messageRefs, scrollContainerRef, syncActiveNode]);
 
   useEffect(() => {
-    const el = scrollContainer.current;
+    const el = scrollContainerRef.current;
     if (!el) return;
     el.addEventListener("scroll", updateScroll, { passive: true });
     return () => el.removeEventListener("scroll", updateScroll);
-  }, [scrollContainer, updateScroll]);
+  }, [scrollContainerRef, updateScroll]);
 
   useEffect(() => {
-    const el = scrollContainer.current;
+    const el = scrollContainerRef.current;
     if (!el) return;
     const syncLayout = () => {
       measureNodes();
@@ -441,7 +441,7 @@ export function ChatMinimap({
         measureThrottleRef.current = null;
       }
     };
-  }, [measureNodes, scrollContainer, updateScroll]);
+  }, [measureNodes, scrollContainerRef, updateScroll]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -452,7 +452,7 @@ export function ChatMinimap({
   }, [messages.length, measureNodes, updateScroll]);
 
   const scrollToNode = useCallback((node: NodeInfo, behavior: ScrollBehavior) => {
-    const scrollEl = scrollContainer.current;
+    const scrollEl = scrollContainerRef.current;
     if (!scrollEl) return;
     lockActiveNode(node.index);
     if (node.targetTurn.scrollTop === null) {
@@ -465,10 +465,10 @@ export function ChatMinimap({
       node.targetTurn.scrollTop - scrollEl.clientHeight * 0.3,
     );
     scrollEl.scrollTo({ top: targetTop, behavior });
-  }, [lockActiveNode, onRevealHistory, scrollContainer]);
+  }, [lockActiveNode, onRevealHistory, scrollContainerRef]);
 
   const scrollToAssistant = useCallback((node: NodeInfo, assistantIndex: number) => {
-    const scrollEl = scrollContainer.current;
+    const scrollEl = scrollContainerRef.current;
     if (!scrollEl) return;
     const assistantElement = node.targetTurn.assistantPreviews[assistantIndex]?.element;
     if (!assistantElement) {
@@ -490,7 +490,7 @@ export function ChatMinimap({
     );
     lockActiveNode(node.index);
     scrollEl.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
-  }, [lockActiveNode, onRevealHistory, scrollContainer]);
+  }, [lockActiveNode, onRevealHistory, scrollContainerRef]);
 
   const findNearestNode = useCallback((ratio: number): NodeInfo | null => {
     const { nodes, gap, fillsHeight } = nodeLayoutRef.current;
@@ -516,7 +516,7 @@ export function ChatMinimap({
     assistantIndex: number,
     headingIndex: number,
   ) => {
-    const scrollEl = scrollContainer.current;
+    const scrollEl = scrollContainerRef.current;
     if (!scrollEl) return;
     const answerElement = node.targetTurn.assistantPreviews[assistantIndex]?.element;
     if (!answerElement) {
@@ -541,7 +541,7 @@ export function ChatMinimap({
     );
     lockActiveNode(node.index);
     scrollEl.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
-  }, [lockActiveNode, onRevealHistory, scrollContainer]);
+  }, [lockActiveNode, onRevealHistory, scrollContainerRef]);
 
   const cancelPreviewHide = useCallback(() => {
     if (!previewHideTimerRef.current) return;

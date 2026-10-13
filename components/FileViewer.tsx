@@ -1017,7 +1017,8 @@ function TextFileViewer({
   const [gitDiff, setGitDiff] = useState<GitFileDiffResponse | null>(null);
   const workingRevision = gitDiff?.revision;
   const comparison = `${filePath}:${workingRevision ?? ""}`;
-  const diffReview = useMemo(() => gitDiff?.patch ? createDiffReview(gitDiff.patch, comparison) : undefined, [gitDiff?.patch, comparison]);
+  const workingPatch = gitDiff?.patch;
+  const diffReview = useMemo(() => workingPatch ? createDiffReview(workingPatch, comparison) : undefined, [workingPatch, comparison]);
   const loadWorkingContext = useCallback(async (signal: AbortSignal): Promise<DiffContext> => {
     const params = new URLSearchParams({ cwd: cwd!, path: filePath, op: "context", revision: workingRevision! });
     const response = await fetch(`/api/git/diff?${params}`, { signal, cache: "no-store" });
