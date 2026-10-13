@@ -299,7 +299,7 @@ type SlashCommandsResponse = {
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
     session, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked,
-    modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
+    modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen, chatInputRef,
   } = opts;
 
   const isNew = session === null && newSessionCwd !== null;
@@ -499,13 +499,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       && !newSessionPromotedRef.current
       && targetDraftKey === newSessionDraftKey
     ) return;
-    const input = opts.chatInputRef?.current;
+    const input = chatInputRef?.current;
     if (input) {
       input.restoreSubmission(text, draftImages, destinationDraftKey);
     } else if (destinationDraftKey) {
       restoreDraftSubmission(destinationDraftKey, text, draftImages);
     }
-  }, [newSessionDraftKey, opts.chatInputRef, resolveComposerDraftKey]);
+  }, [newSessionDraftKey, chatInputRef, resolveComposerDraftKey]);
 
   const sessionStats = useMemo(() => {
     if (sessionStatsOverride) {
@@ -740,7 +740,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!provisionalDraftKey) return;
     if (provisionalDraftKey !== sid) {
       draftKeyAliasesRef.current.set(provisionalDraftKey, sid);
-      const input = opts.chatInputRef?.current;
+      const input = chatInputRef?.current;
       if (input) input.rekeyDraft(provisionalDraftKey, sid);
       else rekeyDraft(provisionalDraftKey, sid);
     }
@@ -755,7 +755,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       firstMessage,
       transient: true,
     }, provisionalDraftKey);
-  }, [isNew, newSessionCwd, newSessionDraftKey, onSessionCreated, opts.chatInputRef]);
+  }, [isNew, newSessionCwd, newSessionDraftKey, onSessionCreated, chatInputRef]);
 
   const ensureNewSession = useCallback(async () => {
     if (sessionIdRef.current) return sessionIdRef.current;
@@ -1019,7 +1019,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (request.title) document.title = request.title;
         break;
       case "set_editor_text":
-        opts.chatInputRef?.current?.insertText(request.text);
+        chatInputRef?.current?.insertText(request.text);
         break;
       case "custom":
         setExtensionCustomUi((current) => {
@@ -1028,7 +1028,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         });
         break;
     }
-  }, [addNotice, onAttentionNeeded, opts.chatInputRef]);
+  }, [addNotice, onAttentionNeeded, chatInputRef]);
 
   const settleUiStage = useCallback(() => {
     const wasRunning = agentRunningRef.current;
@@ -2051,13 +2051,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setQueuedMessages({ steering: [], followUp: [] });
       const texts = [...(result?.steering ?? []), ...(result?.followUp ?? [])];
       if (texts.length > 0) {
-        opts.chatInputRef?.current?.prependText(texts.join("\n\n"));
+        chatInputRef?.current?.prependText(texts.join("\n\n"));
       }
     } catch (e) {
       console.error("Failed to recall queued messages:", e);
       addNotice({ type: "error", message: "Failed to recall queued messages" });
     }
-  }, [opts.chatInputRef, addNotice]);
+  }, [chatInputRef, addNotice]);
 
   const handleThinkingLevelChange = useCallback(async (level: ThinkingLevelOption) => {
     if (level === "auto") {
