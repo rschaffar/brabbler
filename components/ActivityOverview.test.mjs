@@ -38,6 +38,16 @@ test("ready subagents are identified even when their parent is working or absent
   assert.match(html, /class="activity-mark-read activity-mark-all-subagents-read" title="[^"]+">Mark all subagents as read<\/button>/);
 });
 
+test("worktree metadata accompanies ready roots and nested subagents without changing review actions", () => {
+  const linked = (id, parent) => ({ ...session(id, parent), isWorktree: true, branch: "feature/topic", cwd: "/project-worktrees/topic" });
+  const html = render([linked("parent"), linked("child", "parent"), session("main")], [], ["parent", "child", "main"]);
+  assert.equal((html.match(/title="Worktree: \/project-worktrees\/topic"/g) ?? []).length, 2);
+  assert.equal((html.match(/>feature\/topic<\/span>/g) ?? []).length, 2);
+  assert.match(html, /activity-nested/);
+  assert.match(html, /aria-label="child · project · feature\/topic · in parent · Sub-agent · Ready to review · Review"/);
+  assert.match(html, /aria-label="Mark child as read"/);
+});
+
 test("bulk subagent read is disabled when only parent sessions are ready", () => {
   const html = render([session("ready-root"), session("working-child", "ready-root")], ["working-child"], ["ready-root", "working-child"]);
   assert.match(html, /class="activity-mark-read activity-mark-all-subagents-read" disabled=""/);

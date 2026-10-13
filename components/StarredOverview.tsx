@@ -6,6 +6,7 @@ import { useStarredSessions } from "@/hooks/useStarredSessions";
 import { activityProjectName, activitySessionName, getActivitySections } from "@/lib/activity";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import type { SessionAttention, SessionInfo } from "@/lib/types";
+import { SessionWorktreeBadge } from "./SessionWorktreeBadge";
 
 interface Props {
   sessions: SessionInfo[];
@@ -71,13 +72,14 @@ export function StarredOverview({ sessions, runningIds, queuedIds, attention, re
                 const status = statusById.get(session.id);
                 const statusLabel = status === "needs-you" ? t("activity.needsYou") : status === "working" ? t("activity.working") : status === "ready" ? t("activity.ready") : null;
                 return <div role="listitem" key={session.id} className="activity-starred-item">
-                  <button type="button" className={`activity-item${status ? ` activity-item-${status}` : ""}${selectedId === session.id ? " activity-selected" : ""}`} onClick={() => onSelect(session)} aria-label={`${label} · ${activityProjectName(session)}${statusLabel ? ` · ${statusLabel}` : ""} · ${t("activity.open")}`}>
+                  <button type="button" className={`activity-item${status ? ` activity-item-${status}` : ""}${selectedId === session.id ? " activity-selected" : ""}`} onClick={() => onSelect(session)} aria-label={`${label} · ${activityProjectName(session)}${session.isWorktree && session.branch ? ` · ${session.branch}` : ""}${statusLabel ? ` · ${statusLabel}` : ""} · ${t("activity.open")}`}>
                     <span className="activity-item-top">
                       {status ? <span className="activity-dot" aria-hidden="true" /> : <span className="activity-star" aria-hidden="true">★</span>}
                       <span className="activity-item-title" title={label}>{label}</span>
                       <span className="activity-item-action">{t("activity.open")}</span>
                     </span>
                     <span className="activity-item-meta" title={session.projectRoot ?? session.cwd}>{activityProjectName(session)}</span>
+                    <SessionWorktreeBadge session={session} className="activity-item-meta" />
                     {status && <span className={`activity-starred-status activity-item-${status}`}>
                       {statusLabel}
                     </span>}
