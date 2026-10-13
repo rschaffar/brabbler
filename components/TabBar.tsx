@@ -15,10 +15,13 @@ export interface Tab {
   initialDisplayMode?: FileViewerDisplayMode;
   /** PDF page requested by the link that opened this tab (`#page=N`). */
   page?: number;
+  /** Pending explicit line jump; consumed when the viewer reports its state. */
+  lineTarget?: import("@/lib/file-links").FileLineTarget;
   viewerState?: FileViewerState;
   viewerRevision?: number;
   draft?: FileEditDraft;
   saving?: boolean;
+  pendingOpen?: import("./file-tab-state").OpenFileTabInput;
 }
 
 interface Props {

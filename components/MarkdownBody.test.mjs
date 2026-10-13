@@ -46,6 +46,23 @@ test("keeps local file markdown links in the app", () => {
   assert.doesNotMatch(fileUrlHtml, /target=|rel=|\snode=/);
 });
 
+test("preserves basename-colon and Windows drive links through URL sanitization", () => {
+  assert.match(renderMarkdown("[readme](README.md:25)"), /href="\.\/README\.md:25"/);
+  assert.match(renderMarkdown("[code](C:/repo/code.ts#L36)"), /href="file:\/\/\/C:\/repo\/code\.ts#L36"/);
+  assert.doesNotMatch(renderMarkdown("[unsafe](javascript:alert%281%29)"), /href="javascript:/);
+});
+
+test("autolinks inline source locations without nesting links or linking code blocks", () => {
+  const html = renderMarkdown("`src/code.ts:36:5` and `src/code.ts#L36-L48` and `symbolName` and `https://example.com/a.ts#L36`");
+  assert.match(html, /<a href="src\/code\.ts:36:5"><code[^>]*>src\/code\.ts:36:5<\/code><\/a>/);
+  assert.match(html, /<a href="src\/code\.ts#L36-L48"><code/);
+  assert.doesNotMatch(html, /<a[^>]*>(?:<code[^>]*>)?(?:symbolName|https:)/);
+  const nested = renderMarkdown("[`src/code.ts:36`](src/code.ts#L36)");
+  assert.equal((nested.match(/<a /g) ?? []).length, 1);
+  assert.doesNotMatch(renderMarkdown("`src/code.ts:36`", { onOpenFile: undefined }), /<a /);
+  assert.doesNotMatch(renderMarkdown("```text\nsrc/code.ts:36\n```"), /<a /);
+});
+
 test("keeps file URLs inert without an in-app file handler", () => {
   const html = renderMarkdown("[report](file:///home/me/project/report.html)", { onOpenFile: undefined });
 

@@ -44,7 +44,7 @@ test("FileViewer forwards watcher state to every viewer implementation", () => {
 
 test("TextFileViewer snapshots and restores lightweight tab state", () => {
   const block = functionBlock("TextFileViewer", null);
-  assert.match(block, /onStateChangeRef\.current\?\.\(\{ \.\.\.viewerStateRef\.current \}\)/);
+  assert.match(block, /onStateChangeRef\.current\?\.\(\{ \.\.\.viewerStateRef\.current \}, lineTargetHandledRef\.current\)/);
   assert.match(block, /displayMode: requestedInitialDisplayMode/);
   assert.match(block, /viewerStateRef\.current\.displayMode = nextDisplayMode/);
   assert.match(block, /viewerStateRef\.current\.wrapLines = next/);

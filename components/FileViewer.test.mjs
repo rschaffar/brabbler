@@ -42,7 +42,7 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
     ),
   ).map((node) => node.getText(file)).join("\n");
   const { outputText } = ts.transpileModule(`
-    return (data, displayMode, hasGitDiff = false, isDeletedDiff = false, wrapLines = false, dirty = false, draft = null) => {
+    return (data, displayMode, hasGitDiff = false, isDeletedDiff = false, wrapLines = false, dirty = false, draft = null, initialLineTarget = null, editing = false) => {
       const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
       const FILE_LINE_NUMBER_STYLE = {};
       ${calculations}
@@ -70,5 +70,5 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
 
 test("markdown preview links carry PDF page fragments", () => {
   assert.match(source, /parsePdfPageFragment/);
-  assert.match(source, /onOpenFile\(linkedFile, parsePdfPageFragment\(href\) \?\? undefined\)/);
+  assert.match(source, /onOpenFile\(linkedFile, parsePdfPageFragment\(href\) \?\? undefined, parseFileLineTarget\(href\)\)/);
 });

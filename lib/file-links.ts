@@ -1,3 +1,13 @@
+/** One-based source coordinates. A column is metadata; navigation highlights the line. */
+export interface FileLineTarget {
+  line: number;
+  endLine?: number;
+  column?: number;
+}
+
+// Keep PDF's existing second argument compatible with callers that open whole files.
+export type OpenFileLink = (filePath: string, page?: number, lineTarget?: FileLineTarget) => void;
+
 interface LocalFileClickEvent {
   defaultPrevented: boolean;
   button: number;
@@ -135,6 +145,40 @@ export function resolveLocalFileHref(
   const filePath = stripLineSuffix(normalizeLocalPath(candidate));
   if (candidateKind === "relative" && relativeRoot && !isPathInside(filePath, relativeRoot)) return null;
   return filePath;
+}
+
+function positiveCoordinate(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : undefined;
+}
+
+/** Parse source coordinates without interpreting arbitrary fragments as locations. */
+export function parseFileLineTarget(href: string | undefined): FileLineTarget | undefined {
+  if (!href) return undefined;
+  const hash = href.indexOf("#");
+  const match = hash >= 0
+    ? /^L(\d+)(?:-L?(\d+))?$/i.exec(href.slice(hash + 1).trim())
+    : /:(\d+)(?::(\d+))?$/.exec(href.split("?", 1)[0]);
+  if (!match) return undefined;
+  const line = positiveCoordinate(match[1]);
+  const extra = positiveCoordinate(match[2]);
+  if (!line || (match[2] && !extra)) return undefined;
+  if (hash >= 0) {
+    if (extra && extra < line) return undefined;
+    return extra ? { line, endLine: extra } : { line };
+  }
+  return extra ? { line, column: extra } : { line };
+}
+
+/** Only unambiguous inline-code file references are autolinked, not symbol names. */
+export function resolveInlineFileReference(value: string, cwd?: string): { filePath: string; lineTarget: FileLineTarget } | null {
+  if (value !== value.trim() || value.includes("\n")) return null;
+  const lineTarget = parseFileLineTarget(value);
+  // A basename followed by :line looks like a URL scheme; explicitly make it relative.
+  const href = value.replace(/^([^/\\:#?\s]+\.[^/\\:#?\s]+)(:\d+(?::\d+)?)$/, "./$1$2");
+  const filePath = lineTarget ? resolveLocalFileHref(href, cwd) : null;
+  return filePath && lineTarget ? { filePath, lineTarget } : null;
 }
 
 const PDF_PAGE_FRAGMENT = /^page=(\d+)$/i;

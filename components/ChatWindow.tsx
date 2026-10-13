@@ -66,7 +66,7 @@ interface Props {
   onSessionStatsChange?: (stats: SessionStatsInfo | null) => void;
   onSessionStatsPanelOpen?: () => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
-  onOpenFile?: (filePath: string, page?: number) => void;
+  onOpenFile?: import("@/lib/file-links").OpenFileLink;
   onOpenSession?: (sessionId: string) => void;
   onAskInNewChat?: (prompt: string, sourceSessionId: string, sourceEntryId: string) => Promise<void>;
   quoteSelectionEnabled?: boolean;

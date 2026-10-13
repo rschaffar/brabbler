@@ -1607,6 +1607,13 @@ pre, code {
   }
 }
 
+/* Source lines and rendered blocks reached by an explicit chat link. */
+.file-viewer-content [data-file-line-target] {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: -1px;
+}
+
 /* File viewer markdown preview — larger headings */
 .markdown-file-preview h1 { font-size: 1.8em; }
 .markdown-file-preview h2 { font-size: 1.4em; }
