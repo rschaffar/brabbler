@@ -217,13 +217,20 @@ export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(() => !initialNavigation.sidebarCollapsed);
   const [activeOverview, setActiveOverview] = useState<"activity" | "starred" | "git" | null>(null);
   const [overviewMobileList, setOverviewMobileList] = useState(true);
+  const [gitExplorerExpanded, setGitExplorerExpanded] = useState(false);
+  const gitExplorerTriggerRef = useRef<HTMLButtonElement>(null);
   const closeOverview = useCallback(() => {
+    setGitExplorerExpanded(false);
     setActiveOverview(null);
     setOverviewMobileList(true);
   }, []);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelExpanded, setRightPanelExpanded] = useState(false);
   const rightPanelFullWidth = rightPanelOpen && rightPanelExpanded && !isMobile;
+  const gitExplorerFullWidth = activeOverview === "git" && gitExplorerExpanded && !isMobile && !rightPanelFullWidth;
+  useEffect(() => {
+    if (activeOverview !== "git" || isMobile || rightPanelFullWidth) setGitExplorerExpanded(false);
+  }, [activeOverview, isMobile, rightPanelFullWidth]);
   useEffect(() => {
     if (!rightPanelOpen || isMobile) setRightPanelExpanded(false);
   }, [rightPanelOpen, isMobile]);
@@ -439,7 +446,18 @@ export function AppShell() {
     setRightPanelOpen((open) => !open);
   }, [isMobile]);
 
+  const handleGitExplorerExpandToggle = useCallback(() => {
+    setActiveTopPanel(null);
+    setRightPanelExpanded(false);
+    setGitExplorerExpanded((expanded) => !expanded);
+  }, []);
+  const handleGitExplorerClose = useCallback(() => {
+    closeOverview();
+    requestAnimationFrame(() => gitExplorerTriggerRef.current?.focus());
+  }, [closeOverview]);
+
   const handleRightPanelExpandToggle = useCallback(() => {
+    setGitExplorerExpanded(false);
     setActiveTopPanel(null);
     setRightPanelExpanded((expanded) => !expanded);
   }, []);
@@ -1956,6 +1974,7 @@ export function AppShell() {
     }}>
       {/* Mobile overlay backdrop */}
       <div
+        inert={gitExplorerFullWidth}
         className={`sidebar-overlay-backdrop${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
         onClick={() => setSidebarOpen(false)}
         style={{
@@ -1973,7 +1992,7 @@ export function AppShell() {
       <div
         ref={sidebarResizer.panelRef}
         id="session-sidebar"
-        inert={rightPanelFullWidth}
+        inert={rightPanelFullWidth || gitExplorerFullWidth}
         className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${sidebarResizer.isResizing ? " sidebar-resizing" : ""}`}
         style={{
           "--sidebar-width": `${sidebarResizer.width}px`,
@@ -1992,7 +2011,7 @@ export function AppShell() {
       {sidebarOpen && (
         <div
           {...sidebarResizer.separatorProps}
-          inert={rightPanelFullWidth}
+          inert={rightPanelFullWidth || gitExplorerFullWidth}
           aria-controls="session-sidebar"
           className={`panel-resize-handle sidebar-resize-handle${sidebarResizer.isResizing ? " is-resizing" : ""}`}
           data-resize-handle="sidebar"
@@ -2003,7 +2022,7 @@ export function AppShell() {
       {/* Center: chat */}
       <div inert={rightPanelFullWidth} style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         {/* Top bar with sidebar toggle */}
-        <div ref={topBarRef} style={{ flexShrink: 0, background: "var(--bg-panel)" }}>
+        <div ref={topBarRef} inert={gitExplorerFullWidth} style={{ flexShrink: 0, background: "var(--bg-panel)" }}>
         <div style={{ display: "flex", alignItems: "center", position: "relative", borderBottom: "1px solid var(--border)", height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}>
           <button
             onClick={handleSidebarToggle}
@@ -2082,7 +2101,7 @@ export function AppShell() {
           >
             {activeOverview === "starred" && isMobile && !overviewMobileList ? "←" : "★"}
           </button>
-          <button type="button" className="activity-top-button" aria-label="Git Explorer" title="Git Explorer"
+          <button ref={gitExplorerTriggerRef} type="button" className="activity-top-button" aria-label="Git Explorer" title="Git Explorer"
             aria-pressed={activeOverview === "git"} aria-controls="git-explorer-panel"
             onClick={() => {
               setActiveTopPanel(null);
@@ -2430,14 +2449,16 @@ export function AppShell() {
               hidden={isMobile && !overviewMobileList}
             />
           )}
-          {activeOverview === "git" && <div id="git-explorer-panel" className="git-explorer-host">
-            <GitExplorerPanel key={activeCwd ?? "no-worktree"} cwd={activeCwd} onClose={closeOverview} />
+          {activeOverview === "git" && <div id="git-explorer-panel" className={`git-explorer-host${gitExplorerFullWidth ? " git-explorer-full-width" : ""}`}>
+            <GitExplorerPanel key={activeCwd ?? "no-worktree"} cwd={activeCwd} onClose={handleGitExplorerClose}
+              expanded={gitExplorerFullWidth} canExpand={!isMobile} onToggleExpanded={handleGitExplorerExpandToggle} />
           </div>}
-          <div inert={Boolean(activeOverview && isMobile && overviewMobileList)} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
+          <div inert={gitExplorerFullWidth || Boolean(activeOverview && isMobile && overviewMobileList)} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
           {showChat ? (
             <ChatWindow
               key={sessionKey}
               session={selectedSession}
+              covered={gitExplorerFullWidth || rightPanelFullWidth}
               searchTarget={searchTarget?.sessionId === selectedSession?.id ? searchTarget : null}
               onSearchTargetHandled={handleSearchTargetHandled}
               initialScrollPosition={selectedSession ? sessionScrollPositionsRef.current.get(selectedSession.id) ?? null : null}
@@ -2521,13 +2542,14 @@ export function AppShell() {
 
       <div
         aria-hidden="true"
+        inert={gitExplorerFullWidth}
         className={`right-panel-overlay-backdrop${rightPanelOpen ? " is-open" : ""}`}
         onClick={() => setRightPanelOpen(false)}
       />
       {rightPanelOpen && (
         <div
           {...rightPanelResizer.separatorProps}
-          inert={rightPanelFullWidth}
+          inert={rightPanelFullWidth || gitExplorerFullWidth}
           aria-controls="file-panel"
           className={`panel-resize-handle right-panel-resize-handle${rightPanelResizer.isResizing ? " is-resizing" : ""}`}
           data-resize-handle="right-panel"
@@ -2539,6 +2561,7 @@ export function AppShell() {
       <div
         ref={rightPanelResizer.panelRef}
         id="file-panel"
+        inert={gitExplorerFullWidth}
         className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelFullWidth ? " right-panel-full-width" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
         style={{
           "--right-panel-width": `${rightPanelResizer.width}px`,
