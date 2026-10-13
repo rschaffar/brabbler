@@ -19,8 +19,9 @@ The Nix-native development/service plan owns the existing environment and servic
 - [x] Resolve KaTeX renderer compatibility across all dependency paths with the user-approved, exact 0.19.0 override. Both locks contain only that version; focused/static and desktop/mobile math/security/SVG acceptance passed. The override remains outside upstream adapter ranges.
 - [x] Evaluate a supported ESLint migration. **Immediate-upgrade recommendation retracted:** Next 16.4's import/React/a11y plugin peers exclude 10. Retain 9.39.5 as documented compatibility debt rather than forcing peers or disabling rules; `docs/dependencies.md` owns follow-up.
 - [x] Evaluate TypeScript 7 and Mermaid 12 separately. TypeScript 7 is blocked by typescript-eslint 8.71.2's `<6.1.0` peer ceiling. Mermaid 12.2.0 passed static/focused and desktop/mobile migration acceptance.
-- [ ] Remove redundant YAML typings, align Node typings with the supported runtime, and review bundled-runtime dependency classifications plus proper-lockfile maintenance without introducing an unjustified locking rewrite.
-- [ ] Refresh both lockfile advisory inventories and document remaining advisory exposure and license/notice considerations in a maintained dependency guide.
+- [x] Remove redundant YAML typings, align Node typings with Node 22, move the 12 shipped renderers into runtime dependencies, and retain proper-lockfile for proven SDK locking interoperability. Classification comparison, realized cache and focused/static checks passed.
+- [x] Refresh both advisory inventories and document remaining exposure, compatibility debt and license/notice obligations in the maintained owner `docs/dependencies.md`.
+- [x] Separately authorized demo repair: fix pre-existing archived/search-result type contracts, add two regressions, and adapt remaining demo hook captures to the enabled compiler rules. Independent demo static checks passed.
 - [ ] Run complete acceptance on the settled candidate, independently review the diff, and record exact source identities, commands, results, runtimes and retained artifact paths.
 
 ## Nix-only checkpoint evidence
@@ -46,6 +47,37 @@ Browser/terminal exported-source digest: `04e5f3bd22e223e509d524d3a47478fcefc116
 - Read-only packaging/locking/license review confirmed 12 shipped runtime devDependencies, proper-lockfile/SDK locking interoperability, and mixed-license obligations. Runtime classification changes preserve every resolved version/package path; `runtime-classification-review.log` records the comparison. Mermaid 12 additionally introduces EPL-2.0 elkjs; final artifact notices remain release review, not development-build work.
 
 These are staged/focused checks, not final npm candidate acceptance. Dependency guidance and remaining debt have the maintained owner `docs/dependencies.md`.
+
+## Rebase, review and demo evidence
+
+The user requested rebasing after new file-line-link work merged. Local `rst-main`
+advanced to `ed89fd5a0f3cb69ae66f0c9742d0303280932f2a`. The first rebase stopped at
+one mechanical E2E teardown conflict. Aborted it and verified clean restoration
+of `34e5057a6c33112ee43601e322705bc0f794f94f`, created
+`backup/dependency-refresh-pre-rebase-20261013-121334`, then retried with the reviewed
+`isVisible()` guard and expanded status message. Range-diff confirms the other
+five feature patches are unchanged; the newly merged file-link behavior remains.
+Rebased feature checkpoint: `49fb564f520ba98d637ca657659e55c6fed61f57`.
+Recovery/conflict/range-diff evidence is retained under `test-results/dependency-refresh/rebase-*`.
+
+Independent review found no application defect. Its two low coverage gaps were
+addressed: positive inline-math output and actual Mermaid node-fill changes are
+now asserted; `nix/check-math-dependencies.mjs` guards both independent locks.
+Rebased Markdown/browser acceptance including the new file-line-link flows passed
+at 1280/390 px in 139.46 s, `test-results/e2e/browser-s1SnTj`, source
+`/tmp/pwe-uMNiRv`, digest `6969cf01382a7b1d1daf58c191889acf47391e4fe204a4c282061913e49b5720`.
+
+Demo verification uses an independent disposable copy and its own lock/dependencies,
+not root modules or a production build. The refreshed and original-base copies
+both produced the same seven type errors; the user authorized bounded repairs.
+Fixed snapshot `/tmp/pi-web-demo-final.v6SZ2Em4`, 265 source inputs, digest
+`be2ffcf374188aa5991f9f2b28e037d8991eb00cfe1607a97fdb7e3d1eb69e99`:
+preparation 9.90 s; route type generation, TypeScript, lint and two search cases
+passed in 24.92 s. Lint retains one existing unused-locale warning. Earlier
+failures are retained separately: npm rejected identical user/global config paths;
+initial type generation needed the public parent manifest; then existing type and
+compiler-memoization issues were diagnosed rather than suppressed. This evidence
+predates the demo README-only verification guidance update in `d02beb3`.
 
 ## Non-Goals
 

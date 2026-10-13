@@ -43,6 +43,9 @@ export async function checkMarkdownPreview(page, filePath) {
   const preview = panel.locator(".markdown-file-preview");
   const mathDiagram = blocks.nth(2);
   await mathDiagram.locator("svg .katex").waitFor();
+  const inlineMath = preview.locator("p").filter({ hasText: "Inline math:" });
+  assert.equal(await inlineMath.locator(".katex").count(), 1, "inline math renders positively");
+  assert.equal(await inlineMath.locator('annotation[encoding="application/x-tex"]').textContent(), String.raw`\frac{a}{b} + \sqrt{x}`);
   assert.ok(await preview.locator(".katex-display").count() >= 1, "display math renders");
   assert.equal(await preview.locator(".katex-error").count(), 1, "malformed math stays a rendering error");
   assert.equal(await preview.locator('a[href^="javascript:"], script, [onerror]').count(), 0, "untrusted Markdown remains inert");
@@ -98,10 +101,15 @@ export async function checkMarkdownPreview(page, filePath) {
 
   // Real system-theme changes rerender Mermaid; exported math must remain valid XML.
   const originalScheme = await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const themeFills = [];
   for (const colorScheme of ["dark", "light"]) {
+    const previousTheme = await page.locator("html").getAttribute("data-theme");
+    const previousSvg = await mathDiagram.locator("svg").elementHandle();
     await page.emulateMedia({ colorScheme });
     await page.waitForFunction(scheme => document.documentElement.dataset.theme === scheme, colorScheme);
+    if (previousTheme !== colorScheme) await page.waitForFunction(svg => !svg.isConnected, previousSvg);
     await mathDiagram.locator("svg .katex").waitFor();
+    themeFills.push(await mathDiagram.locator("svg .node rect").first().evaluate(el => getComputedStyle(el).fill));
     const downloaded = page.waitForEvent("download");
     await mathDiagram.getByRole("button", { name: "Download file (SVG)", exact: true }).click();
     const download = await downloaded;
@@ -114,6 +122,7 @@ export async function checkMarkdownPreview(page, filePath) {
     }, xml);
     assert.deepEqual(parsed, { error: false, math: true, scripts: 0 });
   }
+  assert.notEqual(themeFills[0], themeFills[1], "Mermaid node styling actually changes with the theme");
   await page.emulateMedia({ colorScheme: originalScheme });
   await panel.getByRole("button", { name: "Close diagram.md", exact: true }).click();
   // Closing the last tab already hides the panel in the focused selection.

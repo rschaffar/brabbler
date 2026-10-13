@@ -100,8 +100,9 @@ compatibility exception, not upstream support or proof that all formulas work.
 Keep the exact pin until adapter releases support a fixed renderer, then remove
 the override after verifying every resolved copy and CSS alignment again.
 
-`lib/math-dependency.test.mjs` guards the root lockfile's resolved copies,
-renderer/CSS version identity, inherited-trust rejection and public rendering API.
+`nix/check-math-dependencies.mjs` persistently guards both independent manifests
+and lockfiles without installed modules. `lib/math-dependency.test.mjs` additionally
+guards the root renderer/CSS identity, inherited-trust rejection and public API.
 MarkdownBody/minimap tests exercise the rehype path. The browser file-preview
 fixture adds inline/display/malformed/untrusted math, Mermaid math labels,
 light/dark rendering, valid SVG downloads and state-preserving polling. Preserve
@@ -110,6 +111,7 @@ raw-HTML sanitization before math rendering and Mermaid `securityLevel: "strict"
 Focused iteration:
 
 ```sh
+node nix/check-math-dependencies.mjs
 nix develop .#test -c node nix/test-offline.mjs --file lib/math-dependency.test.mjs --file components/MarkdownBody.test.mjs --file components/ChatMinimap.test.mjs --file components/MermaidBlock.test.mjs
 nix develop .#test -c env E2E_MARKDOWN_ONLY=1 npm run test:e2e
 ```
