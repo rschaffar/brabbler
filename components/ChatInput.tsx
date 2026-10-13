@@ -601,10 +601,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     cwd: string;
     values: Record<string, boolean>;
   } | null>(null);
-  const skillDormancy = cwd && skillDormancyState?.cwd === cwd
-    ? skillDormancyState.values
-    : {};
-
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
@@ -627,6 +623,36 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const pendingImageCountRef = useRef(0);
   valueRef.current = value;
   attachedImagesRef.current = attachedImages;
+
+  const processImageFiles = useCallback(async (files: File[]) => {
+    if (compact) return;
+    const remaining = Math.max(
+      0,
+      MAX_ATTACHED_IMAGES - attachedImagesRef.current.length - pendingImageCountRef.current,
+    );
+    const imageFiles = files
+      .filter((f) => f.type.startsWith("image/") && f.size <= MAX_ATTACHED_IMAGE_BYTES)
+      .slice(0, remaining);
+    if (!imageFiles.length) return;
+    pendingImageCountRef.current += imageFiles.length;
+    try {
+      const newImages = await Promise.all(
+        imageFiles.map(async (file) => ({
+          ...await compressImageFile(file),
+          previewUrl: URL.createObjectURL(file),
+        }))
+      );
+      setAttachedImages((prev) => {
+        const accepted = newImages.slice(0, Math.max(0, MAX_ATTACHED_IMAGES - prev.length));
+        newImages.slice(accepted.length).forEach(revokeImagePreview);
+        const next = [...prev, ...accepted];
+        attachedImagesRef.current = next;
+        return next;
+      });
+    } finally {
+      pendingImageCountRef.current -= imageFiles.length;
+    }
+  }, [compact]);
 
   useImperativeHandle(ref, () => ({
     insertIfEmpty(text: string) {
@@ -809,36 +835,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     },
   }));
 
-  const processImageFiles = useCallback(async (files: File[]) => {
-    if (compact) return;
-    const remaining = Math.max(
-      0,
-      MAX_ATTACHED_IMAGES - attachedImagesRef.current.length - pendingImageCountRef.current,
-    );
-    const imageFiles = files
-      .filter((f) => f.type.startsWith("image/") && f.size <= MAX_ATTACHED_IMAGE_BYTES)
-      .slice(0, remaining);
-    if (!imageFiles.length) return;
-    pendingImageCountRef.current += imageFiles.length;
-    try {
-      const newImages = await Promise.all(
-        imageFiles.map(async (file) => ({
-          ...await compressImageFile(file),
-          previewUrl: URL.createObjectURL(file),
-        }))
-      );
-      setAttachedImages((prev) => {
-        const accepted = newImages.slice(0, Math.max(0, MAX_ATTACHED_IMAGES - prev.length));
-        newImages.slice(accepted.length).forEach(revokeImagePreview);
-        const next = [...prev, ...accepted];
-        attachedImagesRef.current = next;
-        return next;
-      });
-    } finally {
-      pendingImageCountRef.current -= imageFiles.length;
-    }
-  }, [compact]);
-
   const removeImage = useCallback((index: number) => {
     setAttachedImages((prev) => {
       const next = [...prev];
@@ -961,34 +957,45 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     onSend(msg, attachedImages.length ? attachedImages : undefined);
   }, [value, attachedImages, isStreaming, modelSpeedChanging, runBuiltinCommand, onSend, clearInput, onAudioUnlock]);
 
-  const slashQuery = !compact && value.startsWith("/") && !/\s/.test(value.slice(1))
-    ? value.slice(1).toLowerCase()
-    : null;
-
-  const filteredSlashCommands = (() => {
-    if (slashQuery === null) return [];
-    const builtinCommands = isStreaming
-      ? BUILTIN_SLASH_COMMANDS.filter((command) => command.availableWhileStreaming)
-      : BUILTIN_SLASH_COMMANDS;
-    const commands = [...builtinCommands, ...(slashCommands ?? [])];
-    return [...commands]
-      .filter((command) => {
-        const name = command.name.toLowerCase();
-        const description = getSlashDescription(command, t).toLowerCase();
-        return name.includes(slashQuery) || description.includes(slashQuery);
-      })
-      .sort((a, b) => {
-        const rankDelta = slashMatchRank(a, slashQuery, t) - slashMatchRank(b, slashQuery, t);
-        if (rankDelta !== 0) return rankDelta;
-        return SLASH_SOURCE_ORDER[a.source] - SLASH_SOURCE_ORDER[b.source]
-          || TEXT_COLLATOR.compare(a.name, b.name);
-      });
-  })();
-
   const {
+    skillDormancy,
+    slashQuery,
+    filteredSlashCommands,
     commands: displayedSlashCommands,
     groups: groupedSlashCommands,
-  } = buildSlashCommandLayout(filteredSlashCommands, skillDormancy);
+  } = React.useMemo(() => {
+    const skillDormancy = cwd && skillDormancyState?.cwd === cwd
+      ? skillDormancyState.values
+      : {};
+    const slashQuery = !compact && value.startsWith("/") && !/\s/.test(value.slice(1))
+      ? value.slice(1).toLowerCase()
+      : null;
+    const filteredSlashCommands = (() => {
+      if (slashQuery === null) return [];
+      const builtinCommands = isStreaming
+        ? BUILTIN_SLASH_COMMANDS.filter((command) => command.availableWhileStreaming)
+        : BUILTIN_SLASH_COMMANDS;
+      const commands = [...builtinCommands, ...(slashCommands ?? [])];
+      return [...commands]
+        .filter((command) => {
+          const name = command.name.toLowerCase();
+          const description = getSlashDescription(command, t).toLowerCase();
+          return name.includes(slashQuery) || description.includes(slashQuery);
+        })
+        .sort((a, b) => {
+          const rankDelta = slashMatchRank(a, slashQuery, t) - slashMatchRank(b, slashQuery, t);
+          if (rankDelta !== 0) return rankDelta;
+          return SLASH_SOURCE_ORDER[a.source] - SLASH_SOURCE_ORDER[b.source]
+            || TEXT_COLLATOR.compare(a.name, b.name);
+        });
+    })();
+    return {
+      skillDormancy,
+      slashQuery,
+      filteredSlashCommands,
+      ...buildSlashCommandLayout(filteredSlashCommands, skillDormancy),
+    };
+  }, [compact, value, isStreaming, slashCommands, t, cwd, skillDormancyState]);
 
   const slashCommandCountLabel = filteredSlashCommands.length === 1
     ? t(slashQuery ? "chat.match" : "chat.command")

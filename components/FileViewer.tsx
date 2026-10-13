@@ -1017,7 +1017,8 @@ function TextFileViewer({
   const [gitDiff, setGitDiff] = useState<GitFileDiffResponse | null>(null);
   const workingRevision = gitDiff?.revision;
   const comparison = `${filePath}:${workingRevision ?? ""}`;
-  const diffReview = useMemo(() => gitDiff?.patch ? createDiffReview(gitDiff.patch, comparison) : undefined, [gitDiff?.patch, comparison]);
+  const workingPatch = gitDiff?.patch;
+  const diffReview = useMemo(() => workingPatch ? createDiffReview(workingPatch, comparison) : undefined, [workingPatch, comparison]);
   const loadWorkingContext = useCallback(async (signal: AbortSignal): Promise<DiffContext> => {
     const params = new URLSearchParams({ cwd: cwd!, path: filePath, op: "context", revision: workingRevision! });
     const response = await fetch(`/api/git/diff?${params}`, { signal, cache: "no-store" });
@@ -1381,7 +1382,9 @@ function TextFileViewer({
           margin: 0,
           padding: 0,
           border: 0,
-          background: "var(--bg)",
+          // Override both Prism theme forms without mixing CSS declarations.
+          background: undefined,
+          backgroundColor: "var(--bg)",
           ...FILE_CODE_STYLE,
           width: wrapLines ? "100%" : "max-content",
           minWidth: "100%",

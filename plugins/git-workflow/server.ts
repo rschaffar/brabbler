@@ -1,4 +1,5 @@
 import { gitText as git, gitOutput, gitEnvironment, records, outputDigest, run, withPreparationSignal } from "./process";
+import { OPERATION_MARKERS, operationMarkerPaths } from "./operation-paths";
 import { spawn } from "node:child_process";
 import { buildGitReview, compactGitCard } from "./review";
 import { createReadStream } from "node:fs";
@@ -42,16 +43,20 @@ async function observedHead(cwd: string) {
 }
 function status(cwd: string): Promise<string> { return outputDigest(gitOutput(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])); }
 async function assertIdle(cwd: string) {
-  for (const name of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer"]) {
-    if (existsSync(toNativePath((await git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", name])).trim()))) throw new Error(`Conflicting Git operation: ${name}`);
+  const paths = await operationMarkerPaths(cwd);
+  for (const [index, name] of OPERATION_MARKERS.entries()) {
+    if (existsSync(toNativePath(paths[index]))) throw new Error(`Conflicting Git operation: ${name}`);
   }
-  if ((await git(cwd, ["config", "--get", "core.sparseCheckout"])).trim() === "true") throw new Error("Sparse checkout is unsupported");
-}
-// config --get exits 1 for absent keys.
-async function idle(cwd: string) {
-  try { await assertIdle(cwd); } catch (error) {
+  let sparseCheckout = "";
+  try { sparseCheckout = (await git(cwd, ["config", "--get", "core.sparseCheckout"])).trim(); }
+  catch (error) {
+    // Only config --get's absent-key status is expected, never marker failures.
     if ((error as { status?: number }).status !== 1) throw error;
   }
+  if (sparseCheckout === "true") throw new Error("Sparse checkout is unsupported");
+}
+async function idle(cwd: string) {
+  await assertIdle(cwd);
   for await (const entry of records(gitOutput(cwd, ["ls-files", "-v", "-z"]))) {
     if (/^[a-zS]/.test(entry)) throw new Error("Hidden index flags are unsupported");
   }

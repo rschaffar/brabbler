@@ -12,6 +12,7 @@ process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 after(() => { if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = oldAgentDir; rmSync(root, { recursive: true, force: true }); });
 const jiti = createJiti(import.meta.url);
 const { executeGitOperation: executeWithReceipts } = await jiti.import("./server.ts");
+const { OPERATION_MARKERS } = await jiti.import("./operation-paths.ts");
 const { preparePluginReview, reviewEntry, reviewPreview } = await jiti.import("../../lib/plugins/review-store.ts");
 const { snapshotOperationReceipt } = await jiti.import("../../lib/operation-receipts.ts");
 const { validatePluginCard } = await jiti.import("../../lib/plugins/ui.ts");
@@ -25,8 +26,8 @@ const { gitWorkflowManifest } = await jiti.import("./manifest.ts");
 const { updatePluginSettings } = await jiti.import("../../lib/plugins/settings.ts");
 function git(cwd, ...args) { return execFileSync("git", ["-C", cwd, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(); }
 let n = 0;
-function fixture() {
-  const repo = join(root, `repo-${++n}`);
+function fixture(suffix = "") {
+  const repo = join(root, `repo-${++n}${suffix}`);
   git(root, "init", "-b", "main", repo);
   git(repo, "config", "user.name", "Test"); git(repo, "config", "user.email", "test@example.invalid");
   writeFileSync(join(repo, "a"), "base a\n"); writeFileSync(join(repo, "b"), "base b\n");
@@ -41,6 +42,43 @@ const commit = (repo, extra = {}) => ({ action: "commit", checkout: repo, mode: 
 function change(repo) { writeFileSync(join(repo, "a"), "changed a\n"); }
 function success(result) { assert.notEqual(result.isError, true, result.content[0].text); assert.equal(result.details.completed, true); }
 function failed(result, pattern) { assert.equal(result.isError, true); assert.match(result.content[0].text, pattern); }
+
+for (const linked of [false, true]) {
+  for (const marker of OPERATION_MARKERS) {
+    test(`${linked ? "linked" : "primary"} checkout refuses ${marker} before approval or effects`, async () => {
+      const repo = fixture();
+      const selected = linked ? feature(repo) : repo;
+      const markerPath = git(selected, "rev-parse", "--path-format=absolute", "--git-path", marker);
+      if (["rebase-merge", "rebase-apply", "sequencer"].includes(marker)) mkdirSync(markerPath);
+      else writeFileSync(markerPath, "");
+      const before = git(selected, "rev-parse", "HEAD");
+      let approvals = 0;
+      const result = await call(repo, commit(repo, { checkout: selected }), { pluginCard: async () => { approvals++; return "approve"; } });
+      failed(result, new RegExp(`Conflicting Git operation: ${marker}`));
+      assert.equal(approvals, 0);
+      assert.equal(result.details.effectStarted, false);
+      assert.equal(git(selected, "rev-parse", "HEAD"), before);
+    });
+  }
+}
+
+test("marker resolution preserves a real checkout path containing embedded newlines and Unicode", async () => {
+  const repo = fixture("-MERGE_HEAD\nquote ' \tµ");
+  writeFileSync(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "CHERRY_PICK_HEAD"), "");
+  failed(await call(repo, commit(repo)), /Conflicting Git operation: CHERRY_PICK_HEAD/);
+});
+
+test("a conflict marker appearing during approval is rechecked before effects", async () => {
+  const repo = fixture(); change(repo);
+  const before = git(repo, "rev-parse", "HEAD");
+  const result = await call(repo, commit(repo), { pluginCard: async () => {
+    writeFileSync(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "MERGE_HEAD"), "");
+    return "approve";
+  } });
+  failed(result, /Conflicting Git operation: MERGE_HEAD/);
+  assert.equal(result.details.effectStarted, false);
+  assert.equal(git(repo, "rev-parse", "HEAD"), before);
+});
 
 test("disabled and denied calls have no UI or effects; allow bypasses approval", async () => {
   const repo = fixture(); change(repo); const before = git(repo, "rev-parse", "HEAD");

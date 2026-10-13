@@ -10,7 +10,25 @@ export const filePanelFixture = `<!doctype html><html><body style="margin:20px;m
 
 export const markdownPanelFixture = "# Diagram walkthrough\n\n```mermaid\nflowchart TD\n"
   + Array.from({ length: 25 }, (_, i) => `N${i}[Step ${i}] --> N${i + 1}`).join("\n")
-  + "\n```\n\n```mermaid\nflowchart LR\nA[Original label] --> B[Finish]\n```\n";
+  + "\n```\n\n```mermaid\nflowchart LR\nA[Original label] --> B[Finish]\n```\n"
+  + String.raw`
+Inline math: $\frac{a}{b} + \sqrt{x}$
+
+$$
+\sum_{n=1}^{5} n^2
+$$
+
+Malformed math: $\notARealCommand{$
+
+Untrusted math: $\href{javascript:alert(1)}{unsafe}$
+
+<script>window.__mathInjection = true</script>
+
+\`\`\`mermaid
+flowchart LR
+C["$$\frac{x}{y}$$"] --> D[Math finish]
+\`\`\`
+`.replaceAll("\\`", "`");
 
 export async function checkMarkdownPreview(page, filePath) {
   writeFileSync(filePath, markdownPanelFixture);
@@ -22,6 +40,18 @@ export async function checkMarkdownPreview(page, filePath) {
   const diagram = blocks.first().locator(".mermaid-preview-button");
   await diagram.locator("svg").waitFor();
   await blocks.nth(1).locator("svg").waitFor();
+  const preview = panel.locator(".markdown-file-preview");
+  const mathDiagram = blocks.nth(2);
+  await mathDiagram.locator("svg .katex").waitFor();
+  const inlineMath = preview.locator("p").filter({ hasText: "Inline math:" });
+  assert.equal(await inlineMath.locator(".katex").count(), 1, "inline math renders positively");
+  assert.equal(await inlineMath.locator('annotation[encoding="application/x-tex"]').textContent(), String.raw`\frac{a}{b} + \sqrt{x}`);
+  assert.ok(await preview.locator(".katex-display").count() >= 1, "display math renders");
+  assert.equal(await preview.locator(".katex-error").count(), 1, "malformed math stays a rendering error");
+  assert.equal(await preview.locator('a[href^="javascript:"], script, [onerror]').count(), 0, "untrusted Markdown remains inert");
+  assert.equal(await page.evaluate(() => window.__mathInjection), undefined);
+  await page.evaluate(() => document.fonts.ready);
+  assert.match(await preview.locator(".katex").first().evaluate(el => getComputedStyle(el).fontFamily), /KaTeX_Main/, "shared KaTeX CSS is applied");
   await panel.getByLabel("Live sync active").waitFor();
   const originalSvg = await diagram.locator("svg").elementHandle();
   const scrollTop = await diagram.evaluate(el => { el.scrollTop = 120; return el.scrollTop; });
@@ -68,11 +98,37 @@ export async function checkMarkdownPreview(page, filePath) {
   assert.equal(await restoredSvg.evaluate(el => el.isConnected), true, "changing another diagram retains the first SVG");
   writeFileSync(filePath, markdownPanelFixture.replace("Step 0", "Changed start").replace("Original label", "Updated label"));
   await diagram.locator("svg").getByText("Changed start", { exact: true }).waitFor();
+
+  // Real system-theme changes rerender Mermaid; exported math must remain valid XML.
+  const originalScheme = await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const themeFills = [];
+  for (const colorScheme of ["dark", "light"]) {
+    const previousTheme = await page.locator("html").getAttribute("data-theme");
+    const previousSvg = await mathDiagram.locator("svg").elementHandle();
+    await page.emulateMedia({ colorScheme });
+    await page.waitForFunction(scheme => document.documentElement.dataset.theme === scheme, colorScheme);
+    if (previousTheme !== colorScheme) await page.waitForFunction(svg => !svg.isConnected, previousSvg);
+    await mathDiagram.locator("svg .katex").waitFor();
+    themeFills.push(await mathDiagram.locator("svg .node rect").first().evaluate(el => getComputedStyle(el).fill));
+    const downloaded = page.waitForEvent("download");
+    await mathDiagram.getByRole("button", { name: "Download file (SVG)", exact: true }).click();
+    const download = await downloaded;
+    assert.equal(download.suggestedFilename(), "mermaid-diagram.svg");
+    assert.equal(await download.failure(), null);
+    const xml = readFileSync(await download.path(), "utf8");
+    const parsed = await page.evaluate(source => {
+      const document = new DOMParser().parseFromString(source, "image/svg+xml");
+      return { error: !!document.querySelector("parsererror"), math: !!document.querySelector(".katex"), scripts: document.querySelectorAll("script").length };
+    }, xml);
+    assert.deepEqual(parsed, { error: false, math: true, scripts: 0 });
+  }
+  assert.notEqual(themeFills[0], themeFills[1], "Mermaid node styling actually changes with the theme");
+  await page.emulateMedia({ colorScheme: originalScheme });
   await panel.getByRole("button", { name: "Close diagram.md", exact: true }).click();
   // Closing the last tab already hides the panel in the focused selection.
   const hidePanel = panel.getByRole("button", { name: "Hide file panel", exact: true });
-  if (await hidePanel.count() && await hidePanel.getAttribute("aria-expanded") === "true") await hidePanel.click();
-  console.log(`PASS: Mermaid scroll, zoom/source state, polling and live updates at ${page.viewportSize().width}px`);
+  if (await hidePanel.isVisible() && await hidePanel.getAttribute("aria-expanded") === "true") await hidePanel.click();
+  console.log(`PASS: Markdown/KaTeX security, Mermaid math/themes/SVG, scroll, zoom/source state, polling and live updates at ${page.viewportSize().width}px`);
 }
 
 // Mock only the bounded Git response; exercise the real explorer, file tab and renderer.

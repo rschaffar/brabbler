@@ -182,11 +182,14 @@ nix develop .#test -c npm run test:terminal
 
 **Never run `next build` or `npm run build` during normal development.** Builds write to `.next/` and can interfere with the development server; reserve them for installation or release work. Manual development reuses a healthy matching server. Linux acceptance instead owns a separate snapshot and free-port server; it never substitutes or restarts the installed service. Non-Linux legacy acceptance requires explicit `--in-place` and a free checkout lock.
 
-For Nix dependency changes, use `nix develop .#update` and `npm install --package-lock-only`, update the dependency hash in `nix/npm-deps.nix`, and deliberately move the old managed `node_modules` aside before re-entering the default shell. Never overwrite an unmanaged dependency tree to bypass a shell refusal.
+The flake tracks `nixos-unstable`; `flake.lock` pins the toolchain for each checkout. Run `nix flake update` deliberately in a feature worktree, then verify the complete Linux offline pipeline plus browser and terminal acceptance before integrating the new lockfile. Chromium advances with nixpkgs, so check compatibility with the locked Playwright version after each update. Do not build or activate the production application as part of this development refresh.
+
+For npm dependency changes, use `nix develop .#update` and `npm install --package-lock-only`, update the dependency hash in `nix/npm-deps.nix`, and deliberately move the old managed `node_modules` aside before re-entering the default shell. Never overwrite an unmanaged dependency tree to bypass a shell refusal.
 
 ### Further reading
 
 - [Testing and isolation](./docs/testing.md)
+- [Dependency maintenance, compatibility exceptions and advisory dispositions](./docs/dependencies.md)
 - [Browser tests](./e2e/README.md)
 - [Worktrees and Git Explorer](./docs/worktrees.md)
 - [Optional Git Workflow plugin](./docs/git-workflow-plugin.md)

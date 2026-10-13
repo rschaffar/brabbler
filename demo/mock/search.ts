@@ -43,7 +43,7 @@ export async function searchSessions(query: string, scope: { projectKey?: string
       { kind: "preview" as const, text: summary.firstMessage || "" },
       { kind: "id" as const, text: summary.id },
     ];
-    const hits = fields.filter(({ kind }) => !scope.titlesOnly || kind === "title").flatMap(({ kind, text }) => {
+    const hits: { rank: number; result: SessionSearchResult }[] = fields.filter(({ kind }) => !scope.titlesOnly || kind === "title").flatMap(({ kind, text }) => {
       const match = matcher.exec(text);
       if (!match) return [];
       const rank = text.length === match[0].length ? 0 : match.index === 0 ? 1 : 2;

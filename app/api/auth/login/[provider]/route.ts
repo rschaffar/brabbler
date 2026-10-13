@@ -2,7 +2,8 @@ import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import { randomUUID } from "node:crypto";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { createModelRuntimeWithExtensions } from "@/lib/model-runtime";
-import { accountCredentialStore, listProviderAccounts } from "@/lib/provider-accounts";
+import { listProviderAccounts } from "@/lib/provider-accounts";
+import { prepareAccountModelRuntime } from "@/lib/account-model-runtime";
 import { createSseStream, SSE_HEADERS } from "@/lib/sse-stream";
 
 export const dynamic = "force-dynamic";
@@ -81,7 +82,7 @@ export async function GET(
           return;
         }
         modelRuntime = await createModelRuntimeWithExtensions(
-          account ? accountCredentialStore({ [provider]: account.id }, undefined, undefined, { allowPendingLogin: true }) : undefined,
+          account ? prepareAccountModelRuntime({ [provider]: account.id }, { allowPendingLogin: true }) : undefined,
         );
         if (writer.closed) return;
         if (!modelRuntime.getProvider(provider)?.auth.oauth) {

@@ -70,8 +70,14 @@ cd demo
 npm install
 npm run dev      # http://127.0.0.1:30142
 npm run lint
-npm run build    # static export in out/
+npm run typecheck
+node --experimental-strip-types --test lib/session-search.test.mjs
 ```
+
+Normal verification uses type generation (`node_modules/.bin/next typegen`),
+typecheck, lint and the focused search regression tests above. Do not run a
+production/static build during normal development. `npm run build` produces
+`out/` only for separately authorized deployment/release work.
 
 `npm run dev` and `npm run build` first run `scripts/prepare-demo-files.mjs`.
 To preview the build under a sub-path the way GitHub Pages serves it, set

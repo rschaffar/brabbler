@@ -1,8 +1,8 @@
 import { stat } from "fs/promises";
 import { resolve } from "path";
-import { createAgentSessionServices, getAgentDir, ModelRuntime, SessionManager, type SettingsManager } from "@earendil-works/pi-coding-agent";
-import { join } from "node:path";
-import { accountCredentialStore, getProjectAccounts, validateAccountSelection, type AccountSelection } from "@/lib/provider-accounts";
+import { createAgentSessionServices, getAgentDir, SessionManager, type SettingsManager } from "@earendil-works/pi-coding-agent";
+import { createAccountModelRuntime } from "@/lib/account-model-runtime";
+import { getProjectAccounts, validateAccountSelection, type AccountSelection } from "@/lib/provider-accounts";
 import { readSessionAccounts } from "@/lib/session-accounts";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { resolveSessionPath } from "@/lib/session-reader";
@@ -44,11 +44,7 @@ async function loadModels(cwd: string, accounts: AccountSelection = {}): Promise
   // too (see lib/project-trust.ts, #236).
   const trustReloadOptions = projectTrustReloadOptions(cwd, agentDir);
   const modelRuntime = Object.keys(accounts).length > 0
-    ? await ModelRuntime.create({
-        credentials: accountCredentialStore(accounts),
-        modelsPath: join(agentDir, "models.json"),
-        modelsStorePath: join(agentDir, "models-store.json"),
-      })
+    ? await createAccountModelRuntime(accounts, { agentDir })
     : undefined;
   const services = await createAgentSessionServices({
     cwd,

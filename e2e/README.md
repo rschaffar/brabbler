@@ -191,6 +191,11 @@ the existing harness diagnostics. `run.json.root` now names the executed snapsho
   cleanup authority; no age/wildcard scans. Auxiliary PDF/theme scripts are outside
   these two runner guarantees.
 
+One-shot Node API probes in the Git plugin fixture close their command and
+settings-write sockets explicitly: long browser interactions must not reuse an
+idle API-test connection. HTTP/transport failures still propagate immediately,
+without retries; ordinary browser requests and assertion deadlines are unchanged.
+
 Console/page errors and local 5xx responses fail acceptance; only explicitly
 corroborated expected conflicts are tolerated. Aborted requests are diagnostic
 information, not blanket failures: SSE/navigation legitimately cancels requests.

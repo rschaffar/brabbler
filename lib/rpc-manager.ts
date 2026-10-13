@@ -1,5 +1,5 @@
 import type { Agent, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, ModelRuntime, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
@@ -7,7 +7,8 @@ import { recordRunStart, recordRunSettlement } from "./session-run-recovery";
 import { readActivityReview, recordActivityCompletion } from "./activity-review-server";
 import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
-import { accountCredentialStore, getProjectAccounts, validateAccountSelection, type AccountSelection } from "./provider-accounts";
+import { getProjectAccounts, validateAccountSelection, type AccountSelection } from "./provider-accounts";
+import { createAccountModelRuntime } from "./account-model-runtime";
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { isModelSpeed, supportsModelSpeed, type ModelSpeed } from "./model-speed";
 import { appendSessionModelSpeed, readSessionModelSpeed } from "./session-model-speed";
@@ -151,6 +152,7 @@ type ExtensionCommandContextActionsLike = {
 };
 
 type AgentSessionWrapperOptions = {
+  initialPromptOwner?: symbol;
   exactSystemPrompt?: () => string;
   chatOnly?: boolean;
   monitorContextFiles?: boolean;
@@ -188,6 +190,9 @@ export function resolveSessionIdleTimeoutMs(
 
 const SESSION_IDLE_TIMEOUT_MS = resolveSessionIdleTimeoutMs();
 
+/** Only refused, fresh launch-owned wrappers use this bounded cleanup budget. */
+export const INITIAL_PROMPT_SHUTDOWN_GRACE_MS = 1000;
+
 const SESSION_REPLACEMENT_COMMAND_TYPES = new Set(["clone"]);
 const COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT = new Set([
   "get_state",
@@ -200,6 +205,8 @@ const COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT = new Set([
 ]);
 
 export interface RpcSessionStartOptions {
+  /** Host-only, single-use exclusive admission for a fresh destination. Never wire data. */
+  initialPromptOwner?: symbol;
   toolNames?: string[];
   accounts?: AccountSelection;
   initialModel?: { provider: string; modelId: string };
@@ -274,6 +281,14 @@ export class AgentSessionWrapper {
   private activeExtensionWidgets = new Map<string, ActiveExtensionWidget>();
   private extensionWidgetGenerations = new Map<string, number>();
   private extensionWidgetsResetting = false;
+  private initialPrompt?: {
+    owner: symbol; state: "pending" | "accepted" | "refused"; submitted: boolean;
+    error?: unknown; refusal: Promise<never>; reject: (error: unknown) => void;
+    settlePrompt?: (error: unknown) => void;
+  };
+  private ownedRetirement?: {
+    completion: Promise<void>; resolve: () => void; reject: (error: unknown) => void;
+  };
   private pendingPromptCount = 0;
   private activeMutatingCommands = 0;
   private sessionReplacement: "clone" | null = null;
@@ -300,6 +315,12 @@ export class AgentSessionWrapper {
     public readonly inner: AgentSessionLike,
     options: AgentSessionWrapperOptions = {},
   ) {
+    if (options.initialPromptOwner !== undefined) {
+      let reject!: (error: unknown) => void;
+      const refusal = new Promise<never>((_resolve, fail) => { reject = fail; });
+      void refusal.catch(() => {});
+      this.initialPrompt = { owner: options.initialPromptOwner, state: "pending", submitted: false, refusal, reject };
+    }
     this.exactSystemPrompt = options.exactSystemPrompt;
     this.chatOnly = options.chatOnly ?? false;
     this.monitorContextFiles = options.monitorContextFiles ?? false;
@@ -332,11 +353,57 @@ export class AgentSessionWrapper {
   }
 
   isRunning(): boolean {
-    return this._alive && (this.pendingPromptCount > 0 || this.pendingCheckoutAdmissions > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning);
+    return this._alive && (this.initialPrompt?.state === "pending" || this.pendingPromptCount > 0 || this.pendingCheckoutAdmissions > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning);
+  }
+
+  /** Race host setup/binding against permanent owned refusal; observe late work. */
+  waitForInitialPrompt<T>(owner: symbol, work: Promise<T>): Promise<T> {
+    const initial = this.initialPrompt;
+    if (!initial || initial.owner !== owner) throw new Error("Invalid initial prompt capability");
+    return Promise.race([work, initial.refusal]);
+  }
+
+  /** Retire only an unaccepted destination owned by this launch, never an ordinary wrapper. */
+  refuseInitialPrompt(owner: symbol, error: unknown): boolean {
+    const initial = this.initialPrompt;
+    if (!initial || initial.owner !== owner || initial.state !== "pending") return false;
+    // Publish the SDK-ID barrier before callbacks can reenter startup on this ID.
+    let resolve!: () => void, reject!: (error: unknown) => void;
+    const completion = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+    this.ownedRetirement = { completion, resolve, reject };
+    const retirements = getOwnedRetirements();
+    const sdkId = this.sessionId;
+    const previous = retirements.get(sdkId);
+    const barrier = previous ? Promise.all([previous, completion]).then(() => {}) : completion;
+    retirements.set(sdkId, barrier);
+    void barrier.then(() => {
+      if (retirements.get(sdkId) === barrier) retirements.delete(sdkId);
+    }, () => { /* A failed public disposal permanently blocks same-ID reuse. */ });
+    initial.state = "refused";
+    initial.error = error;
+    initial.reject(error);
+    initial.settlePrompt?.(error);
+    this.destroyInternal(true);
+    invalidateSessionListCache();
+    return true;
+  }
+
+  private assertInitialPromptAccess(type: string, owner?: symbol): void {
+    const initial = this.initialPrompt;
+    if (initial?.state === "refused") throw initial.error;
+    if (!this._alive) throw new Error("Session is unavailable");
+    if (owner !== undefined && (!initial || initial.owner !== owner || initial.state !== "pending")) {
+      throw new Error("Invalid or consumed initial prompt capability");
+    }
+    if (initial?.state === "pending" && !COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT.has(type)
+      && !(type === "prompt" && owner === initial.owner)) {
+      throw new Error("Session initial prompt is exclusively owned by its launch");
+    }
   }
 
   /** Direct subagent prompts bypass send(); keep their OWN session busy during preflight. */
   beginCheckoutPromptAdmission(): () => void {
+    this.assertInitialPromptAccess("prompt");
     assertDirectoryAdmissionAllowed(this.cwd);
     this.pendingCheckoutAdmissions += 1;
     let released = false;
@@ -625,8 +692,18 @@ export class AgentSessionWrapper {
     }
   }
 
-  async send(command: Record<string, unknown>, promptGuard?: { validate: (disposition?: string) => void; literal?: boolean }): Promise<unknown> {
+  async send(command: Record<string, unknown>, promptGuard?: { validate: (disposition?: string) => void; literal?: boolean; owner?: symbol }): Promise<unknown> {
     const type = command.type as string;
+    if (type === "abort" && this.initialPrompt?.state === "pending") {
+      this.refuseInitialPrompt(this.initialPrompt.owner, new DOMException("Initial prompt cancelled by Stop", "AbortError"));
+      return null;
+    }
+    this.assertInitialPromptAccess(type, promptGuard?.owner);
+    const ownedSubmission = type === "prompt" && promptGuard?.owner !== undefined;
+    if (ownedSubmission) {
+      if (!promptGuard?.validate || this.initialPrompt!.submitted) throw new Error("Initial prompt capability already submitted");
+      this.initialPrompt!.submitted = true;
+    }
     const allowedDuringReplacement = COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT.has(type);
     if (this.sessionReplacement && !allowedDuringReplacement) {
       throw new Error("Session is being copied to a new session");
@@ -641,7 +718,11 @@ export class AgentSessionWrapper {
     try {
       // Status reconciliation must not postpone forced cleanup after Stop.
       if (type !== "get_state") this.resetIdleTimer();
-      if (this.shouldWaitForExtensions(type)) await this.waitForExtensionsBound();
+      if (this.shouldWaitForExtensions(type)) {
+        const binding = this.waitForExtensionsBound();
+        await (this.initialPrompt?.state === "pending" ? Promise.race([binding, this.initialPrompt.refusal]) : binding);
+      }
+      this.assertInitialPromptAccess(type, promptGuard?.owner);
       if (this.sessionReplacement && !allowedDuringReplacement) {
         throw new Error("Session is being copied to a new session");
       }
@@ -656,14 +737,20 @@ export class AgentSessionWrapper {
         // Serialize only admission. Once the preceding prompt has either
         // passed or failed preflight, the SDK can atomically decide whether
         // this submission starts a run or joins its streaming queue.
-        const releaseAdmission = await this.acquirePromptAdmission();
+        const admission = this.acquirePromptAdmission().then((release) => {
+          if (ownedSubmission && this.initialPrompt!.state === "refused") { release(); throw this.initialPrompt!.error; }
+          return release;
+        });
+        const releaseAdmission = await (ownedSubmission ? this.waitForInitialPrompt(promptGuard!.owner!, admission) : admission);
         try {
           // Recheck after extension binding and the serialized admission wait.
           // No await may separate this check from publishing pendingPromptCount.
+          this.assertInitialPromptAccess(type, promptGuard?.owner);
           assertDirectoryAdmissionAllowed(this.cwd);
           // Trusted host-only launch guard, after extension binding and admission awaits.
           // HTTP/tool arguments cannot supply a callable guard.
           promptGuard?.validate();
+          this.assertInitialPromptAccess(type, promptGuard?.owner);
           if (this.inner.isBashRunning) {
             throw new Error("Cannot send a prompt while a shell command is running");
           }
@@ -703,6 +790,8 @@ export class AgentSessionWrapper {
               reject(error);
             };
           });
+          // A reentrant refusal can reject this before inner.prompt throws synchronously.
+          void preflight.catch(() => {});
           const finishPrompt = () => {
             if (promptSettled) return;
             promptSettled = true;
@@ -716,6 +805,11 @@ export class AgentSessionWrapper {
           };
 
           this.pendingPromptCount += 1;
+          if (ownedSubmission) this.initialPrompt!.settlePrompt = (error) => {
+            guardedPreflightRefused = true;
+            rejectPreflight(error);
+            finishPrompt();
+          };
           let prompt: Promise<void>;
           try {
             prompt = this.inner.prompt(command.message as string, {
@@ -728,8 +822,21 @@ export class AgentSessionWrapper {
               preflightResult: (disposition) => {
                 // The SDK invokes this after awaited input/auth/before_agent_start hooks
                 // and immediately before the agent loop. Throwing rejects preflight.
+                if (ownedSubmission && this.initialPrompt!.state === "refused") throw this.initialPrompt!.error;
                 if (guardedPreflightRefused) throw new Error("Deferred launch was already refused; propose again");
-                promptGuard?.validate(disposition);
+                try {
+                  this.assertInitialPromptAccess(type, promptGuard?.owner);
+                  promptGuard?.validate(disposition);
+                  this.assertInitialPromptAccess(type, promptGuard?.owner);
+                } catch (error) {
+                  if (ownedSubmission) this.refuseInitialPrompt(promptGuard!.owner!, error);
+                  throw error;
+                }
+                // No await between final guarded admission and releasing exclusivity.
+                if (ownedSubmission) {
+                  this.initialPrompt!.state = "accepted";
+                  this.initialPrompt!.settlePrompt = undefined;
+                }
                 acceptPreflight();
               },
             });
@@ -739,12 +846,15 @@ export class AgentSessionWrapper {
           }
 
           void prompt.then(() => {
+            if (ownedSubmission && this.initialPrompt!.state === "refused") { finishPrompt(); return; }
             if (promptGuard && !preflightSettled) {
               // SDK agent_settled deferral can resolve before actual dispatch.
               // Never certify guarded launches from that early resolution, and
               // refuse any later deferred callback instead of launching unobserved.
               guardedPreflightRefused = true;
-              rejectPreflight(new Error("SDK did not confirm launch admission; deferred launch refused"));
+              const error = new Error("SDK did not confirm launch admission; deferred launch refused");
+              if (ownedSubmission) this.refuseInitialPrompt(promptGuard!.owner!, error);
+              rejectPreflight(error);
               finishPrompt();
               return;
             }
@@ -754,6 +864,7 @@ export class AgentSessionWrapper {
             finishPrompt();
             if (!streamingBehavior) this.emit({ type: "prompt_done" });
           }, (error) => {
+            if (ownedSubmission) this.refuseInitialPrompt(promptGuard!.owner!, error);
             rejectPreflight(error);
             finishPrompt();
             invalidateSessionListCache();
@@ -1161,19 +1272,30 @@ export class AgentSessionWrapper {
         default:
           throw new Error(`Unsupported command: ${type}`);
       }
+    } catch (error) {
+      if (ownedSubmission) this.refuseInitialPrompt(promptGuard!.owner!, error);
+      throw error;
     } finally {
       if (tracksMutation) this.activeMutatingCommands = Math.max(0, this.activeMutatingCommands - 1);
     }
   }
 
   destroy(): void {
+    if (this.initialPrompt?.state === "pending") {
+      this.refuseInitialPrompt(this.initialPrompt.owner, new DOMException("Initial prompt cancelled by session destruction", "AbortError"));
+      return;
+    }
+    this.destroyInternal(false);
+  }
+
+  private destroyInternal(ownedRefusal: boolean): void {
     if (!this._alive) return;
     this._alive = false;
     // Tell attached SSE listeners to drop this instance so the browser
     // EventSource errors and reconnects instead of staying OPEN on a dead wrapper.
     this.emit({ type: "session_shutdown" });
     if (this.idleTimer) clearTimeout(this.idleTimer);
-    if (this.inner.isBashRunning) this.inner.abortBash();
+    if (!ownedRefusal && this.inner.isBashRunning) this.inner.abortBash();
     this.unsubscribe?.();
     for (const pending of this.pendingUiResponses.values()) pending.cancel();
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
@@ -1191,6 +1313,33 @@ export class AgentSessionWrapper {
         this.onDestroyCallback?.();
       }
     };
+
+    if (ownedRefusal) {
+      // Disposal invalidates the owned destination; it does not certify that arbitrary
+      // extension JS/processes have settled. Never wait on poisoned SDK abort/idle.
+      this.sessionShutdownEmitted = true;
+      let disposed = false;
+      const disposeOnce = () => {
+        if (disposed) return;
+        disposed = true;
+        clearTimeout(timer);
+        try {
+          finishDispose();
+          this.ownedRetirement!.resolve();
+        } catch (error) {
+          console.error("[pi-web] refused initial prompt disposal failed:", error);
+          this.ownedRetirement!.reject(error);
+        }
+      };
+      const timer = setTimeout(() => {
+        console.error(`[pi-web] refused initial prompt extension shutdown timed out after ${INITIAL_PROMPT_SHUTDOWN_GRACE_MS}ms`);
+        disposeOnce();
+      }, INITIAL_PROMPT_SHUTDOWN_GRACE_MS);
+      void Promise.resolve().then(() => this.inner.extensionRunner?.emit?.({ type: "session_shutdown", reason: "quit" }))
+        .catch((error) => { console.error("[pi-web] refused initial prompt extension shutdown failed:", error); })
+        .finally(disposeOnce);
+      return;
+    }
 
     // Always emit session_shutdown before dispose, even when callers skip
     // shutdown() (process exit, direct destroy). Await when possible so
@@ -1221,6 +1370,10 @@ export class AgentSessionWrapper {
   }
 
   async shutdown(): Promise<void> {
+    if (this.initialPrompt?.state === "pending") {
+      this.refuseInitialPrompt(this.initialPrompt.owner, new DOMException("Initial prompt cancelled by session shutdown", "AbortError"));
+    }
+    if (this.ownedRetirement) return this.ownedRetirement.completion;
     if (this.shutdownPromise) return this.shutdownPromise;
     if (!this._alive) return;
 
@@ -1908,6 +2061,8 @@ export class AgentSessionWrapper {
 declare global {
   var __piSessions: Map<string, AgentSessionWrapper> | undefined;
   var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
+  // Canonical persisted SDK IDs, not URL/start aliases. Survives module/HMR reload.
+  var __piOwnedRetirements: Map<string, Promise<void>> | undefined;
   var __piAccountSwitchLocks: Map<string, Promise<void>> | undefined;
   var __piStartingSessionCwds: Map<string, number> | undefined;
   var __piActivityReviewPersistenceFailed: boolean | undefined;
@@ -1991,6 +2146,10 @@ export function steerSubagent(sessionId: string, message: string) {
 
 export function abortSubagent(sessionId: string) {
   return SUBAGENT_CONTROLLER.abort(sessionId);
+}
+
+function getOwnedRetirements(): Map<string, Promise<void>> {
+  return globalThis.__piOwnedRetirements ??= new Map();
 }
 
 function getLocks(): Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> {
@@ -2327,6 +2486,7 @@ async function startRpcSessionInternal(
   sessionId: string, sessionFile: string, cwd: string | undefined, options: RpcSessionStartOptions,
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const { initialModel, allowInitialModelFallback, thinkingLevel, modelSpeed } = options;
+  if (options.initialPromptOwner !== undefined && sessionFile) throw new Error("Initial prompt ownership requires a fresh session");
   if (modelSpeed !== undefined && !isModelSpeed(modelSpeed)) {
     throw new Error("Invalid model speed: expected standard or fast");
   }
@@ -2336,21 +2496,32 @@ async function startRpcSessionInternal(
   const registry = getRegistry();
   const locks = getLocks();
 
-  const existing = registry.get(sessionId);
+  const header = sessionFile ? readSessionHeader(sessionFile) : undefined;
+  const startupSessionId = sessionFile ? header?.id : sessionId;
+  if (!startupSessionId) throw new Error("Cannot prove persisted SDK session ID");
+  const existing = registry.get(startupSessionId);
   if (existing?.isAlive()) {
+    if (options.initialPromptOwner !== undefined) throw new Error("Initial prompt ownership cannot adopt an existing session");
     assertDirectoryAdmissionAllowed(existing.cwd);
-    return { session: existing, realSessionId: sessionId };
+    return { session: existing, realSessionId: existing.sessionId };
   }
 
-  const inflight = locks.get(sessionId);
-  if (inflight) return inflight;
+  const inflight = locks.get(startupSessionId);
+  if (inflight) {
+    if (options.initialPromptOwner !== undefined) throw new Error("Initial prompt ownership cannot adopt an in-flight session");
+    return inflight;
+  }
 
-  const expectedCwd = sessionFile ? readSessionHeader(sessionFile)?.cwd : cwd;
+  const expectedCwd = sessionFile ? header?.cwd : cwd;
   if (!expectedCwd) throw new Error("Cannot prove session cwd");
   // Check and publish startup before any await (including account lookup), so
   // reservations cannot slip between admission and resource construction.
   const finishStartingSession = trackStartingSession(expectedCwd);
   const starting = (async () => {
+    // Old public dispose cleans SDK resources by session ID. Do not construct
+    // replacement resources until it succeeds, even if its wrapper is dead.
+    const retirement = getOwnedRetirements().get(startupSessionId);
+    if (retirement) await retirement;
     let sessionManager: SessionManager;
     if (sessionFile) {
       sessionManager = SessionManager.open(sessionFile, undefined);
@@ -2358,6 +2529,7 @@ async function startRpcSessionInternal(
       if (!cwd) throw new Error("cwd is required for a new session");
       sessionManager = SessionManager.create(cwd, undefined);
     }
+    if (sessionFile && sessionManager.getSessionId() !== startupSessionId) throw new Error("Persisted SDK session ID changed during startup");
     const sessionCwd = sessionManager.getCwd();
     if (!samePath(sessionCwd, expectedCwd)) throw new Error("Session cwd changed during startup");
     const subagentResources = sessionFile
@@ -2424,15 +2596,13 @@ async function startRpcSessionInternal(
     const usesExactSystemPrompt = chatOnly || subagentResources?.exactSystemPrompt !== undefined;
     const promptObserver = options.observePrompt ? [{ name: "pi-web-launch-prompt-observer", hidden: true,
       factory: (pi: import("@earendil-works/pi-coding-agent").ExtensionAPI) => {
-        pi.on("before_agent_start", (event) => { options.observePrompt?.(event.prompt); });
+        pi.on("before_agent_start", (event) => {
+          if (event.messageType === "user") options.observePrompt?.(event.prompt);
+        });
       },
     }] : [];
     const accountRuntime = Object.keys(accounts).length > 0
-      ? await ModelRuntime.create({
-          credentials: accountCredentialStore(accounts),
-          modelsPath: resolve(agentDir, "models.json"),
-          modelsStorePath: resolve(agentDir, "models-store.json"),
-        })
+      ? await createAccountModelRuntime(accounts, { agentDir })
       : undefined;
     const services = await createAgentSessionServices({
       cwd: sessionCwd,
@@ -2560,6 +2730,7 @@ async function startRpcSessionInternal(
     const wrapper = new AgentSessionWrapper(inner, {
       exactSystemPrompt,
       chatOnly,
+      initialPromptOwner: options.initialPromptOwner,
       monitorContextFiles: !subagentResources,
       onAgentRunComplete: (completedSessionId) => {
         void notifySessionComplete(completedSessionId).catch((error) => {
@@ -2573,10 +2744,10 @@ async function startRpcSessionInternal(
 
     return { session: wrapper, realSessionId };
   })().finally(() => {
-    locks.delete(sessionId);
+    if (locks.get(startupSessionId) === starting) locks.delete(startupSessionId);
     finishStartingSession();
   });
 
-  locks.set(sessionId, starting);
+  locks.set(startupSessionId, starting);
   return await starting;
 }

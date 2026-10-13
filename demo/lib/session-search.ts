@@ -80,6 +80,7 @@ export async function searchSessionContents(
         });
         response.results.push({
           session,
+          kind: "message",
           ...(typeof entry.id === "string" ? { entryId: entry.id } : {}),
           blockIndex: matchedBlock!.blockIndex,
           before: (start > 80 ? "..." : "") + text.slice(Math.max(0, start - 80), start).replace(/\s+/g, " ").trimStart(),
