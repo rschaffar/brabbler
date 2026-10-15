@@ -142,10 +142,9 @@ raw-HTML sanitization before math rendering and Mermaid `securityLevel: "strict"
 Focused iteration:
 
 ```sh
-node nix/check-math-dependencies.mjs
-nix develop .#test -c node nix/test-offline.mjs --file lib/math-dependency.test.mjs --file components/MarkdownBody.test.mjs --file components/ChatMinimap.test.mjs --file components/MermaidBlock.test.mjs
-nix develop .#test -c env E2E_MARKDOWN_ONLY=1 npm run test:e2e
+nix run .#test -- core --file lib/math-dependency.test.mjs --file components/MarkdownBody.test.mjs --file components/ChatMinimap.test.mjs --file components/MermaidBlock.test.mjs
+nix run .#test -- e2e --group markdown
 ```
 
 These are not complete acceptance. Follow [Testing](testing.md) for the final
-baseline and separate browser/terminal/plugin coverage.
+complete sandboxed core/plugin and packaged-service VM baseline.

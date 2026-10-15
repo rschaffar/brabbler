@@ -1,12 +1,9 @@
 // Adapted from @Nuctori's script-style CI/E2E fixtures in PR #617 (issue #599).
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { once } from "node:events";
-import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
-import { dirname, join } from "node:path";
+import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { createJiti } from "jiti";
 import { checkFilePanel, checkFileDiffViews, checkEditableFile, checkMarkdownPreview, markdownPanelFixture, filePanelFixture } from "./file-panel.mjs";
@@ -30,12 +27,11 @@ import { checkGitWorkflowPlugin, gitPluginFixtureSource } from "./git-workflow-p
 import { checkSessionLaunch, sessionLaunchFixtureSource } from "./session-launch.mjs";
 import { WORKTREE_MANAGER_IDS, seedWorktreeManagerFixtures, checkWorktreeManager } from "./worktree-manager.mjs";
 
-// Test-process isolation only: the disposable child server inherits private file
-// creation from startup. Never repair SDK files or change umask inside a hook.
+// Package acceptance runs only in the disposable NixOS guest. The service
+// independently receives its private environment and real module UMask.
 process.umask(0o077);
-const root = dirname(dirname(fileURLToPath(import.meta.url)));
-assert.ok(!process.env.E2E_SERVER_MODE || process.env.E2E_SERVER_MODE === "dev", "This runner launches only its own Turbopack dev server; no installed runtime or next start");
-assert.ok(!existsSync(join(root, ".next/dev/lock")), "Use this checkout only without an active dev server");
+const root = process.env.E2E_PACKAGE_ROOT;
+assert.match(root ?? "", /^\/nix\/store\//, "Nix-built application package required");
 const harness = createHarness(root, "browser");
 const { artifacts, agentDir, env: fixtureEnv } = harness;
 try {
@@ -91,13 +87,12 @@ function writeSession(id, entries, cwd = project, parentSessionId) {
     [header, ...entries].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
 }
 
-let server;
 let browser;
 let page;
 let context;
 
   const activityReview = ACTIVITY_SUBAGENTS.length
-    ? await createJiti(import.meta.url).import("../lib/activity-review-server.ts") : null;
+    ? await createJiti(import.meta.url).import(join(root, "lib/activity-review-server.ts")) : null;
   // Seed before startup so the first catalogue scan sees every fixture.
   seedModelSpeedFixtures({ agentDir, writeSession, message, timestamp });
   seedRunningForkFixtures({ agentDir, writeSession, message });
@@ -276,19 +271,9 @@ let context;
 
   }
 
-  const probe = createServer();
-  probe.listen(0, "127.0.0.1");
-  await once(probe, "listening");
-  const port = probe.address().port;
-  await new Promise((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
-  const base = `http://127.0.0.1:${port}`;
-  const ownedServer = harness.startServer(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "dev", "--turbopack", "-H", "127.0.0.1", "-p", String(port)], {
-    cwd: root,
-    env: { ...fixtureEnv, NODE_ENV: "development",
-      PI_CODING_AGENT_DIR: agentDir, PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  server = ownedServer.child;
+  const base = process.env.E2E_BASE_URL;
+  assert.equal(base, "http://127.0.0.1:30141", "Use only the guest's loopback service");
+  const ownedServer = await harness.startService();
 
   async function api(path, status = 200) {
     const response = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(30_000) });
@@ -309,8 +294,7 @@ let context;
 
   const deadline = Date.now() + 120_000;
   while (true) {
-    if (ownedServer.error) throw ownedServer.error;
-    assert.ok(server.exitCode === null && server.signalCode === null, "Server exited before readiness; see server.log and events.jsonl");
+    await ownedServer.check();
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();

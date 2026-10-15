@@ -73,7 +73,10 @@ async function diskEntries(agentDir, path) {
   readers ??= (async () => {
     const { createJiti } = await import("jiti");
     const jiti = createJiti(import.meta.url, { tsconfigPaths: true });
-    const [session, speed] = await Promise.all([jiti.import("../lib/session-reader.ts"), jiti.import("../lib/session-model-speed.ts")]);
+    const [session, speed] = await Promise.all([
+      jiti.import(join(process.env.E2E_PACKAGE_ROOT, "lib/session-reader.ts")),
+      jiti.import(join(process.env.E2E_PACKAGE_ROOT, "lib/session-model-speed.ts")),
+    ]);
     return { ...session, ...speed };
   })();
   const canonical = await readers;

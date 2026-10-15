@@ -46,7 +46,7 @@
     {
       "path": "lib/terminal-manager.test.mjs",
       "lane": "E",
-      "reason": "Original whole file remains INCLUDED: real node-pty/shell creation as well as fakes. No new skip; PTY/shell sandbox failures must fail. Separate e2e terminal SCRIPT is opt-in."
+      "reason": "Original whole file remains INCLUDED: real node-pty/shell creation as well as fakes. No new skip; PTY/shell sandbox failures must fail. Real packaged-service terminal acceptance is additionally mandatory in the VM check."
     },
     {
       "path": "lib/model-catalog-refresh.integration.test.mjs",
@@ -67,6 +67,11 @@
       "path": "lib/test-lifecycle.test.mjs",
       "lane": "E",
       "reason": "Owned process supervision and FD-safe cleanup contracts launch concurrent tiny children and exercise interruption; exclusive avoids nesting with SDK-sensitive acceptance. No browser acceptance substitution."
+    },
+    {
+      "path": "lib/nix-test.test.mjs",
+      "lane": "E",
+      "reason": "Fresh-export CLI contracts mutate process umask and private fixture roots; service acquisition/stop races use injected deferred controls. Exclusive avoids nested orchestration contention; actual Nix/VM acceptance remains separate."
     },
     {
       "path": "lib/test-runner.test.mjs",

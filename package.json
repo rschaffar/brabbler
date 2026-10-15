@@ -65,9 +65,9 @@
     "start": "next start -H 127.0.0.1 -p 30141",
     "start:lan": "next start -H 0.0.0.0 -p 30141",
     "lint": "eslint .",
-    "test:terminal": "node e2e/terminal.mjs",
-    "test:e2e": "node e2e/run.mjs",
-    "test": "node --experimental-strip-types --test \"app/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"public/**/*.test.mjs\"",
+    "test:terminal": "nix run .#test -- e2e --group terminal",
+    "test:e2e": "nix run .#test -- e2e",
+    "test": "nix run .#test -- core",
     "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
   },
   "dependencies": {

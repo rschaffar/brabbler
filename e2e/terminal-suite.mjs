@@ -1,17 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { once } from "node:events";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
 import { closeTerminalDisconnect, terminalDisconnectFixture } from "./terminal-disconnect-fixture.mjs";
 
-const root = fileURLToPath(new URL("../", import.meta.url));
-assert.ok(!existsSync(join(root, ".next/dev/lock")), "Run in a checkout without an active dev server");
+const root = process.env.E2E_PACKAGE_ROOT;
+assert.match(root ?? "", /^\/nix\/store\//, "Nix-built application package required");
 const harness = createHarness(root, "terminal");
 const { artifacts, agentDir, fixtureRoot, env: fixtureEnv } = harness;
 try {
@@ -39,24 +36,16 @@ for (const [id, cwd, name] of [
   ].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
 }
 
-const probe = createServer();
-probe.listen(0, "127.0.0.1");
-await once(probe, "listening");
-const port = probe.address().port;
-await new Promise((resolve) => probe.close(resolve));
-const base = `http://127.0.0.1:${port}`;
-const ownedServer = harness.startServer(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "dev", "--turbopack", "-H", "127.0.0.1", "-p", String(port)], {
-  cwd: root,
-  env: { ...fixtureEnv, NODE_ENV: "development", SHELL: process.platform === "win32" ? fixtureEnv.SHELL : (fixtureEnv.PI_WEB_TEST_SHELL || fixtureEnv.SHELL || "/bin/bash") },
-});
-const server = ownedServer.child;
+const base = process.env.E2E_BASE_URL;
+assert.equal(base, "http://127.0.0.1:30141", "Use only the guest's loopback service");
+const ownedServer = await harness.startService();
 let browser;
   const deadline = Date.now() + 120_000;
   for (;;) {
-    if (ownedServer.error) throw ownedServer.error;
+    await ownedServer.check();
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) break;
-    assert.ok(Date.now() < deadline && server.exitCode === null && server.signalCode === null, "Server did not become ready; see server.log and events.jsonl");
+    assert.ok(Date.now() < deadline, "Service did not become ready; see server.log and events.jsonl");
     await delay(500);
   }
   const chromiumPath = process.env.PI_WEB_TEST_CHROMIUM || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;

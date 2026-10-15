@@ -1,126 +1,97 @@
 {
-  description = "Pi Web package and local development tools";
+  description = "Pi Web: Nix-native package, development and acceptance";
 
-  # Track the development toolchain on nixos-unstable; flake.lock pins each
-  # checkout. Verify Chromium/Playwright compatibility after input updates.
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.home-manager.url = "github:nix-community/home-manager";
+  inputs.home-manager.inputs.nixpkgs.follows = "nixpkgs";
 
-  outputs =
-    { self, nixpkgs }:
+  outputs = { self, nixpkgs, home-manager }:
     let
-      systems = [
-        "x86_64-linux"
-        "aarch64-linux"
-        "aarch64-darwin"
-      ];
-      linuxSystems = [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
-      forSystems =
-        selected: f: nixpkgs.lib.genAttrs selected (system: f (import nixpkgs { inherit system; }));
-      # Keep the shared dependency definition in this TRACKED file. Plain Git
-      # flakes cannot see untracked test helpers, even in a dirty worktree.
-      devModules = pkgs: nodejs:
+      systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
+      linuxSystems = [ "x86_64-linux" "aarch64-linux" ];
+      forSystems = selected: f: nixpkgs.lib.genAttrs selected
+        (system: f (import nixpkgs { inherit system; }));
+      sources = pkgs: import ./nix/sources.nix { inherit (pkgs) lib; root = ./.; };
+      modules = pkgs: import ./nix/modules.nix {
+        inherit pkgs;
+        nodejs = pkgs.nodejs_22;
+        src = (sources pkgs).manifests;
+      };
+      tests = pkgs:
         let
-          manifests = pkgs.runCommand "pi-web-npm-manifests" { } ''
-            mkdir -p "$out"
-            cp ${./package.json} "$out/package.json"
-            cp ${./package-lock.json} "$out/package-lock.json"
-          '';
-          npmCache = import ./nix/npm-deps.nix {
-            inherit (pkgs) fetchNpmDeps;
-            src = manifests;
+          core = import ./nix/tests.nix {
+            inherit pkgs;
+            nodejs = pkgs.nodejs_22;
+            modules = modules pkgs;
+            src = (sources pkgs).tests;
           };
-          npmHooks = pkgs.npmHooks.override { inherit nodejs; };
-        in
-        pkgs.stdenv.mkDerivation {
-          pname = "pi-web-dev-modules";
-          version = (builtins.fromJSON (builtins.readFile ./package.json)).version;
-          src = manifests;
-          inherit nodejs;
-          npmDeps = npmCache;
-          npmRebuildFlags = [ "node-pty" ];
-          nativeBuildInputs = [ nodejs nodejs.python npmHooks.npmConfigHook ];
-          installPhase = ''
-            mkdir -p "$out"
-            cp -r node_modules "$out/node_modules"
-          '';
+          e2e = import ./nix/vm-test.nix {
+            inherit pkgs home-manager;
+            package = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-web;
+            modules = modules pkgs;
+            src = (sources pkgs).tests;
+            homeManagerModule = self.homeManagerModules.default;
+          };
+        in {
+          inherit (core) core mkCore;
+          inherit e2e;
+          apps = {
+            test-core = {
+              type = "app";
+              program = pkgs.lib.getExe (pkgs.writeShellApplication {
+                name = "pi-web-test-core";
+                runtimeInputs = [ pkgs.nodejs_22 pkgs.nix ];
+                text = ''exec node ${self}/nix/run-core.mjs ${self} ${pkgs.stdenv.hostPlatform.system} "$@"'';
+              });
+            };
+            test = {
+              type = "app";
+              program = pkgs.lib.getExe (pkgs.writeShellApplication {
+                name = "pi-web-test";
+                runtimeInputs = [ pkgs.nodejs_22 pkgs.python3 pkgs.nix ];
+                text = ''exec node ${self}/nix/test.mjs "$@"'';
+              });
+            };
+            test-e2e = {
+              type = "app";
+              program = pkgs.lib.getExe (pkgs.writeShellApplication {
+                name = "pi-web-test-e2e";
+                runtimeInputs = [ pkgs.nodejs_22 pkgs.python3 ];
+                text = ''exec node ${self}/nix/run-vm.mjs ${e2e.driver} "$@"'';
+              });
+            };
+          };
         };
-      testTools = pkgs:
-        let
-          nodejs = pkgs.nodejs_22;
-          modules = devModules pkgs nodejs;
-        in
-        import ./nix/tests.nix { inherit pkgs nodejs modules; src = self; };
-    in
-    {
+    in {
       packages = forSystems systems (pkgs: rec {
         pi-web = pkgs.callPackage ./nix/package.nix {
-          src = self;
+          src = (sources pkgs).application;
           nodejs = pkgs.nodejs_22;
+          modules = modules pkgs;
         };
         default = pi-web;
       });
-
       apps = forSystems systems (pkgs: {
         default = {
           type = "app";
-          program = "${pkgs.lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.pi-web}";
+          program = pkgs.lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.pi-web;
         };
         pi-web = self.apps.${pkgs.stdenv.hostPlatform.system}.default;
-      } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (testTools pkgs).apps);
-
+      } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (tests pkgs).apps);
       homeManagerModules.default = import ./nix/home-manager.nix { inherit self; };
-      checks = forSystems linuxSystems (pkgs: {
-        offline = (testTools pkgs).offline;
-        home-manager-module =
-          assert (import ./nix/home-manager-eval.nix {
-            inherit (pkgs) lib;
-            inherit pkgs;
-            module = self.homeManagerModules.default;
-          }) == "ok";
-          pkgs.runCommand "pi-web-home-manager-eval" { } "touch $out";
+      checks = forSystems linuxSystems (pkgs: { inherit (tests pkgs) core e2e; });
+      lib.coreCheck = forSystems linuxSystems (pkgs: (tests pkgs).mkCore);
+      devShells = forSystems linuxSystems (pkgs: {
+        default = pkgs.mkShell {
+          packages = [ pkgs.nodejs_22 pkgs.git pkgs.python3 ];
+          shellHook = ''
+            source ${pkgs.replaceVars ./nix/dev-shell.sh {
+              lockFile = ./package-lock.json;
+              sourceModules = "${modules pkgs}/node_modules";
+            }} || exit 1
+          '';
+        };
+        update = pkgs.mkShell { packages = [ pkgs.nodejs_22 pkgs.git ]; };
       });
-
-      # Nix-wrapped Chromium avoids Playwright's downloaded binary missing
-      # shared libraries on NixOS. CI and non-NixOS users keep their own browser.
-      devShells = forSystems linuxSystems (pkgs:
-        let
-          nodejs = pkgs.nodejs_22;
-          modules = devModules pkgs nodejs;
-          testInputs = pkgs.writeText "pi-web-test-inputs.json" (builtins.toJSON {
-            modules = "${modules}/node_modules";
-            packageSha256 = builtins.hashString "sha256" (builtins.readFile ./package.json);
-            lockSha256 = builtins.hashString "sha256" (builtins.readFile ./package-lock.json);
-          });
-        in
-        {
-          default = pkgs.mkShell {
-            packages = [
-              nodejs
-              pkgs.git
-              pkgs.python3
-              pkgs.chromium
-            ];
-            shellHook = ''
-              source ${pkgs.replaceVars ./nix/dev-shell.sh {
-                lockFile = ./package-lock.json;
-                sourceModules = "${modules}/node_modules";
-              }} || exit 1
-            '';
-            PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";
-            PI_WEB_TEST_INPUTS = testInputs;
-          };
-          # Core/acceptance launchers own their snapshots. No checkout mutation.
-          test = pkgs.mkShell {
-            packages = [ nodejs pkgs.git pkgs.python3 pkgs.chromium ];
-            PI_WEB_TEST_INPUTS = testInputs;
-            PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";
-          };
-          # npm dependency changes edit only the manifest and lockfile. The
-          # default shell takes ownership of Nix-managed node_modules entries.
-          update = pkgs.mkShell { packages = [ nodejs pkgs.git ]; };
-        });
     };
 }

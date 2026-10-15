@@ -34,25 +34,16 @@ Run the code from **this repository** to use Pi Desk. Installing `@agegr/pi-web`
 
 ### From source
 
-Clone this repository, enter its checkout, and choose one of the following setups.
+Clone this repository and enter its checkout. Builds and supported development targets are Nix-native.
 
-**With Nix on Linux:**
+**Manual development with Nix on Linux:**
 
 ```bash
 nix develop
 PI_WEB_SKIP_VERSION_CHECK=1 npm run dev
 ```
 
-The development shell provides pinned tools and prepares a worktree-local `node_modules` from the lockfile. The first setup needs the dependency sources; subsequent runs can reuse the Nix cache. Do not run `npm ci` over dependencies managed by this shell.
-
-**With Node.js and npm:**
-
-Use Node.js **22.19.0 or newer** in a checkout that does not use Nix-managed dependencies:
-
-```bash
-npm ci
-PI_WEB_SKIP_VERSION_CHECK=1 npm run dev
-```
+Nix realizes the pinned tools and dependencies automatically. The manual development shell materializes a worktree-local dependency copy; automated acceptance does not need one. Do not run `npm ci` over Nix-managed dependencies. There is no non-Nix dependency installation or acceptance fallback.
 
 Open **[http://127.0.0.1:30141](http://127.0.0.1:30141)**. If you have not configured a model provider, open **Models** to sign in or add an API key. The development server binds to loopback by default.
 
@@ -77,7 +68,7 @@ nix profile install /path/to/checkout#pi-web
 PI_WEB_SKIP_VERSION_CHECK=1 pi-web
 ```
 
-These are production-package operations and may build the application. They are not part of the normal development loop. The output is a Nix package, not a separately published Pi Desk npm package.
+Nix builds the production package in an isolated builder; that same package is used by VM acceptance. Installation/activation is separate from testing. The output is a Nix package, not a separately published Pi Desk npm package.
 
 On Linux, the flake also exports a Home Manager module:
 
@@ -156,33 +147,21 @@ Read [AGENTS.md](./AGENTS.md) for repository workflow rules and
 [Architecture](./docs/architecture.md) for the source map. [Testing](./docs/testing.md)
 owns the verification baseline and change-dependent acceptance matrix.
 
-On Linux, one complete isolated run satisfies common core tests, type generation,
-typecheck and lint—do not run the ordinary npm baseline in addition solely for
-its spelling:
+There are two acceptance levels: sandboxed core/static/plugin checks and a complete browser/terminal suite against the actual packaged Home Manager service in one NixOS VM.
 
 ```bash
-nix develop .#test -c node nix/test-offline.mjs
-# Focused tests; repeat --file for multiple exact paths:
-nix develop .#test -c node nix/test-offline.mjs --file lib/worktree.test.mjs
+nix flake check -L                         # complete cacheable checks
+nix run .#test -- core                     # fresh core/static/plugin execution
+nix run .#test -- e2e                      # fresh full packaged-service VM run
+nix run .#test -- core --jobs 2 --file lib/worktree.test.mjs
+nix run .#test -- e2e --group markdown      # selected-only iteration
 ```
 
-The `test` shell does not create checkout-local dependencies. Core runs share
-read-only Nix modules; Linux browser/terminal launchers use independent snapshots
-and temporary local dependency copies. Settled runs clean regenerable bulk while
-retaining source, diagnostics and fixture evidence; use `--keep-workspace` to
-preserve bulk too. Multiple reviewers can test the same worktree concurrently,
-with smaller worker budgets to avoid CPU/RAM contention.
+Nix realizes prerequisites automatically; no preparation ceremony, checkout dependencies or Playwright download is needed. The fresh entry point exports/verifies current source, including untracked helpers. Core uses immutable shared modules. E2E uses one guest boot, pinned Chromium, synthetic fixtures/providers and the real installed production package. It requires native Linux/KVM and never contacts the installed host service. Full acceptance includes every named browser group and real terminal coverage; focused passes are not full acceptance.
 
-The isolated runner defaults to eight bounded file workers; `--jobs N` accepts 1–32. Do not append Node concurrency flags to `npm test`: options after its globs do not control Node. Browser and terminal acceptance are separate:
+**Never run `next build` or `npm run build` in a working checkout.** Isolated Nix package builds are supported for acceptance and cannot interfere with a manual development server's `.next`. Manual development remains separate, not an acceptance mode. Settled runs clean only their own regenerable bulk while retaining evidence; see [testing](./docs/testing.md) for resource budgets, diagnostics and retention.
 
-```bash
-nix develop .#test -c npm run test:e2e
-nix develop .#test -c npm run test:terminal
-```
-
-**Never run `next build` or `npm run build` during normal development.** Builds write to `.next/` and can interfere with the development server; reserve them for installation or release work. Manual development reuses a healthy matching server. Linux acceptance instead owns a separate snapshot and free-port server; it never substitutes or restarts the installed service. Non-Linux legacy acceptance requires explicit `--in-place` and a free checkout lock.
-
-The flake tracks `nixos-unstable`; `flake.lock` pins the toolchain for each checkout. Run `nix flake update` deliberately in a feature worktree, then verify the complete Linux offline pipeline plus browser and terminal acceptance before integrating the new lockfile. Chromium advances with nixpkgs, so check compatibility with the locked Playwright version after each update. Do not build or activate the production application as part of this development refresh.
+The flake pins nixpkgs, Home Manager, Node and Chromium through `flake.lock`. Update inputs deliberately in a feature worktree, then verify both complete Nix checks before integration. Chromium/Playwright compatibility is part of packaged VM acceptance. Testing does not activate a service or authorize publication.
 
 For npm dependency changes, use `nix develop .#update` and `npm install --package-lock-only`, update the dependency hash in `nix/npm-deps.nix`, and deliberately move the old managed `node_modules` aside before re-entering the default shell. Never overwrite an unmanaged dependency tree to bypass a shell refusal.
 
@@ -209,7 +188,7 @@ lib/          Session, agent, model, file, Git, and security core
 plugins/      Optional bundled plugins
 public/       Static assets and PWA files
 bin/          Inherited pi-web launcher
-nix/          Packaging and isolated developer checks
+nix/          Shared dependencies, package, core checks and NixOS VM acceptance
 docs/         User guides, contributor notes, and design decisions
 e2e/          Browser and terminal integration tests
 demo/         Inherited standalone demo source

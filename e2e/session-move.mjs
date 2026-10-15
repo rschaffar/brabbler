@@ -152,13 +152,9 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
   await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
   assert.equal(await dialog.getByLabel("Worktree/directory").getAttribute("data-value"), project);
   const browse = async (path) => {
-    // The runner is next dev/Strict Mode: DirectoryPicker starts two initial
-    // reads. Waiting only for its first loading=false can race the second read
-    // resetting the input. Settle both before editing the shared Browse form.
-    let initialReads = 0;
-    const initialReady = page.waitForEvent("requestfinished", {
-      predicate: (request) => new URL(request.url()).pathname === "/api/cwd/browse" && ++initialReads === 2,
-    });
+    // Synchronize with the actual production read and settled form, not
+    // development Strict Mode's duplicate effect invocation count.
+    const initialReady = page.waitForResponse(response => new URL(response.url()).pathname === "/api/cwd/browse");
     await dialog.getByRole("button", { name: "Browse another folder…" }).click();
     await initialReady;
     const picker = page.getByRole("dialog", { name: "Select directory", exact: true });

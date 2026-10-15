@@ -15,9 +15,8 @@ let
     forwarder nodejs pkgs.git pkgs.bash pkgs.coreutils pkgs.findutils
     pkgs.gnugrep pkgs.gnused pkgs.diffutils pkgs.which pkgs.python3 pkgs.util-linux
   ];
-  # There is only ONE scheduled check derivation. The shared runner owns the
-  # bounded parallel native jobs and the drained SDK/latency-only barrier.
-  # max-jobs/cores do not reserve this host against unrelated workloads.
+  # The core runner owns bounded file jobs and the SDK/latency-only barrier.
+  # Package/VM acceptance is a separate Nix check; these are not host reservations.
   program = mode:
     let
       toolPath = lib.makeBinPath tools;
@@ -85,7 +84,7 @@ let
       keep_workspace=0
       help=0
       selection=()
-      ${if mode == "offline" then ''
+      ${if mode == "core" then ''
         refuse() { echo 'Allowed: --jobs <1..32>, repeatable --file <relative-discovered.test.mjs>, --inventory-only, --keep-workspace, --help' >&2; exit 2; }
         while [ "$#" -gt 0 ]; do
           case "$1" in
@@ -98,7 +97,7 @@ let
             --file)
               [ "$#" -ge 2 ] || refuse
               case "$2" in
-                app/*.test.mjs|components/*.test.mjs|hooks/*.test.mjs|lib/*.test.mjs|public/*.test.mjs) ;;
+                app/*.test.mjs|components/*.test.mjs|hooks/*.test.mjs|lib/*.test.mjs|public/*.test.mjs|plugins/*.test.mjs) ;;
                 *) refuse ;;
               esac
               case "/$2/" in
@@ -132,7 +131,7 @@ let
         done
         if [ "$help" = 1 ]; then
           printf '%s\n' \
-            'test-offline [--jobs <1..32>] [--file <relative-discovered.test.mjs> ...] [--inventory-only] [--keep-workspace] [--help]' \
+            'test core [--jobs <1..32>] [--file <relative-discovered.test.mjs> ...] [--inventory-only] [--keep-workspace] [--help]' \
             'Default desired jobs: 8; actual CPU/quota/allocation/memory admission may reduce it.' \
             'Root, Git, tools and artifact paths are fixed by this app; overrides/unknown options refuse.' \
             'Selected-file success is NOT full-suite acceptance. Inventory-only runs no checks/tests.'
@@ -163,14 +162,11 @@ let
           exit 2
         fi
         core_env+=("NIX_BUILD_CORES=$cores")
-      ${if mode == "check" then ''
       else
         echo 'Missing original builder NIX_BUILD_CORES allocation' >&2
         exit 2
-      '' else ""}
       fi
       umask 077
-      ${if mode == "check" then ''
         # Private builder-to-check channel, never a public app/runner option.
         # The builder retains this SAME root for copying; no stdout discovery.
         root="''${PI_WEB_NIX_CHECK_ROOT:?missing internal check root}"
@@ -180,9 +176,6 @@ let
           echo 'Internal check root must be an owned private directory' >&2
           exit 2
         fi
-      '' else ''
-        root=$(${pkgs.coreutils}/bin/mktemp -d /tmp/pi-web-test-${mode}.XXXXXXXX)
-      ''}
       for dir in home config cache data state runtime agent tmp artifacts; do
         ${pkgs.coreutils}/bin/mkdir -m 700 "$root/$dir"
       done
@@ -203,11 +196,9 @@ let
         ${nodejs}/bin/node ${src}/nix/test-lifecycle.mjs "$root" "$keep_workspace" \
         ${body} "$root" "$inventory_only" "''${runner_args[@]}"
     '';
-  offlineProgram = program "offline";
-  offlineCheckProgram = program "check";
-in
-{
-  offline = pkgs.runCommand "pi-web-offline-checks" { } ''
+  coreProgram = program "core";
+  coreCheckProgram = program "check";
+  mkCore = { args ? [ ], runId ? "" }: pkgs.runCommand "pi-web-core-checks" { inherit runId; } ''
     set -euo pipefail
     umask 077
     # Keep failures in the ACTUAL build tree for --keep-failed, not /tmp.
@@ -217,7 +208,7 @@ in
     # Capture BOTH statuses immediately; a successful tee cannot repair a
     # failed body. This does not disable errexit in the separate body script.
     set +e
-    PI_WEB_NIX_CHECK_ROOT="$check_root" ${offlineCheckProgram} 2>&1 | tee "$check_root/driver.log"
+    PI_WEB_NIX_CHECK_ROOT="$check_root" ${if args == [ ] then coreCheckProgram else coreProgram} ${lib.escapeShellArgs args} 2>&1 | tee "$check_root/driver.log"
     pipeline_status=("''${PIPESTATUS[@]}")
     set -e
     body_status="''${pipeline_status[0]}"
@@ -238,13 +229,11 @@ in
     cp "$check_root/source-input.json" "$check_root/driver.log" \
       "$check_root/execution.log" "$check_root/lifecycle.json" "$out/"
     printf '%s\n' \
-      'Offline check passed. Stored/cached artifacts are diagnostics, NOT fresh native/OS authority receipts.' \
+      'Core check passed. Cached artifacts are declared-input evidence, NOT fresh execution or operation authority.' \
       'driver.log includes exporter/static preparation stdout+stderr; original output is also in the Nix build log.' \
       > "$out/result"
   '';
-  apps = {
-    test-offline = { type = "app"; program = toString offlineProgram; };
-    # Browser/terminal/systemd acceptance is separately authorized/manual.
-    # No new host adapters until bus access and nested cleanup are reviewed.
-  };
+in {
+  inherit mkCore;
+  core = mkCore { };
 }

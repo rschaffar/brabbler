@@ -1,211 +1,169 @@
 # Testing Pi Web
 
-## Developer commands
+## Nix-native acceptance
 
-From the physical Linux working-tree root, including untracked test helpers:
+Nix owns the toolchain, built dependencies, production package and test environments.
+There is no dependency-preparation step, non-Nix installation path or development-server
+acceptance mode. Normal realization may fetch pinned inputs or substitutes. Test
+execution uses synthetic data and no external providers.
 
-```sh
-nix develop .#test -c node nix/test-offline.mjs
-# Focused work (repeat --file for multiple exact paths):
-nix develop .#test -c node nix/test-offline.mjs --file lib/worktree.test.mjs
-# Smaller worker budget for concurrent reviewers, inventory, help:
-nix develop .#test -c node nix/test-offline.mjs --jobs 2
-nix develop .#test -c node nix/test-offline.mjs --inventory-only
-nix develop .#test -c node nix/test-offline.mjs --help
-# Preserve regenerable bulk for dependency/generated-file debugging:
-nix develop .#test -c node nix/test-offline.mjs --keep-workspace
-```
-
-Use focused checks while fixing defects, then a full run at a stable checkpoint
-once edits and review changes settle. One owner coordinates dependency preparation
-and validation budgets. Pause source writers during snapshot export; after export,
-the run uses its own source, not subsequent edits. Simultaneous reviewers may run
-from the same worktree: each invocation owns its snapshot and mutable state.
-Record the source digest, not merely a branch name, when comparing results.
-A selected-file pass is not full-suite acceptance. Focused offline runs still
-perform the complete static preparation: there is no tests-only mode yet. Bundled-plugin Git integration tests remain separate; the
-[Git plugin guide](git-workflow-plugin.md#verification) owns their commands and
-CI selection. The [removal checklist](plans/2026-09-29_policy-driven-git-tools-plan.md)
-retains historical removal results.
-
-### One baseline, not two
-
-A **complete successful Linux offline pipeline** satisfies the common core-test,
-type-generation, typecheck and lint requirements. Do not additionally run the
-ordinary npm baseline just to satisfy its spelling. The alternative for prepared
-non-Nix checkouts is:
+From the physical Linux working-tree root:
 
 ```sh
-node_modules/.bin/next typegen
-npm test
-node_modules/.bin/tsc --noEmit
-npm run lint
+# Complete cacheable acceptance for the current native system:
+nix flake check -L
+
+# Fresh execution, including untracked source/test helpers:
+nix run .#test -- core
+nix run .#test -- e2e
+
+# Focused iteration (NOT complete acceptance):
+nix run .#test -- core --jobs 2 --file lib/worktree.test.mjs
+nix run .#test -- core --file plugins/session-launch/runtime.test.mjs
+nix run .#test -- e2e --group markdown
+nix run .#test -- e2e --group terminal
+nix run .#test -- --help
 ```
 
-Unlike the offline pipeline, this alternative writes generated types into the
-checkout: do not overlap it with a dev server using that checkout. Dependency
-preparation is a separate prerequisite, not an application production build.
+Supported acceptance hosts/guests: native x86_64-linux and aarch64-linux with KVM
+available to the Nix builder/user. Other Nix package targets do not acquire a host
+or non-Nix testing fallback. A missing virtualisation capability fails explicitly.
+No test uses, stops or restarts the installed host service on port 30141; the same
+port inside the isolated guest is unrelated.
 
-### Change-dependent acceptance
+Plain `nix flake check` follows Git-flake source visibility: modified tracked files
+are included, new untracked files are not. The fresh entry point safely exports and
+verifies current source before passing that snapshot to Nix. Do not pass a populated
+checkout to `path:.` or stage unrelated files just to make a check see them.
 
-| Changed area | Required evidence beyond focused iteration |
+Use focused checks while editing; run complete core and E2E acceptance after source
+and review changes settle. Record the input identity, exact command/selection,
+result, command runtime and artifact path. A cached successful check is declared-input
+evidence, not a freshly executed run, host permission-gate evidence or authority for
+Git/deployment operations. Rebase or relevant source/toolchain/configuration changes
+require reassessing the resulting candidate. Never relabel old evidence as a new-tip run.
+
+### Two test levels, one application artifact
+
+| Nix check | Coverage | Environment |
+| --- | --- | --- |
+| `checks.<system>.core` | Exporter contracts, genuine Next type generation, TypeScript, lint, recursive core and bundled-plugin Node tests | Nix sandbox with immutable shared modules |
+| `checks.<system>.e2e` | Complete browser/terminal group inventory, real service activation and restart/persistence | One NixOS VM, real Home Manager module, ordinary user, packaged app and pinned Chromium |
+
+Core does not depend on the production bundle or VM. E2E always uses the exact
+Nix-built production package and installed launcher. There is no `next dev`, checkout
+`.next`, manually launched application or stub-only Home Manager deployment test.
+See [browser/terminal acceptance](../e2e/README.md) for groups and the guest lifecycle.
+
+The package and tests share a manifest/toolchain/platform-keyed dependency output,
+including native `node-pty`. Application, test and manifest filesets are separate:
+documentation/test-only edits do not rebuild the application; application-only edits
+do not reinstall dependencies. Next builds receive a private physical dependency
+copy inside the builder; runtime and core checks use the immutable output.
+
+**Never run `next build` or `npm run build` in a working checkout.** Production package
+builds for acceptance are supported only in isolated Nix builders. They neither
+activate a service nor publish an artifact. Manual `nix develop`/`npm run dev` remains
+a separate workflow and is not acceptance.
+
+### Source and credential boundary
+
+The fresh entry point exports an explicit source/name allowlist, including untracked
+helpers, while excluding Git, dependencies, `.next`, `.env*` and reviewed private or
+generated paths. Symlinks and special files refuse. The original export and matching
+manifest verification must succeed before Nix ingestion. This is not a secret-content
+detector: review source admitted to approved trees.
+
+Realization and fresh execution use private HOME/XDG/agent/TMP directories. Ambient
+credentials, proxies, Node options, QEMU options/disk overrides and host user buses
+are not inherited. The VM receives only its declared package/test closures, synthetic
+fixtures and a restricted network; browser, fake providers and application communicate
+on guest loopback. No real session/account files are copied into the guest or store.
+
+Normal realization uses Nix's declared input/substitution machinery. Offline-only
+operation is optional and must be explicit at both outer and inner invocation:
+
+```sh
+nix flake check --offline --no-write-lock-file -L
+nix run --offline --no-write-lock-file .#test -- core --offline
+```
+
+Missing cached inputs then fail normally; there is no custom prerequisite-cache
+scanner or hidden download/build fallback. Do not alter dependency markers or
+symlink another checkout's dependencies to bypass a refusal.
+
+## Coverage and selection
+
+The core universe is recursive `*.test.mjs` under **app, components, hooks, lib,
+public and plugins**. Browser scripts and `.fixture.mjs` helpers are not silently
+added. Every discovered test participates; a new/unreviewed file warns and runs
+exclusively until its scheduling classification is reviewed.
+
+- Default desired core file workers: **8**; `--jobs` accepts canonical **1..32**.
+  Effective workers are bounded by CPU affinity/quota, supplied Nix allocation and
+  memory (1 GiB reserve plus 2 GiB per worker).
+- Files use private HOME/XDG/agent/TMP, pinned Git and Node file concurrency 1.
+  Reviewed F/N files share the bounded pool; latency-sensitive E files drain it
+  and run alone. Existing opt-in native test skips remain explicit in inventory.
+- Failure stops new dispatch while started jobs settle. No automatic retries,
+  timeout inflation, failure-to-skip conversion or suppression of general errors.
+- `core --inventory-only` reports discovery without static checks/execution.
+- A selected core run still performs static preparation. It is not full acceptance.
+
+Do not append Node concurrency options to `npm test`. Npm test aliases delegate to
+the Nix entry point; scheduling belongs to its options. Core and VM resource limits
+are per invocation, not host reservations. One owner coordinates concurrent runs,
+source export and CPU/RAM budgets; pause source writers during export. Fresh
+entry points bound each internal realization to two Nix jobs/four build cores;
+core workers are additionally clamped to that allocation. Outer Nix options control
+only the outer realization, not an already running internal client. The VM uses
+4 GiB/two vCPUs. Keep deliberate contention tests separate from normal acceptance.
+
+### Change-dependent evidence
+
+| Changed area | Required evidence |
 | --- | --- |
-| Application/core behavior | Complete common baseline on the stable candidate |
-| Browser flow | Affected flow through `npm run test:e2e`; choose documented focused switches during iteration, broaden for shared UI/runtime changes |
-| Activity review/navigation | Include `E2E_ACTIVITY_ONLY=1`; the default browser run has only partial Activity coverage |
-| Optional Git plugin | Separate integration command and plugin-focused browser selection in the [plugin guide](git-workflow-plugin.md#verification); core discovery does not include `plugins/**/*.test.mjs` |
-| Session Launch plugin | Separate real SDK tool acceptance and `E2E_SESSION_LAUNCH_ONLY=1` browser selection in [Session Launch](session-launch.md#verification); broaden browser coverage for shared cards/runtime changes |
-| Terminal integration or shared browser/terminal harness | `npm run test:terminal`; shared harness changes also need general and plugin-focused browser acceptance |
-| Documentation only | Review commands, links and preserved contracts; check any changed executable instructions. Do not rerun unaffected application suites solely for an evidence/status commit |
+| Application/runtime behavior | Complete core and packaged-service E2E checks |
+| Harness/Nix/package/service changes | Complete core and full VM checks, including failure/settlement contracts and source-input identity review |
+| Focused feature iteration | Exact affected core files or named E2E groups; not a substitute for stable-candidate acceptance |
+| Documentation only | Review commands, links and contracts; test changed executable instructions, not unrelated application suites |
 
-Record the tested candidate/input scope, command and selection, result, and exact
-artifact path. After rebasing or changing relevant source, lockfile, environment
-or test configuration, reassess and verify the resulting candidate. Older evidence
-is not a new-tip run. A new commit ID alone does not require repeating unaffected
-application checks; keep a genuine appropriately scoped exact-candidate check.
-Configured Git checks still apply—this equivalence is not permission to bypass
-them. Verification never grants integration or cleanup authority.
-
-Plain npm testing does not provide the isolated runner's private environment or
-bounded scheduling. **Do not use `npm test -- --test-concurrency=1`:** that option
-follows the script's globs and is not a Node concurrency option. For a serial
-focused Node run, put options before filenames, for example
-`node --experimental-strip-types --test --test-concurrency=1 lib/example.test.mjs`.
-Never run `next build` or `npm run build` during development.
-
-## What the Linux command does
-
-Supported systems: x86_64-linux and aarch64-linux. The Git-filtered shell keeps
-its manifest-only dependency definition in tracked `flake.nix`; the launcher
-reads the current working filesystem after shell entry. It exports an explicit
-source/name allowlist, including untracked source helpers, while excluding Git,
-dependencies, `.next` and reviewed private/ignored paths. `plugins/` source is
-included for static checks, without adding its integration tests to core discovery. Symlinks/special files
-refuse. This is not a secret-content detector: review files admitted to source
-paths and never pass the populated checkout to `path:.`.
-
-The original export must succeed, followed by matching manifest verification,
-before Nix ingestion. The launcher handles both; no staging, manual manifest
-ceremony or new npm alias is required. Package manifests are intentionally
-unchanged to preserve the exact dependency derivation expected by the existing
-`node_modules` marker. Never delete/move dependencies or rewrite that marker
-automatically to bypass a shell refusal.
-
-The launcher scrubs HOME, all XDG/agent/TMP directories, Nix configuration,
-credentials, proxies and Node options. Its inner Nix invocation is local/offline,
-with builders, substitution and registries disabled. Missing cached prerequisites
-fail without remote fallback. `nix develop --offline --no-write-lock-file .#test -c …`
-also makes shell entry local-only; first-time dependency preparation is separate.
-No global installation, live settings or installed-service contact is involved.
-
-The `test` shell supplies pinned tools and immutable Nix dependencies without
-creating or modifying checkout-local `node_modules`. The default development
-shell still prepares a writable worktree-local copy for manual development.
-Identical manifests/toolchain/platform reuse the same dependency output.
-
-Normal core execution copies filtered source into a private workspace and links
-`node_modules` directly to the read-only Nix output. Source is made writable before
-attaching that link; store permissions are never changed. It runs exporter
-contracts, genuine `next typegen`,
-`tsc --noEmit --incremental false`, lint, then the tests. Generated types never
-pollute the checkout. Help runs export/verification but no test pipeline;
-inventory-only discovers tests without static checks or test execution.
-
-## Parallelism and coverage
-
-The universe is recursive `*.test.mjs` under **app, components, hooks, lib and
-public**; browser scripts and `.fixture.mjs` helpers are not silently added.
-All discovered files are included. Unreviewed files warn and run exclusively.
-
-- Default desired file workers: **8**; `--jobs` accepts canonical integers **1..32**.
-  Effective workers are clamped by CPU affinity/quota, supplied Nix allocation
-  and memory (1 GiB reserve plus 2 GiB per worker). This is an admission estimate,
-  not a host reservation or an OS-process limit. More jobs can increase contention.
-- Each file runs with private HOME/XDG/agent/TMP, constructed environment, pinned
-  native Git configuration isolation and Node concurrency 1. Node options precede
-  the filename. Cases sharing process-global state stay sequential within a file.
-- Reviewed F/N files share the bounded pool. Latency-sensitive E files drain it
-  and run alone. SDK/native deadlines and safety assertions remain unchanged.
-- Failure stops new dispatch while started jobs settle. The summary reports
-  assertion failures, runner errors, interrupted work and unstarted coverage.
-  There is no automatic retry, deadline inflation or failure-to-skip conversion.
-
-Nix `max-jobs` limits derivations, not inner Node workers. A check honors its actual
-positive `NIX_BUILD_CORES` allocation. The fresh app honors that cap when supplied
-but does not invent one; `nix run --cores` alone is not an app runtime allocation.
-Concurrent invocations have independent writable state, but these limits and
-exclusive lanes are per runner, not machine-wide reservations. Coordinate worker
-budgets when running several reviewers (for example, `--jobs 2` per core run).
-Do not oversubscribe browser/SDK-sensitive acceptance or inflate deadlines to mask
-contention. Keep normal full acceptance separate from deliberate concurrency tests.
-Record actual command wall time separately from shell/dependency preparation,
-agent reasoning, review, approval and idle coordination time. File/case duration
-sums and interrupted runs are not comparable full-suite wall-time benchmarks.
+Plugin, session-launch, Activity, trust, bulk and other previously focused-only
+browser scenarios are part of the explicit full VM inventory. Their owning feature
+guides describe assertions, not alternative acceptance environments.
 
 ## Diagnostics and retention
 
-Preparation phase markers and file start/end lines identify where execution
-failed. `summary.json`, `inventory.json`, `events.jsonl` and per-file TAP/stderr
-are retained under the printed artifact path. Assertion passes do not make a file
-successful when process settlement is uncertain. A complete passing suite needs
-all planned files to finish successfully; zero observed survivors is not a
-certificate when observation failed.
+Core prints phase boundaries, inventory, summary, events and original bounded
+TAP/stderr diagnostics. Fresh execution adds a nonce only to the check derivation,
+so it executes once in the same Nix sandbox, not on the host. The printed user-owned
+core root retains `run.json` and `driver.log`; successful runs link the exact store
+output's artifacts/lifecycle/manifest. Its result link is an intentional GC root.
+The separately printed safe source snapshot/manifest remains. Failed runs retain
+original bounded diagnostics and `--keep-failed` builder state, without widening
+nixbld permissions. Nix owns builder containment and eventual build-tree disposal;
+the inner lifecycle still observes jobs before removing its own generated bulk.
 
-Failures print bounded original TAP/stderr and runner reasons, including process
-scan errors, without exporting private HOME/agent contents. In Nix checks these
-are available through `--print-build-logs` or `nix log <exact-derivation>`; tee
-success cannot mask pipeline failure. Failed builder trees retained with
-`--keep-failed` may be private to nixbld: do not widen permissions to inspect them.
+Fresh VM runs print a private `/tmp/pwv-*` root. It contains `run.json`, `driver.log`,
+JUnit, guest journals and per-group suite logs, events, manifests and Chromium traces.
+Failure screenshots/fixture evidence are retained. The driver uses private runtime
+and temporary directories, not the host user's runtime namespace. After confirmed
+driver/descendant settlement and evidence collection, the owner removes only that
+run's pinned runtime/tmp/cache bulk (including qcow disks); interruption or uncertainty
+retains it. The manifest distinguishes execution, settlement and cleanup outcomes.
 
-Record the printed artifact and fixture/export roots and their disposition in the
-handoff; report storage pressure rather than making space by deleting unknown
-resources. Browser/terminal run manifests also name their separate fixture roots.
-`lifecycle.json` records execution, dependency identity, settlement and cleanup;
-`execution.log` retains core preparation/runner output. After observed settlement,
-the run owner removes only its own `source/node_modules`, `source/.next` and
-`tmp/node-compile-cache`, on success **or failure**. Store links are unlinked, never
-followed. Root/source identity changes, mountpoints, observation failures and
-interruption prevent cleanup. `--keep-workspace` retains these regenerables too.
-A cleanup error is reported as refused/possibly partial, not silently successful.
+For cacheable checks, successful evidence is part of the Nix output. Original
+failures remain in `nix log <exact-derivation>` / `-L`; `--keep-failed` retains failed
+builder trees. These can be private to nixbld: never widen permissions to inspect
+or export them. Use the same definition's fresh runner for user-owned diagnostics.
 
-Source snapshots, manifests, reports and failed fixture state remain for diagnosis;
-this is intentionally not a zero-artifact policy. Launcher exports may also be
-subject to their enclosing temporary-directory owner's lifetime policy. No old
-root is discovered or swept. Existing failed/interrupted/uncertain resources need
-separately authorized cleanup; Nix GC does not clean ordinary `/tmp` copies or
-failed build trees. Do not use wildcard or age-based reapers. Settlement covers observed original Linux process identities and a final
-session scan, not arbitrary unobserved escaped descendants; fixtures must settle
-their own detached helpers.
+A passing assertion, successful control command, requested stop, cached check or
+saved report is not proof of process settlement. Browser errors/local 5xx, unexpected
+service generations/restarts, uncertain cgroups, missing traces or failed diagnostic
+collection fail acceptance. Investigate the exact logs/trace before a justified retry;
+a passing unchanged retry is neither a diagnosis nor a fix.
 
-## Cached checks and separate acceptance
-
-`checks.<system>.offline` is the argument-free cacheable pipeline;
-`apps.<system>.test-offline` is the fresh app used by the launcher. Use only these
-named test outputs, never the production/default package or app. Advanced direct
-Nix invocation must first run `nix/export-test-source.py` and its matching
-`--verify-manifest` successfully into new sibling paths beneath an owned private
-0700 directory outside the checkout, then use only that exported `path:` input.
-The normal developer command already does this.
-
-Cached checks are declared-input evidence, not fresh browser/runtime acceptance.
-`nix flake check --no-build` is evaluation only. Browser/terminal coverage is separate:
-
-```sh
-nix develop .#test -c npm run test:e2e
-nix develop .#test -c npm run test:terminal
-```
-
-Use disposable fixture storage; see [e2e/README.md](../e2e/README.md). These scripts
-launch only their own dev server on a free port, never the installed port 30141.
-Linux launchers snapshot the checkout before starting the suite; each snapshot
-has its own `.next`, dependency copy and server. They can run concurrently from
-the same worktree without touching its manual dev server. Browser dependency
-copies remain necessary for Turbopack and are cleaned under the same settled-run
-policy; details and non-Linux legacy execution are in the browser guide.
-Removed Workflow E2E/containment tests are not acceptance requirements. Checks
-grant no integration, publication, deployment or cleanup authority over existing
-resources outside their explicitly owned regenerable bulk.
-
-References: [Node test execution](https://nodejs.org/docs/latest-v22.x/api/test.html#test-runner-execution-model),
-[Nix cores/jobs](https://nix.dev/manual/nix/stable/advanced-topics/cores-vs-jobs),
-[Next typegen](https://nextjs.org/docs/app/api-reference/cli/next#next-typegen-options).
+No wildcard/age-based reapers or historical-root discovery. Existing failed runs,
+backups, checkout dependencies, branches and worktrees need separately authorized
+bounded cleanup. Nix GC does not clean ordinary `/tmp` directories. Report command
+runtime separately from realization, reasoning, review and coordination.

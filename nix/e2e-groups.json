@@ -1,0 +1,23 @@
+{
+  "general": { "suite": "browser", "selector": null },
+  "worktrees": { "suite": "browser", "selector": "E2E_WORKTREE_MANAGER_ONLY" },
+  "session-launch": { "suite": "browser", "selector": "E2E_SESSION_LAUNCH_ONLY" },
+  "running-forks": { "suite": "browser", "selector": "E2E_RUNNING_FORKS_ONLY" },
+  "model-speed": { "suite": "browser", "selector": "E2E_MODEL_SPEED_ONLY" },
+  "trust": { "suite": "browser", "selector": "E2E_TRUST_ONLY" },
+  "git-plugin": { "suite": "browser", "selector": "E2E_GIT_WORKFLOW_PLUGIN_ONLY" },
+  "appearance": { "suite": "browser", "selector": "E2E_CHAT_APPEARANCE_ONLY" },
+  "timestamps": { "suite": "browser", "selector": "E2E_TIMESTAMPS_ONLY" },
+  "diff-context": { "suite": "browser", "selector": "E2E_DIFF_CONTEXT_ONLY" },
+  "markdown": { "suite": "browser", "selector": "E2E_MARKDOWN_ONLY" },
+  "file-edit": { "suite": "browser", "selector": "E2E_FILE_EDIT_ONLY" },
+  "archive": { "suite": "browser", "selector": "E2E_ARCHIVE_ONLY" },
+  "privacy": { "suite": "browser", "selector": "E2E_PROJECT_PRIVACY_ONLY" },
+  "activity": { "suite": "browser", "selector": "E2E_ACTIVITY_ONLY" },
+  "accounts": { "suite": "browser", "selector": "E2E_ACCOUNT_ONLY" },
+  "questions": { "suite": "browser", "selector": "E2E_ASK_USER_ONLY" },
+  "session-links": { "suite": "browser", "selector": "E2E_SESSION_LINK_ONLY" },
+  "bulk": { "suite": "browser", "selector": "E2E_BULK_ONLY" },
+  "move": { "suite": "browser", "selector": "E2E_MOVE_ONLY" },
+  "terminal": { "suite": "terminal", "selector": null }
+}

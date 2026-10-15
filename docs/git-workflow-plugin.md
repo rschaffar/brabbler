@@ -453,24 +453,21 @@ See [ADR 0021](adr/0021-standalone-project-cleanup.md) and its
 
 ## Verification
 
-Core tests remain separate from expensive Git integration tests. See
-[Testing](testing.md) and [browser fixture notes](../e2e/README.md). From a prepared
-Linux worktree, with no dev server owning that checkout:
+Bundled plugin Node tests, including real Pi registration/toggle lifecycle and
+snapshot expiry/bounds, participate in the sandboxed core inventory. Full VM
+acceptance includes the explicit `git-plugin` and `session-launch` groups. See
+[Testing](testing.md) and [browser fixture notes](../e2e/README.md):
 
 ```sh
-nix develop --offline --no-write-lock-file .#test -c node nix/test-offline.mjs
-# Separate plugin tests: snapshot bounds/expiry + real Pi registration/toggle lifecycle.
-nix develop --offline --no-write-lock-file -c sh -c \
-  'env -i PATH="$PATH" LANG=C.UTF-8 PI_OFFLINE=1 node --experimental-strip-types --test "plugins/**/*.test.mjs"'
-# Plugin-only desktop/mobile browser acceptance (no model calls):
-nix develop --offline --no-write-lock-file .#test -c env \
-  E2E_GIT_WORKFLOW_PLUGIN_ONLY=1 npm run test:e2e
+nix flake check -L
+# Fresh focused iteration, not full acceptance:
+nix run .#test -- core --file plugins/git-workflow/cleanup.test.mjs
+nix run .#test -- e2e --group git-plugin
 ```
 
-The ordinary `npm test`, typecheck and lint commands are unchanged. The Nix
-exporter includes `plugins/` source for typecheck/lint without adding expensive
-plugin tests to the core runner. CI explicitly runs the separate plugin Node
-selection and separate `core`/`git-workflow-plugin` browser matrix entries on every
-PR, including shared-core changes. Browser CI uses dev, never a production build.
+CI freshly executes the same complete core and packaged-service VM definitions.
+No separate npm environment, plugin-only CI matrix or development-server path is
+required. Nix realizes dependencies and builds the actual package in isolation;
+the restricted guest uses synthetic providers, not real accounts or model calls.
 Implementation/verification do not authorize integration, publication, deployment
 or feature-resource cleanup.
