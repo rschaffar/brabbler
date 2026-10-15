@@ -3,8 +3,9 @@
 Root and demo have independent manifests and lockfiles. Refresh both deliberately;
 compare resolved versions, not just manifest ranges. Preserve the Pi SDK package
 pins and native PTY pin unless their contracts have been evaluated separately.
-Lockfile changes also require updating `nix/npm-deps.nix` and preparing matching
-Nix-managed dependencies; never bypass the checkout dependency marker.
+Lockfile changes also require updating `nix/npm-deps.nix`. Nix realizes matching
+built dependencies automatically for packages and acceptance. Writable manual-development
+shells still enforce their checkout dependency marker; never bypass it.
 
 ## Runtime classification and locking
 
@@ -61,11 +62,14 @@ Existing React Hooks rule settings are unchanged by this upgrade.
 `lib/eslint-compatibility.test.mjs` exercises the actual selected project config,
 not a reduced test preset: invalid accessibility attributes, missing image text,
 React keys and conditional Hooks, anonymous exports, explicit TypeScript `any`,
-Next image checks, and a clean typed-JSX control. The root offline suite discovers
-it automatically. Run it independently against the demo's installed dependencies
-from `demo/` with `node --test ../lib/eslint-compatibility.test.mjs`. Both projects
-retain their original file selection and enabled rule options in the migration
-comparison. See [Next's ESLint guide](https://nextjs.org/docs/app/api-reference/config/eslint).
+Next image checks, and a clean typed-JSX control. The root sandboxed Nix core suite
+discovers it automatically. A focused root run is
+`nix run .#test -- core --file lib/eslint-compatibility.test.mjs`.
+Run it independently against the demo's installed dependencies from `demo/` with
+`node --test ../lib/eslint-compatibility.test.mjs`; that separate demo-maintenance
+probe is not an alternative application-acceptance path. Both projects retain
+their original file selection and enabled rule options in the migration comparison.
+See [Next's ESLint guide](https://nextjs.org/docs/app/api-reference/config/eslint).
 
 **Defer TypeScript 7:** typescript-eslint 8.71.2 declares TypeScript
 `>=4.8.4 <6.1.0`, excluding 7. Keep TypeScript 5.9.3 until parser/plugin support
