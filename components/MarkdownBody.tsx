@@ -2,11 +2,12 @@
 
 import { createContext, useContext, useMemo, type ComponentProps, type MouseEvent } from "react";
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
-import { parseFileLineTarget, parsePdfPageFragment, resolveInlineFileReference, resolveLocalFileHref, shouldOpenLocalFileInApp, type OpenFileLink } from "@/lib/file-links";
+import { parseFileLineTarget, parsePdfPageFragment, resolveInlineFileReference, resolveLocalFileHref, resolveLocalFileLink, shouldOpenLocalFileInApp, type OpenFileLink } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
 import { markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
 import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
+import { BlockedFileLink } from "./BlockedFileLink";
 
 const MarkdownLinkContext = createContext(false);
 
@@ -89,7 +90,13 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
     a({ href, children, ...props }) {
       // `node` is react-markdown metadata, not a DOM attribute.
       delete props.node;
-      const filePath = onOpenFile ? resolveLocalFileHref(href, cwd) : null;
+      const resolution = onOpenFile ? resolveLocalFileLink(href, cwd) : null;
+      if (resolution?.kind === "blocked") {
+        return <MarkdownLinkContext.Provider value={true}>
+          <BlockedFileLink key={href} reason={resolution.reason}>{children}</BlockedFileLink>
+        </MarkdownLinkContext.Provider>;
+      }
+      const filePath = resolution?.kind === "local" ? resolution.filePath : null;
       const openFile = onOpenFile;
       if (!filePath || !openFile) {
         return (

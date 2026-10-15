@@ -68,6 +68,14 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
   assert.equal(render(large, "source", false, false, false, true, { content: "draft", baseline: "old" }), null);
 });
 
+test("markdown preview links use a stable element type for rejection feedback", () => {
+  const file = ts.createSourceFile("FileViewer.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  assert.ok(file.statements.some(node => ts.isFunctionDeclaration(node) && node.name?.text === "MarkdownPreviewLink"));
+  assert.match(source, /a: MarkdownPreviewLink/);
+  assert.match(source, /<MarkdownPreviewLinkContext\.Provider value=\{\{ baseDir: markdownDirectory, relativeRoot: cwd \?\? markdownDirectory, onOpenFile \}\}>/);
+  assert.match(source, /<BlockedFileLink key=\{href\} reason=\{resolution\.reason\}>/);
+});
+
 test("markdown preview links carry PDF page fragments", () => {
   assert.match(source, /parsePdfPageFragment/);
   assert.match(source, /onOpenFile\(linkedFile, parsePdfPageFragment\(href\) \?\? undefined, parseFileLineTarget\(href\)\)/);

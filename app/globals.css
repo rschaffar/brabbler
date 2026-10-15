@@ -880,6 +880,25 @@ pre, code {
   text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .markdown-body a:hover { text-decoration-color: var(--accent); }
+.markdown-body .blocked-file-link-trigger {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.markdown-body .blocked-file-link-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.markdown-body .blocked-file-link-explanation {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
 .markdown-body img {
   display: block;
   max-width: 100%;

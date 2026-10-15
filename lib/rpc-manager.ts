@@ -63,6 +63,7 @@ import { createAskUserExtension, preferPiWebAskUserExtension, type AskUserUiCont
 import { parseQuestionSet } from "./question-set";
 import { createSessionReferenceExtension } from "./session-reference-extension";
 import { createPiWebSourceExtension } from "./pi-web-source-extension";
+import { createLocalFileLinkGuidanceExtension } from "./local-file-link-guidance";
 import { bundledPluginExtensions } from "./plugins/registry";
 import { validatePluginCard } from "./plugins/ui";
 import { preparePluginReview } from "./plugins/review-store";
@@ -2624,7 +2625,7 @@ async function startRpcSessionInternal(
               : {}),
             appendSystemPrompt: subagentResources.appendSystemPrompt,
             extensionFactories: [
-              ...(usesExactSystemPrompt ? [exactSystemPromptExtension] : []),
+              ...(usesExactSystemPrompt ? [exactSystemPromptExtension] : [createLocalFileLinkGuidanceExtension()]),
               ...(subagentResources.loadExtensions ? [createAskUserExtension()] : []),
             ],
             ...(subagentResources.loadExtensions ? { extensionsOverride: preferPiWebAskUserExtension } : {}),
@@ -2635,6 +2636,7 @@ async function startRpcSessionInternal(
             extensionFactories: [
               createSessionReferenceExtension(),
               createPiWebSourceExtension(),
+              createLocalFileLinkGuidanceExtension(),
               createProjectCommandBashExtension({
                 cwd: sessionCwd,
                 settings: settingsManager,

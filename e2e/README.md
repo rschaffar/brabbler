@@ -25,7 +25,7 @@ persistence across focus/reload/navigation, and independent browser preferences
 at desktop/compact/mobile sizes),
 `E2E_MARKDOWN_ONLY=1` (Files Markdown Mermaid SVG/scroll retention on unchanged
 watcher reads, source choice and zoom dialog state across background polls, and
-live diagram updates, explicit/inline chat line links, repeated same-file jumps, chunked files and rendered Markdown source-position navigation at desktop/mobile sizes),
+live diagram updates, explicit/inline chat line links, rejected/encoded sibling-relative links with keyboard/touch feedback and no website navigation, absolute sibling-file links, nested-preview boundaries, repeated same-file jumps, chunked files and rendered Markdown source-position navigation at desktop/mobile sizes),
 `E2E_CHAT_APPEARANCE_ONLY=1` (full-width default including legacy numeric preferences, desktop/mobile width controls, reading-width restoration, reload persistence, draft resizing and typography),
 `E2E_TIMESTAMPS_ONLY=1`, `E2E_MODEL_SPEED_ONLY=1` (native ChatGPT subscription speed),
 `E2E_MOVE_ONLY=1` (destination picker at desktop/mobile sizes),
