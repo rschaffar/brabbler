@@ -1,5 +1,8 @@
 # Per-invocation test workspaces and shared Nix dependencies
 
+> Testing environment/runner mechanisms superseded by [ADR 0023](0023-nix-native-package-acceptance.md).
+> Snapshot, isolation, settlement and bounded-retention guarantees remain in force.
+
 ## Decision
 
 Automated Linux core and browser/terminal acceptance isolate each invocation, not

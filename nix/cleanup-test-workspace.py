@@ -18,7 +18,7 @@ def mount_paths():
                 for line in stream]
 
 
-def cleanup(root, expected_root, expected_source, mounts=None):
+def cleanup(root, expected_root, expected_source, mounts=None, *, vm=False):
     if not shutil.rmtree.avoids_symlink_attacks:
         raise ValueError('FD-safe recursive removal unavailable')
     root = Path(root)
@@ -37,17 +37,22 @@ def cleanup(root, expected_root, expected_source, mounts=None):
         st = os.fstat(fd)
         if (st.st_dev, st.st_ino) != tuple(expected_root) or st.st_uid != os.getuid() or st.st_mode & 0o077:
             raise ValueError('Run root identity/ownership changed')
-        source_fd = os.open('source', FLAGS, dir_fd=fd)
+        payload = 'runtime' if vm else 'source'
+        source_fd = os.open(payload, FLAGS, dir_fd=fd)
         fds.append(source_fd)
         st = os.fstat(source_fd)
         if (st.st_dev, st.st_ino) != tuple(expected_source):
-            raise ValueError('Source root identity changed')
-        # Only regenerable bulk. Source, manifests, logs and failed fixtures stay.
-        targets = [(source_fd, 'node_modules', root / 'source/node_modules'),
-                   (source_fd, '.next', root / 'source/.next')]
-        tmp_fd = os.open('tmp', FLAGS, dir_fd=fd)
-        fds.append(tmp_fd)
-        targets.append((tmp_fd, 'node-compile-cache', root / 'tmp/node-compile-cache'))
+            raise ValueError(f'{payload.title()} root identity changed')
+        # Fixed run-owner targets only. VM disks/exchange copies are separate
+        # from exported diagnostics; core source and failed fixtures stay.
+        if vm:
+            targets = [(fd, name, root / name) for name in ('runtime', 'tmp', 'cache')]
+        else:
+            targets = [(source_fd, 'node_modules', root / 'source/node_modules'),
+                       (source_fd, '.next', root / 'source/.next')]
+            tmp_fd = os.open('tmp', FLAGS, dir_fd=fd)
+            fds.append(tmp_fd)
+            targets.append((tmp_fd, 'node-compile-cache', root / 'tmp/node-compile-cache'))
         # Preflight every target before deleting any. Never traverse mountpoints.
         for _, _, target in targets:
             if any(m == str(target) or m.startswith(str(target) + '/') or
@@ -66,7 +71,7 @@ def cleanup(root, expected_root, expected_source, mounts=None):
                 raise ValueError(f'Unexpected cleanup target type: {name}')
             removed.append(str(target))
         return {'status': 'removed', 'paths': removed,
-                'retained': 'source snapshot, manifests, diagnostics and fixture state'}
+                'retained': 'manifests and diagnostics' if vm else 'source snapshot, manifests, diagnostics and fixture state'}
     finally:
         for fd in reversed(fds):
             os.close(fd)
@@ -74,7 +79,11 @@ def cleanup(root, expected_root, expected_source, mounts=None):
 
 if __name__ == '__main__':
     try:
-        root, dev, ino, source_dev, source_ino = sys.argv[1:]
-        print(json.dumps(cleanup(root, (int(dev), int(ino)), (int(source_dev), int(source_ino)))))
+        args = sys.argv[1:]
+        vm = args[:1] == ['--vm']
+        if vm:
+            args = args[1:]
+        root, dev, ino, source_dev, source_ino = args
+        print(json.dumps(cleanup(root, (int(dev), int(ino)), (int(source_dev), int(source_ino)), vm=vm)))
     except (OSError, ValueError) as error:
         sys.exit(f'Cleanup refused (earlier targets may already be removed): {error}')

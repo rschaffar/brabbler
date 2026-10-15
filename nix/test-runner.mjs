@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const ROOTS = Object.freeze(['app', 'components', 'hooks', 'lib', 'public']);
+export const ROOTS = Object.freeze(['app', 'components', 'hooks', 'lib', 'public', 'plugins']);
 const DEFAULT_JOBS = 8;
 const MAX_JOBS = 32;
 const validJobs = (value) => Number.isInteger(value) && value >= 1 && value <= MAX_JOBS;
@@ -390,7 +390,7 @@ export async function runSuite({ root, artifacts, gitBin, toolPath = [], jobs = 
     if (!plan.length) throw new Error('Empty test selection');
     json(path.join(runDir, 'inventory.json'), { root, node: process.version, manifestSha256: hash(manifestBytes),
       inventory, plan, resources, tools: { node: process.execPath, gitBin, toolPath },
-      scope: files.length ? 'selected-files' : 'original-five-root-suite',
+      scope: files.length ? 'selected-files' : 'core-and-plugin-suite',
       excludedProfiles: ['opt-in real cgroup cases (original skips)', 'e2e/browser and terminal scripts'] });
     for (const file of plan) if (!file.reviewed) event({ type: 'warning', path: file.path, message: file.reason });
     if (inventoryOnly) return { runDir, inventory, plan, resources, exitCode: 0 };

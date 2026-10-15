@@ -6,6 +6,7 @@ import { finished } from "node:stream/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { consumeExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
+import { serviceOwner } from "./service.mjs";
 
 const inheritedKeys = [
   "PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
@@ -123,10 +124,10 @@ export function startOwnedServer(command, args, options, { logPath, event, grace
   };
 }
 
-export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTimeoutMs = 30_000 } = {}) {
+export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTimeoutMs = 30_000, requireService = true } = {}) {
   process.umask(0o077);
   const parent = join(root, "test-results", "e2e");
-  mkdirSync(parent, { recursive: true });
+  if (!process.env.PI_WEB_TEST_ARTIFACTS) mkdirSync(parent, { recursive: true });
   const artifacts = process.env.PI_WEB_TEST_ARTIFACTS ?? mkdtempSync(join(parent, `${kind}-`));
   const artifactStat = lstatSync(artifacts);
   if (!artifactStat.isDirectory() || (process.platform !== "win32" && (artifactStat.uid !== process.getuid() || (artifactStat.mode & 0o077)))) {
@@ -162,6 +163,7 @@ export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTim
   let server;
   let browser;
   let launching;
+  let startingService;
   let interrupted = false;
   let finishing;
   const recordError = (type, error, detail = {}) => { allErrors.push(`${type}: ${error.message ?? error}`); event(type, { ...detail, message: String(error.message ?? error) }); };
@@ -210,18 +212,22 @@ export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTim
   }
   function finish() {
     finishing ??= (async () => {
+      const stoppingService = startingService ? server?.stop() : undefined;
+      if (startingService) await diagnose("service-acquisition-settlement-error", () => startingService);
       if (launching) await diagnose("browser-launch-settlement-error", () => launching);
       for (const acquisition of acquisitions) await diagnose("context-acquisition-settlement-error", () => acquisition);
       for (const context of contexts.keys()) await closeContext(context);
       await diagnose("browser-close-error", () => browser?.close());
-      const settlement = await server?.stop();
+      const settlement = await (stoppingService ?? server?.stop());
       const errors = [...allErrors, ...observations.flatMap((info) => info.errors)];
+      if (requireService && settlement?.scope !== "systemd-user-service") errors.push("No installed service settlement was established");
       const failed = interrupted || diagnosticFailure || errors.length > 0 || process.exitCode || settlement && (!settlement.settled || settlement.unexpectedExit || settlement.error || settlement.logError);
       state.status = failed ? "failed" : "passed";
       state.finishedAt = new Date().toISOString(); state.server = settlement ?? null;
       state.errors = errors; state.interrupted = interrupted;
-      state.resourcesSettled = !resourcesUncertain && !launching && acquisitions.size === 0 && !interrupted &&
-        (!settlement || settlement.settled && settlement.processGroup === "absent");
+      state.resourcesSettled = !resourcesUncertain && !launching && !startingService && acquisitions.size === 0 && !interrupted &&
+        (!server ? !requireService : settlement?.settled && (settlement.scope === "systemd-user-service"
+          ? ["absent", "empty"].includes(settlement.cgroup) : !requireService && settlement.processGroup === "absent"));
       event("run-end", { status: state.status });
       try { save(); } catch (error) { recordError("manifest-error", error); process.exitCode = 1; }
       process.off("SIGINT", onInt); process.off("SIGTERM", onTerm);
@@ -233,6 +239,17 @@ export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTim
   return {
     artifacts, fixtureRoot, env, event,
     get agentDir() { return env.PI_CODING_AGENT_DIR; },
+    async startService() {
+      checkActive();
+      if (server) throw new Error("Harness already owns a service");
+      server = serviceOwner({ command: env.E2E_SERVICE_CONTROL, envFile: env.E2E_SERVICE_ENV,
+        env, logPath: join(artifacts, "server.log"), event });
+      startingService = server.start();
+      try { await startingService; } finally { startingService = undefined; }
+      checkActive();
+      return server;
+    },
+    // Low-level child lifecycle fixtures only; never accepted as service evidence.
     startServer(command, args, options) {
       checkActive();
       if (server) throw new Error("Harness already owns a server");

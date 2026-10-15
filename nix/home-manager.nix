@@ -57,6 +57,9 @@ in
         ExecStart = "${lib.getExe cfg.package} --hostname ${cfg.hostname} --port ${toString cfg.port} --no-open";
         Restart = "on-failure";
         RestartSec = 5;
+        # The Node launcher forwards SIGTERM and reports the conventional
+        # 128+15 exit code after its child exits (bin/process-lifecycle.js).
+        SuccessExitStatus = [ 143 ];
         UMask = "0077";
         WorkingDirectory = "%h";
         Environment = [

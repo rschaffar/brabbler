@@ -93,13 +93,15 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
 
   const rememberPosition = useCallback(() => {
     const instance = viewer.current?.getInstance(), item = instance?.getRenderedItems()[0];
-    if (!instance || !item) return;
+    // Initial scroll notifications must not overwrite the position awaiting restoration.
+    if (!instance || !item || !bound.current.has(item.instance)) return;
     const top = instance.getScrollTop(), anchor = item.instance.getNumericScrollAnchor(top);
     if (anchor) model.anchors[model.reading] = { lineNumber: anchor.lineNumber, side: anchor.side ?? "additions", offset: anchor.top - top };
     model.scrollLeft = viewport.current?.scrollLeft ?? 0;
   }, [model]);
   const bindViewer = useCallback(() => {
-    if (!mounted.current) return;
+    // CodeView can render before our passive mount effect; its live ref owns this binding.
+    // React clears the ref on unmount, so a late post-render frame has no item to bind.
     const item = viewer.current?.getInstance()?.getRenderedItems()[0];
     if (!item) return;
     for (const button of item.element.shadowRoot?.querySelectorAll<HTMLElement>("[data-expand-button]") ?? []) {
@@ -132,7 +134,7 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
     }
     const anchor = model.anchors[model.reading];
     if (anchor) viewer.current?.scrollTo({ type: "line", id: model.reading, lineNumber: anchor.lineNumber,
-      side: model.reading === "diff" ? anchor.side : undefined, offset: -anchor.offset, align: "start", behavior: "instant" });
+      side: model.reading === "diff" ? anchor.side : undefined, offset: anchor.offset, align: "start", behavior: "instant" });
     if (viewport.current) viewport.current.scrollLeft = model.scrollLeft;
   }, [ensureContext, model]);
   const options = useMemo<CodeViewReactOptions<undefined, undefined>>(() => ({
