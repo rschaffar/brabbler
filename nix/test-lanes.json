@@ -4,6 +4,11 @@
   "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. The requested eight-worker default still requires native execution acceptance with unchanged deadlines. Re-review when resource/fixture behavior changes.",
   "files": [
     {
+      "path": "lib/eslint-compatibility.test.mjs",
+      "lane": "F",
+      "reason": "In-process lintText on synthetic JSX/TypeScript using the real project config; reads only installed lint modules/config, no source writes, SDK, network or shared process mutation."
+    },
+    {
       "path": "components/file-tab-state.test.mjs",
       "lane": "F",
       "reason": "Read test and file-tab-state.ts: immutable in-memory tab transformations; type-only imports, no browser/IO."
