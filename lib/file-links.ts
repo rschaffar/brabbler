@@ -102,11 +102,17 @@ function fileUrlToPath(href: string): string | null {
   }
 }
 
-export function resolveLocalFileHref(
+export type LocalFileLinkBlockReason = "outside-root" | "missing-base";
+export type LocalFileLinkResolution =
+  | { kind: "local"; filePath: string }
+  | { kind: "blocked"; reason: LocalFileLinkBlockReason };
+
+/** Distinguish rejected relative file links from ordinary web/app links. */
+export function resolveLocalFileLink(
   href: string | undefined,
   baseDir?: string,
   relativeRoot = baseDir,
-): string | null {
+): LocalFileLinkResolution | null {
   if (!href) return null;
 
   const cleanHref = href.split("#", 1)[0].split("?", 1)[0].trim();
@@ -135,7 +141,8 @@ export function resolveLocalFileHref(
   } else if (normalizedHref.startsWith("/")) {
     candidate = normalizedHref;
     candidateKind = "absolute";
-  } else if (baseDir && looksLikeRelativeFileHref(normalizedHref)) {
+  } else if (looksLikeRelativeFileHref(normalizedHref)) {
+    if (!baseDir) return { kind: "blocked", reason: "missing-base" };
     candidate = `${normalizeFilePathSlashes(baseDir).replace(/\/+$/, "")}/${normalizedHref}`;
     candidateKind = "relative";
   }
@@ -143,8 +150,20 @@ export function resolveLocalFileHref(
   if (!candidate) return null;
 
   const filePath = stripLineSuffix(normalizeLocalPath(candidate));
-  if (candidateKind === "relative" && relativeRoot && !isPathInside(filePath, relativeRoot)) return null;
-  return filePath;
+  if (candidateKind === "relative" && relativeRoot && !isPathInside(filePath, relativeRoot)) {
+    return { kind: "blocked", reason: "outside-root" };
+  }
+  return { kind: "local", filePath };
+}
+
+/** Path-only compatibility API; rejection never changes the file-access boundary. */
+export function resolveLocalFileHref(
+  href: string | undefined,
+  baseDir?: string,
+  relativeRoot = baseDir,
+): string | null {
+  const result = resolveLocalFileLink(href, baseDir, relativeRoot);
+  return result?.kind === "local" ? result.filePath : null;
 }
 
 function positiveCoordinate(value: string | undefined): number | undefined {

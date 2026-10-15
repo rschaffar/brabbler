@@ -453,6 +453,8 @@ export const enLocale: LocalePlugin = {
     "chat.expandProcess": "Expand process details",
     "chat.filesWritten": "Files changed",
     "chat.openWrittenFile": "Open {name}",
+    "fileLink.outsideRoot": "This relative file link points outside the allowed base directory. Use an absolute filesystem path instead. File access permissions still apply.",
+    "fileLink.missingBase": "This relative file link has no working directory to resolve against. Use an absolute filesystem path instead. File access permissions still apply.",
     "chat.loadEarlier": "Scroll up to load earlier messages",
     "chat.scrollToLatest": "Scroll to latest",
     "chat.extensionRequest": "extension request",

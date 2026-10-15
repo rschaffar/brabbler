@@ -46,6 +46,33 @@ test("keeps local file markdown links in the app", () => {
   assert.doesNotMatch(fileUrlHtml, /target=|rel=|\snode=/);
 });
 
+test("explains rejected relative file links instead of making them browser links", () => {
+  const html = renderMarkdown("[sibling](../sibling/file.yml#L14)");
+  assert.match(html, /<button[^>]*type="button"[^>]*title="This relative file link points outside/);
+  assert.match(html, /aria-expanded="false"[^>]*>sibling<\/button>/);
+  assert.doesNotMatch(html, /<a |href=|target=/);
+  const missingBase = renderMarkdown("[file](src/file.ts)", { cwd: undefined });
+  assert.match(missingBase, /no working directory to resolve against/);
+  assert.doesNotMatch(missingBase, /<a /);
+});
+
+test("keeps absolute sibling links local and web/app links navigable", () => {
+  const html = renderMarkdown("[sibling](/home/me/sibling/file.yml#L14)");
+  assert.match(html, /<a href="\/home\/me\/sibling\/file.yml#L14">sibling<\/a>/);
+  for (const href of ["https://example.com/file.ts", "//example.com/file.ts", "/api/files/a.ts", "#heading"]) {
+    assert.match(renderMarkdown(`[web](${href})`), /<a /, href);
+    assert.doesNotMatch(renderMarkdown(`[web](${href})`), /blocked-file-link/, href);
+  }
+});
+
+test("rejected links do not nest inline references or image-preview buttons", () => {
+  for (const markdown of ["[`src/file.ts:14`](../sibling/file.ts#L14)", "[![diagram](diagram.png)](../sibling/file.ts)"]) {
+    const html = renderMarkdown(markdown);
+    assert.equal((html.match(/<button /g) ?? []).length, 1);
+    assert.doesNotMatch(html, /<a /);
+  }
+});
+
 test("preserves basename-colon and Windows drive links through URL sanitization", () => {
   assert.match(renderMarkdown("[readme](README.md:25)"), /href="\.\/README\.md:25"/);
   assert.match(renderMarkdown("[code](C:/repo/code.ts#L36)"), /href="file:\/\/\/C:\/repo\/code\.ts#L36"/);

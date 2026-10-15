@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo, type ComponentProps, type CSSProperties, type MouseEvent } from "react";
+import { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo, type ComponentProps, type CSSProperties, type MouseEvent } from "react";
 import {
   Prism as SyntaxHighlighter,
   createElement as renderSyntaxNode,
@@ -8,7 +8,7 @@ import {
 } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import {
   DOCX_PREVIEW_MAX_BYTES,
@@ -19,12 +19,13 @@ import {
   isVideoPath,
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
-import { parseFileLineTarget, parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp, type FileLineTarget, type OpenFileLink } from "@/lib/file-links";
+import { parseFileLineTarget, parsePdfPageFragment, resolveLocalFileHref, resolveLocalFileLink, shouldOpenLocalFileInApp, type FileLineTarget, type OpenFileLink } from "@/lib/file-links";
 import { navigateToFileLine } from "@/lib/file-line-navigation";
 import { rehypeMarkdownSourceLines } from "@/lib/markdown-source-lines";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, markdownUrlTransform, normalizeDisplayMathWithSourceMap } from "@/lib/markdown";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
+import { BlockedFileLink } from "./BlockedFileLink";
 import { FrontmatterCard } from "./FrontmatterCard";
 import { CommittedPatchDiff } from "./CommittedPatchDiff";
 import type { GitFileDiffResponse } from "@/lib/git-types";
@@ -69,6 +70,26 @@ interface FileData {
   size: number;
   nextOffset: number;
   truncated: boolean;
+}
+
+const MarkdownPreviewLinkContext = createContext<{ baseDir?: string; relativeRoot?: string; onOpenFile?: OpenFileLink }>({});
+
+// A stable element type keeps rejection feedback and keyboard focus across watcher reads.
+function MarkdownPreviewLink({ href, children, ...props }: ComponentProps<"a"> & ExtraProps) {
+  delete props.node;
+  const { baseDir, relativeRoot, onOpenFile } = useContext(MarkdownPreviewLinkContext);
+  const resolution = onOpenFile ? resolveLocalFileLink(href, baseDir, relativeRoot) : null;
+  if (resolution?.kind === "blocked") {
+    return <BlockedFileLink key={href} reason={resolution.reason}>{children}</BlockedFileLink>;
+  }
+  const linkedFile = resolution?.kind === "local" ? resolution.filePath : null;
+  if (!linkedFile || !onOpenFile) return <a href={href} {...props}>{children}</a>;
+  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!shouldOpenLocalFileInApp(event)) return;
+    event.preventDefault();
+    onOpenFile(linkedFile, parsePdfPageFragment(href) ?? undefined, parseFileLineTarget(href));
+  };
+  return <a href={href} {...props} onClick={handleClick}>{children}</a>;
 }
 
 // These functions are React element types, not render callbacks. Keep both
@@ -1819,29 +1840,14 @@ function TextFileViewer({
             {frontmatter?.data && <div data-source-line-start={1} data-source-line-end={viewerContent.slice(0, viewerContent.length - frontmatter.rest.length).split(/\r?\n/).length - 1}>
               <FrontmatterCard data={frontmatter.data} />
             </div>}
+            <MarkdownPreviewLinkContext.Provider value={{ baseDir: markdownDirectory, relativeRoot: cwd ?? markdownDirectory, onOpenFile }}>
             <ReactMarkdown
               remarkPlugins={markdownPreviewRemarkPlugins}
               rehypePlugins={positionedMarkdownPlugins}
               urlTransform={onOpenFile ? markdownUrlTransform : undefined}
               components={{
                 ...markdownCodeComponents,
-                a({ href, children, ...props }) {
-                  delete props.node;
-                  const linkedFile = onOpenFile
-                    ? resolveLocalFileHref(href, markdownDirectory, cwd ?? markdownDirectory)
-                    : null;
-                  if (!linkedFile || !onOpenFile) {
-                    return <a href={href} {...props}>{children}</a>;
-                  }
-
-                  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-                    if (!shouldOpenLocalFileInApp(event)) return;
-                    event.preventDefault();
-                    onOpenFile(linkedFile, parsePdfPageFragment(href) ?? undefined, parseFileLineTarget(href));
-                  };
-
-                  return <a href={href} {...props} onClick={handleClick}>{children}</a>;
-                },
+                a: MarkdownPreviewLink,
                 img({ src, alt, ...props }) {
                   delete props.node;
                   const imagePath = typeof src === "string"
@@ -1858,6 +1864,7 @@ function TextFileViewer({
             >
               {markdownPreview.markdown}
             </ReactMarkdown>
+            </MarkdownPreviewLinkContext.Provider>
           </div>
         ) : useLightweightSource ? (
           <div
