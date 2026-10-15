@@ -33,6 +33,65 @@ const render = (patch, hasBinaryChanges = false) => renderToStaticMarkup(React.c
   patch, hasBinaryChanges, before: "parent", after: "commit",
 }));
 
+// Exercise the actual callbacks with public viewer doubles, including layout before passive effects.
+// SSR cannot exercise CodeView's browser lifecycle; the unchanged VM collapse/reopen assertion does.
+function positionCallbacks(bindings) {
+  const ast = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const declarations = new Map();
+  const names = ["rememberPosition", "bindViewer"];
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node) && names.includes(node.name.getText(ast))) declarations.set(node.name.getText(ast), node.getText(ast));
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  assert.equal(declarations.size, names.length);
+  const code = ts.transpileModule([...declarations.values()].map((text) => `const ${text};`).join("\n"), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  return new Function(...Object.keys(bindings), `${code}\nreturn { ${names.join(", ")} };`)(...Object.values(bindings));
+}
+
+function retainedPosition(mounted = false) {
+  const anchor = { lineNumber: 50, side: "additions", offset: -7 };
+  const model = { reading: "after", anchors: { after: anchor }, scrollLeft: 19 };
+  let top = 0;
+  const calls = [];
+  const renderer = { getNumericScrollAnchor: () => top === 0 ? { lineNumber: 1, top: 0 } : { lineNumber: 50, top: 1000 } };
+  const item = { type: "file", instance: renderer, element: {} };
+  const instance = { getRenderedItems: () => [item], getScrollTop: () => top };
+  const viewer = { current: { getInstance: () => instance, scrollTo: (target) => {
+    calls.push(target);
+    // Pierre's start alignment is lineTop - stickyOffset - offset (headers disabled here).
+    top = 1000 - target.offset;
+  } } };
+  const viewport = { current: { scrollLeft: 0 } }, bound = { current: new WeakSet() };
+  const callbacks = positionCallbacks({ model, viewer, viewport, bound, mounted: { current: mounted },
+    accessibleButtons: { current: new WeakSet() }, ensureContext: () => {}, useCallback: (callback) => callback });
+  return { ...callbacks, anchor, model, viewer, viewport, bound, renderer, calls };
+}
+
+test("initial viewport notifications cannot replace a retained anchor before binding", () => {
+  const state = retainedPosition();
+  state.rememberPosition();
+  assert.equal(state.model.anchors.after, state.anchor);
+  assert.equal(state.model.scrollLeft, 19);
+});
+
+for (const mounted of [false, true]) test(`retained After position restores once ${mounted ? "after" : "before"} passive mount, without offset drift`, () => {
+  const state = retainedPosition(mounted);
+  state.bindViewer();
+  assert.deepEqual(state.calls, [{ type: "line", id: "after", lineNumber: 50, side: undefined, offset: -7, align: "start", behavior: "instant" }]);
+  assert.equal(state.viewport.current.scrollLeft, 19);
+  state.rememberPosition();
+  assert.deepEqual(state.model.anchors.after, state.anchor);
+  state.bindViewer();
+  assert.equal(state.calls.length, 1);
+  state.viewer.current = null;
+  state.bindViewer(); // A queued post-render frame after unmount must be harmless.
+  state.rememberPosition();
+  assert.deepEqual(state.model.anchors.after, state.anchor);
+});
+
 const modified = `diff --git a/notes.txt b/notes.txt
 index 4824a54..d914290 100644
 --- a/notes.txt
