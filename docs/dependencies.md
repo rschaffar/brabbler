@@ -40,16 +40,32 @@ offline reopening, pending-login ownership, refresh joining/serialization and
 metadata-only invalidation. All catalog HTTP is stubbed; these tests do not replace
 parent-owned static, session, browser, terminal or plugin acceptance on SDK upgrades.
 
-## Deferred compiler/linter majors
+## Lint compatibility and deferred compiler major
 
-**Retraction of the immediate ESLint 10 recommendation:** Next 16.4's current
-import, React and accessibility plugins reject ESLint 10 in their declared peer
-ranges (eslint-plugin-import 2.32.0, eslint-plugin-react 7.37.5 and
-eslint-plugin-jsx-a11y 6.10.2). Retain ESLint 9.39.5 as compatibility debt, not a
-claim that the unsupported major has become supported. Revisit when the complete
-Next plugin graph supports 10; do not use legacy-peer-deps or disable lint rules.
-Next's newer React Hooks checks remain enabled, with affected root/demo hooks
-adapted rather than suppressed.
+**Earlier ESLint 10 hold withdrawn after verification:** root and demo resolve
+ESLint **10.12.0** with the unchanged Next **16.4.0** presets. The earlier hold
+treated plugin peer-range exclusions as a runtime blocker; that conclusion was
+too strong. Next documents ESLint 10 compatibility and supplies compatibility
+adapters. Normal npm installation and clean `npm ci` reproduce the lint toolchain
+without force or legacy-peer-deps flags, changed peer declarations, overrides for
+ESLint, or disabled rules.
+
+This remains a **plugin peer-support exception**: eslint-plugin-import 2.32.0,
+eslint-plugin-react 7.37.5 and eslint-plugin-jsx-a11y 6.10.2 exclude ESLint 10 from
+their published peer ranges, so npm emits peer warnings. Next's compatibility
+support and local verification do not change those upstream declarations or
+certify every rule. Revisit the exception when the plugins publish native support;
+do not suppress warnings or replace the preset solely to remove metadata lag.
+Existing React Hooks rule settings are unchanged by this upgrade.
+
+`lib/eslint-compatibility.test.mjs` exercises the actual selected project config,
+not a reduced test preset: invalid accessibility attributes, missing image text,
+React keys and conditional Hooks, anonymous exports, explicit TypeScript `any`,
+Next image checks, and a clean typed-JSX control. The root offline suite discovers
+it automatically. Run it independently against the demo's installed dependencies
+from `demo/` with `node --test ../lib/eslint-compatibility.test.mjs`. Both projects
+retain their original file selection and enabled rule options in the migration
+comparison. See [Next's ESLint guide](https://nextjs.org/docs/app/api-reference/config/eslint).
 
 **Defer TypeScript 7:** typescript-eslint 8.71.2 declares TypeScript
 `>=4.8.4 <6.1.0`, excluding 7. Keep TypeScript 5.9.3 until parser/plugin support
