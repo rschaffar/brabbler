@@ -25,16 +25,17 @@
             modules = modules pkgs;
             src = (sources pkgs).tests;
           };
-          e2e = import ./nix/vm-test.nix {
-            inherit pkgs home-manager;
+          mkE2E = { workers ? 2 }: import ./nix/vm-test.nix {
+            inherit pkgs home-manager workers;
             package = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-web;
             modules = modules pkgs;
             src = (sources pkgs).tests;
             homeManagerModule = self.homeManagerModules.default;
           };
+          e2e = mkE2E { };
         in {
           inherit (core) core mkCore;
-          inherit e2e;
+          inherit e2e mkE2E;
           apps = {
             test-core = {
               type = "app";
@@ -56,8 +57,8 @@
               type = "app";
               program = pkgs.lib.getExe (pkgs.writeShellApplication {
                 name = "pi-web-test-e2e";
-                runtimeInputs = [ pkgs.nodejs_22 pkgs.python3 ];
-                text = ''exec node ${self}/nix/run-vm.mjs ${e2e.driver} "$@"'';
+                runtimeInputs = [ pkgs.nodejs_22 pkgs.python3 pkgs.nix ];
+                text = ''exec node ${self}/nix/run-vm.mjs ${self} ${pkgs.stdenv.hostPlatform.system} "$@"'';
               });
             };
           };
@@ -81,6 +82,7 @@
       homeManagerModules.default = import ./nix/home-manager.nix { inherit self; };
       checks = forSystems linuxSystems (pkgs: { inherit (tests pkgs) core e2e; });
       lib.coreCheck = forSystems linuxSystems (pkgs: (tests pkgs).mkCore);
+      lib.vmTest = forSystems linuxSystems (pkgs: (tests pkgs).mkE2E);
       devShells = forSystems linuxSystems (pkgs: {
         default = pkgs.mkShell {
           packages = [ pkgs.nodejs_22 pkgs.git pkgs.python3 ];

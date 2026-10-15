@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { availableResources } from './resources.mjs';
 
 export const ROOTS = Object.freeze(['app', 'components', 'hooks', 'lib', 'public', 'plugins']);
 const DEFAULT_JOBS = 8;
@@ -68,30 +69,8 @@ export function planFiles(inventory, manifest, selection = []) {
   }));
 }
 
-function availableCpus() {
-  let count = os.availableParallelism();
-  // Affinity alone can exceed a cgroup v2 quota. Read only; never manage the web/user cgroup.
-  const base = '/sys/fs/cgroup';
-  try {
-    const membership = fs.readFileSync('/proc/self/cgroup', 'utf8').match(/^0::(.*)$/m)?.[1];
-    let directory = membership ? path.resolve(base, `.${membership}`) : base;
-    if (directory !== base && !directory.startsWith(base + '/')) directory = base;
-    for (;;) {
-      try {
-        const [quota, period] = fs.readFileSync(path.join(directory, 'cpu.max'), 'utf8').trim().split(/\s+/);
-        if (quota !== 'max' && Number(quota) > 0 && Number(period) > 0) {
-          count = Math.min(count, Math.max(1, Math.floor(Number(quota) / Number(period))));
-        }
-      } catch { /* No v2 quota at this level; still honor affinity and the explicit Nix cap. */ }
-      if (directory === base) break;
-      directory = path.dirname(directory);
-    }
-  } catch { /* Non-v2 hosts retain affinity/Nix admission. */ }
-  return count;
-}
-
 export function resourceProfile({ requested = DEFAULT_JOBS, cores = process.env.NIX_BUILD_CORES,
-  cpus = availableCpus(), memory = Math.min(os.freemem(), process.availableMemory?.() ?? Infinity) } = {}) {
+  cpus = availableResources().cpus, memory = availableResources().memory } = {}) {
   if (!validJobs(requested)) throw new Error(`jobs must be an integer from 1 to ${MAX_JOBS}`);
   if (cores !== undefined && (!/^\d+$/.test(cores) || !Number.isSafeInteger(Number(cores)))) throw new Error('Invalid NIX_BUILD_CORES');
   const nixCores = Number(cores) > 0 ? Number(cores) : null;

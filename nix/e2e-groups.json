@@ -1,5 +1,8 @@
 {
-  "general": { "suite": "browser", "selector": null },
+  "state": { "suite": "browser", "selector": "E2E_STATE_ONLY" },
+  "history": { "suite": "browser", "selector": "E2E_HISTORY_ONLY" },
+  "extension-dialogs": { "suite": "browser", "selector": "E2E_EXTENSION_DIALOGS_ONLY" },
+  "mobile-sidebar": { "suite": "browser", "selector": "E2E_MOBILE_SIDEBAR_ONLY" },
   "worktrees": { "suite": "browser", "selector": "E2E_WORKTREE_MANAGER_ONLY" },
   "session-launch": { "suite": "browser", "selector": "E2E_SESSION_LAUNCH_ONLY" },
   "running-forks": { "suite": "browser", "selector": "E2E_RUNNING_FORKS_ONLY" },

@@ -1,126 +1,143 @@
 # Packaged-service browser and terminal acceptance
 
 All acceptance runs against the **actual Nix-built application**, started through
-its installed launcher and real Home Manager systemd user unit in one NixOS VM.
+its installed launcher and real Home Manager systemd user units in one NixOS VM.
 There is no development-server, in-place, host-service or non-Nix fallback.
 
 ```sh
-# Complete core + packaged-service acceptance (may reuse cached check outputs):
-nix flake check -L
-# Fresh full VM execution:
-nix run .#test -- e2e
-# Fresh focused iteration, not full acceptance:
+nix flake check -L                         # complete, cacheable core + VM checks
+nix run .#test -- all                      # fresh complete acceptance, one snapshot
+nix run .#test -- e2e                      # fresh full VM, resource-admitted lanes
+nix run .#test -- e2e --workers 2           # same coverage, explicit resource profile
+# Focused iteration, NOT full acceptance:
 nix run .#test -- e2e --group markdown
 nix run .#test -- e2e --group terminal
 nix run .#test -- e2e --group git-plugin
 ```
 
 Nix realizes pinned dependencies/package/driver automatically. No `npm ci`,
-Playwright download or checkout-local `node_modules` is required. The native Linux
-host must expose KVM to the invoking user/Nix builder. See [testing](../docs/testing.md)
-for source snapshots, optional offline operation, resource budgets and cached versus
-fresh evidence. Production builds occur only in isolated Nix builders, never in a
-working checkout's `.next`.
+Playwright download or checkout-local `node_modules` is required. Native Linux/KVM
+is mandatory. See [testing](../docs/testing.md) for safe snapshots, offline operation,
+resource admission and cached versus fresh evidence. Production builds occur only
+in isolated Nix builders, never in a working checkout's `.next`.
 
-## Complete group inventory
+## Disjoint coverage inventory
 
-`nix/e2e-groups.json` is the single selection inventory used by the CLI and VM
-script. Full acceptance executes every group, not merely the browser suite's
-historical unselected branch. A core regression checks that every browser
-`E2E_*_ONLY` selector appears exactly once. Selectors remain fixture internals;
-users choose named groups, never combine environment switches.
+`nix/e2e-groups.json` is the CLI/VM inventory: **23 browser groups and terminal**.
+`e2e/scenarios.mjs` assigns reviewed scenario/input variants to exactly one owner.
+The independent baseline inventory/order tests protect the extraction; runtime
+`coverage.json` records completion only after each whole assertion chain returns.
+Missing, duplicate, unowned, reordered or retried scenarios fail. Browser selection
+must be exactly one known selector before allocating fixtures. There is no hidden
+unselected `general` aggregate or account/API footer in unrelated focused groups.
 
 | Group | Coverage |
 | --- | --- |
-| `general` | Session pagination/branches, rendering/scrolling, sidebar, files, archive actions, inline/browser questions, accounts, Activity/privacy basics, Git Explorer and shared flows |
+| `state` | API pagination/errors, externally appended JSONL, account validation/redaction/defaults/concurrent writes, live AGENTS reload and dependent durable account selection/deletion |
+| `history` | Version reload, session/mobile identity, observer pagination/node identity, recovery acknowledgement, rendering/thinking/compaction, minimap and reading/branch cancellation chain |
+| `extension-dialogs` | Complete inline extension select/input/editor dialogs, keyboard/focus/expiry and retained receipts |
+| `mobile-sidebar` | Compact action geometry/keyboard, archive/search scopes, reconciled inline restore and subsequent project move |
 | `worktrees` | Management inventory, paging, trust boundaries, stale/lost preparation recovery and bounded cleanup receipts |
-| `session-launch` | Real SDK tool, exact approvals/settings, independent faux-provider child sessions and receipt navigation |
-| `running-forks` | Historical/root/quoted forks while the original real SDK extension waits for input |
-| `model-speed` | Native model speed writes, canonical packaged disk reader, persistence and ambiguous acknowledgement reconciliation |
+| `session-launch` | Real SDK tool, exact approvals/settings, independent faux-provider sessions and receipt navigation |
+| `running-forks` | Historical/root/quoted forks while the original SDK extension waits for input |
+| `model-speed` | Native writes, canonical packaged disk reader, persistence and ambiguous acknowledgement reconciliation |
 | `trust` | Worktree/project grants, revocation and restriction |
 | `git-plugin` | Bundled Git Workflow, approvals, immutable reviews, receipts, expiry/reconnect and cleanup |
-| `appearance` | Default/full/reading widths, wide-screen legacy preferences, typography and reload |
-| `timestamps` | Message timestamp presentation |
-| `diff-context` | Explorer/Files immutable 5,000-line diff contexts, navigation, wrapping and Wide view |
-| `markdown` | Markdown/KaTeX security, Mermaid math/themes/SVG, preview state, file links and live user-file changes |
-| `file-edit` | File editor/read-only/diff behavior |
-| `archive` | Focused archive/restore flow |
-| `privacy` | Project concealment/loading/failure behavior, independent contexts and tablet coverage |
-| `activity` | Full Activity overview, real worktree/subagent fixtures and tablet coverage |
-| `accounts` | Provider account selection and native OAuth metadata with synthetic browser responses |
-| `questions` | Browser-native mixed question sets, draft/reload/cancel/receipts and tool-registration assertions |
-| `session-links` | Desktop/mobile link copying and following the copied link |
+| `appearance` | Default/full/reading widths, numeric legacy preference and fresh preference inputs, typography/reload |
+| `timestamps` | Both en-US and legacy Chinese locale/preference variants |
+| `diff-context` | Loaded Workflow absence, Git Explorer immutable contexts/navigation/wrapping/Wide and integrated merge graph, in prerequisite order |
+| `markdown` | Markdown/KaTeX security, Mermaid math/themes/SVG, preview state, file links and real user-file polling |
+| `file-edit` | Panel setup, all modified/added/deleted/context diff variants, editor/read-only/draft retention |
+| `archive` | Focused archive/restore flow, distinct from the mobile search/restore/move chain |
+| `privacy` | Concealment/loading/failure behavior, independent contexts and tablet coverage |
+| `activity` | Full overview, real worktree/subagent/recovery fixtures and tablet coverage |
+| `accounts` | Separate created/deleted and shared-device OAuth variants, retaining locale and mobile-height differences |
+| `questions` | Native tool ownership plus mixed question sets, draft/reload/cancel/receipts |
+| `session-links` | Desktop/mobile copying and following the copied link |
 | `bulk` | Bulk archive/conflict/retry/restore/delete |
-| `move` | Full destination picker, plain/Git/worktree/Browse paths, superseded reads and proposal-only changes |
+| `move` | Full picker, plain/Git/worktree/Browse paths, superseded reads and proposal-only changes |
 | `terminal` | Real shell/PTY, fonts, reconnect/restart/exit, creation cancellation and workspace/Explorer coexistence |
 
-Existing viewport-specific assertions are retained, including desktop/mobile,
-focused wide-screen cases and 700px Activity/privacy coverage. All groups use the
-same immutable package; one guest boot serves the entire run. Service stop, fresh
-fixture roots and fresh browser contexts isolate groups. A selected group is not
-full acceptance, even if its assertions overlap the general suite.
+Preserve distinct viewport heights/locales/preferences, not just desktop/mobile
+widths. History desktop acknowledges recovery before fresh mobile checks it;
+Explorer precedes merge mutation; file panel precedes diff/edit draft checks.
+Real polling, submission acknowledgement and expiry observations keep their original
+deadlines. Embedded assertions in different integration chains are not duplicates.
 
-## Guest lifecycle and boundaries
+## One guest, isolated service lanes
 
-1. Boot one restricted-network NixOS guest and activate the **real pinned Home
-   Manager NixOS integration** for an ordinary user.
-2. Start that user's manager after initial activation. Its generated
-   `default.target.wants` starts the real application unit. Verify readiness and
-   stop it before the scenario groups.
-3. For each group, create new private synthetic fixture/evidence directories.
-   Seed sessions, repositories and extensions before starting the application.
-   Service and runner share identical physical paths/UID and a private fixture
-   environment supplied through the unit's runtime environment file.
-4. Start only that fixed user unit. Bind its `InvocationID`, main PID, restart
-   counter and cgroup; unexpected exit/restart fails even if the unit is active
-   again. A successful `systemctl` child alone is not application evidence.
-5. Run pinned headless Chromium in the guest against guest loopback. Capture all
-   context traces, errors, responses and local 5xx. Real Git, native `node-pty`,
-   SDK tools and packaged fonts/assets are exercised.
-6. Stop the unit, observe inactive state and empty/absent descendant cgroup,
-   collect journals and preserve the per-group manifest. Do not start another
-   group against an unsettled service.
-7. Verify a real service restart retains the last group's session data. Export
-   evidence before tearing the VM down.
+Fresh full runs admit **1..4 lanes** using effective CPU/memory: two vCPUs and 4 GiB
+per lane plus 2 GiB host headroom. Explicit `--workers` refuses insufficient budget;
+focused selections default to one. The cacheable check declares two lanes. All
+profiles execute the same complete inventory/package/deadlines. Resource estimates
+are not reservations; keep deliberate contention tests separate.
 
-The VM has no host port forwarding or unrestricted external network. The package
-and test support are read-only store inputs. No host session/account/credential
-files, installed service, developer `.next` or source/dependency copies are used.
-Only synthetic provider data and deterministic fixture providers are present.
-Normal browser acceptance does not require real provider access.
+`nix/vm-test.nix` generates one immutable root-owned registry and, per lane, a
+separate ordinary user (`t0`…`t3`, UIDs 1000…1003), private HOME, fixed guest loopback
+port (30141…30144), environment file, user manager and real Home Manager
+`pi-web.service`. Each controller checks the guest marker and its literal UID,
+forces its own bus/runtime path and names only that unit. The harness validates the
+registry/package/controller/port binding; it never trusts ambient HOME for ownership.
 
-Application-source helpers and generated fixture extensions resolve against the
-**installed package**, not a source checkout. Live file tests modify synthetic
-project Markdown/session files, not application code; they remain valid under
-production execution without HMR.
+1. Boot one restricted-network guest. Activate real pinned Home Manager for every
+   configured lane. Start each user manager only after activation, proving its
+   generated `default.target.wants` link starts the application. Verify lane-distinct
+   smoke sessions, production UMask and live generation, then stop.
+2. Freeze a deterministic duration-weighted partition (`artifacts/plan.json`). Each
+   lane executes its queue serially; queues overlap. No work stealing or concurrent
+   driver-machine connections. Each group gets private physical fixtures/evidence
+   and a separate Node process, so process-global fixture environment changes cannot
+   affect another lane.
+3. A unique transient **system** runner unit, with the lane's unprivileged User and
+   complete cgroup supervision, owns the suite/Chromium. It does not replace the
+   application unit. Application startup still uses the real installed launcher and
+   fixed Home Manager user service.
+4. Bind application InvocationID/PID/restart count/**cgroup**. Capture every context
+   trace, errors/responses/local 5xx and a generation-filtered service journal.
+   Successful control commands are not proof the application stayed alive.
+5. Before another group uses a lane, require passing harness/coverage receipts,
+   stopped application, closed port and empty/absent runner descendants. A failure
+   closes admission across all lanes; already-started groups drain without deadline
+   changes. Pending groups remain explicitly not run.
+6. On success, verify real restart/persistence against each used lane's final fixture.
+   Finally settle **all runner cgroups before final application stops**, preventing
+   late service acquisition. Collect every lane independently, even after failure.
+
+The VM has no host port forwarding, host store mount or unrestricted external
+network. Its read-only closure image contains only declared package/test inputs;
+its writable store overlay belongs to the guest. No live host accounts/credentials,
+installed service, developer `.next` or source/dependency copies are used. Helpers
+and generated extensions resolve against the **installed package**. Live-file tests
+modify synthetic projects/session data, not application source or HMR state.
 
 ## Diagnostics and settlement
 
-Fresh execution prints its private `/tmp/pwv-*` root. `driver.log`, JUnit and
-`run.json` identify the exact driver, selection, timestamps, outcome, observed
-settlement and bulk cleanup. Guest evidence contains the system journal and one
-directory per group:
+Fresh execution prints its private `/tmp/pwv-*` root. `run.json`, `realization.log`,
+`driver.log`, JUnit, `artifacts/plan.json` and `artifacts/acceptance.json` identify the
+exact package, resource profile, partition, group/lane timing, result, collection and
+settlement. Guest diagnostics are staged under a root-owned directory before export. Reject
+symlinks/special entries there before the pinned driver's host copytree can follow
+links. Every run exercises that guard with a synthetic host-only sentinel:
 
-- `run.json`: package root, fixture root, status, original service generation,
-  stop/cgroup evidence and `resourcesSettled`.
-- `suite.log`, `server.log`: original test output and service journal.
-- `events.jsonl`: browser console/page errors, failed requests, local 5xx,
-  context/trace operations and requested/observed service lifecycle events.
-- `context-N.zip`: a trace for every context, on success and failure; failed
-  contexts also receive bounded screenshot attempts.
+- `artifacts/guest/pi-web-evidence/journal.log`: complete boot journal once.
+- `…/lN/runners/<group>.log`: original suite output from its owned transient unit.
+- `…/lN/artifacts/<group>/run.json`: fixture/package, service generation and settlement.
+- `…/<group>/coverage.json`: exact expected/completed scenario IDs.
+- `…/<group>/server.log`, `events.jsonl`, `context-N.zip` and failure screenshots.
+- `…/lN/<group>-failed-fixture.tar.gz`: failed/uncertain synthetic fixture evidence.
 
-Browser assertions keep their existing deadlines. Browser/context acquisitions,
-trace exports and service stop operations have separate bounded diagnostics;
-resource uncertainty or failed collection fails acceptance rather than authorizing
-cleanup. Expected conflicts must be individually corroborated; no blanket retries,
-5xx/console suppression, forced clicks or longer deadlines to hide contention.
+The version-2 receipt must match the exact pre-boot plan. Every lane's collection,
+runner and application settlement is required; passing acceptance additionally needs
+all selected groups, scenario completion, activation and used-lane restart proofs.
+Failed assertions may still permit cleanup after complete retained evidence and
+settlement. One incomplete/unsafe lane, interruption or unknown cgroup retains bulk.
 
-After driver/descendant settlement, the owner removes only its own pinned runtime,
-temporary and cache directories, including VM disks/exchange copies. Evidence is
-separate and retained. Interrupted/uncertain runs retain bulk. A cleanup refusal is
-reported, not silently accepted. Existing failed roots and other tasks' resources
-require separate bounded cleanup authority; see the [retention policy](../docs/testing.md#diagnostics-and-retention).
+Browser/context acquisition, traces and service stops retain separate bounds. No
+blanket retries, console/5xx suppression, forced clicks or longer browser deadlines
+hide contention. After confirmed driver/descendant settlement and valid evidence,
+only that invocation's pinned runtime/tmp/cache bulk is removed; diagnostics remain.
+Existing failures and other tasks' resources require separate bounded cleanup; see
+[retention](../docs/testing.md#diagnostics-and-retention).
 
-Core harness/service-owner regressions run in `checks.core`. Those contract tests
-are not browser acceptance, and VM acceptance grants no host operation authority,
-integration, publication or deployment permission.
+Core harness/service-owner contracts are not native browser acceptance. VM testing
+grants no host operation, integration, publication or deployment authority.

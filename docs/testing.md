@@ -13,7 +13,9 @@ From the physical Linux working-tree root:
 # Complete cacheable acceptance for the current native system:
 nix flake check -L
 
-# Fresh execution, including untracked source/test helpers:
+# Fresh complete acceptance, one verified snapshot and resource-aware overlap:
+nix run .#test -- all
+# Or execute the two independent levels separately:
 nix run .#test -- core
 nix run .#test -- e2e
 
@@ -101,7 +103,8 @@ exclusively until its scheduling classification is reviewed.
 
 - Default desired core file workers: **8**; `--jobs` accepts canonical **1..32**.
   Effective workers are bounded by CPU affinity/quota, supplied Nix allocation and
-  memory (1 GiB reserve plus 2 GiB per worker).
+  memory (1 GiB reserve plus 2 GiB per worker). Linux admission uses
+  `MemAvailable`, not only unused pages; ancestor cgroup headroom remains binding.
 - Files use private HOME/XDG/agent/TMP, pinned Git and Node file concurrency 1.
   Reviewed F/N files share the bounded pool; latency-sensitive E files drain it
   and run alone. Existing opt-in native test skips remain explicit in inventory.
@@ -116,8 +119,23 @@ are per invocation, not host reservations. One owner coordinates concurrent runs
 source export and CPU/RAM budgets; pause source writers during export. Fresh
 entry points bound each internal realization to two Nix jobs/four build cores;
 core workers are additionally clamped to that allocation. Outer Nix options control
-only the outer realization, not an already running internal client. The VM uses
-4 GiB/two vCPUs. Keep deliberate contention tests separate from normal acceptance.
+only the outer realization, not an already running internal client.
+
+VM profiles contain **1..4 isolated service lanes**, with two vCPUs and 4 GiB per
+lane, plus a 16 GiB sparse state disk. Fresh E2E chooses the largest profile fitting
+effective CPU/memory with 2 GiB host headroom; `--workers 1..4` fixes a profile and
+refuses insufficient budget. Focused runs default to one lane. The cacheable E2E
+check declares two lanes (four vCPUs/8 GiB); use appropriate host/Nix job budgets.
+Profiles execute the identical complete inventory/package/deadlines, not a fallback.
+
+`test -- all` exports/verifies once, preserves the VM's best admitted profile and
+overlaps core (default two workers) only with enough additional CPU/memory headroom,
+including each internal client's two-build/four-core realization peaks.
+Otherwise it runs the levels serially rather than reducing browser resources or
+hiding contention with deadlines. `selection.json` records this decision. A peer
+failure signals the other owned invocation and awaits shutdown; interrupted or
+incomplete evidence retains bulk. CI overlaps the independent levels on separate
+runner machines. Keep deliberate contention tests separate from normal acceptance.
 
 ### Change-dependent evidence
 
@@ -144,8 +162,12 @@ original bounded diagnostics and `--keep-failed` builder state, without widening
 nixbld permissions. Nix owns builder containment and eventual build-tree disposal;
 the inner lifecycle still observes jobs before removing its own generated bulk.
 
-Fresh VM runs print a private `/tmp/pwv-*` root. It contains `run.json`, `driver.log`,
-JUnit, guest journals and per-group suite logs, events, manifests and Chromium traces.
+Fresh VM runs print a private `/tmp/pwv-*` root. It contains `run.json`,
+`realization.log`, `driver.log`, the immutable driver link, `artifacts/plan.json`,
+`artifacts/acceptance.json`, JUnit, journals and per-group manifests/Chromium traces.
+The versioned receipt matches the exact package/selection/partition, every group's
+scenario completion and every lane's collection plus runner/application settlement.
+One incomplete or unsafe lane vetoes bulk cleanup; failed assertions alone do not.
 Failure screenshots/fixture evidence are retained. The driver uses private runtime
 and temporary directories, not the host user's runtime namespace. After confirmed
 driver/descendant settlement and evidence collection, the owner removes only that

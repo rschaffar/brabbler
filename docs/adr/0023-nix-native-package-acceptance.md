@@ -1,5 +1,9 @@
 # Nix-native package and service acceptance
 
+The sequential single-user scheduling below is superseded by
+[ADR 0024](0024-disjoint-parallel-acceptance-lanes.md). Its package, sandbox,
+Home Manager, input, credential and settlement boundaries remain in force.
+
 ## Decision
 
 Use two Nix-owned testing levels on native Linux: sandboxed core/static/bundled-plugin

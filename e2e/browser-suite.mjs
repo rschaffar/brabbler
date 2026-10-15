@@ -26,6 +26,10 @@ import { checkSessionMovePicker } from "./session-move.mjs";
 import { checkGitWorkflowPlugin, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
 import { checkSessionLaunch, sessionLaunchFixtureSource } from "./session-launch.mjs";
 import { WORKTREE_MANAGER_IDS, seedWorktreeManagerFixtures, checkWorktreeManager } from "./worktree-manager.mjs";
+import { browserInputs, createCoverage, selectGroup } from "./scenarios.mjs";
+
+// Validate one-hot ownership before the harness or any fixture side effects.
+const group = selectGroup(process.env);
 
 // Package acceptance runs only in the disposable NixOS guest. The service
 // independently receives its private environment and real module UMask.
@@ -34,7 +38,9 @@ const root = process.env.E2E_PACKAGE_ROOT;
 assert.match(root ?? "", /^\/nix\/store\//, "Nix-built application package required");
 const harness = createHarness(root, "browser");
 const { artifacts, agentDir, env: fixtureEnv } = harness;
+let coverage;
 try {
+coverage = createCoverage(group, artifacts);
 applyFixtureEnvironment(fixtureEnv); // In-process helpers and children share isolation.
 const project = join(agentDir, "project");
 const otherProject = join(agentDir, "other-project");
@@ -58,7 +64,7 @@ const APPEND = "e2e-external-append-session";
 const ARCHIVE = "e2e-archive-session";
 const BULK = ["e2e-bulk-desktop-a", "e2e-bulk-desktop-b", "e2e-bulk-mobile-a", "e2e-bulk-mobile-b"];
 const OTHER = "e2e-other-project";
-const ACTIVITY_SUBAGENTS = process.env.E2E_ACTIVITY_ONLY === "1"
+const ACTIVITY_SUBAGENTS = group === "activity"
   ? ["e2e-ready-child-a", "e2e-ready-child-b", "e2e-working-child", "e2e-other-child"] : [];
 const GIT = "e2e-git-explorer";
 const TRUST_MAIN = "e2e-trust-main";
@@ -100,7 +106,7 @@ let context;
   mkdirSync(join(agentDir, "extensions"));
   writeFileSync(join(agentDir, "extensions", "e2e-dialog.js"), extensionSource);
   writeFileSync(join(agentDir, "extensions", "e2e-session-launch.js"), sessionLaunchFixtureSource(root));
-  if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") writeFileSync(join(agentDir, "extensions", "e2e-git-plugin.js"), gitPluginFixtureSource(root));
+  if (group === "git-plugin") writeFileSync(join(agentDir, "extensions", "e2e-git-plugin.js"), gitPluginFixtureSource(root));
   // Simulate the recognized external package so the browser owns ask_user exactly once.
   mkdirSync(join(agentDir, "extensions", "pi-ask-user"));
   writeFileSync(join(agentDir, "extensions", "pi-ask-user", "index.js"), `export default function (pi) {
@@ -114,7 +120,7 @@ let context;
   longEntries.splice(1, 0, message("alternate", "e0", "user", "E2E alternate history branch"));
   writeSession(LONG, longEntries);
   let branchCwd = project;
-  if (process.env.E2E_ACTIVITY_ONLY === "1") {
+  if (group === "activity") {
     const git = (...args) => execFileSync("git", ["-C", project, ...args], { encoding: "utf8", env: fixtureEnv }).trim();
     git("init", "-qb", "main");
     git("-c", "user.name=E2E", "-c", "user.email=e2e@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "Activity worktree fixture");
@@ -132,7 +138,7 @@ let context;
     version: 1, runId, sessionId: BRANCH, ownerPid: 99999999,
     startedAt: new Date().toISOString(),
   }));
-  if (process.env.E2E_ACTIVITY_ONLY !== "1") seedRecoveryRun("11111111-1111-4111-8111-111111111111");
+  if (group !== "activity") seedRecoveryRun("11111111-1111-4111-8111-111111111111");
   const toolResult = message("result", "call", "toolResult", [{ type: "text", text: "E2E tool output" }]);
   Object.assign(toolResult.message, { toolCallId: "t1", toolName: "bash", isError: false });
   const richEntries = [
@@ -196,7 +202,7 @@ let context;
     message("root", null, "user", "Other workspace task"),
     message("reply", "root", "assistant", "Waiting for more work"),
   ], otherProject);
-  if (process.env.E2E_TRUST_ONLY === "1") {
+  if (group === "trust") {
     mkdirSync(trustProject);
     const git = (...args) => execFileSync("git", ["-C", trustProject, ...args], { encoding: "utf8", env: fixtureEnv }).trim();
     git("init", "-qb", "main");
@@ -272,7 +278,11 @@ let context;
   }
 
   const base = process.env.E2E_BASE_URL;
-  assert.equal(base, "http://127.0.0.1:30141", "Use only the guest's loopback service");
+  assert.equal(base, harness.baseURL, "Use only the harness-selected guest service URL");
+  const laneURL = new URL(base);
+  assert.equal(laneURL.protocol, "http:");
+  assert.equal(laneURL.hostname, "127.0.0.1", "Use only the guest's strict IPv4 loopback service");
+  assert.equal(laneURL.origin, base, "Service URL must be the exact canonical lane origin");
   const ownedServer = await harness.startService();
 
   async function api(path, status = 200) {
@@ -299,7 +309,7 @@ let context;
     if (response?.ok) {
       const { sessions } = await response.json();
       assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...WORKTREE_MANAGER_IDS, ...ACTIVITY_SUBAGENTS,
-        ...(process.env.E2E_TRUST_ONLY === "1" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
+        ...(group === "trust" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
       for (const id of ACTIVITY_SUBAGENTS) {
         assert.equal(sessions.find((session) => session.id === id)?.relation?.kind, "subagent", `${id} must have real subagent metadata`);
       }
@@ -309,12 +319,26 @@ let context;
     await delay(250);
   }
 
+  async function newInputContext(inputId) {
+    const input = browserInputs[inputId];
+    assert.ok(input, `Unknown browser input: ${inputId}`);
+    const next = await harness.newContext(browser, input.options, base);
+    if (input.piLocale) {
+      // Legacy interface preferences must not change controls/dates on reload.
+      await next.addInitScript(({ locale, origin }) => {
+        if (window === window.top && location.origin === origin) localStorage.setItem("pi-locale", locale);
+      }, { locale: input.piLocale, origin: base });
+    }
+    return next;
+  }
+
   async function runModelSpeedChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) {
+      const { viewport } = browserInputs[inputId].options;
       let createdId;
-      for (const phase of ["exercise", "fresh"]) {
-        context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+      for (const phase of ["exercise", "fresh"]) await coverage.run(`model-speed/${phase}@${inputId}`, async () => {
+        context = await newInputContext(inputId);
         page = await context.newPage();
         page.setDefaultTimeout(30_000);
         const errors = harness.errorsFor(context);
@@ -325,91 +349,101 @@ let context;
         await harness.closeContext(context);
         context = undefined;
         page = undefined;
-      }
+      });
     }
   }
 
   async function runRunningForkChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
-      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`running-forks/full@${inputId}`, async () => {
+      const { viewport } = browserInputs[inputId].options;
+      context = await newInputContext(inputId);
       page = await context.newPage();
       page.setDefaultTimeout(30_000);
       const errors = harness.errorsFor(context);
       await checkRunningSessionForks(page, { base, api, post, artifacts, width: viewport.width });
       assert.deepEqual(errors, [], `Running-fork browser/server errors at ${viewport.width}px`);
       await harness.closeContext(context); context = undefined; page = undefined;
-    }
+    });
   }
 
   async function runSessionLaunchChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
-      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`session-launch/full@${inputId}`, async () => {
+      const { viewport } = browserInputs[inputId].options;
+      context = await newInputContext(inputId);
       page = await context.newPage(); page.setDefaultTimeout(30_000);
       const errors = harness.errorsFor(context);
       await checkSessionLaunch(page, { base, api, post, project, agentDir, artifacts, width: viewport.width });
       assert.deepEqual(errors, [], `Session-launch browser/server errors at ${viewport.width}px`);
       await harness.closeContext(context); context = undefined; page = undefined;
-    }
+    });
   }
   async function runWorktreeManagerChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const [index, viewport] of [{ width: 1280, height: 800 }, { width: 390, height: 844 }].entries()) {
-      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+    for (const [index, inputId] of ["en-desktop", "en-mobile-tall"].entries()) await coverage.run(`worktrees/full@${inputId}`, async () => {
+      const { viewport } = browserInputs[inputId].options;
+      context = await newInputContext(inputId);
       page = await context.newPage(); page.setDefaultTimeout(30_000);
       const errors = harness.errorsFor(context);
       await checkWorktreeManager(page, { base, fixture: managerFixtures[index], artifacts, width: viewport.width });
       assert.deepEqual(errors, [], `Worktree-manager errors at ${viewport.width}px`);
       await harness.closeContext(context); context = undefined; page = undefined;
-    }
+    });
   }
-  if (process.env.E2E_WORKTREE_MANAGER_ONLY === "1") {
+  if (group === "worktrees") {
     await runWorktreeManagerChecks();
-  } else if (process.env.E2E_SESSION_LAUNCH_ONLY === "1") {
+  } else if (group === "session-launch") {
     await runSessionLaunchChecks();
-  } else if (process.env.E2E_RUNNING_FORKS_ONLY === "1") {
+  } else if (group === "running-forks") {
     await runRunningForkChecks();
-  } else if (process.env.E2E_MODEL_SPEED_ONLY === "1") {
+  } else if (group === "model-speed") {
     await runModelSpeedChecks();
-  } else if (process.env.E2E_TRUST_ONLY === "1") {
+  } else if (group === "trust") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
-      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`trust/full@${inputId}`, async () => {
+      const { viewport } = browserInputs[inputId].options;
+      context = await newInputContext(inputId);
       page = await context.newPage();
       const errors = harness.errorsFor(context);
       await checkProjectTrustScopes(page, { base, api, trustProject, trustLinked, mainId: TRUST_MAIN, width: viewport.width });
       assert.deepEqual(errors, [], "Trust browser/server errors");
       await harness.closeContext(context); context = undefined; page = undefined;
-    }
-  } else if (process.env.E2E_GIT_WORKFLOW_PLUGIN_ONLY === "1") {
+    });
+  } else if (group === "git-plugin") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
-      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/full@${inputId}`, async () => {
+      const { viewport } = browserInputs[inputId].options;
+      context = await newInputContext(inputId);
       page = await context.newPage();
       const errors = harness.errorsFor(context);
       await checkGitWorkflowPlugin(page, base, gitProject, GIT, artifacts, viewport.width);
       assert.deepEqual(errors, [], "Plugin browser/server errors");
       await harness.closeContext(context); context = undefined; page = undefined;
-    }
-  } else if (process.env.E2E_CHAT_APPEARANCE_ONLY === "1") {
-    browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    context = await harness.newContext(browser, { viewport: { width: 2560, height: 1100 }, locale: "en-US" }, base);
-    page = await context.newPage();
-    const errors = harness.errorsFor(context);
-    // A pre-existing numeric preference must not opt out of full width.
-    await context.addInitScript(() => {
-      if (localStorage.getItem("pi-chat-content-width") === null) localStorage.setItem("pi-chat-content-width", "820");
     });
-    await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
-    await page.locator(".markdown-code-block pre").waitFor();
-    await checkChatAppearance(page);
-    assert.deepEqual(errors, [], "Chat appearance browser/server errors");
-    await harness.closeContext(context); context = undefined; page = undefined;
-  } else if (process.env.E2E_TIMESTAMPS_ONLY === "1") {
+  } else if (group === "appearance") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
-      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+    for (const inputId of ["numeric-wide", "legacy-desktop"]) await coverage.run(`appearance/full@${inputId}`, async () => {
+      context = await newInputContext(inputId);
+      page = await context.newPage();
+      const errors = harness.errorsFor(context);
+      if (browserInputs[inputId].chatWidth) {
+        // Preserve the original timing: install after the initial blank page.
+        // A pre-existing numeric preference must not opt out of full width.
+        await context.addInitScript(() => {
+          if (localStorage.getItem("pi-chat-content-width") === null) localStorage.setItem("pi-chat-content-width", "820");
+        });
+      }
+      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      await page.locator(".markdown-code-block pre").waitFor();
+      await checkChatAppearance(page);
+      assert.deepEqual(errors, [], "Chat appearance browser/server errors");
+      await harness.closeContext(context); context = undefined; page = undefined;
+    });
+  } else if (group === "timestamps") {
+    browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const inputId of ["en-desktop", "en-mobile-tall", "legacy-desktop", "legacy-mobile"]) await coverage.run(`timestamps/full@${inputId}`, async () => {
+      context = await newInputContext(inputId);
       page = await context.newPage();
       const errors = harness.errorsFor(context);
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
@@ -418,8 +452,10 @@ let context;
       await harness.closeContext(context);
       context = undefined;
       page = undefined;
-    }
-  } else {
+    });
+  } else if (["state", "history", "extension-dialogs", "mobile-sidebar", "diff-context", "markdown", "file-edit", "archive", "privacy", "activity", "accounts", "questions", "session-links", "bulk", "move"].includes(group)) {
+  let secondaryAccountId;
+  if (group === "state") await coverage.run("state/api-append-accounts@service", async () => {
   const detail = await api(`/api/sessions/${LONG}?deferThinking=1&deferMedia=1`);
   assert.deepEqual(detail.context.entryIds, ids(4950, 5000));
   assert.equal(detail.context.messages.length, 50);
@@ -465,7 +501,6 @@ let context;
     console.log("PASS: external session-file appends are visible on force/mount reads");
   }
 
-  let secondaryAccountId;
   // Secondary provider identities stay out of pi's auth.json and project
   // defaults are snapshotted when each session is created.
   {
@@ -525,20 +560,15 @@ let context;
     console.log("PASS: isolated account creation, metadata redaction, project defaults, transient switching and concurrent persisted switches");
   }
 
+  });
+
   browser = await harness.launchBrowser(chromium, process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
     ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
     : {});
-  // Full acceptance includes speed; unrelated focused switches retain their selection.
-  if (!Object.keys(process.env).some((key) => /^E2E_.*_ONLY$/.test(key) && process.env[key] === "1")) {
-    await runModelSpeedChecks();
-    await runRunningForkChecks();
-    await runSessionLaunchChecks();
-    await runWorktreeManagerChecks();
-  }
   // A live session keeps the context files it loaded until explicitly reloaded.
-  {
+  if (group === "state") await coverage.run("state/agents-reload@default", async () => {
     const contextFile = join(otherProject, "AGENTS.md");
-    const checkContext = await harness.newContext(browser, {}, base);
+    const checkContext = await newInputContext("default");
     const checkPage = await checkContext.newPage();
     try {
       await post(`/api/agent/${OTHER}`, { type: "get_state" });
@@ -560,17 +590,14 @@ let context;
       rmSync(contextFile, { force: true });
       await harness.closeContext(checkContext);
     }
-  }
-  for (const viewport of [
-    ...(process.env.E2E_ARCHIVE_ONLY === "1" ? [] : [{ width: 1280, height: 800 }]),
-    ...(process.env.E2E_ACTIVITY_ONLY === "1" || process.env.E2E_PROJECT_PRIVACY_ONLY === "1" ? [{ width: 700, height: 800 }] : []),
-    { width: 390, height: 844 },
-  ]) {
-    context = await harness.newContext(browser, { viewport, locale: viewport.width > 600 ? "zh-CN" : "zh-TW", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
-    // Legacy interface preferences must not change controls or dates after reload.
-    await context.addInitScript(({ locale, origin }) => {
-      if (window === window.top && location.origin === origin) localStorage.setItem("pi-locale", locale);
-    }, { locale: viewport.width > 600 ? "zh-CN" : "zh-TW", origin: base });
+  });
+  for (const inputId of group === "state" ? []
+    : group === "archive" || group === "mobile-sidebar" ? ["legacy-mobile"]
+    : group === "diff-context" ? ["legacy-desktop"]
+    : group === "activity" || group === "privacy" ? ["legacy-desktop", "legacy-tablet", "legacy-mobile"]
+    : ["legacy-desktop", "legacy-mobile"]) {
+    const { viewport } = browserInputs[inputId].options;
+    context = await newInputContext(inputId);
     page = await context.newPage();
     page.setDefaultTimeout(30_000);
     const errors = harness.errorsFor(context);
@@ -579,26 +606,33 @@ let context;
       const url = new URL(response.url());
       if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
     });
-    if (process.env.E2E_DIFF_CONTEXT_ONLY === "1") {
-      if (viewport.width === 1280) await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
-      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
-      await page.locator(".markdown-code-block pre").waitFor();
-      await checkFilePanel(page, previewFile);
-      await checkFileDiffViews(page, editableFile);
-      assert.deepEqual(errors, [], `Browser errors during diff review at ${viewport.width}px`);
-      await harness.closeContext(context); context = undefined;
+    if (group === "diff-context") {
+      await coverage.run(`diff-context/explorer-then-merge@${inputId}`, async () => {
+        // The absent managed control is checked on a hydrated chat, just as in
+        // the former general path. Explorer must precede the mutating merge.
+        await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+        await page.locator(".markdown-code-block pre").waitFor();
+        assert.equal(await page.getByRole("button", { name: "Workflow", exact: true }).count(), 0, "Managed Workflow controls must be absent");
+        await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
+        await checkIntegratedGitGraph(page, targetWorktree);
+        assert.deepEqual(errors, [], `Browser errors during diff review at ${viewport.width}px`);
+        await harness.closeContext(context); context = undefined; page = undefined;
+      });
       continue;
     }
-    if (process.env.E2E_MARKDOWN_ONLY === "1") {
+    if (group === "markdown") {
+      await coverage.run(`markdown/preview-then-line-links@${inputId}`, async () => {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       await checkMarkdownPreview(page, markdownFile);
       await checkFileLineLinks(page, base, fileLineFixtures);
       assert.deepEqual(errors, [], "Browser errors during Markdown preview and line links");
-      await harness.closeContext(context); context = undefined;
+      await harness.closeContext(context); context = undefined; page = undefined;
+      });
       continue;
     }
-    if (process.env.E2E_FILE_EDIT_ONLY === "1") {
+    if (group === "file-edit") {
+      await coverage.run(`file-edit/panel-diff-edit@${inputId}`, async () => {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       await checkFilePanel(page, previewFile);
@@ -606,10 +640,12 @@ let context;
       await checkEditableFile(page, editableFile);
       assert.deepEqual(errors, [], "Browser errors during file editing");
       await harness.closeContext(context);
-      context = undefined;
+      context = undefined; page = undefined;
+      });
       continue;
     }
-    if (process.env.E2E_ARCHIVE_ONLY === "1") {
+    if (group === "archive") {
+      await coverage.run(`archive/inline-restore@${inputId}`, async () => {
       const archiveResponse = await fetch(`${base}/api/sessions/${ARCHIVE}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ archived: true }),
@@ -627,15 +663,19 @@ let context;
       await harness.closeContext(context);
       context = undefined;
       page = undefined;
+      });
       continue;
     }
-    if (process.env.E2E_PROJECT_PRIVACY_ONLY === "1") {
-      await checkProjectPrivacy(page, viewport.width, { base, api, post, harness, selectedSessionId: BRANCH, otherSessionId: OTHER });
-      assert.deepEqual(errors, [], `Project privacy browser errors at width ${viewport.width}`);
-      await harness.closeContext(context); context = undefined; page = undefined;
+    if (group === "privacy") {
+      await coverage.run(`privacy/full@${inputId}`, async () => {
+        await checkProjectPrivacy(page, viewport.width, { base, api, post, harness, selectedSessionId: BRANCH, otherSessionId: OTHER });
+        assert.deepEqual(errors, [], `Project privacy browser errors at width ${viewport.width}`);
+        await harness.closeContext(context); context = undefined; page = undefined;
+      });
       continue;
     }
-    if (process.env.E2E_ACTIVITY_ONLY === "1") {
+    if (group === "activity") {
+      await coverage.run(`activity/worktree-interruption-subagents@${inputId}`, async () => {
       // Seed only after the selected chat has loaded, so clicking its newly
       // discovered Activity row must refresh the warning in that same chat.
       await checkActivityOverview(page, viewport.width, {
@@ -654,9 +694,11 @@ let context;
       await harness.closeContext(context);
       context = undefined;
       page = undefined;
+      });
       continue;
     }
-    if (process.env.E2E_ACCOUNT_ONLY === "1") {
+    if (group === "accounts") {
+      await coverage.run(`accounts/created-deleted@${inputId}`, async () => {
       const { oauthProviders } = await api("/api/auth/providers");
       const oauthEntry = oauthProviders.find((item) => item.id === "github-copilot") ?? oauthProviders[0];
       assert.ok(oauthEntry, "OAuth provider required for account browser fixture");
@@ -671,9 +713,11 @@ let context;
       await harness.closeContext(context);
       context = undefined;
       page = undefined;
+      });
       continue;
     }
-    if (process.env.E2E_ASK_USER_ONLY === "1") {
+    if (group === "questions") {
+      await coverage.run(`questions/registration-and-dialog@${inputId}`, async () => {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       const { data: tools } = await post(`/api/agent/${RICH}`, { type: "get_tools" });
@@ -684,9 +728,11 @@ let context;
       await harness.closeContext(context);
       context = undefined;
       page = undefined;
+      });
       continue;
     }
-    if (process.env.E2E_SESSION_LINK_ONLY === "1") {
+    if (group === "session-links") {
+      await coverage.run(`session-links/copy-follow@${inputId}`, async () => {
       await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });
       await page.getByText("E2E archive fixture", { exact: true }).first().waitFor();
       if (viewport.width <= 600) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
@@ -706,9 +752,11 @@ let context;
       await harness.closeContext(context);
       context = undefined;
       page = undefined;
+      });
       continue;
     }
-    if (process.env.E2E_BULK_ONLY === "1") {
+    if (group === "bulk") {
+      await coverage.run(`bulk/archive-restore-delete@${inputId}`, async () => {
       const ids = viewport.width <= 600 ? BULK.slice(2) : BULK.slice(0, 2);
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
@@ -767,9 +815,11 @@ let context;
       await harness.closeContext(context);
       context = undefined;
       page = undefined;
+      });
       continue;
     }
-    if (process.env.E2E_MOVE_ONLY === "1") {
+    if (group === "move") {
+      await coverage.run(`move/full-picker@${inputId}`, async () => {
       const moveId = viewport.width <= 600 ? ARCHIVE : APPEND;
       await checkSessionMovePicker(page, { base, api, sessionId: moveId, project, otherProject, gitProject, targetWorktree, mobile: viewport.width <= 600 });
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
@@ -777,14 +827,11 @@ let context;
       await harness.closeContext(context);
       context = undefined;
       page = undefined;
+      });
       continue;
     }
-    await checkProjectPrivacy(page, viewport.width, { base, api, post, harness, selectedSessionId: BRANCH, otherSessionId: OTHER });
-    if (viewport.width === 1280) {
-      assert.equal(await page.getByRole("button", { name: "Workflow", exact: true }).count(), 0, "Managed Workflow controls must be absent");
-      await checkGitExplorer(page, { base, sessionId: GIT, cwd: gitProject, targetWorktree });
-      await checkIntegratedGitGraph(page, targetWorktree);
-    }
+    if (group === "history") {
+    await coverage.run(`history/reading-chain@${inputId}`, async () => {
     // Use a separate tab: a deliberate full-page reload must not alter the
     // reading-position and session-history fixtures exercised below.
     const versionPage = await context.newPage();
@@ -927,7 +974,6 @@ let context;
     assert.equal(await finalMessage.getByRole("button", { name: /^Thinking/ }).count(), 0);
     assert.equal(await finalMessage.getByText("test/E2E Model", { exact: true }).count(), 1);
     assert.equal(thinkingRequests.length, 0);
-    await checkMessageTimestamps(page, timestamp);
     await processDetails.click();
     assert.equal(await thinking.count(), 3);
     assert.equal(await thinking.last().innerText(), "E2E final reasoning");
@@ -1041,18 +1087,26 @@ let context;
       await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
       await heading.waitFor({ state: "visible" });
     }
-    await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
-    await page.locator(".markdown-code-block pre").waitFor();
-    await checkFilePanel(page, previewFile);
-    await checkFileDiffViews(page, editableFile);
-    await checkEditableFile(page, editableFile);
-    await checkMarkdownPreview(page, markdownFile);
-    await checkFileLineLinks(page, base, fileLineFixtures);
-    await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
-    await page.locator(".markdown-code-block pre").waitFor();
-    await checkExtensionDialogs(page, artifacts, viewport.width);
-    await checkAskUserDialog(page, viewport.width);
-    if (viewport.width <= 600) {
+    assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+    console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`);
+    await harness.closeContext(context);
+    context = undefined;
+    page = undefined;
+    });
+    continue;
+    }
+    if (group === "extension-dialogs") {
+      await coverage.run(`extension-dialogs/full@${inputId}`, async () => {
+        await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+        await page.locator(".markdown-code-block pre").waitFor();
+        await checkExtensionDialogs(page, artifacts, viewport.width);
+        assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+        await harness.closeContext(context); context = undefined; page = undefined;
+      });
+      continue;
+    }
+    if (group === "mobile-sidebar") {
+      await coverage.run(`mobile-sidebar/archive-search-restore-move@${inputId}`, async () => {
       await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });
       await page.getByText("E2E archive fixture", { exact: true }).first().waitFor();
       await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
@@ -1159,20 +1213,15 @@ let context;
       await page.locator('.mobile-session-title').getByText("Other workspace task", { exact: true }).waitFor();
       assert.equal(await page.locator('.mobile-session-project').textContent(), "other-project");
       console.log("PASS: mobile session move changes the saved project and refreshes the sidebar");
+      assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
+      await harness.closeContext(context); context = undefined; page = undefined;
+      });
+      continue;
     }
-    if (viewport.width > 600) {
-      await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
-      await page.locator(".markdown-code-block pre").waitFor();
-      await checkChatAppearance(page);
-    }
-    assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
-    console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`);
-    await harness.closeContext(context);
-    context = undefined;
-    page = undefined;
+    assert.fail(`No browser scenario dispatch for ${group}`);
   }
-  if (process.env.E2E_SESSION_LINK_ONLY !== "1") {
-  context = await harness.newContext(browser, {}, base);
+  if (group === "state") await coverage.run("state/durable-account@default", async () => {
+  context = await newInputContext("default");
   page = await context.newPage();
   await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /^Account for/ }).click();
@@ -1214,15 +1263,17 @@ let context;
   await harness.closeContext(context);
   context = undefined;
   page = undefined;
+  });
 
-  if (process.env.E2E_ACCOUNT_ONLY !== "1") {
+  if (group === "accounts") {
     const { oauthProviders } = await api("/api/auth/providers");
     const oauthEntry = oauthProviders.find((item) => item.id === "github-copilot") ?? oauthProviders[0];
     assert.ok(oauthEntry, "OAuth provider required for browser authorization fixture");
     const oauthProvider = oauthEntry.id;
     const { account: deviceAccount } = await post("/api/auth/accounts", { provider: oauthProvider, label: "E2E device", type: "oauth" });
-    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 600 }]) {
-      context = await harness.newContext(browser, { viewport, locale: "en-US", hasTouch: viewport.width <= 600, isMobile: viewport.width <= 600 }, base);
+    for (const inputId of ["en-desktop", "en-mobile-short"]) await coverage.run(`accounts/shared-device@${inputId}`, async () => {
+      const { viewport } = browserInputs[inputId].options;
+      context = await newInputContext(inputId);
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);
       page = await context.newPage();
       page.setDefaultTimeout(30_000);
@@ -1231,13 +1282,16 @@ let context;
       await harness.closeContext(context);
       context = undefined;
       page = undefined;
-    }
+    });
   }
+  } else {
+    assert.fail(`No group dispatch for ${group}`);
   }
-  }
+  coverage.finish();
 } catch (error) {
   console.error(error);
   process.exitCode = 1;
+  coverage?.fail(error);
   await harness.fail(error);
 } finally {
   await harness.finish();

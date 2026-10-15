@@ -151,13 +151,14 @@ There are two acceptance levels: sandboxed core/static/plugin checks and a compl
 
 ```bash
 nix flake check -L                         # complete cacheable checks
-nix run .#test -- core                     # fresh core/static/plugin execution
-nix run .#test -- e2e                      # fresh full packaged-service VM run
+nix run .#test -- all                      # fresh complete acceptance; resource-aware overlap
+nix run .#test -- core                     # fresh core/static/plugin execution separately
+nix run .#test -- e2e                      # fresh full packaged-service VM run separately
 nix run .#test -- core --jobs 2 --file lib/worktree.test.mjs
 nix run .#test -- e2e --group markdown      # selected-only iteration
 ```
 
-Nix realizes prerequisites automatically; no preparation ceremony, checkout dependencies or Playwright download is needed. The fresh entry point exports/verifies current source, including untracked helpers. Core uses immutable shared modules. E2E uses one guest boot, pinned Chromium, synthetic fixtures/providers and the real installed production package. It requires native Linux/KVM and never contacts the installed host service. Full acceptance includes every named browser group and real terminal coverage; focused passes are not full acceptance.
+Nix realizes prerequisites automatically; no preparation ceremony, checkout dependencies or Playwright download is needed. The fresh entry point exports/verifies current source, including untracked helpers. Core uses immutable shared modules. E2E uses one guest boot, pinned Chromium, synthetic fixtures/providers and the real installed production package. Disjoint scenario owners run in up to four resource-admitted lanes, each with its own user, Home Manager service, port and state; `--workers 1..4` fixes the profile. The combined `all` command exports once and overlaps core/VM only with spare CPU/memory headroom. It requires native Linux/KVM and never contacts the installed host service. Full acceptance includes every named browser group and real terminal coverage; focused passes are not full acceptance.
 
 **Never run `next build` or `npm run build` in a working checkout.** Isolated Nix package builds are supported for acceptance and cannot interfere with a manual development server's `.next`. Manual development remains separate, not an acceptance mode. Settled runs clean only their own regenerable bulk while retaining evidence; see [testing](./docs/testing.md) for resource budgets, diagnostics and retention.
 

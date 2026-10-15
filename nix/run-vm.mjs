@@ -2,22 +2,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { groups, privateEnvironment, validateArgs } from './test.mjs';
+import { privateEnvironment, validateArgs } from './test.mjs';
 import { directoryIdentity, runOwned } from './test-lifecycle.mjs';
+import { createPlan, validateEvidence, workerBudget } from './vm-plan.mjs';
+export { validateEvidence } from './vm-plan.mjs';
 
-export function validateEvidence(receipt, group) {
-  const selected = group === 'all' ? Object.keys(groups) : [group];
-  if (receipt?.version !== 1 || receipt.artifactsCollected !== true || receipt.serviceStopped !== true ||
-      typeof receipt.passed !== 'boolean' || !receipt.package?.startsWith('/nix/store/') ||
-      JSON.stringify(receipt.selected) !== JSON.stringify(selected)) throw new Error('Missing/incomplete VM evidence collection');
-  return receipt;
-}
-
-export async function runVM(driver, args) {
+export async function runVM(source, system, args) {
   const parsed = validateArgs(['e2e', ...args]);
   if (parsed.help) throw new Error('Use nix run .#test -- --help');
-  if (!/^\/nix\/store\/[a-z0-9]{32}-[^/]+$/.test(driver ?? '')) throw new Error('Pinned Nix VM driver required');
-  const group = parsed.options[1] ?? 'all';
+  if (!/^\/nix\/store\/[a-z0-9]{32}-[^/]+$/.test(source ?? '') || !['x86_64-linux', 'aarch64-linux'].includes(system)) {
+    throw new Error('Pinned Nix source and native Linux system required');
+  }
+  const option = name => parsed.options.includes(name) ? parsed.options[parsed.options.indexOf(name) + 1] : undefined;
+  const group = option('--group') ?? 'all';
+  const budget = workerBudget({ requested: option('--workers') ? Number(option('--workers')) : group === 'all' ? undefined : 1 });
   const mask = process.umask(0o077);
   const root = fs.mkdtempSync(path.join(fs.realpathSync('/tmp'), 'pwv-'));
   const original = directoryIdentity(root), env = privateEnvironment(root, process.env);
@@ -28,16 +26,28 @@ export async function runVM(driver, args) {
   env.PI_WEB_E2E_GROUP = group;
   const controller = new AbortController();
   const handlers = Object.fromEntries(['SIGINT', 'SIGTERM'].map(sig => [sig, () => controller.abort(sig)]));
-  const report = { version: 1, driver, group, fresh: true, root, startedAt: new Date().toISOString() };
+  const report = { version: 2, source, system, group, budget, fresh: true, root, startedAt: new Date().toISOString() };
   const save = () => fs.writeFileSync(path.join(root, 'run.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
   for (const [sig, handler] of Object.entries(handlers)) process.on(sig, handler);
-  console.log(`Fresh VM acceptance, group=${group}${group === 'all' ? '' : ' (selected-only, NOT full acceptance)'}\nArtifacts: ${root}`);
+  console.log(`Fresh VM acceptance, group=${group}, lanes=${budget.workers}${group === 'all' ? '' : ' (selected-only, NOT full acceptance)'}\nArtifacts: ${root}`);
   save();
   try {
+    report.realization = await runOwned('nix', ['build', '--extra-experimental-features', 'nix-command flakes',
+      '--store', 'daemon', '--no-write-lock-file', '--option', 'accept-flake-config', 'false',
+      '--option', 'sandbox', 'true', '--max-jobs', '2', '--cores', '4', '--impure', '--keep-failed', '-L',
+      ...(parsed.offline ? ['--offline'] : []), '--out-link', path.join(root, 'driver'),
+      '--file', path.join(source, 'nix/fresh-vm.nix'), '--argstr', 'system', system,
+      '--argstr', 'workers', String(budget.workers)],
+    { cwd: root, env, signal: controller.signal, logPath: path.join(root, 'realization.log') });
+    if (report.realization.code !== 0 || !report.realization.settled || report.realization.interrupted) throw new Error('VM prerequisite realization failed; stopped without retry');
+    const driver = fs.realpathSync(path.join(root, 'driver'));
+    report.driver = driver;
+    report.plan = createPlan(JSON.parse(fs.readFileSync(path.join(driver, 'lanes.json'), 'utf8')), group);
+    save();
     report.execution = await runOwned(path.join(driver, 'bin/nixos-test-driver'),
       ['--no-interactive', '--output_directory', path.join(root, 'artifacts'), '--junit-xml', 'junit.xml'],
       { cwd: root, env, signal: controller.signal, graceMs: 45_000, logPath: path.join(root, 'driver.log') });
-    try { report.evidence = validateEvidence(JSON.parse(fs.readFileSync(path.join(root, 'artifacts/acceptance.json'), 'utf8')), group); }
+    try { report.evidence = validateEvidence(JSON.parse(fs.readFileSync(path.join(root, 'artifacts/acceptance.json'), 'utf8')), report.plan); }
     catch (error) { report.error = error.message; }
     report.status = report.execution.code === 0 && report.execution.settled && !report.execution.interrupted && report.evidence?.passed ? 'passed' : 'failed';
     process.exitCode = report.status === 'passed' ? 0 : 1;
@@ -60,6 +70,6 @@ export async function runVM(driver, args) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { await runVM(process.argv[2], process.argv.slice(3)); }
+  try { await runVM(process.argv[2], process.argv[3], process.argv.slice(4)); }
   catch (error) { console.error(error.message); process.exitCode = 2; }
 }
