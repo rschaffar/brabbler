@@ -17,9 +17,12 @@ mounted behind inactive tabs, hidden panels, and session or project switches.
   the last subscriber leaving starts a new 120-second grace period. This also
   collects creations that never establish their initial connection.
 - Hiding a panel, switching tabs, and unmounting a component only disconnect
-  clients. Explicitly terminating a tab waits for creation and in-flight input
-  before deleting the PTY. Restart waits for termination before creating a new
-  ID. Failed termination leaves the tab available to retry.
+  clients. Explicitly terminating a tab disconnects its event stream immediately
+  and prevents pending creation or browser lifecycle callbacks from reconnecting.
+  It still waits for creation and in-flight input before deleting the PTY.
+  Restart waits for termination before creating a new ID. Failed termination
+  leaves the tab available to retry; explicit reconnect checks the same ID and
+  never silently creates a replacement shell.
 - A shell exit closes the SSE stream and retains its output and exit code in
   the browser. Unobserved server records expire after the same grace period.
 - Explicit termination and expiry signal the shell, escalating to SIGKILL after
@@ -58,10 +61,12 @@ Restart Pi Web after repair.
 ## Verification
 
 The [common baseline](testing.md) covers native PTY, lease, output cursor, input
-queue and storage checks. `nix develop -c npm run test:terminal` uses the shell's
-Chromium and starts an isolated development server for desktop/mobile acceptance.
-In a non-Nix checkout, prepare Playwright Chromium before `npm run test:terminal`.
+queue and storage checks, plus controlled whole-component lifecycle callbacks.
+`nix run .#test -- core --file components/TerminalPanel.test.mjs` focuses those
+callbacks and client contracts. `nix run .#test -- e2e --group terminal` exercises
+real PTYs and pinned Chromium against the Nix-built production package through
+the genuine Home Manager service in an isolated NixOS guest.
 The shared [browser harness](../e2e/README.md#diagnostics-shutdown-and-retention)
-isolates HOME/XDG/agent/TMP, traces each context, bounds owned-server shutdown and
-prints the unique artifact directory plus retained fixture root. Acceptance never
-uses the installed service, and cleanup of retained resources remains separate.
+isolates HOME/XDG/agent/TMP, traces each context and records owned-service
+settlement. Acceptance never uses the installed host service, a development
+server or checkout build output. Retained-resource cleanup remains separate.
