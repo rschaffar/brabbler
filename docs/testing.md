@@ -137,6 +137,33 @@ failure signals the other owned invocation and awaits shutdown; interrupted or
 incomplete evidence retains bulk. CI overlaps the independent levels on separate
 runner machines. Keep deliberate contention tests separate from normal acceptance.
 
+### Measured complete run
+
+On the same native x86_64 Linux host (32 logical CPUs), the 2026-10-15 fresh
+four-lane/four-core-worker run passed **304 files / 2,333 core tests** and all
+**24 VM groups**, including every lane's real activation, restart/persistence,
+collection and runner/application settlement.
+
+| Command scope | Sequential baseline | Fresh parallel run |
+| --- | --- | --- |
+| Core | 6m27s, four workers | 8m03s, four workers overlapping VM |
+| Packaged-service VM | 45m44s, one lane | 10m55s, four lanes |
+| Complete acceptance | 52m11s, serial levels | **10m58s**, overlapping levels |
+
+The measured complete command was `test -- all --workers 4 --jobs 4`. Admission
+saw about 50.8 GiB available memory and selected an eight-vCPU/16-GiB guest;
+its combined estimate required 16 CPUs/27 GiB including realization peaks.
+Dependencies and the previously built production package were reused, but the
+nonce-keyed sandboxed core and regular VM driver both executed freshly. This is
+not cold-cache or GitHub-runner timing, and more resources alone do not establish
+safe scaling. The core slowdown is included, not hidden by the combined result.
+
+The VM driver took 602.37s; group elapsed times totaled 1,839.35s. Actual lane
+work sums were 552.14/400.60/461.26/425.35s; Git plugin (281.36s) and worktrees
+(185.28s) were the largest remaining groups. Initial partition weights remain
+estimates, not an optimality claim. Exact inputs, retained failures, commands and
+receipts are recorded in the [implementation plan](plans/2026-10-15_parallel-nix-acceptance-plan.md).
+
 ### Change-dependent evidence
 
 | Changed area | Required evidence |
