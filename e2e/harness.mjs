@@ -1,12 +1,12 @@
 // Shared by the script-style browser and terminal acceptance runners.
 // Importing this file has no filesystem, environment or process side effects.
 import { spawn } from "node:child_process";
-import { appendFileSync, createWriteStream, lstatSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, createWriteStream, lstatSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { finished } from "node:stream/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { consumeExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
-import { serviceOwner } from "./service.mjs";
+import { guestLane, serviceOwner } from "./service.mjs";
 
 const inheritedKeys = [
   "PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
@@ -126,16 +126,22 @@ export function startOwnedServer(command, args, options, { logPath, event, grace
 
 export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTimeoutMs = 30_000, requireService = true } = {}) {
   process.umask(0o077);
+  const lane = requireService ? guestLane() : null;
+  const baseURL = lane ? `http://127.0.0.1:${lane.port}` : undefined;
   const parent = join(root, "test-results", "e2e");
   if (!process.env.PI_WEB_TEST_ARTIFACTS) mkdirSync(parent, { recursive: true });
   const artifacts = process.env.PI_WEB_TEST_ARTIFACTS ?? mkdtempSync(join(parent, `${kind}-`));
   const artifactStat = lstatSync(artifacts);
-  if (!artifactStat.isDirectory() || (process.platform !== "win32" && (artifactStat.uid !== process.getuid() || (artifactStat.mode & 0o077)))) {
+  if (!artifactStat.isDirectory() || realpathSync(artifacts) !== artifacts || (process.platform !== "win32" && (artifactStat.uid !== process.getuid() || (artifactStat.mode & 0o077)))) {
     throw new Error("Artifacts must be an owned private physical directory");
   }
   // Keep socket paths short and outside nix develop's auto-removed TMPDIR.
   // Host temp policies still apply; the manifest records the exact private root.
   const fixtureRoot = process.env.PI_WEB_TEST_FIXTURES ?? mkdtempSync(join(process.platform === "win32" ? tmpdir() : "/tmp", `pw-${kind}-`));
+  const fixtureStat = lstatSync(fixtureRoot);
+  if (!fixtureStat.isDirectory() || realpathSync(fixtureRoot) !== fixtureRoot || (process.platform !== "win32" &&
+      (fixtureStat.uid !== process.getuid() || (fixtureStat.mode & 0o077)))) throw new Error("Fixtures must be an owned private physical directory");
+  if (lane && (!fixtureRoot.startsWith(`${lane.home}/f/`) || !artifacts.startsWith(`${lane.home}/evidence/`))) throw new Error("Fixture/evidence storage must belong to this lane");
   const env = fixtureEnvironment(fixtureRoot);
   if (process.env.PI_WEB_TEST_TMP) {
     const temp = process.env.PI_WEB_TEST_TMP, st = lstatSync(temp);
@@ -237,12 +243,12 @@ export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTim
     return finishing;
   }
   return {
-    artifacts, fixtureRoot, env, event,
+    artifacts, fixtureRoot, env, event, baseURL,
     get agentDir() { return env.PI_CODING_AGENT_DIR; },
     async startService() {
       checkActive();
       if (server) throw new Error("Harness already owns a service");
-      server = serviceOwner({ command: env.E2E_SERVICE_CONTROL, envFile: env.E2E_SERVICE_ENV,
+      server = serviceOwner({ lane, command: env.E2E_SERVICE_CONTROL, envFile: env.E2E_SERVICE_ENV,
         env, logPath: join(artifacts, "server.log"), event });
       startingService = server.start();
       try { await startingService; } finally { startingService = undefined; }

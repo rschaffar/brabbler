@@ -5,14 +5,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { availableResources } from './resources.mjs';
+import { combinedBudget, workerBudget } from './vm-plan.mjs';
 
 export const groups = Object.freeze(JSON.parse(fs.readFileSync(new URL('./e2e-groups.json', import.meta.url), 'utf8')));
 const roots = new Set(['app', 'components', 'hooks', 'lib', 'public', 'plugins']);
 export function validateArgs(args) {
   if (args.length === 1 && args[0] === '--help') return { help: true };
   const [kind, ...tail] = args;
-  if (!['core', 'e2e'].includes(kind)) throw new Error('Choose core or e2e');
-  const options = [], seen = new Set(), files = new Set();
+  if (!['core', 'e2e', 'all'].includes(kind)) throw new Error('Choose core, e2e or all');
+  const options = [], vmOptions = [], seen = new Set(), files = new Set();
   let offline = false;
   for (let i = 0; i < tail.length; i++) {
     const flag = tail[i];
@@ -20,11 +22,17 @@ export function validateArgs(args) {
     seen.add(flag);
     if (flag === '--offline') { offline = true; continue; }
     if (flag === '--help') return { help: true };
+    if ((kind === 'e2e' || kind === 'all') && flag === '--workers') {
+      const value = tail[++i];
+      if (!/^[1-4]$/.test(value ?? '')) throw new Error('workers must be 1..4');
+      (kind === 'all' ? vmOptions : options).push(flag, value); continue;
+    }
     if (kind === 'e2e') {
       const value = tail[++i];
       if (flag !== '--group' || !(value === 'all' || Object.hasOwn(groups, value))) throw new Error('Unknown E2E group/option');
       options.push(flag, value); continue;
     }
+    if (kind === 'all' && flag !== '--jobs') throw new Error('all accepts only --jobs, --workers and --offline');
     if (flag === '--inventory-only') { options.push(flag); continue; }
     const value = tail[++i];
     if (flag === '--jobs') {
@@ -37,7 +45,7 @@ export function validateArgs(args) {
     } else throw new Error(`Unknown core option: ${flag}`);
     options.push(flag, value);
   }
-  return { kind, options, offline };
+  return { kind, options, offline, ...(kind === 'all' ? { vmOptions } : {}) };
 }
 
 export function privateEnvironment(root, ambient) {
@@ -63,11 +71,12 @@ async function execute(program, args, { cwd, env, signal }) {
   });
 }
 
-export async function run(args, { cwd = process.cwd(), ambient = process.env, command = execute } = {}) {
+export async function run(args, { cwd = process.cwd(), ambient = process.env, command = execute, readResources = availableResources } = {}) {
   const parsed = validateArgs(args);
   if (parsed.help) {
     console.log('nix run .#test -- core [--file <path>] [--jobs 1..32] [--inventory-only] [--offline]');
-    console.log('nix run .#test -- e2e [--group all|' + Object.keys(groups).join('|') + '] [--offline]');
+    console.log('nix run .#test -- e2e [--group all|' + Object.keys(groups).join('|') + '] [--workers 1..4] [--offline]');
+    console.log('nix run .#test -- all [--workers 1..4] [--jobs 1..32] [--offline] (one snapshot; overlap only with sufficient CPU/memory headroom)');
     console.log('Fresh execution, not a cached check. Selected groups/files are NOT full acceptance. Nix realizes prerequisites automatically.');
     return;
   }
@@ -93,10 +102,32 @@ export async function run(args, { cwd = process.cwd(), ambient = process.env, co
     const exportArgs = ['-I', '-B', exporter, source, '--output', output, '--manifest', manifest];
     await checked('python3', exportArgs);
     await checked('python3', [...exportArgs, '--verify-manifest']);
-    await checked('nix', ['run', '--extra-experimental-features', 'nix-command flakes', '--store', 'daemon',
+    const launch = (kind, options) => checked('nix', ['run', '--extra-experimental-features', 'nix-command flakes', '--store', 'daemon',
       '--no-write-lock-file', '--option', 'accept-flake-config', 'false', '--max-jobs', '2', '--cores', '4',
       ...(parsed.offline ? ['--offline'] : []),
-      `path:${output}#test-${parsed.kind}`, '--', ...parsed.options, ...(parsed.offline ? ['--offline'] : [])]);
+      `path:${output}#test-${kind}`, '--', ...options, ...(parsed.offline ? ['--offline'] : [])]);
+    if (parsed.kind !== 'all') await launch(parsed.kind, parsed.options);
+    else {
+      const resources = readResources();
+      const budget = workerBudget({ resources, requested: parsed.vmOptions.length ? Number(parsed.vmOptions[1]) : undefined });
+      const coreJobs = parsed.options.length ? Number(parsed.options[1]) : 2;
+      const admission = combinedBudget(resources, budget, coreJobs);
+      const { overlap } = admission;
+      const coreOptions = parsed.options.length ? parsed.options : ['--jobs', overlap ? '2' : '4'];
+      const selection = { version: 1, source: output, budget, coreOptions, overlap, admission };
+      fs.writeFileSync(path.join(root, 'selection.json'), JSON.stringify(selection, null, 2) + '\n', { mode: 0o600 });
+      console.log(`Complete acceptance: ${overlap ? 'overlap' : 'serial (insufficient spare budget for overlap)'}, VM lanes=${budget.workers}, core=${JSON.stringify(coreOptions)}`);
+      if (!overlap) { await launch('core', coreOptions); await launch('e2e', ['--workers', String(budget.workers)]); }
+      else {
+        let primary;
+        const settle = async (kind, options) => {
+          try { await launch(kind, options); }
+          catch (error) { primary ??= error; controller.abort('SIGTERM'); throw error; }
+        };
+        await Promise.allSettled([settle('core', coreOptions), settle('e2e', ['--workers', String(budget.workers)])]);
+        if (primary) throw primary;
+      }
+    }
     return root;
   } finally {
     for (const [sig, handler] of Object.entries(handlers)) process.off(sig, handler);

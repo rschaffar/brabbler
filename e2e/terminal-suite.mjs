@@ -5,13 +5,16 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
+import { createCoverage } from "./scenarios.mjs";
 import { closeTerminalDisconnect, terminalDisconnectFixture } from "./terminal-disconnect-fixture.mjs";
 
 const root = process.env.E2E_PACKAGE_ROOT;
 assert.match(root ?? "", /^\/nix\/store\//, "Nix-built application package required");
 const harness = createHarness(root, "terminal");
 const { artifacts, agentDir, fixtureRoot, env: fixtureEnv } = harness;
+const coverage = createCoverage("terminal", artifacts);
 try {
+await coverage.run("terminal/full@production-pty", async () => {
 applyFixtureEnvironment(fixtureEnv);
 const workspace = join(fixtureRoot, "workspace-a");
 const otherWorkspace = join(fixtureRoot, "workspace-b");
@@ -37,7 +40,9 @@ for (const [id, cwd, name] of [
 }
 
 const base = process.env.E2E_BASE_URL;
-assert.equal(base, "http://127.0.0.1:30141", "Use only the guest's loopback service");
+assert.equal(base, harness.baseURL, "Use only this guest lane's loopback service");
+assert.equal(new URL(base).hostname, "127.0.0.1");
+assert.equal(new URL(base).origin, base);
 const ownedServer = await harness.startService();
 let browser;
   const deadline = Date.now() + 120_000;
@@ -273,7 +278,10 @@ let browser;
       finally { await harness.closeContext(context); }
     }
   }
+});
+coverage.finish();
 } catch (error) {
+  coverage.fail(error);
   console.error(error);
   await harness.fail(error);
 } finally {

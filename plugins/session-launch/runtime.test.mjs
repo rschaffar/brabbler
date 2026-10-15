@@ -230,27 +230,48 @@ test("canonical same-ID reopen waits for owned public disposal before resource c
   });
   const dispose = old.inner.dispose;
   t.mock.method(old.inner, "dispose", function () { dispose.call(this); calls.push("old public dispose finished"); });
-  const retiring = old.shutdown(); await entered.promise;
-  globalThis.__sessionLaunchConstruct = () => calls.push("construct SDK resources");
-  let reopened = false;
-  const pending = startRpcSession("__url_alias__", old.sessionFile, undefined).then((result) => { reopened = true; return result; });
-  const samePending = startRpcSession(old.sessionId, old.sessionFile, undefined);
-  const hmr = await createJiti(import.meta.url, { moduleCache: false }).import("../../lib/rpc-manager.ts");
-  const hmrPending = hmr.startRpcSession("__hmr_alias__", old.sessionFile, undefined);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(reopened, false); assert.deepEqual(calls, []);
-  const independent = await f.start(["read"]);
-  assert.notEqual(independent.sessionId, old.sessionId); assert.deepEqual(calls, ["construct SDK resources"]);
-  calls.length = 0;
-  shutdownGate.resolve(); await retiring;
-  const replacement = await pending; f.wrappers.push(replacement.session);
-  assert.equal((await samePending).session, replacement.session); assert.equal((await hmrPending).session, replacement.session);
-  assert.equal(replacement.realSessionId, old.sessionId);
-  assert.deepEqual(calls, ["old public dispose finished", "construct SDK resources"]);
-  await new Promise((resolve) => setImmediate(resolve)); old.destroy(); await old.shutdown();
-  assert.deepEqual(calls, ["old public dispose finished", "construct SDK resources"], "old disposal cannot run after replacement resource construction");
-  assert.equal(getRpcSession(old.sessionId), replacement.session);
-  assert.equal(f.faux.state.callCount, 0, "explicit reopen never replays initial prompt");
+  const started = [];
+  try {
+    // This proves ordering, not elapsed latency. Control only the timer armed
+    // synchronously by owned retirement, then restore real SDK timers before
+    // the uncached HMR import. The unchanged shutdown unit test proves 999/1000ms.
+    const retirementClock = t.mock.method(globalThis, "setTimeout", (_callback, delay) => {
+      assert.equal(delay, 1000, "only the owned-retirement deadline is controlled");
+      return { unref() {} };
+    });
+    let retiring;
+    try { retiring = old.shutdown(); } finally { retirementClock.mock.restore(); }
+    started.push(retiring);
+    assert.equal(retirementClock.mock.callCount(), 1);
+    await entered.promise;
+    globalThis.__sessionLaunchConstruct = () => calls.push("construct SDK resources");
+    let reopened = false;
+    const pending = startRpcSession("__url_alias__", old.sessionFile, undefined).then((result) => { reopened = true; return result; });
+    started.push(pending);
+    const samePending = startRpcSession(old.sessionId, old.sessionFile, undefined);
+    started.push(samePending);
+    const hmr = await createJiti(import.meta.url, { moduleCache: false }).import("../../lib/rpc-manager.ts");
+    const hmrPending = hmr.startRpcSession("__hmr_alias__", old.sessionFile, undefined);
+    started.push(hmrPending);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(reopened, false); assert.deepEqual(calls, []);
+    const independent = await f.start(["read"]);
+    assert.notEqual(independent.sessionId, old.sessionId); assert.deepEqual(calls, ["construct SDK resources"]);
+    calls.length = 0;
+    shutdownGate.resolve(); await retiring;
+    const replacement = await pending; f.wrappers.push(replacement.session);
+    assert.equal((await samePending).session, replacement.session); assert.equal((await hmrPending).session, replacement.session);
+    assert.equal(replacement.realSessionId, old.sessionId);
+    assert.deepEqual(calls, ["old public dispose finished", "construct SDK resources"]);
+    await new Promise((resolve) => setImmediate(resolve)); old.destroy(); await old.shutdown();
+    assert.deepEqual(calls, ["old public dispose finished", "construct SDK resources"], "old disposal cannot run after replacement resource construction");
+    assert.equal(getRpcSession(old.sessionId), replacement.session);
+    assert.equal(f.faux.state.callCount, 0, "explicit reopen never replays initial prompt");
+  } finally {
+    // Assertion failures must not leave gated SDK hooks using a removed fixture.
+    shutdownGate.resolve();
+    await Promise.allSettled(started);
+  }
 });
 
 test("literal launch refuses transformed/intercepted prompts and late model/tool changes", async (t) => {

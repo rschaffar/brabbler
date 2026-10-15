@@ -4,6 +4,21 @@
   "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. The requested eight-worker default still requires native execution acceptance with unchanged deadlines. Re-review when resource/fixture behavior changes.",
   "files": [
     {
+      "path": "lib/e2e-coverage.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed independent scenario/input inventory and source/order contracts plus private coverage receipts; no browser, real service, SDK, network or shared process mutation."
+    },
+    {
+      "path": "lib/nix-vm.test.mjs",
+      "lane": "E",
+      "reason": "Lane/resource/evidence contracts, private symlink/FIFO probes, ephemeral loopback HTTP/TCP and tiny Python actual-function checks; combined-launcher fakes mutate process umask. Exclusive avoids nested orchestration contention; actual guest concurrency remains mandatory VM acceptance."
+    },
+    {
+      "path": "plugins/session-launch/runtime.test.mjs",
+      "lane": "E",
+      "reason": "Real SDK lifecycle and cold HMR with private fixture/agent roots and process-global extension/env hooks. The ordering case controls only its synchronously armed retirement timer and settles gated work before teardown; the separate shutdown unit test retains the exact deadline proof. Keep core-exclusive, as before its reviewed entry."
+    },
+    {
       "path": "lib/eslint-compatibility.test.mjs",
       "lane": "F",
       "reason": "In-process lintText on synthetic JSX/TypeScript using the real project config; reads only installed lint modules/config, no source writes, SDK, network or shared process mutation."

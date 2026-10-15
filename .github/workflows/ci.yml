@@ -14,6 +14,12 @@ concurrency:
 
 jobs:
   acceptance:
+    # Independent machines avoid core/Chromium contention and overlap both checks.
+    name: acceptance (${{ matrix.suite }})
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -31,6 +37,7 @@ jobs:
       # freshly, once each. User-owned diagnostics remain uploadable on failure;
       # never widen permissions on nixbld's failed trees or retry a failed suite.
       - name: Fresh core and bundled-plugin acceptance
+        if: matrix.suite == 'core'
         id: core
         shell: bash
         run: |
@@ -45,9 +52,11 @@ jobs:
           printf 'root=%s\n' "$root" >> "$GITHUB_OUTPUT"
           exit "$status"
       - name: Fresh full packaged-service VM acceptance
+        if: matrix.suite == 'e2e'
         id: e2e
         shell: bash
         run: |
+          mkdir -p test-results
           set +e
           nix run --no-write-lock-file .#test -- e2e 2>&1 | tee test-results/e2e.log
           statuses=("${PIPESTATUS[@]}")
@@ -60,7 +69,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: nix-acceptance
+          name: nix-acceptance-${{ matrix.suite }}
           path: |
             test-results/core.log
             test-results/e2e.log
@@ -71,5 +80,6 @@ jobs:
             ${{ steps.e2e.outputs.root || 'test-results/not-started-e2e' }}/artifacts
             ${{ steps.e2e.outputs.root || 'test-results/not-started-e2e' }}/run.json
             ${{ steps.e2e.outputs.root || 'test-results/not-started-e2e' }}/driver.log
+            ${{ steps.e2e.outputs.root || 'test-results/not-started-e2e' }}/realization.log
           retention-days: 7
           if-no-files-found: warn
