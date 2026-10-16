@@ -4,6 +4,16 @@
 
 Run the unchanged complete browser/terminal scenario inventory against the Nix-built production launcher in an ordinary Nix build sandbox. Retain a small, genuine NixOS/Home Manager deployment check. Do not require nspawn, namespace-root, automatic UID allocation, experimental Nix cgroups, host configuration changes, a development server, or the installed service.
 
+## Status
+
+Implementation and native acceptance are complete on the isolated feature branch.
+Local integration is **pending a completion decision**, not implied: when asked,
+the user requested the measured improvement breakdown instead. Do not infer merge
+or cleanup approval. Local `rst-main` independently advanced to the Pi SDK 1.3
+upgrade at `c7b656ad6785108040356b3580325207bae11700`; composing with that target
+requires separate resulting-candidate verification. The accepted run below uses
+the feature's SDK 1.2 base, not that uncomposed upgrade.
+
 ## Context
 
 The user explicitly requested this separation after discussing the daemon-wide prerequisites of nspawn. The previously created clean `feat/nspawn-acceptance` worktree is reused; no container implementation or host settings were changed. It was advanced without conflicts to local `rst-main` at `e5a4a77d7a6e61aa4d9ff7a13e74dba2cb92bed1` before source edits.
@@ -26,11 +36,11 @@ This supersedes the environment arrangement, not the coverage or safety obligati
 
 - [x] Prove the ordinary-sandbox launcher/service adapter with focused ownership, cancellation, credential isolation and detached-descendant tests; retain original failure diagnostics.
 - [x] Execute unchanged `session-links` and `terminal` acceptance in the ordinary Nix sandbox with the actual package and pinned Chromium, before promoting the backend.
-- [ ] Run every existing browser/terminal group through bounded isolated process lanes with exact package/selection/scenario and settlement receipts; test invalid/missing evidence and failure publication.
+- [x] Run every existing browser/terminal group through bounded isolated process lanes with exact package/selection/scenario and settlement receipts; test invalid/missing evidence and failure publication.
 - [x] Reduce the genuine Home Manager VM to an explicit deployment smoke, preserving activation, generated startup, permissions/environment, real restart/persistence and observed cgroup/TCP closure. Do not weaken these assertions to make a backend pass.
-- [ ] Wire cacheable checks, fresh CLI, complete orchestration and CI to the three levels; test selection, fresh identities, admission, failure propagation and source-input separation.
-- [ ] Obtain independent safety/coverage review, address findings and complete native core, full browser and deployment VM acceptance for one settled candidate. Record exact inputs, commands, timing, reuse and artifacts.
-- [ ] Update the owning ADR, testing/browser guides and instructions; distinguish historical VM timing from new measurements and any evidence-only follow-up checks.
+- [x] Wire cacheable checks, fresh CLI, complete orchestration and CI to the three levels; test selection, fresh identities, admission, failure propagation and source-input separation.
+- [x] Obtain independent safety/coverage review, address findings and complete native core, full browser and deployment VM acceptance for one settled candidate. Record exact inputs, commands, timing, reuse and artifacts.
+- [x] Update the owning ADR, testing/browser guides and instructions; distinguish historical VM timing from new measurements and any evidence-only follow-up checks.
 - [ ] Create reviewable unsigned feature commits, resolve completion intent, and perform only separately approved exact-state local non-FF integration/cleanup. No remote publication.
 
 ## Progress and retained focused evidence
@@ -150,7 +160,80 @@ All original suite/scenario sources and browser deadlines remain unchanged.
   complete combined acceptance.
 
 The new three-level CLI, cacheable checks, CI split and maintained guides are
-implemented; corrected complete settled-candidate acceptance remains.
+implemented. Independent ownership/evidence and final readiness reviews found no
+remaining blocker. Complete native acceptance passed as follows.
+
+## Complete acceptance evidence
+
+- **Tested implementation:** `2b863662a78d322419257387252b1595f026a2a7`.
+- **Frozen input:** `/tmp/pi-web-sandbox-awaited.nIeIy5/source`, content/mode SHA256
+  `74d3ee5159405ec7ea59efab577f21030828d8d48287bea80447a5903ea64425`.
+  Export and matching-manifest verification passed; post-run verification confirmed
+  the live feature source still matched those tested bytes/modes before this
+  evidence-only documentation update.
+- **Command**, executed with the physical cwd inside that frozen export:
+
+  ```sh
+  nix run --no-write-lock-file --max-jobs 2 --cores 4 \
+    path:/tmp/pi-web-sandbox-awaited.nIeIy5/source#test \
+    -- all --workers 4 --jobs 4
+  ```
+
+- **Result:** exit 0, **403.590s (6m44s)**. `results.json`, `complete.json`,
+  `complete.log`, `source.json`, `post-run-verify.log` and `metrics.json` remain
+  under `/tmp/pi-web-sandbox-awaited.nIeIy5`.
+- **Core:** `/tmp/pi-web-test-core.Y38qlO/run.json`; **399.373s** report interval,
+  **307/307 files, 2,393/2,393 tests, 10 suites**, no failures/skips/cancellations,
+  unstarted files, surviving observations or settlement uncertainty. Exact output:
+  `/nix/store/apyn3x93pbc7ndidd795rbka8mx5v2pa-pi-web-core-checks`, with
+  `artifacts/run-CYW9kn/{summary,inventory}.json`.
+- **Browser/terminal:** `/tmp/pi-web-test-browser.Dtm3FQ/run.json`, **218.250s**;
+  all **24 groups / 53 exact success-only scenario receipts** verified against
+  the plan. Each immutable group output retains its harness, coverage, logs and
+  Chromium traces. Group work summed **747.350s**; queue work was
+  **194.912/175.207/194.742/182.489s**. No assertion, viewport/locale/preference
+  variant or deadline was removed to obtain this result.
+- **Deployment:** `/tmp/pwv-Sqlr1r/run.json`, **22.357s** report interval;
+  driver script **17.43s**, receipt interval **17.336s**. All five mandatory proofs,
+  actual service/cgroup/TCP settlement, host-only symlink probe, safe collection,
+  guest-before-copy hashes and independent host comparison passed. Only the exact
+  verified owned runtime/tmp/cache bulk was removed; manifests/JUnit/journals,
+  observations, fixture archive and helper diagnostics remain.
+- **Graph:** `nix flake check --no-build --no-write-lock-file -L
+  path:/tmp/pi-web-sandbox-awaited.nIeIy5/source`, exit 0 in **4.279s**;
+  `graph.log`/`graph-result.json` retained. Other systems were not executed.
+- **Package:** `/nix/store/nhbj7a43blj3j3z81cwvrbhzckynzhh7-pi-web-0.9.3`,
+  derivation `/nix/store/c6f70ssipiscnn4b6ffxm0ywrmj38yw8-pi-web-0.9.3.drv`.
+  The application derivation matches the focused terminal proof; intervening
+  harness/tests/docs did not rebuild application inputs. Pinned runtime:
+  Node 22.23.3, Chromium 155.0.8059.79, Next 16.4.2, Pi SDK 1.2.0.
+
+Phase intervals come from retained run-report timestamps; 403.590s is the actual
+outer command timer. Browser precedes deployment while core overlaps both, so
+adding all three phase intervals would double-count work. The earlier 658s full
+run becomes **403.590s: 1.63x faster, 38.66% less wall time**. The recorded
+52m11s original baseline is about **7.76x** this runtime, across both migrations.
+Dependency/source maintenance differs between historical candidates; this is
+observed timing, not a single-variable A/B claim.
+
+Host: native x86_64 Linux, **32 logical CPUs**, about **51 GiB available memory**
+at browser admission. Core requested/effective workers **4**; browser sandboxes
+**4**. Combined admission estimated **16 CPUs/27 GiB**, including realization
+peaks, not a reservation/hard partition. Deployment used **1 vCPU/1536 MiB RAM/
+2 GiB sparse state disk**, a verified initial profile rather than a proven minimum.
+Prerequisites/package/driver were warm while core, every browser capsule and the
+guest executed freshly. Earlier package realization, model work, review, waiting
+and coordination are outside the command timer.
+
+Core is now the critical path. Exclusive files summed **322.286s**, led by
+`cleanup.test.mjs` **79.762s**, `discard.test.mjs` **40.420s**, `server.test.mjs`
+**29.446s** and `project-management.test.mjs` **23.389s** in Git Workflow. No
+core isolation classification was relaxed; further audit is separate scope.
+Native ARM, GitHub execution and cold-cache timing remain unverified. Host daemon
+features/configuration, installed service, remote publication and historical
+failure roots remain untouched. A final evidence-only update changes this plan
+and the testing guide; its proportional checks are reported separately, not
+relabeled as another full run or an SDK 1.3 acceptance result.
 No host Nix configuration, privilege, installed service or remote operation changed.
 
 ## Risks and Recovery
@@ -159,8 +242,8 @@ Chromium, PTYs and process/descendant settlement must work without elevated sand
 
 ## Completion Checklist
 
-- [ ] All 52 browser scenario/input IDs plus the terminal receipt remain covered with unchanged substantive assertions and deadlines.
-- [ ] Browser execution uses the installed production artifact in an ordinary Nix sandbox without host credentials, user bus, installed service or development build.
-- [ ] Genuine deployment proofs pass independently in the small restricted-network, closure-only KVM guest.
-- [ ] Complete native acceptance and independent review pass; exact candidate, command runtimes and retained artifacts are recorded without relabelling old evidence.
-- [ ] Maintained guides/ADR describe the new boundaries; feature history and any approved integration are verified, with remaining gaps explicit.
+- [x] All 52 browser scenario/input IDs plus the terminal receipt remain covered with unchanged substantive assertions and deadlines.
+- [x] Browser execution uses the installed production artifact in an ordinary Nix sandbox without host credentials, user bus, installed service or development build.
+- [x] Genuine deployment proofs pass independently in the small restricted-network, closure-only KVM guest.
+- [x] Complete native acceptance and independent review pass; exact candidate, command runtimes and retained artifacts are recorded without relabelling old evidence.
+- [x] Maintained guides/ADR describe the new boundaries and feature history is reviewable; unapproved integration/cleanup and remaining verification gaps are explicit.

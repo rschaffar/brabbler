@@ -183,6 +183,35 @@ resource estimates, prerequisite reuse and failures remain in the
 Current implementation/evidence is owned by the
 [sandboxed-browser plan](plans/2026-10-16_sandboxed-browser-acceptance-plan.md).
 
+### Measured browser/deployment split
+
+The 2026-10-16 fresh `test -- all --workers 4 --jobs 4` passed in **403.590s
+(6m44s)**: **307 core files / 2,393 tests / 10 suites**, all **24 browser/terminal
+groups / 53 scenario receipts**, and every genuine deployment proof. No tests
+were skipped or cancelled; execution/settlement and artifact validation passed.
+
+| Scope | Previous parallel VM architecture | Browser/deployment split |
+| --- | --- | --- |
+| Core, overlapping browser work | 483s | 399s |
+| Browser plus deployment | 655s in the shared VM | 218s browser + 22s deployment |
+| Complete acceptance | 658s | **404s**, about **39% less wall time** |
+
+Browser and deployment are serial with each other and overlap core; do not add
+all three times to obtain complete runtime. The native x86_64 host had 32 logical
+CPUs and about 51 GiB available memory. Admission selected four core workers/four
+group sandboxes, estimating 16 CPUs/27 GiB including realization—not a reservation.
+The deployment guest used its verified initial 1-vCPU/1536-MiB/2-GiB profile;
+browser resource needs moved to ordinary builders rather than disappearing.
+
+Dependencies, package and reusable prerequisites were warm; all core/group/guest
+executions were fresh. Earlier realization, model/review/coordination time is not
+part of 403.590s. These are historical observed comparisons, not a cold-cache or
+single-variable A/B benchmark: dependency maintenance and the approved terminal
+correction distinguish source candidates. Native ARM and GitHub execution remain
+unverified. Core is now the critical path; exclusive core files consume about
+322s of aggregate work, led by Git Workflow cleanup/discard/server tests. This
+change does not reclassify or weaken them.
+
 ## Diagnostics and retention
 
 Core retains inventory, summary, original bounded TAP/stderr and lifecycle evidence.
