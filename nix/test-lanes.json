@@ -4,6 +4,11 @@
   "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. The requested eight-worker default still requires native execution acceptance with unchanged deadlines. Re-review when resource/fixture behavior changes.",
   "files": [
     {
+      "path": "lib/e2e-async-condition.test.mjs",
+      "lane": "F",
+      "reason": "Controlled Promise and injected monotonic-clock/timer fixtures, including late rejection and serialized session-state predicates; no real browser, server, network or shared environment mutation. Native browser acceptance remains separate."
+    },
+    {
       "path": "lib/nix-service.test.mjs",
       "lane": "E",
       "reason": "Private filesystem artifact hashing and Python source checks for the genuine deployment VM; kept exclusive with other orchestration/settlement probes. Actual Home Manager/PTY/cgroup proof remains separate native KVM acceptance."

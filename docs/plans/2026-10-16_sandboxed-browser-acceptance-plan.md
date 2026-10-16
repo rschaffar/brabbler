@@ -89,8 +89,68 @@ All original suite/scenario sources and browser deadlines remain unchanged.
   Only that run's verified owned runtime/tmp/cache bulk was removed; diagnostics
   remain. This focused proof is not complete core/browser acceptance.
 
+- First complete trial `/tmp/pi-web-sandbox-complete.Pk30ZL` (digest
+  `69b7e1848ada90cdfed302b0dac9820b83a58a4138b147f71a6681653534c04a`) failed
+  after **237.314s**: 23/24 whole browser/terminal groups passed; trust's first
+  decision correctly hit the active-session guard during lazy startup. The
+  coordinator aborted/awaited core and did not start deployment. Retained exact
+  capsule: `/nix/store/6kiwkfqg89vqdf9f8p77jvyj5kgz9848-pi-web-browser-trust-diagnostics`.
+  Trace showed an early `running:false` response before wrapper registration,
+  a 409 trust response, then startup persistence after that rejection. This was
+  fixture readiness, not authority to weaken the production trust guard.
+- Added a default-deadline readiness barrier before **each** original trust Apply:
+  successful HTTP, registered `running:true` wrapper and all streaming/prompt/bash/
+  compaction flags false. Preserved every scope/propagation/revocation/clear
+  assertion, one click per decision and original detach deadlines; no retries or
+  error suppression. Added callback contracts for absent/missing/busy/idle state
+  and HTTP failure. `/tmp/pi-web-sandbox-trust-ready.gpE5CA` passed harness/static
+  in **39.629s** and real trust acceptance in **17.386s**. Independent source review
+  found no blocker; actual browser serialization/polling passed in that native run.
+
+- Second complete trial `/tmp/pi-web-sandbox-complete-ready.3p7YOX` (digest
+  `55fa34f5bcc218d7a39e1d79df8ef8d282aa068234783dd29b4c728b3f6c96ba`) failed
+  after **197.793s** in Move: an existing enabled-control predicate dereferenced
+  `null.disabled` before the newly opening Browse picker mounted. Retained capsule:
+  `/nix/store/vd8ml68zivv5p2s3v95pbbdb17byympf-pi-web-browser-move-diagnostics`.
+  Core was aborted/awaited and deployment was not started. This is not an unchanged
+  passing retry or a new complete benchmark.
+- Replaced all ten unsafe enabled-control polls in that helper with a shared
+  closure-free predicate requiring a present control with `disabled === false`.
+  No action, assertion, selector, held-request ordering or deadline changed. Added
+  serialized-callback cases for absence, missing properties, disabled and enabled
+  controls; Trust predicate contracts now also execute after serialization in a
+  separate VM realm. `/tmp/pi-web-sandbox-move-ready.oAzVDL` passed harness/static
+  in **43.390s** and real Move in **22.759s**. Independent review found no blocker.
+
+- Third complete trial `/tmp/pi-web-sandbox-final.S8hpGs` (digest
+  `6c3fd0d4cb255ce0efe8c48c74820a031dd0e507542937bed4e7ad139e041940`) failed
+  after **244.095s**, again at the first trust decision. Exact trace proved the
+  readiness response was still `running:false`: pinned Playwright accepted the
+  async predicate's truthy Promise, then adopted false without another poll.
+  Earlier focused success did not establish a deterministic fix. The failure
+  capsule remains `/nix/store/46bbfyq9p1f0j98c50n22m3yigdf1rz9-pi-web-browser-trust-diagnostics`.
+- Replaced that broken poll with one non-prompt `get_state` command per Apply,
+  joining normal construction/extension binding. Require HTTP/application success,
+  the selected session ID and all four idle flags; timeout stays **30 seconds**,
+  with zero retries. `/tmp/pi-web-sandbox-trust-ack.3ZlPfC` passed real trust
+  acceptance in **18.427s**. No production trust guard/API was changed.
+- Audited the same framework assumption: ten pre-existing async predicates in
+  Git Workflow, Appearance, Session Launch and Activity now use a shared awaited
+  `page.evaluate` poller. One monotonic 30-second budget includes every read/delay;
+  only resolved falsy values poll again, original errors propagate, and late
+  evaluations remain observed until harness/context cleanup. Fixed Session Launch's
+  separate wrong-envelope idle predicate to require a live wrapper's actual
+  `state` flags. Predicate/action coverage and deadlines were not reduced.
+  `/tmp/pi-web-sandbox-async-focused.igcPzX` passed three focused files/static in
+  **40.140s**, including deterministic false-Promise, deadline, late-result/error,
+  strict acknowledgement and serialized response-shape contracts.
+- A separate full core run from `/tmp/pi-web-sandbox-core-full.kXsmGS` passed
+  **306 files / 2,382 tests / 10 suites** in **357.785s**. This precedes the final
+  async-waiter/acknowledgement delta and is not relabelled as final-candidate or
+  complete combined acceptance.
+
 The new three-level CLI, cacheable checks, CI split and maintained guides are
-implemented; complete settled-candidate acceptance and final evidence review remain.
+implemented; corrected complete settled-candidate acceptance remains.
 No host Nix configuration, privilege, installed service or remote operation changed.
 
 ## Risks and Recovery

@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
+import { waitForAsyncCondition } from "./async-condition.mjs";
 import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { checkBlockingCard } from "./blocking-card.mjs";
 import { MODEL_SPEED_IDS } from "./model-speed.mjs";
+
+export async function sessionLaunchIdle(sessionId) {
+  const response = await fetch(`/api/agent/${encodeURIComponent(sessionId)}`);
+  if (!response.ok) throw new Error(`Session launch readiness HTTP ${response.status}`);
+  const snapshot = await response.json();
+  return snapshot.running === true && snapshot.state?.isStreaming === false && snapshot.state?.isPromptRunning === false;
+}
 
 /** Real production launch service and SDK wrappers with deterministic faux-provider turns. */
 export function sessionLaunchFixtureSource(root) {
@@ -75,9 +83,7 @@ export async function checkSessionLaunch(page, { base, api, post, project, agent
   const finish = async (mode) => {
     const notice = page.getByText(new RegExp(`^Launch ${mode}: `)); await notice.waitFor();
     const content = await notice.innerText();
-    await page.waitForFunction(async (sid) => {
-      const response = await fetch(`/api/agent/${sid}`); const state = await response.json(); return !state.isStreaming && !state.isPromptRunning;
-    }, parentId);
+    await waitForAsyncCondition(page, sessionLaunchIdle, parentId);
     return JSON.parse(content.slice(content.indexOf(": ") + 2));
   };
   const sessionsBefore = (await api("/api/sessions?includeArchived=1")).sessions.map((session) => session.id);

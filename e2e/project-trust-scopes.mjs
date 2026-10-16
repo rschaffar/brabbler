@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
 
-export async function waitForTrustAgent(page, sessionId) {
-  // A missing wrapper can report running:false while lazy construction is active.
-  // Require the real selected agent to exist and be idle before a trust mutation.
-  await page.waitForFunction(async (id) => {
-    const response = await fetch(`/api/agent/${encodeURIComponent(id)}`);
-    if (!response.ok) throw new Error(`Trust readiness HTTP ${response.status}`);
-    const agent = await response.json();
-    return agent.running === true && agent.state?.isStreaming === false &&
-      agent.state?.isPromptRunning === false && agent.state?.isBashRunning === false &&
-      agent.state?.isCompacting === false;
-  }, sessionId);
+export async function waitForTrustAgent(page, sessionId, base) {
+  // Unlike an early GET, this non-prompt command joins lazy construction and
+  // extension binding. Async waitForFunction predicates are not awaited by the
+  // pinned Playwright poller, so use the actual command acknowledgement instead.
+  const response = await page.request.post(`${base}/api/agent/${encodeURIComponent(sessionId)}`, {
+    data: { type: "get_state" }, timeout: 30_000, maxRetries: 0,
+  });
+  assert.equal(response.ok(), true, `Trust readiness HTTP ${response.status()}`);
+  const reply = await response.json();
+  assert.equal(reply.success, true, reply.error ?? "Trust readiness command was not acknowledged");
+  assert.equal(reply.data?.sessionId, sessionId, "Readiness must acknowledge the selected session");
+  for (const key of ["isStreaming", "isPromptRunning", "isBashRunning", "isCompacting"]) {
+    assert.equal(reply.data?.[key], false, `Selected agent must be idle: ${key}`);
+  }
 }
 
 export async function checkProjectTrustScopes(page, { base, api, trustProject, trustLinked, mainId, width }) {
@@ -23,7 +26,7 @@ export async function checkProjectTrustScopes(page, { base, api, trustProject, t
   const dialog = page.getByRole("dialog", { name: "Manage project resource trust" });
   await dialog.waitFor();
   const apply = async () => {
-    await waitForTrustAgent(page, mainId);
+    await waitForTrustAgent(page, mainId, base);
     await dialog.getByRole("button", { name: "Apply trust decision" }).click();
     await dialog.waitFor({ state: "detached" });
   };

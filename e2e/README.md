@@ -98,6 +98,13 @@ All selections retain the same package/inventory/deadlines; budgets are not rese
    Failure closes admission and drains started sandboxes, including report-write
    failures. Pending groups stay not run; no retries or deadline changes.
 
+Async API readiness uses [the shared awaited poller](async-condition.mjs), not an
+async `waitForFunction` predicate: the pinned poller treats the Promise itself as
+truthy. One monotonic 30-second budget covers evaluations and delays; only resolved
+falsy values poll again, and errors propagate. A timed-out read remains owned by
+context shutdown, not a claim of cancellation. Trust decisions instead await one
+non-prompt `get_state` startup/binding acknowledgement under the same bound.
+
 No host HOME, credentials, user bus, installed service or live store mount is
 forwarded. Synthetic providers and applications share only their sandbox loopback.
 Live-file tests modify fixture projects/session data, not application source/HMR.
