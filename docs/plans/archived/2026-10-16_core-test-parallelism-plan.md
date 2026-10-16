@@ -78,6 +78,21 @@ acceptance boundaries remain unchanged. The completed plan is archived after thi
 handoff. Final evidence-only/archive checks are reported separately, not relabelled
 as another full execution at the later documentation-only tip.
 
+### Current-target composition after stale approvals
+
+Two merge proposals returned stale before any Git effect. Read-only revalidation
+then found local `rst-main` had advanced to `369555b6e72a5d7e8ec040954e73f184de9c08d7`
+through an independently approved Git Explorer row-alignment change and stronger
+browser geometry checks. Old approvals were not reused and no manual merge or
+permission change was attempted.
+
+- Rebased cleanly to **`b9ba9bdbc313fdeff73e6006ab06cc16cb0b950e`**; all three feature patches remain `=` in the range-diff. Only the four expected incoming component/browser geometry files differ from the earlier verified tree; they exactly match the new target. Core optimization and original paired evidence remain unchanged.
+- Frozen source `/tmp/pi-web-core-priority-composed.Ay1l0g/source`, content/mode SHA256 **`228aca575373e254364c149fab3b2c3bd60a637f38e77a404c375da366ab973d`**. Separate export/verification and pre/post-run source checks passed. Package/support and driver preparation passed in **8.293s**, recorded separately; native graph evaluation passed in **4.414s**.
+- Fresh complete command, physical cwd in that snapshot: `nix run --no-write-lock-file --max-jobs 2 --cores 4 path:/tmp/pi-web-core-priority-composed.Ay1l0g/source#test -- all --workers 4 --jobs 4`.
+- **Passed 305.067s (5m05s)**: core **300.971s**, browser **227.386s**, deployment **22.969s**. All **308 files / 2,404 tests / 10 suites**, **24 browser/terminal groups / 53 exact receipts**, genuine deployment proofs and settlement/hash gates passed; no skipped/cancelled tests. This verifies the newly composed application/assertions, not a replacement for the earlier 417.385s → 291.599s performance pair.
+- Evidence: complete logs/commands/results, composition/range-diff, source manifest and `metrics.json` under `/tmp/pi-web-core-priority-composed.Ay1l0g`; core `/tmp/pi-web-test-core.69wUgQ`, output `/nix/store/33i0y873bdskcighz8sfrdziy9s68n9z-pi-web-core-checks`, `artifacts/run-sGgK5P/summary.json`; browser `/tmp/pi-web-test-browser.drg1Fr`; deployment `/tmp/pwv-ybxz6R`.
+- Package `/nix/store/gssd7v016ij45925lh2lwig72j8wcymm-pi-web-0.9.3`, unchanged toolchain/worker budgets, native 32-logical-CPU host; about 56 GiB available at browser admission. Warm prerequisites, fresh executions. A final documentation-only checkpoint and its proportional checks remain separate from this full run; exact-state Git integration/cleanup still belongs to the global lifecycle.
+
 ## Risks and Recovery
 
 Parallel files still share the exported source cwd. Any source-relative write, fixed port, unscoped process signalling or shared mutable external state blocks promotion until isolated. Process-local globals do not by themselves require cross-file exclusivity. Latency-sensitive operations and unchanged 10-second waits must be proven under bounded normal load, not justified by a passing unchanged retry. Keep classification fallback E and preserve captured failures/uncertain workspaces. Resource estimates are not reservations; keep deliberate concurrency tests separate from ordinary SDK/browser acceptance and coordinate one test owner.
