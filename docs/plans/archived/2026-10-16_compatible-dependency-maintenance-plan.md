@@ -51,7 +51,7 @@ checkout or against the installed service. No Git remote operations.
   separately validate changed demo dependencies without a production demo build.
 - [x] Recheck final currency/advisory matches and maintain the remaining-issues
   report in `docs/dependencies.md`, distinguishing matches from exploitability.
-- [ ] Commit reviewable changes and hand off the verified feature to the separate
+- [x] Commit reviewable changes and hand off the verified feature to the separate
   global Git completion/integration workflow. That workflow owns the unresolved
   completion choice, exact-action integration approval and cleanup approval.
 
@@ -62,7 +62,7 @@ checkout or against the installed service. No Git remote operations.
 - [x] Complete acceptance passes on the settled candidate; exact inputs, commands,
   selections, outcomes, wall times and retained artifact paths are recorded.
 - [x] Demo maintenance evidence and independent review have clear dispositions.
-- [ ] Git result, integration state, no-remote/no-deployment boundary and retained
+- [x] Git result, integration state, no-remote/no-deployment boundary and retained
   or approved-cleaned feature resources are reported.
 
 ## Evidence
@@ -124,3 +124,16 @@ Durable version choices, advisories and license/compatibility notes are maintain
 in `docs/dependencies.md`. Evidence/status-only updates and archival receive
 input-identity/documentation checks, not relabelled application runs. Integration
 and feature cleanup remain separate user-controlled Git operations.
+
+### Git handoff
+
+Implementation commit: `4cdf93499df288d2c70e2b7ea38460aa7ecc47d9`, on
+`chore/dependency-maintenance-pass` in the isolated worktree above. Accepted
+application, test, dependency and Nix inputs are unchanged; only this status-only
+plan update/archival follows. As of this handoff, the feature is **unintegrated**
+and the branch/worktree are retained. The global Git completion workflow is the
+explicit owner of the pending user choice and any subsequent rebase, exact-candidate
+verification, unsigned non-fast-forward merge into local `rst-main`, and separate
+feature-resource cleanup. No Git remote action, publication, installed-service
+restart or host activation occurred. This completed implementation plan does not
+grant any of those operations authority.
