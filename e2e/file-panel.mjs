@@ -54,8 +54,19 @@ export async function checkMarkdownPreview(page, filePath) {
   assert.match(await preview.locator(".katex").first().evaluate(el => getComputedStyle(el).fontFamily), /KaTeX_Main/, "shared KaTeX CSS is applied");
   await panel.getByLabel("Live sync active").waitFor();
   const originalSvg = await diagram.locator("svg").elementHandle();
-  const scrollTop = await diagram.evaluate(el => { el.scrollTop = 120; return el.scrollTop; });
-  assert.ok(scrollTop > 0, "fixture scrolls inside the diagram");
+  const geometry = await diagram.evaluate(el => ({
+    height: el.clientHeight,
+    scrollHeight: el.scrollHeight,
+    svgHeight: el.querySelector("svg").getBoundingClientRect().height,
+  }));
+  assert.ok(geometry.svgHeight > 600, "fixture exceeds the former diagram height cap");
+  assert.ok(geometry.height >= geometry.svgHeight, "preview grows to the full diagram height");
+  assert.ok(geometry.scrollHeight <= geometry.height + 1, "diagram has no internal vertical overflow");
+  assert.equal(await diagram.evaluate(el => { el.scrollTop = 120; return el.scrollTop; }), 0,
+    "tall diagrams do not require internal vertical scrolling");
+  const fileContent = panel.locator(".file-viewer-content");
+  const scrollTop = await fileContent.evaluate(el => { el.scrollTop = 120; return el.scrollTop; });
+  assert.ok(scrollTop > 0, "the file pane owns vertical scrolling");
 
   // An unchanged watcher read still updates FileViewer state. It must not
   // replace React component types and destroy the nested diagram state.
@@ -67,7 +78,7 @@ export async function checkMarkdownPreview(page, filePath) {
   await read;
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   assert.equal(await originalSvg.evaluate(el => el.isConnected), true, "unchanged refresh retains the SVG node");
-  assert.equal(await diagram.evaluate(el => el.scrollTop), scrollTop, "unchanged refresh retains diagram scroll");
+  assert.equal(await fileContent.evaluate(el => el.scrollTop), scrollTop, "unchanged refresh retains file scroll");
 
   // This source choice and an open zoom dialog must survive real background
   // polling, not just an isolated component render.
@@ -128,7 +139,7 @@ export async function checkMarkdownPreview(page, filePath) {
   // Closing the last tab already hides the panel in the focused selection.
   const hidePanel = panel.getByRole("button", { name: "Hide file panel", exact: true });
   if (await hidePanel.isVisible() && await hidePanel.getAttribute("aria-expanded") === "true") await hidePanel.click();
-  console.log(`PASS: Markdown/KaTeX security, Mermaid math/themes/SVG, scroll, zoom/source state, polling and live updates at ${page.viewportSize().width}px`);
+  console.log(`PASS: Markdown/KaTeX security, Mermaid math/themes/SVG, full-height previews, file scroll, zoom/source state, polling and live updates at ${page.viewportSize().width}px`);
 }
 
 // Mock only the bounded Git response; exercise the real explorer, file tab and renderer.
