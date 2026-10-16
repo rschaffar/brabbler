@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { waitForAsyncCondition } from "./async-condition.mjs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -32,7 +33,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await page.getByText("Active branch answer", { exact: true }).waitFor();
   assert.equal(await page.getByText("A previous run may have been interrupted", { exact: false }).count(), 0);
   seedInterruptedRun();
-  await page.waitForFunction(async () => {
+  await waitForAsyncCondition(page, async () => {
     const response = await fetch("/api/agent/running", { cache: "no-store" });
     return response.ok && Array.isArray((await response.json()).reviewedRuns);
   });
@@ -54,7 +55,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   // Upgrade an existing browser's stars into server storage on the next load.
   await page.evaluate((id) => localStorage.setItem("pi-web:starred-sessions", JSON.stringify([id])), otherSessionId);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForFunction(async (id) => {
+  await waitForAsyncCondition(page, async (id) => {
     const response = await fetch("/api/starred-sessions", { cache: "no-store" });
     return (await response.json()).ids.includes(id) && localStorage.getItem("pi-web:starred-sessions") === null;
   }, otherSessionId);
@@ -73,7 +74,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   else await sessionRow.hover();
   await sessionRow.getByRole("button", { name: "Star session" }).click();
   await sessionRow.getByRole("button", { name: "Unstar session" }).waitFor();
-  await page.waitForFunction(async (id) => {
+  await waitForAsyncCondition(page, async (id) => {
     const response = await fetch("/api/starred-sessions", { cache: "no-store" });
     return (await response.json()).ids.includes(id);
   }, selectedSessionId);
@@ -149,7 +150,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   // without awaiting so the browser can see and answer the background dialog.
   const prompting = post(`/api/agent/${waitingSessionId}`, { type: "prompt", message: "/e2e-ask-user single" });
   void prompting.catch(() => {}); // Observe early rejection during teardown; await below still fails.
-  await page.waitForFunction(async (id) => {
+  await waitForAsyncCondition(page, async (id) => {
     const response = await fetch("/api/agent/running", { cache: "no-store" });
     const snapshot = await response.json();
     return snapshot.attention.some((item) => item.sessionId === id && item.method === "ask_user");
@@ -236,7 +237,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   const peerContext = width === 1280 ? await harness.newContext(page.context().browser(), { viewport: { width, height: 900 }, locale: "en-US" }, base) : null;
   const peer = peerContext ? await peerContext.newPage() : null;
   if (peer) {
-    await page.waitForFunction(async (id) => {
+    await waitForAsyncCondition(page, async (id) => {
       const response = await fetch("/api/agent/running", { cache: "no-store" });
       const state = await response.json();
       return state.completedRuns.some((entry) => entry.sessionId === id)

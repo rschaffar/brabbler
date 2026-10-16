@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { waitForAsyncCondition } from "./async-condition.mjs";
 
 export async function checkChatAppearanceReset(page) {
   const width = page.getByRole("slider", { name: "Chat content width", exact: true });
@@ -76,7 +77,7 @@ export async function checkChatAppearance(page) {
   assert.equal(await page.locator("html").getAttribute("lang"), "en");
   const titleLanguage = page.getByRole("combobox", { name: "Generated title language" });
   await titleLanguage.selectOption("en");
-  await page.waitForFunction(async () => {
+  await waitForAsyncCondition(page, async () => {
     const response = await fetch("/api/sessions/title-language");
     return response.ok && (await response.json()).language === "en";
   });
@@ -97,7 +98,7 @@ export async function checkChatAppearance(page) {
   const cheapOption = JSON.stringify(["test", "cheap"]);
   await page.waitForFunction(() => !!document.querySelector(`#settings-title-model option[value='${JSON.stringify(["test", "cheap"])}']`));
   await titleModel.selectOption(cheapOption);
-  await page.waitForFunction(async () => {
+  await waitForAsyncCondition(page, async () => {
     const response = await fetch("/api/sessions/title-model");
     return response.ok && (await response.json()).model?.modelId === "cheap";
   });
@@ -106,7 +107,7 @@ export async function checkChatAppearance(page) {
   await page.waitForFunction(() => document.querySelector("#settings-title-model")?.value === JSON.stringify(["test", "cheap"]));
   assert.equal(await titleModel.inputValue(), cheapOption, "The title model must reload from the server");
   await titleModel.selectOption("");
-  await page.waitForFunction(async () => (await (await fetch("/api/sessions/title-model")).json()).model === null);
+  await waitForAsyncCondition(page, async () => (await (await fetch("/api/sessions/title-model")).json()).model === null);
   await page.unroute("**/api/models?*");
   assert.equal(await width.inputValue(), "820");
   assert.equal(await fontSize.inputValue(), "14");

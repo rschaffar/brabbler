@@ -1,5 +1,9 @@
 # Disjoint coverage and bounded parallel acceptance lanes
 
+[ADR 0025](0025-browser-and-deployment-acceptance.md) supersedes the shared-VM
+placement and lane resource profiles below, not disjoint scenario ownership,
+input/order coverage, success-only completion or fail-closed evidence obligations.
+
 ## Decision
 
 Replace ADR 0023's sequential single-user scheduling with explicit disjoint

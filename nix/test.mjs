@@ -13,7 +13,7 @@ const roots = new Set(['app', 'components', 'hooks', 'lib', 'public', 'plugins']
 export function validateArgs(args) {
   if (args.length === 1 && args[0] === '--help') return { help: true };
   const [kind, ...tail] = args;
-  if (!['core', 'e2e', 'all'].includes(kind)) throw new Error('Choose core, e2e or all');
+  if (!['core', 'e2e', 'service', 'all'].includes(kind)) throw new Error('Choose core, e2e, service or all');
   const options = [], vmOptions = [], seen = new Set(), files = new Set();
   let offline = false;
   for (let i = 0; i < tail.length; i++) {
@@ -27,6 +27,7 @@ export function validateArgs(args) {
       if (!/^[1-4]$/.test(value ?? '')) throw new Error('workers must be 1..4');
       (kind === 'all' ? vmOptions : options).push(flag, value); continue;
     }
+    if (kind === 'service') throw new Error('service accepts only --offline');
     if (kind === 'e2e') {
       const value = tail[++i];
       if (flag !== '--group' || !(value === 'all' || Object.hasOwn(groups, value))) throw new Error('Unknown E2E group/option');
@@ -76,7 +77,8 @@ export async function run(args, { cwd = process.cwd(), ambient = process.env, co
   if (parsed.help) {
     console.log('nix run .#test -- core [--file <path>] [--jobs 1..32] [--inventory-only] [--offline]');
     console.log('nix run .#test -- e2e [--group all|' + Object.keys(groups).join('|') + '] [--workers 1..4] [--offline]');
-    console.log('nix run .#test -- all [--workers 1..4] [--jobs 1..32] [--offline] (one snapshot; overlap only with sufficient CPU/memory headroom)');
+    console.log('nix run .#test -- service [--offline] (genuine Home Manager deployment VM)');
+    console.log('nix run .#test -- all [--workers 1..4] [--jobs 1..32] [--offline] (core + browser + deployment; one snapshot, resource-aware overlap)');
     console.log('Fresh execution, not a cached check. Selected groups/files are NOT full acceptance. Nix realizes prerequisites automatically.');
     return;
   }
@@ -102,6 +104,11 @@ export async function run(args, { cwd = process.cwd(), ambient = process.env, co
     const exportArgs = ['-I', '-B', exporter, source, '--output', output, '--manifest', manifest];
     await checked('python3', exportArgs);
     await checked('python3', [...exportArgs, '--verify-manifest']);
+    if (parsed.kind === 'e2e' || parsed.kind === 'all') {
+      const verified = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+      if (verified.status !== 'complete' || !/^[a-f0-9]{64}$/.test(verified.contentModeSha256 ?? '')) throw new Error('Missing verified source digest');
+      env.PI_WEB_SOURCE_DIGEST = verified.contentModeSha256;
+    }
     const launch = (kind, options) => checked('nix', ['run', '--extra-experimental-features', 'nix-command flakes', '--store', 'daemon',
       '--no-write-lock-file', '--option', 'accept-flake-config', 'false', '--max-jobs', '2', '--cores', '4',
       ...(parsed.offline ? ['--offline'] : []),
@@ -114,17 +121,19 @@ export async function run(args, { cwd = process.cwd(), ambient = process.env, co
       const admission = combinedBudget(resources, budget, coreJobs);
       const { overlap } = admission;
       const coreOptions = parsed.options.length ? parsed.options : ['--jobs', overlap ? '2' : '4'];
-      const selection = { version: 1, source: output, budget, coreOptions, overlap, admission };
+      const selection = { version: 2, source: output, sourceDigest: env.PI_WEB_SOURCE_DIGEST,
+        levels: ['core', 'browser', 'service'], budget, coreOptions, overlap, admission };
       fs.writeFileSync(path.join(root, 'selection.json'), JSON.stringify(selection, null, 2) + '\n', { mode: 0o600 });
-      console.log(`Complete acceptance: ${overlap ? 'overlap' : 'serial (insufficient spare budget for overlap)'}, VM lanes=${budget.workers}, core=${JSON.stringify(coreOptions)}`);
-      if (!overlap) { await launch('core', coreOptions); await launch('e2e', ['--workers', String(budget.workers)]); }
+      console.log(`Complete acceptance: ${overlap ? 'overlap' : 'serial (insufficient spare budget for overlap)'}, browser sandboxes=${budget.workers}, core=${JSON.stringify(coreOptions)}`);
+      const acceptance = async () => { await launch('e2e', ['--workers', String(budget.workers)]); await launch('service', []); };
+      if (!overlap) { await launch('core', coreOptions); await acceptance(); }
       else {
         let primary;
-        const settle = async (kind, options) => {
-          try { await launch(kind, options); }
+        const settle = async operation => {
+          try { await operation(); }
           catch (error) { primary ??= error; controller.abort('SIGTERM'); throw error; }
         };
-        await Promise.allSettled([settle('core', coreOptions), settle('e2e', ['--workers', String(budget.workers)])]);
+        await Promise.allSettled([settle(() => launch('core', coreOptions)), settle(acceptance)]);
         if (primary) throw primary;
       }
     }

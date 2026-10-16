@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { waitForAsyncCondition } from "./async-condition.mjs";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -114,7 +115,7 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   };
   const finish = async (mode, result) => {
     await page.getByText(`Git plugin fixture ${mode}-${width}: ${result}`, { exact: true }).waitFor();
-    await page.waitForFunction(async (sid) => {
+    await waitForAsyncCondition(page, async (sid) => {
       const response = await fetch(`/api/agent/${sid}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "get_state" }) });
       const { data } = await response.json(); return data && !data.isPromptRunning && !data.isStreaming;
     }, sessionId);

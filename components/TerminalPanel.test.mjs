@@ -108,7 +108,7 @@ function findElement(node, predicate) {
 
 // Execute the entire production component, not extracted/copied lifecycle logic.
 // The doubles expose public hooks/browser/xterm boundaries; no ref index is assumed.
-function terminalPanelHarness({ deleteFailures = 0 } = {}) {
+function terminalPanelHarness({ deleteFailures = 0, online = true } = {}) {
   const refs = [], states = [], effects = [];
   const sources = [], terminals = [], writers = [], requests = [], order = [];
   const listeners = new Map();
@@ -236,7 +236,7 @@ function terminalPanelHarness({ deleteFailures = 0 } = {}) {
     },
     EventSource: FakeEventSource,
     ResizeObserver: class { observe() {} disconnect() {} },
-    navigator: { onLine: true },
+    navigator: { onLine: online },
     localStorage: { getItem: () => null, setItem() {} },
     document: { fonts: { load: () => Promise.resolve([]) } },
     getComputedStyle: () => ({ getPropertyValue: () => "monospace" }),
@@ -287,6 +287,25 @@ function terminalPanelHarness({ deleteFailures = 0 } = {}) {
 }
 
 const methods = (harness) => harness.requests.map(({ method }) => method);
+
+for (const restored of [false, true]) {
+  test(`${restored ? "restored" : "new"} terminal connects to the reachable local endpoint when navigator reports offline`, async (t) => {
+    const h = terminalPanelHarness({ online: false });
+    t.after(() => h.unmount());
+    h.render({ restored });
+    if (!restored) h.creation.resolve({ id: h.tab.id });
+    await h.flush();
+    assert.deepEqual(methods(h), [restored ? "GET" : "POST"]);
+    assert.equal(h.sources.length, 1, "advisory Internet-interface state must not block the local event stream");
+    assert.equal(h.sources[0].url, `${h.path}/events`);
+    h.sources[0].open();
+    await h.flush();
+    assert.equal(h.terminals[0].options.disableStdin, false);
+    assert.equal(findElement(h.tree, (node) => node.props?.className?.startsWith("terminal-status-dot"))?.props.className,
+      "terminal-status-dot is-ready");
+    assert.deepEqual(methods(h), [restored ? "GET" : "POST"], "connection must not create a replacement shell");
+  });
+}
 
 test("closing during held creation never opens SSE and awaits creation and writer drain before DELETE", async (t) => {
   const h = terminalPanelHarness();

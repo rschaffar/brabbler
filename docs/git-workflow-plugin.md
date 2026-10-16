@@ -454,8 +454,8 @@ See [ADR 0021](adr/0021-standalone-project-cleanup.md) and its
 ## Verification
 
 Bundled plugin Node tests, including real Pi registration/toggle lifecycle and
-snapshot expiry/bounds, participate in the sandboxed core inventory. Full VM
-acceptance includes the explicit `git-plugin` and `session-launch` groups. See
+snapshot expiry/bounds, participate in the sandboxed core inventory. Full sandboxed
+browser acceptance includes the explicit `git-plugin` and `session-launch` groups. See
 [Testing](testing.md) and [browser fixture notes](../e2e/README.md):
 
 ```sh
@@ -465,7 +465,7 @@ nix run .#test -- core --file plugins/git-workflow/cleanup.test.mjs
 nix run .#test -- e2e --group git-plugin
 ```
 
-CI freshly executes the same complete core and packaged-service VM definitions.
+CI freshly executes the same complete core, sandboxed browser and genuine deployment definitions.
 No separate npm environment, plugin-only CI matrix or development-server path is
 required. Nix realizes dependencies and builds the actual package in isolation;
 the restricted guest uses synthetic providers, not real accounts or model calls.

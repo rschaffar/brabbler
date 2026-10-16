@@ -1,29 +1,32 @@
 # Packaged-service browser and terminal acceptance
 
-All acceptance runs against the **actual Nix-built application**, started through
-its installed launcher and real Home Manager systemd user units in one NixOS VM.
-There is no development-server, in-place, host-service or non-Nix fallback.
+All acceptance uses the **actual Nix-built application and installed launcher**.
+Complete browser/terminal scenarios run in ordinary Nix build sandboxes. A separate
+small NixOS/KVM suite proves genuine Home Manager/systemd deployment. There is no
+development-server, in-place, host-service or non-Nix fallback.
 
 ```sh
-nix flake check -L                         # complete, cacheable core + VM checks
+nix flake check --max-jobs 1 --cores 4 -L  # complete cacheable core/browser/service
 nix run .#test -- all                      # fresh complete acceptance, one snapshot
-nix run .#test -- e2e                      # fresh full VM, resource-admitted lanes
-nix run .#test -- e2e --workers 2           # same coverage, explicit resource profile
+nix run .#test -- e2e                      # full browser/terminal, admitted sandboxes
+nix run .#test -- e2e --workers 2           # same coverage, two concurrent sandboxes
+nix run .#test -- service                  # genuine deployment, fixed small VM
 # Focused iteration, NOT full acceptance:
 nix run .#test -- e2e --group markdown
 nix run .#test -- e2e --group terminal
 nix run .#test -- e2e --group git-plugin
 ```
 
-Nix realizes pinned dependencies/package/driver automatically. No `npm ci`,
-Playwright download or checkout-local `node_modules` is required. Native Linux/KVM
-is mandatory. See [testing](../docs/testing.md) for safe snapshots, offline operation,
-resource admission and cached versus fresh evidence. Production builds occur only
-in isolated Nix builders, never in a working checkout's `.next`.
+Nix realizes pinned dependencies, package, Chromium and fonts automatically. No
+`npm ci`, Playwright download or checkout-local modules are required. Browser tests
+need ordinary Linux Nix sandboxing, not KVM or nspawn/experimental daemon features.
+Only deployment needs native Linux/KVM. See [testing](../docs/testing.md) for snapshots,
+offline operation, admission and cached/fresh evidence. Production builds occur only
+in isolated Nix builders, never in checkout `.next`.
 
 ## Disjoint coverage inventory
 
-`nix/e2e-groups.json` is the CLI/VM inventory: **23 browser groups and terminal**.
+`nix/e2e-groups.json` is the CLI/browser inventory: **23 browser groups and terminal**.
 `e2e/scenarios.mjs` assigns reviewed scenario/input variants to exactly one owner.
 The independent baseline inventory/order tests protect the extraction; runtime
 `coverage.json` records completion only after each whole assertion chain returns.
@@ -64,80 +67,99 @@ Explorer precedes merge mutation; file panel precedes diff/edit draft checks.
 Real polling, submission acknowledgement and expiry observations keep their original
 deadlines. Embedded assertions in different integration chains are not duplicates.
 
-## One guest, isolated service lanes
+## One ordinary sandbox per whole browser group
 
-Fresh full runs admit **1..4 lanes** using effective CPU/memory: two vCPUs and 4 GiB
-per lane plus 2 GiB host headroom. Explicit `--workers` refuses insufficient budget;
-focused selections default to one. The cacheable check declares two lanes. All
-profiles execute the same complete inventory/package/deadlines. Resource estimates
-are not reservations; keep deliberate contention tests separate.
+Fresh full execution admits **1..4 concurrent sandboxes**, estimating two CPUs and
+4 GiB per group plus 2 GiB host headroom. Explicit `--workers` refuses insufficient
+budget; focused selections default to one. Preparation has its own bounded estimate.
+Cacheable group derivations use normal Nix scheduling: bound `--max-jobs` explicitly.
+All selections retain the same package/inventory/deadlines; budgets are not reservations.
 
-`nix/vm-test.nix` generates one immutable root-owned registry and, per lane, a
-separate ordinary user (`t0`…`t3`, UIDs 1000…1003), private HOME, fixed guest loopback
-port (30141…30144), environment file, user manager and real Home Manager
-`pi-web.service`. Each controller checks the guest marker and its literal UID,
-forces its own bus/runtime path and names only that unit. The harness validates the
-registry/package/controller/port binding; it never trusts ambient HOME for ownership.
+1. Realize immutable production package, test dependencies, complete tools, Chromium
+   and fontconfig/fonts. Freeze a deterministic weighted queue plan. Each queue is
+   serial, but **every group is a new build sandbox**, not a reused service user.
+2. Before fixture allocation, require a non-root builder and loopback-only interfaces.
+   Fresh runs additionally compare all network/PID/mount namespace identities with
+   the outer invocation. Each sandbox can use 30141 without touching another sandbox
+   or host service. Separate users alone would not provide this isolation.
+3. Allocate private synthetic HOME/agent/projects/artifacts and launch the actual
+   installed `bin/pi-web` with a sanitized production environment. This is explicitly
+   the process backend, not a simulated systemd service. Bind the registered child
+   generation/package; unexpected exit, spawn/log failure or incomplete stop fails.
+4. Run each original browser/terminal assertion chain, collecting every context trace,
+   server log, events and console/HTTP errors. The original scenario/input inventory
+   and success-only coverage order are unchanged. Generated helpers resolve against
+   the **installed package**, not a copied application or checkout dependencies.
+5. Require exact package/source/nonce/group/coverage receipts, closed service port,
+   settled child/pipes and absent original POSIX group. Inner observations do **not**
+   certify escaped descendants: Nix owns outer builder containment.
+6. Validate the finalized immutable evidence tree before reading it. A realized
+   diagnostic capsule is not a pass; a separate verdict gate rejects failed assertions.
+   Failure closes admission and drains started sandboxes, including report-write
+   failures. Pending groups stay not run; no retries or deadline changes.
 
-1. Boot one restricted-network guest. Activate real pinned Home Manager for every
-   configured lane. Start each user manager only after activation, proving its
-   generated `default.target.wants` link starts the application. Verify lane-distinct
-   smoke sessions, production UMask and live generation, then stop.
-2. Freeze a deterministic duration-weighted partition (`artifacts/plan.json`). Each
-   lane executes its queue serially; queues overlap. No work stealing or concurrent
-   driver-machine connections. Each group gets private physical fixtures/evidence
-   and a separate Node process, so process-global fixture environment changes cannot
-   affect another lane.
-3. A unique transient **system** runner unit, with the lane's unprivileged User and
-   complete cgroup supervision, owns the suite/Chromium. It does not replace the
-   application unit. Application startup still uses the real installed launcher and
-   fixed Home Manager user service.
-4. Bind application InvocationID/PID/restart count/**cgroup**. Capture every context
-   trace, errors/responses/local 5xx and a generation-filtered service journal.
-   Successful control commands are not proof the application stayed alive.
-5. Before another group uses a lane, require passing harness/coverage receipts,
-   stopped application, closed port and empty/absent runner descendants. A failure
-   closes admission across all lanes; already-started groups drain without deadline
-   changes. Pending groups remain explicitly not run.
-6. On success, verify real restart/persistence against each used lane's final fixture.
-   Finally settle **all runner cgroups before final application stops**, preventing
-   late service acquisition. Collect every lane independently, even after failure.
+Async API readiness uses [the shared awaited poller](async-condition.mjs), not an
+async `waitForFunction` predicate: the pinned poller treats the Promise itself as
+truthy. One monotonic 30-second budget covers evaluations and delays; only resolved
+falsy values poll again, and errors propagate. A timed-out read remains owned by
+context shutdown, not a claim of cancellation. Trust decisions instead await one
+non-prompt `get_state` startup/binding acknowledgement under the same bound.
 
-The VM has no host port forwarding, host store mount or unrestricted external
-network. Its read-only closure image contains only declared package/test inputs;
-its writable store overlay belongs to the guest. No live host accounts/credentials,
-installed service, developer `.next` or source/dependency copies are used. Helpers
-and generated extensions resolve against the **installed package**. Live-file tests
-modify synthetic projects/session data, not application source or HMR state.
+No host HOME, credentials, user bus, installed service or live store mount is
+forwarded. Synthetic providers and applications share only their sandbox loopback.
+Live-file tests modify fixture projects/session data, not application source/HMR.
+
+## Small genuine deployment VM
+
+`nix/vm-test.nix` retains one restricted-network, closure-only NixOS guest, real
+pinned Home Manager and ordinary `t0`/UID1000. Its immutable registry fixes the
+package/launcher/controller, HOME, environment file, unit and port. Initial execution
+target: **1 vCPU, 1536 MiB RAM, 2 GiB sparse state disk**; not a measured minimum.
+The guest contains no Chromium or full browser harness/dependency copy.
+
+Mandatory ordered proofs:
+
+1. Activate real Home Manager while the user manager is inactive, then start the
+   manager and prove its generated `default.target.wants` link launches the package.
+   The controller cannot explicitly start a replacement application unit.
+2. Inspect actual ordinary-user launcher environment, file-over-unit precedence,
+   runtime substitution, UMask/private physical paths and denied reads as `nobody`.
+3. Persist a real HTTP session rename in the synthetic session file/workspace.
+4. Explicitly restart the genuine user unit; require a new InvocationID and the
+   same durable session/name through HTTP.
+5. Exercise real HTTP PTY creation/SSE output, proving TTY, UID, cwd, dimensions and
+   synthetic environment. Leave its shell running for the final shutdown proof.
+6. Settle clients, stop the exact service and require inactive state, MainPID zero,
+   authenticated empty/absent cgroups and refused TCP port. Preserve diagnostics
+   independently after failures; collection is not inferred from a stop command.
+
+The read-only guest store image contains only declared package/support closures;
+its writable overlay belongs to the guest. No host forwarding, host credentials,
+user bus, developer `.next` or live host-store exposure is introduced.
 
 ## Diagnostics and settlement
 
-Fresh execution prints its private `/tmp/pwv-*` root. `run.json`, `realization.log`,
-`driver.log`, JUnit, `artifacts/plan.json` and `artifacts/acceptance.json` identify the
-exact package, resource profile, partition, group/lane timing, result, collection and
-settlement. Guest diagnostics are staged under a root-owned directory before export. Reject
-symlinks/special entries there before the pinned driver's host copytree can follow
-links. Every run exercises that guard with a synthetic host-only sentinel:
+Fresh browser execution prints `/tmp/pi-web-test-browser.*`: `run.json`, preparation
+log and per-group driver logs/result links. Each immutable capsule contains
+`result.json`, suite output, harness/coverage receipts, server log, events, Chromium
+traces/screenshots and a failed-fixture archive on failure. Both cacheable and fresh
+verdict gates reject failed diagnostic capsules; Nix owns their build-tree disposal.
 
-- `artifacts/guest/pi-web-evidence/journal.log`: complete boot journal once.
-- `…/lN/runners/<group>.log`: original suite output from its owned transient unit.
-- `…/lN/artifacts/<group>/run.json`: fixture/package, service generation and settlement.
-- `…/<group>/coverage.json`: exact expected/completed scenario IDs.
-- `…/<group>/server.log`, `events.jsonl`, `context-N.zip` and failure screenshots.
-- `…/lN/<group>-failed-fixture.tar.gz`: failed/uncertain synthetic fixture evidence.
+Deployment prints `/tmp/pwv-*`: `run.json`, realization/driver logs, driver link,
+plan/evidence, JUnit and `artifacts/guest/pi-web-evidence/` with `journal.log`,
+`service.log`, `observations.json`, `fixtures.tar.gz`. The exact receipt binds their
+guest-stage SHA-256 hashes computed **before** transfer. Root-owned staging rejects
+symlinks/special/cross-device entries before the driver's host copy can follow them;
+a host-only synthetic sentinel exercises the guard. Host collection independently
+checks files/hashes. Private helper reports, including bounded failed HTTP bodies
+and PTY transcripts, export separately under `artifacts/guest-helpers/`; an unsafe
+helper vetoes complete collection without preventing safe journal export.
 
-The version-2 receipt must match the exact pre-boot plan. Every lane's collection,
-runner and application settlement is required; passing acceptance additionally needs
-all selected groups, scenario completion, activation and used-lane restart proofs.
-Failed assertions may still permit cleanup after complete retained evidence and
-settlement. One incomplete/unsafe lane, interruption or unknown cgroup retains bulk.
+After complete retained evidence and confirmed driver/service settlement, only the
+invocation's pinned runtime/tmp/cache bulk may be removed. Failed assertions alone
+need not veto cleanup; interruption or unsafe/incomplete evidence does. No wildcard
+or historical-root cleanup. See [retention](../docs/testing.md#diagnostics-and-retention).
 
-Browser/context acquisition, traces and service stops retain separate bounds. No
-blanket retries, console/5xx suppression, forced clicks or longer browser deadlines
-hide contention. After confirmed driver/descendant settlement and valid evidence,
-only that invocation's pinned runtime/tmp/cache bulk is removed; diagnostics remain.
-Existing failures and other tasks' resources require separate bounded cleanup; see
-[retention](../docs/testing.md#diagnostics-and-retention).
-
-Core harness/service-owner contracts are not native browser acceptance. VM testing
-grants no host operation, integration, publication or deployment authority.
+Console/5xx suppression, forced clicks, retries and longer browser deadlines are
+not acceptance fixes. Contract tests alone are not real Chromium, PTY or Home Manager
+acceptance. A receipt grants no host operation, Git integration or deployment authority.

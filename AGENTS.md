@@ -13,7 +13,7 @@ all other lifecycle safeguards remain in force.
 - **Local integration target (required):** Integrate completed work into local `rst-main`. Rebase on its current local tip, verify the exact candidate, and obtain exact-state approval before integration. If blocked, retain the feature resources and resolve the blocker rather than bypassing safeguards.
 - **Local integration method (required):** Use an ordinary unsigned **non-fast-forward merge**. Do not fast-forward or squash into `rst-main`. Remote publication and feature-worktree cleanup remain separate approvals.
 - **Commit signing and authorship:** No project-specific signing or identity requirement; the global lifecycle applies.
-- **Required verification:** Follow the single baseline and change-dependent acceptance matrix in [docs/testing.md](docs/testing.md). Complete acceptance comprises the Nix sandbox core/static/plugin check and the full packaged-service NixOS VM check. Fresh entry points execute the same definitions; focused passes are not full acceptance. No additional npm baseline, development-server acceptance or non-Nix fallback is required or supported. Production package builds for verification are allowed only inside isolated Nix builders; never run `next build` or `npm run build` in a working checkout or build against the installed service.
+- **Required verification:** Follow the single baseline and change-dependent acceptance matrix in [docs/testing.md](docs/testing.md). Complete acceptance comprises sandboxed core/static/plugin checks, the full browser/terminal inventory in ordinary Nix sandboxes, and the genuine Home Manager deployment NixOS VM check. Fresh entry points execute the same definitions; focused passes are not full acceptance. No additional npm baseline, development-server acceptance or non-Nix fallback is required or supported. Production package builds for verification are allowed only inside isolated Nix builders; never run `next build` or `npm run build` in a working checkout or build against the installed service.
 - **Publication constraints:** [docs/release.md](docs/release.md) owns the release process. GitHub pushes/releases and npm publication require separate, explicit authorization for the exact remote operation.
 - **Planning workflow:** [.agents/skills/writing-plans/SKILL.md](.agents/skills/writing-plans/SKILL.md) owns plans under `docs/plans/`; durable decisions belong in `docs/adr/`, and current operational or contributor behavior belongs in the focused guide under `docs/` or `README.md`/`AGENTS.md`.
 - **Intentional deviations or incompatible rules:** The required linked worktree, `rst-main` target, and non-fast-forward merge replace the global lifecycle's optional direct-checkout, alternative/no-target, and fast-forward/squash choices for this repository. Keep its inspection, clean-state, verification, exact-state approval, remote boundary, and separate cleanup safeguards. Preserve the isolated-build boundary above.
@@ -31,9 +31,10 @@ From the selected Linux worktree:
 nix develop                         # prepares checkout-local writable dependencies
 npm run dev                         # manual development, port 30141; see lifecycle below
 # Automated checks require no shell/dependency preparation or manual server:
-nix flake check -L
+nix flake check --max-jobs 1 --cores 4 -L
 nix run .#test -- core --file lib/worktree.test.mjs
 nix run .#test -- e2e --group markdown
+nix run .#test -- service
 ```
 
 The shell reuses matching Nix-managed `node_modules`; do not run `npm ci` over it,
@@ -68,7 +69,7 @@ obvious change.
 ## Browser and dev-server lifecycle
 
 - **Manual development:** before starting, run `lsof -nP -iTCP:30141 -sTCP:LISTEN`; identify the checkout/process and reuse a healthy matching server. Do not interrupt an installed service or a different task's server.
-- **Acceptance:** [e2e/README.md](e2e/README.md) owns the fixture lifecycle. Acceptance uses one restricted-network NixOS guest, the real Home Manager user service and the Nix-built production package. It never uses the host service or checkout's `.next`; there is no development-server or in-place fallback.
+- **Acceptance:** [e2e/README.md](e2e/README.md) owns the fixture lifecycle. Browser/terminal acceptance uses one ordinary Nix sandbox per whole group and the installed production launcher; the separate small restricted-network NixOS guest proves the real Home Manager user service. Neither uses the host service or checkout's `.next`; there is no development-server or in-place fallback.
 - A browser-only `Module ... factory is not available` overlay may be stale HMR. Explicitly reload the page, then compare current server logs and a direct HTTP/API request. Restart only after a fresh page and server-side checks corroborate failure. Stop the exact owned dev process gracefully, retain `.next` in a `mktemp -d` backup, then use `npm run dev`. No webpack fallback.
 - Diagnose failures from the exact run's logs, responses, traces and observed process events. Preserve failures before a justified retry; a passing unchanged retry does not prove a fix. Do not suppress general console/5xx errors or inflate deadlines to manufacture acceptance.
 - [docs/testing.md](docs/testing.md#diagnostics-and-retention) owns bounded current-run bulk cleanup after settlement and retained evidence. Historical roots, failed builds, checkout dependencies and backups still require separately authorized cleanup; no wildcard/age-based reapers.

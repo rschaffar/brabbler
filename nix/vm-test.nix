@@ -1,60 +1,57 @@
-{ pkgs, package, modules, src, home-manager, homeManagerModule, workers ? 2 }:
-assert builtins.isInt workers && workers >= 1 && workers <= 4;
+# Fixed genuine deployment proof; full browser/terminal acceptance is separate.
+{ pkgs, package, home-manager, homeManagerModule, workers ? 1, ... }:
+assert workers == 1;
 let
   inherit (pkgs) lib;
-  support = pkgs.runCommand "pi-web-test-support" { } ''
+  # Builtins-only helpers, not the browser source tree or another modules copy.
+  support = pkgs.runCommand "pi-web-service-support" { } ''
     mkdir -p "$out"
-    cp -R ${src}/. "$out/"
-    ln -s ${modules}/node_modules "$out/node_modules"
+    cp ${./service-plan.mjs} "$out/service-plan.mjs"
+    cp ${./service-smoke.mjs} "$out/service-smoke.mjs"
+    cp ${./vm-evidence.mjs} "$out/vm-evidence.mjs"
   '';
-  identities = builtins.genList (i: {
-    id = "l${toString i}";
-    user = "t${toString i}";
-    uid = 1000 + i;
-    home = "/home/t${toString i}";
-    port = 30141 + i;
-    envFile = "/home/t${toString i}/service.env";
-    unit = "pi-web.service";
-  }) workers;
-  control = lane: pkgs.writeShellApplication {
-    name = "pi-web-test-service-${lane.id}";
+  controller = pkgs.writeShellApplication {
+    name = "pi-web-deployment-control";
     runtimeInputs = [ pkgs.systemd ];
     text = ''
-      # Immutable controller: exactly one guest UID, bus and real HM unit.
       if [[ ! -r /etc/pi-web-acceptance-guest ]] || \
          [[ "$(< /etc/pi-web-acceptance-guest)" != pi-web-nixos-acceptance-v1 ]] || \
-         [[ "$(${pkgs.coreutils}/bin/id -u)" != ${toString lane.uid} ]]; then
-        echo 'Acceptance service control requires its disposable guest user' >&2
+         [[ "$(${pkgs.coreutils}/bin/id -u)" != 1000 ]]; then
+        echo 'Deployment service control requires its disposable guest user' >&2
         exit 1
       fi
-      export XDG_RUNTIME_DIR=/run/user/${toString lane.uid}
-      export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${toString lane.uid}/bus
+      export XDG_RUNTIME_DIR=/run/user/1000
+      export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
       case "''${1:-}" in
-        start) [[ "$#" == 1 ]]; systemctl --user reset-failed pi-web.service; systemctl --user start pi-web.service ;;
+        # No start action: only HM's generated default.target link starts it.
+        restart) [[ "$#" == 1 ]]; systemctl --user restart pi-web.service ;;
         stop) [[ "$#" == 1 ]]; systemctl --user stop pi-web.service ;;
         status) [[ "$#" == 1 ]]; systemctl --user show pi-web.service \
-          -p ActiveState -p SubState -p InvocationID -p MainPID -p NRestarts -p ControlGroup -p Result ;;
-        logs)
-          if [[ "$#" == 2 && "$2" =~ ^[a-f0-9]{32}$ ]]; then
-            journalctl --user -b -u pi-web.service --no-pager -o short-iso "_SYSTEMD_INVOCATION_ID=$2"
-          elif [[ "$#" == 1 ]]; then
-            journalctl --user -b -u pi-web.service --no-pager -o short-iso
-          else exit 2; fi ;;
-        *) echo 'Allowed: start, stop, status, logs [generation]' >&2; exit 2 ;;
+          -p ActiveState -p SubState -p InvocationID -p MainPID -p NRestarts \
+          -p ControlGroup -p Result -p UMask -p WorkingDirectory -p FragmentPath -p ExecStart ;;
+        logs) [[ "$#" == 1 ]]; journalctl --user -b -u pi-web.service --no-pager -o short-iso ;;
+        *) echo 'Allowed: restart, stop, status, logs' >&2; exit 2 ;;
       esac
     '';
   };
-  controls = map control identities;
-  lanes = lib.imap0 (i: lane: lane // { controller = lib.getExe (builtins.elemAt controls i); }) identities;
-  resources = { inherit workers; cpus = workers * 2; memoryMiB = workers * 4096; };
-  registry = pkgs.writeText "pi-web-acceptance-lanes.json" (builtins.toJSON {
+  resources = { workers = 1; cpus = 1; memoryMiB = 1536; diskMiB = 2048; };
+  registry = pkgs.writeText "pi-web-service.json" (builtins.toJSON {
     version = 1;
+    kind = "pi-web-service-registry";
     package = "${package}/lib/node_modules/@agegr/pi-web";
-    inherit lanes resources;
+    launcher = lib.getExe package;
+    shell = "${pkgs.bash}/bin/bash";
+    inherit resources;
+    service = {
+      user = "t0"; uid = 1000; home = "/home/t0"; port = 30141; unit = "pi-web.service";
+      envFile = "/home/t0/service.env"; fixture = "/home/t0/fixtures";
+      agentDir = "/home/t0/fixtures/agent"; evidence = "/home/t0/evidence";
+      controller = lib.getExe controller;
+    };
   });
   acceptance = pkgs.testers.runNixOSTest {
-    name = "pi-web-acceptance-${toString workers}-lanes";
-    globalTimeout = 3600;
+    name = "pi-web-service-deployment";
+    globalTimeout = 600;
     qemu.forceAccel = true;
     nodes.machine = { config, modulesPath, ... }:
       let
@@ -78,9 +75,10 @@ let
         };
       };
       virtualisation = {
+        # Initial execution target, not a measured minimum or a build budget.
         memorySize = resources.memoryMiB;
         cores = resources.cpus;
-        diskSize = 16384; # Sparse state: concurrent traces and failure archives.
+        diskSize = resources.diskMiB;
         mountHostNixStore = false;
         useNixStoreImage = false;
         writableStore = true;
@@ -106,55 +104,52 @@ let
       };
       boot.kernelParams = [ "regInfo=/nix/.ro-store/.pi-web-registration" ];
       environment.etc."pi-web-acceptance-guest".text = "pi-web-nixos-acceptance-v1\n";
-      environment.etc."pi-web-acceptance-lanes.json".source = registry;
-      users.users = lib.listToAttrs (map (lane: lib.nameValuePair lane.user {
-        isNormalUser = true; inherit (lane) uid home; homeMode = "0700";
-      }) lanes);
+      environment.etc."pi-web-service.json".source = registry;
+      users.users.t0 = { isNormalUser = true; uid = 1000; home = "/home/t0"; homeMode = "0700"; };
       home-manager = {
         useGlobalPkgs = true;
         useUserPackages = true;
-        users = lib.listToAttrs (map (lane: lib.nameValuePair lane.user {
+        users.t0 = {
           imports = [ homeManagerModule ];
           home.stateVersion = "24.11";
           services.pi-web = {
             enable = true;
             inherit package;
-            inherit (lane) port;
-            agentDir = "%h/fixtures/initial";
-            environmentFile = lane.envFile;
+            port = 30141;
+            agentDir = "%h/fixtures/agent";
+            environmentFile = "/home/t0/service.env";
             environment = {
               PI_OFFLINE = "1"; NODE_ENV = "production";
               NEXT_TELEMETRY_DISABLED = "1"; JITI_FS_CACHE = "0";
               SHELL = "${pkgs.bash}/bin/bash";
+              PI_WEB_SERVICE_UNIT = "unit-value";
+              PI_WEB_SERVICE_OVERRIDE = "unit-value-must-be-overridden";
+              PI_WEB_SERVICE_RUNTIME = "%t";
             };
           };
-          systemd.user.services.pi-web.Service.TimeoutStopSec = 10;
-        }) lanes);
+          # Deliberately no replacement ExecStart or test-only service policy.
+        };
       };
       environment.systemPackages = [
-        pkgs.nodejs_24 pkgs.git pkgs.bash pkgs.coreutils pkgs.curl
-        pkgs.chromium pkgs.util-linux
-      ] ++ controls;
-      # Users cannot read each other's fixtures, service configuration or traces.
-      systemd.tmpfiles.rules = lib.concatMap (lane: [
-        "d ${lane.home}/fixtures 0700 ${lane.user} users -"
-        "d ${lane.home}/fixtures/initial 0700 ${lane.user} users -"
-        "f ${lane.envFile} 0600 ${lane.user} users -"
-        "d ${lane.home}/evidence 0700 ${lane.user} users -"
-      ]) lanes ++ [ "d /var/lib/pi-web-evidence 0700 root root -" ];
+        pkgs.nodejs_24 pkgs.bash pkgs.coreutils pkgs.util-linux pkgs.gnutar pkgs.gzip controller
+      ];
+      systemd.tmpfiles.rules = [
+        "d /home/t0/fixtures 0700 t0 users -"
+        "d /home/t0/fixtures/agent 0700 t0 users -"
+        "f /home/t0/service.env 0600 t0 users -"
+        "d /home/t0/evidence 0700 t0 users -"
+        "d /var/lib/pi-web-evidence 0700 root root -"
+      ];
     };
     testScript = builtins.replaceStrings
-      [ "@support@" "@registry@" "@node@" "@chromium@" "@shell@" ]
-      [ "${support}" "${registry}" "${pkgs.nodejs_24}/bin/node"
-        "${pkgs.chromium}/bin/chromium" "${pkgs.bash}/bin/bash" ]
+      [ "@support@" "@registry@" "@node@" ]
+      [ "${support}" "${registry}" "${pkgs.nodejs_24}/bin/node" ]
       (builtins.readFile ./vm-test.py);
   };
 in acceptance // {
-  # The regular driver, with its immutable registry available to the fresh
-  # wrapper. No interactive driver or different test definition.
   driver = pkgs.symlinkJoin {
-    name = "pi-web-acceptance-driver-${toString workers}-lanes";
+    name = "pi-web-service-driver";
     paths = [ acceptance.driver ];
-    postBuild = ''ln -s ${registry} "$out/lanes.json"'';
+    postBuild = ''ln -s ${registry} "$out/service.json"'';
   };
 }

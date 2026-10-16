@@ -8,6 +8,9 @@ import { join } from "node:path";
 import { consumeExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
 import { guestLane, serviceOwner } from "./service.mjs";
 
+const processBaseURL = "http://127.0.0.1:30141";
+const ownedProcessScope = "Owned child/pipe closure and original POSIX group absence only; escaped descendants and Windows descendants are not certified";
+
 const inheritedKeys = [
   "PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
   "LANG", "LC_ALL", "TZ", "TERM", "SHELL", "PI_WEB_TEST_SHELL",
@@ -117,17 +120,103 @@ export function startOwnedServer(command, args, options, { logPath, event, grace
         const logError = flushed ? await logFinished : new Error("Server log flush timed out");
         if (logError) event("server-log-error", { message: logError.message });
         return { settled, unexpectedExit, processGroup, error: error?.message, logError: logError?.message,
-          scope: "Owned child/pipe closure and original POSIX group absence only; escaped descendants and Windows descendants are not certified" };
+          scope: ownedProcessScope };
       })();
       return stopping;
     },
   };
 }
 
+function processServiceConfiguration(root, env) {
+  if (env.E2E_SERVICE_BACKEND !== "process") throw new Error("Explicit process service backend required");
+  const match = typeof root === "string" && /^(\/nix\/store\/[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+)\/lib\/node_modules\/@agegr\/pi-web$/.exec(root);
+  if (!match || env.E2E_PACKAGE_ROOT !== root) throw new Error("Process acceptance requires the same canonical Nix-store pi-web package root");
+  if (env.E2E_BASE_URL !== processBaseURL) throw new Error(`Process acceptance requires the exact loopback URL ${processBaseURL}`);
+  if (process.platform !== "linux") throw new Error("Process acceptance requires a Linux Nix build sandbox");
+  return Object.freeze({ root, launcher: `${match[1]}/bin/pi-web`, baseURL: processBaseURL });
+}
+
+/** One whole group per Nix build sandbox. The runner, not this flag, owns containment. */
+export function processServiceOwner({ root, env, logPath, event = () => {} }, own = startOwnedServer) {
+  const target = processServiceConfiguration(root, env);
+  const serviceEnv = { ...env, NODE_ENV: "production", PI_WEB_SKIP_VERSION_CHECK: "1" };
+  let owned, child, generation, starting, stopping, failure;
+  let stopRequested = false;
+  const fail = (message) => { failure ??= message; throw new Error(failure); };
+  async function check() {
+    if (failure) throw new Error(failure);
+    if (stopRequested) throw new Error("Process service is stopping or stopped");
+    if (!generation) throw new Error("Process service has not been acquired");
+    if (owned.error) fail(owned.error.message);
+    if (owned.child !== child || child.pid !== generation.pid || !Number.isSafeInteger(child.pid) || child.pid < 1 ||
+        child.exitCode !== null || child.signalCode !== null) fail("Installed package launcher exited or changed generation unexpectedly");
+    return generation;
+  }
+  return {
+    start() {
+      if (starting || stopRequested) throw new Error("Process service acquisition already started or stopping");
+      starting = (async () => {
+        // Register ownership synchronously, before awaiting spawn acknowledgement.
+        // The optional lifecycle factory is a unit-test seam, never a runner input.
+        owned = own(target.launcher, ["--hostname", "127.0.0.1", "--port", "30141", "--no-open"],
+          { cwd: serviceEnv.HOME, env: serviceEnv }, { logPath, event });
+        child = owned.child;
+        child.once("exit", (code, signal) => {
+          if (!stopRequested) failure ??= `Installed package launcher exited unexpectedly (${signal ? `signal ${signal}` : `code ${code}`})`;
+        });
+        await new Promise((resolve, reject) => {
+          const spawned = () => { child.off("error", errored); resolve(); };
+          const errored = (error) => { child.off("spawn", spawned); reject(error); };
+          child.once("spawn", spawned); child.once("error", errored);
+        });
+        generation = Object.freeze({ packageRoot: root, launcher: target.launcher, pid: child.pid });
+        if (stopRequested) throw new Error("Process service stopped during acquisition");
+        await check();
+        if (stopRequested) throw new Error("Process service stopped during acquisition");
+        event("service-started", generation);
+      })().catch((error) => { failure ??= error.message; throw error; });
+      return starting;
+    },
+    check,
+    stop() {
+      stopRequested = true;
+      if (!stopping) {
+        // Start the existing escalation deadline immediately, even during acquisition.
+        const observedStop = owned?.stop().catch((error) => ({ settled: false, processGroup: "unknown", error: error.message }));
+        stopping = (async () => {
+          try { await starting; } catch (error) { failure ??= error.message; }
+          const result = (await observedStop) ?? { settled: false, processGroup: "not-observed", error: failure ?? "No installed package process was acquired" };
+          const receipt = { ...result, scope: "installed-package-process", settlementScope: ownedProcessScope,
+            descendants: "not-certified", containmentOwner: "nix-build", generation,
+            unexpectedExit: !!(failure || result.unexpectedExit), error: result.error ?? failure };
+          event("service-settled", receipt);
+          return receipt;
+        })();
+      }
+      return stopping;
+    },
+  };
+}
+
+/** Match identity/bounded settlement, not execution or log success or sandbox completion. */
+export function processServiceReceiptMatches(receipt, root, env) {
+  const target = processServiceConfiguration(root, env);
+  return receipt?.scope === "installed-package-process" && receipt.settlementScope === ownedProcessScope &&
+    receipt.descendants === "not-certified" && receipt.containmentOwner === "nix-build" &&
+    receipt.generation?.packageRoot === root && receipt.generation.launcher === target.launcher &&
+    Number.isSafeInteger(receipt.generation.pid) && receipt.generation.pid > 0 && receipt.settled === true && receipt.processGroup === "absent";
+}
+
 export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTimeoutMs = 30_000, requireService = true } = {}) {
+  const backend = process.env.E2E_SERVICE_BACKEND ?? "systemd";
+  if (backend !== "systemd" && backend !== "process") throw new Error(`Unknown E2E_SERVICE_BACKEND: ${backend}`);
+  const processTarget = requireService && backend === "process" ? processServiceConfiguration(root, process.env) : null;
+  if (processTarget && (!process.env.PI_WEB_TEST_ARTIFACTS || !process.env.PI_WEB_TEST_FIXTURES)) {
+    throw new Error("Process acceptance requires explicit private fixture and artifact directories");
+  }
   process.umask(0o077);
-  const lane = requireService ? guestLane() : null;
-  const baseURL = lane ? `http://127.0.0.1:${lane.port}` : undefined;
+  const lane = requireService && backend === "systemd" ? guestLane() : null;
+  const baseURL = processTarget?.baseURL ?? (lane ? `http://127.0.0.1:${lane.port}` : undefined);
   const parent = join(root, "test-results", "e2e");
   if (!process.env.PI_WEB_TEST_ARTIFACTS) mkdirSync(parent, { recursive: true });
   const artifacts = process.env.PI_WEB_TEST_ARTIFACTS ?? mkdtempSync(join(parent, `${kind}-`));
@@ -226,13 +315,18 @@ export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTim
       await diagnose("browser-close-error", () => browser?.close());
       const settlement = await (stoppingService ?? server?.stop());
       const errors = [...allErrors, ...observations.flatMap((info) => info.errors)];
-      if (requireService && settlement?.scope !== "systemd-user-service") errors.push("No installed service settlement was established");
+      const processEvidence = processTarget && processServiceReceiptMatches(settlement, root, env);
+      if (processTarget) {
+        if (!processEvidence) errors.push("No installed package process settlement was established");
+      } else if (requireService && settlement?.scope !== "systemd-user-service") errors.push("No installed service settlement was established");
       const failed = interrupted || diagnosticFailure || errors.length > 0 || process.exitCode || settlement && (!settlement.settled || settlement.unexpectedExit || settlement.error || settlement.logError);
       state.status = failed ? "failed" : "passed";
       state.finishedAt = new Date().toISOString(); state.server = settlement ?? null;
       state.errors = errors; state.interrupted = interrupted;
+      // In process mode this is deliberately only the receipt's bounded observations.
+      // Only completed outer Nix realization can establish final builder containment.
       state.resourcesSettled = !resourcesUncertain && !launching && !startingService && acquisitions.size === 0 && !interrupted &&
-        (!server ? !requireService : settlement?.settled && (settlement.scope === "systemd-user-service"
+        (!server ? !requireService : settlement?.settled && (processTarget ? processEvidence : settlement.scope === "systemd-user-service"
           ? ["absent", "empty"].includes(settlement.cgroup) : !requireService && settlement.processGroup === "absent"));
       event("run-end", { status: state.status });
       try { save(); } catch (error) { recordError("manifest-error", error); process.exitCode = 1; }
@@ -248,8 +342,10 @@ export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTim
     async startService() {
       checkActive();
       if (server) throw new Error("Harness already owns a service");
-      server = serviceOwner({ lane, command: env.E2E_SERVICE_CONTROL, envFile: env.E2E_SERVICE_ENV,
-        env, logPath: join(artifacts, "server.log"), event });
+      server = processTarget
+        ? processServiceOwner({ root, env, logPath: join(artifacts, "server.log"), event })
+        : serviceOwner({ lane, command: env.E2E_SERVICE_CONTROL, envFile: env.E2E_SERVICE_ENV,
+          env, logPath: join(artifacts, "server.log"), event });
       startingService = server.start();
       try { await startingService; } finally { startingService = undefined; }
       checkActive();
