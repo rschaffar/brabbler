@@ -41,10 +41,51 @@ offline reopening, pending-login ownership, refresh joining/serialization and
 metadata-only invalidation. All catalog HTTP is stubbed; these tests do not replace
 parent-owned static, session, browser, terminal or plugin acceptance on SDK upgrades.
 
+## Compatible maintenance pass (2026-10-16)
+
+Root/demo resolve coordinated Next and eslint-config-next **16.4.2**, React and
+react-dom **19.3.1**, and js-yaml **5.5.0**. Root additionally resolves Undici
+**8.12.2** and Playwright **1.64.1**. Ordinary selective npm updates refresh the
+allowed transitive graph, including Shiki **4.5.0**, Zod **4.6.7** and JSZip
+**3.10.2**, without force/legacy-peer-deps flags or new overrides. Selection
+excludes the SDK family: published caret ranges would otherwise admit SDK 1.3
+transitives despite the four direct 1.2.0 pins. All seven Pi packages remain
+**1.2.0**, pending a separate SDK compatibility migration.
+
+Next 16.4.2 includes the 16.4.1 security fixes and further bundler fixes; React
+and Undici updates include transport/security hardening. The YAML update also
+rejects invalid unquoted punctuation-leading scalars and advances its argparse
+dependency. These are normal package changes, not proof of complete security.
+No application API migration or lint-rule suppression is intended by this pass.
+
+Nix inputs stay on their existing tracks: nixpkgs advances to
+`55bfb4d7437bd4e09ab7cba58a43bd68eb310044`, Home Manager to
+`640725978b99076e18e069f6e7d2959124584f8f`. Node remains **22.23.3**; Chromium
+advances within 155 from **155.0.8059.39** to **155.0.8059.79**, including published
+security fixes. Home Manager's stricter `useGlobalPkgs` validation does not require
+a change to this project's VM/service configuration; `home.stateVersion` is not
+raised. Updating this project lock does not update any installed host Nix daemon
+or activate a host service. Chromium 155 remains an executable override rather
+than Playwright's bundled Chromium 156; complete packaged VM acceptance owns
+compatibility, not a matching-major assumption. Upstream Chromium already has
+further fixes beyond this Nix channel's package.
+
+### Remaining version choices
+
+At the registry checkpoint, **36/43 root** and **25/27 demo** direct dependencies
+match npm's latest tag. Every exception is deliberate: the four root Pi SDK pins
+(1.2.0 versus 1.3.0), native PTY's tested 1.2.0-beta.15 rather than a downgrade to
+stable 1.1.0, Node 22 typings rather than Node 26, and TypeScript 5 rather than 7.
+Keep proper-lockfile 4.1.2 and the tested KaTeX exception described below. Older
+transitives constrained by parents, major ranges or the SDK hold are not an
+instruction to add overrides or replace working libraries. Later registry
+releases require another inventory, not a perpetual-currentness claim.
+
 ## Lint compatibility and deferred compiler major
 
 **Earlier ESLint 10 hold withdrawn after verification:** root and demo resolve
-ESLint **10.12.0** with the unchanged Next **16.4.0** presets. The earlier hold
+ESLint **10.12.0** with Next **16.4.2** presets; existing lint configuration and
+rule settings are unchanged. The earlier hold
 treated plugin peer-range exclusions as a runtime blocker; that conclusion was
 too strong. Next documents ESLint 10 compatibility and supplies compatibility
 adapters. Normal npm installation and clean `npm ci` reproduce the lint toolchain
@@ -77,18 +118,28 @@ and a separate Next/compiler migration can be tested. Align Node types to Node
 22, the supported runtime; js-yaml 5 supplies its own types, so external YAML
 typings are unnecessary.
 
-## Advisory disposition (2026-10-13)
+## Advisory disposition (2026-10-16)
 
-A fresh npm bulk-advisory query against every resolved root/demo version found
-**two root records across two packages**, and **one demo record**. The earlier
-Next, js-yaml, KaTeX, DOMPurify, sharp, source-map-js and brace-expansion matches
-are absent from these candidate lockfiles. This is advisory matching, not a
+After the compatible update pass, a fresh public npm bulk-advisory query against
+every resolved root/demo version still found **two root records across two
+packages**, and **one demo record**. The earlier Next, js-yaml, KaTeX, DOMPurify,
+sharp, source-map-js and brace-expansion matches are absent from these candidate
+lockfiles. This is advisory matching, not a
 complete security audit or proof of absence of vulnerabilities.
 
 | Remaining package | Scope | Disposition |
 | --- | --- | --- |
 | braces 3.0.3, [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm), high | Both locks; development-only micromatch path | Deeply nested glob patterns can exhaust the stack. Latest 3.0.3 remains affected (`<=3.0.3`); no fixed release was available. Keep as explicitly tracked tooling exposure; avoid treating untrusted patterns as safe. |
 | sprintf-js 1.0.3, [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c), moderate | Root; Mammoth's nested argparse dependency, runtime-classified | Unbounded format precision can cause DoS. Even latest 1.1.3 remains affected (`<=1.1.3`); changing the transitive range does not remediate it. No application-supplied formatter input was identified; package presence alone does not establish exploitability. |
+
+The braces path in both locks is `eslint-config-next → @next/eslint-plugin-next
+→ fast-glob → micromatch → braces`; upgrading the Next preset did not remove it.
+The sprintf-js path is `mammoth → argparse → sprintf-js`. Neither library is a
+direct application dependency. Development-only classification does not establish
+absence from Nix's dependency output, which deliberately retains dev modules.
+Their actual vulnerable-input reachability remains a separate investigation;
+this pass does not replace the established parent libraries merely to erase a
+warning.
 
 This guide owns revisiting these two exposures and deferred majors on dependency
 refreshes. Do not add blanket audit ignores or call this candidate audit-clean.
@@ -101,7 +152,9 @@ need notices based on what is actually redistributed, including bundled code.
 Preserve MIT/ISC/BSD copyright/license texts and Apache licenses/applicable NOTICE
 material. Notable expressions include Mammoth BSD-2-Clause, JSZip
 `MIT OR GPL-3.0-or-later` (use MIT), DOMPurify `MPL-2.0 OR Apache-2.0` (use
-Apache-2.0), and Pako `MIT AND Zlib` (both obligations).
+Apache-2.0), and Pako `MIT AND Zlib` (both obligations). Argparse 3 records
+**PSF-2.0** as an attribution correction; preserve applicable Python/PSF notices
+for shipped copies rather than treating the old lockfile label as authoritative.
 
 Review source-availability obligations for MPL components (including web-push and
 Lightning CSS) and LGPL source/relinking obligations for redistributed libvips.
