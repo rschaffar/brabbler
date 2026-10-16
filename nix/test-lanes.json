@@ -4,6 +4,30 @@
   "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. The requested eight-worker default still requires native execution acceptance with unchanged deadlines. Re-review when resource/fixture behavior changes.",
   "files": [
     {
+      "path": "plugins/git-workflow/cleanup.test.mjs",
+      "lane": "N",
+      "estimatedMs": 90000,
+      "reason": "Source and transitive cleanup helpers reviewed: each case owns private Git repositories/worktrees and agent settings/reviews; scratch and descriptor helpers stay in private roots, with no shared-source writes, fixed ports or peer signalling. FS mocks and env changes remain serial within the file's separate Node process. Historical Node 24 duration is advisory, not a deadline or concurrency reservation."
+    },
+    {
+      "path": "plugins/git-workflow/discard.test.mjs",
+      "lane": "N",
+      "estimatedMs": 50000,
+      "reason": "Source and transitive discard/cleanup helpers reviewed: private per-case repositories, worktrees and agent storage contain destructive/race probes; scratch files use worker-private TMP and signalling targets owned children/groups. Process-local mocks/env require serial cases, not cross-file exclusivity. No shared-source writes or fixed port dependency found; historical duration is advisory."
+    },
+    {
+      "path": "plugins/git-workflow/server.test.mjs",
+      "lane": "N",
+      "estimatedMs": 35000,
+      "reason": "Reviewed real Git operations use one private per-file agent/root and unique repositories. PATH shims, registries and lazy observer imports are process-local; settings/reviews/records and scratch stay private, with no listener, source write or machine-wide idle assumption. Preserve serial cases and native-effect settlement; historical duration is advisory."
+    },
+    {
+      "path": "plugins/git-workflow/project-management.test.mjs",
+      "lane": "N",
+      "estimatedMs": 30000,
+      "reason": "Reviewed per-case private Git roots and agent storage; session/terminal maps, reservations, FS fault injection and env changes are local to this file's Node process. No shared-source writes/fixed ports or unscoped peer signals found. Keep cases serial, original ten-second waits and awaited native effects/reservation release; historical duration is advisory."
+    },
+    {
       "path": "lib/e2e-async-condition.test.mjs",
       "lane": "F",
       "reason": "Controlled Promise and injected monotonic-clock/timer fixtures, including late rejection and serialized session-state predicates; no real browser, server, network or shared environment mutation. Native browser acceptance remains separate."

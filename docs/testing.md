@@ -129,8 +129,18 @@ exclusively until reviewed.
   respect CPU affinity/quota, Nix allocation and memory: 1 GiB reserve plus 2 GiB
   per worker. Linux uses `MemAvailable` and ancestor cgroup headroom.
 - Core files have private environments, pinned Git and Node file concurrency 1.
-  Reviewed F/N files share the pool; latency-sensitive E files drain that pool and
-  run alone. E classification does not block an independent browser invocation.
+  Reviewed F/N files share the pool, ordered longest-first by optional manifest
+  `estimatedMs` (positive safe integer; omitted means zero), with canonical path
+  ties. Estimates are coarse historical priority hints, not deadlines, resource
+  reservations or permission to skip work. E files retain their serial inventory
+  order after draining the pool; unreviewed files still warn and default to E.
+  E classification does not block an independent browser invocation.
+- Git Workflow cleanup/discard/server/project-management are explicitly reviewed N
+  files: separate file processes and private Git/agent/TMP fixtures isolate their
+  globals, fault injection, settings and owned native effects. Their cases remain
+  serial. The source cwd is still shared; future source-relative writes, fixed
+  ports or unscoped process effects require another isolation review. Concurrency
+  changes do not authorize weaker Stop, permission, stale-state or cleanup checks.
 - Browser fresh full execution admits **1..4 concurrent group sandboxes**, estimating
   2 CPUs/4 GiB per group plus 2 GiB host headroom. `--workers 1..4` refuses an
   insufficient budget; focused groups default to one. Each weighted queue is serial,
@@ -214,6 +224,42 @@ single-variable A/B benchmarks. Native ARM and GitHub execution remain unverifie
 Core is now the critical path: exclusive files consume about **343s** of aggregate
 work, led by Git Workflow cleanup/discard/server tests. This change does not
 reclassify or weaken them.
+
+### Measured reviewed-core scheduling
+
+On the same native x86_64 host and four-core-worker/four-browser-sandbox budget,
+a paired fresh comparison passed on 2026-10-16:
+
+| Report interval | Corrected baseline | Reviewed N / longest-first |
+| --- | --- | --- |
+| Core | 414.377s | **287.462s** |
+| Browser | 226.879s | 215.217s |
+| Deployment | 23.512s | 21.722s |
+| Complete command | 417.385s | **291.599s (4m52s)** |
+
+Complete wall time fell **125.786s / 30.14% (1.431x faster)** without increasing
+worker count. Both runs use the same application derivation, toolchain, browser
+scenario inputs and exact cursor-specific history matcher. An earlier unchanged
+trial failed because its broad history matcher consumed a late initial response;
+that retained 119.028s failure is not the performance baseline. The approved
+fixture correction changes no action/assertion/deadline and has meaningful red/
+green regressions plus real history acceptance.
+
+Both runs passed **308 core files / 10 suites**; core cases grew **2,399 → 2,404**
+through scheduler regressions, with none skipped/cancelled. All **24 browser/terminal
+groups / 53 exact scenario receipts** and every deployment/settlement proof passed.
+The four Git files retain their **303** original cases and unmodified bodies;
+actual full-run overlap is **34.833s**, with E waiting for the entire pool.
+Individual files were slower under contention, but ran concurrently: no timeout
+was increased or failure hidden. Serial E work fell **335.713s → 135.634s**.
+
+Core remains the critical path, now about 50s beyond the browser/deployment track.
+These are measured command times, not a cold-cache or machine-exclusive claim:
+prerequisites were warm, executions fresh, admission 16 CPUs/27 GiB (estimates,
+not reservations), host 32 logical CPUs/about 54 GiB available at browser admission.
+Four-worker load is verified; broader-width timing, native ARM and CI execution
+remain unverified. Exact identities, failures and evidence live in the
+[completed core parallelism plan](plans/archived/2026-10-16_core-test-parallelism-plan.md).
 
 ## Diagnostics and retention
 

@@ -27,6 +27,7 @@ import { checkGitWorkflowPlugin, gitPluginFixtureSource } from "./git-workflow-p
 import { checkSessionLaunch, sessionLaunchFixtureSource } from "./session-launch.mjs";
 import { WORKTREE_MANAGER_IDS, seedWorktreeManagerFixtures, checkWorktreeManager } from "./worktree-manager.mjs";
 import { browserInputs, createCoverage, selectGroup } from "./scenarios.mjs";
+import { historyPageResponse } from "./history-pagination.mjs";
 
 // Validate one-hot ownership before the harness or any fixture side effects.
 const group = selectGroup(process.env);
@@ -897,8 +898,8 @@ let context;
 
     // Exercise the real IntersectionObserver and prepend path, twice.
     for (let turn = 0; turn < 2; turn++) {
-      const responsePromise = page.waitForResponse((response) =>
-        new URL(response.url()).pathname === `/api/sessions/${LONG}/context`);
+      const before = `e${4950 - turn * 50}`;
+      const responsePromise = page.waitForResponse((response) => historyPageResponse(response, LONG, before));
       await sentinel.evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
       const response = await responsePromise;
       const older = (await response.json()).context;
