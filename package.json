@@ -12,7 +12,7 @@
   },
   "license": "MIT",
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=24.0.0"
   },
   "bin": {
     "pi-web": "bin/pi-web.js"
@@ -102,7 +102,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
-    "@types/node": "^22.20.5",
+    "@types/node": "^24.19.2",
     "@types/proper-lockfile": "4.1.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -115,7 +115,7 @@
     "playwright": "^1.64.0",
     "postcss": "^8.5.29",
     "tailwindcss": "^4.3.3",
-    "typescript": "^5"
+    "typescript": "^6.0.3"
   },
   "overrides": {
     "katex": "$katex"

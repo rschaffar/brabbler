@@ -65,6 +65,10 @@ The demo never ends up in the app or its npm package:
 
 ## Commands
 
+Use Node **24** (the Nix/CI baseline is **24.21.0**, minimum **24.0.0**).
+The demo's independent compiler and Node typings are TypeScript **6.0.3** and
+`@types/node` **24.19.2**, matching the root baseline.
+
 ```bash
 cd demo
 npm install

@@ -162,7 +162,10 @@ Nix realizes prerequisites automatically; no preparation ceremony, checkout depe
 
 **Never run `next build` or `npm run build` in a working checkout.** Isolated Nix package builds are supported for acceptance and cannot interfere with a manual development server's `.next`. Manual development remains separate, not an acceptance mode. Settled runs clean only their own regenerable bulk while retaining evidence; see [testing](./docs/testing.md) for resource budgets, diagnostics and retention.
 
-The flake pins nixpkgs, Home Manager, Node and Chromium through `flake.lock`. Update inputs deliberately in a feature worktree, then verify both complete Nix checks before integration. Chromium/Playwright compatibility is part of packaged VM acceptance. Testing does not activate a service or authorize publication.
+The flake pins nixpkgs, Home Manager, Node and Chromium through `flake.lock`.
+The current Nix baseline is Node **24.21.0**, with TypeScript **6.0.3** and Node 24
+typings in root/demo. The launcher and both manifests require Node **24.0.0 or
+newer**; this minimum check is not acceptance evidence for every future runtime. Update inputs deliberately in a feature worktree, then verify both complete Nix checks before integration. Chromium/Playwright compatibility is part of packaged VM acceptance. Testing does not activate a service or authorize publication.
 
 For npm dependency changes, use `nix develop .#update` and `npm install --package-lock-only`, update the dependency hash in `nix/npm-deps.nix`, and deliberately move the old managed `node_modules` aside before re-entering the default shell. Never overwrite an unmanaged dependency tree to bypass a shell refusal.
 

@@ -132,7 +132,7 @@ let
         }) lanes);
       };
       environment.systemPackages = [
-        pkgs.nodejs_22 pkgs.git pkgs.bash pkgs.coreutils pkgs.curl
+        pkgs.nodejs_24 pkgs.git pkgs.bash pkgs.coreutils pkgs.curl
         pkgs.chromium pkgs.util-linux
       ] ++ controls;
       # Users cannot read each other's fixtures, service configuration or traces.
@@ -145,7 +145,7 @@ let
     };
     testScript = builtins.replaceStrings
       [ "@support@" "@registry@" "@node@" "@chromium@" "@shell@" ]
-      [ "${support}" "${registry}" "${pkgs.nodejs_22}/bin/node"
+      [ "${support}" "${registry}" "${pkgs.nodejs_24}/bin/node"
         "${pkgs.chromium}/bin/chromium" "${pkgs.bash}/bin/bash" ]
       (builtins.readFile ./vm-test.py);
   };
