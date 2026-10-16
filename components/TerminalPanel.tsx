@@ -114,7 +114,9 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     resizeObserver.observe(container);
 
     const connect = () => {
-      if (disposed || closingRef.current || exited || !navigator.onLine) return;
+      // Internet-interface state is advisory: loopback can remain reachable offline.
+      // Let the real transport determine whether this terminal can reconnect.
+      if (disposed || closingRef.current || exited) return;
       events?.close();
       events = new EventSource(`/api/terminal/${encodeURIComponent(id)}/events${offset === undefined ? "" : `?after=${offset}`}`);
       events.onmessage = (message) => {
