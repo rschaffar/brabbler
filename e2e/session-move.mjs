@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 
+export async function waitForMoveControl(page, selector) {
+  // A newly opening picker can be absent on the first poll. Absence is not ready.
+  await page.waitForFunction((target) => document.querySelector(target)?.disabled === false, selector);
+}
+
 export async function checkSessionMovePicker(page, { base, api, sessionId, project, otherProject, gitProject, targetWorktree, mobile }) {
   const session = async () => (await api("/api/sessions?force=1")).sessions.find((item) => item.id === sessionId);
   const open = async () => {
@@ -27,11 +32,11 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
   };
   const select = async (root) => {
     await choose("Destination project", root);
-    await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
+    await waitForMoveControl(page, "#move-session-directory");
   };
   // Default to the session's own project, without proposing a destination yet.
   assert.equal(await projectSelect.getAttribute("data-value"), project);
-  await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
+  await waitForMoveControl(page, "#move-session-directory");
   await directorySelect.click();
   assert.equal(await dialog.locator(`button[role="option"][data-value="${project}"]`).isDisabled(), true);
   assert.equal(await move.isDisabled(), true);
@@ -49,7 +54,7 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
   assert.equal(await dialog.getByRole("option").count(), 1);
   await projectSelect.press("ArrowDown");
   await projectSelect.press("Enter");
-  await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
+  await waitForMoveControl(page, "#move-session-directory");
   assert.equal(await projectSelect.getAttribute("data-value"), otherProject);
 
   // A superseded request must not replace a newer project's destinations.
@@ -91,9 +96,9 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
   await browseReceived;
   await dialog.getByRole("button", { name: "Browse another folder…" }).click();
   const pendingBrowser = page.getByRole("dialog", { name: "Select directory", exact: true });
-  await page.waitForFunction(() => !document.querySelector('.directory-picker-panel button[type="submit"]').disabled);
+  await waitForMoveControl(page, '.directory-picker-panel button[type="submit"]');
   release();
-  await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
+  await waitForMoveControl(page, "#move-session-directory");
   await page.waitForTimeout(150);
   assert.equal(await pendingBrowser.getByLabel("Directory path").inputValue(), project);
   await pendingBrowser.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -107,7 +112,7 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
   assert.equal(await move.isDisabled(), true);
   await page.unroute(matcher);
   await dialog.getByRole("button", { name: "Retry", exact: true }).click();
-  await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
+  await waitForMoveControl(page, "#move-session-directory");
   await directorySelect.click();
   assert.equal(await dialog.locator(`button[role="option"][data-value="${targetWorktree}"]`).innerText(), `target · ${targetWorktree}`);
   assert.equal(await dialog.locator(`button[role="option"][data-value="${gitProject}"]`).innerText(), `feature · ${gitProject}`);
@@ -126,7 +131,7 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
   // Same-project linked -> primary move, with only the exact source disabled.
   dialog = await open();
   assert.equal(await dialog.getByLabel("Destination project").getAttribute("data-value"), gitProject);
-  await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
+  await waitForMoveControl(page, "#move-session-directory");
   assert.equal(await dialog.getByRole("button", { name: "Move", exact: true }).isDisabled(), true);
   const linkedDirectory = dialog.getByLabel("Worktree/directory");
   await linkedDirectory.click();
@@ -149,7 +154,7 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
   // another existing non-Git directory, without invoking Move itself.
   dialog = await open();
   await choose("Destination project", project);
-  await page.waitForFunction(() => !document.querySelector("#move-session-directory").disabled);
+  await waitForMoveControl(page, "#move-session-directory");
   assert.equal(await dialog.getByLabel("Worktree/directory").getAttribute("data-value"), project);
   const browse = async (path) => {
     // Synchronize with the actual production read and settled form, not
@@ -159,7 +164,7 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
     await initialReady;
     const picker = page.getByRole("dialog", { name: "Select directory", exact: true });
     const go = picker.getByRole("button", { name: "Go", exact: true });
-    await page.waitForFunction(() => !document.querySelector('.directory-picker-panel button[type="submit"]').disabled);
+    await waitForMoveControl(page, '.directory-picker-panel button[type="submit"]');
     await picker.getByLabel("Directory path").fill(path);
     const navigated = page.waitForResponse((response) => {
       const url = new URL(response.url());
@@ -167,7 +172,7 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
     });
     await go.click();
     await navigated;
-    await page.waitForFunction(() => !document.querySelector('.directory-picker-panel button[type="submit"]').disabled);
+    await waitForMoveControl(page, '.directory-picker-panel button[type="submit"]');
     await picker.getByRole("button", { name: "Select this folder", exact: true }).click();
     await picker.waitFor({ state: "detached" });
   };
