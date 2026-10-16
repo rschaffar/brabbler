@@ -7,6 +7,13 @@ There is no dependency-preparation step, non-Nix installation path or developmen
 acceptance mode. Normal realization may fetch pinned inputs or substitutes. Test
 execution uses synthetic data and no external providers.
 
+The selected Nix runtime is Node **24.21.0** throughout modules, the application,
+core/fresh runners and VM fixtures. Core's fail-closed runtime-major check requires
+**24**; changing the runtime means updating that guard deliberately, not accepting
+arbitrary ambient Node. Root/demo use TypeScript **6.0.3** and Node 24 typings.
+The launcher/npm minimum is **24.0.0**; acceptance covers the pinned runtime, not
+every version admitted by that minimum.
+
 From the physical Linux working-tree root:
 
 ```sh

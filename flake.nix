@@ -14,14 +14,14 @@
       sources = pkgs: import ./nix/sources.nix { inherit (pkgs) lib; root = ./.; };
       modules = pkgs: import ./nix/modules.nix {
         inherit pkgs;
-        nodejs = pkgs.nodejs_22;
+        nodejs = pkgs.nodejs_24;
         src = (sources pkgs).manifests;
       };
       tests = pkgs:
         let
           core = import ./nix/tests.nix {
             inherit pkgs;
-            nodejs = pkgs.nodejs_22;
+            nodejs = pkgs.nodejs_24;
             modules = modules pkgs;
             src = (sources pkgs).tests;
           };
@@ -41,7 +41,7 @@
               type = "app";
               program = pkgs.lib.getExe (pkgs.writeShellApplication {
                 name = "pi-web-test-core";
-                runtimeInputs = [ pkgs.nodejs_22 pkgs.nix ];
+                runtimeInputs = [ pkgs.nodejs_24 pkgs.nix ];
                 text = ''exec node ${self}/nix/run-core.mjs ${self} ${pkgs.stdenv.hostPlatform.system} "$@"'';
               });
             };
@@ -49,7 +49,7 @@
               type = "app";
               program = pkgs.lib.getExe (pkgs.writeShellApplication {
                 name = "pi-web-test";
-                runtimeInputs = [ pkgs.nodejs_22 pkgs.python3 pkgs.nix ];
+                runtimeInputs = [ pkgs.nodejs_24 pkgs.python3 pkgs.nix ];
                 text = ''exec node ${self}/nix/test.mjs "$@"'';
               });
             };
@@ -57,7 +57,7 @@
               type = "app";
               program = pkgs.lib.getExe (pkgs.writeShellApplication {
                 name = "pi-web-test-e2e";
-                runtimeInputs = [ pkgs.nodejs_22 pkgs.python3 pkgs.nix ];
+                runtimeInputs = [ pkgs.nodejs_24 pkgs.python3 pkgs.nix ];
                 text = ''exec node ${self}/nix/run-vm.mjs ${self} ${pkgs.stdenv.hostPlatform.system} "$@"'';
               });
             };
@@ -67,7 +67,7 @@
       packages = forSystems systems (pkgs: rec {
         pi-web = pkgs.callPackage ./nix/package.nix {
           src = (sources pkgs).application;
-          nodejs = pkgs.nodejs_22;
+          nodejs = pkgs.nodejs_24;
           modules = modules pkgs;
         };
         default = pi-web;
@@ -85,7 +85,7 @@
       lib.vmTest = forSystems linuxSystems (pkgs: (tests pkgs).mkE2E);
       devShells = forSystems linuxSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = [ pkgs.nodejs_22 pkgs.git pkgs.python3 ];
+          packages = [ pkgs.nodejs_24 pkgs.git pkgs.python3 ];
           shellHook = ''
             source ${pkgs.replaceVars ./nix/dev-shell.sh {
               lockFile = ./package-lock.json;
@@ -93,7 +93,7 @@
             }} || exit 1
           '';
         };
-        update = pkgs.mkShell { packages = [ pkgs.nodejs_22 pkgs.git ]; };
+        update = pkgs.mkShell { packages = [ pkgs.nodejs_24 pkgs.git ]; };
       });
     };
 }

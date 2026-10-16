@@ -373,7 +373,7 @@ export async function runSuite({ root, artifacts, gitBin, toolPath = [], jobs = 
       excludedProfiles: ['opt-in real cgroup cases (original skips)', 'e2e/browser and terminal scripts'] });
     for (const file of plan) if (!file.reviewed) event({ type: 'warning', path: file.path, message: file.reason });
     if (inventoryOnly) return { runDir, inventory, plan, resources, exitCode: 0 };
-    if (Number(process.versions.node.split('.')[0]) !== 22) throw new Error('Execution requires pinned Node 22');
+    if (Number(process.versions.node.split('.')[0]) !== 24) throw new Error('Execution requires pinned Node 24');
     if (resources.effective < 1) throw new Error('Insufficient memory: require 1GiB reserve + 2GiB per worker');
     validateTools(gitBin, toolPath);
     async function run(file) {
