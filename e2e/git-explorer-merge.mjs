@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { checkGitGraphAlignment } from "./git-graph-geometry.mjs";
 
 /** Create an explicit disposable merge fixture, then inspect its history. */
 export async function checkIntegratedGitGraph(page, targetWorktree) {
@@ -13,7 +14,15 @@ export async function checkIntegratedGitGraph(page, targetWorktree) {
   await explorer.getByRole("button", { name: "Refresh" }).click();
   await explorer.getByText(new RegExp(`^${oid.slice(0, 10)} ·`)).waitFor();
   const graph = explorer.getByLabel("Commit graph");
-  assert.ok(await graph.locator("svg path").count() >= 2, "Merge commit should have both parent edges");
+  await checkGitGraphAlignment(graph);
+  const mergeEdges = await graph.locator("svg path").evaluateAll((paths) => {
+    const node = paths[0].ownerSVGElement.querySelector("circle");
+    return paths.filter((path) => {
+      const start = path.getPointAtLength(0);
+      return start.x === node.cx.baseVal.value && start.y === node.cy.baseVal.value;
+    }).length;
+  });
+  assert.equal(mergeEdges, 2, "Both parent edges start at the merge commit's node and label");
   await graph.locator(`button[title^="${oid}"]`).click();
   const detail = explorer.getByRole("region", { name: "Git commit details" });
   await detail.getByText("Merge commit · changes vs first parent").waitFor();

@@ -5,6 +5,7 @@ import { layoutGitGraph } from "@/lib/git-graph-layout";
 import type { ExplorerCommit } from "@/lib/git-explorer";
 
 type Page = { head: string; branch: string; refs: { branch: string; oid: string }[]; commits: ExplorerCommit[]; nextSkip: number | null };
+// Pixel height shared by the SVG coordinates and commit rows (not rem-based h-9).
 const ROW = 36;
 const GAP = 15;
 const X = 12;
@@ -101,8 +102,8 @@ export function GitExplorer({ cwd, onOpenCommit, onBranchChange }: {
             cy={row * ROW + ROW / 2} r="4" fill="var(--bg-panel)" stroke={laneColor(graph.lanes[row])} strokeWidth="2" />)}
         </svg>
         {page.commits.map((commit) => <button key={commit.oid} type="button" aria-pressed={selectedOid === commit.oid}
-          className="flex h-9 w-full min-w-0 flex-col justify-center pr-2 text-left text-text hover:bg-bg-hover aria-pressed:bg-bg-selected"
-          style={{ paddingLeft: graphWidth }} onClick={() => { setSelectedOid(commit.oid); onOpenCommit(page.branch, page.head, commit.oid); }}
+          className="flex w-full min-w-0 flex-col justify-center pr-2 text-left text-text hover:bg-bg-hover aria-pressed:bg-bg-selected"
+          style={{ height: ROW, paddingLeft: graphWidth }} onClick={() => { setSelectedOid(commit.oid); onOpenCommit(page.branch, page.head, commit.oid); }}
           title={[commit.oid, `${commit.author} · ${commit.date}`, commit.subject,
             ...(refs.get(commit.oid) ?? []).map((branch) => `Local branch: ${branch}`),
             ...(commit.tags ?? []).map((tag) => `Local tag: ${tag}`)].join("\n")}>
