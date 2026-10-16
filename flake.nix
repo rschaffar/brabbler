@@ -25,17 +25,23 @@
             modules = modules pkgs;
             src = (sources pkgs).tests;
           };
-          mkE2E = { workers ? 2 }: import ./nix/vm-test.nix {
+          mkE2E = { workers ? 1 }: import ./nix/vm-test.nix {
             inherit pkgs home-manager workers;
+            package = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-web;
+            homeManagerModule = self.homeManagerModules.default;
+          };
+          browser = import ./nix/browser-test.nix {
+            inherit pkgs;
             package = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-web;
             modules = modules pkgs;
             src = (sources pkgs).tests;
-            homeManagerModule = self.homeManagerModules.default;
+            flakeSource = self;
           };
-          e2e = mkE2E { };
+          e2e = browser.check;
+          service = mkE2E { workers = 1; };
         in {
           inherit (core) core mkCore;
-          inherit e2e mkE2E;
+          inherit e2e service mkE2E browser;
           apps = {
             test-core = {
               type = "app";
@@ -57,6 +63,14 @@
               type = "app";
               program = pkgs.lib.getExe (pkgs.writeShellApplication {
                 name = "pi-web-test-e2e";
+                runtimeInputs = [ pkgs.nodejs_24 pkgs.python3 pkgs.nix ];
+                text = ''exec node ${self}/nix/run-browser.mjs ${self} ${pkgs.stdenv.hostPlatform.system} "$@"'';
+              });
+            };
+            test-service = {
+              type = "app";
+              program = pkgs.lib.getExe (pkgs.writeShellApplication {
+                name = "pi-web-test-service";
                 runtimeInputs = [ pkgs.nodejs_24 pkgs.python3 pkgs.nix ];
                 text = ''exec node ${self}/nix/run-vm.mjs ${self} ${pkgs.stdenv.hostPlatform.system} "$@"'';
               });
@@ -80,9 +94,11 @@
         pi-web = self.apps.${pkgs.stdenv.hostPlatform.system}.default;
       } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (tests pkgs).apps);
       homeManagerModules.default = import ./nix/home-manager.nix { inherit self; };
-      checks = forSystems linuxSystems (pkgs: { inherit (tests pkgs) core e2e; });
+      checks = forSystems linuxSystems (pkgs: { inherit (tests pkgs) core e2e service; });
       lib.coreCheck = forSystems linuxSystems (pkgs: (tests pkgs).mkCore);
       lib.vmTest = forSystems linuxSystems (pkgs: (tests pkgs).mkE2E);
+      lib.browserSupport = forSystems linuxSystems (pkgs: (tests pkgs).browser.support);
+      lib.browserCapsule = forSystems linuxSystems (pkgs: (tests pkgs).browser.mkCapsule);
       devShells = forSystems linuxSystems (pkgs: {
         default = pkgs.mkShell {
           packages = [ pkgs.nodejs_24 pkgs.git pkgs.python3 ];

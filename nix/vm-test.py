@@ -1,283 +1,409 @@
-"""One guest/package; deterministic concurrent lanes with independent HM units."""
+"""One real Home Manager deployment; no browser inventory or browser support."""
+import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shlex
+import stat
 import subprocess
 import time
 import traceback
+from types import TracebackType
 from typing import Any
 
 support = "@support@"
-registry = json.loads(Path("@registry@").read_text())
-focus = os.environ.get("PI_WEB_E2E_GROUP", "all")
-plan = json.loads(subprocess.check_output(["@node@", f"{support}/nix/vm-plan.mjs", "plan", "@registry@", focus], text=True))
+node = "@node@"
+registry_file = "@registry@"
+registry: dict[str, Any] = json.loads(Path(registry_file).read_text())
+plan: dict[str, Any] = json.loads(subprocess.check_output(
+    [node, f"{support}/service-plan.mjs", "plan", registry_file], text=True, timeout=10))
+service = registry["service"]
 (driver.out_dir / "plan.json").write_text(json.dumps(plan, indent=2) + "\n")
-records: dict[str, dict[str, Any]] = {job["name"]: {"name": job["name"], "lane": job["lane"], "status": "not-run", "runnerSettled": True} for job in plan["jobs"]}
-lanes = {lane["id"]: lane for lane in plan["lanes"]}
-state = {lane["id"]: {"id": lane["id"], "smoke": False, "restart": None, "collected": False,
-                           "serviceStopped": False, "runnersStopped": False} for lane in plan["lanes"]}
-passed = guest_ready = probe_passed = False
+checks = [{"name": name, "status": "not-run"} for name in plan["checks"]]
+proof: dict[str, Any] = {name: None for name in ("activation", "permissions", "write", "restart", "pty")}
+errors: list[str] = []
+known_groups: set[str] = set()
+clients_settled = True
+acceptance_ready = diagnostic_reachable = probe_passed = collected = False
+collecting = False
+settlement: dict[str, Any] = {"status": None, "groups": [], "port": None}
+artifacts: dict[str, str] = {}
+primary: BaseException | None = None
+primary_traceback: TracebackType | None = None
+validation: subprocess.CompletedProcess[str] | None = None
+core_stage = "/var/lib/pi-web-evidence"
+helper_stage = "/var/lib/pi-web-helper-evidence"
+probe_stage = "/var/lib/pi-web-evidence-probe"
 started = time.monotonic()
 
 
-def command(argv):
-    return machine.succeed(shlex.join(argv))
+def require_existing_channel():
+    # execute/connect can implicitly start a VM. Collection may use only the
+    # already-connected guest, never start/reconnect/reboot it after a failure.
+    if collecting:
+        assert machine.is_up(), "Existing guest diagnostic channel unavailable; refusing reconnect"
 
 
-def control(lane, action):
-    return command(["runuser", "-u", lane["user"], "--", lane["controller"], action])
+def command(argv, timeout=120):
+    require_existing_channel()
+    return machine.succeed(shlex.join(argv), timeout=timeout)
 
 
-def properties(unit):
-    output = command(["systemctl", "show", unit, "-p", "ActiveState,SubState,InvocationID,MainPID,ControlGroup,Result,ExecMainStatus"])
-    return dict(line.split("=", 1) for line in output.strip().splitlines())
+def control(action):
+    return command(["runuser", "-u", service["user"], "--", service["controller"], action])
 
 
-def empty_cgroup(group, prefix):
-    assert group.startswith(prefix) and ".." not in group.split("/"), f"Foreign cgroup: {group}"
-    file = f"/sys/fs/cgroup{group}/cgroup.events"
-    output = command(["@shell@", "-c", f"if test -e {shlex.quote(file)}; then cat {shlex.quote(file)}; else echo absent; fi"])
-    return output.strip() == "absent" or "populated 0" in output.splitlines()
+def properties():
+    return dict(line.split("=", 1) for line in control("status").strip().splitlines())
+
+
+def service_cgroup(group):
+    assert isinstance(group, str) and re.fullmatch(
+        r"/user\.slice/user-1000\.slice/user@1000\.service/(?:[A-Za-z0-9_.@:-]+/)*pi-web\.service", group
+    ) and not any(part in (".", "..") for part in group.split("/")), f"Foreign cgroup: {group}"
+    return group
+
+
+def observe_cgroup(group):
+    service_cgroup(group)
+    # Only ENOENT is absence; unreadable/malformed/populated observations fail.
+    script = """const fs = require('node:fs');
+try { process.stdout.write(fs.readFileSync('/sys/fs/cgroup' + process.argv[1] + '/cgroup.events', 'utf8')); }
+catch (error) { if (error.code === 'ENOENT') console.log('absent'); else throw error; }"""
+    output = command([node, "-e", script, group], timeout=10).strip()
+    if output == "absent":
+        return "absent"
+    assert re.findall(r"^populated ([01])$", output, re.M) == ["0"], f"Cgroup not established empty: {output}"
+    return "empty"
+
+
+def live(expected=None):
+    current = properties()
+    assert current["ActiveState"] == "active" and current["SubState"] == "running"
+    assert re.fullmatch(r"[1-9][0-9]*", current["MainPID"])
+    assert re.fullmatch(r"[a-f0-9]{32}", current["InvocationID"])
+    assert current["NRestarts"] == "0" and current["Result"] == "success"
+    known_groups.add(service_cgroup(current["ControlGroup"]))
+    generation = {key: current[key] for key in (
+        "ActiveState", "SubState", "InvocationID", "MainPID", "NRestarts", "ControlGroup", "Result"
+    )}
+    if expected is not None:
+        assert generation == expected, "Service changed generation/PID/restarts/cgroup unexpectedly"
+    return generation
+
+
+def smoke(mode, *extra):
+    global clients_settled
+    prior = clients_settled
+    clients_settled = False
+    argv = ["runuser", "-u", service["user"], "--", "env", "-i", f"HOME={service['home']}",
+            "PATH=/run/current-system/sw/bin", "LANG=C.UTF-8", "LC_ALL=C.UTF-8",
+            node, f"{support}/service-smoke.mjs", mode, registry_file, *extra]
+    code, output = machine.execute(shlex.join(argv) + " 2>&1", timeout=40)
+    # The synchronous runuser/Node client exited, even if its assertions failed.
+    # An earlier uncertain client cannot be cleared by a later successful call.
+    clients_settled = prior
+    assert code == 0, f"{mode} helper failed ({code}): {output}"
+    return json.loads(output)
+
+
+def check(name, action):
+    record = next(item for item in checks if item["name"] == name)
+    record["status"] = "failed"
+    with subtest(name):
+        result = action()
+    record["status"] = "passed"
+    return result
+
+
+def guest_tree_manifest(source, names=()):
+    """Validate the SAME strict tree guard, then hash only root-owned staging."""
+    assert source in (core_stage, helper_stage, probe_stage), "Foreign evidence source"
+    assert not names or (source == core_stage and list(names) == plan["artifacts"])
+    script = (
+        "import assert from 'node:assert/strict';\n"
+        "import fs from 'node:fs';\n"
+        "import { createHash } from 'node:crypto';\n"
+        f"import {{ assertEvidenceTree }} from {json.dumps(f'{support}/vm-evidence.mjs')};\n"
+        """const root = process.argv[1], names = JSON.parse(process.argv[2]);
+assert.equal(process.getuid(), 0);
+assert.equal(fs.readFileSync('/etc/pi-web-acceptance-guest', 'utf8').trim(), 'pi-web-nixos-acceptance-v1');
+const initial = fs.lstatSync(root);
+assert.ok(initial.isDirectory() && initial.uid === 0 && (initial.mode & 0o777) === 0o700, 'Root-private evidence staging required');
+assertEvidenceTree(root); // Physical root, entry bound, symlinks, devices and special files.
+const digests = {}, missing = [], buffer = Buffer.alloc(64 * 1024);
+for (const name of names) {
+  let fd;
+  try { fd = fs.openSync(root + '/' + name, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); }
+  catch (error) { if (error.code === 'ENOENT') { missing.push(name); continue; } throw error; }
+  try {
+    const stat = fs.fstatSync(fd);
+    assert.ok(stat.isFile() && stat.uid === 0 && stat.nlink === 1, 'Physical root-owned single-link artifact required');
+    const hash = createHash('sha256');
+    for (;;) {
+      const count = fs.readSync(fd, buffer, 0, buffer.length, null);
+      if (!count) break;
+      hash.update(buffer.subarray(0, count));
+    }
+    digests[name] = hash.digest('hex');
+  } finally { fs.closeSync(fd); }
+}
+console.log(JSON.stringify({digests, missing}));"""
+    )
+    require_existing_channel()
+    code, output = machine.execute(shlex.join(
+        [node, "--input-type=module", "-e", script, source, json.dumps(list(names))]) + " 2>&1", timeout=30)
+    if code != 0:
+        raise ValueError(f"Unsafe evidence export refused: {output}")
+    result: dict[str, Any] = json.loads(output)
+    assert set(result) == {"digests", "missing"}
+    assert set(result["digests"]).union(result["missing"]) == set(names)
+    assert not set(result["digests"]).intersection(result["missing"])
+    assert all(re.fullmatch(r"[a-f0-9]{64}", value) for value in result["digests"].values())
+    return result
 
 
 def copy_evidence(source, destination):
-    # copy_from_machine's HOST copytree dereferences links. Validate the settled,
-    # root-private staging tree in the GUEST before invoking that host operation.
-    code, output = machine.execute(shlex.join(["@node@", f"{support}/nix/vm-evidence.mjs", "tree", source]) + " 2>&1", timeout=30)
-    if code != 0:
-        raise ValueError(f"Unsafe evidence export refused: {output}")
+    # The pinned driver's HOST copytree dereferences links. Validate immediately
+    # before that operation, never copying an unsafe helper tree to salvage it.
+    guest_tree_manifest(source)
+    require_existing_channel()
     machine.copy_from_machine(source, destination)
 
 
-def port_closed(lane):
-    machine.succeed(shlex.join(["@node@", f"{support}/nix/vm-evidence.mjs", "port", str(lane["port"])]), timeout=10)
+def verify_exported_artifacts(root, expected, mandatory):
+    """Compare transfer results with GUEST hashes; never derive receipt hashes here."""
+    assert root.resolve(strict=True) == root and root.is_dir(), "Physical exported root required"
+    assert set(expected).issubset(mandatory), "Foreign artifact digest"
+    for filename, guest_digest in expected.items():
+        assert re.fullmatch(r"[a-f0-9]{64}", guest_digest)
+        fd = os.open(root / filename, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as stream:
+            metadata = os.fstat(stream.fileno())
+            assert stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1, f"Unsafe exported artifact: {filename}"
+            digest = hashlib.sha256()
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        assert digest.hexdigest() == guest_digest, f"Guest/host artifact hash mismatch: {filename}"
+    assert set(expected) == set(mandatory), "Missing mandatory guest artifact digests"
 
 
-def live(lane, expected=None):
-    current = dict(line.split("=", 1) for line in control(lane, "status").strip().splitlines())
-    assert current["ActiveState"] == "active" and current["SubState"] == "running"
-    assert current["MainPID"] != "0" and current["NRestarts"] == "0" and len(current["InvocationID"]) == 32
-    assert current["ControlGroup"].startswith(f"/user.slice/user-{lane['uid']}.slice/user@{lane['uid']}.service/")
-    if expected:
-        for key in ("InvocationID", "MainPID", "ControlGroup", "NRestarts"):
-            assert current[key] == expected[key], f"Service changed {key}"
-    state[lane["id"]]["cgroup"] = current["ControlGroup"]
-    return current
+def diagnostic_channel_reachable():
+    # is_up() here means booted AND connected, not that multi-user.target passed.
+    # Do not call execute when it could implicitly start/connect a different boot.
+    if not machine.is_up():
+        return False
+    try:
+        code, output = machine.execute("printf %s pi-web-diagnostic-channel-v1", timeout=10)
+        return code == 0 and output == "pi-web-diagnostic-channel-v1"
+    except Exception as error:
+        errors.append(f"Diagnostic channel probe: {error}")
+        traceback.print_exc()
+        return False
 
 
-def validate(mode, data):
-    result = subprocess.run(["@node@", f"{support}/nix/vm-plan.mjs", mode], input=json.dumps(data), text=True, capture_output=True)
-    assert result.returncode == 0, result.stderr
-
-
-def stop_runner(job):
-    record = records[job["name"]]
-    if record["status"] == "not-run":
+def collect_helper_evidence():
+    # A separate ROOT-private sibling: cp -a may preserve user-owned directories
+    # and unsafe links, but cannot poison the core journal/observations tree.
+    try:
+        command(["install", "-d", "-m", "700", "-o", "root", "-g", "root", helper_stage, f"{helper_stage}/artifacts"])
+        command(["cp", "-a", f"{service['evidence']}/.", f"{helper_stage}/artifacts/"])
+        copy_evidence(helper_stage, "guest-helpers")
         return True
-    # A successfully stopped transient unit can already have been unloaded.
-    # Reobserve its exact cgroup instead of treating a second stop's unknown-unit
-    # error as uncertainty. This driver creates each unique unit only once.
-    if record["runnerSettled"]:
-        return empty_cgroup(f"/system.slice/{job['unit']}", f"/system.slice/{job['unit']}")
-    # Stop the complete runner cgroup before the final application stop,
-    # preventing a late acquisition. Never discover/signal numeric PIDs.
-    command(["systemctl", "stop", job["unit"]])
-    group = record["runner"].get("ControlGroup") or f"/system.slice/{job['unit']}"
-    result = properties(job["unit"])
-    return result["MainPID"] == "0" and result["ActiveState"] in ("inactive", "failed") and empty_cgroup(group, f"/system.slice/{job['unit']}")
+    except Exception as error:
+        errors.append(f"Helper evidence incomplete/unsafe: {error}")
+        traceback.print_exc()
+        return False
 
 
-def launch(job):
-    lane = lanes[job["lane"]]
-    command(["install", "-d", "-m", "700", "-o", lane["user"], "-g", "users", job["fixture"], job["evidence"]])
-    env = {"PATH": "/run/current-system/sw/bin", "HOME": lane["home"], "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8",
-           "SHELL": "@shell@", "E2E_PACKAGE_ROOT": plan["package"], "E2E_BASE_URL": f"http://127.0.0.1:{lane['port']}",
-           "E2E_SERVICE_CONTROL": lane["controller"], "E2E_SERVICE_ENV": lane["envFile"],
-           "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH": "@chromium@", "PI_WEB_TEST_FIXTURES": job["fixture"],
-           "PI_WEB_TEST_ARTIFACTS": job["evidence"], "PI_WEB_TEST_TMP": f"{job['fixture']}/tmp"}
-    if job["selector"]:
-        env[job["selector"]] = "1"
-    record = records[job["name"]]
-    record.update(status="failed", runnerSettled=False, startedAt=time.monotonic(), startedSeconds=round(time.monotonic() - started, 3))
-    argv = ["systemd-run", f"--unit={job['unit']}", "--property=Type=exec", "--property=RemainAfterExit=yes",
-            f"--property=User={lane['user']}", "--property=Group=users", f"--property=WorkingDirectory={lane['home']}",
-            "--property=UMask=0077", "--property=KillMode=control-group", "--property=TimeoutStopSec=15s",
-            "--property=RuntimeMaxSec=1800s", "--property=StandardOutput=journal", "--property=StandardError=journal",
-            "env", "-i"] + [f"{key}={value}" for key, value in env.items()] + ["@node@", f"{support}/e2e/{job['suite']}-suite.mjs"]
-    command(argv)
-    record["runner"] = properties(job["unit"])
-    assert record["runner"]["InvocationID"], "Runner acquisition identity missing"
-    print(f"START lane={lane['id']} group={job['name']}", flush=True)
+def collect_core_evidence(helper_collected):
+    global artifacts
+    try:
+        command(["install", "-d", "-m", "700", "-o", "root", "-g", "root", core_stage])
+        collection_failed = False
+        try:
+            command(["tar", "-czf", f"{core_stage}/fixtures.tar.gz", "-C", service["home"], "fixtures", "service.env"], timeout=30)
+        except Exception as error:
+            collection_failed = True
+            errors.append(f"Fixture archive: {error}")
+            traceback.print_exc()
+        # Archive/helper failures never suppress safe journal attempts.
+        for filename, argv in (
+            ("journal.log", ["journalctl", "-b", "--no-pager", "-o", "short-iso"]),
+            ("service.log", ["journalctl", "-b", "--no-pager", "-o", "short-iso", "_SYSTEMD_USER_UNIT=pi-web.service", "_UID=1000"]),
+        ):
+            try:
+                require_existing_channel()
+                machine.succeed(shlex.join(argv) + " > " + shlex.quote(f"{core_stage}/{filename}"), timeout=30)
+            except Exception as error:
+                collection_failed = True
+                errors.append(f"{filename}: {error}")
+                traceback.print_exc()
+        observations = {"plan": plan, "checks": checks, "proof": proof, "clientsSettled": clients_settled,
+                        "acceptanceReady": acceptance_ready, "diagnosticReachable": diagnostic_reachable,
+                        "helpersCollected": helper_collected, "settlement": settlement, "errors": errors}
+        try:
+            command([node, "-e", "require('node:fs').writeFileSync(process.argv[1], process.argv[2], {flag: 'wx', mode: 0o600})",
+                     f"{core_stage}/observations.json", json.dumps(observations, indent=2) + "\n"])
+        except Exception as error:
+            collection_failed = True
+            errors.append(f"Observations: {error}")
+            traceback.print_exc()
+        # This is authoritative: the tree is validated and hashed INSIDE the
+        # root-private guest stage BEFORE copy_from_machine and its shared hop.
+        manifest = guest_tree_manifest(core_stage, plan["artifacts"])
+        artifacts = dict(manifest["digests"])
+        if manifest["missing"]:
+            collection_failed = True
+            errors.append(f"Missing staged artifacts: {manifest['missing']}")
+        # Even an incomplete archive must not suppress export of safe journals.
+        copy_evidence(core_stage, "guest")
+        exported = driver.out_dir / "guest" / "pi-web-evidence"
+        verify_exported_artifacts(exported, artifacts, plan["artifacts"])
+        return not collection_failed and helper_collected
+    except Exception as error:
+        errors.append(f"Core evidence collection: {error}")
+        traceback.print_exc()
+        return False
 
 
-def complete(job, observed):
-    record = records[job["name"]]
-    assert observed["InvocationID"] == record["runner"]["InvocationID"], "Runner generation changed"
-    record["runner"] = observed
-    record["elapsedSeconds"] = round(time.monotonic() - record.pop("startedAt"), 3)
-    record["finishedSeconds"] = round(time.monotonic() - started, 3)
-    record["runnerSettled"] = stop_runner(job)
-    for key, filename in (("harness", "run.json"), ("coverage", "coverage.json")):
-        record[key] = json.loads(command(["cat", f"{job['evidence']}/{filename}"]))
-    record["status"] = "passed"
-    validate("group", {"job": job, "lane": lanes[job["lane"]], "result": record, "package": plan["package"]})
-    port_closed(lanes[job["lane"]])
-    print(f"END lane={job['lane']} group={job['name']} seconds={record['elapsedSeconds']}", flush=True)
+def activation():
+    machine.wait_for_unit("home-manager-t0.service", timeout=120)
+    smoke("seed")
+    generated = smoke("activation")
+    code, output = machine.execute("systemctl is-active user@1000.service")
+    assert code != 0 and output.strip() == "inactive", "User manager started before the default-target proof"
+    # Never explicitly start the application or manufacture its startup link.
+    command(["systemctl", "start", "user@1000.service"])
+    machine.wait_for_unit("pi-web.service", user=service["user"], timeout=120)
+    machine.wait_for_open_port(service["port"], timeout=120)
+    observed = properties()
+    assert observed["UMask"] == "0077" and observed["WorkingDirectory"] == service["home"]
+    assert registry["launcher"] in observed["ExecStart"]
+    fragment = command(["readlink", "-f", observed["FragmentPath"]]).strip()
+    assert fragment == generated["target"]
+    return {**generated, "fragment": fragment, "managerWasInactive": True, "generation": live()}
+
+
+def permissions():
+    generation = proof["activation"]["generation"]
+    live(generation)
+    observed = smoke("permissions", generation["MainPID"])
+    denied = {}
+    for name, file in (("environment", service["envFile"]), ("session", plan["session"]["file"])):
+        # Distinguish genuine EACCES from a missing fixture or broken probe user.
+        script = """const fs = require('node:fs');
+if (process.getuid() !== 65534) throw new Error('Expected nobody probe');
+try { fs.readFileSync(process.argv[1]); throw new Error('Private file was readable'); }
+catch (error) { if (error.code !== 'EACCES') throw error; }"""
+        command(["runuser", "-u", "nobody", "--", node, "-e", script, file], timeout=10)
+        denied[name] = True
+    live(generation)
+    return {**observed, "deniedReads": denied}
+
+
+def http_write():
+    generation = proof["activation"]["generation"]
+    live(generation)
+    result = smoke("http-write")
+    live(generation)
+    return result
+
+
+def restart():
+    before = live(proof["activation"]["generation"])
+    control("restart")
+    machine.wait_for_unit("pi-web.service", user=service["user"], timeout=120)
+    machine.wait_for_open_port(service["port"], timeout=120)
+    after = live()
+    assert after["InvocationID"] != before["InvocationID"], "Explicit restart did not change invocation"
+    session = smoke("restart-read")
+    assert session == proof["write"]["session"], "Durable session/name changed across restart"
+    live(after)
+    return {"before": before, "after": after, "session": session}
+
+
+def pty():
+    generation = proof["restart"]["after"]
+    live(generation)
+    result = smoke("pty", generation["ControlGroup"])
+    live(generation)
+    return result  # No DELETE: final unit stop must settle this live native shell.
 
 
 try:
     start_all()
-    machine.wait_for_unit("multi-user.target")
-    guest_ready = True
+    machine.wait_for_unit("multi-user.target", timeout=120)
+    acceptance_ready = True
     with subtest("evidence-symlink-boundary"):
-        # A synthetic host-only sentinel, never a credential. An absolute guest
-        # link must be rejected before host copytree could dereference it.
         host_sentinel = driver.out_dir.parent / "host-only-evidence-sentinel"
         with host_sentinel.open("x") as sentinel:
             sentinel.write("Synthetic host-only evidence boundary fixture\n")
-        command(["mkdir", "-m", "700", "/var/lib/pi-web-evidence-probe"])
-        command(["ln", "-s", str(host_sentinel), "/var/lib/pi-web-evidence-probe/host-link"])
+        command(["mkdir", "-m", "700", probe_stage])
+        command(["ln", "-s", str(host_sentinel), f"{probe_stage}/host-link"])
         try:
-            copy_evidence("/var/lib/pi-web-evidence-probe", "symlink-probe")
+            copy_evidence(probe_stage, "symlink-probe")
         except ValueError as error:
             assert "symbolic link" in str(error), error
         else:
-            raise AssertionError("Guest symlink crossed host evidence boundary")
+            raise AssertionError("Guest link crossed the host evidence boundary")
         assert not (driver.out_dir / "symlink-probe").exists()
         probe_passed = True
-    for lane in plan["lanes"]:
-        with subtest(f"home-manager-{lane['id']}"):
-            machine.wait_for_unit(f"home-manager-{lane['user']}.service")
-            directory = f"{lane['home']}/fixtures/initial/sessions/smoke"
-            timestamp = "2026-10-15T00:00:00.000Z"
-            session = f"vm-service-smoke-{lane['id']}"
-            transcript = "\n".join(json.dumps(entry) for entry in [
-                {"type": "session", "version": 3, "id": session, "timestamp": timestamp, "cwd": lane["home"]},
-                {"type": "message", "id": "m1", "parentId": None, "timestamp": timestamp,
-                 "message": {"role": "user", "content": [{"type": "text", "text": session}]}}]) + "\n"
-            seed = f"umask 077; mkdir -p {directory}; printf %s {shlex.quote(transcript)} > {directory}/2026-10-15T00-00-00-000Z_{session}.jsonl"
-            command(["runuser", "-u", lane["user"], "--", "@shell@", "-c", seed])
-            # Only the real activation-created default.target link starts the app.
-            command(["systemctl", "start", f"user@{lane['uid']}.service"])
-            machine.wait_for_unit("pi-web.service", user=lane["user"])
-            machine.wait_for_open_port(lane["port"])
-            smoke = json.loads(command(["curl", "--fail", "--silent", f"http://127.0.0.1:{lane['port']}/api/sessions"]))
-            assert [item["id"] for item in smoke["sessions"]] == [session]
-            status, mask = machine.systemctl("show pi-web.service -p UMask --value", user=lane["user"])
-            assert status == 0 and mask.strip() == "0077"
-            live(lane)
-            control(lane, "stop")
-            state[lane["id"]]["smoke"] = True
-
-    pending = {lane["id"]: [next(job for job in plan["jobs"] if job["name"] == name) for name in lane["groups"]] for lane in plan["lanes"]}
-    active, failures = {}, []
-    # Static weighted queues, not concurrent machine.execute calls or shared users.
-    while active or (not failures and any(pending.values())):
-        for lane_id, queue in pending.items():
-            if not failures and queue and lane_id not in active:
-                job = queue.pop(0)
-                active[lane_id] = job
-                try:
-                    launch(job)
-                except Exception as error:
-                    failures.append(f"{job['name']}: {error}")
-                    traceback.print_exc()
-                    active.pop(lane_id)
-        for lane_id, job in list(active.items()):
-            observed = properties(job["unit"])
-            if observed["MainPID"] != "0" and observed["ActiveState"] in ("active", "activating"):
-                continue
-            try:
-                with subtest(job["name"]):
-                    complete(job, observed)
-            except Exception as error:
-                records[job["name"]]["status"] = "failed"
-                failures.append(f"{job['name']}: {error}")
-                traceback.print_exc()
-                print(command(["journalctl", "-b", "-u", job["unit"], "--no-pager", "-n", "80"]))
-            active.pop(lane_id)
-        if active:
-            time.sleep(0.25)
-    assert not failures, "\n".join(failures)
-
-    for lane in plan["lanes"]:
-        if not lane["groups"]:
-            continue
-        with subtest(f"service-restart-{lane['id']}"):
-            control(lane, "start")
-            machine.wait_for_open_port(lane["port"])
-            generation = live(lane)
-            url = f"http://127.0.0.1:{lane['port']}/api/sessions?force=1"
-            before = json.loads(command(["curl", "--fail", "--silent", url]))
-            live(lane, generation)
-            status, output = machine.systemctl("restart pi-web.service", user=lane["user"])
-            assert status == 0, output
-            machine.wait_for_open_port(lane["port"])
-            restarted = live(lane)
-            assert restarted["InvocationID"] != generation["InvocationID"]
-            after = json.loads(command(["curl", "--fail", "--silent", url]))
-            before_ids = sorted(item["id"] for item in before["sessions"])
-            assert before_ids and before_ids == sorted(item["id"] for item in after["sessions"])
-            live(lane, restarted)
-            control(lane, "stop")
-            state[lane["id"]]["restart"] = True
-    passed = True
-except Exception:
-    traceback.print_exc()  # Preserve the primary even if collection also fails.
-    raise
+    proof["activation"] = check("activation", activation)
+    proof["permissions"] = check("environment-permissions", permissions)
+    proof["write"] = check("http-write", http_write)
+    proof["restart"] = check("restart-persistence", restart)
+    proof["pty"] = check("production-pty", pty)
+except Exception as error:
+    primary, primary_traceback = error, error.__traceback__
+    errors.append(str(error) or type(error).__name__)
+    traceback.print_exc()
 finally:
-    if guest_ready:
-        # Settle every runner first; collect each lane independently even on errors.
-        for job in plan["jobs"]:
-            record = records[job["name"]]
-            try:
-                record["runnerSettled"] = stop_runner(job)
-            except Exception as error:
-                record["runnerSettled"] = False
-                record["stopError"] = str(error)
-            if "startedAt" in record:
-                record["elapsedSeconds"] = round(time.monotonic() - record.pop("startedAt"), 3)
-        for lane in plan["lanes"]:
-            result = state[lane["id"]]
-            result["runnersStopped"] = all(records[name]["runnerSettled"] for name in lane["groups"])
-            try:
-                control(lane, "stop")
-                observed = dict(line.split("=", 1) for line in control(lane, "status").strip().splitlines())
-                group = result.get("cgroup", f"/user.slice/user-{lane['uid']}.slice/user@{lane['uid']}.service/app.slice/pi-web.service")
-                result["serviceStopped"] = observed["ActiveState"] == "inactive" and observed["MainPID"] == "0" and empty_cgroup(group, f"/user.slice/user-{lane['uid']}.slice/user@{lane['uid']}.service/")
-                port_closed(lane)
-            except Exception as error:
-                result["serviceStopped"] = False
-                result["stopError"] = str(error)
-            try:
-                stage = f"/var/lib/pi-web-evidence/{lane['id']}"
-                command(["mkdir", "-p", f"{stage}/artifacts", f"{stage}/runners"])
-                command(["cp", "-a", f"{lane['home']}/evidence/.", f"{stage}/artifacts/"])
-                for job in plan["jobs"]:
-                    if job["lane"] != lane["id"] or records[job["name"]]["status"] == "not-run":
-                        continue
-                    runner_log = f"{stage}/runners/{job['name']}.log"
-                    machine.succeed(shlex.join(["journalctl", "-b", "-u", job["unit"], "--no-pager", "-o", "cat"]) + " > " + shlex.quote(runner_log))
-                    if records[job["name"]]["status"] != "passed":
-                        command(["tar", "-czf", f"{stage}/{job['name']}-failed-fixture.tar.gz", "-C", "/", job["fixture"].lstrip("/")])
-                result["collected"] = True
-            except Exception as error:
-                result["collectionError"] = str(error)
-                traceback.print_exc()
-        collected = False
+    collecting = True
+    diagnostic_reachable = diagnostic_channel_reachable()
+    if diagnostic_reachable:
         try:
-            machine.succeed("journalctl -b --no-pager > /var/lib/pi-web-evidence/journal.log")
-            copy_evidence("/var/lib/pi-web-evidence", "guest")
-            collected = all(item["collected"] for item in state.values())
-        except Exception:
+            current = properties()
+            if current.get("ControlGroup"):
+                known_groups.add(service_cgroup(current["ControlGroup"]))
+            if all(item["status"] == "passed" for item in checks):
+                live(proof["restart"]["after"])
+        except Exception as error:
+            errors.append(f"Pre-stop observation: {error}")
+        try:
+            control("stop")
+            settlement["status"] = properties()
+            settlement["groups"] = [{"path": group, "state": observe_cgroup(group)} for group in sorted(known_groups)]
+            assert known_groups, "No authenticated service cgroup was observed"
+            assert settlement["status"]["ActiveState"] == "inactive" and settlement["status"]["MainPID"] == "0"
+            command([node, f"{support}/vm-evidence.mjs", "port", str(service["port"])], timeout=10)
+            settlement["port"] = "refused"
+        except Exception as error:
+            errors.append(f"Service settlement: {error}")
             traceback.print_exc()
-        receipt = {"version": 2, "plan": plan, "passed": passed, "artifactsCollected": collected, "collectionProbe": probe_passed,
-                   "serviceStopped": all(item["serviceStopped"] for item in state.values()),
-                   "runnersStopped": all(item["runnersStopped"] for item in state.values()),
-                   "lanes": list(state.values()), "groups": list(records.values()),
-                   "elapsedSeconds": round(time.monotonic() - started, 3)}
-        (driver.out_dir / "acceptance.json").write_text(json.dumps(receipt, indent=2) + "\n")
-        validate("receipt", {"plan": plan, "receipt": receipt})
-        assert collected, "Missing/incomplete VM evidence collection"
-        assert receipt["serviceStopped"] and receipt["runnersStopped"], "Service/runner stop was not established; diagnostics collected, VM bulk must remain"
+        helper_collected = collect_helper_evidence()
+        collected = collect_core_evidence(helper_collected)
+    else:
+        errors.append("Guest diagnostic channel unreachable; no reconnect or new boot attempted")
+    receipt = {"version": 1, "kind": "pi-web-service-evidence", "plan": plan,
+               "passed": acceptance_ready and not errors and all(item["status"] == "passed" for item in checks),
+               "checks": checks, "proof": proof, "clientsSettled": clients_settled, "settlement": settlement,
+               "collectionProbe": probe_passed, "artifactsCollected": collected, "artifacts": artifacts,
+               "errors": errors, "elapsedSeconds": round(time.monotonic() - started, 3)}
+    receipt_file = driver.out_dir / "acceptance.json"
+    receipt_file.write_text(json.dumps(receipt, indent=2) + "\n")
+    try:
+        validation = subprocess.run([node, f"{support}/service-plan.mjs", "receipt"],
+                                    input=json.dumps({"plan": plan, "receipt": receipt}), text=True, capture_output=True, timeout=10)
+        if validation.returncode != 0:
+            print(validation.stderr, flush=True)
+    except Exception as error:
+        receipt["passed"] = False
+        errors.append(f"Evidence validation: {error}")
+        receipt_file.write_text(json.dumps(receipt, indent=2) + "\n")
+        traceback.print_exc()
+if primary is not None:
+    raise primary.with_traceback(primary_traceback)
+assert validation is not None and validation.returncode == 0, "Missing/unsafe service evidence or uncertain settlement; retain VM bulk"
+assert receipt["passed"], "Deployment assertions/collection/settlement failed; original diagnostics retained"

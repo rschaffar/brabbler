@@ -111,7 +111,7 @@ security fixes. Home Manager's stricter `useGlobalPkgs` validation does not requ
 a change to this project's VM/service configuration; `home.stateVersion` is not
 raised. Updating this project lock does not update any installed host Nix daemon
 or activate a host service. Chromium 155 remains an executable override rather
-than Playwright's bundled Chromium 156; complete packaged VM acceptance owns
+than Playwright's bundled Chromium 156; complete packaged browser acceptance owns
 compatibility, not a matching-major assumption. Upstream Chromium already has
 further fixes beyond this Nix channel's package.
 
@@ -328,4 +328,4 @@ nix run .#test -- e2e --group markdown
 ```
 
 These are not complete acceptance. Follow [Testing](testing.md) for the final
-complete sandboxed core/plugin and packaged-service VM baseline.
+complete sandboxed core/plugin, browser/terminal and genuine deployment VM baseline.

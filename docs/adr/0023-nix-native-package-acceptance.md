@@ -3,6 +3,9 @@
 The sequential single-user scheduling below is superseded by
 [ADR 0024](0024-disjoint-parallel-acceptance-lanes.md). Its package, sandbox,
 Home Manager, input, credential and settlement boundaries remain in force.
+[ADR 0025](0025-browser-and-deployment-acceptance.md) subsequently separates full
+browser/terminal integration from the smaller genuine deployment VM; the historical
+placement and two-level arrangement below no longer describe current operation.
 
 ## Decision
 

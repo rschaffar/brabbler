@@ -68,7 +68,7 @@ nix profile install /path/to/checkout#pi-web
 PI_WEB_SKIP_VERSION_CHECK=1 pi-web
 ```
 
-Nix builds the production package in an isolated builder; that same package is used by VM acceptance. Installation/activation is separate from testing. The output is a Nix package, not a separately published Pi Desk npm package.
+Nix builds the production package in an isolated builder; that same package is used by browser and deployment acceptance. Installation/activation is separate from testing. The output is a Nix package, not a separately published Pi Desk npm package.
 
 On Linux, the flake also exports a Home Manager module:
 
@@ -147,25 +147,26 @@ Read [AGENTS.md](./AGENTS.md) for repository workflow rules and
 [Architecture](./docs/architecture.md) for the source map. [Testing](./docs/testing.md)
 owns the verification baseline and change-dependent acceptance matrix.
 
-There are two acceptance levels: sandboxed core/static/plugin checks and a complete browser/terminal suite against the actual packaged Home Manager service in one NixOS VM.
+There are three acceptance levels: sandboxed core/static/plugin checks, the complete browser/terminal inventory in ordinary Nix sandboxes, and a small genuine Home Manager/systemd deployment VM. All use pinned inputs; browser and deployment run the same production package.
 
 ```bash
-nix flake check -L                         # complete cacheable checks
+nix flake check --max-jobs 1 --cores 4 -L   # complete cacheable checks
 nix run .#test -- all                      # fresh complete acceptance; resource-aware overlap
 nix run .#test -- core                     # fresh core/static/plugin execution separately
-nix run .#test -- e2e                      # fresh full packaged-service VM run separately
+nix run .#test -- e2e                      # full browser/terminal inventory separately
+nix run .#test -- service                  # genuine Home Manager deployment separately
 nix run .#test -- core --jobs 2 --file lib/worktree.test.mjs
 nix run .#test -- e2e --group markdown      # selected-only iteration
 ```
 
-Nix realizes prerequisites automatically; no preparation ceremony, checkout dependencies or Playwright download is needed. The fresh entry point exports/verifies current source, including untracked helpers. Core uses immutable shared modules. E2E uses one guest boot, pinned Chromium, synthetic fixtures/providers and the real installed production package. Disjoint scenario owners run in up to four resource-admitted lanes, each with its own user, Home Manager service, port and state; `--workers 1..4` fixes the profile. The combined `all` command exports once and overlaps core/VM only with spare CPU/memory headroom. It requires native Linux/KVM and never contacts the installed host service. Full acceptance includes every named browser group and real terminal coverage; focused passes are not full acceptance.
+Nix realizes prerequisites automatically; no preparation ceremony, checkout dependencies or Playwright download is needed. The fresh entry point exports/verifies current source, including untracked helpers. Core uses immutable shared modules. Every browser/terminal group gets its own ordinary Nix sandbox, pinned Chromium/fonts, synthetic fixtures/providers and installed production launcher. Up to four resource-admitted sandboxes run concurrently; `--workers 1..4` fixes the width, not a VM size. Browser acceptance needs no KVM, nspawn or experimental daemon features. The separate small KVM guest proves real Home Manager startup, environment/permissions, restart/persistence, HTTP PTY and service/cgroup shutdown. The combined `all` command exports once, runs browser then deployment, and overlaps core only with sufficient CPU/memory headroom. No level contacts the installed host service. Full acceptance requires all three levels; focused passes are not full acceptance.
 
 **Never run `next build` or `npm run build` in a working checkout.** Isolated Nix package builds are supported for acceptance and cannot interfere with a manual development server's `.next`. Manual development remains separate, not an acceptance mode. Settled runs clean only their own regenerable bulk while retaining evidence; see [testing](./docs/testing.md) for resource budgets, diagnostics and retention.
 
 The flake pins nixpkgs, Home Manager, Node and Chromium through `flake.lock`.
 The current Nix baseline is Node **24.21.0**, with TypeScript **6.0.3** and Node 24
 typings in root/demo. The launcher and both manifests require Node **24.0.0 or
-newer**; this minimum check is not acceptance evidence for every future runtime. Update inputs deliberately in a feature worktree, then verify both complete Nix checks before integration. Chromium/Playwright compatibility is part of packaged VM acceptance. Testing does not activate a service or authorize publication.
+newer**; this minimum check is not acceptance evidence for every future runtime. Update inputs deliberately in a feature worktree, then verify all three complete Nix checks before integration. Chromium/Playwright compatibility is part of packaged browser acceptance. Testing does not activate a service or authorize publication.
 
 For npm dependency changes, use `nix develop .#update` and `npm install --package-lock-only`, update the dependency hash in `nix/npm-deps.nix`, and deliberately move the old managed `node_modules` aside before re-entering the default shell. Never overwrite an unmanaged dependency tree to bypass a shell refusal.
 
@@ -192,7 +193,7 @@ lib/          Session, agent, model, file, Git, and security core
 plugins/      Optional bundled plugins
 public/       Static assets and PWA files
 bin/          Inherited pi-web launcher
-nix/          Shared dependencies, package, core checks and NixOS VM acceptance
+nix/          Package/dependencies, sandboxed core/browser and deployment VM checks
 docs/         User guides, contributor notes, and design decisions
 e2e/          Browser and terminal integration tests
 demo/         Inherited standalone demo source

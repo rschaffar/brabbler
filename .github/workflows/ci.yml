@@ -14,27 +14,27 @@ concurrency:
 
 jobs:
   acceptance:
-    # Independent machines avoid core/Chromium contention and overlap both checks.
+    # Independent machines avoid core/Chromium contention and isolate deployment.
     name: acceptance (${{ matrix.suite }})
     strategy:
       fail-fast: false
       matrix:
-        suite: [core, e2e]
+        suite: [core, e2e, service]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
         with:
-          enable_kvm: true
+          enable_kvm: ${{ matrix.suite == 'service' }}
           extra_nix_config: |
             experimental-features = nix-command flakes
             max-jobs = 2
             cores = 4
       - name: Evaluate the complete native check graph
         run: nix flake check --no-build --no-write-lock-file
-      # Execute the same core program and VM driver as checks.core/checks.e2e,
-      # freshly, once each. User-owned diagnostics remain uploadable on failure;
+      # Execute the same core, sandboxed browser and deployment definitions freshly.
+      # User-owned diagnostics remain uploadable on failure;
       # never widen permissions on nixbld's failed trees or retry a failed suite.
       - name: Fresh core and bundled-plugin acceptance
         if: matrix.suite == 'core'
@@ -51,7 +51,7 @@ jobs:
           if [[ ! "$root" =~ ^/tmp/pi-web-test-core\.[A-Za-z0-9]+$ ]]; then root="$GITHUB_WORKSPACE/test-results/not-started-core"; status=1; fi
           printf 'root=%s\n' "$root" >> "$GITHUB_OUTPUT"
           exit "$status"
-      - name: Fresh full packaged-service VM acceptance
+      - name: Fresh complete sandboxed browser and terminal acceptance
         if: matrix.suite == 'e2e'
         id: e2e
         shell: bash
@@ -62,8 +62,23 @@ jobs:
           statuses=("${PIPESTATUS[@]}")
           status=${statuses[0]}
           if [ "$status" -eq 0 ]; then status=${statuses[1]}; fi
-          root=$(awk '/^Artifacts: \/tmp\/pwv-/ { print $2 }' test-results/e2e.log | tail -1)
-          if [[ ! "$root" =~ ^/tmp/pwv-[A-Za-z0-9]+$ ]]; then root="$GITHUB_WORKSPACE/test-results/not-started-e2e"; status=1; fi
+          root=$(awk '/^Artifacts: \/tmp\/pi-web-test-browser\./ { print $2 }' test-results/e2e.log | tail -1)
+          if [[ ! "$root" =~ ^/tmp/pi-web-test-browser\.[A-Za-z0-9]+$ ]]; then root="$GITHUB_WORKSPACE/test-results/not-started-e2e"; status=1; fi
+          printf 'root=%s\n' "$root" >> "$GITHUB_OUTPUT"
+          exit "$status"
+      - name: Fresh genuine Home Manager deployment acceptance
+        if: matrix.suite == 'service'
+        id: service
+        shell: bash
+        run: |
+          mkdir -p test-results
+          set +e
+          nix run --no-write-lock-file .#test -- service 2>&1 | tee test-results/service.log
+          statuses=("${PIPESTATUS[@]}")
+          status=${statuses[0]}
+          if [ "$status" -eq 0 ]; then status=${statuses[1]}; fi
+          root=$(awk '/^Artifacts: \/tmp\/pwv-/ { print $2 }' test-results/service.log | tail -1)
+          if [[ ! "$root" =~ ^/tmp/pwv-[A-Za-z0-9]+$ ]]; then root="$GITHUB_WORKSPACE/test-results/not-started-service"; status=1; fi
           printf 'root=%s\n' "$root" >> "$GITHUB_OUTPUT"
           exit "$status"
       - uses: actions/upload-artifact@v4
@@ -73,13 +88,17 @@ jobs:
           path: |
             test-results/core.log
             test-results/e2e.log
+            test-results/service.log
             ${{ steps.core.outputs.root || 'test-results/not-started-core' }}/artifacts
             ${{ steps.core.outputs.root || 'test-results/not-started-core' }}/lifecycle.json
             ${{ steps.core.outputs.root || 'test-results/not-started-core' }}/run.json
             ${{ steps.core.outputs.root || 'test-results/not-started-core' }}/driver.log
-            ${{ steps.e2e.outputs.root || 'test-results/not-started-e2e' }}/artifacts
+            ${{ steps.e2e.outputs.root || 'test-results/not-started-e2e' }}/groups
             ${{ steps.e2e.outputs.root || 'test-results/not-started-e2e' }}/run.json
-            ${{ steps.e2e.outputs.root || 'test-results/not-started-e2e' }}/driver.log
-            ${{ steps.e2e.outputs.root || 'test-results/not-started-e2e' }}/realization.log
+            ${{ steps.e2e.outputs.root || 'test-results/not-started-e2e' }}/preparation.log
+            ${{ steps.service.outputs.root || 'test-results/not-started-service' }}/artifacts
+            ${{ steps.service.outputs.root || 'test-results/not-started-service' }}/run.json
+            ${{ steps.service.outputs.root || 'test-results/not-started-service' }}/driver.log
+            ${{ steps.service.outputs.root || 'test-results/not-started-service' }}/realization.log
           retention-days: 7
           if-no-files-found: warn

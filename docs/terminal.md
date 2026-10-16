@@ -41,7 +41,10 @@ Input and resizes are serialized. Pending adjacent input is batched so remote
 connections do not require one round trip per keystroke; large pastes are split
 without splitting Unicode characters. Failed input is not retried because its
 delivery may be ambiguous. Reconnect attaches to the same process with a fresh
-writer; restart explicitly replaces the process.
+writer; restart explicitly replaces the process. Initial/restored connections do
+not require `navigator.onLine`: a reachable local application can work while the
+browser reports no external network. Actual HTTP/SSE failures still determine
+connection state; closing, disposal and same-ID restoration guards remain binding.
 
 `bin/prepare-terminal.js` repairs node-pty 1.1.0's macOS spawn-helper executable
 bits during installation, including published/npm-installed Pi Web packages.
@@ -64,9 +67,10 @@ The [common baseline](testing.md) covers native PTY, lease, output cursor, input
 queue and storage checks, plus controlled whole-component lifecycle callbacks.
 `nix run .#test -- core --file components/TerminalPanel.test.mjs` focuses those
 callbacks and client contracts. `nix run .#test -- e2e --group terminal` exercises
-real PTYs and pinned Chromium against the Nix-built production package through
-the genuine Home Manager service in an isolated NixOS guest.
-The shared [browser harness](../e2e/README.md#diagnostics-shutdown-and-retention)
+real PTYs and pinned Chromium against the Nix-built production launcher in an
+ordinary Nix sandbox. `nix run .#test -- service` separately proves a genuine HTTP
+PTY and its shutdown ownership in the Home Manager service's closure-only guest.
+The shared [browser harness](../e2e/README.md#diagnostics-and-settlement)
 isolates HOME/XDG/agent/TMP, traces each context and records owned-service
 settlement. Acceptance never uses the installed host service, a development
 server or checkout build output. Retained-resource cleanup remains separate.
