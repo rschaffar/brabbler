@@ -52,6 +52,9 @@ export function planFiles(inventory, manifest, selection = []) {
     if (!['F', 'N', 'E'].includes(entry.lane) || typeof entry.reason !== 'string' || !entry.reason.trim()) {
       throw new Error(`Invalid review: ${entry.path}`);
     }
+    if (entry.estimatedMs !== undefined && (!Number.isSafeInteger(entry.estimatedMs) || entry.estimatedMs < 1)) {
+      throw new Error(`Invalid duration estimate: ${entry.path}`);
+    }
     if (entry.expectedCases !== undefined && (!Array.isArray(entry.expectedCases) || !entry.expectedCases.length ||
         entry.expectedCases.some((name) => typeof name !== 'string' || !name.trim()) ||
         new Set(entry.expectedCases).size !== entry.expectedCases.length)) throw new Error(`Invalid expectedCases: ${entry.path}`);
@@ -66,6 +69,7 @@ export function planFiles(inventory, manifest, selection = []) {
     reason: reviewed.get(file.path)?.reason ?? 'UNREVIEWED: exclusive fallback; still included',
     reviewed: reviewed.has(file.path),
     expectedCases: reviewed.get(file.path)?.expectedCases,
+    estimatedMs: reviewed.get(file.path)?.estimatedMs ?? 0,
   }));
 }
 
@@ -296,7 +300,10 @@ export function validateCases(tap, expectedCases) {
 // Mechanism seam for tiny worker tests, not a substitute for native Git/SDK acceptance.
 export async function schedule(plan, { jobs, run, signal }) {
   if (!validJobs(jobs)) throw new Error('Invalid pool size');
-  const ordered = [...plan.filter((f) => f.lane !== 'E'), ...plan.filter((f) => f.lane === 'E')];
+  // Historical estimates only prioritize reviewed parallel work, never E barriers.
+  const pool = plan.filter((file) => file.lane !== 'E').sort((a, b) =>
+    (b.estimatedMs ?? 0) - (a.estimatedMs ?? 0) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const ordered = [...pool, ...plan.filter((file) => file.lane === 'E')];
   const results = new Map();
   const active = new Set();
   let failed = false;
@@ -383,7 +390,7 @@ export async function runSuite({ root, artifacts, gitBin, toolPath = [], jobs = 
       const stderr = path.join(runDir, `${id}.stderr.log`);
       const workspace = createWorkspace();
       const argv = nodeArgs(path.join(root, file.path));
-      const record = { path: file.path, lane: file.lane, argv: [process.execPath, ...argv],
+      const record = { path: file.path, lane: file.lane, estimatedMs: file.estimatedMs, argv: [process.execPath, ...argv],
         workspace: workspace.directory, stdout, stderr, startedAt: new Date().toISOString() };
       let child, original, spawnError, exitCode = null, exitSignal = null, interrupted = signal?.aborted ?? false;
       const handles = [];

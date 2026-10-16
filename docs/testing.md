@@ -129,8 +129,18 @@ exclusively until reviewed.
   respect CPU affinity/quota, Nix allocation and memory: 1 GiB reserve plus 2 GiB
   per worker. Linux uses `MemAvailable` and ancestor cgroup headroom.
 - Core files have private environments, pinned Git and Node file concurrency 1.
-  Reviewed F/N files share the pool; latency-sensitive E files drain that pool and
-  run alone. E classification does not block an independent browser invocation.
+  Reviewed F/N files share the pool, ordered longest-first by optional manifest
+  `estimatedMs` (positive safe integer; omitted means zero), with canonical path
+  ties. Estimates are coarse historical priority hints, not deadlines, resource
+  reservations or permission to skip work. E files retain their serial inventory
+  order after draining the pool; unreviewed files still warn and default to E.
+  E classification does not block an independent browser invocation.
+- Git Workflow cleanup/discard/server/project-management are explicitly reviewed N
+  files: separate file processes and private Git/agent/TMP fixtures isolate their
+  globals, fault injection, settings and owned native effects. Their cases remain
+  serial. The source cwd is still shared; future source-relative writes, fixed
+  ports or unscoped process effects require another isolation review. Concurrency
+  changes do not authorize weaker Stop, permission, stale-state or cleanup checks.
 - Browser fresh full execution admits **1..4 concurrent group sandboxes**, estimating
   2 CPUs/4 GiB per group plus 2 GiB host headroom. `--workers 1..4` refuses an
   insufficient budget; focused groups default to one. Each weighted queue is serial,
