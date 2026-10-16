@@ -26,11 +26,19 @@ protocol; the SDK uses the same package/version. Release age alone does not
 justify a replacement. Any future replacement must prove cross-process and SDK
 interoperability, including the existing stale-delete/concurrent-login regression.
 
-## Pi SDK 1.2.0 catalog compatibility
+## Pi SDK 1.3.0 compatibility
 
-The Pi package pins remain exact. SDK 1.2.0 personalizes OpenRouter catalogs via
-`/models/user` and persists the resulting model list, limits and prices. Additional
-accounts must therefore bind both credentials and a catalog store to the same
+The four direct Pi package pins are now exactly **1.3.0**; the coordinated
+MCP, codemode and telemetry packages also resolve **1.3.0**, with no older SDK
+copies. Normal npm resolution with strict engine checks required no force flags,
+new overrides or peer edits. No external package resolution changed. Demo has no
+Pi dependency; its independent manifests/lock and the Nix toolchain inputs remain
+unchanged. Node 22, TypeScript 5, native PTY, proper-lockfile and KaTeX choices are
+not part of this SDK upgrade.
+
+SDK 1.2.0 introduced personalized OpenRouter catalogs via `/models/user` and
+persisted model lists, limits and prices. Additional accounts continue to require
+both credentials and a catalog store bound to the same
 immutable complete account-ID snapshot, never reuse or seed from the Pi-default
 store. `lib/account-model-runtime.ts` owns this boundary; ordinary Pi-default
 routes retain CLI-compatible storage. See [Model/account contracts](model-internals.md).
@@ -41,6 +49,41 @@ offline reopening, pending-login ownership, refresh joining/serialization and
 metadata-only invalidation. All catalog HTTP is stubbed; these tests do not replace
 parent-owned static, session, browser, terminal or plugin acceptance on SDK upgrades.
 
+The 1.3 review found no required application API migration. Account/catalog,
+preflight/disposal, resource discovery and native Codex tier-pricing implementations
+remain compatible; keep the guarded launch lifecycle and reported-`fast` pricing
+shim rather than removing them on a version-number assumption. All seven packages
+retain Node **>=22.19.0**, MIT licensing and their external dependency declarations;
+coordinated internal Pi edges are now exact **1.3.0** instead of `^1.2.0`.
+
+Notable upstream behavior changes:
+
+- Resumed default-tool sessions restore their transcript tool loadout. Explicit
+  persisted Pi Web tool selections and Chat-only restrictions still take precedence.
+- Ambiguous model scopes can include multiple providers with warnings; Pi Web's
+  stricter exact-ambiguity rejection remains intentional. The settings editor
+  reflects both SDK matches for repair; disabling one writes an explicit surviving
+  reference with its thinking pin intact. The migration regression checks both
+  owners, ambiguous-start refusal, exact repair and the last-model guard.
+- Malformed complete tool arguments carry `argumentsError` and are refused before
+  execution instead of executing a partially parsed prefix. Cross-model reasoning
+  is omitted from outgoing provider context; saved history is not rewritten.
+- Codemode admits at most **two live workers across sessions per SDK module
+  instance**, counting cancelled workers until actual exit. Capacity fails promptly;
+  cancellation acknowledgement is not worker-settlement proof.
+- Kimi Coding now uses OpenAI Chat Completions with a default endpoint ending in
+  `/coding/v1`; custom base-URL overrides must include `/v1`. OpenCode's bundled
+  endpoints move from `/zen` to `/inference`. No local settings or credentials are
+  inspected or rewritten by the upgrade.
+
+A fresh root advisory match after the SDK update still returns only the two
+braces/sprintf-js records below, with no Pi-package match. This is not live-provider,
+exploitability or complete artifact-license certification. Existing context tests
+cover change detection but not an independently asserted complete discovery-order
+plus Chat-only provider request; wire/SSE tests do not join a real partial tool
+stream and reconnect in one regression. These remain bounded coverage opportunities,
+not observed SDK failures or reasons to weaken the existing acceptance baseline.
+
 ## Compatible maintenance pass (2026-10-16)
 
 Root/demo resolve coordinated Next and eslint-config-next **16.4.2**, React and
@@ -48,9 +91,10 @@ react-dom **19.3.1**, and js-yaml **5.5.0**. Root additionally resolves Undici
 **8.12.2** and Playwright **1.64.1**. Ordinary selective npm updates refresh the
 allowed transitive graph, including Shiki **4.5.0**, Zod **4.6.7** and JSZip
 **3.10.2**, without force/legacy-peer-deps flags or new overrides. Selection
-excludes the SDK family: published caret ranges would otherwise admit SDK 1.3
-transitives despite the four direct 1.2.0 pins. All seven Pi packages remain
-**1.2.0**, pending a separate SDK compatibility migration.
+excluded the SDK family: published caret ranges would otherwise admit SDK 1.3
+transitives despite the four direct 1.2.0 pins. Its seven-package **1.2.0** hold
+was subsequently superseded by the separately authorized coordinated **1.3.0**
+upgrade described above.
 
 Next 16.4.2 includes the 16.4.1 security fixes and further bundler fixes; React
 and Undici updates include transport/security hardening. The YAML update also
@@ -73,11 +117,12 @@ further fixes beyond this Nix channel's package.
 ### Remaining version choices
 
 At the registry checkpoint, **36/43 root** and **25/27 demo** direct dependencies
-match npm's latest tag. Every exception is deliberate: the four root Pi SDK pins
-(1.2.0 versus 1.3.0), native PTY's tested 1.2.0-beta.15 rather than a downgrade to
-stable 1.1.0, Node 22 typings rather than Node 26, and TypeScript 5 rather than 7.
-Keep proper-lockfile 4.1.2 and the tested KaTeX exception described below. Older
-transitives constrained by parents, major ranges or the SDK hold are not an
+matched npm's latest tag before the separate SDK upgrade. The four root Pi SDK
+holds (1.2.0 versus 1.3.0) are now resolved. Remaining deliberate choices are
+native PTY's tested 1.2.0-beta.15 rather than a downgrade to stable 1.1.0, Node 22
+typings rather than Node 26, and TypeScript 5 rather than 7. Keep proper-lockfile
+4.1.2 and the tested KaTeX exception described below. Older transitives constrained
+by parents or major ranges are not an
 instruction to add overrides or replace working libraries. Later registry
 releases require another inventory, not a perpetual-currentness claim.
 

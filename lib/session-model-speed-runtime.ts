@@ -10,7 +10,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Pi 1.0.0's legacy Codex adapter prices priority, but not the fast response spelling. */
+/** Pi 1.3.0's legacy Codex adapter prices priority, but not the fast response spelling. */
 function withReportedFastPricing(
   source: AssistantMessageEventStream,
   observed: () => { tier?: string; model: Model<"openai-codex-responses"> },
@@ -48,7 +48,7 @@ function withReportedFastPricing(
 /**
  * A session-local view, never a mutation of the account/runtime shared by subagents.
  * Bind other methods to the original runtime. Main turns carry the owning
- * agent's active signal AND payload callback in SDK 1.0.0. Cache warming uses
+ * agent's active signal AND payload callback in SDK 1.3.0. Cache warming uses
  * its own signal; bug-report/compaction summaries omit that callback, even
  * when a caller supplies the main signal or the same session id.
  */
