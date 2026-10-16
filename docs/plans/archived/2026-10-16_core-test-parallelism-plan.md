@@ -4,6 +4,16 @@
 
 Reduce complete acceptance wall time by reviewing the four expensive default-exclusive Git Workflow files for bounded file-level parallelism and scheduling long reviewed files first. Preserve every test/scenario, within-file serial execution, immutable Nix inputs, failure admission/draining, process settlement and original deadlines. The user authorized this bounded implementation after the measured optimization discussion; fixture-cost rewrites and production changes are not included. The additional narrowly scoped history-response matcher correction below was separately approved to unblock a valid baseline.
 
+## Status
+
+Implementation, independent review and complete native acceptance are complete.
+The user chose **Prepare local integration into rst-main** after the paired result.
+This completed implementation plan hands exact-state approval, unsigned non-FF
+local integration/result verification and separately gated cleanup to the global
+`git-worktrees` lifecycle. Those Git operations are not claimed complete by this
+archive; publication, host activation and historical evidence/backup disposal
+remain outside scope.
+
 ## Context and Plan Relationship
 
 Use `perf/core-test-parallelism` in the dedicated linked worktree, starting from local `rst-main` at `a2cc0ebcc85fa1a3ac539b3f4a675ad032335097`. CodeGraph was initialized there before research/edits. The completed browser/deployment split and ADR 0025 own the three acceptance boundaries; this plan changes only the existing core review/scheduling policy. SDK/toolchain, Mermaid, browser coverage and deployment behavior remain owned elsewhere.
@@ -19,13 +29,13 @@ Initial read-only review found private fixture repositories/agent state and proc
 - [x] Add meaningful scheduler/schema regressions and verify their red behavior before implementation. All five new cases failed against the original runner while 25 existing cases/static passed (38.177s); cover estimates, deterministic priority/ties, E order/result order and failure/abort draining using deferred gates, not sleeps/native-work substitutes.
 - [x] Add optional positive-safe-integer `estimatedMs` (omission becomes zero) and longest-first/canonical-path scheduling only within F/N. Estimates affect order, never coverage, authority or budgets. Keep E order/results inventory and fail-stop/drain semantics; all focused contracts passed.
 - [x] Verify focused runner contracts and all four unchanged real Git files concurrently in an ordinary Nix sandbox. Six files/374 cases passed in 120.877s; all four native files overlap for 26.344s with no observed survivors/uncertainty, and E starts only after their drain. Deadlines unchanged.
-- [ ] Obtain independent source/safety review and freeze the settled candidate. Verify native graph and fresh complete core/browser/deployment acceptance with the same four-worker budget, without concurrent check jobs.
-- [ ] Compare exact source/package identities, coverage, resource/admission observations and runtimes with the baseline. Update the testing guide and archive this plan after its implementation evidence/handoff is complete.
-- [ ] Create reviewable unsigned feature history and resolve this task's completion intent through the Git lifecycle. Any local integration remains a separate exact-state non-FF approval into current `rst-main`; cleanup/publication are not implied.
+- [x] Obtain independent source/safety review and freeze the settled candidate. Native graph passed in 4.215s and complete core/browser/deployment acceptance passed in 291.599s on the same four-worker budget, without another check job overlapping.
+- [x] Compare exact source/package identities, coverage, admission observations and runtimes with the baseline: only the five expected optimization/test/docs paths differ, with 1,108 other entries and the application derivation unchanged. Current behavior/results are handed to docs/testing.md; archive this completed implementation evidence.
+- [x] Create reviewable unsigned history (separate fixture correction and core optimization) and resolve completion intent: the user selected preparation for current-`rst-main` integration. Exact-state non-FF approval/integration/result checks and separate cleanup now belong to the global Git lifecycle; publication is not implied.
 
 ## Evidence Ledger
 
-- Baseline snapshot: `/tmp/pi-web-core-baseline.7pt57x/source`, content/mode SHA256 `2fb1cb044868dbc8766530c45e829a297b73bbe67726bb90abb09fd95297512e`, unchanged Git base above. Separate export/manifest verification passed. Prerequisites were realized in isolated Nix builders by a single sequential coordinator; exact preparation results are retained in `preparation.json`.
+- Initial baseline attempt (failed): `/tmp/pi-web-core-baseline.7pt57x/source`, content/mode SHA256 `2fb1cb044868dbc8766530c45e829a297b73bbe67726bb90abb09fd95297512e`, unchanged Git base above. Separate export/manifest verification passed. Prerequisites were realized in isolated Nix builders by a single sequential coordinator; exact preparation results are retained in `preparation.json`.
 - Baseline command, physical cwd inside that snapshot: `nix run --no-write-lock-file --max-jobs 2 --cores 4 path:/tmp/pi-web-core-baseline.7pt57x/source#test -- all --workers 4 --jobs 4`. It runs from immutable inputs while the sole repository writer prepares changes; only read-only audit agents run alongside it.
 
 ### Baseline obstruction and approved fixture correction
@@ -44,6 +54,30 @@ Initial read-only review found private fixture repositories/agent state and proc
 - Independent source review found no blocker. Strengthened its two nonblocking test observations: failure/abort checks now yield an event-loop turn while peers remain gated, and real two/eight-worker mechanism fixtures assert positive estimate propagation and weighted E isolation. These mechanism probes do not certify higher-width SDK/browser load.
 - The focused run is not full acceptance or a speedup benchmark: no concurrent browser work/full remaining core corpus was present. Complete candidate acceptance/comparison remains open. Native x86_64 host, 32 logical CPUs; same requested/effective four core workers and four browser sandboxes for paired complete runs. Resource budgets remain estimates, not reservations; cold-cache, native ARM and CI execution are unverified.
 
+### Complete optimized candidate
+
+- **Tested implementation:** `6e3576c1cc69cc0c387d098ecb570e834344356b`; frozen source `/tmp/pi-web-core-priority-full.VIUnwY/source`, content/mode SHA256 `b1680c08cd07721f17326c1219cb8f9e70ae6cca0a39e420013c03425dc61cf8`. Separate export/manifest verification and post-run live-source verification passed.
+- Exact command, with physical cwd inside that export:
+
+  ```sh
+  nix run --no-write-lock-file --max-jobs 2 --cores 4 \
+    path:/tmp/pi-web-core-priority-full.VIUnwY/source#test \
+    -- all --workers 4 --jobs 4
+  ```
+
+- **Result:** exit 0, **291.599s (4m52s)** versus baseline **417.385s (6m57s)**: **125.786s saved, 30.14% less wall time, 1.431x faster**. Exact commands, logs, source/package comparisons, metrics and graph results remain under that root. Native graph evaluation passed in **4.215s**; no non-native execution is claimed.
+- **Core:** **287.462s** versus **414.377s**, **308/308 files / 2,404 tests / 10 suites**, all passed, no skipped/cancelled cases or observed survivors/settlement uncertainty. Baseline had 2,399 cases; the five additions are scheduler regressions, not removed work. Receipt `/tmp/pi-web-test-core.LIk2dZ/run.json`; output `/nix/store/n89qg0pkqcz7yiwwgbqksgyzq3zfbcvl-pi-web-core-checks`, `artifacts/run-RZftNg/{summary,inventory}.json`.
+- **Browser:** **215.217s** versus **226.879s**, all **24 groups / 53 exact scenario receipts**; `/tmp/pi-web-test-browser.mZwYTz/run.json`. Scenario inputs, rendering changes already present in the local base and the approved history fix are identical across the pair. No browser/application source was changed by the optimization.
+- **Deployment:** **21.722s** versus **23.512s**, `/tmp/pwv-lwazW1/run.json`; every genuine activation/environment/permission/persistence/PTY proof, service/cgroup/TCP settlement, host-only sentinel and artifact/hash gate passed. Only that invocation's verified runtime/tmp/cache bulk was removed; diagnostics remain.
+- **Actual priority/isolation:** first four starts were cleanup/discard/server/project-management. Their full-run durations **103.749/56.479/39.737/34.833s** were individually slower under contention than baseline, but their real overlap was **34.833s** and E waited for the entire F/N pool. Every native file retained **133/97/35/38** original cases and byte-identical bodies. Serial E work fell **335.713s → 135.634s**. Do not attribute the whole gain to faster individual tests or separately quantify classification versus ordering without another experiment.
+- **Identity/budget:** source comparison has exactly five changed paths (runner, lane manifest, runner regressions, testing guide, this plan), with **1,108 unchanged entries**. Both use `/nix/store/larzh9nxn2nzlc3v48ny6zmfcc4yk1am-pi-web-0.9.3.drv`. Same pinned Node 24.21.0/TypeScript 6.0.3/SDK 1.3.0 and Nix inputs. Native host **32 logical CPUs / about 54 GiB available** at browser admission; core requested/effective **4**, browser width **4**, aggregate estimate **16 CPUs/27 GiB**, not a reservation. Guest remains **1 vCPU/1536 MiB/2 GiB sparse disk**.
+- **Timing scope:** prerequisites were warm and every core, browser capsule and guest executed freshly. No other coordinator-owned check job overlapped either measured run. Command time excludes earlier preparation, model/review/coordination and the preserved failed/red trials. This is one measured pair on shared hardware, not a cold-cache or statistical/machine-exclusive guarantee. Native ARM, CI and heavy widths beyond four remain unverified.
+
+Current mechanisms and empirical findings live in `docs/testing.md`; ADR 0025's
+acceptance boundaries remain unchanged. The completed plan is archived after this
+handoff. Final evidence-only/archive checks are reported separately, not relabelled
+as another full execution at the later documentation-only tip.
+
 ## Risks and Recovery
 
 Parallel files still share the exported source cwd. Any source-relative write, fixed port, unscoped process signalling or shared mutable external state blocks promotion until isolated. Process-local globals do not by themselves require cross-file exclusivity. Latency-sensitive operations and unchanged 10-second waits must be proven under bounded normal load, not justified by a passing unchanged retry. Keep classification fallback E and preserve captured failures/uncertain workspaces. Resource estimates are not reservations; keep deliberate concurrency tests separate from ordinary SDK/browser acceptance and coordinate one test owner.
@@ -52,8 +86,8 @@ If audits or measurements reject a candidate, retain evidence and limit/revert o
 
 ## Completion Checklist
 
-- [ ] Every promoted file has a concrete isolation rationale and passes real concurrent execution with unchanged cases/deadlines.
-- [ ] Priority estimates are validated, deterministic and advisory; unknown files stay E, all tests run once and E never overlaps the pool.
-- [ ] Failure/abort closes admission and drains owned started work with honest settlement/coverage evidence.
-- [ ] Paired baseline/candidate native results and source/package bindings are recorded; complete three-level acceptance passes after review.
-- [ ] Current findings live in the maintained testing guide; implementation history, remaining gaps and separately owned Git lifecycle are explicit.
+- [x] Every promoted file has a concrete isolation rationale and passes real concurrent execution with unchanged cases/deadlines.
+- [x] Priority estimates are validated, deterministic and advisory; unknown files stay E, all tests run once and E never overlaps the pool.
+- [x] Failure/abort closes admission and drains owned started work with honest settlement/coverage evidence.
+- [x] Paired baseline/candidate native results and source/package bindings are recorded; complete three-level acceptance passes after review.
+- [x] Current findings live in the maintained testing guide; implementation history, remaining gaps and separately owned Git lifecycle are explicit.
