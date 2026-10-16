@@ -6,13 +6,14 @@ Run the unchanged complete browser/terminal scenario inventory against the Nix-b
 
 ## Status
 
-Implementation and native acceptance are complete on the isolated feature branch.
-Local integration is **pending a completion decision**, not implied: when asked,
-the user requested the measured improvement breakdown instead. Do not infer merge
-or cleanup approval. Local `rst-main` independently advanced to the Pi SDK 1.3
-upgrade at `c7b656ad6785108040356b3580325207bae11700`; composing with that target
-requires separate resulting-candidate verification. The accepted run below uses
-the feature's SDK 1.2 base, not that uncomposed upgrade.
+Implementation, independent review and complete native acceptance are complete.
+After receiving the measured breakdown, the user selected **compose with current
+`rst-main` and prepare integration**. The resulting Node 24/TypeScript 6/SDK 1.3
+candidate passed all three levels below. This completed implementation plan hands
+exact-state approval, the required unsigned non-FF local merge/result verification,
+and separately gated cleanup to the global `git-worktrees` lifecycle. Those Git
+operations are not claimed complete by this archive; no publication, host activation
+or disposal of the retained recovery backup is authorized by this plan.
 
 ## Context
 
@@ -41,14 +42,15 @@ This supersedes the environment arrangement, not the coverage or safety obligati
 - [x] Wire cacheable checks, fresh CLI, complete orchestration and CI to the three levels; test selection, fresh identities, admission, failure propagation and source-input separation.
 - [x] Obtain independent safety/coverage review, address findings and complete native core, full browser and deployment VM acceptance for one settled candidate. Record exact inputs, commands, timing, reuse and artifacts.
 - [x] Update the owning ADR, testing/browser guides and instructions; distinguish historical VM timing from new measurements and any evidence-only follow-up checks.
-- [ ] Create reviewable unsigned feature commits, resolve completion intent, and perform only separately approved exact-state local non-FF integration/cleanup. No remote publication.
+- [x] Create reviewable unsigned feature commits and resolve completion intent; the user chose current-`rst-main` composition, whose complete acceptance passed. Hand off exact-state local non-FF approval/integration/result verification and separate cleanup to the global `git-worktrees` lifecycle; no remote publication.
 
 ## Progress and retained focused evidence
 
 The chosen browser boundary is **one whole group per ordinary Nix build sandbox**,
 not multiple service users sharing a network namespace. The process receipt covers
 its registered child, pipes and original POSIX group only; Nix owns outer containment.
-All original suite/scenario sources and browser deadlines remain unchanged.
+Scenario inputs, substantive assertions and browser deadlines remain intact.
+The narrowly scoped fixture corrections below are explicit, not claimed as unchanged helpers.
 
 - Initial focused contracts/static passed in 39.627s. Real `session-links` then
   failed in 42.424s because the ordinary builder lacked explicit sans-serif fonts.
@@ -163,7 +165,7 @@ The new three-level CLI, cacheable checks, CI split and maintained guides are
 implemented. Independent ownership/evidence and final readiness reviews found no
 remaining blocker. Complete native acceptance passed as follows.
 
-## Complete acceptance evidence
+## Node 22 checkpoint evidence (SDK 1.2)
 
 - **Tested implementation:** `2b863662a78d322419257387252b1595f026a2a7`.
 - **Frozen input:** `/tmp/pi-web-sandbox-awaited.nIeIy5/source`, content/mode SHA256
@@ -231,10 +233,78 @@ Core is now the critical path. Exclusive files summed **322.286s**, led by
 core isolation classification was relaxed; further audit is separate scope.
 Native ARM, GitHub execution and cold-cache timing remain unverified. Host daemon
 features/configuration, installed service, remote publication and historical
-failure roots remain untouched. A final evidence-only update changes this plan
-and the testing guide; its proportional checks are reported separately, not
-relabeled as another full run or an SDK 1.3 acceptance result.
-No host Nix configuration, privilege, installed service or remote operation changed.
+failure roots remain untouched. That checkpoint's evidence-only follow-up changed
+only this plan/testing guide, retained the same application derivation, and passed
+73 local target checks plus 14 CLI contracts/static checks in **48.846s**. It was
+not relabelled as another full run or SDK 1.3 acceptance.
+
+## Composed Node 24 / SDK 1.3 acceptance
+
+- The first clean rebase onto SDK 1.3 preserved all six feature patches exactly.
+  Before Nix ingestion, a binding assertion caught `rst-main` advancing again to
+  `2c85642e2c2693e9241ab27674d474325bc3a471` (Node 24/TypeScript 6). The unused
+  `/tmp/pi-web-sdk13-acceptance.0Rvp6r` export and `composition-drift.json` remain;
+  no tests/builds ran from that stale-target preparation.
+- The new target caused mechanical conflicts in README/flake/small-VM definitions.
+  Restored and verified the clean pre-attempt feature, retained
+  `backup/nspawn-before-node24-rebase-20261016T134722Z`, then resolved the bounded
+  retry with Node 24 and the three-level layout. All other upstream toolchain,
+  manifests, SDK family, native-module hash, advisory probes and demo files match
+  the target. Independent review confirmed the four new browser Node pins are 24,
+  correct browser/service entrypoints, no Chromium in the VM, intact lifecycle/
+  coverage, and five unchanged feature patches. Recovery/range evidence remains
+  under `/tmp/pi-web-sdk13-compose.fVW9lE`; the backup is not implicitly disposable.
+- **Tested implementation:** `7d1e325e13bc21429fc050f8cb3c23203d2edd43`, tree
+  `ef2ae3d311d456531f9ea1f6d0a42b9e0324079f`, based on the exact target above.
+- **Frozen input:** `/tmp/pi-web-composed-acceptance.jcr4Ia/source`, content/mode
+  SHA256 `91a135468c936c89f1555013c720c1bc49af79a97539d1f8f8485142d7fade2e`.
+  Separate export/verification, pre-run and post-run matching-manifest checks passed.
+  Pinned runtime: **Node 24.21.0 / TypeScript 6.0.3 / Pi SDK 1.3.0**, with the
+  unchanged locked Nix inputs, Next 16.4.2 and Chromium 155.0.8059.79.
+- Prepared browser/package support in **73.448s** and the genuine service driver in
+  **44.122s**, **117.572s total**, using isolated Nix builders and sequential
+  clients capped at two jobs/four cores. `preparation.json` records both settled
+  clients; this is separate from the fresh-execution timer. Production package:
+  `/nix/store/2i7dfx6xcxnpjp707im27l3kk1fbgjzy-pi-web-0.9.3`.
+- **Command**, with physical cwd inside that frozen export:
+
+  ```sh
+  nix run --no-write-lock-file --max-jobs 2 --cores 4 \
+    path:/tmp/pi-web-composed-acceptance.jcr4Ia/source#test \
+    -- all --workers 4 --jobs 4
+  ```
+
+- **Result:** exit 0, **418.482s (6m58s)**. Exact command/results, complete log,
+  composition bindings, graph result, source manifest and metrics remain under
+  `/tmp/pi-web-composed-acceptance.jcr4Ia`. Native graph evaluation passed in
+  **4.550s**; no other architecture was executed.
+- **Core:** **414.029s**, **308 files / 2,395 tests / 10 suites**, every case passed,
+  no skips/cancellations or observed survivors/settlement uncertainty.
+  `/tmp/pi-web-test-core.3S0EkD/run.json`; immutable output
+  `/nix/store/93cf7gf586pgpmvbh8gi01kd2fzq0q01-pi-web-core-checks`,
+  `artifacts/run-ZAsc9f/{summary,inventory}.json`.
+- **Browser/terminal:** **222.915s**, all **24 groups / 53 exact scenario receipts**,
+  `/tmp/pi-web-test-browser.njSESo/run.json`. Group work summed **756.686s**;
+  receipt identity, finalized evidence trees and bounded process settlement passed.
+- **Deployment:** **21.605s**, driver script **16.26s**, receipt interval **16.156s**;
+  `/tmp/pwv-XpGuTl/run.json`. All five proofs, cgroup/TCP closure, sentinel rejection,
+  safe collection and guest-before-copy/host-after-copy hashes passed. Only the
+  exact settled owned runtime/tmp/cache bulk was removed; diagnostics remain.
+- **Resources/reuse:** native x86_64, 32 logical CPUs, about 54 GiB available at
+  browser admission; four effective core workers/four browser sandboxes, combined
+  admission 16 CPUs/27 GiB including realization (estimates, not reservations).
+  Guest: 1 vCPU/1536 MiB RAM/2 GiB sparse state disk, verified but not a minimum.
+  Package/driver were warm; every core, capsule and guest execution was fresh.
+
+The composed full runtime is **36.40% below 658s (1.572x faster)**; do not replace
+its Node 24 result with the earlier 403.590s checkpoint or claim a controlled A/B
+experiment. Core remains critical: exclusive work **342.581s**, led by Git Workflow
+cleanup **85.606s**, discard **48.641s**, server **31.054s** and project management
+**26.736s**. No isolation classification was relaxed. Native ARM, GitHub execution
+and cold-cache timing remain unverified. Current operational findings live in
+`docs/testing.md`, decisions in ADR 0025 and feature contracts in the owning guides;
+this plan is archived after that handoff. Final evidence-only documentation/archive
+checks are reported separately, not claimed as another full source-tip execution.
 
 ## Risks and Recovery
 
