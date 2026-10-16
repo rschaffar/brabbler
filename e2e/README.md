@@ -49,7 +49,7 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `appearance` | Default/full/reading widths, numeric legacy preference and fresh preference inputs, typography/reload |
 | `timestamps` | Both en-US and legacy Chinese locale/preference variants |
 | `diff-context` | Loaded Workflow absence, Git Explorer immutable contexts/navigation/wrapping/Wide and integrated merge graph, in prerequisite order |
-| `markdown` | Markdown/KaTeX security, Mermaid math/themes/SVG, preview state, file links and real user-file polling |
+| `markdown` | Markdown/KaTeX security, full-height Mermaid previews, math/themes/SVG, file-scroll/preview state, file links and real user-file polling |
 | `file-edit` | Panel setup, all modified/added/deleted/context diff variants, editor/read-only/draft retention |
 | `archive` | Focused archive/restore flow, distinct from the mobile search/restore/move chain |
 | `privacy` | Concealment/loading/failure behavior, independent contexts and tablet coverage |
