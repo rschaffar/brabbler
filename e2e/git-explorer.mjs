@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { withExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
 import { checkDiffContext } from "./git-diff-context.mjs";
 import { checkGitExplorerFullscreen } from "./git-explorer-fullscreen.mjs";
+import { checkGitGraphAlignment } from "./git-graph-geometry.mjs";
 
 /** Visual history tracks the selected checkout and branch, independently of the open chat. */
 export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorktree }) {
@@ -45,6 +46,17 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
     await badge.waitFor({ state: "visible" });
     assert.equal(await badge.getAttribute("title"), `Local tag: ${tag}`, "Tag tooltip preserves the complete name");
     assert.equal(await badge.innerText(), `tag: ${tag}`, "Tags are distinguishable from branch labels");
+  }
+  await checkGitGraphAlignment(graph);
+  const rootFontSize = await page.evaluate(() => document.documentElement.style.fontSize);
+  try {
+    // SVG uses pixel coordinates; rem-based rows must not drift at other root sizes either.
+    for (const size of [16, 18]) {
+      await page.evaluate((size) => { document.documentElement.style.fontSize = `${size}px`; }, size);
+      await checkGitGraphAlignment(graph);
+    }
+  } finally {
+    await page.evaluate((saved) => { document.documentElement.style.fontSize = saved; }, rootFontSize);
   }
   const branchOptions = await branch.locator("option").evaluateAll((options) => options.map((option) => option.value));
   for (const tag of ["e2e-light", "e2e-annotated", "same-name"]) {
@@ -276,6 +288,7 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
     assert.ok(await mobileDiff.isVisible(), "Side-by-side diff remains scrollable on mobile");
     await explorer.getByRole("button", { name: "Back to commits" }).click();
     await graph.waitFor({ state: "visible" });
+    await checkGitGraphAlignment(graph);
     await page.waitForFunction(() => {
       const bounds = document.querySelector('[aria-label="Commit graph"]')?.getBoundingClientRect();
       return bounds && bounds.left >= 0 && bounds.right <= innerWidth;
