@@ -46,7 +46,7 @@ bounded decision. Production builds are allowed only in isolated Nix test builde
   before turning an evaluation into a retained major migration.
 - [x] Verify any resulting candidate according to `docs/testing.md`; distinguish
   experimental trials, focused checks and complete accepted-source evidence.
-- [ ] Commit reviewable work and hand off to the user-controlled Git completion
+- [x] Commit reviewable work and hand off to the user-controlled Git completion
   workflow, archiving only after all evaluation obligations have dispositions.
 
 ## Completion Checklist
@@ -57,7 +57,7 @@ bounded decision. Production builds are allowed only in isolated Nix test builde
   blocker; retained changes, if any, match explicit user decisions.
 - [x] Tests, review, original failures, commands, runtimes and source identities
   are retained and honestly scoped; no unrelated pins or state were altered.
-- [ ] Durable facts and remaining work have maintained owners; Git state and
+- [x] Durable facts and remaining work have maintained owners; Git state and
   integration/cleanup authority are reported accurately.
 
 ## Decisions and evidence
@@ -165,3 +165,14 @@ receive identity/documentation checks, not relabelled full application runs.
 No host service, real credentials/sessions, remote Git, publication or deployment
 was touched. Pending local integration and resource cleanup require their own
 Git workflow decisions and exact-action gates.
+
+## Git handoff
+
+Implementation commit: `26634cc328f151c6f1e68db96db09bfcd90b2242`, on
+`chore/dependency-risk-evaluation` in the isolated worktree named above. As of
+this handoff the feature is **unintegrated** and its branch/worktree/evidence are
+retained. The global Git completion workflow owns the unresolved completion
+choice, any rebase/exact-input revalidation, required unsigned non-fast-forward
+local integration into `rst-main`, and separate verified-resource cleanup.
+Only this status/evidence archival follows the accepted inputs; it does not
+imply a fresh full application run or authorize any deployment/remote action.
