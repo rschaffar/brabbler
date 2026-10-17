@@ -270,6 +270,47 @@ Four-worker load is verified; broader-width timing, native ARM and CI execution
 remain unverified. Exact identities, failures and evidence live in the
 [completed core parallelism plan](plans/archived/2026-10-16_core-test-parallelism-plan.md).
 
+### Measured second-batch file parallelism
+
+A fresh four-worker/four-browser-sandbox pair passed on 2026-10-17, starting from
+local `rst-main` `04a0ac6`. Nine more audited default-E files enter the existing
+pool; no runner implementation, production code, existing test-body or deadline changes.
+
+| Report interval | Unchanged control | Second reviewed batch |
+| --- | --- | --- |
+| Core | 292.028s | **251.489s** |
+| Browser | 216.875s | 213.847s |
+| Deployment | 24.277s | 21.369s |
+| Complete command | 296.227s | **255.502s (~4m16s)** |
+
+Complete wall time fell **40.725s / 13.748% (1.1594x faster)** at the same worker
+budget. Serial E work fell **135.568s → 102.206s**; the pool absorbed the extra
+work without a larger admission width. Both passed all **308 files / 10 suites**,
+**24 browser/terminal groups / 53 receipts**, and genuine deployment/settlement
+proofs. Tests grew **2,404 → 2,406** through two manifest contracts. All 307 other
+files retained identical registered/completed outcomes and counts; the original
+unit titles remain alongside the two additions. None skipped or cancelled.
+
+Before ordinary acceptance, a separate diagnostic Nix run passed **416 tests**
+with a peak of four active native files: all nine candidates overlapped cleanup,
+and the E contract waited for the pool. Inotify watched 1,126 source entries with
+zero observed mutation events. This checks the shared writable source rather than
+assuming it is immutable; it is not a universal write/descendant guarantee or a
+performance benchmark. The observer exists only in a diagnostic snapshot, not the
+repository or ordinary acceptance runner. Large-operations and model-speed-lifecycle
+remain exclusive, pending their separate settlement/resource/teardown evidence.
+
+Both ordinary runs used the same production package, tools and Node 24/SDK 1.3
+inputs. Prerequisites were warm, all test executions fresh; isolated preparation
+was **8.722s control / 7.525s candidate**, separate from command runtimes. Native
+x86_64 host: 32 logical CPUs, about **55 / 57 GiB** available at browser admission;
+combined admission remains an estimated **16 CPUs / 27 GiB**, not a reservation.
+This is one fresh pair, not cold-cache, statistically repeated, ARM, CI or
+above-four-worker evidence; no per-worker RSS peak is claimed. Core is still the
+critical track, now about **16s** beyond browser plus deployment. Exact inputs,
+red/green checks, failures, artifacts and scope live in the
+[completed second-batch plan](plans/archived/2026-10-17_core-exclusive-batch2-plan.md).
+
 ## Diagnostics and retention
 
 Core retains inventory, summary, original bounded TAP/stderr and lifecycle evidence.
