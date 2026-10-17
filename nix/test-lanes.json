@@ -28,6 +28,60 @@
       "reason": "Reviewed per-case private Git roots and agent storage; session/terminal maps, reservations, FS fault injection and env changes are local to this file's Node process. No shared-source writes/fixed ports or unscoped peer signals found. Keep cases serial, original ten-second waits and awaited native effects/reservation release; historical duration is advisory."
     },
     {
+      "path": "plugins/git-workflow/runtime.test.mjs",
+      "lane": "N",
+      "estimatedMs": 10000,
+      "reason": "Reviewed native Git/SDK lifecycle and cross-repository cases: private fixture repositories, worktree containers and agent services; faux model responses, offline construction and awaited shutdown/disposal. No shared-source writes, fixed ports or unscoped peer signals found. Keep nested cases serial; priority is historical, not a deadline or wider-worker proof."
+    },
+    {
+      "path": "plugins/git-workflow/policy.test.mjs",
+      "lane": "N",
+      "estimatedMs": 4000,
+      "reason": "Reviewed private per-case repositories and agent settings/reviews, real Git effects and synthetic SDK responses. Cancellation notifications and provider/listener state are process-local; settings locks and native targets remain fixture-bound. Preserve serial cases and awaited shutdown, with no source writes or listener dependency. Historical priority only."
+    },
+    {
+      "path": "lib/rpc-manager-idle-timeout.test.mjs",
+      "lane": "F",
+      "estimatedMs": 5000,
+      "reason": "Reviewed inert fake sessions and controlled idle-clock advancement: no real SDK session construction, elapsed idle wait, shell or persistent run. Fresh-loader/env/timer changes are private to one Node process and restored serially; pinned runner disables Jiti filesystem caching. Import-heavy historical priority, not permission to change timing assertions."
+    },
+    {
+      "path": "lib/rpc-manager-shutdown.test.mjs",
+      "lane": "N",
+      "estimatedMs": 3000,
+      "reason": "Reviewed fake-session/deferred lifecycle tests with real private-agent journal/activity persistence, locks and atomic writes. Shutdown gates settle before teardown; apparent shared-cwd shell case records arguments without execution. Process-local timer mocks retain the genuine 999/1000ms boundary and serial cases. No shared-source writes or fixed service; historical priority only."
+    },
+    {
+      "path": "lib/rpc-manager-directory-reservations.test.mjs",
+      "lane": "N",
+      "estimatedMs": 2500,
+      "reason": "Reviewed private directories, symlink aliases and persisted SDK fixtures; reservation/session/terminal maps and injected startup harness are process-local. Refused terminal admission happens before PTY loading/spawn, and deferred startups/leases settle. Keep cases serial and native path assertions unchanged; no source writes or fixed ports. Historical priority only."
+    },
+    {
+      "path": "app/api/project-trust/route.test.mjs",
+      "lane": "N",
+      "estimatedMs": 4500,
+      "reason": "Reviewed in-process Request/route calls over private agent/repository/worktree fixtures. Trust JSON/locks and common-Git identity markers stay fixture-bound; busy-session/admitted-root caches are process-local and destruction is awaited. No HTTP listener, shared-source writes or host state. Preserve serial env changes and original native Git budgets; historical priority only."
+    },
+    {
+      "path": "lib/worktree-management.test.mjs",
+      "lane": "N",
+      "estimatedMs": 4000,
+      "reason": "Reviewed native SHA-1/SHA-256, shallow/history/status/registration cases in private repositories; scripts, object removal and local file-URL clones stay fixture-bound. Capture caches are process-local; child Git and at-most-three-way detail reads are awaited. Elapsed diagnostic is not a timing assertion. Keep 15-second child bounds and serial cases; historical priority only."
+    },
+    {
+      "path": "app/api/worktrees/manage/route.test.mjs",
+      "lane": "N",
+      "estimatedMs": 3500,
+      "reason": "Reviewed direct in-process GET requests, private per-case repositories and dynamic private-agent global/project/session settings paths. Admitted-root/capture caches and env changes are process-local; native Git reads are awaited. No bound listener, shared-source writes or host configuration. Keep cases serial and original stale-state assertions; historical priority only."
+    },
+    {
+      "path": "lib/session-reader-external-write.test.mjs",
+      "lane": "N",
+      "estimatedMs": 2500,
+      "reason": "Reviewed real SDK open/append/repair effects on explicit private JSONL fixtures; session storage derives from each file's parent, not its literal /tmp header cwd. Fake wrappers, invalid-image admission and extracted registration Map avoid real model/shell work; gated shutdown settles. Only reads shared source; cases remain serial and priority is advisory."
+    },
+    {
       "path": "lib/e2e-async-condition.test.mjs",
       "lane": "F",
       "reason": "Controlled Promise and injected monotonic-clock/timer fixtures, including late rejection and serialized session-state predicates; no real browser, server, network or shared environment mutation. Native browser acceptance remains separate."

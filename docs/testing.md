@@ -141,6 +141,15 @@ exclusively until reviewed.
   serial. The source cwd is still shared; future source-relative writes, fixed
   ports or unscoped process effects require another isolation review. Concurrency
   changes do not authorize weaker Stop, permission, stale-state or cleanup checks.
+- A second reviewed batch adds synthetic RPC idle-timeout tests to F, and native
+  Git Workflow runtime/policy, RPC shutdown/directory reservations, project-trust
+  and worktree-manager routes, worktree management and external-session-write
+  tests to N. Private fixtures/process-local maps isolate their effects; real
+  journal/trust/settings/JSONL writes make the native cases N rather than F.
+  Controlled clocks preserve the original 999/1000ms shutdown proof. The source
+  cwd is writable, not filesystem-isolated, and source-relative writes remain a
+  blocker. Large-operations and model-speed-lifecycle stay unreviewed E pending
+  stronger timeout-settlement/resource and asynchronous-teardown evidence.
 - Browser fresh full execution admits **1..4 concurrent group sandboxes**, estimating
   2 CPUs/4 GiB per group plus 2 GiB host headroom. `--workers 1..4` refuses an
   insufficient budget; focused groups default to one. Each weighted queue is serial,
