@@ -33,7 +33,7 @@ uses `/api/agent/[id]`.
 - [ ] Implement/review the accessible composer status and compaction-only recovery;
   pass the focused core files and `history` browser group, retaining failures.
 - [ ] Commit the settled application candidate and pass complete Nix acceptance:
-  `nix run .#test -- all --workers 2 --jobs 2`, recording exact inputs, runtime,
+  `nix run .#test -- all --workers 2 --jobs 4`, recording exact inputs, runtime,
   core/browser/deployment results and retained manifests.
 - [ ] Resolve local completion intent under the Git policy; integrate only after
   exact-state approval, or explicitly retain the feature. Record the outcome.
@@ -81,7 +81,7 @@ uses `/api/agent/[id]`.
   Current behavior is handed off to `docs/session-internals.md`; full acceptance
   and the local completion decision remain pending.
 - First complete attempt on `776bb818fab4136abf0d5f8aa369e32f474bad9d`
-  failed in 188.157 seconds: the pre-existing workspace-memory test executes
+  (`all --workers 2 --jobs 2`) failed in 188.157 seconds: the pre-existing workspace-memory test executes
   production cleanup in an isolated VM and lacked its newly captured
   `compactionPhase` binding. Core stopped admission; the browser peer was
   interrupted and service did not start. Evidence:
@@ -95,7 +95,22 @@ uses `/api/agent/[id]`.
   original assertions remain unchanged. Application bytes are unchanged from
   `776bb81`. The expanded seven-file rerun passed all 98 tests and static
   checks in 43 seconds: `/tmp/pi-compaction-core-r6.log`,
-  `/tmp/pi-web-test-core.DcJWmd/run.json`. Complete acceptance remains pending.
+  `/tmp/pi-web-test-core.DcJWmd/run.json`.
+- Second complete attempt on `ae237842a01966bb358b54a139c7d1b1522473c8`
+  failed in 209.153 seconds because the existing composer-locking source
+  assertion required unconditional `aria-busy`, contradicting the deliberate
+  compaction live-region exception. It now requires that exception while
+  preserving the disabled-control assertion and submission-locking checks.
+  Evidence: `/tmp/pi-compaction-acceptance-r2.log`,
+  `/tmp/pi-web-test-core.xQkCor/run.json`,
+  `/tmp/pi-web-test-browser.7U620Z/run.json`. No application change; complete
+  acceptance remains pending.
+- Expanded source-consumer selection passed all 191 tests across 20 files,
+  static checks included, in 47.687 seconds: `/tmp/pi-compaction-core-r7.log`,
+  `/tmp/pi-web-test-core.9Joir1/run.json`. This includes every test directly
+  mentioning `ChatInput` or `useAgentSession`, plus scenario ownership contracts.
+  The final full run admits four core workers and two browser sandboxes under
+  the existing resource checks, with no concurrent source/review writers.
 
 ## Completion Checklist
 

@@ -484,7 +484,7 @@ test("locks built-in command submission until it settles", async () => {
   callback.resolve({ handled: true });
   assert.equal(await first, true);
   assert.deepEqual(callback.pendingStates, [true, false]);
-  assert.match(sourceText, /<fieldset\s+disabled=\{builtinCommandPending\}\s+aria-busy=\{builtinCommandPending\}/);
+  assert.match(sourceText, /<fieldset\s+disabled=\{builtinCommandPending\}\s+aria-busy=\{builtinCommandPending && !isCompacting\}/);
 });
 
 test("keeps only read-only built-ins available while a run is active", () => {
