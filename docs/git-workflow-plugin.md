@@ -64,6 +64,14 @@ before it replaces their mandatory questions; stronger explicit constraints stil
 apply. A workflow question chooses intent; an exact Git approval belongs to the
 tool card, not a duplicate preceding question.
 
+Current policy is projected after the earliest user message or compacted/branch
+summary, not appended after each new tool result. The stable request-only anchor
+preserves reusable prompt prefixes and WebSocket delta continuation while settings
+remain unchanged. The full-transcript SDK hook preserves existing system/tool
+anchors; policy changes refresh the projected block immediately and may legitimately
+invalidate its cached suffix. No snapshot becomes execution authority or persists
+in conversation history.
+
 `git_cleanup` adds bounded artifact/worktree/branch cleanup under a new, separate
 `cleanupFeature` permission; existing `removeWorktree` remains strict and retains
 branches. Both Ask and Allow operations leave durable execution cards, not just
