@@ -80,6 +80,22 @@ uses `/api/agent/[id]`.
 - Final independent read-only re-review found no further actionable regressions.
   Current behavior is handed off to `docs/session-internals.md`; full acceptance
   and the local completion decision remain pending.
+- First complete attempt on `776bb818fab4136abf0d5f8aa369e32f474bad9d`
+  failed in 188.157 seconds: the pre-existing workspace-memory test executes
+  production cleanup in an isolated VM and lacked its newly captured
+  `compactionPhase` binding. Core stopped admission; the browser peer was
+  interrupted and service did not start. Evidence:
+  `/tmp/pi-compaction-acceptance.log`, `/tmp/pi-web-test-core.WUQkoZ/run.json`,
+  `/tmp/pi-web-test-browser.7K6IZB/run.json`; exported source digest
+  `6017622f506f39ea3a49469c3231c1dc2ba1af4816b5e1904cdc6db3c02feabc`.
+- Expanded focused iteration then exposed the analogous missing
+  `compactionVersionRef` binding in the existing warm-cache restoration fixture
+  (42 seconds; `/tmp/pi-compaction-core-r5.log`,
+  `/tmp/pi-web-test-core.5zqiV9/run.json`). Both fixtures now bind the new state;
+  original assertions remain unchanged. Application bytes are unchanged from
+  `776bb81`. The expanded seven-file rerun passed all 98 tests and static
+  checks in 43 seconds: `/tmp/pi-compaction-core-r6.log`,
+  `/tmp/pi-web-test-core.DcJWmd/run.json`. Complete acceptance remains pending.
 
 ## Completion Checklist
 
