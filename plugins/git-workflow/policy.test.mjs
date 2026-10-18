@@ -101,21 +101,41 @@ test("SDK request context and read-only policy tool use the real session and ref
   const { session } = await createAgentSessionFromServices({ services, model: faux.getModel(), thinkingLevel: "off", sessionManager });
   t.after(async () => { try { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); } finally { session.dispose(); } });
   await session.bindExtensions({ mode: "rpc", uiContext: { notify() {} } });
-  faux.setResponses([(context) => {
-    const text = JSON.stringify(context.messages);
-    assert.match(text, /pi-web:git-policy\/v1/); assert.match(text, /current-branch/); assert.match(text, /ask_user/);
-    return fauxAssistantMessage([fauxToolCall("git_policy", { checkout: other }, { id: "policy-foreign" })], { stopReason: "toolUse" });
-  }, fauxAssistantMessage("Done.")]);
+  const requests = [];
+  // Assert outside faux callbacks: the provider converts thrown assertions into
+  // error responses, which session.prompt() does not necessarily reject.
+  const capture = (response) => (context) => { requests.push(structuredClone(context.messages)); return response; };
+  const persistedPolicies = () => sessionManager.getEntries().filter((entry) =>
+    [entry.customType, entry.message?.customType].some((type) => typeof type === "string" && type.startsWith("pi-web:plugin-policy:")));
+  faux.setResponses([
+    capture(fauxAssistantMessage([fauxToolCall("git_policy", { checkout: other }, { id: "policy-foreign" })], { stopReason: "toolUse" })),
+    capture(fauxAssistantMessage("Done.")),
+  ]);
   await session.prompt("Inspect the foreign repository policy.");
+  assert.equal(requests.length, 2); assert.equal(session.getLastAssistantText(), "Done.");
+  const text = JSON.stringify(requests[0]);
+  assert.match(text, /pi-web:git-policy\/v1/); assert.match(text, /current-branch/); assert.match(text, /ask_user/);
+  assert.deepEqual(requests[1].slice(0, requests[0].length), requests[0],
+    "the real SDK request keeps its old policy prefix when tool results append");
   const result = session.messages.find((m) => m.role === "toolResult" && m.toolCallId === "policy-foreign");
   assert.equal(result.isError, false); assert.equal(result.details.effective.commit, "deny");
   assert.equal(result.details.sessionOverridesApply, false);
-  assert.equal(sessionManager.getEntries().some((e) => e.message?.customType?.startsWith("pi-web:plugin-policy:")), false);
+  assert.deepEqual(persistedPolicies(), []);
   updatePluginSettings(manifest, "session", own, { workspace: "worktree" }, [], undefined, identity);
-  faux.setResponses([(context) => {
-    const policyMessages = context.messages.filter((m) => JSON.stringify(m).includes("Current harness Git policy"));
-    assert.equal(policyMessages.length, 1); assert.match(JSON.stringify(policyMessages), /workspace\\\":\\\"worktree|"workspace":"worktree"/);
-    return fauxAssistantMessage("Updated.");
-  }]);
+  faux.setResponses([capture(fauxAssistantMessage("Updated."))]);
   await session.prompt("Check current policy.");
+  assert.equal(requests.length, 3); assert.equal(session.getLastAssistantText(), "Updated.");
+  const policyMessages = requests[2].filter((message) => JSON.stringify(message).includes("Current harness Git policy"));
+  assert.equal(policyMessages.length, 1); assert.match(JSON.stringify(policyMessages), /workspace\\\":\\\"worktree|"workspace":"worktree"/);
+  sessionManager.appendCompaction("Synthetic compacted history", sessionManager.getLeafId(), 1000);
+  updatePluginSettings(manifest, "session", own, { workspace: "current-branch" }, [], undefined, identity);
+  faux.setResponses([capture(fauxAssistantMessage("Compacted policy is current."))]);
+  await session.prompt("Check after compaction.");
+  assert.equal(requests.length, 4); assert.equal(session.getLastAssistantText(), "Compacted policy is current.");
+  const summary = requests[3].findIndex((message) => JSON.stringify(message).includes("Synthetic compacted history"));
+  const policies = requests[3].filter((message) => JSON.stringify(message).includes("Current harness Git policy"));
+  assert.ok(summary >= 0); assert.equal(policies.length, 1);
+  assert.match(JSON.stringify(policies), /current-branch/);
+  assert.equal(requests[3][summary + 1], policies[0], "fresh policy is anchored to the projected summary");
+  assert.deepEqual(persistedPolicies(), []);
 });
