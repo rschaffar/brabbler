@@ -30,15 +30,19 @@ uses `/api/agent/[id]`.
 - [x] Trace existing events, state restoration, composer ownership and reusable
   history fixtures; verify both state endpoints and modern/legacy event handling
   in `hooks/useAgentSession.ts` and `e2e/browser-suite.mjs`.
-- [ ] Implement/review the accessible composer status and compaction-only recovery;
+- [x] Implement/review the accessible composer status and compaction-only recovery;
   pass the focused core files and `history` browser group, retaining failures.
-- [ ] Commit the settled application candidate and pass complete Nix acceptance:
+- [x] Commit the settled application candidate and pass complete Nix acceptance:
   `nix run .#test -- all --workers 2 --jobs 4`, recording exact inputs, runtime,
   core/browser/deployment results and retained manifests.
-- [ ] Resolve local completion intent under the Git policy; integrate only after
-  exact-state approval, or explicitly retain the feature. Record the outcome.
+- [x] Resolve local completion intent under the Git policy and hand off guarded
+  finalization: the user selected local `rst-main` integration. The coordinating
+  agent owns exact merge approval/execution and separate cleanup, recorded by
+  durable operation receipts and the completion report rather than this plan.
 
 ## Verification evidence
+
+Iteration results below are historical; final acceptance is recorded separately.
 
 - Initial focused regression run exposed missing compaction-only recovery.
 - First focused green: 54 tests in three files; `/tmp/pi-compaction-core.log`,
@@ -114,11 +118,60 @@ uses `/api/agent/[id]`.
 
 ## Completion Checklist
 
-- [ ] Desktop/mobile progress, reload/reconnect, missed end, cancellation, failure,
+- [x] Desktop/mobile progress, reload/reconnect, missed end, cancellation, failure,
   toolbar and slash-command completion pass with unchanged scenario ownership.
-- [ ] Production callback regressions cover stale session/prompt/compaction reads,
+- [x] Production callback regressions cover stale session/prompt/compaction reads,
   late manual completion, unmount cleanup and accessible live-region ancestors.
-- [ ] Complete core/static/plugin, all browser/terminal groups and genuine Home
+- [x] Complete core/static/plugin, all browser/terminal groups and genuine Home
   Manager deployment VM acceptance pass on the recorded candidate inputs.
-- [ ] Durable behavior is documented in `docs/session-internals.md`; local Git
-  outcome and any accepted gaps are recorded. Nothing is remotely published.
+- [x] Durable behavior is documented in `docs/session-internals.md`; the local
+  completion decision, finalization owner and verification limits are recorded
+  below. Nothing is remotely published.
+
+## Final acceptance
+
+Candidate: `0c36159c38344892e6cb04e8810f9bc18b1f362b` (application inputs
+unchanged from `776bb818fab4136abf0d5f8aa369e32f474bad9d`).
+
+```sh
+nix run .#test -- all --workers 2 --jobs 4
+```
+
+Passed fresh on native x86_64 Linux: **2,424 core tests / 310 files / 10 suites**,
+all **24 browser/terminal groups / 53 scenario receipts**, and every genuine
+Home Manager deployment proof with confirmed shutdown/collection. No skipped,
+cancelled or missing core cases; all browser capsules passed and settled.
+
+- Exported source: `/nix/store/ckm8wn9fibgl9yznpgydnr4ws6kx2vcf-source`.
+- Outer content/mode digest:
+  `2840ffdb7222a03053460d36caa2f800c06827e219ffa365c0a8c482fe44358f`.
+- Log: `/tmp/pi-compaction-acceptance-r3.log`.
+- Core: `/tmp/pi-web-test-core.hVeCn3/run.json`.
+- Browser/terminal: `/tmp/pi-web-test-browser.AZeXOC/run.json`.
+- Deployment: `/tmp/pwv-GLMlQO/run.json`.
+- Export/admission: `/tmp/pi-web-test-source-Sid7As/selection.json`.
+
+Whole-command runtime: **517.614 seconds**, including its Nix realization and
+preparation, but not model work, review or coordination. No separately timed
+external preparation was run. Manifest intervals are 280.480s core, 443.338s
+browser and 67.329s service (the latter includes realization; guest execution
+itself was 21.032s). Levels overlap and must not be added. Host admission saw
+32 logical CPUs and about 38 GiB available memory; the combined conservative
+estimate was 16 CPUs/19 GiB, not a reservation or benchmark claim.
+
+The synthetic protocol fixtures exercise the real packaged UI without live model
+requests. Live-provider compaction was not exercised. The installed host service
+was not changed; no remote operation was authorized or performed.
+
+## Git finalization handoff
+
+The user chose integration into local `rst-main` using the required unsigned
+non-fast-forward merge. At archival, exact approval/execution and separate
+cleanup remain owned by the coordinating agent's guarded Git finalization;
+the durable operation receipts and completion report own the resulting IDs and
+resource disposition. This handoff is neither merge approval nor proof of success.
+
+The evidence/archive-only follow-up must leave every application/test input
+byte-identical to the accepted candidate; verify that bounded diff and the
+Markdown handoff before proposing the exact merge. No full-suite rerun is needed
+solely for an evidence-only commit ID change.
