@@ -28,6 +28,7 @@ import { checkSessionLaunch, sessionLaunchFixtureSource } from "./session-launch
 import { WORKTREE_MANAGER_IDS, seedWorktreeManagerFixtures, checkWorktreeManager } from "./worktree-manager.mjs";
 import { browserInputs, createCoverage, selectGroup } from "./scenarios.mjs";
 import { historyPageResponse } from "./history-pagination.mjs";
+import { checkCompactionVisibility } from "./compaction.mjs";
 
 // Validate one-hot ownership before the harness or any fixture side effects.
 const group = selectGroup(process.env);
@@ -1088,6 +1089,7 @@ let context;
       await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
       await heading.waitFor({ state: "visible" });
     }
+    await checkCompactionVisibility(page, { base, id: COMPACTED, artifacts, width: viewport.width });
     assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
     console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`);
     await harness.closeContext(context);

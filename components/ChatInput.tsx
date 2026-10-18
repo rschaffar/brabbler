@@ -1591,7 +1591,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   return (
     <fieldset
       disabled={builtinCommandPending}
-      aria-busy={builtinCommandPending}
+      aria-busy={builtinCommandPending && !isCompacting}
       style={{
         flexShrink: 0,
         minWidth: 0,
@@ -1600,7 +1600,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         background: "transparent",
         padding: compact ? 0 : "0 16px 8px",
         paddingRight: compact ? 0 : isMobile ? 16 : 52, // desktop: 16px base + 36px for ChatMinimap alignment
-        opacity: builtinCommandPending ? 0.5 : 1,
+        opacity: builtinCommandPending && !isCompacting ? 0.5 : 1,
         transition: "opacity 0.15s",
       }}
     >
@@ -1620,6 +1620,31 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       <div style={{ maxWidth: "var(--chat-content-max-width, none)", margin: "0 auto" }}>
         <ModelErrorBanner error={modelError} />
         <ModelScopeWarningBanner warnings={modelScopeWarnings} />
+        {isCompacting && (
+          <div
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            data-testid="compaction-status"
+            style={{
+              display: "flex", alignItems: "flex-start", gap: 8,
+              marginBottom: 8, padding: "8px 10px", borderRadius: 7,
+              border: "1px solid var(--border)", background: "var(--bg-panel)",
+              color: "var(--text)", fontSize: 13, lineHeight: 1.5,
+            }}
+          >
+            <svg className="animate-spin motion-reduce:animate-none" aria-hidden="true"
+              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              style={{ flexShrink: 0, marginTop: 2, color: "var(--accent)" }}>
+              <circle cx="12" cy="12" r="9" opacity="0.2" />
+              <path d="M12 3a9 9 0 0 1 9 9" strokeLinecap="round" />
+            </svg>
+            <div style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+              <div style={{ fontWeight: 600 }}>{t("chat.compactionInProgress")}</div>
+              <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{t("chat.compactionProgressHelp")}</div>
+            </div>
+          </div>
+        )}
         {onModelSpeedChange && modelSpeedChanging && (
           <div role="status" style={{ fontSize: 11, color: "var(--text-muted)", padding: "0 4px 6px" }}>
             {t("chat.modelSpeedConfirming")}
@@ -1724,7 +1749,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
              {t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts })}{retryInfo.errorMessage && <span style={{ opacity: 0.7, marginLeft: 4 }}>— {retryInfo.errorMessage}</span>}
           </div>
         )}
-        {compactResultText && (
+        {!isCompacting && compactResultText && (
           <div style={{
             marginBottom: 8, padding: "5px 10px",
             background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.24)",
@@ -1737,7 +1762,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {compactResultText}
           </div>
         )}
-        {compactError && (
+        {!isCompacting && compactError && (
           <div
             role="alert"
             style={{
