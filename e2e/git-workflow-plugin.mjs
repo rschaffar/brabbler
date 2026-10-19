@@ -17,7 +17,7 @@ export default function (pi) {
     let operation;
     if (mode.startsWith("large-")) {
       const files = Array.from({ length: 45 }, (_, index) => "large-review-" + index + ".txt");
-      for (const file of files) writeFileSync(join(ctx.cwd, file), ("Large browser review " + mode + "\\n").repeat(2000));
+      for (const file of files) writeFileSync(join(ctx.cwd, file), "Text about GIT binary patch is not binary\\n" + ("Large browser review " + mode + "\\n").repeat(2000));
       operation = { action: "commit", checkout: ctx.cwd, mode: "files", files, message: "Large exact browser review " + mode };
     } else if (mode.startsWith("cleanup-")) {
       const selectedCheckout = ctx.cwd + "-" + mode;
@@ -133,7 +133,44 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     if (address.pathname === `/api/agent/${sessionId}` && request.method() === "POST") commands.push(request.postDataJSON());
   };
   const decisions = () => commands.filter((request) => request.type === "extension_ui_response" || request.type === "abort");
-  const fileToggle = (file, path) => file.getByRole("button", { name: `Toggle diff: ${path}`, exact: true });
+  const openFile = async (group, path) => {
+    const trigger = group.getByRole("button", { name: /^Files \(/ });
+    if (await trigger.isVisible()) {
+      await trigger.click();
+      const drawer = page.getByRole("dialog", { name: "Review files", exact: true });
+      await drawer.getByRole("searchbox").fill(path);
+      await drawer.getByRole("button", { name: `Open diff: ${path}`, exact: true }).click();
+      await drawer.waitFor({ state: "hidden" });
+    } else await group.getByRole("button", { name: `Open diff: ${path}`, exact: true }).click();
+  };
+  const fullscreen = async (group, title) => {
+    await group.evaluate((element) => { element._reviewBody = element.querySelector(".blocking-card-body"); });
+    await group.getByRole("button", { name: "Open fullscreen review", exact: true }).click();
+    const surface = page.getByRole("dialog", { name: title, exact: true });
+    await surface.waitFor();
+    const box = await surface.boundingBox(), viewport = page.viewportSize();
+    assert.ok(box.width >= viewport.width - 2 && box.height >= viewport.height - 2, "Whole operation fills the app viewport");
+    assert.equal(await group.evaluate((element) => element._reviewBody === element.querySelector(".blocking-card-body")), true, "Fullscreen keeps the mounted review body");
+    const fixed = await group.evaluate((element) => {
+      const body = element.querySelector(".blocking-card-body"), header = element.querySelector(".blocking-card-header"), footer = element.querySelector(".blocking-card-footer");
+      const scroll = body.scrollTop, before = [header.getBoundingClientRect().top, footer.getBoundingClientRect().bottom];
+      body.scrollTop = body.scrollHeight;
+      const after = [header.getBoundingClientRect().top, footer.getBoundingClientRect().bottom];
+      body.scrollTop = scroll;
+      return { before, after };
+    });
+    assert.deepEqual(fixed.after, fixed.before, "Fullscreen details scroll without moving header/actions");
+    await group.getByRole("button", { name: "Restore inline review", exact: true }).focus();
+    await page.keyboard.press("Shift+Tab");
+    assert.equal(await surface.evaluate((element) => element.contains(document.activeElement)), true, "Keyboard focus cannot reach covered chat controls");
+    return surface;
+  };
+  const restore = async (group) => {
+    await group.getByRole("button", { name: "Restore inline review", exact: true }).focus();
+    await page.keyboard.press("Escape");
+    await group.getByRole("button", { name: "Open fullscreen review", exact: true }).waitFor();
+    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Open fullscreen review");
+  };
   const version = (file, name) => file.getByRole("group", { name: "File version", exact: true }).getByRole("button", { name, exact: true });
   // CodeView only mounts a window of lines. Navigate before checking distant text;
   // never require all 5,000 lines to exist in the DOM.
@@ -168,7 +205,7 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     await card.getByRole("button", { name: "Side by side", exact: true }).click();
     await first.getByRole("region", { name: "Side-by-side diff", exact: true }).waitFor();
     await first.getByText("Modified", { exact: true }).waitFor();
-    assert.equal(await fileToggle(second, "second-draft.txt").getAttribute("aria-expanded"), "false");
+    assert.equal(await second.count(), 0, "Only the selected file renderer mounts");
     assert.equal(await card.getByRole("group", { name: "Patch view", exact: true }).count(), 1);
     await first.getByRole("button", { name: "Next change", exact: true }).click();
     await expectLine(first, "Side-by-side diff", 50, candidate);
@@ -219,30 +256,49 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     await first.getByRole("button", { name: "Next match", exact: true }).click();
     await expectLine(first, "After file", 2500, "Plugin context 2500");
     await first.getByText("1/1 matches", { exact: true }).waitFor();
-    await fileToggle(first, "draft.txt").click();
-    assert.equal(await first.locator(".git-diff-code-view").count(), 0, "Collapsed file renderers unmount");
-    await fileToggle(first, "draft.txt").click();
+    await openFile(card, "second-draft.txt");
+    assert.equal(await first.locator(".git-diff-code-view").count(), 0, "Unselected file renderers unmount");
+    await card.getByRole("button", { name: "Previous file", exact: true }).click();
     assert.equal(await version(first, "After").getAttribute("aria-pressed"), "true");
     assert.equal(await first.getByRole("searchbox", { name: "Search full file", exact: true }).inputValue(), "plugin context 2500");
     await expectLine(first, "After file", 2500, "Plugin context 2500");
     await version(first, "Changes").click();
     assert.equal(await first.getByRole("button", { name: "Diff context", exact: true }).getAttribute("aria-pressed"), "true");
-    await fileToggle(second, "second-draft.txt").click();
+    await card.getByRole("button", { name: "Next file", exact: true }).click();
     await second.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
     assert.equal(await second.getByRole("button", { name: "Show full file", exact: true }).getAttribute("aria-pressed"), "false",
       "Showing one full file does not expand another file's context");
-    await card.getByRole("button", { name: "Collapse all files", exact: true }).click();
-    assert.equal(await card.locator(".git-diff-code-view").count(), 0);
-    await card.getByRole("button", { name: "Expand all files", exact: true }).click();
+    await openFile(card, "draft.txt");
     await first.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
     await first.getByRole("button", { name: "Diff context", exact: true }).waitFor();
     await card.getByRole("button", { name: "Collapse", exact: true }).click();
     await page.getByRole("button", { name: /Awaiting response.*Git commit/ }).click();
     await first.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
-    assert.equal(contextReads.length, 1, "View/version switches, file/card collapse and Expand all files reuse only the requested snapshot");
+    assert.equal(contextReads.length, 1, "View/version switches, file selection and card collapse reuse only the requested snapshot");
 
     await card.getByRole("button", { name: "Side by side", exact: true }).click();
     const beforeWide = decisions().length;
+    const whole = await fullscreen(card, "Git commit");
+    assert.equal(await card.getByRole("group", { name: "Patch view", exact: true }).count(), 1);
+    if (width <= 600) {
+      await card.getByRole("button", { name: "Files (2)", exact: true }).click();
+      const drawer = page.getByRole("dialog", { name: "Review files", exact: true });
+      await drawer.getByRole("searchbox").focus();
+      await page.keyboard.press("Escape");
+      await drawer.waitFor({ state: "hidden" });
+      assert.equal(await whole.isVisible(), true, "Drawer Escape keeps fullscreen open");
+      await card.getByRole("button", { name: "Files (2)", exact: true }).click();
+      await drawer.waitFor();
+      const viewport = page.viewportSize();
+      await page.setViewportSize({ width: 900, height: viewport.height });
+      await drawer.waitFor({ state: "hidden" });
+      assert.equal(await card.evaluate((element) => element.contains(document.activeElement)), true,
+        "Closing the drawer on desktop resize restores focus to the selected reader, not covered chat");
+      await page.setViewportSize(viewport);
+      await card.getByRole("button", { name: "Files (2)", exact: true }).waitFor();
+      assert.equal(await card.evaluate((element) => element.contains(document.activeElement)), true, "Reader focus survives return to mobile");
+      assert.equal(await whole.isVisible(), true);
+    }
     await first.getByRole("button", { name: "Wide view", exact: true }).click();
     const wide = page.getByRole("dialog", { name: "Review file: draft.txt", exact: true });
     await wide.waitFor();
@@ -251,7 +307,9 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     await page.keyboard.press("Escape");
     await wide.waitFor({ state: "hidden" });
     await page.waitForFunction(() => document.activeElement?.textContent === "Wide view");
-    assert.equal(decisions().length, beforeWide, "Escape from wide reading neither rejects the approval nor aborts the session");
+    assert.equal(await whole.isVisible(), true, "Nested wide Escape keeps the whole-operation reader open");
+    await restore(card);
+    assert.equal(decisions().length, beforeWide, "Drawer, wide and fullscreen Escape neither reject the approval nor abort the session");
     assert.equal(await card.getByRole("button", { name: "Approve commit", exact: true }).isEnabled(), true);
     assert.equal(tip(), before, "Context and wide reading are display-only");
     await checkBlockingCard(card);
@@ -292,6 +350,8 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
       const group = historical.getByRole("group", { name: "Git commit", exact: true });
       const historicalFile = group.getByRole("region", { name: "File changes: draft.txt", exact: true });
       await checkBlockingCard(group);
+      await fullscreen(group, "Git commit");
+      await restore(group);
       // Raw was persisted before approval; choose split explicitly rather than
       // assuming receipt expansion resets the shared browser view preference.
       await group.getByRole("button", { name: "Side by side", exact: true }).click();
@@ -373,6 +433,8 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
       // mobile: its branch previews intentionally use paged review, not one DOM.
       if (width > 600) await card.getByRole("group", { name: "Patch view" }).waitFor();
     } else assert.equal(await card.getByRole("group", { name: "Patch view" }).count(), 0);
+    await fullscreen(card, title);
+    await restore(card);
     await card.getByRole("button", { name: "Reject", exact: true }).click();
     await finish(`preview-${action}`, "refused");
   }
@@ -442,6 +504,8 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   const saved = page.locator(`[data-operation-receipt="${operationId}"]`);
   await saved.getByRole("button", { name: /Succeeded/ }).click();
   await saved.getByText("Policy authorized · allow · project", { exact: true }).waitFor();
+  await fullscreen(saved.getByRole("group", { name: "Git commit", exact: true }), "Git commit");
+  await restore(saved);
   assert.equal(await saved.getByRole("button", { name: "Approve commit", exact: true }).count(), 0);
   assert.equal(await page.locator(`[data-operation-receipt="${operationId}"]`).count(), 1);
   await saved.getByRole("button", { name: "Collapse", exact: true }).click();
@@ -501,6 +565,8 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     for (const root of cleanupRoots) await card.getByText(root, { exact: true }).waitFor();
     assert.equal(await card.getByText(/1 entries · .* bytes · SHA256/).count(), cleanupFiles.length, "Regular files have exact inventories");
     assert.equal(await card.getByText(/entries · .* bytes · SHA256/).count(), cleanupRoots.length);
+    await fullscreen(card, "Clean up integrated Git feature");
+    await restore(card);
     await page.screenshot({ path: join(artifacts, `git-plugin-${cleanupMode}-approval-${width}.png`) });
     await card.getByRole("button", { name: "Clean up listed resources", exact: true }).click();
     await finish(cleanupMode, "completed");
@@ -546,8 +612,16 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   await exactReview.getByText(/Showing entries 1–40 of 46/).waitFor();
   await card.getByRole("button", { name: "Approve commit", exact: true }).waitFor();
   assert.ok(await exactReview.getByRole("link", { name: "Download complete exact patch", exact: true }).getAttribute("href"));
+  await fullscreen(card, "Git commit");
+  assert.equal(await exactReview.getByRole("group", { name: "Patch view", exact: true }).count(), 1);
+  await openFile(card, "a/large-review-0.txt b/large-review-0.txt");
+  await card.getByRole("button", { name: "Side by side", exact: true }).click();
+  await exactReview.getByRole("region", { name: width > 600 ? "Side-by-side diff" : "Raw patch", exact: true }).waitFor();
+  assert.equal(await exactReview.getByText("Binary changes are summarized; file contents are not shown.", { exact: true }).count(), 0,
+    "A binary-marker phrase inside ordinary added text remains an interactive text patch");
   await exactReview.getByRole("button", { name: "Next files", exact: true }).click();
   await exactReview.getByText(/Showing entries 41–46 of 46/).waitFor();
+  await restore(card);
   await card.getByRole("button", { name: "Approve commit", exact: true }).click();
   await finish("large", "completed");
   assert.equal(execFileSync("git", ["-C", repo, "show", "--format=", "--name-only", "HEAD"], { encoding: "utf8" }).trim().split("\n").length, 45);

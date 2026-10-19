@@ -33,7 +33,7 @@ export function PluginCardContent({ request, sessionId, reviewBaseUrl }: { reque
     {request.markdown && <MarkdownBody>{request.markdown}</MarkdownBody>}
     {request.sections?.filter((section) => !section.collapsible).map((section, index) => <Section key={index} section={section} />)}
     {request.review && <ReviewAttachment key={`${sessionId}:${request.review.id}`} review={request.review} sessionId={sessionId} reviewBaseUrl={reviewBaseUrl} before={request.patchBefore} after={request.patchAfter} contextHandle={request.patchContext} pluginId={request.pluginId} />}
-    {request.patch && <SuppliedPatchStack patch={request.patch} before={request.patchBefore ?? "Current"} after={request.patchAfter ?? "Proposed"}
+    {request.patch && <SuppliedPatchStack navigation patch={request.patch} before={request.patchBefore ?? "Current"} after={request.patchAfter ?? "Proposed"}
       contextHandle={request.patchContext} pluginId={request.pluginId} />}
     {request.sections?.filter((section) => section.collapsible).map((section, index) => <Section key={index} section={section} />)}
   </>;
@@ -56,7 +56,7 @@ export function PluginCard({ request, onRespond, sessionId }: {
   return <div onKeyDown={(event) => {
     if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); respond({ cancelled: true }); }
   }}>
-    <BlockingCard title={request.title} label={request.subtitle ?? t("chat.extensionRequest")} collapsed={collapsed}
+    <BlockingCard allowFullscreen={Boolean(request.review || request.patch)} title={request.title} label={request.subtitle ?? t("chat.extensionRequest")} collapsed={collapsed}
       onCollapse={() => setCollapsed(true)} onExpand={() => setCollapsed(false)} footer={<>
         {request.scope && <p className="blocking-card-scope">{request.scope}</p>}
         <button type="button" autoFocus disabled={sent} className="mr-auto" onClick={() => respond({ cancelled: true })}>{t("chat.cancel")}</button>

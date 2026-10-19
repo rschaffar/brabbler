@@ -11,6 +11,8 @@ const helpers = await jiti.import("../lib/git-patch-display.ts");
 const review = await jiti.import("../lib/git-diff-review.ts");
 const toolbar = await jiti.import("./GitDiffToolbar.tsx");
 const preferences = await jiti.import("../hooks/useGitDiffPreferences.ts");
+const browser = await jiti.import("./ReviewFileBrowser.tsx");
+const { I18nProvider } = await jiti.import("../hooks/useI18n.tsx");
 const filename = new URL("./GitPatchStack.tsx", import.meta.url).pathname;
 const source = await readFile(filename, "utf8");
 const mod = new Module(filename);
@@ -20,6 +22,7 @@ mod.require = (id) => {
   if (id === "@/lib/git-patch-display") return helpers;
   if (id === "@/lib/git-diff-review") return review;
   if (id === "./GitDiffToolbar") return toolbar;
+  if (id === "./ReviewFileBrowser") return browser;
   if (id === "@/hooks/useGitDiffPreferences") return preferences;
   if (id === "./CommittedPatchDiff") return { CommittedPatchDiff: ({ patch, view }) => React.createElement("pre", { "data-view": view }, patch) };
   return require(id);
@@ -39,6 +42,19 @@ test("stack initially opens only the first file with one shared toolbar and pres
   assert.match(html, /Complete raw patch/); assert.match(html, /second file content/);
   assert.match(html, /&lt;script&gt;not executable&lt;\/script&gt;/); assert.doesNotMatch(html, /<script>/);
 });
+test("operation reviews mount only the selected file and one shared mode selector", () => {
+  const html = renderToStaticMarkup(React.createElement(I18nProvider, {}, React.createElement(mod.exports.SuppliedPatchStack,
+    { patch: supplied, before: "HEAD", after: "Candidate", navigation: true })));
+  assert.match(html, /Open diff: first.txt/);
+  assert.match(html, /Open diff: second.txt/);
+  assert.match(html, /Previous file/); assert.match(html, /Next file/);
+  assert.match(html, /Filter files/);
+  assert.equal((html.match(/aria-label="Patch view"/g) ?? []).length, 1);
+  assert.equal((html.match(/data-view="split"/g) ?? []).length, 1);
+  assert.match(html, /File changes: first.txt/);
+  assert.doesNotMatch(html, /File changes: second.txt|Expand all files|Toggle diff:/);
+});
+
 test("malformed framing exposes complete escaped raw text instead of a partial file list", () => {
   const raw = "unrecognized <header>\n" + supplied;
   const html = renderToStaticMarkup(React.createElement(mod.exports.SuppliedPatchStack, { patch: raw, before: "HEAD", after: "Candidate" }));

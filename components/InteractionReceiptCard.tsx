@@ -19,7 +19,7 @@ export function InteractionReceiptCard({ receipt, sessionId }: { receipt: Intera
   const outcome = t(`chat.receipt.${receipt.outcome}`);
   return <div className="my-4 min-w-0" data-interaction-receipt={request.id}
     data-operation-id={request.method === "plugin_card" ? request.operationId : undefined}>
-    <BlockingCard title={interactionTitle(request)}
+    <BlockingCard allowFullscreen={request.method === "plugin_card" && Boolean(request.review || request.patch)} title={interactionTitle(request)}
       label={request.method === "plugin_card" && request.subtitle ? `${request.subtitle} · ${outcome}` : outcome}
       collapsedLabel={outcome}
       collapsed={collapsed} retainBodyWhenCollapsed={false}
