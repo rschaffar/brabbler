@@ -62,6 +62,7 @@ While `isCompacting` is true, the composer shows an accessible, indeterminate **
 
 ### Moving sessions between projects
 - The row's **Move to project…** action proposes a project and registered worktree/directory, or another existing directory through Browse, without changing the sidebar checkout. The route accepts distinct registered checkout roots within the same repository, but refuses the exact current directory, same-repository subdirectories and running families. A move changes the header cwd and the SDK session-file directory for the selected session and its nested subagents; forks stay in place, but any stored parent path pointing at a moved file is repaired (including subagent metadata).
+- A missing source cwd does not prevent relocation: persisted history is outside the checkout. The route waives only source-root/registration checks for `ENOENT`, including removed/prunable worktrees; known same-repository destinations still require a registered checkout root. It does not recreate the old directory, and running/queued-family restrictions remain unchanged.
 - `lib/session-move.ts` stages all rewrites, backs up originals for rollback, installs destination files without overwriting an existing file, evicts idle wrappers, and refreshes both session-path and list caches. Never only change the header or only rename the JSONL: Pi's session discovery and parent references must stay consistent. Other Pi processes writing concurrently are not coordinated with this operation.
 
 ### Agent-created ordinary sessions

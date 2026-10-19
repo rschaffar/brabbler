@@ -23,19 +23,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!source) return NextResponse.json({ error: "Session not found" }, { status: 404 });
     const header = readSessionHeader(source);
     if (!header?.cwd) return NextResponse.json({ error: "Session is not persisted" }, { status: 409 });
+    // The transcript outlives its checkout. Only a genuinely missing source
+    // bypasses source registration checks; permission/I/O failures still fail.
+    let sourceMissing = false;
+    try { statSync(header.cwd); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      sourceMissing = true;
+    }
     const [from, to] = await Promise.all([resolveProject(header.cwd), resolveProject(cwd)]);
-    const sourceWorktrees = await listWorktrees(header.cwd).catch(() => []);
+    // Recovered grouping can still identify same-repository destinations after
+    // removal, but must never require the vanished checkout to be registered.
+    const sourceWorktrees = await listWorktrees(sourceMissing ? from.projectRoot : header.cwd).catch(() => []);
     const destinationWorktrees = await listWorktrees(cwd).catch(() => []);
     // Subdirectories are distinct Pi Web project groups, but not distinct Git
     // repositories. Treat them as same-repository for this worktree-only action.
     const sameGitRepo = sourceWorktrees.some((source) =>
       destinationWorktrees.some((destination) => samePath(source.path, destination.path)));
     if (sameGitRepo || projectIdentityKey(from.projectRoot) === projectIdentityKey(to.projectRoot)) {
-      if (!from.isTopLevel || !to.isTopLevel || samePath(header.cwd, cwd)) {
+      if ((!sourceMissing && !from.isTopLevel) || !to.isTopLevel || samePath(header.cwd, cwd)) {
         return NextResponse.json({ error: "Choose another worktree or project" }, { status: 409 });
       }
-      if (!sourceWorktrees.some((item) => samePath(item.path, header.cwd))
-        || !sourceWorktrees.some((item) => samePath(item.path, cwd))) {
+      if ((!sourceMissing && !sourceWorktrees.some((item) => samePath(item.path, header.cwd)))
+        || !destinationWorktrees.some((item) => samePath(item.path, cwd))) {
         return NextResponse.json({ error: "Choose a registered worktree" }, { status: 409 });
       }
     }

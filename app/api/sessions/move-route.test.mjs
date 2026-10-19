@@ -13,6 +13,8 @@ const exec = promisify(execFile);
 const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { listAllSessions, resolveSessionPath, invalidateSessionPathCache, invalidateSessionListCache } = await jiti.import("../../../lib/session-reader.ts");
 
+const { resolveProject, invalidateProjectCache } = await jiti.import("../../../lib/worktree.ts");
+
 const header = (id, cwd, parentSession) => JSON.stringify({
   type: "session", version: 3, id, cwd, timestamp: "2026-01-01T00:00:00.000Z",
   ...(parentSession ? { parentSession } : {}),
@@ -101,6 +103,67 @@ test("move persists a nested family, repairs an external fork and refreshes path
   assert.equal(after.find((session) => session.id === id)?.cwd, newCwd);
   assert.equal(after.find((session) => session.id === `${id}-child`)?.relation?.parentSessionId, id);
   assert.equal(after.find((session) => session.id === fork.getSessionId())?.relation?.originSessionId, id);
+});
+
+test("deleted source checkouts do not strand persisted sessions", async (t) => {
+  for (const scenario of [
+    { name: "removed worktree to main", target: "main", remove: true },
+    { name: "prunable worktree to sibling with cached identity", target: "sibling", cached: true },
+    { name: "removed worktree to plain directory", target: "plain", remove: true },
+    { name: "custom deleted worktree to main without inferred identity", target: "main", custom: true, remove: true },
+  ]) await t.test(scenario.name, async (t) => {
+    const dir = await mkdtemp(join(tmpdir(), "pi-web-deleted-move-"));
+    const previous = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = join(dir, "agent");
+    const root = join(dir, "repo"), plain = join(dir, "plain");
+    const source = scenario.custom ? join(dir, "custom") : join(dir, "repo-worktrees", "deleted");
+    const sibling = join(dir, "repo-worktrees", "sibling");
+    await Promise.all([root, plain].map((cwd) => mkdir(cwd)));
+    const git = (...args) => exec("git", ["-C", root, ...args]);
+    await git("init", "-q");
+    await git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "initial");
+    await git("worktree", "add", "-q", "-b", "deleted", source);
+    await git("worktree", "add", "-q", "-b", "sibling", sibling);
+    const nested = join(root, "nested");
+    await mkdir(nested);
+    const manager = SessionManager.create(source);
+    manager.appendMessage({ role: "user", content: "Recover this history", timestamp: Date.now() });
+    manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "Preserved" }], timestamp: Date.now() });
+    const id = manager.getSessionId(), oldPath = manager.getSessionFile();
+    const original = await readFile(oldPath, "utf8");
+    t.after(async () => {
+      if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = previous;
+      invalidateSessionPathCache(id);
+      invalidateSessionListCache();
+      invalidateProjectCache();
+      await rm(dir, { recursive: true, force: true });
+    });
+    if (scenario.cached) await resolveProject(source);
+    if (scenario.remove) await git("worktree", "remove", source);
+    else await rm(source, { recursive: true });
+    if (!scenario.cached) invalidateProjectCache();
+    invalidateSessionListCache();
+    assert.equal((await request(id, source)).status, 400, "A missing destination still refuses");
+    if (!scenario.custom) assert.equal((await request(id, nested)).status, 409, "Known same-repo subdirectories still refuse");
+    assert.equal(await readFile(oldPath, "utf8"), original);
+    const destination = scenario.target === "plain" ? plain : scenario.target === "sibling" ? sibling : root;
+    const registry = globalThis.__piSessions;
+    globalThis.__piSessions = new Map([[id, { isRunning: () => true }]]);
+    try {
+      assert.equal((await request(id, destination)).status, 409, "Missing cwd does not bypass running protection");
+      assert.equal(await readFile(oldPath, "utf8"), original);
+    } finally { globalThis.__piSessions = registry; }
+    const response = await request(id, destination);
+    assert.equal(response.status, 200, await response.clone().text());
+    const newPath = await resolveSessionPath(id);
+    const content = await readFile(newPath, "utf8");
+    assert.equal(JSON.parse(content.split("\n")[0]).cwd, destination);
+    assert.deepEqual(content.split("\n").slice(1), original.split("\n").slice(1));
+    await assert.rejects(readFile(oldPath), { code: "ENOENT" });
+    await assert.rejects(readFile(join(source, ".git")), { code: "ENOENT" });
+    assert.equal((await listAllSessions({ force: true })).find((item) => item.id === id)?.cwd, destination);
+  });
 });
 
 test("same-project continuation accepts only distinct registered worktree roots", async (t) => {
