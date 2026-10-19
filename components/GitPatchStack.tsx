@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CommittedPatchDiff } from "./CommittedPatchDiff";
 import { GitDiffToolbar } from "./GitDiffToolbar";
+import { ReviewFileBrowser } from "./ReviewFileBrowser";
 import { useGitDiffPreferences } from "@/hooks/useGitDiffPreferences";
 import { createDiffReview, type DiffReviewModel } from "@/lib/git-diff-review";
 import { createPatchLoader, splitGitPatch, type DisplayFile, type DisplayPatch } from "@/lib/git-patch-display";
@@ -54,8 +55,8 @@ function ExpandedPatch({ file, load, loadContext, reviews, before, after, view, 
 }
 
 /** Expanding or reading a file never changes the operation's approval scope. */
-export function GitPatchStack({ files, before, after, loadPatch, loadContext, completePatch }: {
-  files: DisplayFile[]; before: string; after: string;
+export function GitPatchStack({ files, before, after, loadPatch, loadContext, completePatch, navigation = false }: {
+  files: DisplayFile[]; before: string; after: string; navigation?: boolean;
   loadPatch?: (id: string, signal: AbortSignal) => Promise<DisplayPatch>;
   loadContext?: ContextLoader; completePatch?: string;
 }) {
@@ -66,6 +67,23 @@ export function GitPatchStack({ files, before, after, loadPatch, loadContext, co
   const context = useMemo(() => loadContext ? createPatchLoader(loadContext) : undefined, [loadContext]);
   const totals = files.every((file) => file.additions !== undefined && file.deletions !== undefined)
     ? files.reduce((sum, file) => ({ additions: sum.additions + file.additions!, deletions: sum.deletions + file.deletions! }), { additions: 0, deletions: 0 }) : null;
+  if (navigation) return <><ReviewFileBrowser files={files.map((file) => ({ id: file.id,
+    label: file.previousPath && file.previousPath !== file.path ? `${file.previousPath} → ${file.path}` : file.path,
+    description: `${file.status}${file.additions === undefined ? "" : ` · +${file.additions} −${file.deletions}`}` }))}>
+    {(selected, preferences) => {
+      const file = files.find((file) => file.id === selected.id)!;
+      return <section aria-label={`File changes: ${file.path}`}>
+        <p className="text-xs text-text-muted">{file.status}</p>
+        <ExpandedPatch key={selected.id} file={file} load={load} loadContext={context} reviews={reviews.current}
+          before={before} after={after} {...preferences} immediate />
+      </section>;
+    }}
+  </ReviewFileBrowser>
+    {completePatch !== undefined && <details className="mt-3 text-xs text-text-muted">
+      <summary className="cursor-pointer font-medium">Complete raw patch</summary>
+      <pre className="mt-2 overflow-x-auto font-mono text-xs text-text">{completePatch}</pre>
+    </details>}
+  </>;
   return <section aria-label="Changed files" className="min-w-0">
     <div className="git-patch-stack-toolbar">
       <h2 className="font-semibold">Changed files ({files.length})</h2>
@@ -95,8 +113,8 @@ export function GitPatchStack({ files, before, after, loadPatch, loadContext, co
   </section>;
 }
 
-export function SuppliedPatchStack({ patch, before, after, contextHandle, pluginId }: {
-  patch: string; before: string; after: string; contextHandle?: string; pluginId?: string;
+export function SuppliedPatchStack({ patch, before, after, contextHandle, pluginId, navigation = false }: {
+  patch: string; before: string; after: string; contextHandle?: string; pluginId?: string; navigation?: boolean;
 }) {
   const files = useMemo(() => { try { return splitGitPatch(patch); } catch { return null; } }, [patch]);
   const loadContext = useCallback(async (id: string, signal: AbortSignal): Promise<DiffContext> => {
@@ -105,7 +123,7 @@ export function SuppliedPatchStack({ patch, before, after, contextHandle, plugin
     if (!response.ok) throw new Error(body.error ?? "Full-file context unavailable");
     return body;
   }, [contextHandle, pluginId]);
-  return files ? <GitPatchStack key={`${contextHandle ?? "patch"}:${patch}`} files={files} before={before} after={after} completePatch={patch}
+  return files ? <GitPatchStack key={`${contextHandle ?? "patch"}:${patch}`} files={files} before={before} after={after} completePatch={patch} navigation={navigation}
     loadContext={contextHandle && pluginId ? loadContext : undefined} />
     : <div className="min-w-0 text-xs">
       <p className="mb-2 text-text-muted">The patch could not be separated into files; showing the complete raw patch.</p>

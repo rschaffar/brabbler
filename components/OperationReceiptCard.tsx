@@ -13,7 +13,7 @@ export function OperationReceiptCard({ receipt, sessionId }: { receipt: Operatio
   const request = { ...receipt.card, type: "extension_ui_request" as const, method: "plugin_card" as const,
     id: receipt.operationId, pluginId: receipt.pluginId, actions: [] };
   return <div className="my-4 min-w-0" data-operation-receipt={receipt.operationId}>
-    <BlockingCard title={receipt.card.title} label={`${authorization} · ${outcome}`}
+    <BlockingCard allowFullscreen={Boolean(receipt.card.review || receipt.card.patch)} title={receipt.card.title} label={`${authorization} · ${outcome}`}
       collapsedLabel={outcome} collapsed={collapsed} retainBodyWhenCollapsed={false}
       onCollapse={() => setCollapsed(true)} onExpand={() => setCollapsed(false)}
       footer={<p className="min-w-0 break-words text-xs text-text-muted">{authorization} · {receipt.authorization.source} · {outcome}</p>}>

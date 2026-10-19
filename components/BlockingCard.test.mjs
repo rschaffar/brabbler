@@ -16,13 +16,18 @@ async function component(name, dependencies = {}) {
   mod._compile(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
   return mod.exports;
 }
-const shell = await component("./BlockingCard.tsx");
+const shell = await component("./BlockingCard.tsx", {
+  "@/lib/panel-focus": { deepActiveElement: () => null, panelTabStops: () => [] },
+});
 const { PluginCard, PluginCardContent } = await component("./plugin-ui/PluginCard.tsx", {
   "../BlockingCard": shell,
   "../MarkdownBody": { MarkdownBody: ({ children }) => React.createElement("p", {}, children) },
   "../GitPatchStack": { SuppliedPatchStack: () => React.createElement("div", {}, "stack") },
   "./ReviewAttachment": await component("./plugin-ui/ReviewAttachment.tsx", {
     "../GitPatchStack": { SuppliedPatchStack: () => React.createElement("div", {}, "stack") },
+    "../ReviewFileBrowser": { ReviewFileBrowser: () => null },
+    "../CommittedPatchDiff": { CommittedPatchDiff: () => null },
+    "@/lib/git-diff-review": { createDiffReview: () => ({}) },
   }),
 });
 
@@ -70,6 +75,33 @@ test("large reference-only reviews retain the entire-operation scope and live ac
   assert.ok(html.length < 10000);
 });
 
+test("failed aggregate patches retain a single selected-entry fallback; metadata-only reviews stay collapsed", async () => {
+  const url = "/api/sessions/current/reviews/review";
+  const renderReview = async (entries, patch, patchError) => {
+    const states = [0, 0, { entries, total: entries.length, next: null, start: 0, url }, "", patch, patchError];
+    let stateIndex = 0;
+    const { ReviewAttachment } = await component("./plugin-ui/ReviewAttachment.tsx", {
+      react: { ...React, useState: (initial) => React.useState(stateIndex < states.length ? states[stateIndex++] : initial) },
+      "../GitPatchStack": { SuppliedPatchStack: () => React.createElement("div", {}, "aggregate patch") },
+      "../ReviewFileBrowser": { ReviewFileBrowser: ({ files, children }) => React.createElement("div", { "data-file-browser": true },
+        children(files.find((file) => file.id === "1") ?? files[0], { view: "split", wrap: true })) },
+      "../CommittedPatchDiff": { CommittedPatchDiff: () => null },
+      "@/lib/git-diff-review": { createDiffReview: () => ({}) },
+    });
+    return renderToStaticMarkup(React.createElement(ReviewAttachment, { sessionId: "current", review: { id: "review", bytes: 1024, entries: entries.length } }));
+  };
+  const metadata = { id: 0, label: "Exact operation", bytes: 100, kind: "text" };
+  const failed = await renderReview([metadata, { id: 1, label: "a/file b/file", bytes: 100, kind: "patch" }], null, "Exact patch unavailable");
+  assert.match(failed, /Exact patch unavailable/);
+  assert.match(failed, /data-file-browser="true"/);
+  assert.match(failed, /entry=1&amp;download=1/);
+  assert.match(failed, /Download complete exact patch/);
+  assert.doesNotMatch(failed, /aggregate patch/);
+  const details = await renderReview([metadata], { url, text: "" }, "");
+  assert.match(details, /<summary[^>]*>Exact operation/);
+  assert.doesNotMatch(details, /data-file-browser|Loading review|Exact details/);
+});
+
 test("historical shell uses outcome labels and does not mount expensive collapsed bodies", () => {
   let mounted = 0;
   const Content = () => { mounted += 1; return React.createElement("div", {}, "diff renderer"); };
@@ -114,7 +146,8 @@ test("receipt cards default collapsed; expanded approvals retain scope and patch
   assert.match(expanded, /Approval required/);
   assert.match(expanded, /chat.receiptDecisionOnly/);
   assert.doesNotMatch(expanded, /<form|<input|<textarea|type="submit"|data-primary|>chat.cancel</);
-  assert.equal((expanded.match(/<button/g) ?? []).length, 1, "only collapse can act on the historical card");
+  assert.equal((expanded.match(/<button/g) ?? []).length, 2, "only local collapse/fullscreen controls");
+  assert.match(expanded, /chat.fullscreenCard/);
 });
 const operationHelpers = await jiti.import("../lib/operation-receipts.ts");
 const operationDependencies = {
@@ -149,7 +182,8 @@ test("operation receipts collapse unmounted bodies and separate policy authoriza
   assert.match(intentOnly, /Effect may have started/);
   assert.doesNotMatch(intentOnly, /Effect not started/);
   assert.doesNotMatch(expanded, /<form|<input|<textarea|type="submit"|data-primary|Forbidden callback control/);
-  assert.equal((expanded.match(/<button/g) ?? []).length, 1, "only local collapse control");
+  assert.equal((expanded.match(/<button/g) ?? []).length, 2, "only local collapse/fullscreen controls");
+  assert.match(expanded, /chat.fullscreenCard/);
   const terminal = renderToStaticMarkup(React.createElement(OperationReceiptCard, { receipt: { ...receipt, phase: "failed" } }));
   assert.match(terminal, /Failed/);
   assert.doesNotMatch(terminal, /outcome unknown/);

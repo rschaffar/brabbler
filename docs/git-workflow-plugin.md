@@ -269,10 +269,17 @@ project commands before approval. Preview uses an ephemeral index and may add
 unreachable Git objects, but never stages working files. The supplied rebase/merge
 patch shows feature changes since the merge base, **not** a predicted result.
 Exact review material is saved once before the prepared receipt, independently of
-card size. Small reviews use the [shared diff-review controls](worktrees.md#full-file-diff-review):
-stacked collapsible files (first expanded), shared split/unified/raw and wrap,
-optional full context and read-only historical review. Larger reviews use 40-entry
-inventory pages and lazy entry reads. Interactive rendering is display-bounded;
+card size. Small reviews use the [shared diff-review controls](worktrees.md#full-file-diff-review)
+with one selected file: a searchable file sidebar where space permits, otherwise a
+**Files (N)** drawer. Selecting a file closes the drawer; **Previous/Next file**
+move within the displayed inventory. One sticky split/unified/raw and wrap toolbar
+applies to every file, retaining the browser-wide preference. Context/version/search
+and reading anchors remain local to each file; selecting another file never eagerly
+loads its full context. Larger reviews retain 40-entry inventory pages, lazy entry
+reads and explicitly page-local filtering; **Previous/Next files** change pages.
+Only lightweight reading positions persist across large-review entry changes;
+parsed patches and contents are released when their selected reader unmounts.
+Metadata-only exact details remain collapsed until requested. Interactive rendering is display-bounded;
 large individual entries have 256 KiB raw content pages. Complete exact reviews,
 raw patches and individual entries can always be streamed for download while the
 saved material is available. Binary and metadata-only changes remain explicit.
@@ -301,7 +308,16 @@ logic. Presentation is not model-facing tool content.
 
 Approvals share the compact blocking-card shell with browser questions and
 ordinary extension select/confirm/input/editor requests: bounded body scrolling,
-fixed action footer and collapse/expand preserving local state. Git cards show
+fixed action footer and collapse/expand preserving local state. Cards with exact
+review attachments or supplied patches also offer **Open fullscreen review**,
+including metadata-only Git worktree/cleanup operations and read-only receipts.
+This is an in-app modal view of the entire mounted card, not browser fullscreen:
+operation details, the shared file browser and the unchanged action footer remain
+available. **Restore inline review** or Escape returns to chat without remounting
+the review, answering the request or stopping the agent. The file drawer and nested
+per-file Wide view consume their own Escape first. Native modal focus containment
+keeps background controls inaccessible; shadow-aware Tab boundary wrapping keeps
+keyboard traversal in the fullscreen reader. Closing restores focus to its trigger. Fullscreen is transient and is not saved across reloads. Git cards show
 checkout/branch and operation-specific fields, the exact commit message, required
 checks, visible operation notes and the whole-operation approval scope. Full refs,
 candidate tree and native arguments are under Technical details. Cancel cancels
@@ -312,7 +328,7 @@ just an expanded file. Worktree approvals use the same layout without patches.
 Cards use the existing per-session pending-dialog maps and `extension_ui_response`
 transport. Only an action declared by the matching live request can resolve it.
 SSE reconnect replays pending cards; request dismissal, Stop and wrapper teardown
-cancel them. Escape in **Wide view** closes only the reader and restores focus;
+cancel them. Escape in fullscreen or **Wide view** closes only that reader and restores focus;
 it neither submits nor cancels the live approval. Disable or relevant settings
 changes cancel waiting Git approvals; Pi's supported dynamic registration/hidden
 exposure removes active tools and their guidance immediately. Re-enable registers
