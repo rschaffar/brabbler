@@ -317,7 +317,7 @@ test("warm cache restoration updates live refs before starting its canonical fre
   const bindings = {
     cached: { leafId: "cached-leaf", messages: [], entryIds: [], thinkingLevel: "off", model: null },
     session: { id: "session" }, dataRef: { current: null }, activeLeafIdRef: { current: null },
-    modelSpeedRef: { current: "standard" }, setModelSpeed() {},
+    modelSpeedRef: { current: "standard" }, compactionVersionRef: { current: 0 }, setModelSpeed() {},
     setData() {}, setActiveLeafId() {}, setMessages() {}, setEntryIds() {},
     setHistoryCursor() {}, setHasEarlierMessages() {}, setError() {}, setLoading() {},
   };

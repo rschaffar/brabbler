@@ -377,6 +377,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [modelSwitching, setModelSwitching] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
+  // Compaction can start/end within one prompt. New events, commands and reads
+  // invalidate older snapshots independently of the prompt's run generation.
+  const compactionVersionRef = useRef(0);
+  // Manual POST admission and its SSE start describe one phase. Only a new
+  // inactive -> active transition changes ownership; its end still permits the
+  // POST to publish its result, but a later phase invalidates that completion.
+  const compactionPhaseRef = useRef({ active: false, generation: 0 });
+  const setCompactionState = useCallback((active: boolean) => {
+    if (active && !compactionPhaseRef.current.active) compactionPhaseRef.current.generation += 1;
+    compactionPhaseRef.current.active = active;
+    compactionVersionRef.current += 1;
+    setIsCompacting(active);
+  }, []);
   const [autoCompactionEnabled, setAutoCompactionEnabled] = useState(true);
   const [compactError, setCompactError] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<CompactResultInfo | null>(null);
@@ -1205,6 +1218,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
       try {
         const speedRevision = modelSpeedRevisionRef.current;
+        const compactionVersion = compactionVersionRef.current;
         const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json() as { running?: boolean; state?: AgentStateResponse };
@@ -1229,7 +1243,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
 
         if (data.running && state?.isCompacting) {
-          setIsCompacting(true);
+          if (compactionVersion === compactionVersionRef.current) setCompactionState(true);
           eventStreamGraceTimerRef.current = setTimeout(() => void checkServerIdle(), PROMPT_SETTLE_POLL_MS);
           return;
         }
@@ -1249,7 +1263,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     };
 
     eventStreamGraceTimerRef.current = setTimeout(() => void checkServerIdle(), EVENT_STREAM_IDLE_GRACE_MS);
-  }, [cancelEventStreamGrace, closeEvents, syncLiveModel]);
+  }, [cancelEventStreamGrace, closeEvents, syncLiveModel, setCompactionState]);
 
   const finishPromptWithoutStream = useCallback(async (sid: string | null = sessionIdRef.current, runId = promptRunIdRef.current) => {
     // Bail out before loadSession too: a stale finish for a previous run
@@ -1335,7 +1349,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // If the server reports idle while we still think it's running, finish
   // through the same settlement path used by non-streaming prompts.
   const reconcileAgentState = useCallback(async (sid: string) => {
-    if (!agentRunningRef.current || sessionIdRef.current !== sid) return;
+    if ((!agentRunningRef.current && !isCompacting) || sessionIdRef.current !== sid) return;
+    const compactionVersion = ++compactionVersionRef.current;
     const runId = promptRunIdRef.current;
     const speedRevision = modelSpeedRevisionRef.current;
     try {
@@ -1345,13 +1360,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // A slow response can straddle a run boundary (previous run finished
       // and the user already started the next one while this request was in
       // flight) — everything in it is stale, drop it.
-      if (sessionIdRef.current !== sid || promptRunIdRef.current !== runId) return;
+      if (sessionIdRef.current !== sid || promptRunIdRef.current !== runId
+        || compactionVersion !== compactionVersionRef.current) return;
       const state = data.state;
       syncLiveModel(state, speedRevision);
       // Mirror compaction state unconditionally: a missed compaction_end
       // would otherwise leave the "Stop compaction" UI stuck. No state
       // (wrapper destroyed) means nothing is compacting.
-      setIsCompacting(state?.isCompacting ?? false);
+      setCompactionState(state?.isCompacting ?? false);
       setAutoCompactionEnabled(state?.autoCompactionEnabled ?? true);
       setQueuedMessages(normalizeQueuedMessages(state?.queuedMessages));
       const busy = data.running && state
@@ -1372,13 +1388,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch {
       // Network still down — the next poll / visibility / online tick retries.
     }
-  }, [finishPromptWithoutStream, syncLiveModel]);
+  }, [finishPromptWithoutStream, syncLiveModel, isCompacting, setCompactionState]);
 
-  // Recovery net for missed SSE events: while the agent is running, verify
+  // Recovery net for missed SSE events: while the agent is running or compacting, verify
   // against the server periodically and whenever the tab returns to the
   // foreground or the network comes back.
   useEffect(() => {
-    if (!agentRunning) return;
+    if (!agentRunning && !isCompacting) return;
     const reconcile = () => {
       // Read the ref on every tick: for brand-new sessions the id is
       // assigned only after ensure_session returns.
@@ -1392,11 +1408,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", reconcile);
     return () => {
+      compactionVersionRef.current += 1;
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("online", reconcile);
     };
-  }, [agentRunning, reconcileAgentState]);
+  }, [agentRunning, isCompacting, reconcileAgentState]);
 
   useEffect(() => {
     agentRunningRef.current = agentRunning;
@@ -1474,7 +1491,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
         const sid = sessionIdRef.current;
         const wasRunning = settleUiStage();
-        setIsCompacting(false);
+        setCompactionState(false);
         if (sid) {
           void loadSession(sid);
           scheduleEventStreamClose(sid);
@@ -1657,13 +1674,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         break;
       case "auto_compaction_start":
       case "compaction_start":
-        setIsCompacting(true);
+        setCompactionState(true);
         setCompactError(null);
         setCompactResult(null);
         break;
       case "auto_compaction_end":
       case "compaction_end":
-        setIsCompacting(false);
+        setCompactionState(false);
         if (event.errorMessage) {
           setCompactError(event.errorMessage as string);
           setCompactResult(null);
@@ -1710,7 +1727,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setExtensionDialog((current) => current?.id === event.id ? null : current);
         break;
     }
-  }, [addNotice, cancelEventStreamGrace, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel, setMessages, setTranscript, reconcileInteractionReceipts]);
+  }, [addNotice, cancelEventStreamGrace, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel, setCompactionState, setMessages, setTranscript, reconcileInteractionReceipts]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -2015,20 +2032,23 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleCompact = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (!sid || isCompacting) return;
-    setIsCompacting(true);
+    setCompactionState(true);
+    const compactionGeneration = compactionPhaseRef.current.generation;
     setCompactError(null);
     setCompactResult(null);
     try {
       const result = await sendAgentCommand<CompactCommandResult>(sid, { type: "compact" });
+      if (compactionGeneration !== compactionPhaseRef.current.generation) return;
       setCompactResult(readCompactResult(result, "manual"));
       await loadSession(sid, true);
     } catch (e) {
+      if (compactionGeneration !== compactionPhaseRef.current.generation) return;
       setCompactError(e instanceof Error ? e.message : String(e));
       setCompactResult(null);
     } finally {
-      setIsCompacting(false);
+      if (compactionGeneration === compactionPhaseRef.current.generation) setCompactionState(false);
     }
-  }, [isCompacting, loadSession]);
+  }, [isCompacting, loadSession, setCompactionState]);
 
   const loadModels = useCallback(async (signal?: AbortSignal) => {
     const modelCwd = newSessionCwd ?? session?.cwd ?? "";
@@ -2107,19 +2127,23 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return result;
     };
 
+    let compactionGeneration: number | undefined;
     try {
       switch (commandName) {
         case "compact": {
           if (!sid || isCompacting) return complete({ handled: true, error: "No active session to compact" });
-          setIsCompacting(true);
+          setCompactionState(true);
+          compactionGeneration = compactionPhaseRef.current.generation;
           setCompactError(null);
           setCompactResult(null);
           const result = await sendAgentCommand<CompactCommandResult>(sid, {
             type: "compact",
             ...(args ? { customInstructions: args } : {}),
           });
-          setCompactResult(readCompactResult(result, "manual"));
-          if (await loadSession(sid, true)) promoteNewSession();
+          if (compactionGeneration === compactionPhaseRef.current.generation) {
+            setCompactResult(readCompactResult(result, "manual"));
+            if (await loadSession(sid, true)) promoteNewSession();
+          }
           return complete({ handled: true, message: "Compacted context" });
         }
 
@@ -2204,9 +2228,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch (e) {
       return complete({ handled: true, error: e instanceof Error ? e.message : String(e) });
     } finally {
-      if (commandName === "compact") setIsCompacting(false);
+      if (compactionGeneration !== undefined && compactionGeneration === compactionPhaseRef.current.generation) {
+        setCompactionState(false);
+      }
     }
-  }, [activeLeafId, addNotice, ensureNewSession, isCompacting, loadModels, loadSession, loadSlashCommands, loadTools, promoteNewSession, onSessionForked, onSessionStatsPanelOpen]);
+  }, [activeLeafId, addNotice, ensureNewSession, isCompacting, loadModels, loadSession, loadSlashCommands, loadTools, promoteNewSession, onSessionForked, onSessionStatsPanelOpen, setCompactionState]);
 
   // Let AgentSession.prompt decide atomically whether to queue against the
   // current run or start a new turn if it settled while the request was in
@@ -2631,7 +2657,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setError(null);
         setLoading(false);
       }
+      const compactionVersion = ++compactionVersionRef.current;
       loadSession(session.id, !cached, true, { force: true }).then((loadedAgentState) => {
+        if (!sessionHookMountedRef.current || sessionIdRef.current !== session.id) return;
         const agentState = loadedAgentState as { running: boolean; state?: AgentStateResponse } | null;
         if (agentState?.running) {
           loadTools(session.id);
@@ -2653,7 +2681,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           }
         }
         if (agentState?.state) {
-          if (agentState.state.isCompacting !== undefined) setIsCompacting(agentState.state.isCompacting);
+          if (agentState.state.isCompacting !== undefined && compactionVersion === compactionVersionRef.current) {
+            setCompactionState(agentState.state.isCompacting);
+          }
           if (agentState.state.contextUsage !== undefined) setContextUsage(agentState.state.contextUsage ?? null);
           if (agentState.state.systemPrompt !== undefined) setSystemPrompt(agentState.state.systemPrompt ?? null);
           if (agentState.state.extensionStatuses !== undefined) setExtensionStatuses(agentState.state.extensionStatuses ?? []);
@@ -2662,6 +2692,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
       });
     }
+    const compactionPhase = compactionPhaseRef.current;
     return () => {
       sessionHookMountedRef.current = false;
       const abandonedDraftKey = isNew ? newSessionDraftKey : null;
@@ -2707,6 +2738,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         liveFollowFrameRef.current = null;
       }
       bashRecoveryIdRef.current += 1;
+      compactionPhase.generation += 1;
       cancelEventStreamGrace();
       closeEvents();
     };
