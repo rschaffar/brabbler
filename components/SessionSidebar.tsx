@@ -2,7 +2,9 @@
 
 import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import type { SessionInfo } from "@/lib/types";
-import { listSessionFamilies } from "@/lib/session-family";
+import { sessionFamiliesForWorktree } from "@/lib/session-worktree-filter";
+import { useSessionWorktrees } from "@/hooks/useSessionWorktrees";
+import { SessionBulkMoveDialog, type BulkMoveRequest } from "./SessionBulkMoveDialog";
 import { runBulkSessionAction, type BulkSessionAction } from "@/lib/bulk-session-actions";
 import { loadExplorerOpen, saveExplorerOpen } from "@/lib/file-explorer-state";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
@@ -10,7 +12,7 @@ import { sessionDeepLink } from "@/lib/session-reference";
 import { copyText } from "@/lib/clipboard";
 import { useStarredSessions } from "@/hooks/useStarredSessions";
 import { skillExpansionToCommand } from "@/lib/slash-display";
-import { getProjectActivity, getRecentProjects, sessionsForProject } from "@/lib/project-groups";
+import { getProjectActivity, getRecentProjects } from "@/lib/project-groups";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import type { SessionAttention, SessionCompletion } from "@/lib/types";
 import {
@@ -423,6 +425,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const reviewAckInFlightRef = useRef(false);
   const reviewAckFailedRef = useRef(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [sessionFilter, setSessionFilter] = useState<{ project: string; cwd: string } | null>(null);
+  const [bulkMoveRequest, setBulkMoveRequest] = useState<BulkMoveRequest | null>(null);
   const [bulkModeScope, setBulkModeScope] = useState<string | null>(null);
   const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkConfirmDelete, setBulkConfirmDelete] = useState(false);
@@ -607,8 +611,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         return next.size === prev.size ? prev : next;
       });
       setError(null);
+      return true;
     } catch (e) {
       if (loadId === sessionLoadIdRef.current) setError(String(e));
+      return false;
     } finally {
       if (loadId === sessionLoadIdRef.current) setLoading(false);
     }
@@ -1273,10 +1279,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     [projectActivity, selectedProject],
   );
 
-  const filteredSessions = useMemo(
-    () => selectedProject ? sessionsForProject(allSessions, selectedProject.key) : allSessions,
-    [allSessions, selectedProject],
-  );
+  const sessionWorktreeCwd = sessionFilter && sessionFilter.project === selectedProject?.key ? sessionFilter.cwd : null;
+  const sessionWorktreeCatalogKey = useMemo(() => JSON.stringify(allSessions.map(session =>
+    [session.id, session.cwd, session.projectKey, session.archived])), [allSessions]);
+  const sessionWorktrees = useSessionWorktrees(selectedProject?.root ?? null, `${sessionWorktreeCatalogKey}:${wtRefreshKey}`);
+  const chooseSessionWorktree = (cwd: string) => {
+    setSessionFilter(cwd && selectedProject ? { project: selectedProject.key, cwd } : null);
+    setBulkModeScope(null); setBulkSelectedIds(new Set()); setBulkError(null);
+  };
   const showWorktreeSwitcher = Boolean(
     worktreeState?.isGit
     && worktreeState.isTopLevel
@@ -1307,16 +1317,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       : null);
 
   const sessionFamilies = useMemo(
-    () => listSessionFamilies(filteredSessions).filter((family) => Boolean(family.root.archived) === showArchived),
-    [filteredSessions, showArchived],
+    () => sessionFamiliesForWorktree(allSessions, selectedProject?.key ?? null, sessionWorktreeCwd, showArchived ? "archived" : "active"),
+    [allSessions, selectedProject?.key, sessionWorktreeCwd, showArchived],
   );
 
-  const bulkScope = `${selectedProject?.key ?? ""}:${showArchived}`;
+  const bulkScope = JSON.stringify([selectedProject?.key ?? "", showArchived, sessionWorktreeCwd]);
   const bulkSelecting = selectedProject !== null && bulkModeScope === bulkScope && !sessionSearchActive;
   const selectedFamilyIds = useMemo(() => new Set(
     sessionFamilies.filter((family) => !family.root.transient && bulkSelectedIds.has(family.root.id))
       .map((family) => family.root.id),
   ), [sessionFamilies, bulkSelectedIds]);
+  const bulkArchiveBlocked = sessionFamilies.some(family => selectedFamilyIds.has(family.root.id) && family.archiveOwnerId !== family.root.id);
   const selectableFamilyIds = useMemo(() => sessionFamilies.filter((family) => !family.root.transient)
     .map((family) => family.root.id), [sessionFamilies]);
 
@@ -1338,7 +1349,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   };
 
   const performBulkAction = async (action: BulkSessionAction) => {
-    if (bulkBusy || !bulkSelecting || selectedFamilyIds.size === 0) return;
+    if (bulkBusy || !bulkSelecting || selectedFamilyIds.size === 0 || (action !== "delete" && bulkArchiveBlocked)) return;
     const ids = [...selectedFamilyIds];
     const selectedFamilies = sessionFamilies.filter((family) => selectedFamilyIds.has(family.root.id));
     setBulkConfirmDelete(false);
@@ -1398,6 +1409,18 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           onSelectCheckout={(path) => setSelectedCwd(path)}
           onReturnFocus={() => wtDropdownRef.current?.querySelector("button")?.focus({ preventScroll: true })} />
       )}
+      {bulkMoveRequest && <SessionBulkMoveDialog request={bulkMoveRequest} projects={recentProjects}
+        onClose={() => setBulkMoveRequest(null)} onSettled={async (movedIds, failedIds) => {
+          if (selectedSessionIdRef.current && movedIds.includes(selectedSessionIdRef.current)) onSessionDeleted?.(selectedSessionIdRef.current);
+          if (failedIds === null) setBulkError(t("sessionWorktrees.unknownOutcome"));
+          else if (failedIds.length) {
+            setBulkSelectedIds(new Set(failedIds));
+            setBulkError(t("sidebar.bulkFailed", { count: failedIds.length, succeeded: movedIds.length }));
+          } else exitBulkMode();
+          const refreshed = await loadSessions(false, true);
+          sessionWorktrees.refresh();
+          if (!refreshed) throw new Error("Session list refresh failed");
+        }} />}
       {movingSession && (
         <div role="presentation" onClick={() => { if (!moveBusy) setMovingSession(null); }} style={{ position: "fixed", inset: 0, zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)" }}>
           <div role="dialog" aria-modal="true" aria-label={t("sidebar.moveSession")} onClick={(event) => event.stopPropagation()} style={{ width: 440, maxWidth: "calc(100vw - 24px)", background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10, padding: 20, display: "grid", gap: 12 }}>
@@ -1957,6 +1980,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     )}
                   </div>
 
+                  {sessionWorktrees.inventory?.worktrees.filter(entry => entry.state !== "present").map(entry => (
+                    <button type="button" key={`history:${entry.path}`} title={entry.path}
+                      onClick={() => { chooseSessionWorktree(entry.path); setWtDropdownOpen(false); }}
+                      className="block w-full border-t border-border px-3 py-2 text-left text-xs text-text-muted">
+                      <span aria-hidden="true">⚠ </span>{entry.branch ?? displayCwd(entry.path, homeDir)} · {t(entry.state === "missing" ? "sessionWorktrees.missing" : "sessionWorktrees.unavailable")}
+                    </button>
+                  ))}
                   <button type="button" onClick={() => { setManagerProject(worktreeState.projectKey); setWtDropdownOpen(false); }}
                     style={{ width: "100%", padding: "9px 10px", textAlign: "left", fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", borderTop: "1px solid var(--border)", cursor: "pointer" }}>
                     {t("manager.open")}
@@ -2184,6 +2214,32 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           overflow: "hidden",
         }}
       >
+        {selectedProject && <div className="flex items-center gap-1 border-b border-border px-3 py-1.5 text-xs">
+          <label htmlFor="session-worktree-filter" className="sr-only">{t("sessionWorktrees.filterLabel")}</label>
+          <select id="session-worktree-filter" aria-label={t("sessionWorktrees.filterLabel")} value={sessionWorktreeCwd ?? ""}
+            disabled={bulkBusy} onChange={event => chooseSessionWorktree(event.target.value)}
+            className="min-w-0 flex-1 rounded border border-border bg-bg px-2 py-1 text-text" title={sessionWorktreeCwd ?? t("sessionWorktrees.all")}>
+            <option value="">{t("sessionWorktrees.all")}</option>
+            {sessionWorktreeCwd && !sessionWorktrees.inventory?.worktrees.some(entry => entry.path === sessionWorktreeCwd)
+              && <option value={sessionWorktreeCwd}>{sessionWorktreeCwd}</option>}
+            {sessionWorktrees.inventory?.worktrees.map(entry => <option key={entry.path} value={entry.path}>
+              {entry.state !== "present" ? "⚠ " : ""}{entry.branch ?? displayCwd(entry.path, homeDir)}{entry.isMain ? ` · ${t("sidebar.main")}` : ""}
+              {entry.state !== "present" ? ` · ${t(entry.state === "missing" ? "sessionWorktrees.missing" : "sessionWorktrees.unavailable")}` : ""} ({entry.sessionCount})
+            </option>)}
+          </select>
+          <button type="button" title={sessionWorktrees.error ?? t("sessionWorktrees.refresh")} aria-label={t("sessionWorktrees.refresh")}
+            onClick={sessionWorktrees.refresh} className="rounded px-2 py-1 text-text-muted">↻</button>
+          <details className="relative shrink-0">
+            <summary aria-label={t("sessionWorktrees.actions")} className="cursor-pointer list-none rounded px-2 py-1">⋯</summary>
+            <div className="absolute right-0 z-30 w-64 rounded border border-border bg-bg p-2 shadow-lg">
+              <button type="button" disabled={bulkBusy || !sessionWorktrees.inventory?.mainCwd
+                || !sessionWorktrees.inventory.worktrees.some(entry => entry.state === "missing" && entry.sessionCount > 0)}
+                onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); setBulkMoveRequest({ project: selectedProject.root, missingOnly: true }); }}
+                className="w-full rounded px-2 py-2 text-left disabled:opacity-50">{t("sessionWorktrees.recoverAction")}</button>
+            </div>
+          </details>
+        </div>}
+        {sessionWorktrees.error && <p role="alert" className="px-3 text-xs text-red-500">{sessionWorktrees.error}</p>}
         <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 10px", gap: 8 }}>
           {!sessionSearchActive && selectedProject && (
             <button type="button" disabled={bulkBusy} onClick={() => {
@@ -2216,9 +2272,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               : t("sidebar.bulkSelected", { count: selectedFamilyIds.size })}</span>
             {!bulkConfirmDelete && (
               <>
-                <button type="button" className={BULK_BUTTON_CLASS} disabled={bulkBusy || selectedFamilyIds.size === 0} onClick={() => void performBulkAction(showArchived ? "restore" : "archive")}>
+                <button type="button" className={BULK_BUTTON_CLASS} disabled={bulkBusy || selectedFamilyIds.size === 0 || bulkArchiveBlocked}
+                  title={bulkArchiveBlocked ? t("sessionWorktrees.archiveParent") : undefined} onClick={() => void performBulkAction(showArchived ? "restore" : "archive")}>
                   {t(showArchived ? "sidebar.restore" : "sidebar.archive")}
                 </button>
+                <button type="button" className={BULK_BUTTON_CLASS} disabled={bulkBusy || selectedFamilyIds.size === 0}
+                  onClick={() => setBulkMoveRequest({ project: selectedProject!.root, ids: [...selectedFamilyIds], missingOnly: false })}>{t("sessionWorktrees.moveAction")}</button>
                 <button type="button" className={BULK_BUTTON_CLASS} disabled={bulkBusy || selectedFamilyIds.size === 0} onClick={() => setBulkConfirmDelete(true)}>{t("sidebar.delete")}</button>
               </>
             )}
@@ -2232,7 +2291,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             {bulkError && <div role="alert" style={{ width: "100%", color: "#ef4444" }}>{bulkError}</div>}
           </div>
         )}
-      <SessionSearch open={sessionSearchOpen} query={sessionSearchQuery} projectKey={searchAllProjects ? null : selectedProject?.key ?? null} allProjects={searchAllProjects} titlesOnly={searchTitlesOnly} status={searchBothStatuses ? "both" : showArchived ? "archived" : "active"} selectedSessionId={selectedSessionId} onSelectSession={handleSelectSessionFromList}>
+      <SessionSearch open={sessionSearchOpen} query={sessionSearchQuery} worktreeCwd={sessionWorktreeCwd} projectKey={searchAllProjects ? null : selectedProject?.key ?? null} allProjects={searchAllProjects} titlesOnly={searchTitlesOnly} status={searchBothStatuses ? "both" : showArchived ? "archived" : "active"} selectedSessionId={selectedSessionId} onSelectSession={handleSelectSessionFromList}>
         <div
           ref={listScrollRef}
           onScroll={handleListScroll}
@@ -2304,6 +2363,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     onRenamed={loadSessions}
                     onMove={() => { setMovingSession(family.root); setMoveDestination(""); setMoveError(null); }}
                     archivedView={showArchived}
+                    archiveDisabled={family.archiveOwnerId !== family.root.id}
                     onArchived={(id, archived) => {
                       // An older in-flight list response must not undo this action.
                       sessionLoadIdRef.current += 1;
@@ -2597,6 +2657,7 @@ function SessionItem({
   onDeleted,
   onArchived,
   archivedView = false,
+  archiveDisabled = false,
   depth = 0,
   hasChildren = false,
   collapsed = false,
@@ -2618,6 +2679,7 @@ function SessionItem({
   onDeleted?: (id: string) => void;
   onArchived?: (id: string, archived: boolean) => void;
   archivedView?: boolean;
+  archiveDisabled?: boolean;
   depth?: number;
   hasChildren?: boolean;
   collapsed?: boolean;
@@ -2716,7 +2778,7 @@ function SessionItem({
 
   const handleArchive = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (session.transient || archiveBusy || isRunning) return;
+    if (session.transient || archiveBusy || isRunning || archiveDisabled) return;
     setArchiveBusy(true);
     setActionError(null);
     try {
@@ -2732,7 +2794,7 @@ function SessionItem({
     } finally {
       setArchiveBusy(false);
     }
-  }, [session.id, session.transient, archiveBusy, isRunning, archivedView, onArchived]);
+  }, [session.id, session.transient, archiveBusy, isRunning, archiveDisabled, archivedView, onArchived]);
 
   const handleCopyLink = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -2978,8 +3040,8 @@ function SessionItem({
                 </button>
                 <button
                   onClick={handleArchive}
-                  disabled={archiveBusy || isRunning}
-                  title={isRunning ? t("sidebar.archiveRunning") : t(archivedView ? "sidebar.restore" : "sidebar.archive")}
+                  disabled={archiveBusy || isRunning || archiveDisabled}
+                  title={archiveDisabled ? t("sessionWorktrees.archiveParent") : isRunning ? t("sidebar.archiveRunning") : t(archivedView ? "sidebar.restore" : "sidebar.archive")}
                   aria-label={t(archivedView ? "sidebar.restore" : "sidebar.archive")}
                   style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, padding: 0, background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 7, color: "var(--text-muted)", cursor: isRunning ? "not-allowed" : "pointer", flexShrink: 0 }}
                 >

@@ -4,9 +4,8 @@ import { isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
 import { moveSessionFamily, SessionMoveConflict } from "@/lib/session-move";
 import { resolveSessionPath, readSessionHeader } from "@/lib/session-reader";
-import { listWorktrees, resolveProject } from "@/lib/worktree";
+import { validateSessionMoveSource } from "@/lib/session-move-validation";
 import { samePath } from "@/lib/paths";
-import { projectIdentityKey } from "@/lib/project-identity";
 
 // POST /api/sessions/[id]/move  body: { cwd: string }
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -23,32 +22,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!source) return NextResponse.json({ error: "Session not found" }, { status: 404 });
     const header = readSessionHeader(source);
     if (!header?.cwd) return NextResponse.json({ error: "Session is not persisted" }, { status: 409 });
-    // The transcript outlives its checkout. Only a genuinely missing source
-    // bypasses source registration checks; permission/I/O failures still fail.
-    let sourceMissing = false;
-    try { statSync(header.cwd); } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      sourceMissing = true;
-    }
-    const [from, to] = await Promise.all([resolveProject(header.cwd), resolveProject(cwd)]);
-    // Recovered grouping can still identify same-repository destinations after
-    // removal, but must never require the vanished checkout to be registered.
-    const sourceWorktrees = await listWorktrees(sourceMissing ? from.projectRoot : header.cwd).catch(() => []);
-    const destinationWorktrees = await listWorktrees(cwd).catch(() => []);
-    // Subdirectories are distinct Pi Web project groups, but not distinct Git
-    // repositories. Treat them as same-repository for this worktree-only action.
-    const sameGitRepo = sourceWorktrees.some((source) =>
-      destinationWorktrees.some((destination) => samePath(source.path, destination.path)));
-    if (sameGitRepo || projectIdentityKey(from.projectRoot) === projectIdentityKey(to.projectRoot)) {
-      if ((!sourceMissing && !from.isTopLevel) || !to.isTopLevel || samePath(header.cwd, cwd)) {
-        return NextResponse.json({ error: "Choose another worktree or project" }, { status: 409 });
-      }
-      if ((!sourceMissing && !sourceWorktrees.some((item) => samePath(item.path, header.cwd)))
-        || !destinationWorktrees.some((item) => samePath(item.path, cwd))) {
-        return NextResponse.json({ error: "Choose a registered worktree" }, { status: 409 });
-      }
-    }
-    return NextResponse.json({ ok: true, ...(await moveSessionFamily(id, cwd)) });
+    return NextResponse.json({ ok: true, ...(await moveSessionFamily(id, cwd, {
+      validate: async sessions => {
+        const root = sessions.find(session => session.id === id);
+        if (!root || !samePath(root.cwd, header.cwd) || !samePath(root.path, source)) {
+          throw new SessionMoveConflict("Session changed while planning move");
+        }
+        return validateSessionMoveSource(root.cwd, cwd);
+      },
+    })) });
   } catch (error) {
     if (error instanceof SessionMoveConflict) return NextResponse.json({ error: error.message }, { status: 409 });
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {

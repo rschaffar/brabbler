@@ -187,7 +187,8 @@ function refreshProjectInBackground(cwd: string): void {
   inflight.set(cwd, task);
 }
 
-async function resolveProjectUncached(cwd: string): Promise<ProjectInfo> {
+/** Fresh resolution for mutation/history inventory; never cached ownership. */
+export async function resolveProjectUncached(cwd: string): Promise<ProjectInfo> {
   let info: ProjectInfo;
   try {
     if (!existsSync(cwd)) {

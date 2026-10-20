@@ -4,6 +4,26 @@
   "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. The requested eight-worker default still requires native execution acceptance with unchanged deadlines. Re-review when resource/fixture behavior changes.",
   "files": [
     {
+      "path": "lib/session-worktree-filter.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed pure directory/ancestry/display grouping with synthetic catalogues; Jiti fsCache false, no native SDK work or shared writes. Independent source review confirmed isolation."
+    },
+    {
+      "path": "components/SessionWorktreeTools.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed fixed immutable source reads and assertions only; no React mount, SDK, environment changes or shared writes. Genuine desktop/mobile behavior remains separate browser acceptance."
+    },
+    {
+      "path": "lib/session-worktrees-plan.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed pure graph/request/plan tests plus native path-state and inventory checks in unique mkdtemp roots. Temporary files and injected Git/project interfaces stay private; no fixed ports, SDK construction, shared writes or process signalling. Cases remain serial."
+    },
+    {
+      "path": "app/api/sessions/bulk-move.test.mjs",
+      "lane": "N",
+      "reason": "Reviewed single serial case with private Git repositories, worktrees, agent storage and synthetic SDK session files; in-process routes, fake wrapper registries and refusal probes stay process-local. Git effects are awaited, cleanup targets only the owned root; no server, model request, shared-source write or host-service access."
+    },
+    {
       "path": "plugins/git-workflow/cleanup.test.mjs",
       "lane": "N",
       "estimatedMs": 90000,

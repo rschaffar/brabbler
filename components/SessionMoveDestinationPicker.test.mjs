@@ -43,6 +43,8 @@ test("current-directory equality handles Windows drive and UNC variants without 
   assert.ok(sameMoveDirectory("C:\\Repo\\", "c:/repo"));
   assert.ok(sameMoveDirectory("\\\\Host\\Share\\Repo", "//host/share/repo/"));
   assert.ok(sameMoveDirectory("/", "/"));
+  assert.ok(!sameMoveDirectory("", "/"), "bulk picker has no current cwd, including at filesystem root");
+  assert.ok(!sameMoveDirectory("/", ""));
   assert.ok(!sameMoveDirectory("/Repo", "/repo"));
   assert.ok(!sameMoveDirectory("/repo\\name", "/repo/name"));
 });
