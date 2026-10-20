@@ -2615,6 +2615,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           {explorerOpen && (
             <div ref={explorerScrollRef} className="scrollbar-subtle" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}>
               <FileExplorer
+                key={JSON.stringify([selectedCwd ?? selectedCwdProp, selectedSessionId])}
                 ref={fileExplorerRef}
                 cwd={selectedCwd ?? selectedCwdProp!}
                 onOpenFile={onOpenFile ?? (() => {})}

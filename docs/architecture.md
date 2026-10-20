@@ -94,6 +94,9 @@ lib/
   file-workspace.ts    pure split geometry, group/view navigation, previews and history
   file-workspace-store.ts current parked snapshots without shell-level scroll notifications
   file-edit-sessions.ts browser-local single-editor ownership; never authorization
+  file-drop.ts         client-safe file/directory drop classification and destination routing
+  explorer-upload.ts   owned browser upload/preflight/conflict lifecycle and abortable transport
+  file-upload.ts       server flat-name/conflict validation and staged filesystem writes
   enabled-models.ts    pure minimal-edit engine for the `enabledModels` pattern list
   enabled-models-runtime.ts  SDK adapter: per-pattern resolution, provider kinds, settings IO
   markdown.ts          shared Markdown pipelines/source-preserving normalization

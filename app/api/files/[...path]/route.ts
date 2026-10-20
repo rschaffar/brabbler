@@ -21,9 +21,13 @@ import { isFilePathReferencedBySession } from "@/lib/session-file-references";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { FileEditError, loadEditableFile, saveEditableFile, MAX_EDIT_REQUEST_BYTES } from "@/lib/file-edit";
 import {
+  assertUploadDirectoryWritable,
   inspectUploadTargets,
   parseUploadConflictStrategy,
+  UploadWriteError,
   validateUploadFileNames,
+  writeUploadFile,
+  type UploadDirectory,
 } from "@/lib/file-upload";
 import { parseFormDataWithinLimit, parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import { filePathFromApiSegments, samePath } from "@/lib/paths";
@@ -45,6 +49,7 @@ const MAX_UPLOAD_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_UPLOAD_TOTAL_BYTES = 100 * 1024 * 1024;
 // Multipart boundaries and headers are not file bytes, but must be bounded too.
 const MAX_UPLOAD_REQUEST_BYTES = MAX_UPLOAD_TOTAL_BYTES + 1024 * 1024;
+const MAX_UPLOAD_CHECK_BYTES = 1024 * 1024;
 
 const EXT_TO_LANGUAGE: Record<string, string> = {
   ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript",
@@ -76,7 +81,7 @@ function parseFileRequestType(value: string): FileRequestType | null {
 }
 
 async function getUploadDirectory(segments: string[]): Promise<
-  { directory: string } | { response: NextResponse }
+  UploadDirectory | { response: NextResponse }
 > {
   const directory = filePathFromApiSegments(segments);
   const allowedRoots = await getAllowedFileRoots();
@@ -109,7 +114,9 @@ async function getUploadDirectory(segments: string[]): Promise<
     return { response: NextResponse.json({ error: "Access denied" }, { status: 403 }) };
   }
 
-  return { directory: realDirectory };
+  const target = { directory: realDirectory, roots: realRoots, identity: fs.statSync(realDirectory) };
+  assertUploadDirectoryWritable(target);
+  return target;
 }
 
 function parseUploadFileNames(value: unknown): string[] | null {
@@ -133,7 +140,14 @@ export async function POST(
     const type = request.nextUrl.searchParams.get("type") ?? "upload";
 
     if (type === "upload-check") {
-      const body = await request.json().catch(() => null) as { fileNames?: unknown } | null;
+      if (!hasJsonContentType(request)) return NextResponse.json({ error: "Expected JSON" }, { status: 400 });
+      let body: { fileNames?: unknown } | null;
+      try { body = await parseJsonWithinLimit(request, MAX_UPLOAD_CHECK_BYTES) as typeof body; }
+      catch (error) {
+        return NextResponse.json({ error: error instanceof RequestBodyTooLargeError ? "Upload check too large" : "Invalid JSON" },
+          { status: error instanceof RequestBodyTooLargeError ? 413 : 400 });
+      }
+      assertUploadDirectoryWritable(uploadDirectory);
       const fileNames = parseUploadFileNames(body?.fileNames);
       if (!fileNames) {
         return NextResponse.json({ error: "fileNames must be an array of strings" }, { status: 400 });
@@ -176,6 +190,7 @@ export async function POST(
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
+    assertUploadDirectoryWritable(uploadDirectory);
     const inspection = inspectUploadTargets(directory, fileNames);
     if (strategy === "error" && inspection.conflicts.length > 0) {
       return NextResponse.json({
@@ -185,23 +200,11 @@ export async function POST(
       }, { status: 409 });
     }
 
-    const conflictSet = new Set(inspection.conflicts);
-    const nonReplaceableSet = new Set(inspection.nonReplaceable);
     const uploaded: string[] = [];
     const skipped: string[] = [];
     const errors: Array<{ name: string; error: string }> = [];
 
     for (const file of files) {
-      const destination = path.join(directory, file.name);
-      if (conflictSet.has(file.name) && strategy === "skip") {
-        skipped.push(file.name);
-        continue;
-      }
-      if (conflictSet.has(file.name) && nonReplaceableSet.has(file.name)) {
-        errors.push({ name: file.name, error: "Cannot replace a directory or symbolic link" });
-        continue;
-      }
-
       let bytes: Buffer;
       try {
         bytes = Buffer.from(await file.arrayBuffer());
@@ -210,18 +213,10 @@ export async function POST(
         continue;
       }
 
-      if (conflictSet.has(file.name)) {
-        try {
-          fs.unlinkSync(destination);
-        } catch (error) {
-          errors.push({ name: file.name, error: error instanceof Error ? error.message : String(error) });
-          continue;
-        }
-      }
-
       try {
-        fs.writeFileSync(destination, bytes, { flag: "wx" });
-        uploaded.push(file.name);
+        const outcome = writeUploadFile(uploadDirectory, file.name, bytes, strategy);
+        if (outcome === "skipped") skipped.push(file.name);
+        else uploaded.push(file.name);
       } catch (error) {
         errors.push({ name: file.name, error: error instanceof Error ? error.message : String(error) });
       }
@@ -232,7 +227,8 @@ export async function POST(
       { status: errors.length > 0 ? 207 : 200 },
     );
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) },
+      { status: error instanceof UploadWriteError ? error.status : 500 });
   }
 }
 

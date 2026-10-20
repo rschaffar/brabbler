@@ -52,7 +52,7 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `timestamps` | Both en-US and legacy Chinese locale/preference variants |
 | `diff-context` | Loaded Workflow absence, Git Explorer immutable contexts/navigation/wrapping/Wide and integrated merge graph, in prerequisite order |
 | `markdown` | Markdown/KaTeX security, full-height Mermaid previews, math/themes/SVG, file-scroll/preview state, file/source links, CSV/TSV virtualization, scoped fragments/headings, loaded-skill document navigation, model endpoint/adaptive save/inheritance/stale tests, blocked preference storage, interactive read-only external-reference/watch/reopen sentinel proofs and real user-file polling |
-| `file-edit` | Panel setup, all modified/added/deleted/context diff variants, editor/read-only/draft retention |
+| `file-edit` | Panel setup, all modified/added/deleted/context diff variants, editor/read-only/draft retention; Explorer root/nested/file/Changes-row drops, closed-folder refresh, keyboard/touch pickers, conflicts, filtered-search refresh and upload-driven clean/dirty viewer sync |
 | `archive` | Focused archive/restore flow, distinct from the mobile search/restore/move chain |
 | `privacy` | Concealment/loading/failure behavior, independent contexts and tablet coverage |
 | `activity` | Full overview, real worktree/subagent/recovery fixtures, running/fallback Agents badge with reduced motion, deterministic recorded per-agent/family usage and keyboard/touch breakdowns without review acknowledgement, selected-session-only toolbar, and tablet coverage; native model-issued child runs, saved IDs/history, removed-worktree resume refusal, suffix settings and never-prompted queued Stop |
