@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { terminalFontSize, useChatAppearance } from "@/hooks/useChatAppearance";
+import { setTerminalTheme, useTerminalTheme } from "@/hooks/useTerminalTheme";
+import { TERMINAL_XTERM_THEMES } from "@/lib/terminal-theme";
+import { applyTerminalModifiers, NO_TERMINAL_MODIFIERS, terminalExtraKeySequence, type TerminalExtraKey, type TerminalModifier, type TerminalModifiers } from "@/lib/terminal-extra-keys";
+import { TerminalExtraKeys, useTerminalExtraKeysVisible } from "./TerminalExtraKeys";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useI18n } from "@/hooks/useI18n";
@@ -39,6 +44,34 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
   const [error, setError] = useState<string | null>(null);
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [reconnectKey, setReconnectKey] = useState(0);
+  const [modifiers, setModifiers] = useState<TerminalModifiers>(NO_TERMINAL_MODIFIERS);
+  const modifiersRef = useRef(modifiers);
+  const showExtraKeys = useTerminalExtraKeysVisible();
+  const theme = useTerminalTheme();
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
+  const fontSize = terminalFontSize(useChatAppearance().fontSize);
+  const fontSizeRef = useRef(fontSize);
+  fontSizeRef.current = fontSize;
+  const refitRef = useRef<() => void>(() => {});
+  const consumeModifiers = useCallback(() => {
+    const current = modifiersRef.current;
+    if (current.ctrl || current.alt) {
+      modifiersRef.current = NO_TERMINAL_MODIFIERS;
+      setModifiers(NO_TERMINAL_MODIFIERS);
+    }
+    return current;
+  }, []);
+  const sendExtraKey = (key: TerminalExtraKey) => {
+    const terminal = terminalRef.current;
+    if (!terminal || terminal.options.disableStdin) return;
+    terminal.input(terminalExtraKeySequence(key, consumeModifiers(), terminal.modes.applicationCursorKeysMode), true);
+  };
+  const toggleModifier = (modifier: TerminalModifier) => {
+    const next = { ...modifiersRef.current, [modifier]: !modifiersRef.current[modifier] };
+    modifiersRef.current = next;
+    setModifiers(next);
+  };
 
   useEffect(() => {
     try {
@@ -64,20 +97,12 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       fontFamily: fontRef.current === "nerd"
         ? '"Pi Web Nerd Font", monospace'
         : getComputedStyle(container).getPropertyValue("--font-mono").trim() || "monospace",
-      fontSize: 13,
+      fontSize: fontSizeRef.current,
       lineHeight: 1.25,
       scrollback: 8000,
       screenReaderMode: true,
       disableStdin: true,
-      theme: {
-        background: "#111318", foreground: "#d7dce5", cursor: "#60a5fa",
-        selectionBackground: "#365b8a",
-        black: "#1d222b", red: "#f87171", green: "#4ade80", yellow: "#facc15",
-        blue: "#60a5fa", magenta: "#c084fc", cyan: "#22d3ee", white: "#e5e7eb",
-        brightBlack: "#6b7280", brightRed: "#fca5a5", brightGreen: "#86efac",
-        brightYellow: "#fde047", brightBlue: "#93c5fd", brightMagenta: "#d8b4fe",
-        brightCyan: "#67e8f9", brightWhite: "#ffffff",
-      },
+      theme: TERMINAL_XTERM_THEMES[themeRef.current],
     });
     terminalRef.current = terminal;
     const fit = new FitAddon();
@@ -101,7 +126,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     });
     writerRef.current = writer;
     const onData = terminal.onData((data) => {
-      if (connected && !exited && !inputFailed) writer.write(data);
+      if (connected && !exited && !inputFailed) writer.write(applyTerminalModifiers(data, consumeModifiers()));
     });
     const fitAndResize = () => {
       if (!container.offsetWidth || !container.offsetHeight) return;
@@ -111,6 +136,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       if (!connected || exited || inputFailed) return;
       writer.resize(Math.max(2, cols), Math.max(2, rows));
     });
+    refitRef.current = fitAndResize;
     const resizeObserver = new ResizeObserver(fitAndResize);
     resizeObserver.observe(container);
 
@@ -200,8 +226,19 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       terminal.dispose();
       terminalRef.current = null;
       fitRef.current = null;
+      refitRef.current = () => {};
     };
-  }, [id, cwd, restored, reconnectKey]);
+  }, [id, cwd, restored, reconnectKey, consumeModifiers]);
+
+  useEffect(() => {
+    if (terminalRef.current) terminalRef.current.options.theme = TERMINAL_XTERM_THEMES[theme];
+  }, [theme]);
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal || terminal.options.fontSize === fontSize) return;
+    terminal.options.fontSize = fontSize;
+    refitRef.current();
+  }, [fontSize]);
 
   // Font loads and font changes can alter cell width; refit without restarting
   // the PTY (and let the existing resize handler update its dimensions).
@@ -252,7 +289,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
   }, [id, tab.closing]);
 
   return (
-    <section className="terminal-panel" aria-label={t("terminal.title")}>
+    <section className="terminal-panel" data-terminal-theme={theme} aria-label={t("terminal.title")}>
       <header className="terminal-panel-header">
         <div className="terminal-panel-path">
           <span className={`terminal-status-dot is-${status}`} title={t(`terminal.${status}`)} />
@@ -281,6 +318,9 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
             </svg>
           </button>
         )}
+        <button type="button" onClick={() => setTerminalTheme(theme === "dark" ? "light" : "dark")} title={t(theme === "dark" ? "terminal.lightTheme" : "terminal.darkTheme")} aria-label={t(theme === "dark" ? "terminal.lightTheme" : "terminal.darkTheme")}>
+          <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+        </button>
         <button type="button" onClick={onRestart} disabled={Boolean(tab.closing)} title={t("terminal.restart")} aria-label={t("terminal.restart")}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M20 11a8 8 0 1 0-2.34 5.66" /><polyline points="20 4 20 11 13 11" />
@@ -292,6 +332,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
         {status === "exited" && <div className="terminal-panel-exit" role="status">{exitCode === null ? t("terminal.exited") : t("terminal.exitCode", { code: exitCode })}</div>}
       </div>
       <div className="terminal-xterm"><div ref={containerRef} className="terminal-xterm-host" /></div>
+      {active && showExtraKeys && <TerminalExtraKeys modifiers={modifiers} onKey={sendExtraKey} onToggleModifier={toggleModifier} />}
     </section>
   );
 }

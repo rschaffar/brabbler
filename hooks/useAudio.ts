@@ -24,8 +24,12 @@ function playTone(ctx: AudioContext) {
 export function useAudio() {
   const [enabled, setEnabled] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
-    const stored = localStorage.getItem("pi-sound-enabled");
-    return stored === null ? true : stored === "true";
+    try {
+      const stored = window.localStorage.getItem("pi-sound-enabled");
+      return stored === null ? true : stored === "true";
+    } catch {
+      return true;
+    }
   });
 
   const enabledRef = useRef(enabled);
@@ -56,7 +60,7 @@ export function useAudio() {
     const next = !enabledRef.current;
     if (next) unlockAudio(true);
     enabledRef.current = next;
-    localStorage.setItem("pi-sound-enabled", String(next));
+    try { window.localStorage.setItem("pi-sound-enabled", String(next)); } catch { /* Best-effort persistence. */ }
     setEnabled(next);
   }, [unlockAudio]);
 

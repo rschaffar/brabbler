@@ -51,7 +51,7 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `appearance` | Default/full/reading widths, numeric legacy preference and fresh preference inputs, typography/reload |
 | `timestamps` | Both en-US and legacy Chinese locale/preference variants |
 | `diff-context` | Loaded Workflow absence, Git Explorer immutable contexts/navigation/wrapping/Wide and integrated merge graph, in prerequisite order |
-| `markdown` | Markdown/KaTeX security, full-height Mermaid previews, math/themes/SVG, file-scroll/preview state, file links, external-reference denial/intentional-link sentinel fixtures and real user-file polling |
+| `markdown` | Markdown/KaTeX security, full-height Mermaid previews, math/themes/SVG, file-scroll/preview state, file/source links, CSV/TSV virtualization, scoped fragments/headings, loaded-skill document navigation, model endpoint/adaptive save/inheritance/stale tests, blocked preference storage, interactive read-only external-reference/watch/reopen sentinel proofs and real user-file polling |
 | `file-edit` | Panel setup, all modified/added/deleted/context diff variants, editor/read-only/draft retention |
 | `archive` | Focused archive/restore flow, distinct from the mobile search/restore/move chain |
 | `privacy` | Concealment/loading/failure behavior, independent contexts and tablet coverage |
@@ -61,7 +61,7 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `session-links` | Desktop/mobile copying and following the copied link |
 | `bulk` | Bulk archive/conflict/retry/restore/delete |
 | `move` | Full picker, plain/Git/worktree/Browse paths, superseded reads and proposal-only changes; independent stale-worktree filters, archive-inclusive recovery, missing-child subtrees and native-modal bulk Browse/Move |
-| `terminal` | Real shell/PTY, fonts, reconnect/restart/exit, creation cancellation and workspace/Explorer coexistence |
+| `terminal` | Real shell/PTY, fonts, live palette/font-size changes without PTY/SSE replacement, coarse-touch portrait modifier/arrow input, reconnect/restart/exit, creation cancellation and workspace/Explorer coexistence |
 
 Preserve distinct viewport heights/locales/preferences, not just desktop/mobile
 widths. History desktop acknowledges recovery before fresh mobile checks it;

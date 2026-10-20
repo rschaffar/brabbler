@@ -25,6 +25,9 @@ import { rehypeMarkdownSourceLines } from "@/lib/markdown-source-lines";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, markdownUrlTransform, normalizeDisplayMathWithSourceMap } from "@/lib/markdown";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
+import { DelimitedTable } from "./DelimitedTable";
+import { isDelimitedTablePath } from "@/lib/delimited-table";
+import { jumpToMarkdownFragment } from "@/lib/markdown-compat";
 import { BlockedFileLink } from "./BlockedFileLink";
 import { FrontmatterCard } from "./FrontmatterCard";
 import { CommittedPatchDiff } from "./CommittedPatchDiff";
@@ -70,6 +73,7 @@ interface FileData {
   size: number;
   nextOffset: number;
   truncated: boolean;
+  probeEligibility?: { edit: boolean; gitDiff: boolean };
 }
 
 const MarkdownPreviewLinkContext = createContext<{ baseDir?: string; relativeRoot?: string; onOpenFile?: OpenFileLink }>({});
@@ -78,6 +82,7 @@ const MarkdownPreviewLinkContext = createContext<{ baseDir?: string; relativeRoo
 function MarkdownPreviewLink({ href, children, ...props }: ComponentProps<"a"> & ExtraProps) {
   delete props.node;
   const { baseDir, relativeRoot, onOpenFile } = useContext(MarkdownPreviewLinkContext);
+  if (href?.startsWith("#")) return <a href={href} {...props} onClick={jumpToMarkdownFragment}>{children}</a>;
   const resolution = onOpenFile ? resolveLocalFileLink(href, baseDir, relativeRoot) : null;
   if (resolution?.kind === "blocked") {
     return <BlockedFileLink key={href} reason={resolution.reason}>{children}</BlockedFileLink>;
@@ -1061,6 +1066,7 @@ function TextFileViewer({
   const [watching, setWatching] = useState(false);
   const esRef = useRef<EventSource | null>(null);
   const contentRequestRef = useRef(0);
+  const probeEligibilityRef = useRef<{ path: string; cwd?: string; sessionId?: string | null; edit: boolean; gitDiff: boolean } | null>(null);
   const gitDiffRequestRef = useRef(0);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const autoDiffAppliedRef = useRef(false);
@@ -1147,10 +1153,12 @@ function TextFileViewer({
 
   const fetchContent = useCallback((filePath: string, offset = 0) => {
     const requestId = ++contentRequestRef.current;
-    return fetch(getFileApiUrl(filePath, "read", sourceSessionId, { offset: offset || undefined }))
+    return fetch(getFileApiUrl(filePath, "read", sourceSessionId, { offset: offset || undefined, viewerCwd: cwd }))
       .then((r) => r.json())
       .then((d: FileData & { error?: string }) => {
         if (requestId !== contentRequestRef.current) return null;
+        probeEligibilityRef.current = { path: filePath, cwd, sessionId: sourceSessionId,
+          edit: d.probeEligibility?.edit === true, gitDiff: d.probeEligibility?.gitDiff === true };
         if (d.error) {
           setError(d.error);
           return null;
@@ -1163,13 +1171,22 @@ function TextFileViewer({
       })
       .catch((e) => {
         if (requestId !== contentRequestRef.current) return null;
+        probeEligibilityRef.current = { path: filePath, cwd, sessionId: sourceSessionId, edit: false, gitDiff: false };
         setError(String(e));
         return null;
       });
-  }, [sourceSessionId]);
+  }, [sourceSessionId, cwd]);
 
   const fetchEditable = useCallback(async (targetPath: string) => {
+    const eligible = probeEligibilityRef.current;
+    if (!eligible || eligible.path !== targetPath || eligible.cwd !== cwd || eligible.sessionId !== sourceSessionId) return;
     const requestId = ++editRequestRef.current;
+    if (!eligible.edit) {
+      setEditSnapshot(null);
+      setEditing(false);
+      if (draftRef.current && draftRef.current.content !== draftRef.current.baseline) setExternalChange(true);
+      return;
+    }
     try {
       const response = await fetch(getFileApiUrl(targetPath, "edit", sourceSessionId));
       const next = await response.json() as { content?: string; revision?: string; writable?: boolean };
@@ -1193,12 +1210,14 @@ function TextFileViewer({
         else setEditSnapshot(null);
       }
     }
-  }, [sourceSessionId, setFileDraft]);
+  }, [sourceSessionId, cwd, setFileDraft]);
 
   const fetchGitDiff = useCallback(async (targetPath: string) => {
+    const eligible = probeEligibilityRef.current;
+    if (!eligible || eligible.path !== targetPath || eligible.cwd !== cwd || eligible.sessionId !== sourceSessionId) return;
     const requestId = ++gitDiffRequestRef.current;
     setGitDiffLoading(true);
-    if (!cwd) {
+    if (!cwd || !eligible.gitDiff) {
       setGitDiff(null);
       setGitDiffLoading(false);
       setGitDiffResolved(true);
@@ -1219,11 +1238,13 @@ function TextFileViewer({
         setGitDiffResolved(true);
       }
     }
-  }, [cwd]);
+  }, [cwd, sourceSessionId]);
 
   const saveDraft = useCallback(async () => {
     const current = draftRef.current;
-    if (!current || current.content === current.baseline || saving || savingElsewhere) return;
+    const eligible = probeEligibilityRef.current;
+    if (!current || current.content === current.baseline || saving || savingElsewhere || !eligible?.edit
+      || eligible.path !== filePath || eligible.cwd !== cwd || eligible.sessionId !== sourceSessionId) return;
     setSaving(true);
     onSavingChangeRef.current?.(true);
     setSaveError(null);
@@ -1254,7 +1275,7 @@ function TextFileViewer({
       setSaving(false);
       onSavingChangeRef.current?.(false);
     }
-  }, [filePath, sourceSessionId, saving, savingElsewhere, setFileDraft, fetchContent, fetchGitDiff]);
+  }, [filePath, cwd, sourceSessionId, saving, savingElsewhere, setFileDraft, fetchContent, fetchGitDiff]);
 
   // Reset and load the file itself when its identity changes. Live watching is
   // managed separately so pausing it never clears the displayed content.
@@ -1266,16 +1287,19 @@ function TextFileViewer({
     setGitDiff(null);
     setGitDiffResolved(false);
     setWatching(false);
-    void fetchEditable(filePath);
-
-    fetchContent(filePath).finally(() => {
-      if (active) setLoading(false);
-    });
+    probeEligibilityRef.current = null;
+    fetchContent(filePath).then(() => {
+      if (active) { void fetchEditable(filePath); void fetchGitDiff(filePath); }
+    }).finally(() => { if (active) setLoading(false); });
 
     return () => {
       active = false;
+      contentRequestRef.current += 1;
+      editRequestRef.current += 1;
+      gitDiffRequestRef.current += 1;
+      probeEligibilityRef.current = null;
     };
-  }, [filePath, fetchContent, fetchEditable, sourceSessionId]);
+  }, [filePath, fetchContent, fetchEditable, fetchGitDiff, sourceSessionId]);
 
   useEffect(() => {
     setWatching(false);
@@ -1286,32 +1310,29 @@ function TextFileViewer({
     }
 
     if (!watchEnabled) return;
-
-    const synchronize = () => {
-      if (!draftRef.current || draftRef.current.content === draftRef.current.baseline) void fetchContent(filePath);
+    let disposed = false;
+    const synchronize = async () => {
+      if (disposed) return;
+      if (!draftRef.current || draftRef.current.content === draftRef.current.baseline) await fetchContent(filePath);
+      if (disposed) return;
       void fetchEditable(filePath);
       void fetchGitDiff(filePath);
     };
 
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
-
     es.addEventListener("connected", () => {
+      if (disposed) return;
       setWatching(true);
-      // The server emits connected only after its watcher exists. Reading now
-      // closes the gap between the last snapshot and live events.
-      synchronize();
+      // Read after watcher admission, then probe only from its current hint.
+      void synchronize();
     });
-
     es.addEventListener("change", synchronize);
-
-    const markDisconnected = () => {
-      setWatching(false);
-    };
+    const markDisconnected = () => { if (!disposed) setWatching(false); };
     es.addEventListener("error", markDisconnected);
     es.onerror = markDisconnected;
-
     return () => {
+      disposed = true;
       es.close();
       if (esRef.current === es) esRef.current = null;
     };
@@ -1328,20 +1349,20 @@ function TextFileViewer({
     // explicit mode hint always wins over this default.
     if (
       defaultPreviewEligibleRef.current
-      && !data?.truncated
-      && (data?.language === "markdown" || data?.language === "html")
+      && ((!data?.truncated && (data?.language === "markdown" || data?.language === "html"))
+        || (data && isDelimitedTablePath(filePath) && !initialLineTarget))
     ) {
       defaultPreviewEligibleRef.current = false;
       updateDisplayMode("preview");
     }
-  }, [data?.language, data?.truncated, updateDisplayMode]);
+  }, [data, filePath, initialLineTarget, updateDisplayMode]);
 
   useEffect(() => {
     // Line targets refer to the current file, not a diff or HTML iframe.
-    if (initialLineTarget && !lineTargetHandledRef.current && (displayMode === "diff" || (data?.language === "html" && displayMode === "preview"))) {
+    if (initialLineTarget && !lineTargetHandledRef.current && (displayMode === "diff" || ((data?.language === "html" || isDelimitedTablePath(filePath)) && displayMode === "preview"))) {
       updateDisplayMode("source");
     }
-  }, [initialLineTarget, displayMode, data?.language, updateDisplayMode]);
+  }, [initialLineTarget, displayMode, data?.language, filePath, updateDisplayMode]);
 
   const hasGitDiff = gitDiff?.supported === true && typeof gitDiff.patch === "string";
   const isDeletedDiff = hasGitDiff && gitDiff.status === "deleted";
@@ -1381,7 +1402,8 @@ function TextFileViewer({
   const language = data?.language ?? "text";
   const isHtml = language === "html";
   const isMarkdown = language === "markdown";
-  const hasPreview = !data?.truncated && (isHtml || isMarkdown);
+  const isDelimitedTable = isDelimitedTablePath(filePath);
+  const hasPreview = isDelimitedTable || (!data?.truncated && (isHtml || isMarkdown));
   const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
   const useLightweightSource = sourceLines.length > SOURCE_HIGHLIGHT_MAX_LINES
     && !(effectiveDisplayMode === "diff" && hasGitDiff)
@@ -1832,6 +1854,8 @@ function TextFileViewer({
             style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
              title={t("i18n.htmlPreview")}
           />
+        ) : isDelimitedTable && effectiveDisplayMode === "preview" ? (
+          <DelimitedTable content={content} filePath={filePath} complete={!data?.truncated || dirty} scrollRef={contentRef} />
         ) : isMarkdown && effectiveDisplayMode === "preview" ? (
           <div
             className="markdown-body markdown-file-preview"

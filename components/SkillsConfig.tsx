@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { SkillInstructions } from "./SkillInstructions";
 import type {
   SkillInfo as Skill,
   SkillInstallScope,
@@ -225,6 +226,7 @@ function SkillDetail({
           {skill.description}
         </span>
       </ConfigField>
+      <SkillInstructions key={skill.filePath} skill={skill} cwd={cwd} />
     </ConfigDetailStack>
   );
 }

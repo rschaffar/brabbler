@@ -16,6 +16,28 @@ export interface SplitDiffFile {
   rows: SplitDiffRow[];
 }
 
+export interface UnifiedDiffLine {
+  type: "context" | "removed" | "added";
+  text: string;
+  oldLineNo: number | null;
+  newLineNo: number | null;
+}
+
+/** Paired replacements become removed/added lines; context appears once. */
+export function unifiedDiffLines(file: SplitDiffFile): UnifiedDiffLine[] {
+  const lines: UnifiedDiffLine[] = [];
+  for (const row of file.rows) {
+    if (row.type === "hunk") continue;
+    if (row.left.type === "context" && row.right.type === "context") {
+      lines.push({ type: "context", text: row.right.text, oldLineNo: row.left.lineNo, newLineNo: row.right.lineNo });
+      continue;
+    }
+    if (row.left.type !== "empty") lines.push({ type: "removed", text: row.left.text, oldLineNo: row.left.lineNo, newLineNo: null });
+    if (row.right.type !== "empty") lines.push({ type: "added", text: row.right.text, oldLineNo: null, newLineNo: row.right.lineNo });
+  }
+  return lines;
+}
+
 interface PendingChangeLine {
   lineNo: number;
   text: string;

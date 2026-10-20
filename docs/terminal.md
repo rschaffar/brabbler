@@ -28,6 +28,14 @@ mounted behind inactive tabs, hidden panels, and session or project switches.
 - Explicit termination and expiry signal the shell, escalating to SIGKILL after
   two seconds if it ignores SIGHUP. Server shutdown force-kills shells immediately.
 
+## Appearance and touch keys
+
+The header's light/dark switch changes only the terminal, defaults dark, and persists best-effort as `pi-web:terminal-theme`. Open terminals share the browser choice; storage events synchronize other tabs. Failed persistence keeps the in-tab choice. Theme changes update live xterm options, not PTY/SSE ownership. The retained Nerd/System font selector is independent.
+
+Settings → General → **Chat & terminal font size** also adjusts the terminal: chat 14 means terminal 13px, with 12–24 chat mapping to 11–23 terminal. There is no separate size preference. Changes refit through the existing resize writer, including after a hidden terminal becomes visible, without recreating the shell or stream.
+
+Coarse-pointer portrait devices get two seven-key rows below the terminal, taking actual grid height rather than overlaying output. ESC, TAB, punctuation, Home/End, arrows and paging follow xterm's application-cursor mode. Ctrl/Alt are one-shot and also apply to the next software-keyboard character. Keys retain input focus and pass through the existing serialized writer; they never retry ambiguous delivery. Repeat timers stop on release/cancel/leave/unmount, including hiding the active toolbar.
+
 ## Transport
 
 Output events carry a monotonically increasing UTF-16 offset in SSE `id`.

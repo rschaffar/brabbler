@@ -5,6 +5,9 @@ import { setImmediate } from "node:timers/promises";
 import { Script } from "node:vm";
 import ts from "typescript";
 import { createTerminalWriter, terminalRequest } from "../lib/terminal-client.ts";
+import * as extraKeyHelpers from "../lib/terminal-extra-keys.ts";
+import { TERMINAL_XTERM_THEMES } from "../lib/terminal-theme.ts";
+import { terminalFontSize } from "../hooks/useChatAppearance.ts";
 
 const componentFile = new URL("./TerminalPanel.tsx", import.meta.url);
 const componentScript = new Script(ts.transpileModule(await readFile(componentFile, "utf8"), {
@@ -108,7 +111,9 @@ function findElement(node, predicate) {
 
 // Execute the entire production component, not extracted/copied lifecycle logic.
 // The doubles expose public hooks/browser/xterm boundaries; no ref index is assumed.
-function terminalPanelHarness({ deleteFailures = 0, online = true } = {}) {
+function terminalPanelHarness({ deleteFailures = 0, online = true, extraKeysVisible = false } = {}) {
+  let appearanceSize = 14, theme = "dark", fits = 0;
+  const ExtraKeys = () => null;
   const refs = [], states = [], effects = [];
   const sources = [], terminals = [], writers = [], requests = [], order = [];
   const listeners = new Map();
@@ -123,6 +128,11 @@ function terminalPanelHarness({ deleteFailures = 0, online = true } = {}) {
   const onCloseError = () => { closeErrors++; order.push("callback:close-error"); };
 
   const hooks = {
+    useCallback(callback, deps) {
+      const cell = hooks.useRef(null);
+      if (!cell.current || deps.some((value, index) => !Object.is(value, cell.current.deps[index]))) cell.current = { callback, deps };
+      return cell.current.callback;
+    },
     useRef(initial) {
       const index = refCursor++;
       if (index === refs.length) refs.push({ current: initial });
@@ -163,6 +173,7 @@ function terminalPanelHarness({ deleteFailures = 0, online = true } = {}) {
       this.disposed = false;
       this.dataListeners = new Set();
       this.resizeListeners = new Set();
+      this.modes = { applicationCursorKeysMode: false };
       terminals.push(this);
     }
     loadAddon() {}
@@ -180,6 +191,7 @@ function terminalPanelHarness({ deleteFailures = 0, online = true } = {}) {
       this.resizeListeners.add(callback);
       return { dispose: () => this.resizeListeners.delete(callback) };
     }
+    input(data, userInput) { assert.equal(userInput, true); this.emitData(data); }
     emitData(data) { for (const callback of this.dataListeners) callback(data); }
     emitResize(cols, rows) { for (const callback of this.resizeListeners) callback({ cols, rows }); }
     dispose() { this.disposed = true; }
@@ -229,7 +241,12 @@ function terminalPanelHarness({ deleteFailures = 0, online = true } = {}) {
       if (id === "react") return hooks;
       if (id === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (id === "@xterm/xterm") return { Terminal: FakeTerminal };
-      if (id === "@xterm/addon-fit") return { FitAddon: class { fit() {} } };
+      if (id === "@xterm/addon-fit") return { FitAddon: class { fit() { fits++; } } };
+      if (id === "@/hooks/useChatAppearance") return { terminalFontSize, useChatAppearance: () => ({ fontSize: appearanceSize }) };
+      if (id === "@/hooks/useTerminalTheme") return { useTerminalTheme: () => theme, setTerminalTheme(next) { theme = next; dirty = true; } };
+      if (id === "@/lib/terminal-theme") return { TERMINAL_XTERM_THEMES };
+      if (id === "@/lib/terminal-extra-keys") return extraKeyHelpers;
+      if (id === "./TerminalExtraKeys") return { TerminalExtraKeys: ExtraKeys, useTerminalExtraKeysVisible: () => extraKeysVisible };
       if (id === "@/hooks/useI18n") return { useI18n: () => ({ t: (key) => key }) };
       if (id === "@/lib/terminal-client") return client;
       throw new Error(`Unexpected component dependency: ${id}`);
@@ -271,6 +288,9 @@ function terminalPanelHarness({ deleteFailures = 0, online = true } = {}) {
     creation, sources, terminals, writers, requests, order, path, render, unmount,
     get tab() { return tab; },
     get tree() { return tree; },
+    get extraKeys() { return findElement(tree, element => element.type === ExtraKeys)?.props; },
+    get fits() { return fits; },
+    appearance(size, nextTheme) { appearanceSize = size; theme = nextTheme; render(); },
     get closed() { return closed; },
     get closeErrors() { return closeErrors; },
     dispatch(type, event = {}) { for (const callback of listeners.get(type) ?? []) callback(event); },
@@ -285,6 +305,37 @@ function terminalPanelHarness({ deleteFailures = 0, online = true } = {}) {
     },
   };
 }
+
+test("live terminal theme/size and one-shot keys preserve PTY and stream ownership", async t => {
+  const h = terminalPanelHarness({ extraKeysVisible: true });
+  t.after(() => h.unmount());
+  h.render();
+  h.creation.resolve({ id: h.tab.id });
+  await h.flush();
+  h.sources[0].open();
+  await h.flush();
+  const terminal = h.terminals[0];
+  const fits = h.fits;
+  h.appearance(18, "light");
+  await h.flush();
+  assert.equal(terminal.options.fontSize, 17);
+  assert.equal(terminal.options.theme.background, "#fbfbfc");
+  assert.ok(h.fits > fits);
+  assert.equal(h.terminals.length, 1);
+  assert.equal(h.sources.length, 1);
+  assert.equal(h.requests.length, 1);
+  h.extraKeys.onToggleModifier("ctrl");
+  h.extraKeys.onKey("ArrowLeft");
+  await h.flush();
+  assert.deepEqual(h.writers[0].writes, ["\x1b[1;5D"]);
+  h.extraKeys.onToggleModifier("ctrl");
+  terminal.emitData("c");
+  terminal.emitData("c");
+  await h.flush();
+  assert.deepEqual(h.writers[0].writes, ["\x1b[1;5D", "\x03", "c"]);
+  assert.equal(h.extraKeys.modifiers.ctrl, false);
+  assert.equal(h.terminals.length, 1);
+});
 
 const methods = (harness) => harness.requests.map(({ method }) => method);
 

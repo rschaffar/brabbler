@@ -40,6 +40,12 @@ Disabling the last enabled model is refused with `409 { reason: "last-model" }`:
 ### Model/provider searches
 The shared model picker matches model names, IDs, provider IDs and qualified `provider/modelId` case-insensitively after trimming; matching never changes provider/model identity, account scope or grouping. Desktop autofocuses the filter; viewports at the existing mobile breakpoint do not. Add provider matches OAuth and API-key provider IDs as well as displayed names, while retaining existing logged-in/configured eligibility.
 
+### Per-model endpoint and adaptive thinking overrides
+
+Models → a custom model → Advanced settings exposes SDK-native `baseUrl`; empty removes the override and inherits the provider endpoint. Catalog lookup uses the effective model/provider URL. A connection-test generation is invalidated by draft identity/config changes and unmount, so a late success cannot attach to a different endpoint/model.
+
+Reasoning-capable `anthropic-messages` models offer Claude adaptive thinking through `compat.forceAdaptiveThinking`, not a new reasoning enum. The checkbox reads merged provider/model compat: disabling over an inherited true writes explicit false; restoring inheritance removes redundant overrides and preserves unrelated compat. Other APIs hide the control. `thinkingLevelMap` remains separate. Synthetic SDK 1.3 tests inspect adaptive effort versus budget payloads and stop before HTTP; connection-test success is not evidence a provider accepts adaptive thinking. Saving definitions retains existing runtime lifecycle. Existing sessions require wrapper recreation to reliably apply edited definitions; ordinary resource `/reload` alone is insufficient.
+
 ### Auth and model config
 - `ModelsConfig` combines models from `~/.pi/agent/models.json` with provider auth status from pi's `AuthStorage`/`ModelRegistry`.
 - Provider listing is capability-driven, never id-driven: `lib/provider-listing.ts` decides membership from `auth.apiKey.login` / `auth.oauth` plus the stored credential type, so dual-auth providers (anthropic and github-copilot today — which providers declare both changes between SDK releases, so never assume it from an id) appear exactly once and never fall through both lists (#309). `lib/provider-listing-runtime.ts` adapts `ModelRuntime` to those pure helpers.

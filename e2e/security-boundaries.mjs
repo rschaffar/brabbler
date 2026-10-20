@@ -71,9 +71,35 @@ export async function checkExternalReferenceBoundary(page, base, fixtures) {
   const link = page.getByRole("link", { name: "External reference safe fixture", exact: true });
   await link.waitFor();
   assert.equal(await link.getAttribute("href"), intentional.file + "#L2");
-  // This regression owns authorization and link rendering. Opening the viewer
-  // also runs its existing edit/Git capability probes, which legitimately refuse
-  // outside-root files. Do not suppress those unrelated browser console errors
-  // or claim this API proof is an interactive external-viewer acceptance test.
-  console.log(`PASS: ${page.viewportSize().width}px real external-reference denials, intentional HTTP read and rendered source link`);
+  const probes = [];
+  const observe = request => {
+    const target = new URL(request.url());
+    if ((target.pathname === new URL(url(intentional)).pathname && ["edit", "save"].includes(target.searchParams.get("type")))
+      || (target.pathname === "/api/git/diff" && target.searchParams.get("path") === intentional.file)) probes.push(request.url());
+  };
+  page.on("request", observe);
+  try {
+    await link.click();
+    const panel = page.locator("#file-panel");
+    const line = panel.locator('[data-line-number="2"][data-file-line-target="true"]');
+    await line.waitFor();
+    assert.match(await line.innerText(), /intentional line two/);
+    const watchSentinel = `SAFE_WATCH_SENTINEL_${page.viewportSize().width}`;
+    writeFileSync(intentional.file, `SAFE_REFERENCE_SENTINEL\nintentional line two\n${watchSentinel}\n`);
+    await panel.getByText(watchSentinel, { exact: true }).waitFor();
+    assert.equal(await panel.getByRole("button", { name: "Edit", exact: true }).count(), 0);
+    assert.equal(await panel.getByRole("button", { name: "Save", exact: true }).count(), 0);
+    await panel.getByRole("button", { name: "Close intentional.txt", exact: true }).click();
+    await link.click();
+    await line.waitFor();
+    await panel.getByText(watchSentinel, { exact: true }).waitFor();
+    assert.deepEqual(probes, [], "read-only references never probe forbidden edit/Git endpoints, including watch/reopen");
+  } finally { page.off("request", observe); }
+  const baselineAgain = await fetch(url(intentional, "read", false));
+  assert.equal(baselineAgain.status, 403, "opening a reference did not register a new root");
+  await baselineAgain.arrayBuffer();
+  const saved = await fetch(url(intentional, "save"), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: "must not save", expectedRevision: "0".repeat(64) }) });
+  assert.equal(saved.status, 403);
+  await saved.arrayBuffer();
+  console.log(`PASS: ${page.viewportSize().width}px real external-reference denials, interactive read-only source link, watcher/reopen and zero forbidden probes`);
 }

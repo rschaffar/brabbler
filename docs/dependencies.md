@@ -7,12 +7,20 @@ Lockfile changes also require updating `nix/npm-deps.nix`. Nix realizes matching
 built dependencies automatically for packages and acceptance. Writable manual-development
 shells still enforce their checkout dependency marker; never bypass it.
 
+## Renderer and HTTP follow-ups
+
+The root app pins runtime `remark-cjk-friendly` **2.3.2** (parse-only extension) and direct development `@types/mdast` **4.0.4** for CJK emphasis/autolink compatibility. Currency safety wraps remark-math tokenization rather than rewriting source, preserving code/escapes/source coordinates. Root manifests/lock and the Nix npm-cache hash move together; SDK, native PTY and flake/toolchain pins do not change. The static demo retains its independent renderer sources/manifests; this is an application port, not a demo redesign.
+
+`instrumentation-node.ts` reads global `httpIdleTimeoutMs` once at startup using SDK-compatible agent-directory resolution and a nonblocking regular-file reader. Missing/invalid settings keep the default; numeric zero or `disabled` disables idle header/body timeouts. Project settings cannot change this process-wide startup setting. Undici 8.12.2 explicitly uses CONNECT for proxied HTTP as well as HTTPS and a **2,000 ms address-family attempt window**, not a total connection deadline. Keep error listeners, fetch-override preservation and once-only configuration. Synthetic tests exercise CONNECT, stalled-body timeout, NO_PROXY and option propagation; native SDK parity tests resolve the agent directory without inspecting operator settings.
+
+A public `npm audit --omit=dev --json` on the follow-up lock reports **3 moderate runtime findings**, all in the already documented Mammoth/argparse/sprintf-js chain below; the CJK parser is not reported affected. This is the selected audit scope, not a security-clean claim or live-provider evidence.
+
 ## Runtime classification and locking
 
-The root manifest declares the 12 shipped renderer/preview libraries as runtime
+The root manifest declares the 13 shipped renderer/preview libraries as runtime
 `dependencies`: ansi_up, katex, mammoth, mermaid, react-markdown,
 react-syntax-highlighter, rehype-katex, rehype-raw, rehype-sanitize,
-remark-frontmatter, remark-gfm and remark-math. Demo already classified its shared
+remark-frontmatter, remark-gfm, remark-math and remark-cjk-friendly. Demo already classified its shared
 renderers this way. Types, compiler/lint tooling, CSS build tooling and Playwright
 remain development-only. Moving classification preserves resolved versions but
 adds these packages and their transitives to downstream production npm installs.

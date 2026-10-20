@@ -60,6 +60,14 @@ export function setCompatBool<T extends CompatEntry>(entry: T, key: string, valu
   };
 }
 
+/** Remove redundant overrides, but preserve an explicit false over a true provider default. */
+export function setCompatFlag<T extends CompatEntry>(entry: T, key: string, value: boolean, inherited = false): T {
+  const compat = { ...(entry.compat ?? {}) };
+  if (value === inherited) delete compat[key];
+  else compat[key] = value;
+  return { ...entry, compat: Object.keys(compat).length ? compat : undefined };
+}
+
 export function updateHeaderRow(
   rows: readonly HeaderRow[],
   id: number,
