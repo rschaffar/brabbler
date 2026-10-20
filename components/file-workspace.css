@@ -1,4 +1,5 @@
-.file-workspace { min-width: 0; color: var(--text); }
+/* Keep the live region's containing block inside the clipped outer panel. */
+.file-workspace { position: relative; min-width: 0; color: var(--text); }
 .file-workspace-group { border: 1px solid var(--border); background: var(--bg); overflow: visible; }
 .file-workspace-group.is-active { border-top-color: var(--accent); }
 .file-workspace-group-header { height: 36px; display: flex; align-items: center; background: var(--bg-panel); }
