@@ -26,6 +26,7 @@ import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { SessionMoveDestinationPicker } from "./SessionMoveDestinationPicker";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
+import { isHistoryOnlySession } from "@/lib/session-directory";
 import { SessionSearch } from "./SessionSearch";
 import dynamic from "next/dynamic";
 import { SubagentIcon } from "./SubagentIcon";
@@ -139,6 +140,7 @@ interface Props {
   onSessionDeleted?: (sessionId: string) => void;
   onSessionArchived?: (sessionId: string) => void;
   selectedCwd?: string | null;
+  selectedCwdState?: SessionInfo["cwdState"];
   onCwdChange?: (
     cwd: string | null,
     projectRoot?: string | null,
@@ -412,7 +414,7 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onQueuedSessionIdsChange, onActivityChange, onReviewReadReady, onReviewLaterReady, onSessionsChange }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, selectedCwdState: selectedCwdStateProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onQueuedSessionIdsChange, onActivityChange, onReviewReadReady, onReviewLaterReady, onSessionsChange }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const { starredIds, starredProjectKeys, toggleStarred, toggleStarredProject } = useStarredSessions();
@@ -447,6 +449,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
+  const directoryUnavailable = isHistoryOnlySession({ cwdState: selectedCwd === selectedCwdProp
+    ? selectedCwdStateProp : allSessions.find((session) => session.cwd === selectedCwd)?.cwdState });
   const [homeDir, setHomeDir] = useState<string>("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
@@ -1044,7 +1048,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Load worktrees for the current effective cwd
   const [wtRefreshKey, setWtRefreshKey] = useState(0);
   useLayoutEffect(() => {
-    if (!selectedCwd) {
+    if (!selectedCwd || directoryUnavailable) {
       setWorktreeState(null);
       setWorktreeLoadingCwd(null);
       return;
@@ -1078,7 +1082,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         }
       });
     return () => { cancelled = true; };
-  }, [selectedCwd, wtRefreshKey, refreshKey]);
+  }, [directoryUnavailable, selectedCwd, wtRefreshKey, refreshKey]);
 
   // Auto-select cwd and restore session from URL on first load
   useEffect(() => {
@@ -1282,14 +1286,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [onSelectSession]);
 
   const handleNewSession = useCallback(() => {
-    if (!selectedCwd) return;
+    if (!selectedCwd || directoryUnavailable) return;
     // Generate a temporary UUID client-side — no backend call needed.
     // Pi will be spawned lazily when the user sends the first message.
     const tempId = typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
     onNewSession?.(tempId, selectedCwd);
-  }, [selectedCwd, onNewSession]);
+  }, [directoryUnavailable, selectedCwd, onNewSession]);
 
   const [movingSession, setMovingSession] = useState<SessionInfo | null>(null);
   const [moveDestination, setMoveDestination] = useState("");
@@ -1538,7 +1542,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           <div style={{ display: "flex", gap: 6 }}>
             <button
               onClick={handleNewSession}
-              disabled={!selectedCwd}
+              disabled={!selectedCwd || directoryUnavailable}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                 background: "var(--bg-hover)",
@@ -2482,7 +2486,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       )}
 
       {/* File Explorer section */}
-      {(selectedCwdProp || selectedCwd) && (
+      {!directoryUnavailable && (selectedCwdProp || selectedCwd) && (
         <div
           ref={explorerSectionRef}
           style={{

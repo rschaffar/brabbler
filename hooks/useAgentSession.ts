@@ -14,6 +14,7 @@ import type {
   UserMessage,
 } from "@/lib/types";
 import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
+import { isHistoryOnlySession } from "@/lib/session-directory";
 import { clearQuestionDraft, reconcileQuestionDrafts } from "@/lib/question-set-drafts";
 import { useI18n } from "./useI18n";
 import { normalizeToolCalls } from "@/lib/normalize";
@@ -1013,9 +1014,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     eventConnectionRef.current!.ensureConnected(sid)
   ), []);
 
+  const historyOnly = isHistoryOnlySession(session);
   const maintainEventsConnected = useCallback((sid: string) => {
-    eventConnectionRef.current!.maintain(sid);
-  }, []);
+    // History viewing must not create/reopen a runtime in a missing working folder.
+    if (!historyOnly) eventConnectionRef.current!.maintain(sid);
+  }, [historyOnly]);
 
   // Keep the selected session warm even while its agent is idle. The SSE lease
   // is renewed separately below and expires if the browser disappears.
@@ -1036,7 +1039,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   useEffect(() => {
     const sid = session?.id;
-    if (!sid) return;
+    if (!sid || historyOnly) return;
     let disposed = false;
     let renewing = false;
 
@@ -1076,7 +1079,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [closeEvents, maintainEventsConnected, session?.id]);
+  }, [closeEvents, historyOnly, maintainEventsConnected, session?.id]);
 
   const respondToExtensionUi = useCallback(async (
     request: ExtensionUiDialogRequest,
@@ -2046,6 +2049,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [isCompacting, loadSession, setCompactionState]);
 
   const loadModels = useCallback(async (signal?: AbortSignal) => {
+    if (historyOnly) return;
     const modelCwd = newSessionCwd ?? session?.cwd ?? "";
     const modelsParams = new URLSearchParams();
     if (modelCwd) modelsParams.set("cwd", modelCwd);
@@ -2102,7 +2106,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         );
       }
     }
-  }, [isNew, newSessionCwd, session?.cwd]);
+  }, [historyOnly, isNew, newSessionCwd, session?.cwd]);
 
   const handleBuiltinSlashCommand = useCallback(async (text: string): Promise<BuiltinSlashCommandResult> => {
     if (!text.startsWith("/")) return { handled: false };
@@ -2653,10 +2657,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setLoading(false);
       }
       const compactionVersion = ++compactionVersionRef.current;
-      loadSession(session.id, !cached, true, { force: true }).then((loadedAgentState) => {
+      loadSession(session.id, !cached, !historyOnly, { force: true }).then((loadedAgentState) => {
         if (!sessionHookMountedRef.current || sessionIdRef.current !== session.id) return;
         const agentState = loadedAgentState as { running: boolean; state?: AgentStateResponse } | null;
-        if (agentState?.running) {
+        if (agentState?.running && !historyOnly) {
           loadTools(session.id);
           if (agentState.state?.isStreaming || agentState.state?.isPromptRunning) {
             sdkAgentActiveRef.current = Boolean(agentState.state.isStreaming);

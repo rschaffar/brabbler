@@ -4,6 +4,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { closeSync, constants, type Dirent, fstatSync, openSync, readSync, statSync } from "fs";
 import { readdir } from "fs/promises";
+import { sessionDirectoryState } from "./session-worktrees-inventory";
 import { isAbsolute, join, normalize as normalizePath, relative, resolve as resolvePath, sep } from "path";
 import type { AgentMessage, ImageContent, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
 import { normalizeToolCalls } from "./normalize";
@@ -159,6 +160,7 @@ function readSessionRelationEntries(filePath: string): SessionEntry[] {
 export async function attachSessionProjectInfo(sessions: SessionInfo[]): Promise<SessionInfo[]> {
   const uniqueCwds = [...new Set(sessions.map((s) => s.cwd).filter(Boolean))];
   const projectByCwd = new Map<string, ProjectInfo>();
+  const stateByCwd = new Map(uniqueCwds.map((cwd) => [cwd, sessionDirectoryState(cwd, statSync)]));
   await Promise.all(uniqueCwds.map(async (cwd) => {
     projectByCwd.set(cwd, await resolveProject(cwd));
   }));
@@ -168,6 +170,7 @@ export async function attachSessionProjectInfo(sessions: SessionInfo[]): Promise
     const projectRoot = project?.projectRoot ?? session.cwd;
     return {
       ...session,
+      cwdState: stateByCwd.get(session.cwd) ?? "unavailable",
       projectRoot,
       projectKey: projectIdentityKey(projectRoot),
       ...(project?.branch ? { branch: project.branch } : {}),

@@ -55,7 +55,7 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `file-edit` | Panel setup, all modified/added/deleted/context diff variants, editor/read-only/draft retention |
 | `archive` | Focused archive/restore flow, distinct from the mobile search/restore/move chain |
 | `privacy` | Concealment/loading/failure behavior, independent contexts and tablet coverage |
-| `activity` | Full overview, real worktree/subagent/recovery fixtures, running/fallback Agents badge with reduced motion, deterministic recorded per-agent/family usage and keyboard/touch breakdowns without review acknowledgement, selected-session-only toolbar, and tablet coverage |
+| `activity` | Full overview, real worktree/subagent/recovery fixtures, running/fallback Agents badge with reduced motion, deterministic recorded per-agent/family usage and keyboard/touch breakdowns without review acknowledgement, selected-session-only toolbar, and tablet coverage; native model-issued child runs, saved IDs/history, removed-worktree resume refusal, suffix settings and never-prompted queued Stop |
 | `accounts` | Separate created/deleted and shared-device OAuth variants, retaining locale and mobile-height differences |
 | `questions` | Native tool ownership plus mixed question sets, draft/reload/cancel/receipts |
 | `session-links` | Desktop/mobile copying and following the copied link |

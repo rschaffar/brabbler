@@ -1,4 +1,5 @@
 import type { SessionInfo } from "@/lib/types";
+import { isHistoryOnlySession } from "@/lib/session-directory";
 
 /**
  * Overlay a catalogue row onto the session already on screen.
@@ -14,6 +15,9 @@ export function mergeCatalogRow(current: SessionInfo, refreshed: SessionInfo): S
   return {
     ...current,
     ...refreshed,
+    // A stale catalogue must not readmit a cwd just classified as missing by a
+    // fresh detail read. An explicit reselect/reload or move can admit it again.
+    cwdState: current.cwd === refreshed.cwd && isHistoryOnlySession(current) ? current.cwdState : refreshed.cwdState,
     detailsPending: refreshed.detailsPending,
     archived: refreshed.archived,
     relation: refreshed.relation,
