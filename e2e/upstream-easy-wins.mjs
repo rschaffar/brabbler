@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { checkModelKeyboard, checkFreshComposerFocus } from "./composer-keyboard-focus.mjs";
 
 /** Isolated tab: never disturb the existing reading/history assertion chain. */
 export async function checkUpstreamComposer(context, base, sessionId, alternateSessionId, width) {
@@ -25,7 +26,8 @@ export async function checkUpstreamComposer(context, base, sessionId, alternateS
     const listbox = page.getByRole("listbox");
     await listbox.getByRole("option", { name: "Fixture model 11", exact: true }).waitFor();
     assert.equal(await listbox.getByRole("option").count(), 1);
-    // Toggle the picker closed: its portal can cover the textarea's click point.
+    await checkModelKeyboard(page, width);
+    // Toggle the fixed picker closed: it can cover the textarea's click point.
     // Never select a synthetic model or invoke a provider.
     await page.locator(".model-selector.is-toolbar").getByRole("button").click();
     await filter.waitFor({ state: "hidden" });
@@ -85,6 +87,7 @@ export async function checkUpstreamComposer(context, base, sessionId, alternateS
     await selectSession(sessionId);
     await page.waitForFunction(() => document.querySelector(".chat-input-textarea")?.value === "upstream-list-draft\n2. retained");
     await input.fill("");
+    await checkFreshComposerFocus(page, alternateSessionId, width);
     console.log(`PASS: ${width}px provider search, picker focus, list newline/undo/IME/fallback and SPA draft retention`);
   } finally { await page.close(); }
 }

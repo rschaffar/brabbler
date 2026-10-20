@@ -65,6 +65,7 @@ import {
 import type { BlockingExtensionUiRequest, SessionAttention, SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
+import { requestFreshComposerFocus } from "@/lib/composer-focus";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
@@ -851,6 +852,11 @@ export function AppShell() {
     setActiveTopPanel(null);
     if (isMobile) setSidebarOpen(false);
     router.replace(`?cwd=${encodeURIComponent(cwd)}`, { scroll: false });
+    const focusRevision = workspaceRestoreTokenRef.current;
+    requestFreshComposerFocus(chatInputRef, isMobile, () => (
+      workspaceRestoreTokenRef.current === focusRevision
+      && activeNewSessionDraftKeyRef.current === draftKey
+    ));
   }, [invalidateWorkspaceRestore, router, isMobile]);
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)

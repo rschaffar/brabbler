@@ -417,7 +417,8 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       t("chat.quoteIntro"),
       t("chat.quoteQuestion"),
     ));
-    window.getSelection()?.removeAllRanges();
+    // Insertion owns selection/focus. Clearing document ranges afterwards can
+    // reset the composer's caret instead of leaving it after the quote (#1319).
     closeQuotedSelection();
   }, [chatInputRef, quotedSelection, closeQuotedSelection, t]);
 

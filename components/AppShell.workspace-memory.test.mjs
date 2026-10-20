@@ -47,6 +47,32 @@ test("keeps chat scroll positions in page memory by session id", () => {
   assert.doesNotMatch(source, /localStorage[^\n]*sessionScroll/i);
 });
 
+test("New focus requests are bound to the intended fresh draft and navigation revision", () => {
+  const callback = callbackBody("handleNewSession", "hydrateSelectedSession");
+  const requests = [];
+  const context = vm.createContext({
+    useCallback: (fn) => fn, useGlobalKeyboardShortcuts() {},
+    parkedNewSessionDraftKey: (cwd) => `parked-new:${cwd}`, rekeyDraft() {},
+    activeNewSessionDraftKeyRef: { current: null }, workspaceRestoreTokenRef: { current: 0 },
+    router: { replace() {} }, isMobile: false, activeCwd: "/p", chatInputRef: { current: null },
+    requestFreshComposerFocus: (...args) => requests.push(args),
+  });
+  context.invalidateWorkspaceRestore = () => context.workspaceRestoreTokenRef.current++;
+  for (const [setter] of callback.matchAll(/\bset[A-Z]\w*(?=\()/g)) context[setter] = () => {};
+  vm.runInContext(stripTypeScriptTypes(`${callback}\nglobalThis.start = handleNewSession;`), context);
+  context.start("first", "/p");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0][2](), true);
+  context.start("second", "/p");
+  assert.equal(requests[0][2](), false);
+  assert.equal(requests[1][2](), true);
+  context.activeNewSessionDraftKeyRef.current = null;
+  assert.equal(requests[1][2](), false);
+  context.start("third", "/p");
+  context.invalidateWorkspaceRestore();
+  assert.equal(requests[2][2](), false);
+});
+
 test("workspace restoration remains inside the cross-project branch", () => {
   assert.match(
     callbackBody("handleCwdChange", "handleSelectSession"),
@@ -84,6 +110,8 @@ test("New restores the draft after session navigation and workspace auto-restore
         workspaceKeyOf: (value) => value.projectKey ?? value.cwd,
         useCallback: (callback) => callback,
         useGlobalKeyboardShortcuts() {},
+        chatInputRef: { current: null },
+        requestFreshComposerFocus() {},
         activeNewSessionDraftKeyRef: { current: `new:initial:${cwd}` },
         pendingMovedCheckoutRef: { current: null },
         activeProjectKeyRef: { current: cwd },

@@ -11,7 +11,7 @@ const jiti = createJiti(import.meta.url, {
 });
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
-const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, compressImageFile, cycleListIndex, filterModelOptions, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, modelSupportsImageInput, replaceLinksWithMarkdown, shouldCompressImageFile } = await jiti.import("./ChatInput.tsx");
+const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, compressImageFile, cycleListIndex, filterModelOptions, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, modelSupportsImageInput, replaceLinksWithMarkdown, shouldCompressImageFile, stacksComposerLayout } = await jiti.import("./ChatInput.tsx");
 const { ModelSelector } = await jiti.import("./ModelSelector.tsx");
 const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } = await jiti.import("@/lib/draft-store.ts");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
@@ -35,6 +35,12 @@ test("preserves pasted HTML links as Markdown without changing plain text layout
     "Engineer and [Engineer](https://example.com/job)",
   );
   assert.equal(replaceLinksWithMarkdown("plain text", [link("missing", "https://example.com")]), null);
+});
+
+test("only compact quotes and streaming mobile composers stack their action row", () => {
+  for (const compact of [false, true]) for (const mobile of [false, true]) for (const streaming of [false, true]) {
+    assert.equal(stacksComposerLayout(compact, mobile, streaming), compact || (mobile && streaming));
+  }
 });
 
 test("follow-up shortcuts preserve newline, IME, mobile and completion behavior", () => {

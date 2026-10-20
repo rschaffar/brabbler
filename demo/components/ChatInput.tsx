@@ -87,6 +87,7 @@ interface Props {
 }
 
 export interface ChatInputHandle {
+  focus: () => void;
   insertText: (text: string) => void;
   insertIfEmpty: (text: string) => void;
   replaceMessage: (message: UserMessage) => void;
@@ -248,6 +249,11 @@ export function isExactSlashCommand(message: string, command: SlashCommandPalett
 
 export function canClearBuiltinCommandInput(message: string, imageCount: number, submittedMessage: string): boolean {
   return imageCount === 0 && message.trim() === submittedMessage;
+}
+
+/** On phones, streaming actions must not take the draft's horizontal space. */
+export function stacksComposerLayout(compact: boolean, isMobile: boolean, isStreaming: boolean): boolean {
+  return compact || (isMobile && isStreaming);
 }
 
 const SLASH_SOURCES: SlashCommandSource[] = ["builtin", "extension", "prompt", "skill"];
@@ -420,6 +426,25 @@ function revokeImagePreview(image: AttachedImage): void {
   if (image.previewUrl.startsWith("blob:")) {
     URL.revokeObjectURL(image.previewUrl);
   }
+}
+
+function StopButton({ onAbort }: { onAbort: () => void }) {
+  const { t } = useI18n();
+  return <button type="button" onClick={onAbort} title={t("chat.stopAgent")} style={{
+    display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
+    padding: "8px 14px", height: 32, background: "rgba(239,68,68,0.08)",
+    border: "1px solid rgba(239,68,68,0.3)", borderRadius: 9, color: "#ef4444",
+    cursor: "pointer", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", letterSpacing: "-0.01em",
+    transition: "background 0.12s",
+  }}
+    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.16)"; }}
+    onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.08)"; }}
+  >
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="7" height="7" rx="1.5" fill="currentColor" />
+    </svg>
+    {t("chat.stop")}
+  </button>;
 }
 
 function QueuedMessageRow({ kind, text }: { kind: "steer" | "follow-up"; text: string }) {
@@ -648,6 +673,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [compact]);
 
   useImperativeHandle(ref, () => ({
+    focus() {
+      const ta = textareaRef.current;
+      if (!ta || ta.disabled || ta.closest("[inert], [hidden]") || !ta.getClientRects().length || isComposingRef.current) return;
+      ta.focus({ preventScroll: true });
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    },
     insertIfEmpty(text: string) {
       const ta = textareaRef.current;
       const current = ta ? ta.value : value;
@@ -1017,6 +1048,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const slashCommandCountLabel = filteredSlashCommands.length === 1
     ? t(slashQuery ? "chat.match" : "chat.command")
     : t(slashQuery ? "chat.matches" : "chat.commands", { count: filteredSlashCommands.length });
+  const stackedComposer = stacksComposerLayout(compact, isMobile, isStreaming && Boolean(onSteer || onFollowUp));
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = hasInputText || attachedImages.length > 0;
   // Warn when images are attached but the selected model is known not to accept
@@ -2145,9 +2177,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             style={{
               minWidth: 0,
               display: "flex",
-              flexDirection: compact ? "column" : "row",
+              flexDirection: stackedComposer ? "column" : "row",
               gap: 8,
-              alignItems: compact ? "stretch" : "center",
+              alignItems: stackedComposer ? "stretch" : "center",
               background: "var(--bg)",
               border: compact ? "none" : `1px solid ${bashMode ? "var(--tool-bg)" : isStreaming && (onSteer || onFollowUp)
                 ? "rgba(234,179,8,0.4)"
@@ -2193,7 +2225,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             }
             rows={1}
             style={{
-              flex: compact ? "none" : 1,
+              flex: stackedComposer ? "none" : 1,
               minWidth: 0,
               width: "100%",
               background: "none",
@@ -2211,7 +2243,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           />
 
           {isStreaming ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, alignSelf: "flex-end" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center", gap: 6, flexShrink: 0, alignSelf: "flex-end" }}>
               {onSteer && (
                 <button
                   onClick={() => sendQueued("steer")}
@@ -2355,7 +2387,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           {!isMobile && <div style={{ flex: 1 }} />}
 
           {/* RIGHT: thinking + tools preset + compact + sound (idle) | Stop + sound (streaming) */}
-          <div ref={controlsMenuRef} style={{
+          <div style={{
             flex: "0 0 auto",
             display: "flex",
             alignItems: "center",
@@ -2363,6 +2395,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             position: "relative",
             marginLeft: isMobile ? 0 : "auto",
           }}>
+            <div ref={controlsMenuRef} style={{ position: "relative", display: "flex", minWidth: 0 }}>
             {isMobile && (
               <button
                 type="button"
@@ -2653,32 +2686,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             )}
 
-            {isStreaming && (
-              <button
-                onClick={onAbort}
-                 title={t("chat.stopAgent")}
-                style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  padding: "8px 14px",
-                  height: 32,
-                  background: "rgba(239,68,68,0.08)",
-                  border: "1px solid rgba(239,68,68,0.3)",
-                  borderRadius: 9,
-                  color: "#ef4444",
-                  cursor: "pointer",
-                  fontSize: 12, fontWeight: 600,
-                  whiteSpace: "nowrap", letterSpacing: "-0.01em",
-                  transition: "background 0.12s",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.16)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.08)"; }}
-              >
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                  <rect x="1.5" y="1.5" width="7" height="7" rx="1.5" fill="currentColor" />
-                </svg>
-                 {t("chat.stop")}
-              </button>
-            )}
+            {!isMobile && isStreaming && <StopButton onAbort={onAbort} />}
 
             {onSoundToggle !== undefined && (
               <button
@@ -2765,6 +2773,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </button>
             )}
             </div>
+            </div>
+            {isMobile && isStreaming && <StopButton onAbort={onAbort} />}
           </div>
 
         </div>}

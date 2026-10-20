@@ -107,6 +107,10 @@ The installed launcher and maintained root npm dev/start scripts load `bin/reque
 ### Composer lists and Markdown markers
 Native newlines (desktop Shift+Enter or mobile Enter) continue ordered, bullet, task and Chinese enumeration items; an empty item clears its marker. Selections, code, IME composition and ordinary sends retain their existing behavior. Native edits preserve undo and controlled drafts; when native editing is unavailable the ordinary newline remains. Deep indentation without a recognized shallower list is conservatively treated as code. Chat ordered lists size their indentation to their largest counter; the separate file-preview renderer retains the shared two-digit CSS fallback.
 
+### Mobile streaming composer actions
+
+At the existing mobile breakpoint, a busy composer with steer/follow-up actions gives its draft the full row and places the existing labeled actions beneath it, right-aligned and able to wrap. Desktop and idle layouts remain unchanged; compact quote composers still stack. Bash-only activity without queue callbacks does not add a stacked action row. The textarea is not remounted, and send/queue/IME/shortcut semantics are unchanged. The controls toolbar, provider-account control and pending interaction cards remain available when the software keyboard opens; no upstream blanket toolbar-hiding rule is applied. Mobile Stop is directly visible alongside More during a run, outside its collapsible menu; opening More does not cover Stop. Desktop keeps its existing Stop position and both use the same abort action.
+
 ### Installed app and asset caching
 `PI_WEB_APP_NAME` changes only the runtime PWA manifest name/short name (trimmed, blank defaults to `Pi Web`); identity, titles and icons remain unchanged. The worker neither precaches nor intercepts manifests, including stale-cache/query/navigation variants. Static network responses return without awaiting Cache Storage writes; `waitUntil` retains the cloned background write and cache failures do not discard healthy responses.
 

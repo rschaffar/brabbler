@@ -40,6 +40,12 @@ Disabling the last enabled model is refused with `409 { reason: "last-model" }`:
 ### Model/provider searches
 The shared model picker matches model names, IDs, provider IDs and qualified `provider/modelId` case-insensitively after trimming; matching never changes provider/model identity, account scope or grouping. Desktop autofocuses the filter; viewports at the existing mobile breakpoint do not. Add provider matches OAuth and API-key provider IDs as well as displayed names, while retaining existing logged-in/configured eligibility.
 
+### Model picker and mobile keyboards
+
+An open picker follows its trigger on window/visual-viewport resize and scroll, root height/keyboard-state writes and trigger resizing. Updates coalesce into one animation frame and clean up on close. Upward fixed panels use layout-coordinate `top` plus translation, accounting for `visualViewport.offsetTop`; a keyboard-covered Settings trigger is clamped above the keyboard. Panel height never imposes a minimum larger than the available space; upward preference can fall back below a trigger at the visible top. Filter DOM/value/focus and provider/model/account identities stay unchanged by geometry updates. The panel remains inside its existing DOM owner, not a new body portal.
+
+`useViewportHeight` distinguishes substantial keyboard shrink from browser chrome using zoom-corrected height, and follows late WebKit/IME settling with one bounded, non-restarting reread chain. Editable activity can start a new chain; teardown cancels frames/timers/listeners and clears root state. Unscaled page-scroll correction remains unchanged. Keyboard state does not hide the composer toolbar or Stop. Browser acceptance simulates shrink/pan/no-event changes; native phone keyboards and Safari/PWA remain actual-device verification, not a Chromium claim.
+
 ### Per-model endpoint and adaptive thinking overrides
 
 Models → a custom model → Advanced settings exposes SDK-native `baseUrl`; empty removes the override and inherits the provider endpoint. Catalog lookup uses the effective model/provider URL. A connection-test generation is invalidated by draft identity/config changes and unmount, so a late success cannot attach to a different endpoint/model.

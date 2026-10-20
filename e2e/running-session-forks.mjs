@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { checkRunningComposer } from "./composer-keyboard-focus.mjs";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { waitForAsyncCondition } from "./async-condition.mjs";
@@ -146,6 +147,8 @@ export async function checkRunningSessionForks(page, { base, api, post, artifact
 
     // Select persisted response text, then exercise the actual quote composer.
     const answer = page.getByText(`Running fork answer ${width}`, { exact: true });
+    await checkRunningComposer(page, width, answer);
+    await checkSource();
     await answer.scrollIntoViewIfNeeded();
     await answer.evaluate((element) => {
       const range = document.createRange();
@@ -181,7 +184,23 @@ export async function checkRunningSessionForks(page, { base, api, post, artifact
     assert.equal((await prompting).status(), 200);
     await page.getByText("E2E confirm result: false", { exact: true }).waitFor();
     assert.equal((await api(sourcePath)).state.isPromptRunning, false);
-    console.log(`PASS: ${width}px running-message/root/quoted forks preserve the original prompt and question`);
+    // Separate from the preserved Cancel chain: the directly visible control
+    // must still perform the real abort and settle a pending SDK interaction.
+    const stopPrompt = responseFor("prompt");
+    await page.locator(".chat-input-textarea").fill("/e2e-dialog confirm");
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    await question().waitFor();
+    const aborted = responseFor("abort");
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    assert.equal((await aborted).status(), 200);
+    await stopPrompt;
+    await question().waitFor({ state: "hidden" });
+    await waitForAsyncCondition(page, async (id) => {
+      const response = await fetch(`/api/agent/${id}`);
+      if (!response.ok) throw new Error(`Stopped composer state HTTP ${response.status}`);
+      return (await response.json()).state?.isPromptRunning === false;
+    }, sourceId);
+    console.log(`PASS: ${width}px running-message/root/quoted forks preserve the original prompt and question; direct Stop settles a fresh SDK interaction`);
   } finally {
     if ((await api(sourcePath)).state.isPromptRunning) await post(sourcePath, { type: "abort" });
     await prompting;
