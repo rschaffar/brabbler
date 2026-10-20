@@ -40,6 +40,7 @@ import { historyPageResponse } from "./history-pagination.mjs";
 import { checkCompactionVisibility } from "./compaction.mjs";
 import { seedSourceHighlighting, checkSourceHighlighting } from "./source-highlighting.mjs";
 import { checkHighlightFailure } from "./highlight-failure.mjs";
+import { createOwnedRoutes } from "./owned-routes.mjs";
 
 // Validate one-hot ownership before the harness or any fixture side effects.
 const group = selectGroup(process.env);
@@ -344,10 +345,12 @@ let context;
     await delay(250);
   }
 
-  async function newInputContext(inputId, extraOptions = {}) {
+  async function newInputContext(inputId, extraOptions) {
     const input = browserInputs[inputId];
     assert.ok(input, `Unknown browser input: ${inputId}`);
-    const next = await harness.newContext(browser, { ...input.options, ...extraOptions }, base);
+    const next = extraOptions
+      ? await harness.newContext(browser, { ...input.options, ...extraOptions }, base)
+      : await harness.newContext(browser, input.options, base);
     if (input.piLocale) {
       // Legacy interface preferences must not change controls/dates on reload.
       await next.addInitScript(({ locale, origin }) => {
@@ -896,27 +899,43 @@ let context;
     }
     if (group === "history") {
     await coverage.run(`history/reading-chain@${inputId}`, async () => {
-    // Use a separate tab: a deliberate full-page reload must not alter the
-    // reading-position and session-history fixtures exercised below.
-    const versionPage = await context.newPage();
+    // Interception needs its own SW-blocked context. The original history/PWA
+    // context below stays unchanged, and reload cannot alter its reading state.
+    const versionContext = await newInputContext(inputId, { serviceWorkers: "block" });
+    const versionErrors = harness.errorsFor(versionContext);
+    const versionPage = await versionContext.newPage();
+    versionPage.setDefaultTimeout(30_000);
+    const versionPattern = "**/api/app-version";
+    const versionRoute = createOwnedRoutes(route => route.fulfill({ json: { version: "99.99.99" } }), route => route.continue());
     try {
+      const initialVersion = versionPage.waitForResponse(response => new URL(response.url()).pathname === "/api/app-version");
+      void initialVersion.catch(() => {});
+      await versionPage.bringToFront();
       await versionPage.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      assert.equal(await versionPage.evaluate(() => document.visibilityState), "visible");
+      assert.equal((await (await initialVersion).json()).version, null, "isolated fixtures disable live version checks");
+      await versionPage.getByText("E2E final answer", { exact: true }).waitFor();
       const reloadWeb = versionPage.getByRole("button", { name: "Reload Pi Web" });
       assert.equal(await reloadWeb.count(), 0, "The running version should not show a reload prompt");
-      await versionPage.route("**/api/app-version", (route) => route.fulfill({ json: { version: "99.99.99" } }));
+      await versionPage.route(versionPattern, versionRoute.handler);
+      const changedVersion = versionPage.waitForResponse(response => new URL(response.url()).pathname === "/api/app-version");
+      void changedVersion.catch(() => {});
       await versionPage.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      assert.equal((await (await changedVersion).json()).version, "99.99.99");
       await reloadWeb.waitFor();
       assert.ok(await versionPage.getByText("Pi Web v99.99.99 is running.").isVisible());
       versionPage.once("dialog", (dialog) => dialog.dismiss());
       await reloadWeb.click();
       await reloadWeb.waitFor();
-      await versionPage.unroute("**/api/app-version");
+      await versionRoute.dispose(handler => versionPage.unroute(versionPattern, handler));
       versionPage.once("dialog", (dialog) => dialog.accept());
       await Promise.all([versionPage.waitForNavigation(), reloadWeb.click()]);
       await reloadWeb.waitFor({ state: "detached" });
+      assert.deepEqual(versionErrors, [], "Browser errors during version mismatch/reload");
       console.log(`PASS: ${viewport.width}px version mismatch prompts before page reload`);
     } finally {
-      await versionPage.close();
+      try { await versionRoute.dispose(handler => versionPage.unroute(versionPattern, handler)); }
+      finally { await harness.closeContext(versionContext); }
     }
     await checkUpstreamComposer(context, base, RICH, LONG, viewport.width);
     const stateReady = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/sessions/${LONG}/state`);
