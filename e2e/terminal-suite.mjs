@@ -56,14 +56,16 @@ let browser;
   const chromiumPath = process.env.PI_WEB_TEST_CHROMIUM || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
   browser = await harness.launchBrowser(chromium, chromiumPath ? { executablePath: chromiumPath } : undefined);
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
-    const context = await harness.newContext(browser, { viewport, locale: "en-US" }, base);
+    const context = await harness.newContext(browser, { viewport, locale: "en-US", ...(viewport.width < 500 ? { hasTouch: true, isMobile: true } : {}) }, base);
     const page = await context.newPage();
     page.setDefaultTimeout(30_000);
     const errors = harness.errorsFor(context);
     const created = new Set();
+    const streamRequests = [];
     let disconnect;
     page.on("request", (request) => {
       if (new URL(request.url()).pathname === "/api/terminal" && request.method() === "POST") created.add(request.postDataJSON().id);
+      if (/^\/api\/terminal\/[^/]+\/events$/.test(new URL(request.url()).pathname)) streamRequests.push(request.url());
     });
     const ready = () => page.locator(".terminal-panel:visible .is-ready").waitFor();
     const text = () => page.locator(".terminal-panel:visible .xterm-rows").innerText();
@@ -123,6 +125,53 @@ let browser;
       const pid = (await text()).match(/TOKEN:alive:(\d+)/)[1];
       const [id] = created;
       assert.equal(created.size, 1);
+      const originalStreams = streamRequests.length;
+      const terminalPanel = page.locator(".terminal-panel:visible");
+      await terminalPanel.getByRole("button", { name: "Use light terminal theme", exact: true }).click();
+      assert.equal(await terminalPanel.getAttribute("data-terminal-theme"), "light");
+      assert.equal(await terminalPanel.evaluate(el => getComputedStyle(el).backgroundColor), "rgb(251, 251, 252)");
+      await terminalPanel.getByRole("button", { name: "Use dark terminal theme", exact: true }).click();
+      const waitFont = expected => page.waitForFunction(expected => {
+        const panel = [...document.querySelectorAll(".terminal-panel")].find(el => el.getBoundingClientRect().width > 0);
+        const rows = panel?.querySelector(".xterm-rows");
+        return rows && getComputedStyle(rows).fontSize === expected;
+      }, expected);
+      for (const [action, expected] of [["End", "23px"], ["Home", "11px"], ["reset", "13px"]]) {
+        // On phones the file panel covers the sidebar toggle. Use the actual
+        // panel controls, never force-click through the overlying terminal.
+        await hidePanel();
+        await showSidebar();
+        await page.getByRole("button", { name: "Settings", exact: true }).click();
+        const size = page.getByRole("slider", { name: "Chat & terminal font size", exact: true });
+        if (action === "reset") await page.getByRole("button", { name: "Reset chat & terminal font size", exact: true }).click();
+        else await size.press(action);
+        await page.keyboard.press("Escape");
+        if (viewport.width < 500) await page.locator("#session-sidebar").getByText("Terminal session one", { exact: true }).click();
+        await visiblePanel();
+        await waitFont(expected);
+      }
+      assert.equal(streamRequests.length, originalStreams, "appearance changes retain the same SSE connection");
+      assert.equal(created.size, 1, "appearance changes never create another PTY");
+      await run("printf '\\nAPPEARANCE:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
+      await waitOutput(`APPEARANCE:alive:${pid}`);
+      if (viewport.width < 500) {
+        const keys = terminalPanel.getByRole("toolbar", { name: "Terminal extra keys", exact: true });
+        await keys.waitFor();
+        await terminalPanel.locator(".xterm-helper-textarea").focus();
+        await page.keyboard.type("printf 'SHOULD_NOT_RUN'");
+        await keys.getByRole("button", { name: "CTRL", exact: true }).tap();
+        assert.equal(await terminalPanel.locator(".xterm-helper-textarea").evaluate(el => el === document.activeElement), true, "extra keys preserve input focus");
+        await page.keyboard.type("u");
+        assert.equal(await keys.getByRole("button", { name: "CTRL", exact: true }).getAttribute("aria-pressed"), "false");
+        await run("printf '\\nKEYS:ctrl-u:%s\\n' \"$PR695_TOKEN\"");
+        await waitOutput("KEYS:ctrl-u:alive");
+        await terminalPanel.locator(".xterm-helper-textarea").focus();
+        await page.keyboard.type("printf '\\nKEYS:%s\\n' fo");
+        await keys.getByRole("button", { name: "Left", exact: true }).tap();
+        await page.keyboard.type("o");
+        await page.keyboard.press("Enter");
+        await waitOutput("KEYS:foo");
+      }
       const resized = await fetch(`${base}/api/terminal/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "resize", cols: 80, rows: 1 }) });
       assert.equal(resized.status, 200, "one-row keyboard fits are accepted and clamped");
       await run("printf '\\nCLAMP:%s\\n' \"$(stty size)\"");

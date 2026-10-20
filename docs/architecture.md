@@ -57,6 +57,7 @@ app/api/
   models-config/test/route.ts     POST test a configured model/provider
   plugins/route.ts                GET/POST package plugin management
   skills/route.ts                 GET/PATCH loaded skills and disable-model-invocation
+  skills/content/route.ts         GET bounded loaded-skill instructions/contained Markdown references
   skills/install/route.ts         POST install skills through npx skills add
   skills/search/route.ts          GET/POST skills.sh search
   subagents/settings/route.ts     GET/PUT built-in subagent feature setting
@@ -88,7 +89,11 @@ lib/
   file-paths.ts        client/server path encoding helpers
   enabled-models.ts    pure minimal-edit engine for the `enabledModels` pattern list
   enabled-models-runtime.ts  SDK adapter: per-pattern resolution, provider kinds, settings IO
-  markdown.ts          shared markdown helpers
+  markdown.ts          shared Markdown pipelines/source-preserving normalization
+  markdown-compat.ts   currency/CJK parsing and document-scoped fragment/heading helpers
+  message-signatures.ts  copy-on-write browser projection, never provider/durable mutation
+  subagent-extension-selectors.ts  alias ownership/longest-match grants and conservative denials
+  delimited-table.ts   client-safe CSV/TSV parsing and virtual table layout
   node-cli.ts          locate bundled npm-cli.js / npx-cli.js so npm/npx spawn without a shell (Windows npm.cmd)
   npx.ts               npx runner used by skill install
   plugin-updates.ts    npm view update checks for /api/plugins/check
@@ -127,6 +132,9 @@ components/
   AgentsConfig.tsx    built-in subagent toggle + agent profile editor
   PluginsConfig.tsx   modal for installed package plugins
   SkillsConfig.tsx    modal for loaded/search/installable skills
+  SkillInstructions.tsx  bounded read-only document reader inside the selected skill
+  DelimitedTable.tsx  row-virtualized CSV/TSV preview in the existing file scroll pane
+  TerminalPanel.tsx   retained PTY/xterm with live appearance and touch-key toolbar
   FileExplorer.tsx    file tree inside sidebar
   FileIcons.tsx       file icon helpers
   FileViewer.tsx      file content in a tab
@@ -135,6 +143,8 @@ components/
 hooks/
   useAgentSession.ts  messages + streaming + SSE + fork/navigate/reconciliation logic
   useAudio.ts         completion sound + browser AudioContext unlock
+  useStreamingSelector.ts  batched subscriptions without parent per-chunk renders
+  useTerminalTheme.ts best-effort shared browser terminal palette
   useDragDrop.ts      shared drag/drop state
   useIsMobile.ts      responsive breakpoint hook
   useTheme.ts         theme state

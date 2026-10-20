@@ -18,6 +18,7 @@ import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
 import { checkUpstreamComposer, checkOverflowTabs } from "./upstream-easy-wins.mjs";
 import { checkRequestHeaderBoundary, seedExternalReferenceFixtures, checkExternalReferenceBoundary } from "./security-boundaries.mjs";
+import { seedFollowupSettings, checkSkillInstructions, checkModelOverrides, checkBlockedPreferences } from "./upstream-followups.mjs";
 import { MODEL_SPEED_IDS, seedModelSpeedFixtures, checkModelSpeed, checkModelSpeedPersistence } from "./model-speed.mjs";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
 import { RUNNING_FORK_IDS, seedRunningForkFixtures, checkRunningSessionForks } from "./running-session-forks.mjs";
@@ -181,6 +182,7 @@ let context;
   writeSession(RICH, richEntries);
   const fileLineFixtures = seedFileLineLinks({ project, writeSession, message });
   const externalReferenceFixtures = group === "markdown" ? seedExternalReferenceFixtures({ agentDir, writeSession, message }) : [];
+  const followupSettings = group === "markdown" ? seedFollowupSettings({ agentDir }) : null;
   // The default page is 50 *visible* messages (user / assistant / compaction).
   // toolResults ride along free after #810, so 48 tool-call assistants + the
   // final answer + the divider fill that window; the user prompt is the 51st
@@ -644,7 +646,10 @@ let context;
       assert.ok(marker.padding >= marker.font * 3, JSON.stringify(marker));
       await checkMarkdownPreview(page, markdownFile);
       await checkFileLineLinks(page, base, fileLineFixtures);
+      await checkSkillInstructions(page, base, followupSettings);
+      await checkModelOverrides(page, base);
       await checkExternalReferenceBoundary(page, base, externalReferenceFixtures);
+      await checkBlockedPreferences(page, base, RICH);
       assert.deepEqual(errors, [], "Browser errors during Markdown preview and line links");
       await harness.closeContext(context); context = undefined; page = undefined;
       });

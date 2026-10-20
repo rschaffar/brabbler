@@ -9,6 +9,9 @@ export function seedFileLineLinks({ project, writeSession, message }) {
   writeFileSync(sibling, "// sibling source line 1\nexport const sibling = true;\n");
   mkdirSync(join(project, "nested-links"));
   writeFileSync(join(project, "nested-links", "links.md"), `[Parent within root](../line-target.ts#L180)\n\n[Outside preview root](../../other-project/sibling-line-target.ts#L2)\n\n[Absolute sibling](${sibling}#L2)\n`);
+  writeFileSync(join(project, "followups.csv"), "name,notes,value\nalpha,\"line one\nline two\",10\n" + Array.from({ length: 3000 }, (_, i) => `row-${i},plain,${i}\n`).join(""));
+  writeFileSync(join(project, "followups.tsv"), "key\ttext\none\tx,y\n");
+  writeFileSync(join(project, "followups-anchors.md"), '<a id="start"></a>\n\n[Jump to section](#target)\n\n[Jump to heading](#scoped-anchor-target)\n\n## Target\n\n' + "Anchor paragraph.\n\n".repeat(90) + '<a id="target"></a>\n\n## Scoped anchor target\n\n[Return to start](#start)\n');
   const code = join(project, "line-target.ts");
   const codeContent = Array.from({ length: 260 }, (_, i) => i === 179 ? "export function linkedFunction() { return 42; }" : `// source line ${i + 1}`).join("\n");
   writeFileSync(code, codeContent);
@@ -23,7 +26,7 @@ export function seedFileLineLinks({ project, writeSession, message }) {
   const listLine = lines.indexOf("- Target list item") + 1;
   const codeLine = lines.indexOf("function markdownFunction() {}") + 1;
   writeSession(sessionId, [message("user", null, "user", "File line navigation"), message("answer", "user", "assistant", [
-    { type: "text", text: `[linkedFunction](line-target.ts#L180)\n\n\`line-target.ts:180:3\`\n\n[Range](line-target.ts#L180-L182)\n\n[Large file](large-line-target.txt#L1200)\n\n[Heading](line-target.md#L${headingLine})\n\n[Paragraph](line-target.md:${paragraphLine})\n\n[List item](line-target.md#L${listLine})\n\n[Markdown code](line-target.md#L${codeLine})\n\n[Frontmatter](line-target.md#L2)\n\n[Math](line-target.md#L7)\n\n[Missing line](line-target.ts#L9999)\n\n[Outside chat root](../other-project/sibling-line-target.ts#L2)\n\n[Encoded outside root](%2e%2e/other-project/sibling-line-target.ts#L2)\n\n[Absolute sibling](${sibling}#L2)\n\n[Nested preview](nested-links/links.md)` },
+    { type: "text", text: `[linkedFunction](line-target.ts#L180)\n\n\`line-target.ts:180:3\`\n\n[Range](line-target.ts#L180-L182)\n\n[Large file](large-line-target.txt#L1200)\n\n[Heading](line-target.md#L${headingLine})\n\n[Paragraph](line-target.md:${paragraphLine})\n\n[List item](line-target.md#L${listLine})\n\n[Markdown code](line-target.md#L${codeLine})\n\n[Frontmatter](line-target.md#L2)\n\n[Math](line-target.md#L7)\n\n[Missing line](line-target.ts#L9999)\n\n[Outside chat root](../other-project/sibling-line-target.ts#L2)\n\n[Encoded outside root](%2e%2e/other-project/sibling-line-target.ts#L2)\n\n[Absolute sibling](${sibling}#L2)\n\n[Nested preview](nested-links/links.md)\n\n[CSV preview](followups.csv)\n\n[CSV source line](followups.csv#L3)\n\n[TSV preview](followups.tsv)\n\n[Fragment preview](followups-anchors.md)` },
   ])]);
   return { sessionId, headingLine, paragraphLine, listLine, codeLine, code, codeContent, nested: join(project, "nested-links", "links.md") };
 }
@@ -167,6 +170,37 @@ export async function checkFileLineLinks(page, base, fixture) {
   await panel.getByText("Unsaved changes", { exact: true }).waitFor({ state: "hidden" });
   writeFileSync(fixture.code, fixture.codeContent);
   await page.waitForFunction(expected => document.querySelector('#file-panel textarea')?.value === expected, fixture.codeContent);
+  await click("CSV preview");
+  const table = panel.getByRole("table");
+  await table.getByRole("columnheader", { name: "name", exact: true }).waitFor();
+  assert.ok(Number(await table.getAttribute("aria-rowcount")) > 1000);
+  assert.ok(await table.getByRole("row").count() < 150, "large CSV renders only viewport rows");
+  assert.equal(await table.getByRole("row").nth(1).getByRole("cell").nth(1).getAttribute("title"), "line one\nline two");
+  await pane.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await page.waitForFunction(() => Number(document.querySelector('#file-panel [role="table"] [role="row"][aria-rowindex]:last-child')?.getAttribute("aria-rowindex")) > 1000);
+  assert.ok(await table.getByRole("row").count() < 150);
+  await click("CSV source line");
+  await assertJump('[data-line-number="3"]');
+  await click("TSV preview");
+  await panel.getByRole("columnheader", { name: "text", exact: true }).waitFor();
+  await panel.getByRole("cell", { name: "x,y", exact: true }).waitFor();
+  await click("Fragment preview");
+  const originalUrl = page.url(), pages = page.context().pages().length;
+  await panel.getByRole("link", { name: "Jump to section", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('#file-panel .file-viewer-content')?.scrollTop > 500);
+  await panel.getByRole("link", { name: "Return to start", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('#file-panel .file-viewer-content')?.scrollTop < 100);
+  await panel.getByRole("link", { name: "Jump to heading", exact: true }).click();
+  await page.waitForFunction(() => {
+    const pane = document.querySelector('#file-panel .file-viewer-content');
+    const heading = pane?.querySelector('[data-heading-anchor="scoped-anchor-target"]');
+    if (!pane || !heading) return false;
+    const p = pane.getBoundingClientRect(), h = heading.getBoundingClientRect();
+    return h.top >= p.top - 1 && h.bottom <= p.bottom + 1;
+  });
+  assert.equal(page.url(), originalUrl);
+  assert.equal(page.context().pages().length, pages);
   await returnToChat();
+  console.log(`PASS: CSV/TSV virtualization, quoted records, CSV source-line override and scoped Markdown fragments at ${page.viewportSize().width}px`);
   console.log(`PASS: rejected relative links with accessible feedback, absolute siblings, nested previews, chat explicit/inline line links, ranges, repeated tabs, large chunks, rendered Markdown and save-owner/draft retention at ${page.viewportSize().width}px`);
 }
