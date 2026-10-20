@@ -1,6 +1,6 @@
 # File split workspace — UX proposal
 
-Status: **Implementation complete; final acceptance pending after a test-contract update.** The user authorized implementation and confirmed both opt-in link destinations per document and parked-editor recovery without changing chat. Work remains isolated on `docs/file-split-workspace-design`. This status grants no integration, publication or activation authority; completion/integration remains a separate Git workflow decision.
+Status: **Implementation and complete acceptance finished.** The user authorized implementation and confirmed both opt-in link destinations per document and parked-editor recovery without changing chat. Work remains isolated on `docs/file-split-workspace-design`. This status grants no integration, publication or activation authority; completion/integration remains a separate Git workflow decision.
 
 ## Goal
 
@@ -15,18 +15,18 @@ Research baseline: local `rst-main` at `1fe0a04c2d6d11e0c301457e379289d3a61f1508
 - `components/AppShell.tsx:1091–1117` opens every file in one shared group and activates it. A Markdown guide therefore disappears when its source link activates another tab.
 - `components/TabBar.tsx` has one tab list; `components/file-tab-state.ts` keys tabs by path and protects pending jumps and in-flight saves. Merely adding CSS columns would not give independent navigation or safe duplicate views.
 - `components/MarkdownBody.tsx` and Markdown links in `components/FileViewer.tsx` already resolve file links and source targets. `lib/file-links.ts:20–26` deliberately handles Ctrl/Cmd-click in-app for local files: preserve this instead of inventing browser-tab semantics.
-- [File/link/editing contracts](../feature-internals.md) already own relative-root restrictions, reference-only reads, source jumps, drafts and save ownership. These remain authoritative.
+- [File/link/editing contracts](../../feature-internals.md) already own relative-root restrictions, reference-only reads, source jumps, drafts and save ownership. These remain authoritative.
 - Files and terminals currently share the right panel; the panel can expand without dismissing chat. Git Explorer and per-file diff Wide view have separate expansion/focus contracts.
 
 ## Plan Relationship
 
-No existing active plan found for file tab groups or cross-pane document links. [Git Explorer sidecar](2026-09-28_git-explorer-sidecar-branches-plan.md) and [Explorer fullscreen](2026-10-13_git-explorer-fullscreen-plan.md) own adjacent surfaces, not a general file workspace. This proposal does not reopen their Git APIs, immutable review rendering or outstanding checks.
+No existing active plan found for file tab groups or cross-pane document links. [Git Explorer sidecar](../2026-09-28_git-explorer-sidecar-branches-plan.md) and [Explorer fullscreen](../2026-10-13_git-explorer-fullscreen-plan.md) own adjacent surfaces, not a general file workspace. This proposal does not reopen their Git APIs, immutable review rendering or outstanding checks.
 
 The supplied review document is an example workflow, not an input to change or copy into this repository.
 
 ## Experience
 
-[Static visual concept](assets/file-split-workspace.svg) — three-file review layout, routing indicator and a four-file variation. This is a wireframe, not a working prototype.
+[Static visual concept](../assets/file-split-workspace.svg) — three-file review layout, routing indicator and a four-file variation. This is a wireframe, not a working prototype.
 
 ### 1. Start ordinary; opt in from the guide
 
@@ -141,7 +141,7 @@ Nested menus/dialogs and diff Wide view consume Escape first; then pane Focus re
 
 ## Architecture
 
-The following is the historical proposal, not the current API reference. Implemented ownership/lifetime decisions now live in [ADR 0027](../adr/0027-file-split-workspaces.md), current behavior in [Feature contracts](../feature-internals.md), and the source map in [Architecture](../architecture.md).
+The following is the historical proposal, not the current API reference. Implemented ownership/lifetime decisions now live in [ADR 0027](../../adr/0027-file-split-workspaces.md), current behavior in [Feature contracts](../../feature-internals.md), and the source map in [Architecture](../../architecture.md).
 
 - Introduce a client-side workspace model with a recursive layout tree: a split has an explicit left/right or top/bottom axis, ratio and two children; a group has a stable ID, ordered view IDs, active view, optional preview and bounded location history. UI words remain right/below.
 - Separate **resource**, **view**, **group** and **link intent**. A resource preserves the existing path/access/source context. A view has its own ID and viewer state. A guide view optionally names a destination group. An open intent carries origin view, source-session/cwd, path, line/page and explicit disposition. Capture origin context when the user acts; do not later substitute the currently selected chat.
@@ -220,28 +220,28 @@ The user has authorized implementation. No item is complete until its evidence e
 - [x] Not applicable: the separate disposable user-prototype step was superseded by authorization to implement and browser-test the actual workspace. The user confirmed per-document opt-in and unchanged-chat parked recovery; no unobserved usability study or Herdr comparison is claimed.
 - [x] Resolve writable-path identity, stable hosting and nested geometry in the actual implementation; record the rationale in ADR 0027 and preserve the existing authorization/PTY boundaries. Core identity/geometry tests and real save/terminal checks provide evidence, not the original sketch alone.
 - [x] Add `lib/file-workspace.ts`, `file-workspace-store.ts`, domain types and transition tests for nested groups, routing, preview/history, duplicates, stale destinations and geometry refusal; focused core selections pass.
-- [ ] Finish grouped/lazy tab-panel semantics in the existing Files host; wide/compact/mobile independent-view and keep-open checks pass, with the final inactive-panel ARIA-target regression awaiting settled acceptance.
+- [x] Finish grouped/lazy tab-panel semantics in the existing Files host; wide/compact/mobile independent-view and keep-open checks pass, including valid inactive-panel ARIA targets without mounting readers/subscriptions.
 - [x] Carry captured open context through chat/file Markdown and ordinary entry points. Source-link, traversal, absolute-reference and session-switch browser checks pass. A real two-page PDF regression proves repeated page intents reload only the embed while retaining its host, guide scroll and focus.
 - [x] Add per-view destination controls and shared accessible link actions. Existing Markdown inventory checks confirm opt-in routing, one-shot overrides, source jumps and keyboard/menu navigation without requiring dragging or modifiers.
 - [x] Add server-identified single-owner edits, typing-through-Save protection and guarded close/join/reset. File-edit acceptance proves real saves/conflicts; Markdown acceptance proves cross-view/cross-session ownership and reference-only no-probe/no-write boundaries.
 - [x] Add in-memory scoped parking, responsive projection and explicit return to the moved guide/parked owner. Browser checks prove reader scroll restoration, pane/menu/Escape focus and unchanged-chat recovery; terminal checks prove live PTY identity. Missing-file failures stay inside the unchanged per-view error path. No reload persistence is claimed.
 - [x] Hand current behavior to `docs/feature-internals.md`, module ownership to `docs/architecture.md`, PTY invariants to `docs/terminal.md`, labels to the English catalog and accepted tradeoffs to ADR 0027. This proposal is historical, not the operational owner.
-- [ ] Run complete acceptance after the lazy-panel test-contract update, using `nix run .#test -- all --workers 4 --jobs 4`; record the exact candidate, result, input identity, requested/effective widths, timing and artifacts. The earlier full pass at `af4f8a3` and focused PDF pass are separate evidence, not a relabelled new-tip run.
+- [x] Run complete acceptance on `14c4107788e7b000ba2bc3181a8ae05c66fbc53e` with `nix run .#test -- all --workers 4 --jobs 4`; all 345 core files / 2,617 tests, all 24 browser/terminal groups and the genuine deployment VM pass. Exact input, effective widths, intervals and artifacts are recorded below. The earlier full pass and focused checks remain separate evidence.
 
-Focused commands should select the actual new reducer test file through `nix run .#test -- core --file <new-test-path>`; existing integration owners are `e2e --group markdown`, `file-edit`, `diff-context` and `terminal`. Register new scenarios in the maintained group inventory instead of adding a second unsupported runner. [Testing](../testing.md) and [browser acceptance](../../e2e/README.md) own execution, containment and evidence requirements.
+Focused commands should select the actual new reducer test file through `nix run .#test -- core --file <new-test-path>`; existing integration owners are `e2e --group markdown`, `file-edit`, `diff-context` and `terminal`. Register new scenarios in the maintained group inventory instead of adding a second unsupported runner. [Testing](../../testing.md) and [browser acceptance](../../../e2e/README.md) own execution, containment and evidence requirements.
 
 ## Completion Checklist
 
-- [ ] A walkthrough stays visible while at least five consecutive source links reuse one chosen pane, without creating additional panes or retained tabs.
-- [ ] The user can keep three and four files visible using both right and below splits, rearrange them via menus and restore after temporary pane/workspace focus.
-- [ ] Two guides can target different panes; chat and unrelated documents retain ordinary behavior. A one-shot override changes no saved route; a closed destination never silently replaces the guide.
-- [ ] Preview retention, Back/Forward, repeated line jumps, duplicate views, unsaved edits, save conflicts, stale callbacks and denied references pass focused core and real browser checks.
-- [ ] Keyboard/touch users can perform the whole workflow; responsive projection, Escape isolation, in-memory workspace restoration, existing reload safeguards and terminal identity checks pass.
-- [ ] Maintained documentation and complete Nix acceptance evidence describe the actual settled candidate; implementation and any local integration use their separately authorized lifecycle.
+- [x] A walkthrough stays visible while at least five consecutive source links reuse one chosen pane, without creating additional panes or retained tabs.
+- [x] The user can keep three and four file views visible using both right and below splits, rearrange them via menus and restore after temporary pane/workspace focus.
+- [x] Two guides can target different panes; chat and unrelated documents retain ordinary behavior. A one-shot override changes no saved route; a closed destination never silently replaces the guide.
+- [x] Preview retention, Back/Forward, repeated source/PDF jumps, duplicate views, unsaved edits, save conflicts, stale callbacks and denied references pass focused core and real browser checks.
+- [x] Keyboard-accessible menus and touch-capable controls provide the workflow; browser checks prove responsive projection, Escape isolation, parked restoration, existing reload/terminal safeguards and live terminal identity. No manual assistive-technology or user study is claimed.
+- [x] Maintained guides/ADR and complete Nix acceptance describe the settled application candidate. Evidence/archive follow-ups use documentation-only checks; any local integration remains a separate authorized Git lifecycle.
 
 ## Evidence and handoff
 
-The earlier design-only claim ("Application checks are not claimed for a document-only proposal") is superseded by explicit implementation authorization and the evidence below. The initial 45/55 ratio and graphical mini-map were recommendations, not user findings: first delivery uses equal splits, constrained parent-local geometry and native labelled controls. No measured usability optimum or user study is claimed.
+The earlier design-only claim ("Application checks are not claimed for a document-only proposal") is superseded by explicit implementation authorization and the evidence below. The initial 45/55 ratio, graphical mini-map and content-minimum figures were recommendations, not user findings: first delivery uses equal splits, constrained parent-local geometry and native labelled controls as documented in the feature guide. No measured usability optimum or user study is claimed.
 
 Current mechanisms and accepted decisions have moved to the maintained guides and ADR 0027 named above. Reload persistence, dragging and a separate layout mini-map are explicitly deferred, not unfinished first-delivery obligations. Integration, activation and publication remain separate workflow/permission boundaries.
 
@@ -256,4 +256,15 @@ Current mechanisms and accepted decisions have moved to the maintained guides an
 
 ### Settled-candidate acceptance
 
-Attempt `/tmp/pi-web-file-workspace-settled-acceptance.BAdDfV/output.log` at `2787904440e59d31f3340c08e4b05978c1c2158a` stopped on the source assertion that previously removed inactive panel hosts along with readers (core 515 passed / 1 failed; peers drained). The implementation now deliberately retains an empty hidden ARIA target, not a reader/subscription. Its guard contract is updated to assert the same selected/draft/saving predicate and conditional provider mounting. This failed attempt is not acceptance; the complete post-correction run remains pending. Immutable input: `/tmp/pi-web-test-source-PYsydU/source`.
+Attempt `/tmp/pi-web-file-workspace-settled-acceptance.BAdDfV/output.log` at `2787904440e59d31f3340c08e4b05978c1c2158a` stopped on the source assertion that previously removed inactive panel hosts along with readers (core 515 passed / 1 failed; peers drained). The implementation now deliberately retains an empty hidden ARIA target, not a reader/subscription. Its guard contract is updated to assert the same selected/draft/saving predicate and conditional provider mounting. This failed attempt is not acceptance. Immutable input: `/tmp/pi-web-test-source-PYsydU/source`.
+
+The post-correction complete run passed on **`14c4107788e7b000ba2bc3181a8ae05c66fbc53e`**:
+
+- Command: `nix run .#test -- all --workers 4 --jobs 4`, **399s end to end**, including in-run realization but excluding model/coordination work. Requested/effective browser and core widths: **4/4**. Admission observed 32 CPUs and about 43.1 GiB available memory; no competing browser-group client was present, but host load was 10.4, so this is not a machine-exclusive or benchmark claim.
+- Core/static/plugin acceptance: **345/345 files; 2,617/2,617 tests; zero skipped/cancelled**. Outer 387.0s; 69.9s before the first test; test-execution interval 316.7s. Evidence: `/tmp/pi-web-test-core.lySSS4/run.json`, output `/nix/store/xdxdmahkhgc94b1s4dppm3g0923zsfgr-pi-web-core-checks`.
+- Complete browser/terminal inventory: **24/24 groups**. Outer 331.1s; 7.4s before the first capsule; 323.6s across sandbox execution. Evidence: `/tmp/pi-web-test-browser.9ZaPpX/run.json`. This includes the repeated PDF/embed, lazy ARIA target, saved-scroll, four-pane, independent-guide, move/reset, parked-owner, real edit/save and PTY checks.
+- Genuine Home Manager deployment VM: activation, environment permissions, HTTP write, restart persistence and production PTY all pass. Outer 61.2s; evidence execution 18.6s. The remainder includes realization/setup/collection; a finer dedicated preparation interval is unavailable. Evidence: `/tmp/pwv-BPSe6k/run.json`. Stage intervals overlap and must not be added.
+- Matching immutable source: `/tmp/pi-web-test-source-ALM8In/source`, pinned `/nix/store/zcf65pdzlr2k6giiys9h2mjixpvzxrrd-source`, digest **`c14a328015e19b491c88d45f84e018e70d073569923da188f50105843e6b7cec`**. Coordinator log/status: `/tmp/pi-web-file-workspace-acceptance-qualified.MUlEFu/`. The run used the pinned isolated production package/Node 24.21.0/Chromium 155, not a host development or installed service.
+- Representative browser captures: `/nix/store/i62wmxgj9shysai05a4spc76a8dzwq9b-pi-web-browser-markdown-diagnostics/artifacts/file-workspace-three-panes-1280x800.png` and `file-workspace-four-panes-1280x800.png` in the same directory. These are synthetic sandbox scenarios, not the supplied live review session.
+
+No application/test inputs change after this pass. The subsequent evidence/archive commit receives local-document-link, whitespace/static-asset and unchanged-input checks; the application acceptance above belongs to `14c4107`, not a relabelled later tip. There is no activation, publication or cleanup authorization in this handoff.
