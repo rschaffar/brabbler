@@ -1,6 +1,6 @@
 "use client";
 import "./file-workspace.css";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore, useLayoutEffect } from "react";
 import { FileViewer } from "./FileViewer";
 import { TabBar } from "./TabBar";
 import { FileEditContext } from "@/hooks/useFileEditSession";
@@ -15,7 +15,10 @@ import {
   type FileWorkspaceState, type FileLocation, type FileDisposition, type FileRect, type SplitAxis,
 } from "@/lib/file-workspace";
 
-export interface FileWorkspaceHandle { open: (location: FileLocation, disposition?: FileDisposition) => void }
+export interface FileWorkspaceHandle {
+  open: (location: FileLocation, disposition?: FileDisposition) => void;
+  focus: (key?: string) => void;
+}
 export interface FileWorkspaceStatus { count: number; groups: { id: string; label: string }[]; canSplit: boolean }
 interface Props {
   workspaceKey: string;
@@ -24,6 +27,7 @@ interface Props {
   gitRefreshKey: number;
   onStatus: (status: FileWorkspaceStatus) => void;
   onShowFiles: () => void;
+  onEmpty: () => void;
   onFocusWorkspace: (key: string) => void;
   mentionCwd?: string;
   onMentionLines: (path: string, start: number, end: number) => void;
@@ -37,7 +41,7 @@ const position = (rect: FileRect) => ({ position: "absolute" as const, left: rec
 /** Layout topology never becomes the React ancestry of a live file/terminal. */
 export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function FileWorkspace(props, ref) {
   const { t } = useI18n();
-  const { onStatus, onFocusWorkspace, onShowFiles } = props;
+  const { onStatus, onFocusWorkspace, onShowFiles, workspaceKey, presented } = props;
   const [store] = useState(() => new FileWorkspaceStore());
   const bank = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   const [edits] = useState(() => new FileEditSessions());
@@ -109,6 +113,22 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
       return routeFrom ? patchFileView(next, routeFrom, { route: destination }) : next;
     });
   };
+  const pendingDomFocus = useRef<{ key: string; group: string } | undefined>(undefined);
+  const flushDomFocus = useCallback(() => {
+    const target = pendingDomFocus.current;
+    if (!target || target.key !== workspaceKey || !presented || document.querySelector("dialog:modal")) return;
+    const view = store.snapshot()[target.key]?.groups[target.group]?.active;
+    const element = view ? document.getElementById(`file-view-${encodeURIComponent(composite(target.key, view))}`)
+      : root.current?.querySelector<HTMLElement>(`[data-file-pane="${target.group}"]`);
+    if (element?.getClientRects().length) {
+      element.focus({ preventScroll: true }); pendingDomFocus.current = undefined;
+    }
+  }, [store, workspaceKey, presented]);
+  useLayoutEffect(() => { flushDomFocus(); });
+  const focusPaneDom = useCallback((key: string, group: string) => {
+    pendingDomFocus.current = { key, group };
+    queueMicrotask(flushDomFocus);
+  }, [flushDomFocus]);
   const focusView = useCallback((owner: string) => {
     for (const [key, workspace] of Object.entries(store.snapshot())) {
       const id = Object.keys(workspace.views).find(id => composite(key, id) === owner);
@@ -116,17 +136,17 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
       if (id && group) {
         commit(key, state => ({ ...selectFileView(state, group, id), focused: undefined }));
         onFocusWorkspace(key); onShowFiles();
-        requestAnimationFrame(() => document.getElementById(`file-view-${encodeURIComponent(owner)}`)?.focus({ preventScroll: true }));
+        focusPaneDom(key, group);
         return;
       }
     }
-  }, [commit, store, onFocusWorkspace, onShowFiles]);
+  }, [commit, store, focusPaneDom, onFocusWorkspace, onShowFiles]);
   const focusGroup = (id: string) => {
     const view = state.groups[id]?.active;
     if (view) focusView(composite(props.workspaceKey, view));
     else {
       commit(props.workspaceKey, state => ({ ...selectFileView(state, id), focused: undefined }));
-      requestAnimationFrame(() => root.current?.querySelector<HTMLElement>(`[data-file-pane="${id}"]`)?.focus());
+      focusPaneDom(props.workspaceKey, id);
     }
   };
   const open = (location: FileLocation, origin?: string, disposition: FileDisposition = { kind: "normal" }, originWorkspace = props.workspaceKey) => {
@@ -145,10 +165,14 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
     if (compact && destination && destination.id !== base) {
       if (origin) setReturnView({ key: props.workspaceKey, id: origin });
       commit(props.workspaceKey, state => selectFileView(state, destination.id));
+      focusPaneDom(props.workspaceKey, destination.id);
     }
     setStatus(t("workspace.opened", { name: location.label }));
   };
-  useImperativeHandle(ref, () => ({ open: (location, disposition) => open(location, undefined, disposition) }));
+  useImperativeHandle(ref, () => ({
+    open: (location, disposition) => open(location, undefined, disposition),
+    focus: (key = props.workspaceKey) => focusPaneDom(key, (store.snapshot()[key] ?? EMPTY).activeGroup),
+  }));
   const protect = (key: string, id: string) => {
     const session = edits.snapshot(composite(key, id));
     return session.owner === composite(key, id) ? session : { saving: false, draft: undefined };
@@ -164,6 +188,11 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
     if (!canClose(props.workspaceKey, [id])) return;
     edits.close(composite(props.workspaceKey, id));
     commit(props.workspaceKey, state => closeFileView(state, id));
+    const next = store.snapshot()[props.workspaceKey] ?? EMPTY;
+    if (!Object.keys(next.views).length) {
+      pendingDomFocus.current = undefined;
+      props.onEmpty();
+    } else focusPaneDom(props.workspaceKey, next.activeGroup);
   };
   const finishClose = (moveTo?: string) => {
     if (!closing || closing.key !== props.workspaceKey) return;
@@ -174,6 +203,12 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
     commit(closing.key, state => closeFileGroup(state, closing.id, moveTo));
     closeDialog.current?.close(); setClosing(undefined);
   };
+  const parkedEditors = Object.entries(bank).flatMap(([key, workspace]) => key === props.workspaceKey ? []
+    : Object.values(workspace.views).flatMap(view => {
+      const owner = composite(key, view.id), session = edits.snapshot(owner);
+      return session.owner === owner && (session.saving || (session.draft && session.draft.content !== session.draft.baseline))
+        ? [{ owner, label: `${view.label} — ${view.cwd ?? view.filePath}` }] : [];
+    }));
   const contextFor = (key: string, id: string) => ({ store: edits, viewId: composite(key, id), focusView });
   // All live view hosts are siblings. Group moves therefore preserve React identity.
   const hosts = Object.entries(bank).flatMap(([key, workspace]) => Object.values(workspace.views).flatMap(view => {
@@ -219,14 +254,25 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
     onKeyDown={event => {
       if (event.key !== "Escape") return;
       const details = (event.target as Element).closest("details[open]");
-      if (details) { details.removeAttribute("open"); event.preventDefault(); event.stopPropagation(); return; }
+      if (details) {
+        details.removeAttribute("open");
+        const group = details.closest<HTMLElement>("[data-file-pane]")?.dataset.filePane;
+        if (group) focusPaneDom(props.workspaceKey, group);
+        event.preventDefault(); event.stopPropagation(); return;
+      }
       if (state.focused) { commit(props.workspaceKey, state => ({ ...state, focused: undefined })); event.preventDefault(); event.stopPropagation(); }
     }}>
+    {parkedEditors.length > 0 && <div className="file-workspace-switcher">
+      <select aria-label={t("workspace.parkedEditors")} value="" onChange={event => { if (event.target.value) focusView(decodeURIComponent(event.target.value)); }}>
+        <option value="">{t("workspace.chooseEditor", { count: parkedEditors.length })}</option>
+        {parkedEditors.map(editor => <option key={editor.owner} value={encodeURIComponent(editor.owner)}>{editor.label}</option>)}
+      </select>
+    </div>}
     {(compact || state.focused) && ordered.length > 1 && <div className="file-workspace-switcher">
       <select aria-label={t("workspace.choosePane")} value={projected} onChange={event => commit(props.workspaceKey, state => ({ ...selectFileView(state, event.target.value), focused: state.focused ? event.target.value : undefined }))}>
         {groups.map(group => <option key={group.id} value={group.id}>{group.label}</option>)}
       </select>
-      {state.focused && <button type="button" onClick={() => commit(props.workspaceKey, state => ({ ...state, focused: undefined }))}>{t("workspace.restore")}</button>}
+      {state.focused && <button type="button" onClick={() => focusGroup(state.focused!)}>{t("workspace.restore")}</button>}
       {returnView?.key === props.workspaceKey && state.views[returnView.id] && <button type="button" onClick={() => { focusView(composite(returnView.key, returnView.id)); setReturnView(undefined); }}>{t("workspace.backToGuide")}</button>}
     </div>}
     <div ref={root} className="file-workspace-canvas" style={{ position: "relative", flex: 1, minHeight: 0 }}>
@@ -239,6 +285,7 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
           <div className="file-workspace-group-header">
             <span title={paneName(id)}>{id.slice(5)}</span>
             <div style={{ minWidth: 0, flex: 1 }}><TabBar tabs={group.views.map(viewId => ({ ...state.views[viewId], label: `${state.views[viewId].label}${group.views.filter(other => state.views[other].filePath === state.views[viewId].filePath).length > 1 ? ` · ${t("workspace.viewNumber", { number: viewId.split("-").at(-1)! })}` : ""}${state.views[viewId].preview ? ` · ${t("workspace.preview")}` : ""}` }))}
+              ariaLabel={paneName(id)} getPanelId={viewId => `file-view-${encodeURIComponent(composite(props.workspaceKey, viewId))}`}
               activeTabId={group.active ?? ""} onSelectTab={viewId => commit(props.workspaceKey, state => selectFileView(state, id, viewId))} onCloseTab={closeView} onKeepTab={viewId => commit(props.workspaceKey, state => patchFileView(state, viewId, { preview: false }))} /></div>
           </div>
           <div className="file-workspace-controls">
@@ -255,12 +302,21 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
               <option value="new-right" disabled={!canSplit(id, "right")}>{t("workspace.newRight")}</option>
               <option value="new-below" disabled={!canSplit(id, "below")}>{t("workspace.newBelow")}</option>
             </select>}
-            {view?.preview && <button type="button" onClick={() => commit(props.workspaceKey, state => patchFileView(state, view.id, { preview: false }))}>{t("workspace.keep")}</button>}
-            <details className="file-workspace-options" onClick={event => { if ((event.target as Element).closest("button")) event.currentTarget.open = false; }}><summary aria-label={t("workspace.paneActions")}>⋯</summary><div className="file-workspace-menu">
+            {view?.preview && <button type="button" onClick={() => { commit(props.workspaceKey, state => patchFileView(state, view.id, { preview: false })); focusPaneDom(props.workspaceKey, id); }}>{t("workspace.keep")}</button>}
+            <details className="file-workspace-options" onClick={event => {
+              if ((event.target as Element).closest("button")) {
+                event.currentTarget.open = false;
+                const next = store.snapshot()[props.workspaceKey] ?? EMPTY;
+                if (!pendingDomFocus.current) focusPaneDom(props.workspaceKey, next.activeGroup);
+              }
+            }}><summary aria-label={t("workspace.paneActions")}>⋯</summary><div className="file-workspace-menu">
               <button type="button" title={t("workspace.needSpace")} disabled={!canSplit(id, "right")} onClick={() => split(id, "right")}>{t("workspace.splitRight")}</button>
               <button type="button" title={t("workspace.needSpace")} disabled={!canSplit(id, "below")} onClick={() => split(id, "below")}>{t("workspace.splitBelow")}</button>
               {view && groups.filter(group => group.id !== id).map(group => <button type="button" key={group.id} onClick={() => commit(props.workspaceKey, state => moveFileView(state, view.id, group.id))}>{t("workspace.moveTo", { pane: group.label })}</button>)}
-              <button type="button" onClick={() => commit(props.workspaceKey, state => ({ ...state, focused: state.focused ? undefined : id }))}>{t(state.focused ? "workspace.restore" : "workspace.focus")}</button>
+              <button type="button" onClick={() => {
+                commit(props.workspaceKey, state => ({ ...state, focused: state.focused ? undefined : id }));
+                focusPaneDom(props.workspaceKey, id);
+              }}>{t(state.focused ? "workspace.restore" : "workspace.focus")}</button>
               <button type="button" onClick={() => focusGroup(ordered[(ordered.indexOf(id) + ordered.length - 1) % ordered.length])}>{t("workspace.previousPane")}</button>
               <button type="button" onClick={() => focusGroup(ordered[(ordered.indexOf(id) + 1) % ordered.length])}>{t("workspace.nextPane")}</button>
               <button type="button" disabled={ordered.length === 1} onClick={() => setClosing({ key: props.workspaceKey, id })}>{t("workspace.closePane")}</button>
@@ -297,14 +353,26 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
         }} />)}
     </div>
     <div role="status" className={status === t("workspace.needSpace") ? "file-workspace-notice" : "file-workspace-status"}>{status}</div>
-    <dialog ref={closeDialog} className="file-link-dialog" aria-label={t("workspace.closePane")} onClose={() => setClosing(undefined)} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeDialog.current?.close(); } }}>
+    <dialog ref={closeDialog} className="file-link-dialog" aria-label={t("workspace.closePane")} onClose={() => {
+      if (closing?.key === props.workspaceKey) {
+        const next = store.snapshot()[closing.key] ?? EMPTY;
+        focusPaneDom(closing.key, next.groups[closing.id] ? closing.id : next.activeGroup);
+      }
+      setClosing(undefined);
+    }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeDialog.current?.close(); } }}>
       <div className="file-workspace-menu">
         {groups.filter(group => group.id !== closing?.id).map(group => <button type="button" key={group.id} onClick={() => finishClose(group.id)}>{t("workspace.moveTabs", { pane: group.label })}</button>)}
         <button type="button" onClick={() => finishClose()}>{t("workspace.closeTabs")}</button>
         <button type="button" onClick={() => closeDialog.current?.close()}>{t("i18n.cancel")}</button>
       </div>
     </dialog>
-    <dialog ref={routeDialog} className="file-link-dialog" aria-label={t("workspace.chooseDestination")} onClose={() => setPending(undefined)} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); routeDialog.current?.close(); } }}>
+    <dialog ref={routeDialog} className="file-link-dialog" aria-label={t("workspace.chooseDestination")} onClose={() => {
+      if (pending?.key === props.workspaceKey) {
+        const next = store.snapshot()[pending.key] ?? EMPTY;
+        focusPaneDom(pending.key, viewGroup(next, pending.origin) ?? next.activeGroup);
+      }
+      setPending(undefined);
+    }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); routeDialog.current?.close(); } }}>
       <div className="file-workspace-menu">
         <button type="button" onClick={() => { if (pending?.key === props.workspaceKey) open(pending.location, pending.origin, { kind: "here" }); routeDialog.current?.close(); }}>{t("workspace.openHere")}</button>
         {groups.map(group => <button type="button" key={group.id} onClick={() => { if (pending?.key === props.workspaceKey) {

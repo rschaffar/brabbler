@@ -100,7 +100,7 @@ export async function checkOverflowTabs(page) {
     await page.getByRole("link", { name: `Overflow tab ${i}`, exact: true }).click();
     await panel.getByRole("tab", { name: `upstream-overflow-tab-${i}.txt`, exact: true }).waitFor();
   }
-  const list = panel.getByRole("tablist");
+  const list = panel.locator('[data-file-pane="pane-1"]').getByRole("tablist");
   assert.ok(await list.evaluate((node) => node.scrollWidth > node.clientWidth), "fixture must genuinely overflow");
   const last = list.getByRole("tab", { name: "upstream-overflow-tab-11.txt", exact: true });
   await last.scrollIntoViewIfNeeded();

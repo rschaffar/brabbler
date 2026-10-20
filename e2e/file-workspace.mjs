@@ -20,7 +20,7 @@ export async function checkFileWorkspace(page, base, fixture) {
   }
   await panel.getByRole("button", { name: "Expand file panel", exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('[data-file-pane="pane-1"] option[value="new-right"]')?.disabled);
-  const guideNode = await guide.elementHandle();
+  let guideNode = await guide.elementHandle();
   await panel.locator('[data-file-pane="pane-1"]').getByLabel("File link destination").selectOption("new-right");
   await page.waitForFunction(() => document.querySelectorAll('[data-file-pane]').length === 2);
   const guideContent = guide.locator(".file-viewer-content");
@@ -59,6 +59,44 @@ export async function checkFileWorkspace(page, base, fixture) {
   await duplicate.getByRole("button", { name: "Go to editor", exact: true }).waitFor();
   assert.equal(await duplicate.getByRole("button", { name: "Edit", exact: true }).count(), 0);
   await duplicate.getByRole("button", { name: "Go to editor", exact: true }).click();
+  assert.equal(await code.getByRole("textbox", { name: "Edit", exact: true }).inputValue(), "// a retained workspace draft\n");
+  // A foreign workspace's owner is reachable without switching the current chat.
+  await guideContent.evaluate(node => { node.scrollTop = 240; });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const parkedGuideScroll = await guideContent.evaluate(node => node.scrollTop);
+  await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
+  const showSidebar = async () => {
+    const button = page.getByRole("button", { name: "Show sidebar", exact: true });
+    if (await button.count()) await button.click();
+  };
+  await showSidebar();
+  await page.getByText("Split owner peer", { exact: true }).click();
+  await page.getByText("Peer review context", { exact: true }).waitFor();
+  await page.waitForFunction(id => new URLSearchParams(location.search).get("session") === id, fixture.peerSessionId);
+  await page.getByRole("link", { name: "Shared edit source", exact: true }).click();
+  await panel.getByRole("button", { name: "Go to editor", exact: true }).click();
+  await panel.getByText(/^Parked Files ·/).waitFor();
+  assert.equal(new URL(page.url()).searchParams.get("session"), fixture.peerSessionId, "Go to editor must not switch chat");
+  assert.equal(await code.getByRole("textbox", { name: "Edit", exact: true }).inputValue(), "// a retained workspace draft\n");
+  await panel.getByRole("button", { name: "Return to current session Files", exact: true }).click();
+  await panel.getByRole("tabpanel", { name: "Pane 1 — split-source-1.ts", exact: true }).getByRole("button", { name: "Go to editor", exact: true }).waitFor();
+  assert.equal(new URL(page.url()).searchParams.get("session"), fixture.peerSessionId);
+  await panel.getByLabel("Unsaved editors", { exact: true }).selectOption({ label: `split-source-1.ts — ${dirname(fixture.code)}` });
+  await panel.getByText(/^Parked Files ·/).waitFor();
+  assert.equal(new URL(page.url()).searchParams.get("session"), fixture.peerSessionId, "direct parked-editor recovery also leaves chat unchanged");
+  assert.equal(await code.getByRole("textbox", { name: "Edit", exact: true }).inputValue(), "// a retained workspace draft\n");
+  await panel.getByRole("button", { name: "Return to current session Files", exact: true }).click();
+  await panel.getByRole("button", { name: "Go to editor", exact: true }).waitFor();
+  await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
+  await showSidebar();
+  await page.getByText("Split review source", { exact: true }).click();
+  await page.waitForFunction(id => new URLSearchParams(location.search).get("session") === id, fixture.sessionId);
+  await page.getByRole("button", { name: "Show file panel", exact: true }).click();
+  await panel.getByRole("button", { name: "Expand file panel", exact: true }).click();
+  await guide.waitFor({ state: "visible" });
+  await page.waitForFunction(expected => document.querySelector('[role="tabpanel"][aria-label="Pane 1 — split-guide.md"] .file-viewer-content')?.scrollTop === expected, parkedGuideScroll);
+  // Clean parked readers may unmount; compare live identity only across subsequent layout changes.
+  guideNode = await guide.elementHandle();
   assert.equal(await code.getByRole("textbox", { name: "Edit", exact: true }).inputValue(), "// a retained workspace draft\n");
   const sourceFile = join(dirname(fixture.code), "split-source-1.ts"), original = readFileSync(sourceFile, "utf8");
   let releaseSave, saveStarted;

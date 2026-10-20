@@ -12,15 +12,18 @@ interface Props {
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
   onKeepTab?: (id: string) => void;
+  ariaLabel?: string;
+  getPanelId?: (id: string) => string;
 }
 
-export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onKeepTab }: Props) {
+export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onKeepTab, ariaLabel, getPanelId }: Props) {
   const { t } = useI18n();
   const [hoveredClose, setHoveredClose] = useState<string | null>(null);
 
   return (
     <div
       role="tablist"
+      aria-label={ariaLabel}
       style={{
         display: "flex",
         // Stretch above the horizontal scrollbar instead of clipping fixed-height tabs.
@@ -38,6 +41,8 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onKeepTab }
           <div
             key={tab.id}
             role="tab"
+            id={getPanelId ? `${getPanelId(tab.id)}-tab` : undefined}
+            aria-controls={getPanelId?.(tab.id)}
             aria-label={tab.kind === "terminal" ? t("terminal.tabLabel", { name: tab.label }) :
               tab.draft && tab.draft.content !== tab.draft.baseline ? `${tab.label} — ${t("files.unsaved")}` : tab.label}
             aria-selected={isActive}

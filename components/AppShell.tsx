@@ -504,6 +504,7 @@ export function AppShell() {
 
   // File workspaces park independently; terminal runtime hosts never move.
   const fileWorkspaceRef = useRef<FileWorkspaceHandle>(null);
+  const [parkedFileWorkspaceKey, setParkedFileWorkspaceKey] = useState<string | null>(null);
   const [fileStatus, setFileStatus] = useState<FileWorkspaceStatus>({ count: 0, groups: [], canSplit: false });
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>("files");
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
@@ -1228,7 +1229,10 @@ export function AppShell() {
     }
   }, [projectTrustBusy, projectTrustCwd]);
 
-  const fileWorkspaceKey = JSON.stringify([selectedSession?.id ?? null, selectedSession?.cwd ?? activeCwd ?? null]);
+  const currentFileWorkspaceKey = JSON.stringify([selectedSession?.id ?? null, selectedSession?.cwd ?? activeCwd ?? null]);
+  const fileWorkspaceKey = parkedFileWorkspaceKey ?? currentFileWorkspaceKey;
+  const parkedFileCwd = parkedFileWorkspaceKey ? (JSON.parse(parkedFileWorkspaceKey) as [string | null, string | null])[1] ?? "" : "";
+  useEffect(() => { setParkedFileWorkspaceKey(null); }, [currentFileWorkspaceKey]);
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
   const windowTitle = activeCwdName ? `${activeCwdName} - Pi Web` : "Pi Web";
 
@@ -2637,18 +2641,23 @@ export function AppShell() {
 
         {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
-          <div hidden={activeFileTabId !== "files"} style={{ height: "100%" }}>
+          <div hidden={activeFileTabId !== "files"} style={{ height: "100%", display: activeFileTabId === "files" ? "flex" : "none", flexDirection: "column" }}>
+            <div hidden={!parkedFileWorkspaceKey} role="status" style={{ display: parkedFileWorkspaceKey ? "flex" : "none", alignItems: "center", gap: 8, padding: "5px 8px", fontSize: 12, borderBottom: "1px solid var(--border)" }}>
+              <span title={parkedFileCwd} style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{translate("workspace.parked", { cwd: parkedFileCwd })}</span>
+              <button type="button" className="file-workspace-return" onClick={() => { setParkedFileWorkspaceKey(null); fileWorkspaceRef.current?.focus(currentFileWorkspaceKey); }}>{translate("workspace.returnCurrent")}</button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0 }}>
             <FileWorkspace ref={fileWorkspaceRef} workspaceKey={fileWorkspaceKey}
               active={rightPanelOpen && activeFileTabId === "files"} presented={activeFileTabId === "files"} gitRefreshKey={explorerRefreshKey}
               onStatus={setFileStatus} onShowFiles={() => { setActiveFileTabId("files"); setRightPanelOpen(true); }}
-              onFocusWorkspace={key => {
-                if (key === fileWorkspaceKey) return;
-                const [sessionId, cwd] = JSON.parse(key) as [string | null, string | null];
-                if (sessionId) void handleOpenSession(sessionId);
-                else if (cwd) void handleCwdChange(cwd);
+              onEmpty={() => {
+                if (terminalTabs.length) setActiveFileTabId(terminalTabs.at(-1)!.id);
+                else setRightPanelOpen(false);
               }}
+              onFocusWorkspace={key => setParkedFileWorkspaceKey(key === currentFileWorkspaceKey ? null : key)}
               mentionCwd={selectedSession?.cwd ?? newSessionCwd ?? activeCwd ?? undefined}
               onMentionLines={handleFileLineMention} onAtMention={handleAtMention} />
+            </div>
           </div>
           {terminalTabs.map((tab) => (
             <div key={tab.id} hidden={tab.id !== activeFileTabId} style={{ width: "100%", height: "100%" }}>

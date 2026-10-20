@@ -1585,12 +1585,13 @@ function TextFileViewer({
     if (requestedInitialDisplayMode === "diff" && hasGitDiff && displayMode !== "diff") return;
 
     const content = contentRef.current;
-    if (!content) return;
+    if (!content || !content.clientWidth || !content.clientHeight) return;
 
     content.scrollTop = viewerStateRef.current.scrollTop;
     content.scrollLeft = viewerStateRef.current.scrollLeft;
     scrollRestorePendingRef.current = false;
   }, [
+    viewportEpoch,
     data?.content,
     displayMode,
     error,

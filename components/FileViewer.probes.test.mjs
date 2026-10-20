@@ -21,7 +21,7 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
 for (const nextCwd of ["/new-checkout", "/old-checkout"]) test(`disposed watcher cannot stale current probes (${nextCwd})`, async () => {
   const oldRead = deferred();
   const edit = deferred(), git = deferred();
-  const refs = { editRequestRef: { current: 0 }, gitDiffRequestRef: { current: 0 }, probeEligibilityRef: { current: null }, draftRef: { current: null }, esRef: { current: null } };
+  const refs = { savingRef: { current: false }, editRequestRef: { current: 0 }, gitDiffRequestRef: { current: 0 }, probeEligibilityRef: { current: null }, draftRef: { current: null }, esRef: { current: null } };
   const state = {};
   function mount(cwd, fetchContent) {
     let cleanup;
@@ -29,7 +29,7 @@ for (const nextCwd of ["/new-checkout", "/old-checkout"]) test(`disposed watcher
     const exports = {};
     const scope = { ...refs, exports, cwd, filePath: "/file.txt", sourceSessionId: "session", watchEnabled: true, fetchContent,
       useCallback: fn => fn, useEffect: effect => { cleanup = effect(); }, URLSearchParams,
-      getFileApiUrl: () => "/file", setFileDraft() {}, setExternalChange() {}, setEditing() {}, setWatching() {},
+      getFileApiUrl: () => "/file", bindEditIdentity: () => true, setFileDraft() {}, setExternalChange() {}, setEditing() {}, setWatching() {},
       setEditSnapshot: v => { state.edit = v; }, setGitDiff: v => { state.git = v; },
       setGitDiffLoading: v => { state.loading = v; }, setGitDiffResolved: v => { state.resolved = v; },
       fetch: url => url.startsWith("/api/git/diff") ? git.promise : edit.promise,
@@ -43,6 +43,10 @@ for (const nextCwd of ["/new-checkout", "/old-checkout"]) test(`disposed watcher
   old.cleanup();
   const current = mount(nextCwd, async () => {});
   refs.probeEligibilityRef.current = { path: "/file.txt", cwd: nextCwd, sessionId: "session", edit: true, gitDiff: true };
+  refs.savingRef.current = true;
+  await current.fetchEditable("/file.txt");
+  assert.equal(refs.editRequestRef.current, 0, "do not start draft-clearing probes during a save");
+  refs.savingRef.current = false;
   const pending = [current.fetchEditable("/file.txt"), current.fetchGitDiff("/file.txt")];
   oldRead.resolve();
   await setImmediate();
@@ -53,7 +57,7 @@ for (const nextCwd of ["/new-checkout", "/old-checkout"]) test(`disposed watcher
     assert.equal(refs.editRequestRef.current, 1, "reject old identity before advancing generation");
     assert.equal(refs.gitDiffRequestRef.current, 1);
   }
-  edit.resolve(Response.json({ content: "saved", revision: "revision", writable: true }));
+  edit.resolve(Response.json({ content: "saved", revision: "revision", writable: true, editIdentity: "a".repeat(64) }));
   git.resolve(Response.json({ supported: true, patch: "patch" }));
   await Promise.all(pending);
   assert.equal(state.edit.revision, "revision");
@@ -61,4 +65,25 @@ for (const nextCwd of ["/new-checkout", "/old-checkout"]) test(`disposed watcher
   assert.equal(state.loading, false);
   assert.equal(state.resolved, true);
   current.cleanup();
+});
+
+test("an edit response arriving during save cannot clear typing that returned to the old baseline", async () => {
+  const pending = deferred();
+  const scope = {
+    exports: {}, cwd: "/project", sourceSessionId: "session", filePath: "/file.txt",
+    savingRef: { current: false }, editRequestRef: { current: 0 },
+    probeEligibilityRef: { current: { path: "/file.txt", cwd: "/project", sessionId: "session", edit: true } },
+    draftRef: { current: { content: "A", baseline: "A", revision: "r" } },
+    useCallback: fn => fn, getFileApiUrl: () => "/file", fetch: () => pending.promise,
+    bindEditIdentity: () => true, setFileDraft() { throw new Error("must retain latest typing during save"); },
+    setEditSnapshot() { throw new Error("must not overwrite the transaction snapshot"); }, setExternalChange() {}, setEditing() {},
+  };
+  new Script(ts.transpileModule(`${definitions.map(node => node.getText(file)).join("\n")} exports.fetchEditable = fetchEditable;`, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText).runInNewContext(scope);
+  const read = scope.exports.fetchEditable("/file.txt");
+  scope.savingRef.current = true;
+  pending.resolve(Response.json({ content: "A", revision: "r", writable: true, editIdentity: "a".repeat(64) }));
+  await read;
+  assert.equal(scope.draftRef.current.content, "A");
 });
