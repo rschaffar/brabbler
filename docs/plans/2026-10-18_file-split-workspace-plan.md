@@ -154,6 +154,53 @@ This is proposed architecture, not a description of an implemented API.
 - First delivery preserves workspaces **in memory**, including across chat switches, pane focus and responsive projection. A browser reload returns to the current ordinary single-group starting state; retain existing unsaved-edit warnings and terminal restoration behavior. Reload recovery is a follow-up, not a gate for the essential review workflow. Any later persistence design must be bounded/versioned navigation metadata only, never contents or drafts, and must reauthorize every restored resource.
 - No new package is assumed. First verify whether the existing resize/focus primitives can support nested axes without becoming a collection of global CSS widths. Choose a library only if that spike establishes a concrete need.
 
+## Preliminary implementation direction
+
+Requested follow-up: a solid implementation idea and justified restructuring, **not a detailed execution plan or authority to implement**. Prefer a bounded file-workspace extraction over an AppShell rewrite or general docking framework.
+
+### Boundaries worth introducing
+
+1. **Workspace model/controller.** Move file groups, view membership, active group, preview slots and routing into a focused `file-workspace` module. Pure transitions decide navigation and layout changes; a small React controller binds reads, edit sessions and callbacks. AppShell retains outer panel visibility/expansion and chat/session integration. Initially adapt the existing single-group behavior, rather than changing structure and UX simultaneously.
+2. **Domain types independent of tab presentation.** Today `components/TabBar.tsx:8–24` defines a Tab containing file identity, reading state, drafts, save flags and pending navigation; `file-tab-state.ts` imports that UI-owned type. Move domain types out of TabBar. Its new input is presentation metadata and callbacks, not the owner of file operations.
+3. **Distinct identities.** A read resource captures path plus originating cwd/source-session; a view has an opaque ID, navigation generation and reading/mode state; a group owns ordered view IDs; an edit session owns draft/baseline/save generation and its editor view. Same-file views share no scroll state, and sharing an edit lock grants no read/write authorization. Authoritative writable-path identity is an early design check: use a narrowly scoped edit-response identity field if existing metadata is insufficient, not browser path-string guesses or a new access API.
+4. **Explicit navigation commands.** Replace positional, context-poor file opens at the workspace boundary with an intent object carrying captured origin, target location and disposition. Ordinary opens adapt to it; resolved Markdown links do not choose panes. Existing `OpenFileLink` callers can migrate through an adapter instead of a repository-wide callback rewrite. Each explicit jump gets a navigation ID consumed by its existing viewer; do not put that ID into the React key. Source/session changes are separate identity transitions, not just new line targets.
+5. **Edit ownership outside the renderer.** Extract TextFileViewer's draft/save transaction lifecycle into a resource edit-session controller. The current local draft is mirrored to AppShell; it is not a controlled shared session. Making two copies of `initialDraft` would therefore create divergent editors. Preserve current revision checking, typing during save, conflict display and delayed navigation. A single editing owner is enough; other views show saved content and Go to editor. Do not add collaborative editing or a shared content cache.
+
+Suggested ownership, not committed filenames:
+
+```text
+AppShell                         outer shell, chat integration, expansion
+  FileWorkspace                  workspace controller and stable hosting
+    PaneGroup / TabBar           tabs, group controls, focus
+    FileViewHost → FileViewer    scoped read/view commands and edit binding
+    Terminal hosts               existing singleton runtime, retained parent
+
+lib/file-workspace/              domain types, transitions, navigation, geometry
+hooks/useFileEditSession         draft/save ownership and subscriptions
+```
+
+Keep frequently changing editor text and scroll reports out of whole-AppShell renders. Use per-session/per-view subscriptions or local refs as appropriate; a new global state library is not justified for this feature.
+
+### Layout tree is data, not viewer lifetime
+
+Prefer a binary split tree for geometry, with **stable sibling hosts** for pane chrome and live content. Derive rectangles and separator positions from the tree and available container size. Split, focus, mobile projection and moving a view then change geometry/visibility rather than its React ancestry. A naive recursive `Split → Group → FileViewer` renderer can remount surviving content when a leaf gains a split parent, even with unchanged keys. Likewise, a portal whose target changes is not a keep-alive solution.
+
+Prototype the exact stable-host DOM and its labelled regions/tab panels before committing to this rendering strategy. It must preserve browser focus/selection and semantic reading anchors, remain accessible in visual traversal order, and avoid mounting every inactive tab. Retain only visible viewers and lifecycle owners that must settle; keep terminal hosts mounted under one unchanged parent, matching the existing lifetime model. Layout shape must not trigger PTY creation/restore calls. Distinguish visible from focused: current terminal activation focuses xterm, so visibility in a multi-pane workspace cannot stand in for keyboard focus.
+
+Use the existing resize hook's pointer/keyboard behavior as the starting point: `hooks/useResizablePanel.ts` already supports both axes. Extract its input mechanics if useful, but give nested separators parent-local ratios and subtree-derived minimum sizes; do not proliferate outer-panel CSS variables, global resize listeners or localStorage keys per split. Leave the outer Files-panel resizer alone.
+
+### Reuse the current viewer, with narrow seams
+
+Do not rebuild source, Markdown, media, CSV or Pierre diff renderers. Extract edit-session ownership and explicit navigation handling from TextFileViewer, then keep its rendering pipelines. Share a small resolved-local-link action component between chat Markdown and file Markdown for menus/dispositions; retain their different base-directory, sanitization and source-position behavior. Do not unify the two complete Markdown renderers merely to add a link menu.
+
+Capture resource context when the view opens. Today AppShell passes `activeCwd` at render time (`components/AppShell.tsx:2632–2665`); the new controller must not accidentally rebind an old guide's reads, edit probes or delayed link navigation to a subsequently selected sidebar checkout/session. Existing server authorization remains final, and immutable Git Explorer/approval views stay outside this live-file workspace.
+
+### Shape of the first implementation
+
+First extract a behavior-preserving single-group workspace and its types; then establish stable hosting, independent view IDs and edit ownership. The first useful vertical slice is the guide plus a reusable code destination plus one independently visible third file, using both split axes. Preview replacement follows only once dirty/save protection is resource-owned. Menus provide creation/movement; no drag-and-drop, reload persistence, docking library, terminal feature work or broad shared-data cache is needed. Extend existing file-state, source-link, edit and terminal evidence rather than claiming pure reducer tests prove browser lifetime/focus behavior.
+
+This narrows the main implementation uncertainty to stable hosting/accessibility and authoritative edit identity. Resolve those with a small prototype before writing a detailed task sequence or estimating the feature.
+
 ## Non-Goals
 
 An IDE, multiple simultaneous chats, terminals in new geometric splits, synchronized scrolling, symbol lookup, historical line rebasing, Git snapshot links, browser-window management, arbitrary website embedding, persistent cross-device workspaces, review completion tracking, automatic chapter recognition, service activation or publication. Tab dragging is a possible later enhancement; first-delivery menus provide every required split/move action.
