@@ -222,8 +222,14 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
     if (op.featureBranch === policy.targetBranch) throw new Error("Feature and target must differ");
     const feature = await branchTip(cwd, op.featureBranch);
     const target = await branchTip(cwd, policy.targetBranch);
+    const operationBranch = op.action === "rebase" ? op.featureBranch : policy.targetBranch;
+    if (current.branch !== operationBranch) {
+      const requiredCheckout = (await worktrees(cwd)).find((entry) => entry.branch === operationBranch);
+      const hint = requiredCheckout ? `Use checkout: ${JSON.stringify(requiredCheckout.path)}.`
+        : `The required branch has no registered checkout; arrange one explicitly before invoking git_${op.action}.`;
+      throw new Error(`git_${op.action} checkout must be the registered checkout of ${op.action === "merge" ? "target" : "feature"} branch ${JSON.stringify(operationBranch)}, not selected branch ${JSON.stringify(current.branch)} at ${JSON.stringify(cwd)}. ${hint}`);
+    }
     if (await status(cwd)) throw new Error("Selected checkout must be clean, including untracked files");
-    if (current.branch !== (op.action === "rebase" ? op.featureBranch : policy.targetBranch)) throw new Error("Select the checkout of the operation's branch");
     const sourceCheckout = (await worktrees(cwd)).find((entry) => entry.branch === (op.action === "merge" ? op.featureBranch : policy.targetBranch));
     if (sourceCheckout) {
       const source = await checkout(sourceCheckout.path, cwd);

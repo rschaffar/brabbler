@@ -145,9 +145,16 @@ registration and captured physical identity/state are rechecked before effects.
   target can also be supplied for one invocation without saving a setting.
   Both branches must differ. No autostash, update-refs of other branches, automatic
   merge-preserving rebase, hidden retry or conflict cleanup.
-- `git_merge`: target `checkout` and `featureBranch`; uses captured local refs and
-  the configured method. Optional `targetBranch` / `mergeMethod` supply invocation
-  choices when the respective workflow setting is Ask, without changing settings.
+- `git_merge`: `checkout` of the **target branch**, not the feature worktree,
+  and `featureBranch`; uses captured local refs and the configured method.
+  Unlike `git_rebase`, do not reuse the feature checkout: identify the target's
+  existing registered checkout with `git worktree list --porcelain`. Do not switch
+  the feature worktree to the target. A wrong-checkout call refuses before checks,
+  approval or effects, naming the required branch and its registered checkout when
+  present. If absent, explicitly arrange a target checkout under the applicable
+  workflow safeguards; the tool never creates one or redirects the operation.
+  Optional `targetBranch` / `mergeMethod` supply invocation choices when the
+  respective workflow setting is Ask, without changing settings.
   No automatic rebase, method fallback, squash, cleanup or
   remote operation. Per-branch mergeOptions cannot change the selected method.
 - `git_worktree`: action `createWorktree | attachWorktree | removeWorktree`, source

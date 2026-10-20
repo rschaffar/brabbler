@@ -27,13 +27,15 @@ export const gitWorkflowPlugin: BundledPlugin = {
     const rebase = defineTool({
       name: "git_rebase", label: "Git rebase", executionMode: "sequential",
       description: "Rebase the explicitly selected feature checkout onto the configured local target branch. No automatic retry or conflict cleanup. Current permission applies; stronger user/repository instructions apply.",
-      parameters: Type.Object({ checkout, featureBranch: Type.String(), targetBranch: Type.Optional(Type.String({ description: "Local target chosen via ask_user when target selection is Ask; does not change settings" })) }),
+      parameters: Type.Object({ checkout: Type.String({ description: "Absolute registered checkout root of the feature branch (HEAD must be featureBranch), not the target checkout. The selected repository's settings apply independently of the session cwd." }),
+        featureBranch: Type.String(), targetBranch: Type.Optional(Type.String({ description: "Local target chosen via ask_user when target selection is Ask; does not change settings" })) }),
       execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, { action: "rebase", ...params }, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id, progress("rebase", _update)),
     });
     const merge = defineTool({
       name: "git_merge", label: "Git merge", executionMode: "sequential",
-      description: "Merge an explicitly selected feature into the configured local target's clean checkout using the configured FF-only or ordinary non-FF method. Runs required checks in the feature checkout. No rebase, fallback or cleanup. Stronger user/repository instructions apply.",
-      parameters: Type.Object({ checkout, featureBranch: Type.String(), targetBranch: Type.Optional(Type.String({ description: "Local target chosen via ask_user when target selection is Ask" })),
+      description: "Merge an explicitly selected feature into the configured local target's clean checkout using the configured FF-only or ordinary non-FF method. Find the target checkout with git worktree list --porcelain; do not reuse the preceding git_rebase checkout or switch the feature worktree to the target. Runs required checks in the feature checkout. No rebase, fallback or cleanup. Stronger user/repository instructions apply.",
+      parameters: Type.Object({ checkout: Type.String({ description: "Absolute registered checkout root of the target branch (HEAD must be targetBranch or the configured target), not the feature worktree. The selected repository's settings apply independently of the session cwd." }),
+        featureBranch: Type.String(), targetBranch: Type.Optional(Type.String({ description: "Local target chosen via ask_user when target selection is Ask" })),
         mergeMethod: Type.Optional(Type.Union([Type.Literal("ff-only"), Type.Literal("non-ff")], { description: "Method chosen via ask_user when method selection is Ask; does not change settings" })) }),
       execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, { action: "merge", ...params }, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id, progress("merge", _update)),
     });

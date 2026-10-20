@@ -95,11 +95,20 @@ test("real model-issued Git tools select repositories independently of Git and n
     assert.ok(session.getAllTools().filter((tool) => toolNames.includes(tool.name)).every((tool) => tool.exposure === "model-only"));
     const invoke = async (name, args) => {
       expectedCheckout = args.checkout; const id = `${kind}-${++calls}`;
+      let tools;
       faux.setResponses([(context) => {
-        assert.ok(toolNames.every((toolName) => getCurrentTools(context.messages).some((tool) => tool.name === toolName)));
+        tools = getCurrentTools(context.messages);
         return fauxAssistantMessage([fauxToolCall(name, args, { id })], { stopReason: "toolUse" });
       }, fauxAssistantMessage("Done.")]);
       await session.prompt(`Execute the explicitly selected ${name} operation.`);
+      assert.ok(toolNames.every((toolName) => tools.some((tool) => tool.name === toolName)));
+      const rebase = tools.find((tool) => tool.name === "git_rebase");
+      const merge = tools.find((tool) => tool.name === "git_merge");
+      assert.match(rebase.parameters.properties.checkout.description, /feature branch.*not the target/i);
+      assert.match(merge.parameters.properties.checkout.description, /target branch.*not the feature/i);
+      assert.match(merge.description, /git worktree list --porcelain/);
+      assert.match(merge.description, /do not reuse.*rebase checkout/i);
+      assert.match(merge.description, /or switch the feature worktree to the target/);
       const result = session.messages.find((message) => message.role === "toolResult" && message.toolCallId === id);
       assert.ok(result, `Missing ${name} result`); assert.equal(result.isError, false, JSON.stringify(result));
       assert.equal(faux.state.callCount, calls * 2); assert.equal(sessionManager.getCwd(), callerCwd);
