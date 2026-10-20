@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import React from "react";
 import ts from "typescript";
+import { isDelimitedTablePath } from "../lib/delimited-table.ts";
 
 const source = await readFile(new URL("./FileViewer.tsx", import.meta.url), "utf8");
 
@@ -38,18 +39,18 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
   const viewer = file.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "TextFileViewer");
   const calculations = viewer.body.statements.filter((node) =>
     ts.isVariableStatement(node) && node.declarationList.declarations.some((declaration) =>
-      ["viewerContent", "sourceLines", "language", "isHtml", "isMarkdown", "hasPreview", "effectiveDisplayMode", "useLightweightSource", "lightweightSourceLines"].includes(declaration.name.getText(file)),
+      ["viewerContent", "sourceLines", "language", "isHtml", "isMarkdown", "isDelimitedTable", "hasPreview", "effectiveDisplayMode", "useLightweightSource", "lightweightSourceLines"].includes(declaration.name.getText(file)),
     ),
   ).map((node) => node.getText(file)).join("\n");
   const { outputText } = ts.transpileModule(`
-    return (data, displayMode, hasGitDiff = false, isDeletedDiff = false, wrapLines = false, dirty = false, draft = null, initialLineTarget = null, editing = false) => {
+    return (data, displayMode, hasGitDiff = false, isDeletedDiff = false, wrapLines = false, dirty = false, draft = null, initialLineTarget = null, editing = false, filePath = "file.txt") => {
       const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
       const FILE_LINE_NUMBER_STYLE = {};
       ${calculations}
       return lightweightSourceLines;
     };
   `, { compilerOptions: { jsx: ts.JsxEmit.React } });
-  const render = new Function("React", "useMemo", outputText)(React, (calculate) => calculate());
+  const render = new Function("React", "useMemo", "isDelimitedTablePath", outputText)(React, (calculate) => calculate(), isDelimitedTablePath);
   const large = { content: "line\n".repeat(1_000), language: "text" };
 
   assert.equal(render({ ...large, content: "line\n".repeat(999) }, "source"), null);
@@ -58,6 +59,7 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
   for (const language of ["html", "markdown"]) {
     assert.equal(render({ ...large, language }, "preview"), null);
   }
+  assert.equal(render(large, "preview", false, false, false, false, null, null, false, "fixture.csv"), null);
   for (const mode of ["source", "diff", "preview"]) {
     const rows = render(large, mode);
     assert.equal(rows.length, 1_001, `${mode} must retain its source fallback`);

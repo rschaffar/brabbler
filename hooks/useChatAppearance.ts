@@ -38,6 +38,11 @@ export function clampChatContentFontSize(value: unknown): number {
   return Math.max(CHAT_CONTENT_FONT_SIZE_MIN, Math.min(CHAT_CONTENT_FONT_SIZE_MAX, Math.round(size)));
 }
 
+export const TERMINAL_FONT_SIZE_DEFAULT = 13;
+export function terminalFontSize(chatFontSize: unknown): number {
+  return clampChatContentFontSize(chatFontSize) - CHAT_CONTENT_FONT_SIZE_DEFAULT + TERMINAL_FONT_SIZE_DEFAULT;
+}
+
 function readStoredPreference(key: string): string | null {
   try {
     return window.localStorage.getItem(key);

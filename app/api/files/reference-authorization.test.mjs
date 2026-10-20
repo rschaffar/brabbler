@@ -8,7 +8,7 @@ import { loadTsModule } from "../../../lib/sse-stream.fixture.mjs";
 
 const jiti = createJiti(import.meta.url);
 const { isFilePathReferencedByEntries, isValidSessionId } = await jiti.import("../../../lib/session-file-references-core.ts");
-const { isPathWithinRoots } = await jiti.import("../../../lib/path-security.ts");
+const { isPathWithinRoots, isExistingPathWithinRoots } = await jiti.import("../../../lib/path-security.ts");
 const { filePathFromApiSegments } = await jiti.import("../../../lib/paths.ts");
 const { readTextPreviewChunk } = await jiti.import("../../../lib/text-preview.ts");
 const sessionId = "550e8400-e29b-41d4-a716-446655440000";
@@ -24,7 +24,7 @@ function fixture(t) {
   const mocks = {
     "next/server": { NextResponse: { json: Response.json } },
     fs: { ...fs, statSync(...args) { stats++; return fs.statSync(...args); } }, path,
-    "@/lib/file-access": { getAllowedFileRoots: async () => roots, isFilePathAllowed: isPathWithinRoots, isExistingFilePathAllowed: () => false },
+    "@/lib/file-access": { getAllowedFileRoots: async () => roots, isFilePathAllowed: isPathWithinRoots, isExistingFilePathAllowed: isExistingPathWithinRoots },
     "@/lib/file-types": { getImageMime: () => null, getAudioMime: () => null, getVideoMime: () => null, getDocumentMime: () => null },
     "@/lib/file-dirent": {},
     "@/lib/session-file-references": { isFilePathReferencedBySession: async (file, id) => isValidSessionId(id) && id === sessionId && isFilePathReferencedByEntries(file, entries) },
@@ -34,11 +34,11 @@ function fixture(t) {
   };
   const { GET } = loadTsModule(new URL("./[...path]/route.ts", import.meta.url), mocks).exports;
   return {
-    outside, get stats() { return stats; }, set entries(value) { entries = value; },
-    async request(type, id = sessionId) {
-      const request = new Request(`http://localhost/api/files/fixture?type=${type}&sessionId=${encodeURIComponent(id)}`);
+    outside, allowed, get stats() { return stats; }, set entries(value) { entries = value; },
+    async request(type, id = sessionId, { file = outside, viewerCwd = allowed } = {}) {
+      const request = new Request(`http://localhost/api/files/fixture?type=${type}&sessionId=${encodeURIComponent(id)}&viewerCwd=${encodeURIComponent(viewerCwd)}`);
       request.nextUrl = new URL(request.url);
-      return GET(request, { params: Promise.resolve({ path: outside.replace(/^\//, "").split("/") }) });
+      return GET(request, { params: Promise.resolve({ path: file.replace(/^\//, "").split("/") }) });
     },
   };
 }
@@ -77,7 +77,34 @@ test("intentional exact links still read external files but never authorize list
   f.entries = [entry("assistant", [{ type: "text", text: `See [file](${f.outside}#L1)` }])];
   const response = await f.request("read");
   assert.equal(response.status, 200);
-  assert.equal((await response.json()).content, "SAFE_REFERENCE_SENTINEL\n");
+  const body = await response.json();
+  assert.equal(body.content, "SAFE_REFERENCE_SENTINEL\n");
+  assert.deepEqual(body.probeEligibility, { edit: false, gitDiff: false });
   for (const type of ["list", "edit"]) assert.equal((await f.request(type)).status, 403);
   for (const id of ["", "invalid", "550e8400-e29b-41d4-a716-446655440001"]) assert.equal((await f.request("read", id)).status, 403);
+});
+
+test("probe hints narrow reads without authorizing edits and preserve deleted-file Git eligibility", async t => {
+  const f = fixture(t);
+  const file = path.join(f.allowed, "inside.txt");
+  fs.writeFileSync(file, "root-authorized text");
+  const allowed = await f.request("read", sessionId, { file });
+  assert.equal(allowed.status, 200);
+  assert.deepEqual((await allowed.json()).probeEligibility, { edit: true, gitDiff: true });
+  const otherCwd = await f.request("read", sessionId, { file, viewerCwd: path.dirname(f.allowed) });
+  assert.equal(otherCwd.status, 200, "viewer cwd cannot determine file-read authority");
+  assert.deepEqual((await otherCwd.json()).probeEligibility, { edit: true, gitDiff: false });
+  const deleted = await f.request("read", sessionId, { file: path.join(f.allowed, "deleted.txt") });
+  assert.equal(deleted.status, 404);
+  assert.deepEqual((await deleted.json()).probeEligibility, { edit: false, gitDiff: true });
+  const subtree = await f.request("read", sessionId, { file: path.join(f.allowed, "removed", "nested", "deleted.txt") });
+  assert.equal(subtree.status, 404);
+  assert.deepEqual((await subtree.json()).probeEligibility, { edit: false, gitDiff: true });
+  const alias = path.join(path.dirname(f.allowed), "cwd-alias");
+  fs.symlinkSync(f.allowed, alias, "dir");
+  const aliasedCwd = await f.request("read", sessionId, { file, viewerCwd: alias });
+  assert.deepEqual((await aliasedCwd.json()).probeEligibility, { edit: true, gitDiff: false });
+  assert.equal((await f.request("read")).status, 403, "cwd hint cannot authorize an unreferenced outside file");
+  fs.symlinkSync(f.outside, path.join(f.allowed, "escape.txt"));
+  assert.equal((await f.request("read", sessionId, { file: path.join(f.allowed, "escape.txt") })).status, 403);
 });

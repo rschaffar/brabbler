@@ -470,12 +470,32 @@ export async function GET(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
+    // Advisory probe eligibility, never an authorization token. A viewer cwd
+    // can narrow Git probes but cannot change this request's read authority.
+    const viewerCwd = request.nextUrl.searchParams.get("viewerCwd")?.trim();
+    const viewerCwdAllowed = Boolean(viewerCwd && isFilePathAllowed(viewerCwd, allowedRoots) && isExistingFilePathAllowed(viewerCwd, allowedRoots));
+    const missingGitProbeAllowed = () => {
+      if (!allowedByRoot || !viewerCwdAllowed) return false;
+      // Git can review a deleted subtree: locate its nearest surviving parent,
+      // then apply the existing physical boundary, never a new containment rule.
+      let parent = path.dirname(filePath);
+      for (;;) {
+        try { fs.realpathSync(parent); return isExistingFilePathAllowed(parent, allowedRoots); }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
+          const next = path.dirname(parent);
+          if (next === parent) return false;
+          parent = next;
+        }
+      }
+    };
     let stat: fs.Stats | undefined;
     try {
       stat = fs.statSync(filePath);
     } catch {
       if (type !== "watch") {
-        return NextResponse.json({ error: "Not found" }, { status: 404 });
+        const gitDiff = missingGitProbeAllowed();
+        return NextResponse.json({ error: "Not found", ...(type === "read" ? { probeEligibility: { edit: false, gitDiff } } : {}) }, { status: 404 });
       }
     }
 
@@ -529,7 +549,9 @@ export async function GET(
       }
       const chunk = readTextPreviewChunk(filePath, stat.size, offset);
       const language = getLanguage(filePath);
-      return NextResponse.json({ ...chunk, language, size: stat.size });
+      return NextResponse.json({ ...chunk, language, size: stat.size,
+        probeEligibility: { edit: allowedByRoot, gitDiff: allowedByRoot && viewerCwdAllowed },
+      });
     }
 
     if (type === "download") {
