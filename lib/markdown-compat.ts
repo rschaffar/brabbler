@@ -214,4 +214,3 @@ export function markdownHeadingAnchors() {
     visit(tree);
   };
 }
-

@@ -152,4 +152,3 @@ export function selectSubagentExtensionTools(
   }
   return [...new Set(selected)];
 }
-
