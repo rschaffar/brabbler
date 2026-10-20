@@ -37,6 +37,21 @@ const timestampedAssistant = {
   usage: { input: 100, output: 20, cacheRead: 30, cacheWrite: 0, cost: { total: 0.0123 } },
 };
 
+test("only settled user/assistant media embeds carry originating read-session identity", () => {
+  const props = { cwd: "/workspace", sessionId: "origin-session", onOpenFile() {} };
+  for (const message of [
+    { role: "user", content: "![Recording](/outside/take.wav)" },
+    { role: "assistant", content: [{ type: "text", text: "![Recording](/outside/take.wav)" }] },
+  ]) {
+    const html = renderMessage(message, props);
+    assert.match(html, /Load audio: Recording/);
+    assert.match(html, /type=download&amp;sessionId=origin-session/);
+    assert.doesNotMatch(html, /<audio|<video|<img/);
+  }
+  assert.doesNotMatch(renderMessage({ role: "assistant", content: [{ type: "text", text: "![Recording](take.wav)" }] }, { ...props, isStreaming: true }), /Load audio|<audio|<img/);
+  assert.doesNotMatch(renderMessage({ role: "custom", customType: "other", content: [{ type: "text", text: "![Recording](take.wav)" }] }, props), /Load audio/);
+});
+
 test("shows the stored assistant timestamp directly after cost and before Copy by default", () => {
   const html = renderMessage(timestampedAssistant);
   assert.match(html, /100 in · 20 out · 30 cache R · \$0\.0123<\/div><time /);

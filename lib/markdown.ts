@@ -5,6 +5,7 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkFrontmatter from "remark-frontmatter";
 import remarkGfm from "remark-gfm";
 import remarkCjkFriendly from "remark-cjk-friendly/parseOnly";
+import { resolveMarkdownMedia } from "./markdown-media";
 import { markdownClobberPrefix, markdownHeadingAnchors, rehypeMatchClobberedIds, remarkCurrencySafeMath, remarkSplitAutolinkLiterals } from "./markdown-compat";
 export { jumpToMarkdownFragment, splitAutolinkLiteralsAtCjkPunctuation } from "./markdown-compat";
 
@@ -30,6 +31,25 @@ function rehypeLocalPathLinks() {
         const href = node.properties.href;
         if (/^[a-zA-Z]:[\\/]/.test(href)) node.properties.href = `file:///${href.replace(/\\/g, "/")}`;
         else if (/^[^/\\:#?\s]+\.[^/\\:#?\s]+:\d+(?::\d+)?(?:[?#]|$)/.test(href)) node.properties.href = `./${href}`;
+      }
+      for (const child of node.children) if (child.type === "element") visit(child);
+    };
+    visit(tree);
+  };
+}
+
+/** Only the opted-in chat image renderer consumes these sources, rewriting local
+ * paths through the file API. Raw media HTML and unsafe protocols stay stripped. */
+function rehypeMediaDriveSources() {
+  return (tree: import("hast").Root) => {
+    const visit = (node: import("hast").Root | import("hast").Element) => {
+      if (node.type === "element" && node.tagName === "img" && typeof node.properties.src === "string") {
+        const src = node.properties.src;
+        const media = resolveMarkdownMedia(src);
+        if (/^file:/i.test(src) && media?.kind !== "local") delete node.properties.src;
+        else if (/^[a-zA-Z]:[\\/]/.test(src) && media?.kind === "local") {
+          node.properties.src = `file:///${src.replace(/\\/g, "/")}`;
+        }
       }
       for (const child of node.children) if (child.type === "element") visit(child);
     };
@@ -403,6 +423,20 @@ export const markdownRehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [
   rehypeRaw,
   rehypeLocalPathLinks,
   [rehypeSanitize, markdownSanitizeSchema],
+  rehypeMatchClobberedIds,
+  markdownHeadingAnchors,
+  [rehypeKatex, { throwOnError: false, strict: false }],
+];
+
+// Do not broaden the file-preview, skill or question pipelines.
+export const markdownMediaRehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [
+  rehypeRaw,
+  rehypeLocalPathLinks,
+  rehypeMediaDriveSources,
+  [rehypeSanitize, { ...markdownSanitizeSchema, protocols: {
+    ...markdownSanitizeSchema.protocols,
+    src: [...(defaultSchema.protocols?.src ?? []), "file"],
+  } }],
   rehypeMatchClobberedIds,
   markdownHeadingAnchors,
   [rehypeKatex, { throwOnError: false, strict: false }],

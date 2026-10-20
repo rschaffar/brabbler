@@ -11,6 +11,7 @@ const { isFilePathReferencedByEntries, isValidSessionId } = await jiti.import(".
 const { isPathWithinRoots, isExistingPathWithinRoots } = await jiti.import("../../../lib/path-security.ts");
 const { filePathFromApiSegments } = await jiti.import("../../../lib/paths.ts");
 const { readTextPreviewChunk } = await jiti.import("../../../lib/text-preview.ts");
+const { getAudioMime, getVideoMime } = await jiti.import("../../../lib/file-types.ts");
 const sessionId = "550e8400-e29b-41d4-a716-446655440000";
 
 function fixture(t) {
@@ -25,7 +26,7 @@ function fixture(t) {
     "next/server": { NextResponse: { json: Response.json } },
     fs: { ...fs, statSync(...args) { stats++; return fs.statSync(...args); } }, path,
     "@/lib/file-access": { getAllowedFileRoots: async () => roots, isFilePathAllowed: isPathWithinRoots, isExistingFilePathAllowed: isExistingPathWithinRoots },
-    "@/lib/file-types": { getImageMime: () => null, getAudioMime: () => null, getVideoMime: () => null, getDocumentMime: () => null },
+    "@/lib/file-types": { getImageMime: () => null, getAudioMime, getVideoMime, getDocumentMime: () => null },
     "@/lib/file-dirent": {},
     "@/lib/session-file-references": { isFilePathReferencedBySession: async (file, id) => isValidSessionId(id) && id === sessionId && isFilePathReferencedByEntries(file, entries) },
     "@/lib/request-security": {}, "@/lib/file-edit": {}, "@/lib/file-upload": {}, "@/lib/bounded-form-data": {},
@@ -35,8 +36,8 @@ function fixture(t) {
   const { GET } = loadTsModule(new URL("./[...path]/route.ts", import.meta.url), mocks).exports;
   return {
     outside, allowed, get stats() { return stats; }, set entries(value) { entries = value; },
-    async request(type, id = sessionId, { file = outside, viewerCwd = allowed } = {}) {
-      const request = new Request(`http://localhost/api/files/fixture?type=${type}&sessionId=${encodeURIComponent(id)}&viewerCwd=${encodeURIComponent(viewerCwd)}`);
+    async request(type, id = sessionId, { file = outside, viewerCwd = allowed, range } = {}) {
+      const request = new Request(`http://localhost/api/files/fixture?type=${type}&sessionId=${encodeURIComponent(id)}&viewerCwd=${encodeURIComponent(viewerCwd)}`, { headers: range ? { range } : {} });
       request.nextUrl = new URL(request.url);
       return GET(request, { params: Promise.resolve({ path: file.replace(/^\//, "").split("/") }) });
     },
@@ -82,6 +83,24 @@ test("intentional exact links still read external files but never authorize list
   assert.deepEqual(body.probeEligibility, { edit: false, gitDiff: false });
   for (const type of ["list", "edit"]) assert.equal((await f.request(type)).status, 403);
   for (const id of ["", "invalid", "550e8400-e29b-41d4-a716-446655440001"]) assert.equal((await f.request("read", id)).status, 403);
+});
+
+test("external media range reads retain exact session authorization and read-only policy", async t => {
+  const f = fixture(t);
+  for (const ext of ["wav", "webm"]) {
+    const file = `${f.outside}.${ext}`;
+    fs.writeFileSync(file, Buffer.from([0, 1, 255, 3, 4, 5]));
+    f.entries = [entry("assistant", [{ type: "text", text: `![Media](${file})` }])];
+    const response = await f.request("read", sessionId, { file, range: "bytes=1-3" });
+    assert.equal(response.status, 206);
+    assert.equal(response.headers.get("content-type"), ext === "wav" ? "audio/wav" : "video/webm");
+    assert.equal(response.headers.get("content-range"), "bytes 1-3/6");
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from([1, 255, 3]));
+    for (const id of ["", "invalid", "550e8400-e29b-41d4-a716-446655440001"]) assert.equal((await f.request("read", id, { file, range: "bytes=1-3" })).status, 403);
+    for (const type of ["edit", "list"]) assert.equal((await f.request(type, sessionId, { file })).status, 403);
+    f.entries = [entry("system", [{ type: "text", text: file }])];
+    assert.equal((await f.request("read", sessionId, { file, range: "bytes=1-3" })).status, 403);
+  }
 });
 
 test("probe hints narrow reads without authorizing edits and preserve deleted-file Git eligibility", async t => {

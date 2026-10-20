@@ -4,11 +4,15 @@ import { createContext, useContext, useMemo, type ComponentProps } from "react";
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import { parseFileLineTarget, parsePdfPageFragment, resolveInlineFileReference, resolveLocalFileHref, resolveLocalFileLink, type OpenFileLink } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
-import { jumpToMarkdownFragment, markdownDocumentRehypePlugins, markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
+import { jumpToMarkdownFragment, markdownDocumentRehypePlugins, markdownMediaRehypePlugins, markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
 import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
 import { BlockedFileLink } from "./BlockedFileLink";
 import { LocalFileLink } from "./LocalFileLink";
+import { MarkdownMedia } from "./MarkdownMedia";
+import { resolveMarkdownMedia } from "@/lib/markdown-media";
+import { getFileName } from "@/lib/file-paths";
+import { useI18n } from "@/hooks/useI18n";
 
 const MarkdownLinkContext = createContext(false);
 
@@ -19,6 +23,8 @@ interface MarkdownBodyProps {
   cwd?: string;
   onOpenFile?: OpenFileLink;
   onNavigateLink?: (href: string) => void;
+  enableInlineMedia?: boolean;
+  sourceSessionId?: string;
 }
 
 function InlineFileCode({ children, className, cwd, onOpenFile, ...props }: ComponentProps<"code"> & { cwd?: string; onOpenFile?: OpenFileLink }) {
@@ -35,11 +41,25 @@ function MarkdownImage({
   src,
   alt,
   cwd,
+  enableInlineMedia,
+  sourceSessionId,
+  isStreaming,
+  onOpenFile,
   ...props
-}: ComponentProps<"img"> & ExtraProps & { cwd?: string }) {
+}: ComponentProps<"img"> & ExtraProps & Pick<MarkdownBodyProps, "cwd" | "enableInlineMedia" | "sourceSessionId" | "isStreaming" | "onOpenFile">) {
   const insideLink = useContext(MarkdownLinkContext);
+  const { t } = useI18n();
   delete props.node;
   const href = typeof src === "string" ? src : undefined;
+  const media = enableInlineMedia ? resolveMarkdownMedia(href, cwd) : null;
+  if (media) {
+    const label = alt?.trim() || (media.kind === "local" ? getFileName(media.filePath) : t("chat.mediaLabel"));
+    if (insideLink) return <span>{label}</span>;
+    if (media.kind === "blocked") return <BlockedFileLink reason={media.reason}>{label}</BlockedFileLink>;
+    if (media.kind === "remote") return <a href={media.href} target="_blank" rel="noopener noreferrer">{label}</a>;
+    if (media.kind !== "local" || isStreaming) return <span>{label}</span>;
+    return <MarkdownMedia filePath={media.filePath} type={media.type} label={label} sessionId={sourceSessionId} onOpenFile={onOpenFile} />;
+  }
   const filePath = href ? resolveLocalFileHref(href, cwd) : null;
   const imageSrc = filePath
     ? `/api/files/${encodeFilePathForApi(filePath)}?type=read`
@@ -55,7 +75,7 @@ function MarkdownImage({
   );
 }
 
-export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onNavigateLink }: MarkdownBodyProps) {
+export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onNavigateLink, enableInlineMedia = false, sourceSessionId }: MarkdownBodyProps) {
   const normalizedMarkdown = useMemo(() => normalizeDisplayMath(children), [children]);
   // Stable renderer identities keep stateful blocks mounted across message hover updates.
   const components = useMemo<Components>(() => ({
@@ -123,7 +143,7 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
       );
     },
     img(props) {
-      return <MarkdownImage cwd={cwd} {...props} />;
+      return <MarkdownImage cwd={cwd} enableInlineMedia={enableInlineMedia && !onNavigateLink} sourceSessionId={sourceSessionId} isStreaming={isStreaming} onOpenFile={onOpenFile} {...props} />;
     },
     ol({ node, start, style, ...props }) {
       const items = node?.children.filter((child) => child.type === "element" && child.tagName === "li").length ?? 0;
@@ -139,14 +159,14 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
         </div>
       );
     },
-  }), [cwd, isStreaming, onOpenFile, onNavigateLink]);
+  }), [cwd, isStreaming, onOpenFile, onNavigateLink, enableInlineMedia, sourceSessionId]);
 
   return (
     <div className={["markdown-body", className].filter(Boolean).join(" ")}>
       <ReactMarkdown
         remarkPlugins={markdownRemarkPlugins}
-        rehypePlugins={onNavigateLink ? markdownDocumentRehypePlugins : markdownRehypePlugins}
-        urlTransform={onOpenFile ? markdownUrlTransform : undefined}
+        rehypePlugins={onNavigateLink ? markdownDocumentRehypePlugins : enableInlineMedia ? markdownMediaRehypePlugins : markdownRehypePlugins}
+        urlTransform={onOpenFile || enableInlineMedia ? markdownUrlTransform : undefined}
         components={components}
       >
         {normalizedMarkdown}

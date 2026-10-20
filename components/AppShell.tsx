@@ -6,6 +6,7 @@ import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { isHistoryOnlySession } from "@/lib/session-directory";
+import { MarkdownMediaScope } from "./MarkdownMedia";
 import { WebVersionNotice } from "./WebVersionNotice";
 import { ActivityOverview } from "./ActivityOverview";
 import { useHiddenProjects } from "@/hooks/useHiddenProjects";
@@ -2465,6 +2466,7 @@ export function AppShell() {
           </div>}
           <div inert={gitExplorerFullWidth || Boolean(activeOverview && isMobile && overviewMobileList)} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
           {showChat ? (
+            <MarkdownMediaScope key={sessionKey} active={settingsSection === null && !projectTrustDialogOpen && !gitExplorerFullWidth && !rightPanelFullWidth && !(isMobile && (rightPanelOpen || sidebarOpen)) && !(activeOverview && isMobile && overviewMobileList)}>
             <ChatWindow
               key={sessionKey}
               session={selectedSession}
@@ -2505,6 +2507,7 @@ export function AppShell() {
               playDoneSound={playDoneSound}
               unlockAudio={unlockAudio}
             />
+            </MarkdownMediaScope>
           ) : initialCwdStatus === "validating" ? (
             <div
               role="status"

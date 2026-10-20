@@ -51,7 +51,7 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `appearance` | Default/full/reading widths, numeric legacy preference and fresh preference inputs; all thirteen palette swatches plus System, native-radio arrows, reload/dark classification/contrast and constrained Settings geometry; font families/base weights, independent resets, cross-tab sync and draft remeasurement |
 | `timestamps` | Both en-US and legacy Chinese locale/preference variants |
 | `diff-context` | Loaded Workflow absence, Git Explorer immutable contexts/navigation/wrapping/Wide and integrated merge graph, in prerequisite order |
-| `markdown` | Markdown/KaTeX security, full-height Mermaid previews, math/themes/SVG, file-scroll/preview state, file/source links, CSV/TSV virtualization, scoped fragments/headings, loaded-skill document navigation, model endpoint/adaptive save/inheritance/stale tests, blocked preference storage, interactive read-only external-reference/watch/reopen sentinel proofs and real user-file polling |
+| `markdown` | Markdown/KaTeX security, full-height Mermaid previews, math/themes/SVG, file-scroll/preview state, file/source links, explicit local media loading/playback/seeking/errors/session authorization and teardown, CSV/TSV virtualization, scoped fragments/headings, loaded-skill document navigation, model endpoint/adaptive save/inheritance/stale tests, blocked preference storage, interactive read-only external-reference/watch/reopen sentinel proofs and real user-file polling |
 | `file-edit` | Panel setup, all modified/added/deleted/context diff variants, editor/read-only/draft retention; Explorer root/nested/file/Changes-row drops, closed-folder refresh, keyboard/touch pickers, conflicts, filtered-search refresh and upload-driven clean/dirty viewer sync |
 | `archive` | Focused archive/restore flow, distinct from the mobile search/restore/move chain |
 | `privacy` | Concealment/loading/failure behavior, independent contexts and tablet coverage |
@@ -70,6 +70,8 @@ widths. History desktop acknowledges recovery before fresh mobile checks it;
 Explorer precedes merge mutation; file panel precedes diff/edit draft checks.
 Real polling, submission acknowledgement and expiry observations keep their original
 deadlines. Embedded assertions in different integration chains are not duplicates.
+
+The Markdown media helper seeds synthetic PCM WAV and a tiny VP8 WebM from reviewed inline bytes (with provenance/hash), not downloaded fixtures or runtime ffmpeg. Desktop/mobile checks observe zero eager media/remote requests, native playback and seeking, session-scoped external-reference range reads/denials, corrupt-file feedback and explicit repair reload, narrow layout, covered-pane/session teardown and no automatic resumption. Direct authorization negatives use Node HTTP, preserving unfiltered browser console/5xx reporting. These are native Chromium proofs, not every browser/codec combination; the static demo and Markdown-file previews are outside this feature's scope.
 
 ## One ordinary sandbox per whole browser group
 
