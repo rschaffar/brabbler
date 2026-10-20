@@ -23,8 +23,8 @@ This implementation plan ends at a verified integration handoff. The global Git 
 - [x] Add safe route and genuine installed-package regressions for both boundaries, using disposable synthetic files/data and immutable package identity, never live credentials or the host service.
 - [x] Update owning security/feature/dependency guides and an ADR for the selected launch boundary; document limits, unsupported invocation paths and deployment requirements accurately.
 - [x] Obtain independent reviews of the actual patch and resolve concrete findings before settled-candidate acceptance. Both read-only reviewers reported no remaining scoped security findings after code, fixture and documentation corrections.
-- [ ] Run focused Nix checks during editing, then complete fresh core/static/plugin, all browser/terminal groups and genuine Home Manager deployment VM acceptance; retain exact candidate/input identity, commands, result, runtime and artifact paths.
-- [ ] Reassess/rebase onto the current local `rst-main` and deliver the clean verified candidate for the Git lifecycle's exact-state completion decision.
+- [x] Run focused Nix checks during editing, then complete fresh core/static/plugin, all browser/terminal groups and genuine Home Manager deployment VM acceptance; retain exact candidate/input identity, commands, result, runtime and artifact paths. See final acceptance below.
+- [x] Reassess/rebase onto current local `rst-main` and deliver the clean verified candidate for the Git lifecycle's exact-state completion decision. `git_rebase` preserved the unrelated live-prompt session-action fix and produced the tested candidate on target `d8888f5`. The user selected local integration after acceptance; exact-state approval/execution remains with the merge tool.
 
 ## Selected implementation and focused evidence
 
@@ -37,6 +37,18 @@ This implementation plan ends at a verified integration handoff. The global Git 
 - Corrected `nix run .#test -- e2e --group markdown` passed desktop/mobile real API denials, intentional external reads and rendered source links in **68 seconds command wall time**, **57.347 seconds capsule execution**; `/tmp/pi-web-security-markdown.pbMyyJ.log`, `/tmp/pi-web-test-browser.lbBoKt/run.json`, outer digest `03136dd2d5a652e0b1b1f394fb2e3b4858c653ec0af9ee156be690f5b2c4b1f5`.
 - Interactive opening of the external viewer is not claimed by this new regression: its pre-existing edit/Git capability probes legitimately return 403 outside roots. No generic console exemption or unrelated viewer refactor was added. Core and genuine HTTP prove reference-only files remain non-editable/non-listable.
 - CodeGraph became unavailable after the harness restart (CLI exited 139); direct source tools were used without reinitializing other checkouts.
+
+## Final acceptance and integration handoff
+
+Tested source: `33c4c4bb603663677a73ae1024706e6fc34682be`, rebased from source commit `d9a98b1a0c53d5730a2104bbdbe60e4bcf5aa675` onto local target `d8888f5510113b7ce696df9624f20906469c7e93`. `nix run .#test -- all --workers 2 --jobs 2` passed with fresh execution in **556 seconds command wall time** (9m16s), including realization and separate from model/review/coordination work. The two-worker budget intentionally bounds concurrency; this is not a cold-cache benchmark or a timing comparison with earlier four-worker runs.
+
+- Outer content/mode digest: `c05fe6aa3b15908fd23c60c98fc567aeb624d641d42cffef83dcee4f98f60696`; snapshot `/tmp/pi-web-test-source-lQXq2n/source.json`, selection `/tmp/pi-web-test-source-lQXq2n/selection.json`.
+- Core/static/plugin: **318 files / 2,494 tests / 10 suites**, no failures, cancellations or skips. `/tmp/pi-web-test-core.rzGxj3/run.json`, immutable output `/nix/store/qa08ki0lvlmpx3zdi5wsfvaqqfqr574g-pi-web-core-checks`.
+- Browser/terminal: **all 24 groups / 53 exact scenario receipts**, all passed and settled. `/tmp/pi-web-test-browser.ooumKO/run.json`. Pre-first-capsule preparation/coordination interval 80.728 seconds; capsule execution span 403.304 seconds.
+- Genuine Home Manager deployment VM passed activation, permissions/environment, durable writes/restart, actual HTTP PTY and shutdown/collection proofs. `/tmp/pwv-tOurEp/run.json`; 64.866 seconds including realization/collection, with 18.708 seconds reported execution.
+- Full command log `/tmp/pi-web-security-all.XdjAwz.log`. Core/browser overlap, so intervals must not be summed. Complete acceptance includes the unrelated target fix; earlier focused passes are not relabeled as rebased-candidate runs.
+- Final independent reviews found no remaining scoped findings. Maintained contracts and ADR 0026 own the mechanism/limits. The implementation plan's archival is documentation-only; application and test inputs remain those accepted above and receive an exact diff/whitespace check before integration.
+- User selected **Integrate into rst-main** after this acceptance. Required unsigned non-FF merge, its exact-state approval and separate cleanup remain subsequent Git lifecycle operations. No host deployment, service restart, remote operation or publication was performed.
 
 ## Non-Goals
 
@@ -53,6 +65,6 @@ No persistent data migration or manifest rewrite is planned. Reverting the code 
 ## Completion Checklist
 
 - [x] Both bypasses are closed on supported entrypoints with meaningful focused adversarial regressions and documented boundaries; full acceptance remains separate below.
-- [ ] Independent review findings are resolved and complete acceptance passes for the settled candidate.
-- [ ] Durable mechanisms/limits live in maintained guides; final evidence and exact source/target IDs are recorded.
-- [ ] Verified candidate is handed to the Git lifecycle without publication or host deployment.
+- [x] Independent review findings are resolved and complete acceptance passes for the settled candidate.
+- [x] Durable mechanisms/limits live in maintained guides; final evidence and exact source/target IDs are recorded.
+- [x] Verified candidate is handed to the Git lifecycle without publication or host deployment.
