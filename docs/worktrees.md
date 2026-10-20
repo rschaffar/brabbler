@@ -242,6 +242,47 @@ Use the session row’s **Move to project…** action for explicit relocation. C
 
 Stop running sessions first. This moves the session and its subagents, not checkout files; independent forks remain in place with repaired parent references. Moving also works after the old worktree directory has been deleted: choose an existing destination, without recreating the old checkout.
 
+### Filter sessions by worktree
+
+The **All worktrees** filter above the session list narrows history independently
+of the working-directory selector. It does not change where **New**, Files or
+Terminal operate, and opening a chat does not reset the filter. The same scope
+applies to session search. Changing project, archive view or worktree filter clears
+bulk selection, so hidden selections cannot be moved accidentally.
+
+The filter includes registered checkouts and directories referenced by this project's
+sessions. **Directory missing** entries carry a warning icon and remain available
+for history filtering, including after Git prunes their registration. The working-
+directory menu also offers these as history-only entries; they cannot become a new
+chat/terminal destination. **Directory unavailable** is not proof of deletion.
+Historical branch labels may be unavailable; the full saved path identifies the entry.
+
+### Move several sessions
+
+Choose **Select**, select sessions, then **Move…**. The existing destination picker
+chooses one existing project/worktree/directory. Review the expanded session and
+archive counts and exact destination, then confirm **Move**. Each selected session
+brings all nested subagents—even descendants from another directory. Independent
+forks stay in place unless selected, with parent links repaired as before. Overlapping
+selected ancestors/descendants are moved once. Families already wholly at the destination
+are reported separately; stop affected running/queued sessions before moving. If a parent
+is already there but some descendants are elsewhere, select those child-only subtrees
+using the worktree filter instead of moving the parent again.
+
+For recovery, open **Project session actions** (⋯) beside the filter and choose
+**Move sessions from missing worktrees to main…**. This covers the whole named
+project, **including archived history**, regardless of current filters. It includes
+a missing child/subtree even if its parent still has an existing directory. All
+subtree descendants participate, and archive state remains unchanged. Recovery is
+unavailable if the real main checkout cannot be verified. Arbitrary historical
+paths with unknown project ownership must be moved manually; no ownership is guessed.
+
+Batches can partially succeed. Review moved/skipped/failed results; failure does not
+undo earlier successful families. A lost response can leave the outcome uncertain:
+refresh and inspect before reviewing another attempt, rather than automatically
+replaying it. Closing a page is not cancellation of dispatched server work. Checkout
+files, project preferences, trust grants and plugin project bindings are **not moved**.
+
 ## Troubleshooting
 
 **I do not see the worktree switcher.**

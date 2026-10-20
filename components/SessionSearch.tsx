@@ -6,13 +6,14 @@ import { formatRelativeTime } from "@/lib/i18n/format";
 import type { SessionInfo } from "@/lib/types";
 import type { SessionSearchResponse } from "@/lib/session-search";
 
-export function SessionSearch({ open, query, projectKey, allProjects, status, titlesOnly, children, selectedSessionId, onSelectSession }: {
+export function SessionSearch({ open, query, projectKey, allProjects, status, titlesOnly, worktreeCwd = null, children, selectedSessionId, onSelectSession }: {
   open: boolean;
   query: string;
   projectKey: string | null;
   allProjects: boolean;
   status: "active" | "archived" | "both";
   titlesOnly: boolean;
+  worktreeCwd?: string | null;
   children: ReactNode;
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, entryId?: string, blockIndex?: number) => void;
@@ -24,6 +25,7 @@ export function SessionSearch({ open, query, projectKey, allProjects, status, ti
   const params = new URLSearchParams({ q: search, status, field: titlesOnly ? "title" : "all" });
   if (allProjects) params.set("scope", "all");
   else if (projectKey) params.set("projectKey", projectKey);
+  if (worktreeCwd) params.set("cwd", worktreeCwd);
   const searchKey = params.toString();
   const requestKey = `${searchKey}:${refresh}`;
   const canSearch = allProjects || Boolean(projectKey);
@@ -66,7 +68,7 @@ export function SessionSearch({ open, query, projectKey, allProjects, status, ti
           {t(failed ? "sidebar.searchRetry" : "sidebar.searchRefresh")}
         </button>}
       </div>
-      <div className="px-3 pb-2 text-xs text-text-dim">{scopeLabel}{titlesOnly && ` · ${t("sidebar.searchTitlesOnly")}`}</div>
+      <div className="px-3 pb-2 text-xs text-text-dim">{scopeLabel}{worktreeCwd && ` · ${worktreeCwd}`}{titlesOnly && ` · ${t("sidebar.searchTitlesOnly")}`}</div>
       {response?.truncated && (
         <div role="status" className="px-3 pb-2 text-xs text-text-muted">{t("sidebar.sessionSearchPartial")}</div>
       )}

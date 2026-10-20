@@ -60,7 +60,7 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `questions` | Native tool ownership plus mixed question sets, draft/reload/cancel/receipts |
 | `session-links` | Desktop/mobile copying and following the copied link |
 | `bulk` | Bulk archive/conflict/retry/restore/delete |
-| `move` | Full picker, plain/Git/worktree/Browse paths, superseded reads and proposal-only changes |
+| `move` | Full picker, plain/Git/worktree/Browse paths, superseded reads and proposal-only changes; independent stale-worktree filters, archive-inclusive recovery, missing-child subtrees and native-modal bulk Browse/Move |
 | `terminal` | Real shell/PTY, fonts, reconnect/restart/exit, creation cancellation and workspace/Explorer coexistence |
 
 Preserve distinct viewport heights/locales/preferences, not just desktop/mobile

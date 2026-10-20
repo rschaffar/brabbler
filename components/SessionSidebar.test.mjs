@@ -171,8 +171,8 @@ test("does not expose disk-backed actions for transient sessions", () => {
   assert.match(sessionItemSource, /\{!session\.transient && !bulkSelecting && \(/);
 });
 
-test("hides subagent rows and aggregates their state into the main session row", () => {
-  assert.match(source, /listSessionFamilies\(filteredSessions\)\.filter\(\(family\) => Boolean\(family\.root\.archived\) === showArchived\)/);
+test("groups session families with independent worktree and archive scope", () => {
+  assert.match(source, /sessionFamiliesForWorktree\(allSessions, selectedProject\?\.key \?\? null, sessionWorktreeCwd, showArchived \? "archived" : "active"\)/);
   assert.match(source, /familySessions\.some\(\(session\) => session\.id === selectedSessionId\)/);
   assert.match(source, /familySessions\.some\(\(session\) => runningSessionIds\.has\(session\.id\) \|\| queuedSessionIds\.has\(session\.id\)\)/);
   assert.doesNotMatch(source, /function SessionTreeItem/);

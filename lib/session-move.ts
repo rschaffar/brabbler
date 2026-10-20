@@ -11,6 +11,8 @@ import { sessionPathKey } from "./session-path";
 import { SUBAGENT_META_TYPE } from "./subagents";
 import { getQueuedSubagentSessionIds } from "./subagent-runtime";
 import type { SessionInfo } from "./types";
+import { samePath } from "./paths";
+import { familyAlreadyThere, sameSessionIds, sessionFamilyGraph } from "./session-worktrees-plan";
 
 export class SessionMoveConflict extends Error {}
 
@@ -19,6 +21,16 @@ declare global {
 }
 
 type SessionFile = { id: string; source: string; target: string; rewritten: string; fingerprint: string };
+
+export interface SessionMoveOptions {
+  expectedSessionBindings?: readonly { id: string; cwd: string; path: string }[];
+  requiredMissingCwd?: string;
+  skipAlreadyThere?: boolean;
+  assertAffected?: (ids: readonly string[]) => void;
+  /** Trusted in-process guard, never a request callback. Repeated under the move
+   * lock and after wrapper shutdown; returns a synchronous final mutation fence. */
+  validate?: (sessions: readonly SessionInfo[], memberIds: readonly string[]) => Promise<(() => void) | void>;
+}
 
 function fingerprint(path: string): string {
   const stat = statSync(path);
@@ -49,7 +61,7 @@ function rewriteFile(content: string, cwd: string | null, relocated: Map<string,
 }
 
 /** Serialize Pi Web relocations so overlapping families cannot stage stale copies. */
-export async function moveSessionFamily(id: string, cwd: string): Promise<{ movedIds: string[] }> {
+export async function moveSessionFamily(id: string, cwd: string, options: SessionMoveOptions = {}): Promise<{ movedIds: string[]; skipped?: boolean }> {
   const previous = globalThis.__piSessionMoveLock ?? Promise.resolve();
   let release!: () => void;
   const turn = new Promise<void>((resolve) => { release = resolve; });
@@ -57,7 +69,7 @@ export async function moveSessionFamily(id: string, cwd: string): Promise<{ move
   globalThis.__piSessionMoveLock = current;
   try {
     await previous;
-    return await moveSessionFamilyUnlocked(id, cwd);
+    return await moveSessionFamilyUnlocked(id, cwd, options);
   } finally {
     release();
     if (globalThis.__piSessionMoveLock === current) globalThis.__piSessionMoveLock = undefined;
@@ -65,29 +77,56 @@ export async function moveSessionFamily(id: string, cwd: string): Promise<{ move
 }
 
 /** Move a persisted session family; forks are independent but their origin paths must be repaired. */
-async function moveSessionFamilyUnlocked(id: string, cwd: string): Promise<{ movedIds: string[] }> {
+async function moveSessionFamilyUnlocked(id: string, cwd: string, options: SessionMoveOptions): Promise<{ movedIds: string[]; skipped?: boolean }> {
   const sessions = mergeSessionLists(await listAllSessions({ force: true }), getRpcSessionInfos({ includeTransient: true }));
   const byId = new Map<string, SessionInfo>(sessions.map((session) => [session.id, session]));
   const root = byId.get(id);
   const source = await resolveSessionPath(id);
   if (!root || !source || !existsSync(source)) throw new SessionMoveConflict("Session is not persisted");
 
-  const children = new Map<string, string[]>();
-  for (const session of sessions) {
-    if (session.relation?.kind !== "subagent") continue;
-    const siblings = children.get(session.relation.parentSessionId) ?? [];
-    siblings.push(session.id);
-    children.set(session.relation.parentSessionId, siblings);
+  let familyIds: string[];
+  try { familyIds = sessionFamilyGraph(sessions).family(id); }
+  catch { throw new SessionMoveConflict("Invalid or cyclic session family; refresh the session list"); }
+  const movedIds = new Set(familyIds);
+  if (!samePath(source, root.path)) throw new SessionMoveConflict("Session path changed while planning move");
+  const members = familyIds.map(memberId => byId.get(memberId)!);
+  if (options.expectedSessionBindings && (!sameSessionIds(familyIds, options.expectedSessionBindings.map(member => member.id))
+    || options.expectedSessionBindings.some(expected => {
+      const actual = byId.get(expected.id);
+      return !actual || !samePath(actual.cwd, expected.cwd) || !samePath(actual.path, expected.path);
+    }))) throw new SessionMoveConflict("Session family or source directories changed; preview the move again");
+  for (const member of members) {
+    if (member.transient || !existsSync(member.path)) throw new SessionMoveConflict("A subagent is not persisted");
   }
-  const movedIds = new Set<string>([id]);
-  const pending = [id];
-  while (pending.length) {
-    for (const child of children.get(pending.pop()!) ?? []) {
-      if (movedIds.has(child)) continue;
-      movedIds.add(child);
-      pending.push(child);
+  let fence = await options.validate?.(sessions, familyIds);
+  const assertBindings = () => {
+    for (const member of members) {
+      const header = readSessionHeader(member.path);
+      if (!header || header.id !== member.id || !samePath(header.cwd, member.cwd)) {
+        throw new SessionMoveConflict("Session family or source directories changed; preview the move again");
+      }
     }
+  };
+  assertBindings();
+  if (options.skipAlreadyThere && familyAlreadyThere(members, cwd)) {
+    fence?.();
+    return { movedIds: [], skipped: true };
   }
+  const assertCurrent = () => {
+    fence?.(); assertBindings();
+    if (options.requiredMissingCwd) {
+      let missing = false;
+      try { statSync(options.requiredMissingCwd); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw new SessionMoveConflict("Cannot verify the source directory is missing");
+        missing = true;
+      }
+      if (!missing) throw new SessionMoveConflict("The source directory exists again; preview the move again");
+    }
+    if (getQueuedSubagentSessionIds().some(queuedId => movedIds.has(queuedId))) throw new SessionMoveConflict("Wait for queued subagents to finish before moving");
+    if (members.some(member => getRpcSession(member.id)?.isRunning())) throw new SessionMoveConflict("Stop the session and its subagents before moving");
+  };
+  assertCurrent();
   if (getQueuedSubagentSessionIds().some((queuedId) => movedIds.has(queuedId))) {
     throw new SessionMoveConflict("Wait for queued subagents to finish before moving");
   }
@@ -135,13 +174,44 @@ async function moveSessionFamilyUnlocked(id: string, cwd: string): Promise<{ mov
     throw new SessionMoveConflict("A subagent disappeared while planning move");
   }
 
+  if (files.length > 4096) throw new SessionMoveConflict("A move may affect at most 4096 sessions, including linked references");
+  options.assertAffected?.(files.map(file => file.id));
+
   // A new queued task may have appeared while preparing the family.
   if (getQueuedSubagentSessionIds().some((queuedId) => movedIds.has(queuedId))) {
     throw new SessionMoveConflict("Wait for queued subagents to finish before moving");
   }
   // Evict idle wrappers before touching their files: their managers retain the
   // old path and could otherwise append to a stale or moved transcript.
-  for (const file of files) await getRpcSession(file.id)?.shutdown();
+  for (const file of files) {
+    if (getRpcSession(file.id)?.isRunning() || getQueuedSubagentSessionIds().includes(file.id)) {
+      throw new SessionMoveConflict("Stop linked sessions before moving");
+    }
+    await getRpcSession(file.id)?.shutdown();
+  }
+  fence = await options.validate?.(sessions, familyIds);
+  // Include late children and incoming links after all awaited shutdown/validation.
+  const finalSessions = mergeSessionLists(await listAllSessions({ force: true }), getRpcSessionInfos({ includeTransient: true }));
+  let finalFamily: string[];
+  try { finalFamily = sessionFamilyGraph(finalSessions).family(id); }
+  catch { throw new SessionMoveConflict("Session family changed; preview the move again"); }
+  const finalById = new Map(finalSessions.map(session => [session.id, session]));
+  if (!sameSessionIds(familyIds, finalFamily) || members.some(member => {
+    const current = finalById.get(member.id);
+    return !current || !samePath(current.path, member.path) || !samePath(current.cwd, member.cwd);
+  })) throw new SessionMoveConflict("Session family or source directories changed; preview the move again");
+  const plannedFiles = new Set(files.map(file => sessionPathKey(file.source)));
+  for (const session of finalSessions) {
+    if (movedIds.has(session.id) || (session.relation?.kind !== "fork" && session.relation?.kind !== "subagent")) continue;
+    const header = readSessionHeader(session.path);
+    if (header?.parentSession && relocated.has(sessionPathKey(header.parentSession)) && !plannedFiles.has(sessionPathKey(session.path))) {
+      throw new SessionMoveConflict("Linked sessions changed; preview the move again");
+    }
+  }
+  assertCurrent();
+  if (files.some(file => getRpcSession(file.id) || getQueuedSubagentSessionIds().includes(file.id))) {
+    throw new SessionMoveConflict("A session reopened while preparing the move; stop it and preview again");
+  }
   const token = randomUUID();
   const stages = files.map((file) => ({ ...file, stage: `${file.target}.${token}.tmp`, backup: `${file.source}.${token}.bak` }));
   const staged: string[] = [];

@@ -1,8 +1,11 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { createContext, FormEvent, useCallback, useContext, useEffect, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
+
+/** Nested pickers must stay inside a native dialog's top-layer/inert boundary. */
+export const DirectoryPickerPortalContext = createContext<RefObject<HTMLElement | null> | null>(null);
 
 interface DirectoryEntry {
   name: string;
@@ -57,6 +60,7 @@ interface Props {
 
 export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false, error }: Props) {
   const { t } = useI18n();
+  const portalRoot = useContext(DirectoryPickerPortalContext);
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const [currentPath, setCurrentPath] = useState("");
   const [parentDirectory, setParentDirectory] = useState<string | null>(null);
@@ -85,9 +89,9 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
   }, []);
 
   useEffect(() => {
-    setPortalTarget(document.body);
+    setPortalTarget(portalRoot?.current ?? document.body);
     void navigateTo(initialPath || undefined);
-  }, [initialPath, navigateTo]);
+  }, [initialPath, navigateTo, portalRoot]);
 
   const handlePathSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -110,7 +114,10 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
         if (event.target === event.currentTarget && !busy) onCancel();
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && !busy) onCancel();
+        if (event.key === "Escape") {
+          event.preventDefault(); event.stopPropagation();
+          if (!busy) onCancel();
+        }
       }}
       style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}
     >

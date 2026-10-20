@@ -25,6 +25,7 @@ import { checkGitExplorer } from "./git-explorer.mjs";
 import { contextContents, changedContextContents } from "./git-diff-context.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
 import { checkSessionMovePicker } from "./session-move.mjs";
+import { checkSessionWorktreeMoves } from "./session-worktree-moves.mjs";
 import { checkGitWorkflowPlugin, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
 import { checkSessionLaunch, sessionLaunchFixtureSource } from "./session-launch.mjs";
 import { WORKTREE_MANAGER_IDS, seedWorktreeManagerFixtures, checkWorktreeManager } from "./worktree-manager.mjs";
@@ -841,6 +842,7 @@ let context;
       await coverage.run(`move/full-picker@${inputId}`, async () => {
       const moveId = viewport.width <= 600 ? ARCHIVE : APPEND;
       await checkSessionMovePicker(page, { base, api, sessionId: moveId, project, otherProject, gitProject, targetWorktree, mobile: viewport.width <= 600 });
+      await checkSessionWorktreeMoves(page, { base, api, post, agentDir, otherProject, mobile: viewport.width <= 600 });
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
       console.log(`PASS: ${viewport.width}px session move picker worktrees, exclusion, Browse, failure and stale responses`);
       await harness.closeContext(context);

@@ -19,7 +19,7 @@ export function sameMoveDirectory(a: string, b: string): boolean {
     const trimmed = slashes.replace(/\/+$/, "") || "/";
     return /^(?:[a-z]:\/|\/\/)/i.test(slashes) ? trimmed.toLowerCase() : trimmed;
   };
-  return key(a) === key(b);
+  return Boolean(a && b) && key(a) === key(b);
 }
 
 export function moveDirectoryOptions(project: string, worktrees: DirectoryOption[]): DirectoryOption[] {
@@ -186,7 +186,7 @@ export function SessionMoveDestinationPicker({ projects, currentProject, current
     {listing?.project === project && listing.error && <div role="alert" style={{ color: "#ef4444", fontSize: 12 }}>
       {listing.error} <button type="button" disabled={disabled} onClick={() => { setListing(null); setAttempt((value) => value + 1); }}>{t("sidebar.retry")}</button>
     </div>}
-    <button type="button" disabled={disabled} onClick={() => setBrowsePath(destination || currentCwd)} style={{ textAlign: "left", color: "var(--accent)", background: "none", border: 0, cursor: "pointer" }}>{t("sidebar.browseProject")}</button>
+    <button type="button" disabled={disabled} onClick={() => setBrowsePath(destination || currentCwd || currentProject)} style={{ textAlign: "left", color: "var(--accent)", background: "none", border: 0, cursor: "pointer" }}>{t("sidebar.browseProject")}</button>
     {browsePath !== null && <DirectoryPicker initialPath={browsePath} onCancel={() => setBrowsePath(null)} onSelect={(path) => {
       setProject("");
       setListing(null);
