@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { checkBlockingCard } from "./blocking-card.mjs";
+import { checkBlockingCard, checkBlockingCardArrival } from "./blocking-card.mjs";
 import { checkQuestionSets } from "./question-sets.mjs";
 
 export async function checkAskUserDialog(page, width) {
@@ -16,6 +16,7 @@ export async function checkAskUserDialog(page, width) {
     await page.getByRole("button", { name: "Send", exact: true }).click();
     const card = page.getByRole("group", { name: "E2E browser question" });
     await card.waitFor();
+    await checkBlockingCardArrival(card);
     await checkBlockingCard(card);
     assert.equal(await card.locator("xpath=ancestor::div[contains(@class, 'overflow-y-auto')]").count() > 0, true, "Question card belongs to the chat scroller");
     return card;

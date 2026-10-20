@@ -34,6 +34,7 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { AppUpdateResponse } from "@/lib/api-types";
 import type { ToolEntry } from "@/lib/tool-presets";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
+import { followBlockingCard } from "@/lib/blocking-card-scroll";
 import {
   captureScrollDistance,
   getPromptAnchorSpacerHeight,
@@ -497,13 +498,19 @@ export function ChatWindow({ session, covered = false, searchTarget, onSearchTar
   const sentinelRef = useRef<HTMLDivElement>(null);
   const messageContentRef = useRef<HTMLDivElement | null>(null);
   const questionCardRef = useRef<HTMLDivElement | null>(null);
+  const questionFollowRef = useRef<{ id: string; following: boolean } | null>(null);
 
-  // A new blocking request lives at the tail, but the reader may be looking at
-  // earlier output. Bring only the card into view (not the whole transcript).
+  // Review content can grow after the request arrives. Follow its actions until
+  // the reader scrolls away, without scrolling the document or nested card body.
   const questionId = extensionDialog?.id;
   useEffect(() => {
-    if (questionId) questionCardRef.current?.scrollIntoView({ block: "nearest" });
-  }, [questionId]);
+    const container = scrollContainerRef.current;
+    const card = questionCardRef.current;
+    if (!questionId) { questionFollowRef.current = null; return; }
+    if (questionFollowRef.current?.id !== questionId) questionFollowRef.current = { id: questionId, following: true };
+    if (loading || covered || !container || !card) return;
+    return followBlockingCard(container, card, questionFollowRef.current);
+  }, [questionId, loading, covered, scrollContainerRef]);
   const prevScrollDistanceRef = useRef<number | null>(null);
   const loadingOlderRef = useRef(false);
   const restoreStartedRef = useRef(false);
@@ -793,9 +800,13 @@ export function ChatWindow({ session, covered = false, searchTarget, onSearchTar
     return history.reverse();
   }, [messages]);
   const messageRefs = useMessageRefs(visibleMessages.length);
+  const stopQuestionFollow = useCallback(() => {
+    if (questionFollowRef.current) questionFollowRef.current.following = false;
+  }, []);
   const revealHistoryForMinimap = useCallback(() => {
+    stopQuestionFollow();
     setVisibleCount((current) => Math.max(current, messages.length * 2));
-  }, [messages.length]);
+  }, [messages.length, stopQuestionFollow]);
 
   const isEmptyNew = isNew && messages.length === 0 && !isStreaming && !sessionBusy;
   useScrollbarVisibility(scrollContainerRef, Boolean(session?.id) || !isEmptyNew);
@@ -1307,6 +1318,7 @@ export function ChatWindow({ session, covered = false, searchTarget, onSearchTar
             scrollContainer={scrollContainerRef}
             messageRefs={messageRefs}
             onRevealHistory={revealHistoryForMinimap}
+            onNavigate={stopQuestionFollow}
           />
         )}
         </>}

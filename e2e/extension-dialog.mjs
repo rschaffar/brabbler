@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { checkBlockingCard } from "./blocking-card.mjs";
+import { checkBlockingCard, checkBlockingCardArrival } from "./blocking-card.mjs";
 
 export const extensionSource = `export default function (pi) {
   pi.registerCommand("e2e-dialog", {
@@ -68,6 +68,7 @@ export async function checkExtensionDialogs(page, artifacts, width) {
     await page.getByRole("button", { name: "Send", exact: true }).click();
     const card = page.getByRole("group", mode === "longtitle" ? { name: /^E2E longtitle/ } : { name: `E2E ${mode}`, exact: true });
     await card.waitFor();
+    await checkBlockingCardArrival(card);
     await checkBlockingCard(card);
     assert.equal(await card.locator("xpath=ancestor::div[contains(@class, 'overflow-y-auto')]").count() > 0, true, "Question card belongs to the chat scroller");
     return card;

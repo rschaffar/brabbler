@@ -18,6 +18,7 @@ interface Props {
   scrollContainer: RefObject<HTMLDivElement | null>;
   messageRefs: RefObject<(HTMLDivElement | null)[]>;
   onRevealHistory: () => void;
+  onNavigate?: () => void;
 }
 
 const MINIMAP_WIDTH = 36;
@@ -245,6 +246,7 @@ export const ChatMinimap = memo(function ChatMinimap({
   scrollContainer: scrollContainerRef,
   messageRefs,
   onRevealHistory,
+  onNavigate,
 }: Props) {
   const { t } = useI18n();
   const [visible, setVisible] = useState(false);
@@ -283,12 +285,13 @@ export const ChatMinimap = memo(function ChatMinimap({
   nodeLayoutRef.current = nodeLayout;
 
   const lockActiveNode = useCallback((index: number) => {
+    onNavigate?.();
     activeNodeLockRef.current = {
       index,
       until: Date.now() + NAVIGATION_ACTIVE_LOCK_MS,
     };
     setActiveIndex(index);
-  }, []);
+  }, [onNavigate]);
 
   const syncActiveNode = useCallback((scrollEl: HTMLDivElement, nextNodes: NodeInfo[]) => {
     const activeLock = activeNodeLockRef.current;
