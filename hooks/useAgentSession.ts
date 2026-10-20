@@ -17,6 +17,7 @@ import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
 import { clearQuestionDraft, reconcileQuestionDrafts } from "@/lib/question-set-drafts";
 import { useI18n } from "./useI18n";
 import { normalizeToolCalls } from "@/lib/normalize";
+import { appendCompletedMessage } from "@/lib/live-transcript";
 import { isModelSpeed, type ModelSpeed } from "@/lib/model-speed";
 import { appendOperationReceipt, collapseOperationReceipts, operationReceiptMessage } from "@/lib/operation-receipts";
 import { appendInteractionReceipt, interactionReceiptMessage, mergeInteractionReceiptHistory, receiptBranchContains } from "@/lib/interaction-receipts";
@@ -1580,20 +1581,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           // already appended it optimistically. Consume only the still-adjacent
           // optimistic bubble; later same-text queue deliveries must render.
           const delivered = normalizeToolCalls(completed);
-          const deliveredKey = userMessageKey(delivered);
           const optimisticKey = optimisticUserMessageKeyRef.current;
           optimisticUserMessageKeyRef.current = null;
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (optimisticKey && last?.role === "user" && userMessageKey(last) === optimisticKey) {
-              return optimisticKey === deliveredKey
-                ? prev
-                : [...prev.slice(0, -1), delivered];
-            }
-            return [...prev, delivered];
-          });
+          setTranscript((current) => appendCompletedMessage(current, delivered,
+            typeof event.entryId === "string" ? event.entryId : "", optimisticKey));
         } else if (completed) {
-          setMessages((prev) => [...prev, normalizeToolCalls(completed)]);
+          setTranscript((current) => appendCompletedMessage(current, normalizeToolCalls(completed),
+            typeof event.entryId === "string" ? event.entryId : ""));
         }
         dispatch({ type: "end" });
         setAgentPhase({ kind: "waiting_model" });
@@ -1727,7 +1721,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setExtensionDialog((current) => current?.id === event.id ? null : current);
         break;
     }
-  }, [addNotice, cancelEventStreamGrace, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel, setCompactionState, setMessages, setTranscript, reconcileInteractionReceipts]);
+  }, [addNotice, cancelEventStreamGrace, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel, setCompactionState, setTranscript, reconcileInteractionReceipts]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {

@@ -42,7 +42,7 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `mobile-sidebar` | Compact action geometry/keyboard, archive/search scopes, reconciled inline restore and subsequent project move |
 | `worktrees` | Management inventory, paging, trust boundaries, stale/lost preparation recovery and bounded cleanup receipts |
 | `session-launch` | Real SDK tool, exact approvals/settings, independent faux-provider sessions and receipt navigation |
-| `running-forks` | Historical/root/quoted forks while the original SDK extension waits for input |
+| `running-forks` | Newly submitted live-prompt forks without reload using a faux-provider turn, plus historical/root/quoted forks while the original SDK extension waits for input |
 | `model-speed` | Native writes, canonical packaged disk reader, persistence and ambiguous acknowledgement reconciliation |
 | `trust` | Worktree/project grants, revocation and restriction |
 | `git-plugin` | Bundled Git Workflow, approvals, immutable reviews, receipts, expiry/reconnect and cleanup |

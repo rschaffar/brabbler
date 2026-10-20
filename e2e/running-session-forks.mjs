@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { waitForAsyncCondition } from "./async-condition.mjs";
 
 export const RUNNING_FORK_IDS = [1280, 390].map((width) => `e2e-running-fork-${width}`);
 
@@ -11,9 +12,9 @@ export function seedRunningForkFixtures({ agentDir, writeSession, message }) {
   for (const width of [1280, 390]) {
     writeSession(`e2e-running-fork-${width}`, [
       message("root", null, "user", `Running fork root ${width}`),
-      message("reply", "root", "assistant", `Running fork answer ${width}`),
+      message("reply", "root", "assistant", [{ type: "text", text: `Running fork answer ${width}` }]),
       message("retry", "reply", "user", `Retry this message ${width}`),
-      message("later", "retry", "assistant", `Later answer ${width}`),
+      message("later", "retry", "assistant", [{ type: "text", text: `Later answer ${width}` }]),
     ], project);
   }
 }
@@ -38,6 +39,51 @@ export async function checkRunningSessionForks(page, { base, api, post, artifact
   const responseFor = (type) => waitForForkResponse(page, (response) =>
     new URL(response.url()).pathname === sourcePath && response.request().method() === "POST"
     && response.request().postDataJSON()?.type === type, { timeout: 120_000 });
+  // Reuse the registered faux provider: unlike an extension command, this
+  // submits and persists an ordinary user message before blocking in ask_user.
+  const beforeLivePrompt = await api(`/api/sessions/${sourceId}`);
+  await post(sourcePath, { type: "set_model", provider: "e2e-session-launch", modelId: "faux-1" });
+  const liveText = `Fork this newly submitted prompt ${width}`;
+  const liveInput = () => page.getByRole("group", { name: "Independent child input", exact: true })
+    .filter({ has: page.getByRole("button", { name: "Submit", exact: true }) });
+  await page.locator(".chat-input-textarea").fill(liveText);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  try {
+    await liveInput().waitFor();
+    const liveMessage = page.locator('[data-entry-id]').filter({ has: page.getByText(liveText, { exact: true }) });
+    assert.equal(await liveMessage.count(), 1, "The optimistic prompt must not be duplicated");
+    await liveMessage.hover();
+    // No reload, session switch, or settlement may be needed to expose the ID.
+    const saved = await api(`/api/sessions/${sourceId}`);
+    const liveIndex = saved.context.messages.findIndex((message) => message.role === "user"
+      && (typeof message.content === "string" ? message.content : message.content.map((block) => block.text ?? "").join("")) === liveText);
+    assert.ok(liveIndex >= 0);
+    const fork = responseFor("fork");
+    await liveMessage.getByRole("button", { name: "New session", exact: true }).click();
+    const response = await fork;
+    assert.equal(response.status(), 200);
+    assert.deepEqual(response.request().postDataJSON(), { type: "fork", entryId: saved.context.entryIds[liveIndex] });
+    const childId = (await response.json()).data.newSessionId;
+    await page.waitForFunction((id) => new URL(location.href).searchParams.get("session") === id, childId);
+    assert.deepEqual((await api(`/api/sessions/${childId}`)).context.entryIds, beforeLivePrompt.context.entryIds);
+    assert.equal((await api(sourcePath)).state.isPromptRunning, true);
+    assert.equal(await page.evaluate(() => performance.timeOrigin), origin);
+    const sidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
+    if (await sidebar.isVisible()) await sidebar.click();
+    await page.locator(`.session-row[data-session-id="${sourceId}"]`).click({ position: { x: 12, y: 12 } });
+    await liveInput().waitFor();
+    await liveInput().getByRole("textbox").first().fill("Continue the original");
+    await liveInput().getByRole("button", { name: "Submit", exact: true }).click();
+    await page.getByText("Independent child completed", { exact: true }).first().waitFor();
+    await waitForAsyncCondition(page, async (id) => {
+      const response = await fetch(`/api/agent/${id}`);
+      if (!response.ok) throw new Error(`Live fork state HTTP ${response.status}`);
+      return (await response.json()).state?.isPromptRunning === false;
+    }, sourceId);
+  } finally {
+    if ((await api(sourcePath)).state.isPromptRunning) await post(sourcePath, { type: "abort" });
+  }
+
   // A genuine SDK extension command stays active without a provider request.
   const prompting = responseFor("prompt");
   await page.locator(".chat-input-textarea").fill("/e2e-dialog confirm");

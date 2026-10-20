@@ -105,4 +105,4 @@ Location: `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`
 {"type":"session_info","id":"...","parentId":"...","name":"user-defined name"}
 ```
 
-`entryIds[]` in `SessionContext` is a parallel array to `messages[]` — maps each displayed message back to its `.jsonl` entry id, used for fork and navigate_tree calls.
+`entryIds[]` in `SessionContext` is a parallel array to `messages[]` — maps each displayed message back to its `.jsonl` entry id, used for fork and navigate_tree calls. Live ordinary `message_end` events carry that ID too: the wrapper defers delivery one microtask because the SDK synchronously appends after notifying its public listeners, and attaches an ID only when the saved leaf holds the exact message object. The hook commits content and IDs atomically, including when an unchanged optimistic prompt is consumed. Unsaved or unmatched messages retain an empty ID, never a guessed navigation target; newly saved prompts can fork while the source keeps running without a reload.
