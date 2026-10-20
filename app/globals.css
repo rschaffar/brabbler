@@ -2332,10 +2332,11 @@ span.token.table {
 .activity-review-item > .activity-item { flex: 1; min-width: 0; }
 .activity-mark-read { flex: none; padding: 0 16px; border: 0; background: transparent; color: var(--accent); font-size: 11px; cursor: pointer; }
 .activity-mark-read:hover, .activity-mark-read:focus-visible { background: var(--bg-hover); text-decoration: underline; }
-.activity-item-needs-you .activity-dot { background: #e59a37; }
+.activity-item-needs-you .activity-dot, .activity-item-later.activity-deferred-attention .activity-dot { background: #e59a37; }
 .activity-item-working .activity-dot { background: var(--accent); }
 .activity-item-interrupted .activity-dot { background: #e59a37; }
 .activity-item-ready .activity-dot { background: #5bb987; }
+.activity-item-later .activity-dot { background: var(--text-muted); }
 .activity-item-meta, .activity-item-reason { display: block; margin: 3px 0 0 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted); }
 .activity-item-reason { color: var(--text); }
 .activity-starred-item { display: flex; align-items: stretch; }

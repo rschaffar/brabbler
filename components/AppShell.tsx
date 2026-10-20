@@ -161,6 +161,13 @@ export function AppShell() {
   }, []);
   const [activityAttention, setActivityAttention] = useState<SessionAttention[]>([]);
   const [reviewSessionIds, setReviewSessionIds] = useState<Set<string>>(() => new Set());
+  const [laterSessionIds, setLaterSessionIds] = useState<Set<string>>(() => new Set());
+  const [laterAttentionSessionIds, setLaterAttentionSessionIds] = useState<Set<string>>(() => new Set());
+  const markReviewLaterRef = useRef<((id: string, requestId?: string) => void) | null>(null);
+  const handleReviewLaterReady = useCallback((markLater: ((id: string, requestId?: string) => void) | null) => {
+    markReviewLaterRef.current = markLater;
+  }, []);
+  const handleMarkReviewLater = useCallback((id: string, requestId?: string) => markReviewLaterRef.current?.(id, requestId), []);
   const markReviewReadRef = useRef<((id: string) => void) | null>(null);
   const handleReviewReadReady = useCallback((markRead: ((id: string) => void) | null) => {
     markReviewReadRef.current = markRead;
@@ -169,14 +176,18 @@ export function AppShell() {
   const [activityAvailable, setActivityAvailable] = useState(true);
   const [recoveryRefreshKey, setRecoveryRefreshKey] = useState(0);
   const handleRecoveryDismissed = useCallback(() => setRecoveryRefreshKey((key) => key + 1), []);
-  const handleActivityChange = useCallback((attention: SessionAttention[], reviewIds: Set<string>, available: boolean) => {
+  const handleActivityChange = useCallback((attention: SessionAttention[], reviewIds: Set<string>, available: boolean, laterIds: Set<string>, laterAttentionIds: Set<string>) => {
     setActivityAttention((previous) => previous.length === attention.length && previous.every((item, index) => {
       const next = attention[index];
       return item.sessionId === next.sessionId && item.method === next.method
-        && item.summary === next.summary && item.since === next.since;
+        && item.summary === next.summary && item.since === next.since && item.requestId === next.requestId;
     }) ? previous : attention);
     setReviewSessionIds((previous) => previous.size === reviewIds.size
       && [...reviewIds].every((id) => previous.has(id)) ? previous : reviewIds);
+    setLaterSessionIds((previous) => previous.size === laterIds.size
+      && [...laterIds].every((id) => previous.has(id)) ? previous : laterIds);
+    setLaterAttentionSessionIds((previous) => previous.size === laterAttentionIds.size
+      && [...laterAttentionIds].every((id) => previous.has(id)) ? previous : laterAttentionIds);
     setActivityAvailable(available);
   }, []);
   const activityNeedsCount = useMemo(() => getActivitySections(
@@ -1279,6 +1290,7 @@ export function AppShell() {
         onQueuedSessionIdsChange={handleQueuedSessionIdsChange}
         onActivityChange={handleActivityChange}
         onReviewReadReady={handleReviewReadReady}
+        onReviewLaterReady={handleReviewLaterReady}
         onSessionsChange={handleSessionsChange}
       />
       <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
@@ -2421,6 +2433,9 @@ export function AppShell() {
         <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex" }}>
           {activeOverview === "activity" && (
             <ActivityOverview
+              laterIds={laterSessionIds}
+              laterAttentionIds={laterAttentionSessionIds}
+              onMarkLater={handleMarkReviewLater}
               sessions={sessionsWithSelection}
               runningIds={runningSessionIds}
               queuedIds={queuedSessionIds}

@@ -73,6 +73,9 @@ Restart Pi Web after repair.
 
 The [common baseline](testing.md) covers native PTY, lease, output cursor, input
 queue and storage checks, plus controlled whole-component lifecycle callbacks.
+Core lease fixtures retain their exact PTY records through expiry so teardown can
+force-terminate an owned shell even after its registry entry is removed and mocked
+timers reset. The ignored-HUP regression requires native exit, including on failure.
 `nix run .#test -- core --file components/TerminalPanel.test.mjs` focuses those
 callbacks and client contracts. `nix run .#test -- e2e --group terminal` exercises
 real PTYs and pinned Chromium against the Nix-built production launcher in an

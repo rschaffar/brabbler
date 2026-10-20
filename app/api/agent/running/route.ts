@@ -22,6 +22,8 @@ export async function GET() {
       attention: getRpcSessionAttention(),
       completedRuns: review.completedRuns,
       reviewedRuns: review.reviewedRuns,
+      laterRuns: review.laterRuns,
+      laterRequests: review.laterRequests,
       activityReviewPersistenceFailed: activityReviewPersistenceFailed(),
       completionNotificationSuppressedSessionIds: getCompletionNotificationSuppressedRpcSessionIds(),
     },

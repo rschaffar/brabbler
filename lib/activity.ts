@@ -2,7 +2,7 @@ import type { SessionAttention, SessionInfo } from "./types";
 import { workspaceKeyOf } from "./workspace-memory";
 import { hasResolvedProjectIdentity } from "./hidden-projects";
 
-export type ActivityStatus = "needs-you" | "working" | "queued" | "interrupted" | "ready";
+export type ActivityStatus = "needs-you" | "working" | "queued" | "interrupted" | "ready" | "later";
 export interface ActivityItem {
   session: SessionInfo;
   status: ActivityStatus;
@@ -65,34 +65,26 @@ export function getActivitySections(
   queuedIds: ReadonlySet<string> = new Set(),
   interruptedIds: ReadonlySet<string> = new Set(),
   hiddenProjectKeys: ReadonlySet<string> = new Set(),
+  laterIds: ReadonlySet<string> = new Set(),
+  laterAttentionIds: ReadonlySet<string> = new Set(),
 ): ActivitySections {
   const byId = new Map(sessions.map((session) => [session.id, session]));
   const attentionById = new Map(attention.map((request) => [request.sessionId, request]));
-  const sections: ActivitySections = { "needs-you": [], working: [], queued: [], interrupted: [], ready: [] };
+  const sections: ActivitySections = { "needs-you": [], working: [], queued: [], interrupted: [], ready: [], later: [] };
   const statusById = new Map<string, ActivityStatus>();
   const hiddenIds = hiddenActivitySessionIds(sessions, hiddenProjectKeys);
-  const isExcluded = (session: SessionInfo): boolean => {
-    if (hiddenIds.has(session.id)) return true;
-    const visited = new Set<string>();
-    let current: SessionInfo | undefined = session;
-    while (current && !visited.has(current.id)) {
-      if (current.archived) return true;
-      visited.add(current.id);
-      current = current.relation?.kind === "subagent" ? byId.get(current.relation.parentSessionId) : undefined;
-    }
-    return false;
-  };
 
   for (const session of sessions) {
-    if (isExcluded(session)) continue;
+    if (hiddenIds.has(session.id)) continue;
     const projectKey = workspaceKeyOf(session);
     if (projectFilter && projectKey !== projectFilter) continue;
     const request = attentionById.get(session.id);
     // A live run supersedes an old unread marker; an actual dialog supersedes both.
-    const status = liveSessionActivityStatus(session.id, runningIds, attentionById)
+    const live = liveSessionActivityStatus(session.id, runningIds, attentionById);
+    const status = live === "needs-you" && laterAttentionIds.has(session.id) ? "later" : live
       ?? (queuedIds.has(session.id) ? "queued"
         : !session.transient && interruptedIds.has(session.id) ? "interrupted"
-        : reviewIds.has(session.id) ? "ready" : null);
+        : reviewIds.has(session.id) ? laterIds.has(session.id) ? "later" : "ready" : null);
     if (!status) continue;
     statusById.set(session.id, status);
     sections[status].push({ session, status, ...(request ? { attention: request } : {}), nested: false, projectKey });

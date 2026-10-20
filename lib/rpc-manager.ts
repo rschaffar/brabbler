@@ -426,6 +426,7 @@ export class AgentSessionWrapper {
     if (!isBlockingExtensionUiRequest(request)) return null;
     return {
       sessionId: this.sessionId,
+      requestId: id,
       method: request.method,
       summary: attentionSummary(request),
       since: this.pendingUiStartedAt.get(id) ?? Date.now(),

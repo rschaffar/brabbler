@@ -158,6 +158,8 @@ export const enLocale: LocalePlugin = {
     "activity.interrupted": "Possibly interrupted",
     "activity.interruptedHint": "Check saved work and tool effects before continuing",
     "activity.ready": "Ready to review",
+    "activity.later": "Later",
+    "activity.markLaterSession": "Review {name} later",
     "activity.project": "Project",
     "activity.allProjects": "All projects",
     "activity.empty": "No agent activity right now.",

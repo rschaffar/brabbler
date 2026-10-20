@@ -118,7 +118,12 @@ test("server review snapshot includes subagents in Activity without adding subag
   assert.match(source, /setUnreadSessionIds\(\(prev\) => sameIdSet\(prev, reviewed\.rootReady\) \? prev : reviewed\.rootReady\)/);
   assert.match(source, /completedWithNotifications = completedInBackground\.filter\([\s\S]*?!previousSuppressedCompletionSessionIdsRef\.current\.has\(id\)[\s\S]*?!knownSubagentIds\.has\(id\)/);
   assert.match(source, /if \(completedWithNotifications\.length > 0\) \{\s*onBackgroundTaskDone\?\.\(\)/);
-  assert.match(source, /onActivityChange\?\.\(attention, new Set\(\[\.\.\.unreadSessionIds, \.\.\.subagentReviewIds\]\), activityAvailable\)/);
+  assert.match(source, /onActivityChange\?\.\(attention, new Set\(\[\.\.\.unreadSessionIds, \.\.\.subagentReviewIds\]\), activityAvailable, laterSessionIds, laterAttentionSessionIds\)/);
+});
+
+test("Later validates the displayed request token instead of substituting a replacement question", () => {
+  assert.match(source, /markReviewLater = useCallback\(\(id: string, requestId\?: string\)/);
+  assert.match(source, /const receipt = \{ sessionId: id, requestId \};\s*if \(!isCurrentActivityRequest\(attention, receipt\)\) return;/);
 });
 
 test("includes project activity counts in accessible labels", () => {

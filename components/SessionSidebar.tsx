@@ -14,9 +14,9 @@ import { useStarredSessions } from "@/hooks/useStarredSessions";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import { getProjectActivity, getRecentProjects } from "@/lib/project-groups";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
-import type { SessionAttention, SessionCompletion } from "@/lib/types";
+import type { SessionAttention, SessionAttentionReceipt, SessionCompletion } from "@/lib/types";
 import {
-  loadReviewedRunTimes, mergeReviewedRunTimes, reconcileCompletedRuns,
+  activityRequestKey, deferredAttentionIds, isCurrentActivityRequest, loadReviewedRunTimes, mergeReviewedRunTimes, reconcileCompletedRuns,
   REVIEWED_RUN_TIMES_STORAGE_KEY,
 } from "@/lib/activity-review";
 import { formatRelativeTime } from "@/lib/i18n/format";
@@ -155,8 +155,9 @@ interface Props {
   onBackgroundTaskDone?: () => void;
   onRunningSessionIdsChange?: (ids: Set<string>) => void;
   onQueuedSessionIdsChange?: (ids: Set<string>) => void;
-  onActivityChange?: (attention: SessionAttention[], reviewIds: Set<string>, available: boolean) => void;
+  onActivityChange?: (attention: SessionAttention[], reviewIds: Set<string>, available: boolean, laterIds: Set<string>, laterAttentionIds: Set<string>) => void;
   onReviewReadReady?: (markRead: ((id: string) => void) | null) => void;
+  onReviewLaterReady?: (markLater: ((id: string, requestId?: string) => void) | null) => void;
   onSessionsChange?: (sessions: SessionInfo[]) => void;
 }
 
@@ -411,7 +412,7 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onQueuedSessionIdsChange, onActivityChange, onReviewReadReady, onSessionsChange }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onQueuedSessionIdsChange, onActivityChange, onReviewReadReady, onReviewLaterReady, onSessionsChange }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const { starredIds, starredProjectKeys, toggleStarred, toggleStarredProject } = useStarredSessions();
@@ -422,6 +423,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const completedRunTimesRef = useRef(new Map<string, number>());
   const reviewedRunTimesRef = useRef(new Map<string, number>());
   const pendingReviewAcksRef = useRef(new Map<string, number>());
+  const laterRunTimesRef = useRef(new Map<string, number>());
+  const pendingLaterRef = useRef(new Map<string, number>());
+  const laterRequestsRef = useRef(new Set<string>());
+  const pendingLaterRequestsRef = useRef(new Map<string, SessionAttentionReceipt>());
+  const [laterAttentionSessionIds, setLaterAttentionSessionIds] = useState<Set<string>>(() => new Set());
+  const [laterSessionIds, setLaterSessionIds] = useState<Set<string>>(() => new Set());
   const reviewAckInFlightRef = useRef(false);
   const reviewAckFailedRef = useRef(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -595,7 +602,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       // is intentionally silent even if an older client marked them unread.
       const unreadEligibleIds = new Set(
         data.sessions
-          .filter((session) => session.relation?.kind !== "subagent" && !session.archived)
+          .filter((session) => session.relation?.kind !== "subagent")
           .map((session) => session.id),
       );
       setUnreadSessionIds((prev) => {
@@ -604,7 +611,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         return next.size === prev.size ? prev : next;
       });
       const subagentIds = new Set(data.sessions.filter((session) =>
-        session.relation?.kind === "subagent" && !session.archived,
+        session.relation?.kind === "subagent",
       ).map((session) => session.id));
       setSubagentReviewIds((prev) => {
         const next = new Set([...prev].filter((id) => subagentIds.has(id)));
@@ -657,23 +664,41 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, []);
 
   const flushReviewAcks = useCallback(async function flushReviewAcks() {
-    if (reviewAckInFlightRef.current || pendingReviewAcksRef.current.size === 0) return;
+    if (reviewAckInFlightRef.current || (pendingReviewAcksRef.current.size === 0 && pendingLaterRef.current.size === 0 && pendingLaterRequestsRef.current.size === 0)) return;
     reviewAckInFlightRef.current = true;
-    const entries = [...pendingReviewAcksRef.current].map(([sessionId, at]) => ({ sessionId, at }));
     try {
-      const response = await fetch("/api/activity/review", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ op: "ack", entries }),
-      });
-      if (!response.ok) throw new Error(`Review acknowledgement failed: HTTP ${response.status}`);
-      const data = await response.json() as { reviewedRuns: SessionCompletion[] };
-      const acknowledged = new Map(data.reviewedRuns.map(({ sessionId, at }) => [sessionId, at]));
-      for (const { sessionId, at } of entries) {
-        if ((acknowledged.get(sessionId) ?? 0) >= at && (pendingReviewAcksRef.current.get(sessionId) ?? 0) <= at) {
-          pendingReviewAcksRef.current.delete(sessionId);
+      for (const op of ["ack", "later"] as const) {
+        const pending = op === "ack" ? pendingReviewAcksRef.current : pendingLaterRef.current;
+        const entries = [...pending].map(([sessionId, at]) => ({ sessionId, at }));
+        if (entries.length === 0) continue;
+        const response = await fetch("/api/activity/review", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ op, entries }),
+        });
+        if (!response.ok) throw new Error(`Review acknowledgement failed: HTTP ${response.status}`);
+        const data = await response.json() as { reviewedRuns: SessionCompletion[]; laterRuns: SessionCompletion[] };
+        const confirmed = new Map((op === "ack" ? data.reviewedRuns : data.laterRuns).map(({ sessionId, at }) => [sessionId, at]));
+        for (const { sessionId, at } of entries) {
+          if ((confirmed.get(sessionId) ?? 0) >= at && (pending.get(sessionId) ?? 0) <= at) pending.delete(sessionId);
         }
+        const times = op === "ack" ? reviewedRunTimesRef : laterRunTimesRef;
+        times.current = mergeReviewedRunTimes(times.current, confirmed);
       }
-      reviewedRunTimesRef.current = mergeReviewedRunTimes(reviewedRunTimesRef.current, acknowledged);
+      if (pendingLaterRequestsRef.current.size > 0) {
+        const entries = [...pendingLaterRequestsRef.current.values()];
+        const response = await fetch("/api/activity/review", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ op: "later-request", entries }),
+        });
+        if (!response.ok) throw new Error(`Request deferral failed: HTTP ${response.status}`);
+        const data = await response.json() as { laterRequests: SessionAttentionReceipt[] };
+        const confirmed = new Set(data.laterRequests.map(activityRequestKey));
+        for (const entry of entries) {
+          const key = activityRequestKey(entry);
+          if (confirmed.has(key)) pendingLaterRequestsRef.current.delete(key);
+        }
+        for (const key of confirmed) laterRequestsRef.current.add(key);
+      }
       reviewAckFailedRef.current = false;
     } catch {
       // Retain the pending receipt and retry on the next visible-tab poll.
@@ -683,7 +708,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       reviewAckInFlightRef.current = false;
       // Bulk reads may enqueue more receipts while the first POST is in flight.
       // Drain them promptly instead of relying on another visible-tab poll.
-      if (!reviewAckFailedRef.current && pendingReviewAcksRef.current.size > 0) void flushReviewAcks();
+      if (!reviewAckFailedRef.current && (pendingReviewAcksRef.current.size > 0 || pendingLaterRef.current.size > 0 || pendingLaterRequestsRef.current.size > 0)) void flushReviewAcks();
     }
   }, []);
 
@@ -711,6 +736,30 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onReviewReadReady?.(markReviewRead);
     return () => onReviewReadReady?.(null);
   }, [markReviewRead, onReviewReadReady]);
+
+  const markReviewLater = useCallback((id: string, requestId?: string) => {
+    if (requestId) {
+      const receipt = { sessionId: id, requestId };
+      if (!isCurrentActivityRequest(attention, receipt)) return;
+      const key = activityRequestKey(receipt);
+      laterRequestsRef.current.add(key);
+      pendingLaterRequestsRef.current.set(key, receipt);
+      setLaterAttentionSessionIds((previous) => new Set([...previous, id]));
+      void flushReviewAcks();
+      return;
+    }
+    const at = completedRunTimesRef.current.get(id);
+    if (!at || at <= (reviewedRunTimesRef.current.get(id) ?? 0) || runningSessionIds.has(id)) return;
+    laterRunTimesRef.current.set(id, at);
+    pendingLaterRef.current.set(id, at);
+    setLaterSessionIds((previous) => new Set([...previous, id]));
+    void flushReviewAcks();
+  }, [attention, flushReviewAcks, runningSessionIds]);
+
+  useEffect(() => {
+    onReviewLaterReady?.(markReviewLater);
+    return () => onReviewLaterReady?.(null);
+  }, [markReviewLater, onReviewLaterReady]);
 
   // Import only timestamped legacy receipts. ID-only unread flags cannot prove
   // that a run actually settled; the server is authoritative after this point.
@@ -780,12 +829,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           attention?: SessionAttention[];
           completedRuns?: SessionCompletion[];
           reviewedRuns?: SessionCompletion[];
+          laterRuns?: SessionCompletion[];
+          laterRequests?: SessionAttentionReceipt[];
           activityReviewPersistenceFailed?: boolean;
         };
         if (stopped || controller !== current) return;
         runningPollAuthoritativeRef.current = true;
         setAttention(data.attention ?? []);
-        setActivityAvailable(!data.activityReviewPersistenceFailed && !reviewAckFailedRef.current);
         const running = new Set(data.runningSessionIds ?? []);
         completedRunTimesRef.current = new Map((data.completedRuns ?? []).map(({ sessionId, at }) => [sessionId, at]));
         const serverReviewed = new Map((data.reviewedRuns ?? []).map(({ sessionId, at }) => [sessionId, at]));
@@ -799,6 +849,33 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         reviewedRunTimesRef.current = mergeReviewedRunTimes(
           mergeReviewedRunTimes(retainedReviewed, serverReviewed), pendingReviewAcksRef.current,
         );
+        const serverLater = new Map((data.laterRuns ?? []).map(({ sessionId, at }) => [sessionId, at]));
+        for (const [id, at] of pendingLaterRef.current) {
+          if ((serverLater.get(id) ?? 0) >= at || !completedRunTimesRef.current.has(id)) pendingLaterRef.current.delete(id);
+        }
+        laterRunTimesRef.current = mergeReviewedRunTimes(
+          mergeReviewedRunTimes(new Map([...laterRunTimesRef.current].filter(([id]) => completedRunTimesRef.current.has(id))), serverLater),
+          pendingLaterRef.current,
+        );
+        const activeRequests = new Set((data.attention ?? []).flatMap((request) => request.requestId
+          ? [activityRequestKey({ sessionId: request.sessionId, requestId: request.requestId })] : []));
+        const serverRequests = new Set((data.laterRequests ?? []).map(activityRequestKey));
+        for (const key of pendingLaterRequestsRef.current.keys()) {
+          if (serverRequests.has(key) || !activeRequests.has(key)) pendingLaterRequestsRef.current.delete(key);
+        }
+        laterRequestsRef.current = new Set([...laterRequestsRef.current, ...serverRequests, ...pendingLaterRequestsRef.current.keys()]
+          .filter((key) => activeRequests.has(key)));
+        const deferredIds = deferredAttentionIds(data.attention ?? [], laterRequestsRef.current);
+        setLaterAttentionSessionIds((previous) => sameIdSet(previous, deferredIds) ? previous : deferredIds);
+        // A write may have persisted even when its response was lost. A poll
+        // confirming all receipts must recover availability without another POST.
+        if (!reviewAckInFlightRef.current && pendingReviewAcksRef.current.size === 0 && pendingLaterRef.current.size === 0 && pendingLaterRequestsRef.current.size === 0) {
+          reviewAckFailedRef.current = false;
+        }
+        setActivityAvailable(!data.activityReviewPersistenceFailed && !reviewAckFailedRef.current);
+        const laterIds = new Set([...laterRunTimesRef.current].filter(([id, at]) =>
+          at === completedRunTimesRef.current.get(id) && at > (reviewedRunTimesRef.current.get(id) ?? 0)).map(([id]) => id));
+        setLaterSessionIds((previous) => sameIdSet(previous, laterIds) ? previous : laterIds);
         const reviewed = reconcileCompletedRuns(
           data.completedRuns ?? [], reviewedRunTimesRef.current, running, allSessionsRef.current,
         );
@@ -852,8 +929,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [onQueuedSessionIdsChange, queuedSessionIds]);
 
   useEffect(() => {
-    onActivityChange?.(attention, new Set([...unreadSessionIds, ...subagentReviewIds]), activityAvailable);
-  }, [onActivityChange, attention, unreadSessionIds, subagentReviewIds, activityAvailable]);
+    onActivityChange?.(attention, new Set([...unreadSessionIds, ...subagentReviewIds]), activityAvailable, laterSessionIds, laterAttentionSessionIds);
+  }, [onActivityChange, attention, unreadSessionIds, subagentReviewIds, activityAvailable, laterSessionIds, laterAttentionSessionIds]);
 
   useEffect(() => {
     onSessionsChange?.(allSessions);
