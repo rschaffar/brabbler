@@ -6,7 +6,7 @@ Implement the approved upstream lifecycle, child-model input-budget and strict m
 
 ## Context and Plan Relationship
 
-User greenlight and four decision answers are recorded in this session. Dedicated branch `feat/subagent-lifecycle`, worktree `/home/robert/projects/3rdparty/pi-web-worktrees/subagent-lifecycle`, base local `rst-main` `1fe0a04c2d6d11e0c301457e379289d3a61f1508`. CodeGraph initialization succeeded. One repository writer; no agent delegation is used under the original task boundary. No remote operations, live providers/credentials, installed-service probes or deployment.
+User greenlight and four decision answers are recorded in this session. Dedicated branch `feat/subagent-lifecycle`, worktree `/home/robert/projects/3rdparty/pi-web-worktrees/subagent-lifecycle`, base local `rst-main` `1fe0a04c2d6d11e0c301457e379289d3a61f1508`. CodeGraph initialization succeeded. One repository writer; no agent delegation is used under the original task boundary. No remote operations, live providers/credentials, installed-service probes or host deployment.
 
 Completed ports `6bc2c3f`, `8e6735a`, `1fe0a04` and archived 2026-10-20 plans remain baseline. MCP/Code-mode controls have a separate assessment owner, including model-only control-tool exposure. No automatic worktree trust or local Claude/trust branch import. Keep SDK 1.3.0, Node 24.21.0, Next 16.4.2 and immutable Nix packaging.
 
@@ -28,8 +28,8 @@ The user separately approved a shared missing-folder UI fix after packaged-brows
 - [x] Chain the awaited native SDK turn boundary, restore hooks/queue mode, enforce saved budgets on resume and distinguish terminal outcomes; verify native faux-provider turns and cancellation.
 - [x] Update Agents settings/demo presentation and owning maintained guides; cover real packaged browser lifecycle/settings/history behavior.
 - [x] Add separately approved missing-folder main-chat handling: preserve saved cwd/history, suppress invalid automatic workspace probes/runtime warming, and verify desktop/tablet/mobile navigation/reload without general console exemptions.
-- [ ] Run focused Nix checks while editing, review the complete patch, then complete fresh core/static/plugin, all browser/terminal groups and genuine deployment-VM acceptance. Record exact candidate/source identity, commands, results, artifacts and command/preparation/execution runtimes.
-- [ ] Commit coherent reviewed history and resolve completion intent through the Git lifecycle. Local integration requires current-target rebase/reassessment and exact-state non-FF approval; cleanup is separate.
+- [x] Run focused Nix checks while editing, review the complete patch, then complete fresh core/static/plugin, all browser/terminal groups and genuine deployment-VM acceptance. Exact states, commands, failures and measured intervals are below; complete acceptance uses separately verified levels, not a claimed successful `all` invocation.
+- [x] Commit coherent reviewed history and resolve completion intent through the Git lifecycle. The user requested rebase and merge in the current integration queue. The ongoing Git lifecycle owns exact-state unsigned non-FF integration into `rst-main` and its execution receipt; separate cleanup/publication authority remains outside implementation completion.
 
 ## Risks and Recovery
 
@@ -72,9 +72,17 @@ Checkout-local dependencies are not prepared; checks use Nix-owned synthetic acc
 
 - Complete core on `7319fe3086a11f47ecb629fef6e7474608a93c28` settled and failed in 342s: `/tmp/pi-web-subagent-complete-core.Hzrmy2.log`, `/tmp/pi-web-test-core.pDWGh5/run.json`. Static preparation and the corrected hook tests passed. Of 361 planned files, 310 passed, one failed and 50 were not admitted after failure; 2,288/2,289 executed tests passed, with no cancelled/skipped tests or observed survivors. The sole failure is another source-shape contract in `lib/rpc-manager.test.mjs`: the terminal append moved to `recordSubagentResult`. Update it to assert both the runtime's recorder call and the helper's actual `SUBAGENT_RESULT_TYPE` append, keeping every resource-policy assertion. This remains a test-only correction; rerun the complete core universe, not merely the failed file.
 
+### Final accepted inputs and handoff
+
+- Complete core/static/plugin passed at `86cebcc9c223c3c4f9df4c75ea5901c872488924`: `nix run --offline --no-write-lock-file .#test -- core --offline --jobs 4`, **361/361 files, 2,699/2,699 tests, 12 suites**, no failures/cancellations/skips/unstarted files or observed survivors. Requested/effective workers **4/4**. Log `/tmp/pi-web-subagent-core-settled.yVH1rE.log`, report `/tmp/pi-web-test-core.NMV3oI/run.json`, immutable details `/nix/store/7h51adivc138blnbkfi50xn8mnf7x98z-pi-web-core-checks/artifacts/run-fr4w5I/summary.json`. Export digest `4f9f573d3b2329bf7cd92280e51750c19e6cf56fe2d0d6df9ac3ef268d6aa6ba`. Command wall **266s** including realization; core-level wall **261.596s**, before first test **37.386s** (realization/static preparation), test-execution span **223.862s**. Typegen/typecheck/lint passed; two existing `ReviewFileBrowser.tsx` ref-cleanup warnings remain.
+- Combined acceptance is the complete core pass above plus all **24** passed browser/terminal groups and the genuine deployment pass at `afd12bc` recorded above. Browser level **303.907s**, before first capsule **7.294s**, capsule execution span **296.501s**; VM level **53.987s** including realization, driver **18.12s**. Prerequisites had been warmed by the earlier full/focused attempts; these are not cold-cache benchmarks. Browser/VM overlap core in the timed-out invocation; do not add those intervals into an end-to-end passing `all` runtime.
+- Verified `git diff --name-only afd12bc..86cebcc`: only this evidence plan, `hooks/model-loading.test.mjs`, `hooks/useAgentSession.test.mjs` and `lib/rpc-manager.test.mjs` differ. A path-excluded `git diff --quiet` confirms no application/browser/VM/dependency/Nix input delta. Thus successful browser/VM evidence remains applicable, while the corrected tests are covered by the later complete core run. Earlier failures remain retained and are not relabeled as successes.
+- Reviewed the full implementation and rebased range; dependencies/toolchain/trust/account/speed/selector/reserved-tool/Git/recovery boundaries remain unchanged. Maintained contracts live in `docs/session-internals.md`, `docs/model-internals.md`, `docs/feature-internals.md` and `e2e/README.md`; the archive owns historical execution evidence only. Final target remains `88126e15954c55aff9f08a7bfd8dcbd107a92e95`.
+- This final evidence/archive delta is documentation-only. Review it, verify links/unchanged tested inputs and `git diff --check` proportionally; do not relabel earlier runs as a new-tip run or create an acceptance/evidence loop. The current session's Git lifecycle owns the pending exact-state merge and separate bounded cleanup. Both backup branches are retained unless separately authorized. No remote publication, installed-host activation, live-provider validation or physical-device browser validation is claimed.
+
 ## Completion Checklist
 
-- [ ] Approved behavior and compatibility boundaries are implemented and covered by focused synthetic/native/browser regressions.
-- [ ] Patch review and complete Nix acceptance pass on settled application/test inputs; failures and evidence are retained honestly.
-- [ ] Durable contracts are in owning guides and final source/target/evidence identities are reported.
-- [ ] Integration/cleanup outcomes are reported only from subsequent authorized Git operations; no publication or host activation is implied.
+- [x] Approved behavior and compatibility boundaries are implemented and covered by focused synthetic/native/browser regressions.
+- [x] Patch review and complete Nix acceptance pass on settled application/test inputs; failures and evidence are retained honestly.
+- [x] Durable contracts are in owning guides and tested source/target/evidence identities are reported.
+- [x] Integration/cleanup handoff is explicit: subsequent authorized Git operations and receipts own those outcomes; no publication or host activation is implied.
