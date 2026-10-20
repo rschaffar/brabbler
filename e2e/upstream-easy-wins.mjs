@@ -25,8 +25,9 @@ export async function checkUpstreamComposer(context, base, sessionId, alternateS
     const listbox = page.getByRole("listbox");
     await listbox.getByRole("option", { name: "Fixture model 11", exact: true }).waitFor();
     assert.equal(await listbox.getByRole("option").count(), 1);
-    // Dismiss without selecting a synthetic model or invoking a provider.
-    await input.click();
+    // Toggle the picker closed: its portal can cover the textarea's click point.
+    // Never select a synthetic model or invoke a provider.
+    await page.locator(".model-selector.is-toolbar").getByRole("button").click();
     await filter.waitFor({ state: "hidden" });
     const newline = width <= 640 ? "Enter" : "Shift+Enter";
     for (const [before, after] of [
@@ -84,7 +85,7 @@ export async function checkUpstreamComposer(context, base, sessionId, alternateS
     await selectSession(sessionId);
     await page.waitForFunction(() => document.querySelector(".chat-input-textarea")?.value === "upstream-list-draft\n2. retained");
     await input.fill("");
-    console.log(`PASS: ${width}px provider search, picker focus, list newline/undo/IME/fallback and draft persistence`);
+    console.log(`PASS: ${width}px provider search, picker focus, list newline/undo/IME/fallback and SPA draft retention`);
   } finally { await page.close(); }
 }
 
