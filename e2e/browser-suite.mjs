@@ -17,6 +17,7 @@ import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
 import { checkUpstreamComposer, checkOverflowTabs } from "./upstream-easy-wins.mjs";
+import { checkRequestHeaderBoundary, seedExternalReferenceFixtures, checkExternalReferenceBoundary } from "./security-boundaries.mjs";
 import { MODEL_SPEED_IDS, seedModelSpeedFixtures, checkModelSpeed, checkModelSpeedPersistence } from "./model-speed.mjs";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
 import { RUNNING_FORK_IDS, seedRunningForkFixtures, checkRunningSessionForks } from "./running-session-forks.mjs";
@@ -178,6 +179,7 @@ let context;
   });
   writeSession(RICH, richEntries);
   const fileLineFixtures = seedFileLineLinks({ project, writeSession, message });
+  const externalReferenceFixtures = group === "markdown" ? seedExternalReferenceFixtures({ agentDir, writeSession, message }) : [];
   // The default page is 50 *visible* messages (user / assistant / compaction).
   // toolResults ride along free after #810, so 48 tool-call assistants + the
   // final answer + the divider fill that window; the user prompt is the 51st
@@ -316,7 +318,7 @@ let context;
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...WORKTREE_MANAGER_IDS, ...ACTIVITY_SUBAGENTS,
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...WORKTREE_MANAGER_IDS, ...ACTIVITY_SUBAGENTS, ...externalReferenceFixtures.map((fixture) => fixture.id),
         ...(group === "trust" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
       for (const id of ACTIVITY_SUBAGENTS) {
         assert.equal(sessions.find((session) => session.id === id)?.relation?.kind, "subagent", `${id} must have real subagent metadata`);
@@ -464,6 +466,7 @@ let context;
   } else if (["state", "history", "extension-dialogs", "mobile-sidebar", "diff-context", "markdown", "file-edit", "archive", "privacy", "activity", "accounts", "questions", "session-links", "bulk", "move"].includes(group)) {
   let secondaryAccountId;
   if (group === "state") await coverage.run("state/api-append-accounts@service", async () => {
+    await checkRequestHeaderBoundary(base);
   const detail = await api(`/api/sessions/${LONG}?deferThinking=1&deferMedia=1`);
   assert.deepEqual(detail.context.entryIds, ids(4950, 5000));
   assert.equal(detail.context.messages.length, 50);
@@ -640,6 +643,7 @@ let context;
       assert.ok(marker.padding >= marker.font * 3, JSON.stringify(marker));
       await checkMarkdownPreview(page, markdownFile);
       await checkFileLineLinks(page, base, fileLineFixtures);
+      await checkExternalReferenceBoundary(page, base, externalReferenceFixtures);
       assert.deepEqual(errors, [], "Browser errors during Markdown preview and line links");
       await harness.closeContext(context); context = undefined; page = undefined;
       });

@@ -1,11 +1,13 @@
 "use strict";
 
-function getNextNodeArgs(nextBin, nextArgs, arch = process.arch) {
-  if (arch === "riscv64") {
-    return ["--no-wasm-lazy-compilation", nextBin, ...nextArgs];
-  }
+const requestGuardPath = require.resolve("./request-header-guard");
 
-  return [nextBin, ...nextArgs];
+function getNextNodeArgs(nextBin, nextArgs, arch = process.arch) {
+  return [
+    ...(arch === "riscv64" ? ["--no-wasm-lazy-compilation"] : []),
+    "--require", requestGuardPath,
+    nextBin, ...nextArgs,
+  ];
 }
 
-module.exports = { getNextNodeArgs };
+module.exports = { getNextNodeArgs, requestGuardPath };

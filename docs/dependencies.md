@@ -115,6 +115,10 @@ than Playwright's bundled Chromium 156; complete packaged browser acceptance own
 compatibility, not a matching-major assumption. Upstream Chromium already has
 further fixes beyond this Nix channel's package.
 
+### Pre-framework authentication boundary (2026-10-20)
+
+Next **16.4.2** still skips proxy middleware for a matching build-ID revalidation header. The application does not rely on a distributed build ID as an authentication secret: supported serving entrypoints preload `bin/request-header-guard.js` to reject that unused external protocol before framework dispatch, without modifying immutable packages. This mitigates the application exposure, not the dependency implementation itself. On Node/Next upgrades, review the scoped HTTP/HTTPS dispatch wrapper and Next's reconstruction of dev-worker preload options; preserve the propagation and genuine installed-package regressions. Bare dependency-level/custom serving omits this boundary. See [ADR 0026](adr/0026-request-and-file-reference-boundaries.md).
+
 ### Remaining version choices
 
 At the registry checkpoint, **36/43 root** and **25/27 demo** direct dependencies
