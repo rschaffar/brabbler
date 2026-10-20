@@ -55,6 +55,8 @@ export interface SubagentMetadata {
   runInBackground: boolean;
   createdAt: string;
   resourceSnapshot: SubagentResourceSnapshot;
+  /** Resolved spawn budget; 0 is explicitly unlimited. Absent on legacy children. */
+  turnLimit?: number;
   worktreePath?: string;
   worktreeBranch?: string;
 }
@@ -76,22 +78,38 @@ export interface SubagentSessionResources {
   exactSystemPrompt?: string;
 }
 
-export interface SubagentResultMetadata {
+export interface SubagentRunMetadata {
+  runId?: string;
+  parentToolCallId?: string;
+  description?: string;
+  task?: string;
+  runInBackground?: boolean;
+  createdAt?: string;
+  resumed?: boolean;
+}
+
+export interface SubagentResultMetadata extends SubagentRunMetadata {
   version: 1;
   status: Exclude<SubagentStatus, "starting" | "running" | "queued" | "interrupted">;
   completedAt: string;
   result?: string;
   error?: string;
   worktreeCleanupError?: string;
+  /** Observation at settlement, never a current filesystem claim. */
+  worktreeExists?: boolean;
 }
 
-export interface SubagentStatusMetadata {
+export interface SubagentStatusMetadata extends SubagentRunMetadata {
   version: 1;
   status: Extract<SubagentStatus, "queued" | "running">;
 }
 
 export interface SubagentRunInfo {
   sessionId: string;
+  /** Lifecycle identity, separate from the session and recovery journal. */
+  runId?: string;
+  turnLimit?: number;
+  resumed?: boolean;
   sessionPath: string;
   parentSessionId: string;
   parentToolCallId: string;
@@ -107,6 +125,7 @@ export interface SubagentRunInfo {
   worktreePath?: string;
   worktreeBranch?: string;
   worktreeCleanupError?: string;
+  worktreeExists?: boolean;
 }
 
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
@@ -581,6 +600,8 @@ export function readSubagentRun(entries: readonly SessionEntry[], sessionId: str
     ? lifecycleEntry
     : undefined;
   const statusData = statusEntry?.type === "custom" && isRecord(statusEntry.data) ? statusEntry.data : undefined;
+  const lifecycle = result ?? statusData;
+  if (data.turnLimit !== undefined && (!Number.isSafeInteger(data.turnLimit) || (data.turnLimit as number) < 0)) return null;
   const persistedStatus = result && (result.status === "completed" || result.status === "failed" || result.status === "aborted")
     ? result.status
     : statusData?.version === 1 && (statusData.status === "queued" || statusData.status === "running")
@@ -590,18 +611,22 @@ export function readSubagentRun(entries: readonly SessionEntry[], sessionId: str
     sessionId,
     sessionPath,
     parentSessionId: data.parentSessionId,
-    parentToolCallId: typeof data.parentToolCallId === "string" ? data.parentToolCallId : "",
+    ...(typeof lifecycle?.runId === "string" ? { runId: lifecycle.runId } : {}),
+    ...(typeof data.turnLimit === "number" ? { turnLimit: data.turnLimit } : {}),
+    ...(lifecycle?.resumed === true ? { resumed: true } : {}),
+    parentToolCallId: typeof lifecycle?.parentToolCallId === "string" ? lifecycle.parentToolCallId : typeof data.parentToolCallId === "string" ? data.parentToolCallId : "",
     profile: typeof data.profile === "string" ? data.profile : "general-purpose",
-    description: typeof data.description === "string" ? data.description : "Subagent",
-    task: typeof data.task === "string" ? data.task : "",
-    runInBackground: data.runInBackground === true,
+    description: typeof lifecycle?.description === "string" ? lifecycle.description : typeof data.description === "string" ? data.description : "Subagent",
+    task: typeof lifecycle?.task === "string" ? lifecycle.task : typeof data.task === "string" ? data.task : "",
+    runInBackground: typeof lifecycle?.runInBackground === "boolean" ? lifecycle.runInBackground : data.runInBackground === true,
     status: persistedStatus,
-    createdAt: typeof data.createdAt === "string" ? data.createdAt : "",
+    createdAt: typeof lifecycle?.createdAt === "string" ? lifecycle.createdAt : typeof data.createdAt === "string" ? data.createdAt : "",
     ...(result && typeof result.completedAt === "string" ? { completedAt: result.completedAt } : {}),
     ...(result && typeof result.result === "string" ? { result: result.result } : {}),
     ...(result && typeof result.error === "string" ? { error: result.error } : {}),
     ...(typeof data.worktreePath === "string" ? { worktreePath: data.worktreePath } : {}),
     ...(typeof data.worktreeBranch === "string" ? { worktreeBranch: data.worktreeBranch } : {}),
     ...(result && typeof result.worktreeCleanupError === "string" ? { worktreeCleanupError: result.worktreeCleanupError } : {}),
+    ...(result && typeof result.worktreeExists === "boolean" ? { worktreeExists: result.worktreeExists } : {}),
   };
 }

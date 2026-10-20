@@ -34,6 +34,7 @@ import {
   ConfigSwitch,
 } from "./SettingsUi";
 import { ModelSelector } from "./ModelSelector";
+import { splitSubagentModelReference } from "@/lib/subagent-model-reference";
 
 const TOOL_OPTIONS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 const THINKING_OPTIONS = ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -362,13 +363,15 @@ export function AgentsConfig({
       ? displayProfilePath(selected, cwd) ?? t("agents.builtinPath")
       : "";
   const fullPath = creating ? displayedPath : selected?.filePath ?? displayedPath;
-  const selectedModelAvailable = !draft.model || modelOptions.some((model) => `${model.provider}/${model.id}` === draft.model);
+  const isListedModel = (reference: string) => modelOptions.some((model) => `${model.provider}/${model.id}` === reference);
+  const draftModelBase = draft.model ? splitSubagentModelReference(draft.model, isListedModel).reference : undefined;
+  const selectedModelAvailable = !draftModelBase || isListedModel(draftModelBase);
   const selectedModel = (() => {
-    if (!draft.model) return null;
-    const separator = draft.model.indexOf("/");
+    if (!draftModelBase) return null;
+    const separator = draftModelBase.indexOf("/");
     return separator < 0
-      ? { provider: "", modelId: draft.model }
-      : { provider: draft.model.slice(0, separator), modelId: draft.model.slice(separator + 1) };
+      ? { provider: "", modelId: draftModelBase }
+      : { provider: draftModelBase.slice(0, separator), modelId: draftModelBase.slice(separator + 1) };
   })();
   const controlStyle = disabled ? { ...inputStyle, ...disabledInputStyle } : inputStyle;
   const switchDisabled = creating
@@ -618,7 +621,7 @@ export function AgentsConfig({
                           onChange={(provider, modelId) => update("model", `${provider}/${modelId}`)}
                           onClear={() => update("model", undefined)}
                           emptyLabel={modelsLoading ? t("agents.modelsLoading") : t("agents.inherit")}
-                          selectedLabel={draft.model && !selectedModelAvailable ? t("agents.modelUnavailable", { model: draft.model }) : undefined}
+                          selectedLabel={draft.model && !selectedModelAvailable ? t("agents.modelUnavailable", { model: draft.model }) : draft.model !== draftModelBase ? draft.model : undefined}
                           disabled={disabled || modelsLoading || (modelOptions.length === 0 && !draft.model)}
                           ariaLabel={t("agents.model")}
                           variant="field"
