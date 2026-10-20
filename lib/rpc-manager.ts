@@ -470,7 +470,21 @@ export class AgentSessionWrapper {
         }
       }
       if (IDLE_RESET_EVENT_TYPES.has(event.type)) this.resetIdleTimer();
-      this.emit(event);
+      const message = event.message as { role?: string } | undefined;
+      if (event.type === "message_end" && message && ["user", "assistant", "toolResult", "system"].includes(message.role ?? "")) {
+        // The SDK notifies public listeners immediately BEFORE appending this
+        // message. Its synchronous append finishes before this microtask runs.
+        // Bind by object identity, never by text or a possibly unrelated leaf.
+        queueMicrotask(() => {
+          if (!this.isAlive()) return;
+          const leaf = this.inner.sessionManager.getLeafEntry();
+          this.emit(leaf?.type === "message" && leaf.message === event.message
+            ? { ...event, entryId: leaf.id }
+            : event);
+        });
+      } else {
+        this.emit(event);
+      }
       if (event.type === "agent_settled") this.notifyAgentRunCompleteIfIdle();
     });
     this.resetIdleTimer();
