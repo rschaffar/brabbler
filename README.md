@@ -161,7 +161,7 @@ There are three acceptance levels: sandboxed core/static/plugin checks, the comp
 
 ```bash
 nix flake check --max-jobs 1 --cores 4 -L   # complete cacheable checks
-nix run .#test -- all                      # fresh complete acceptance; resource-aware overlap
+nix run .#test -- all --workers 4 --jobs 4 # normal fresh complete acceptance, if admitted
 nix run .#test -- core                     # fresh core/static/plugin execution separately
 nix run .#test -- e2e                      # full browser/terminal inventory separately
 nix run .#test -- service                  # genuine Home Manager deployment separately
