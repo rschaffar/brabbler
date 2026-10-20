@@ -38,6 +38,8 @@ import { WORKTREE_MANAGER_IDS, seedWorktreeManagerFixtures, checkWorktreeManager
 import { browserInputs, createCoverage, selectGroup } from "./scenarios.mjs";
 import { historyPageResponse } from "./history-pagination.mjs";
 import { checkCompactionVisibility } from "./compaction.mjs";
+import { seedSourceHighlighting, checkSourceHighlighting } from "./source-highlighting.mjs";
+import { checkHighlightFailure } from "./highlight-failure.mjs";
 
 // Validate one-hot ownership before the harness or any fixture side effects.
 const group = selectGroup(process.env);
@@ -190,6 +192,7 @@ let context;
   const externalReferenceFixtures = group === "markdown" ? seedExternalReferenceFixtures({ agentDir, writeSession, message }) : [];
   const followupSettings = group === "markdown" ? seedFollowupSettings({ agentDir }) : null;
   const mediaFixtures = group === "markdown" ? seedMarkdownMediaFixtures({ project, agentDir, writeSession, message }) : null;
+  const highlightingFixture = group === "markdown" ? seedSourceHighlighting({ project, writeSession, message }) : null;
   // The default page is 50 *visible* messages (user / assistant / compaction).
   // toolResults ride along free after #810, so 48 tool-call assistants + the
   // final answer + the divider fill that window; the user prompt is the 51st
@@ -330,6 +333,7 @@ let context;
       const { sessions } = await response.json();
       assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...WORKTREE_MANAGER_IDS, ...ACTIVITY_SUBAGENTS, ...externalReferenceFixtures.map((fixture) => fixture.id), ...(mediaFixtures ? [mediaFixtures.id, mediaFixtures.otherId] : []),
         ...(group === "markdown" ? [fileLineFixtures.peerSessionId] : []),
+        ...(highlightingFixture ? [highlightingFixture.sessionId, highlightingFixture.fencesId] : []),
         ...(group === "trust" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
       for (const id of ACTIVITY_SUBAGENTS) {
         assert.equal(sessions.find((session) => session.id === id)?.relation?.kind, "subagent", `${id} must have real subagent metadata`);
@@ -340,10 +344,10 @@ let context;
     await delay(250);
   }
 
-  async function newInputContext(inputId) {
+  async function newInputContext(inputId, extraOptions = {}) {
     const input = browserInputs[inputId];
     assert.ok(input, `Unknown browser input: ${inputId}`);
-    const next = await harness.newContext(browser, input.options, base);
+    const next = await harness.newContext(browser, { ...input.options, ...extraOptions }, base);
     if (input.piLocale) {
       // Legacy interface preferences must not change controls/dates on reload.
       await next.addInitScript(({ locale, origin }) => {
@@ -647,6 +651,24 @@ let context;
     }
     if (group === "markdown") {
       await coverage.run(`markdown/preview-then-line-links@${inputId}`, async () => {
+      // This added chunk-interception fixture needs no service worker. Existing
+      // Markdown scenarios below retain their original, independent context.
+      const highlightContext = await newInputContext(inputId, { serviceWorkers: "block" });
+      const highlightErrors = harness.errorsFor(highlightContext);
+      try {
+        const highlightPage = await highlightContext.newPage();
+        highlightPage.setDefaultTimeout(30_000);
+        await checkSourceHighlighting(highlightPage, base, highlightingFixture);
+        assert.deepEqual(highlightErrors, [], "Browser errors during source highlighting");
+      } finally { await harness.closeContext(highlightContext); }
+      const failureContext = await newInputContext(inputId, { serviceWorkers: "block" });
+      const failureErrors = harness.errorsFor(failureContext);
+      try {
+        const failurePage = await failureContext.newPage();
+        failurePage.setDefaultTimeout(30_000);
+        await checkHighlightFailure(failurePage, base, highlightingFixture);
+        assert.deepEqual(failureErrors, [], "Browser errors during grammar failure/retry");
+      } finally { await harness.closeContext(failureContext); }
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       const wideList = page.locator(".markdown-body ol").filter({ hasText: "Upstream wide marker" });

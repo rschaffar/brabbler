@@ -1,7 +1,10 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import SyntaxHighlighter from "react-syntax-highlighter/dist/esm/prism-light";
+import { usePrismLanguages } from "@/hooks/usePrismLanguages";
+import { useDeferredHighlight } from "@/hooks/useDeferredHighlight";
+import { needsPrismLanguage } from "@/lib/prism-languages";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
@@ -270,6 +273,10 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
   const { isDark } = useTheme();
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  // Preload during live code, but never tokenize until the reply has settled.
+  const languagesReady = usePrismLanguages(Boolean(code) && needsPrismLanguage(lang));
+  const highlighted = useDeferredHighlight(code, lang, !isStreaming && languagesReady, root);
 
   const copy = () => {
     copyText(code).then(() => {
@@ -279,7 +286,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
   };
 
   return (
-    <div className="markdown-code-block">
+    <div className="markdown-code-block" ref={root}>
       <div className="markdown-code-header">
         <span className="markdown-code-lang">{lang || "text"}</span>
         <div className="markdown-code-actions">
@@ -307,7 +314,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
         </pre>
       ) : (
         <SyntaxHighlighter
-          language={lang || "text"}
+          language={highlighted ? lang : "text"}
           style={isDark ? vscDarkPlus : vs}
           showLineNumbers
           lineNumberStyle={{ color: "var(--text-dim)", fontStyle: "normal" }}

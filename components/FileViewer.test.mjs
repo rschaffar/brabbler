@@ -4,6 +4,7 @@ import test from "node:test";
 import React from "react";
 import ts from "typescript";
 import { isDelimitedTablePath } from "../lib/delimited-table.ts";
+import { needsPrismLanguage } from "../lib/prism-languages.ts";
 
 const source = await readFile(new URL("./FileViewer.tsx", import.meta.url), "utf8");
 
@@ -68,6 +69,35 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
   }
   assert.equal(render(large, "source", false, false, true)[0].props.children[1].props.style.whiteSpace, "pre-wrap");
   assert.equal(render(large, "source", false, false, false, true, { content: "draft", baseline: "old" }), null);
+});
+
+test("grammar demand belongs only to an active bounded typed Source view", () => {
+  const file = ts.createSourceFile("FileViewer.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const viewer = file.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "TextFileViewer");
+  const names = ["viewerContent", "sourceLines", "language", "isHtml", "isMarkdown", "isDelimitedTable", "hasPreview", "effectiveDisplayMode", "useLightweightSource", "prismReady"];
+  const calculations = viewer.body.statements.filter(node => ts.isVariableStatement(node)
+    && node.declarationList.declarations.some(declaration => names.includes(declaration.name.getText(file)))).map(node => node.getText(file)).join("\n");
+  const { outputText } = ts.transpileModule(`
+    return (data, displayMode = "source", hasGitDiff = false, editing = false, filePath = "fixture.tsx", autoPreview = false) => {
+      const SOURCE_HIGHLIGHT_MAX_LINES = 1000, dirty = false, initialLineTarget = null, isDeletedDiff = false, contentRef = {}, defaultPreviewEligibleRef = { current: autoPreview };
+      const useMemo = calculate => calculate(), usePrismLanguages = enabled => enabled;
+      ${calculations}
+      return prismReady;
+    };`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } });
+  const eligible = new Function("isDelimitedTablePath", "needsPrismLanguage", outputText)(isDelimitedTablePath, needsPrismLanguage);
+  const small = { content: "line\n".repeat(999), language: "tsx" };
+  assert.equal(eligible(small), true, "1000 loaded rows still qualify");
+  assert.equal(eligible({ ...small, content: small.content + "\n" }), false);
+  assert.equal(eligible(null), false);
+  assert.equal(eligible({ ...small, language: "text" }), false);
+  assert.equal(eligible(small, "diff", true), false);
+  assert.equal(eligible(small, "source", false, true), false, "editor is not source highlighting");
+  for (const language of ["html", "markdown"]) {
+    assert.equal(eligible({ ...small, language }, "preview"), false);
+    assert.equal(eligible({ ...small, language }, "source", false, false, "preview.md", true), false, "auto-preview's transient Source render must not load grammars");
+  }
+  for (const ext of ["csv", "tsv"]) assert.equal(eligible(small, "preview", false, false, `table.${ext}`), false);
+  assert.equal(eligible(small, "diff", false), true, "unavailable Diff falls back to Source");
 });
 
 test("markdown preview links use a stable element type for rejection feedback", () => {

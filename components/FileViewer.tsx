@@ -1,11 +1,11 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo, type ComponentProps, type CSSProperties } from "react";
-import {
-  Prism as SyntaxHighlighter,
-  createElement as renderSyntaxNode,
-  type SyntaxHighlighterProps,
-} from "react-syntax-highlighter";
+import type { SyntaxHighlighterProps } from "react-syntax-highlighter";
+import SyntaxHighlighter from "react-syntax-highlighter/dist/esm/prism-light";
+import renderSyntaxNode from "react-syntax-highlighter/dist/esm/create-element";
+import { usePrismLanguages } from "@/hooks/usePrismLanguages";
+import { needsPrismLanguage } from "@/lib/prism-languages";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
@@ -1459,6 +1459,11 @@ function TextFileViewer({
   const useLightweightSource = sourceLines.length > SOURCE_HIGHLIGHT_MAX_LINES
     && !(effectiveDisplayMode === "diff" && hasGitDiff)
     && !(effectiveDisplayMode === "preview" && hasPreview);
+  const prismReady = usePrismLanguages(Boolean(data) && !editing && !useLightweightSource
+    && !(defaultPreviewEligibleRef.current && !data?.truncated && (isHtml || isMarkdown))
+    && !(effectiveDisplayMode === "diff" && hasGitDiff)
+    && !(effectiveDisplayMode === "preview" && hasPreview)
+    && needsPrismLanguage(language), contentRef);
   // react-syntax-highlighter rebuilds every token element on each render, which
   // costs hundreds of milliseconds on large files. Cache the rendered trees so
   // unrelated re-renders (panel open/close, selection changes) reuse them as-is.
@@ -1466,7 +1471,7 @@ function TextFileViewer({
     () => (
       <SyntaxHighlighter
         className={wrapLines ? "file-source-view is-wrapped" : "file-source-view"}
-        language={language === "text" ? "plaintext" : language}
+        language={prismReady ? language : "plaintext"}
         style={isDark ? vscDarkPlus : vs}
         showLineNumbers
         lineNumberStyle={{
@@ -1500,7 +1505,7 @@ function TextFileViewer({
         {viewerContent}
       </SyntaxHighlighter>
     ),
-    [isDark, language, viewerContent, wrapLines],
+    [isDark, language, prismReady, viewerContent, wrapLines],
   );
   const lightweightSourceLines = useMemo(
     () => useLightweightSource ? sourceLines.map((line, lineIndex) => (
