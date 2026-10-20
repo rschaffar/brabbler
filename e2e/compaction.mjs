@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
+import { createOwnedRoutes } from "./owned-routes.mjs";
+
+export async function continueCompactionProbeDuringDisposal(route) {
+  if (route.request().method() === "GET") return route.continue();
+  // Never turn a synthetic late compact command into real provider activity.
+  await route.fulfill({ status: 409, json: { error: "Compaction fixture is disposing" } });
+  throw new Error("Unexpected compaction-fixture command during disposal");
+}
 
 /** Synthetic activity only: existing history, scoped state reads/SSE and one held compact command. */
 export async function checkCompactionVisibility(page, { base, id, artifacts, width }) {
@@ -7,11 +15,15 @@ export async function checkCompactionVisibility(page, { base, id, artifacts, wid
   const url = `${base}/api/agent/${id}`;
   const stateUrl = `${base}/api/sessions/${id}/state`;
   let releaseManual, manualStarted;
-  const stateRoute = async (route) => {
+  const manualGates = new Set();
+  const owned = createOwnedRoutes(async (route) => {
     const request = route.request();
     if (request.method() === "POST" && request.postDataJSON()?.type === "compact") {
       activity.compacting = true;
-      await new Promise((resolve) => { releaseManual = resolve; manualStarted?.(); });
+      await new Promise((resolve) => {
+        const release = () => { manualGates.delete(release); resolve(); };
+        releaseManual = release; manualGates.add(release); manualStarted?.();
+      });
       activity.compacting = false;
       return route.fulfill({ json: { success: true, data: { tokensBefore: 10000, estimatedTokensAfter: 2000 } } });
     }
@@ -19,7 +31,8 @@ export async function checkCompactionVisibility(page, { base, id, artifacts, wid
     const response = await route.fetch(), data = await response.json();
     await route.fulfill({ response, json: { ...data, running: true, state: { ...data.state,
       isStreaming: false, isPromptRunning: false, isBashRunning: false, isCompacting: activity.compacting } } });
-  };
+  }, continueCompactionProbeDuringDisposal);
+  const stateRoute = owned.handler;
   await page.route(url, stateRoute);
   await page.route(stateUrl, stateRoute);
   await page.addInitScript((sessionId) => {
@@ -47,6 +60,7 @@ export async function checkCompactionVisibility(page, { base, id, artifacts, wid
   }, id);
   const status = page.getByTestId("compaction-status");
   const emit = (event) => page.evaluate((event) => window.__compactionEvents.emit(event), event);
+  const failures = [];
   try {
     await page.goto(`${base}/?session=${id}`, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => window.__compactionEvents?.ready());
@@ -112,10 +126,21 @@ export async function checkCompactionVisibility(page, { base, id, artifacts, wid
     }
     await page.getByRole("heading", { name: "E2E compacted heading", exact: true }).waitFor();
     console.log(`PASS: ${width}px compaction progress, refresh/reconnect, missed completion, cancellation, failure and manual completion`);
+  } catch (error) {
+    failures.push(error);
   } finally {
-    releaseManual?.();
-    await page.unroute(url, stateRoute);
-    await page.unroute(stateUrl, stateRoute);
-    await page.evaluate(() => window.__compactionEvents?.restore()).catch(() => {});
+    owned.beginDisposal();
+    for (const release of manualGates) release();
+    try {
+      await owned.dispose(async (handler) => {
+        const unregisterErrors = [];
+        for (const path of [url, stateUrl]) {
+          try { await page.unroute(path, handler); } catch (error) { unregisterErrors.push(error); }
+        }
+        if (unregisterErrors.length) throw new AggregateError(unregisterErrors, "Compaction route removal failed");
+      });
+    } catch (error) { failures.push(error); }
+    try { await page.evaluate(() => window.__compactionEvents?.restore()); } catch (error) { failures.push(error); }
+    if (failures.length) throw new AggregateError(failures, "Compaction fixture failed");
   }
 }
