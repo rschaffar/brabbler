@@ -4,6 +4,7 @@ Implementation reference moved from `AGENTS.md`; repository-relative code paths 
 
 ### AgentSession lifecycle (`lib/rpc-manager.ts`)
 - One `AgentSessionWrapper` per session id, keyed in `globalThis.__piSessions`
+- Both RPC and extension-command Reload paths invalidate settings-listing generations before execution and in `finally`, including partial failures. This does not refresh/rebind a session's ModelRuntime; edited model definitions still require wrapper recreation.
 - `globalThis` survives Next.js hot-reload; plain module-level Map does not
 - Idle timeout: 10 minutes by default (`PI_WEB_IDLE_TIMEOUT_MS`, `0` disables). Concurrent `startRpcSession()` calls share a single start Promise (`globalThis.__piStartLocks`)
 

@@ -13,6 +13,8 @@ import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-acces
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { getProjectTrustStatus } from "@/lib/project-trust";
 import { isPluginSourceCheckable } from "@/lib/plugin-updates";
+import { beginSettingsListingMutation } from "@/lib/settings-listing-runtime";
+import { invalidateModelsCache } from "@/lib/models-cache";
 import type {
   PluginDiagnostic,
   PluginPackageInfo,
@@ -327,6 +329,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
   }
 
+  let finishMutation: ((succeeded: boolean) => void) | undefined;
+  let succeeded = false;
   try {
     const body = await req.json() as {
       action?: PluginAction;
@@ -363,9 +367,11 @@ export async function POST(req: Request) {
 
     if (body.action === "install") {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
+      finishMutation = beginSettingsListingMutation(agentDir);
       await packageManager.installAndPersist(source, { local });
     } else if (body.action === "remove") {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
+      finishMutation = beginSettingsListingMutation(agentDir);
       await packageManager.removeAndPersist(source, { local });
     } else if (body.action === "update") {
       if (!source && !projectTrust.trusted && packageManager.listConfiguredPackages().some((pkg) => pkg.scope === "project")) {
@@ -374,21 +380,31 @@ export async function POST(req: Request) {
           { status: 403 },
         );
       }
+      finishMutation = beginSettingsListingMutation(agentDir);
       await packageManager.update(source);
     } else if (body.action === "disable") {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
+      finishMutation = beginSettingsListingMutation(agentDir);
       setPackageDisabled(settingsManager, source, scope, true);
       await settingsManager.flush();
     } else if (body.action === "enable") {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
+      finishMutation = beginSettingsListingMutation(agentDir);
       setPackageDisabled(settingsManager, source, scope, false);
       await settingsManager.flush();
     } else {
       return NextResponse.json({ error: `Unsupported action: ${body.action}` }, { status: 400 });
     }
 
+    // readPlugins may fail independently of an otherwise completed mutation.
+    succeeded = true;
     return NextResponse.json(await readPlugins(body.cwd));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  } finally {
+    if (finishMutation) {
+      finishMutation(succeeded);
+      invalidateModelsCache();
+    }
   }
 }

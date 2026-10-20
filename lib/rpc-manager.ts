@@ -18,6 +18,7 @@ import { readSessionHeader } from "./session-reader";
 import { SESSION_SPAWN_TYPE, sessionSpawnFromEntries } from "./session-spawn";
 import { sessionLaunchHost } from "./session-launch-runtime";
 import { invalidateModelsCache } from "./models-cache";
+import { invalidateSettingsListingRuntime } from "./settings-listing-runtime";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import {
   createProjectCommandBashExtension,
@@ -1224,12 +1225,17 @@ export class AgentSessionWrapper {
         this.extensionStatuses.clear();
         this.resetExtensionWidgetsForReload();
         this.syncProjectTrust();
-        await this.inner.reload();
+        invalidateSettingsListingRuntime();
+        try {
+          await this.inner.reload();
+        } finally {
+          invalidateSettingsListingRuntime();
+          invalidateModelsCache();
+        }
         this.setActiveToolSelection(activeToolNames);
         if (typeof this.inner.bindExtensions !== "function") {
           this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
         }
-        invalidateModelsCache();
         return { success: true };
       }
 
@@ -2055,11 +2061,17 @@ export class AgentSessionWrapper {
         this.extensionStatuses.clear();
         this.resetExtensionWidgetsForReload();
         this.syncProjectTrust();
-        await this.inner.reload({
-          beforeSessionStart: () => {
-            this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
-          },
-        });
+        invalidateSettingsListingRuntime();
+        try {
+          await this.inner.reload({
+            beforeSessionStart: () => {
+              this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
+            },
+          });
+        } finally {
+          invalidateSettingsListingRuntime();
+          invalidateModelsCache();
+        }
       },
     };
   }
