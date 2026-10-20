@@ -11,9 +11,10 @@ import { InteractionReceiptCard } from "./InteractionReceiptCard";
 import { INTERACTION_RECEIPT_TYPE, readInteractionReceipt } from "@/lib/interaction-receipts";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
-import { getAssistantErrorMessage, getThinkingPreview, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
-import { parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
+import { getAssistantErrorMessage, getThinkingPreview, isAssistantTruncated, isEmptyThinkingBlock, splitThinkingPieces } from "@/lib/message-display";
+import { parseUnifiedPatch, unifiedDiffLines, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
 import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatchPaths, getApplyPatchInputText, parseApplyPatchInput } from "@/lib/apply-patch";
 import { isApplyPatchToolName, isEditToolName } from "@/lib/tool-names";
 import { isToolCallExpanded, setToolCallExpanded } from "@/lib/tool-call-expansion";
@@ -935,6 +936,12 @@ function TextBlock({ block, isStreaming, cwd, onOpenFile }: { block: TextContent
   return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile}>{block.text}</SafeMarkdownBody>;
 }
 
+// Do not memoize pieces: retained sliced props can pin old large stream strings.
+function ThinkingText({ text }: { text: string }) {
+  const pieces = useMemo(() => splitThinkingPieces(text), [text]);
+  return pieces.length === 1 ? text : pieces.map((piece, index) => <div key={index}>{piece.text}</div>);
+}
+
 export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
   block: ThinkingContent;
   duration?: number;
@@ -1040,7 +1047,7 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
             overflowWrap: "anywhere",
           }}
         >
-           {loading ? t("i18n.loadingThinking") : error ?? (block.deferred ? content : block.thinking)}
+           {loading ? t("i18n.loadingThinking") : error ?? <ThinkingText text={(block.deferred ? content : block.thinking) ?? ""} />}
         </div>
       )}
       {duration !== undefined && (
@@ -1219,6 +1226,10 @@ function SplitPatchView({ text }: { text: string }) {
 }
 
 function SplitFilesView({ files }: { files: SplitDiffFile[] }) {
+  return <PatchDiffFiles files={files} layout={useIsMobile() ? "stacked" : "split"} />;
+}
+
+export function PatchDiffFiles({ files, layout }: { files: SplitDiffFile[]; layout: "split" | "stacked" }) {
   const { t } = useI18n();
   const showFileHeaders = files.length > 1;
 
@@ -1235,7 +1246,7 @@ function SplitFilesView({ files }: { files: SplitDiffFile[] }) {
             lineHeight: 1.55,
           }}
         >
-          {showFileHeaders && (
+          {showFileHeaders && layout === "split" && (
             <div
               style={{
                 display: "grid",
@@ -1252,6 +1263,8 @@ function SplitFilesView({ files }: { files: SplitDiffFile[] }) {
             </div>
           )}
 
+          {showFileHeaders && layout === "stacked" && <SplitDiffHeader title={(file.newPath && file.newPath !== "/dev/null" ? file.newPath : file.oldPath) || ""} side="right" />}
+          {layout === "stacked" ? unifiedDiffLines(file).map((line, index) => <SplitDiffCellView key={index} side="right" cell={{ type: line.type, text: line.text, lineNo: line.type === "removed" ? line.oldLineNo : line.newLineNo }} />) :
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}>
             {file.rows.map((row, rowIndex) => {
               if (row.type === "hunk") {
@@ -1265,7 +1278,7 @@ function SplitFilesView({ files }: { files: SplitDiffFile[] }) {
                 </div>
               );
             })}
-          </div>
+          </div>}
         </div>
       ))}
     </div>

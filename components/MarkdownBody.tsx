@@ -4,7 +4,7 @@ import { createContext, useContext, useMemo, type ComponentProps, type MouseEven
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import { parseFileLineTarget, parsePdfPageFragment, resolveInlineFileReference, resolveLocalFileHref, resolveLocalFileLink, shouldOpenLocalFileInApp, type OpenFileLink } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
-import { markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
+import { jumpToMarkdownFragment, markdownDocumentRehypePlugins, markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
 import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
 import { BlockedFileLink } from "./BlockedFileLink";
@@ -17,6 +17,7 @@ interface MarkdownBodyProps {
   isStreaming?: boolean;
   cwd?: string;
   onOpenFile?: OpenFileLink;
+  onNavigateLink?: (href: string) => void;
 }
 
 function InlineFileCode({ children, className, cwd, onOpenFile, ...props }: ComponentProps<"code"> & { cwd?: string; onOpenFile?: OpenFileLink }) {
@@ -57,7 +58,7 @@ function MarkdownImage({
   );
 }
 
-export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile }: MarkdownBodyProps) {
+export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onNavigateLink }: MarkdownBodyProps) {
   const normalizedMarkdown = useMemo(() => normalizeDisplayMath(children), [children]);
   // Stable renderer identities keep stateful blocks mounted across message hover updates.
   const components = useMemo<Components>(() => ({
@@ -90,6 +91,15 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
     a({ href, children, ...props }) {
       // `node` is react-markdown metadata, not a DOM attribute.
       delete props.node;
+      if (onNavigateLink && href && !/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(href)) {
+        const navigate = () => onNavigateLink(href);
+        return <MarkdownLinkContext.Provider value={true}>
+          <a {...props} role="link" tabIndex={0} onClick={navigate} onKeyDown={event => { if (event.key === "Enter") navigate(); }}>{children}</a>
+        </MarkdownLinkContext.Provider>;
+      }
+      if (href?.startsWith("#")) return <MarkdownLinkContext.Provider value={true}>
+        <a href={href} {...props} onClick={jumpToMarkdownFragment}>{children}</a>
+      </MarkdownLinkContext.Provider>;
       const resolution = onOpenFile ? resolveLocalFileLink(href, cwd) : null;
       if (resolution?.kind === "blocked") {
         return <MarkdownLinkContext.Provider value={true}>
@@ -141,13 +151,13 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
         </div>
       );
     },
-  }), [cwd, isStreaming, onOpenFile]);
+  }), [cwd, isStreaming, onOpenFile, onNavigateLink]);
 
   return (
     <div className={["markdown-body", className].filter(Boolean).join(" ")}>
       <ReactMarkdown
         remarkPlugins={markdownRemarkPlugins}
-        rehypePlugins={markdownRehypePlugins}
+        rehypePlugins={onNavigateLink ? markdownDocumentRehypePlugins : markdownRehypePlugins}
         urlTransform={onOpenFile ? markdownUrlTransform : undefined}
         components={components}
       >

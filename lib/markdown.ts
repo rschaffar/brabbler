@@ -4,10 +4,13 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkFrontmatter from "remark-frontmatter";
 import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
+import remarkCjkFriendly from "remark-cjk-friendly/parseOnly";
+import { markdownClobberPrefix, markdownHeadingAnchors, rehypeMatchClobberedIds, remarkCurrencySafeMath, remarkSplitAutolinkLiterals } from "./markdown-compat";
+export { jumpToMarkdownFragment, splitAutolinkLiteralsAtCjkPunctuation } from "./markdown-compat";
 
 const markdownSanitizeSchema = {
   ...defaultSchema,
+  clobberPrefix: markdownClobberPrefix,
   attributes: {
     ...defaultSchema.attributes,
     code: [["className", /^language-./, "math-inline", "math-display"]],
@@ -390,24 +393,29 @@ const remarkGfmOptions = { singleTilde: false } as const;
 export const markdownRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [
   [remarkFrontmatter, ["yaml"]],
   [remarkGfm, remarkGfmOptions],
-  remarkMath,
+  remarkCjkFriendly,
+  remarkSplitAutolinkLiterals,
+  remarkCurrencySafeMath,
 ];
-export const markdownPreviewRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [
-  [remarkFrontmatter, ["yaml"]],
-  [remarkGfm, remarkGfmOptions],
-  remarkMath,
-];
+export const markdownPreviewRemarkPlugins = markdownRemarkPlugins;
 
 export const markdownRehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [
   rehypeRaw,
   rehypeLocalPathLinks,
   [rehypeSanitize, markdownSanitizeSchema],
+  rehypeMatchClobberedIds,
+  markdownHeadingAnchors,
   [rehypeKatex, { throwOnError: false, strict: false }],
 ];
 
-export const markdownPreviewRehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [
+export const markdownPreviewRehypePlugins = markdownRehypePlugins;
+
+// Reader-local heading data, never page-global IDs; before KaTeX duplicates text.
+export const markdownDocumentRehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [
   rehypeRaw,
   rehypeLocalPathLinks,
   [rehypeSanitize, markdownSanitizeSchema],
+  rehypeMatchClobberedIds,
+  markdownHeadingAnchors,
   [rehypeKatex, { throwOnError: false, strict: false }],
 ];
