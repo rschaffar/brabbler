@@ -53,12 +53,16 @@ test("keeps visited settings sections mounted and contains nested Escape handlin
   assert.match(modelsSource, /e\.preventDefault\(\);\s*e\.stopPropagation\(\);\s*onClose\(\);/);
 });
 
-test("offers five palettes and system theme selection with native radios", () => {
-  for (const preference of ["light", "dark", "mist", "rose", "pine", "auto"]) {
+test("offers thirteen palette swatches and System with native radios", () => {
+  for (const preference of ["light", "dark", "mist", "rose", "pine", "sand", "lilac", "slate", "dusk", "ember", "contrast-light", "contrast-dark", "zenburn", "auto"]) {
     assert.match(themeOptionsSource, new RegExp(`id: "${preference}"`));
   }
   assert.match(panelSource, /THEME_OPTIONS\.map/);
   assert.match(panelSource, /type="radio"/);
+  assert.match(panelSource, /data-theme=\{option.id\}/);
+  assert.match(panelSource, /data-system=\{option.id === "auto"/);
+  assert.match(cssSource, /:has\(input:focus-visible\)/);
+  assert.doesNotMatch(panelSource, /ThemeIcon|onKeyDown=.*theme/);
   assert.match(panelSource, /setThemePreference\(option\.id\)/);
   assert.match(themeSource, /const setThemePreference = useCallback/);
 });
@@ -76,9 +80,13 @@ test("omits interface language selection but keeps generated title languages", (
   assert.match(panelSource, /TITLE_LANGUAGES\.map/);
 });
 
-test("groups chat display controls together without row backgrounds", () => {
+test("groups typography and retained layout separately from chat behavior without row backgrounds", () => {
   const appearanceSection = panelSource.slice(
     panelSource.indexOf('{t("settings.appearance")}'),
+    panelSource.indexOf('{t("settings.typography")}'),
+  );
+  const typographySection = panelSource.slice(
+    panelSource.indexOf('{t("settings.typography")}'),
     panelSource.indexOf('{t("settings.chat")}'),
   );
   const chatSection = panelSource.slice(
@@ -88,11 +96,14 @@ test("groups chat display controls together without row backgrounds", () => {
 
   assert.doesNotMatch(appearanceSection, /settings-chat-content/);
   assert.match(chatSection, /className="settings-chat-options"/);
-  assert.equal((chatSection.match(/className="settings-chat-option(?: |")/g) ?? []).length, 4);
-  assert.equal((chatSection.match(/<ConfigSwitch/g) ?? []).length, 3);
-  for (const key of ["thinkingExpandedDefault", "chatFullWidth", "chatContentWidth", "chatContentFontSize", "quoteSelection"]) {
-    assert.match(chatSection, new RegExp(`t\\("settings\\.${key}"\\)`));
+  assert.equal((chatSection.match(/className="settings-chat-option(?: |")/g) ?? []).length, 2);
+  assert.equal((chatSection.match(/<ConfigSwitch/g) ?? []).length, 2);
+  assert.match(typographySection, /<FontSettings \/>/);
+  for (const key of ["chatFullWidth", "chatContentWidth", "chatContentFontSize"]) {
+    assert.match(typographySection, new RegExp(`t\\("settings\\.${key}"\\)`));
+    assert.doesNotMatch(chatSection, new RegExp(`t\\("settings\\.${key}"\\)`));
   }
+  for (const key of ["thinkingExpandedDefault", "quoteSelection"]) assert.match(chatSection, new RegExp(`t\\("settings\\.${key}"\\)`));
   assert.doesNotMatch(panelSource, /ThinkingIcon|settings-thinking-/);
   const chatOptionStyles = cssSource.match(/\.settings-chat-option \{[\s\S]*?\}/)?.[0] ?? "";
   assert.match(chatOptionStyles, /font-size: 12px/);

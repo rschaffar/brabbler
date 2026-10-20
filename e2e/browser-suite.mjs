@@ -19,6 +19,7 @@ import { checkMessageTimestamps } from "./message-timestamps.mjs";
 import { checkUpstreamComposer, checkOverflowTabs } from "./upstream-easy-wins.mjs";
 import { checkRequestHeaderBoundary, seedExternalReferenceFixtures, checkExternalReferenceBoundary } from "./security-boundaries.mjs";
 import { seedFollowupSettings, checkSkillInstructions, checkModelOverrides, checkBlockedPreferences } from "./upstream-followups.mjs";
+import { checkManagedModelContext } from "./managed-model-context.mjs";
 import { MODEL_SPEED_IDS, seedModelSpeedFixtures, checkModelSpeed, checkModelSpeedPersistence } from "./model-speed.mjs";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
 import { RUNNING_FORK_IDS, seedRunningForkFixtures, checkRunningSessionForks } from "./running-session-forks.mjs";
@@ -444,6 +445,9 @@ let context;
         // Preserve the original timing: install after the initial blank page.
         // A pre-existing numeric preference must not opt out of full width.
         await context.addInitScript(() => {
+          // The cross-tab font check creates an initial opaque about:blank page.
+          // Seed only app documents, where browser storage is actually available.
+          if (location.protocol !== "http:" && location.protocol !== "https:") return;
           if (localStorage.getItem("pi-chat-content-width") === null) localStorage.setItem("pi-chat-content-width", "820");
         });
       }
@@ -648,6 +652,7 @@ let context;
       await checkFileLineLinks(page, base, fileLineFixtures);
       await checkSkillInstructions(page, base, followupSettings);
       await checkModelOverrides(page, base);
+      await checkManagedModelContext(page);
       await checkExternalReferenceBoundary(page, base, externalReferenceFixtures);
       await checkBlockedPreferences(page, base, RICH);
       assert.deepEqual(errors, [], "Browser errors during Markdown preview and line links");

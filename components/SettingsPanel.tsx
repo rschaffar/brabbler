@@ -6,7 +6,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { THEME_OPTIONS } from "@/lib/theme";
 import { TITLE_LANGUAGES, type TitleLanguage } from "@/lib/title-language-options";
 import type { TitleModelSelection } from "@/lib/title-language";
-import { ThemeIcon } from "./ThemeIcon";
+import { FontSettings } from "./FontSettings";
 import {
   CHAT_CONTENT_WIDTH_DEFAULT,
   CHAT_CONTENT_WIDTH_MAX,
@@ -275,6 +275,8 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
               <label
                 key={option.id}
                 className="settings-theme-option"
+                data-system={option.id === "auto" || undefined}
+                data-wide={option.id === "contrast-light" || option.id === "contrast-dark" || option.id === "zenburn" || undefined}
               >
                 <input
                   type="radio"
@@ -284,8 +286,20 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
                   onChange={() => setThemePreference(option.id)}
                   className="sr-only"
                 />
-                <ThemeIcon preference={option.id} />
-                <span className="settings-theme-option-label">{t(option.label)}</span>
+                {option.id === "auto" ? (
+                  <span className="settings-theme-swatch settings-theme-system" aria-hidden="true">
+                    <span data-theme="light" className="settings-theme-chip" />
+                    <span data-theme="dark" className="settings-theme-chip" />
+                    <span className="settings-theme-system-name">{t(option.label)}</span>
+                  </span>
+                ) : (
+                  <span className="settings-theme-swatch" aria-hidden="true">
+                    <span data-theme={option.id} className="settings-theme-fill">
+                      <span className="settings-theme-name">{t(option.label)}</span>
+                    </span>
+                  </span>
+                )}
+                <span className="sr-only">{t(option.label)}</span>
               </label>
             );
           })}
@@ -293,19 +307,10 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
       </section>
 
       <section className="settings-general-section">
-        <h3 className="settings-general-heading">{t("settings.chat")}</h3>
+        <h3 className="settings-general-heading">{t("settings.typography")}</h3>
+        <p id="settings-typography-description" className="settings-general-description">{t("settings.fontDescription")}</p>
         <div className="settings-chat-options">
-          <div className="settings-chat-option settings-chat-switch-option">
-            <span>{t("settings.thinkingExpandedDefault")}</span>
-            <ConfigSwitch
-              checked={thinkingExpanded}
-              label={t("settings.thinkingExpandedDefault")}
-              onChange={(enabled) => {
-                setThinkingExpandedByDefault(enabled);
-                setThinkingExpanded(enabled);
-              }}
-            />
-          </div>
+          <FontSettings />
           <div className="settings-chat-option settings-chat-range-option">
             <div className="settings-chat-range-header">
               <span>{t("settings.chatFullWidth")}</span>
@@ -368,6 +373,23 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
               step={1}
               value={fontSize}
               onChange={(event) => setFontSize(Number(event.target.value))}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="settings-general-section">
+        <h3 className="settings-general-heading">{t("settings.chat")}</h3>
+        <div className="settings-chat-options">
+          <div className="settings-chat-option settings-chat-switch-option">
+            <span>{t("settings.thinkingExpandedDefault")}</span>
+            <ConfigSwitch
+              checked={thinkingExpanded}
+              label={t("settings.thinkingExpandedDefault")}
+              onChange={(enabled) => {
+                setThinkingExpandedByDefault(enabled);
+                setThinkingExpanded(enabled);
+              }}
             />
           </div>
           <div className="settings-chat-option settings-chat-switch-option">

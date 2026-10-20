@@ -316,12 +316,14 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
             padding: "11px 13px",
             fontSize: "calc(12.5px + var(--chat-font-size-offset, 0px))",
             lineHeight: 1.62,
+            fontFamily: "var(--font-mono)",
+            fontWeight: "var(--font-mono-weight)",
             borderRadius: 0,
             // Prism themes alternate between shorthand and longhand backgrounds.
             background: undefined,
             backgroundColor: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
           }}
-          codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
+          codeTagProps={{ style: { fontFamily: "var(--font-mono)", fontWeight: "var(--font-mono-weight)" } }}
         >
           {code}
         </SyntaxHighlighter>

@@ -48,20 +48,20 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `model-speed` | Native writes, canonical packaged disk reader, persistence and ambiguous acknowledgement reconciliation |
 | `trust` | Worktree/project grants, revocation and restriction |
 | `git-plugin` | Bundled Git Workflow, approvals, immutable reviews, receipts, expiry/reconnect and cleanup |
-| `appearance` | Default/full/reading widths, numeric legacy preference and fresh preference inputs, typography/reload |
+| `appearance` | Default/full/reading widths, numeric legacy preference and fresh preference inputs; all thirteen palette swatches plus System, native-radio arrows, reload/dark classification/contrast and constrained Settings geometry; font families/base weights, independent resets, cross-tab sync and draft remeasurement |
 | `timestamps` | Both en-US and legacy Chinese locale/preference variants |
 | `diff-context` | Loaded Workflow absence, Git Explorer immutable contexts/navigation/wrapping/Wide and integrated merge graph, in prerequisite order |
 | `markdown` | Markdown/KaTeX security, full-height Mermaid previews, math/themes/SVG, file-scroll/preview state, file/source links, CSV/TSV virtualization, scoped fragments/headings, loaded-skill document navigation, model endpoint/adaptive save/inheritance/stale tests, blocked preference storage, interactive read-only external-reference/watch/reopen sentinel proofs and real user-file polling |
 | `file-edit` | Panel setup, all modified/added/deleted/context diff variants, editor/read-only/draft retention |
 | `archive` | Focused archive/restore flow, distinct from the mobile search/restore/move chain |
 | `privacy` | Concealment/loading/failure behavior, independent contexts and tablet coverage |
-| `activity` | Full overview, real worktree/subagent/recovery fixtures and tablet coverage |
+| `activity` | Full overview, real worktree/subagent/recovery fixtures, running/fallback Agents badge with reduced motion, deterministic recorded per-agent/family usage and keyboard/touch breakdowns without review acknowledgement, selected-session-only toolbar, and tablet coverage |
 | `accounts` | Separate created/deleted and shared-device OAuth variants, retaining locale and mobile-height differences |
 | `questions` | Native tool ownership plus mixed question sets, draft/reload/cancel/receipts |
 | `session-links` | Desktop/mobile copying and following the copied link |
 | `bulk` | Bulk archive/conflict/retry/restore/delete |
 | `move` | Full picker, plain/Git/worktree/Browse paths, superseded reads and proposal-only changes; independent stale-worktree filters, archive-inclusive recovery, missing-child subtrees and native-modal bulk Browse/Move |
-| `terminal` | Real shell/PTY, fonts, live palette/font-size changes without PTY/SSE replacement, coarse-touch portrait modifier/arrow input, reconnect/restart/exit, creation cancellation and workspace/Explorer coexistence |
+| `terminal` | Real shell/PTY, retained Nerd/System families with shared mono base/bold weights, live palette/font-size changes without PTY/SSE replacement, coarse-touch portrait modifier/arrow input, reconnect/restart/exit, creation cancellation and workspace/Explorer coexistence |
 
 Keyboard simulations verify Chromium layout/focus and preserve the same filter node/value; they do not certify native iOS/Android keyboards, Safari or installed-PWA behavior. Physical keyboard/IME/device verification remains separately reported.
 

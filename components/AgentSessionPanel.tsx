@@ -2,6 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { useAgentUsage } from "@/hooks/useAgentUsage";
+import { countRunningSubagents } from "@/lib/session-family";
+import { formatAgentCost, formatAgentDuration, formatAgentTokens, sumAgentUsage, type AgentUsageEntry, type AgentUsageSnapshot } from "@/lib/agent-usage";
+import type { SessionUsageSummary } from "@/lib/session-stats";
 import type { SessionInfo, SubagentSessionStatus } from "@/lib/types";
 
 interface Props {
@@ -10,6 +14,33 @@ interface Props {
   selectedSessionId: string;
   runningSessionIds: ReadonlySet<string>;
   onSelectSession: (session: SessionInfo) => void;
+}
+
+function UsageLine({ entry }: { entry?: AgentUsageEntry }) {
+  const { t } = useI18n();
+  if (!entry || entry.status === "loading") return <span>{t("agentSwitcher.usageLoading")}</span>;
+  if (!("summary" in entry)) return <span>{t("agentSwitcher.usageUnavailable")}</span>;
+  const usage = entry.summary;
+  return <span>{t("agentSwitcher.compactUsage", {
+    time: formatAgentDuration(usage.totalActiveMs), tokens: formatAgentTokens(usage.tokens.total), cost: formatAgentCost(usage.cost),
+  })}{entry.status === "stale" ? ` · ${t("agentSwitcher.usageStale")}` : ""}</span>;
+}
+
+function UsageBreakdown({ summary }: { summary: SessionUsageSummary }) {
+  const { t, locale } = useI18n();
+  const rows = [
+    [t("agentSwitcher.estimatedActive"), formatAgentDuration(summary.totalActiveMs)],
+    [t("session.input"), summary.tokens.input.toLocaleString(locale)],
+    [t("session.output"), summary.tokens.output.toLocaleString(locale)],
+    [t("session.cacheRead"), summary.tokens.cacheRead.toLocaleString(locale)],
+    [t("session.cacheWrite"), summary.tokens.cacheWrite.toLocaleString(locale)],
+    [t("session.total"), summary.tokens.total.toLocaleString(locale)],
+    [t("session.toolCalls"), summary.toolCalls.toLocaleString(locale)],
+    [t("agentSwitcher.recordedCost"), `$${summary.cost.toFixed(4)}`],
+  ];
+  return <dl style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "4px 12px", margin: "8px 0", fontVariantNumeric: "tabular-nums" }}>
+    {rows.map(([label, value]) => <div key={label} style={{ display: "contents" }}><dt>{label}</dt><dd style={{ margin: 0 }}>{value}</dd></div>)}
+  </dl>;
 }
 
 function sessionTitle(session: SessionInfo): string {
@@ -40,7 +71,7 @@ function statusColor(status: SubagentSessionStatus): string {
 function StatusIcon({ status }: { status: SubagentSessionStatus }) {
   if (status === "running" || status === "starting") {
     return (
-      <svg className="animate-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <svg className="animate-spin motion-reduce:animate-none" width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.25" />
         <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       </svg>
@@ -72,12 +103,14 @@ function AgentRow({
   main,
   selected,
   running,
+  usage,
   onSelect,
 }: {
   session: SessionInfo;
   main?: boolean;
   selected: boolean;
   running: boolean;
+  usage?: AgentUsageEntry;
   onSelect: () => void;
 }) {
   const { locale, t } = useI18n();
@@ -93,6 +126,7 @@ function AgentRow({
       type="button"
       role="option"
       aria-selected={selected}
+      data-agent-usage-id={session.id}
       onClick={onSelect}
       style={{
         width: "100%",
@@ -135,6 +169,7 @@ function AgentRow({
         <span style={{ display: "block", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: 11 }} title={secondary}>
           {secondary}
         </span>
+        <span style={{ display: "block", marginTop: 3, color: "var(--text-dim)", fontSize: 11 }}><UsageLine entry={usage} /></span>
       </span>
       <span style={{ display: "flex", alignItems: "center", gap: 6, color: main && !running ? "var(--text-dim)" : statusColor(status), fontSize: 11, whiteSpace: "nowrap" }}>
         {main && !running ? (
@@ -150,7 +185,14 @@ function AgentRow({
   );
 }
 
-export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, runningSessionIds, onSelectSession }: Props) {
+export function AgentSessionPanel(props: Props) {
+  const ids = [props.rootSession.id, ...props.subagents.map((session) => session.id)];
+  const usage = useAgentUsage(ids, props.runningSessionIds);
+  return <AgentSessionPanelContent {...props} usage={usage} />;
+}
+
+/** The view is separate from IO so recorded/zero/partial states can be rendered in core tests. */
+export function AgentSessionPanelContent({ rootSession, subagents, selectedSessionId, runningSessionIds, onSelectSession, usage }: Props & { usage: AgentUsageSnapshot }) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
   const sortedSubagents = useMemo(() => [...subagents].sort((a, b) => {
@@ -167,11 +209,14 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
           .some((value) => value?.toLowerCase().includes(normalizedQuery));
       })
     : sortedSubagents;
-  const runningCount = subagents.filter((session) => runningSessionIds.has(session.id)).length;
+  const runningCount = countRunningSubagents(subagents, runningSessionIds);
+  const family = sumAgentUsage([rootSession.id, ...subagents.map((session) => session.id)], usage);
+  const selected = [rootSession, ...subagents].find((session) => session.id === selectedSessionId);
+  const selectedUsage = usage.get(selectedSessionId);
 
   return (
     <div
-      role="listbox"
+      role="region"
       aria-label={t("agentSwitcher.title")}
       style={{
         background: "var(--bg-panel)",
@@ -180,7 +225,8 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
         borderBottom: "1px solid var(--border)",
         borderRadius: "0 0 6px 6px",
         boxShadow: "0 10px 28px rgba(0,0,0,0.10)",
-        overflow: "hidden",
+        maxHeight: "min(78dvh, 720px)",
+        overflowY: "auto",
       }}
     >
       <div>
@@ -195,6 +241,20 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
             </span>
           )}
         </div>
+        <section data-testid="agent-family-usage" aria-label={t("agentSwitcher.familyUsage")} style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", fontSize: 11, color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+          <strong>{t("agentSwitcher.familyUsage")}</strong>
+          <div>{family.available > 0
+            ? t("agentSwitcher.familyCompact", { time: formatAgentDuration(family.summary.totalActiveMs), tokens: formatAgentTokens(family.summary.tokens.total), cost: formatAgentCost(family.summary.cost) })
+            : t(family.loading > 0 ? "agentSwitcher.usageLoading" : "agentSwitcher.usageUnavailable")}</div>
+          <div>{t(family.available < family.total ? "agentSwitcher.usagePartial" : "agentSwitcher.usageComplete", { available: family.available, total: family.total })}
+            {family.stale > 0 && ` · ${t("agentSwitcher.staleCount", { count: family.stale })}`}</div>
+          <div style={{ marginTop: 4 }}>{t("agentSwitcher.familyMeaning")}</div>
+          <details>
+            <summary style={{ cursor: "pointer", padding: "6px 0" }}>{t("agentSwitcher.familyBreakdown")}</summary>
+            {family.available > 0 && <UsageBreakdown summary={family.summary} />}
+            <p>{t("agentSwitcher.familyHint")}</p>
+          </details>
+        </section>
         {subagents.length > 8 && (
           <div style={{ padding: 8, borderBottom: "1px solid var(--border)" }}>
             <input
@@ -211,12 +271,13 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
             />
           </div>
         )}
-        <div style={{ maxHeight: "min(58dvh, 480px)", overflowY: "auto" }}>
+        <div role="listbox" aria-label={t("agentSwitcher.title")} style={{ maxHeight: "min(58dvh, 480px)", overflowY: "auto" }}>
           <AgentRow
             session={rootSession}
             main
             selected={rootSession.id === selectedSessionId}
             running={runningSessionIds.has(rootSession.id)}
+            usage={usage.get(rootSession.id)}
             onSelect={() => onSelectSession(rootSession)}
           />
           {visibleSubagents.map((session) => (
@@ -225,6 +286,7 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
               session={session}
               selected={session.id === selectedSessionId}
               running={runningSessionIds.has(session.id)}
+              usage={usage.get(session.id)}
               onSelect={() => onSelectSession(session)}
             />
           ))}
@@ -234,6 +296,15 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
             </div>
           )}
         </div>
+        <details style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-muted)", borderTop: "1px solid var(--border)" }}>
+          <summary style={{ cursor: "pointer", padding: "4px 0" }}>{t("agentSwitcher.selectedBreakdown")}</summary>
+          <section aria-label={t("agentSwitcher.selectedUsage")}>
+            <strong>{selected ? sessionTitle(selected) : selectedSessionId}</strong>
+            <div><UsageLine entry={selectedUsage} /></div>
+            {selectedUsage && "summary" in selectedUsage && <UsageBreakdown summary={selectedUsage.summary} />}
+            <p>{t("agentSwitcher.recordedHint")}</p>
+          </section>
+        </details>
       </div>
     </div>
   );

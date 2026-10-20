@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { waitForAsyncCondition } from "./async-condition.mjs";
+import { checkAppearanceThemes } from "./appearance-themes.mjs";
+import { checkFontPreferences } from "./font-preferences.mjs";
 
 export async function checkChatAppearanceReset(page) {
   const width = page.getByRole("slider", { name: "Chat content width", exact: true });
@@ -35,7 +37,11 @@ export async function checkChatAppearanceReset(page) {
 export async function checkChatAppearance(page) {
   await page.setViewportSize({ width: 2560, height: 1100 });
   const textarea = page.locator(".chat-input-textarea");
-  const openSettings = () => page.getByRole("button", { name: "Settings", exact: true }).click();
+  const openSettings = async () => {
+    const sidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
+    if (await sidebar.isVisible()) await sidebar.click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+  };
   const closeSettings = () => page.keyboard.press("Escape");
   const width = page.getByRole("slider", { name: "Chat content width", exact: true });
   const fontSize = page.getByRole("slider", { name: "Chat & terminal font size", exact: true });
@@ -73,6 +79,7 @@ export async function checkChatAppearance(page) {
   assert.ok((await columns()).every((column) => column.width > 2000 && column.maxWidth === "none"));
 
   await openSettings();
+  await checkAppearanceThemes(page, openSettings);
   assert.equal(await page.getByRole("radiogroup", { name: "Language", exact: true }).count(), 0);
   assert.equal(await page.locator("html").getAttribute("lang"), "en");
   const titleLanguage = page.getByRole("combobox", { name: "Generated title language" });
@@ -149,6 +156,7 @@ export async function checkChatAppearance(page) {
   assert.equal(await width.inputValue(), "2000");
   assert.equal(await fontSize.inputValue(), "18");
   await checkChatAppearanceReset(page);
+  await checkFontPreferences(page, openSettings);
   for (const viewport of [{ width: 1280, height: 600 }, { width: 320, height: 568 }]) {
     await page.setViewportSize(viewport);
     // The title-language setting remains independent from the English-only UI.

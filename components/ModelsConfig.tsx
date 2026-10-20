@@ -6,6 +6,8 @@ import { safeAuthorizationUrl } from "@/lib/oauth-url";
 import { DeviceAuthorization } from "./DeviceAuthorization";
 import type { ModelCatalogPreset, ModelCatalogRecommendation } from "@/lib/model-catalog";
 import type { DiscoveredModel } from "@/lib/model-discovery";
+import { ContextWindowError, isOverridesOnlyProvider, managedProviderKind, normalizeContextWindowOverrides, withContextWindowOverride } from "@/lib/model-context";
+import type { ModelContextSettings } from "./ModelContextWindow";
 import {
   getLastSettingsSelection,
   setLastSettingsSelection,
@@ -1318,8 +1320,9 @@ function ModelDetail({
 
 // ── OAuth detail ──────────────────────────────────────────────────────────────
 
-function OAuthDetail({ provider, onRefresh, enabledModels }: {
+function OAuthDetail({ provider, onRefresh, enabledModels, contextSettings }: {
   provider: OAuthProvider; onRefresh: () => void; enabledModels: EnabledModelsController;
+  contextSettings: ModelContextSettings;
 }) {
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const { t } = useI18n();
@@ -1579,15 +1582,16 @@ function OAuthDetail({ provider, onRefresh, enabledModels }: {
 
       <ProviderUsageSummary providerId={provider.id} enabled={provider.loggedIn} />
 
-      {provider.loggedIn && <EnabledModelsSection providerId={provider.id} controller={enabledModels} />}
+      {provider.loggedIn && <EnabledModelsSection providerId={provider.id} controller={enabledModels} contextSettings={contextSettings} />}
     </div>
   );
 }
 
 // ── API Key detail ────────────────────────────────────────────────────────────
 
-function ApiKeyDetail({ provider, onRefresh, enabledModels }: {
+function ApiKeyDetail({ provider, onRefresh, enabledModels, contextSettings }: {
   provider: ApiKeyProvider; onRefresh: () => void; enabledModels: EnabledModelsController;
+  contextSettings: ModelContextSettings;
 }) {
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1714,7 +1718,7 @@ function ApiKeyDetail({ provider, onRefresh, enabledModels }: {
 
       <ProviderUsageSummary providerId={provider.id} enabled={provider.configured} />
 
-      {provider.configured && <EnabledModelsSection providerId={provider.id} controller={enabledModels} />}
+      {provider.configured && <EnabledModelsSection providerId={provider.id} controller={enabledModels} contextSettings={contextSettings} />}
     </div>
   );
 }
@@ -1880,6 +1884,8 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
   const [selection, setSelection] = useState<Selection | null>(readRememberedSelection);
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
   const [apiKeyProviders, setApiKeyProviders] = useState<ApiKeyProvider[]>([]);
+  const [authListed, setAuthListed] = useState(false);
+  const [authListFailed, setAuthListFailed] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   /** Provider ids as models.json has them on disk, and where renames moved them. */
   const savedProvidersRef = useRef<Set<string>>(new Set());
@@ -1893,12 +1899,18 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
 
   const refreshAuthProviders = useCallback(() => {
     fetch("/api/auth/providers")
-      .then((r) => r.json())
-      .then((d: { oauthProviders?: OAuthProvider[]; apiKeyProviders?: ApiKeyProvider[] }) => {
+      .then(async (r) => {
+        const d = await r.json() as { oauthProviders?: OAuthProvider[]; apiKeyProviders?: ApiKeyProvider[] };
+        if (!r.ok || !Array.isArray(d.oauthProviders) || !Array.isArray(d.apiKeyProviders)) throw new Error("Provider discovery unavailable");
+        return d;
+      })
+      .then((d) => {
         if (Array.isArray(d.oauthProviders)) setOauthProviders(d.oauthProviders);
         if (Array.isArray(d.apiKeyProviders)) setApiKeyProviders(d.apiKeyProviders);
+        setAuthListed(true);
+        setAuthListFailed(false);
       })
-      .catch(() => {});
+      .catch(() => setAuthListFailed(true));
   }, []);
 
   useEffect(() => {
@@ -1928,6 +1940,29 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
   useEffect(() => {
     if (selection) setLastSettingsSelection("models", JSON.stringify(selection));
   }, [selection]);
+
+  // Overrides-only entries belong to their managed provider, never a duplicate custom form.
+  useEffect(() => {
+    if (selection?.type !== "provider") return;
+    const entry = config.providers?.[selection.name];
+    if (!isOverridesOnlyProvider(entry)) return;
+    const kind = managedProviderKind(selection.name, oauthProviders, apiKeyProviders);
+    if (kind) setSelection({ type: kind, providerId: selection.name });
+  }, [apiKeyProviders, config.providers, oauthProviders, selection]);
+
+  const contextSettings = (providerId: string): ModelContextSettings => ({
+    overrides: config.providers?.[providerId]?.modelOverrides,
+    disabled: loading || saving || loadError !== null,
+    onChange: (modelId, value) => {
+      try {
+        setConfig(withContextWindowOverride(config, providerId, modelId, value));
+        setSavedOk(false);
+        setSaveError(null);
+      } catch (error) {
+        setSaveError(String(error));
+      }
+    },
+  });
 
   const addCustomProvider = useCallback(() => {
     let finalName = "new-provider";
@@ -2047,10 +2082,11 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
     setSaveError(null);
     setSavedOk(false);
     try {
+      const normalized = normalizeContextWindowOverrides(config);
       const res = await fetch("/api/models-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify(normalized),
       });
       const d = await res.json() as { success?: boolean; error?: string };
       if (!res.ok || d.error) setSaveError(d.error ?? `HTTP ${res.status}`);
@@ -2065,16 +2101,21 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
         savedProvidersRef.current = new Set(Object.keys(config.providers ?? {}));
         savedModelIdsRef.current = savedModelIds(config);
         renamesRef.current.clear();
-        enabledModels.resync(renames, modelRenames);
+        // A project's enabledModels stays read-only; a global budget edit needs only a new view there.
+        if (enabledModels.view?.scope === "project") enabledModels.refresh();
+        else enabledModels.resync(renames, modelRenames);
       }
     } catch (e) {
-      setSaveError(String(e));
+      setSaveError(e instanceof ContextWindowError ? t("models.contextInvalid", { model: e.model }) : String(e));
     } finally {
       setSaving(false);
     }
-  }, [config, enabledModels, loadError]);
+  }, [config, enabledModels, loadError, t]);
 
-  const providers = Object.entries(config.providers ?? {});
+  const providers = Object.entries(config.providers ?? {}).filter(([id, entry]) => {
+    if (!isOverridesOnlyProvider(entry)) return true;
+    return authListed && managedProviderKind(id, oauthProviders, apiKeyProviders) === null;
+  });
   // `12/40` next to a provider makes a narrowed selector visible at a glance.
   const scopeBadge = (providerId: string) => {
     const label = providerBadgeLabel(enabledModels.view, providerId);
@@ -2089,16 +2130,16 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
     if (selection.type === "oauth") {
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <OAuthDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} enabledModels={enabledModels} />;
+      return <OAuthDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} enabledModels={enabledModels} contextSettings={contextSettings(p.id)} />;
     }
     if (selection.type === "apikey") {
       const p = apiKeyProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <ApiKeyDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} enabledModels={enabledModels} />;
+      return <ApiKeyDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} enabledModels={enabledModels} contextSettings={contextSettings(p.id)} />;
     }
     if (selection.type === "provider") {
       const provider = config.providers?.[selection.name];
-      if (!provider) return null;
+      if (!provider || !providers.some(([id]) => id === selection.name)) return null;
       return (
         <ProviderDetail
           key={selection.name}
@@ -2132,6 +2173,10 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
     <ConfigPanelShell embedded={embedded} title={t("common.models")} subtitle="~/.pi/agent/models.json" closeLabel={t("i18n.close")} onClose={onClose}>
 
         <EnabledModelsBanner controller={enabledModels} />
+        {authListFailed && <div role="alert" className="enabled-models-note">
+          {t("models.providerDiscoveryUnavailable")}{" "}
+          <ConfigButton size="small" onClick={refreshAuthProviders}>{t("models.retryProviderDiscovery")}</ConfigButton>
+        </div>}
 
         {/* Body */}
         <ConfigSplitView>
@@ -2249,11 +2294,12 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
         </ConfigSplitView>
 
         {/* Footer */}
-        <ConfigFooter status={(loadError || saveError) && (
-          <span style={{ color: "#f87171" }}>
+        <ConfigFooter status={<div>
+          {(loadError || saveError) && <div role="alert" style={{ color: "#f87171" }}>
             {loadError ? t("models.configUnreadable", { error: loadError }) : saveError}
-          </span>
-        )}>
+          </div>}
+          <span>{t("models.savedEditsApply")}</span>
+        </div>}>
           {!embedded && <ConfigButton onClick={onClose}>{t("i18n.cancel")}</ConfigButton>}
           <ConfigButton
             variant="primary"

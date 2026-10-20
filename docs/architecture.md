@@ -87,6 +87,9 @@ lib/
   draft-store.ts       local draft persistence helpers
   file-access.ts       allowed file roots for /api/files and worktrees
   file-paths.ts        client/server path encoding helpers
+  model-context.ts     managed-model budget draft normalization, clearing and provider routing
+  session-usage-reader.ts  non-writing disk usage snapshots; SDK legacy normalization only in memory
+  agent-usage.ts       bounded single-flight family usage polling and qualified aggregation
   enabled-models.ts    pure minimal-edit engine for the `enabledModels` pattern list
   enabled-models-runtime.ts  SDK adapter: per-pattern resolution, provider kinds, settings IO
   markdown.ts          shared Markdown pipelines/source-preserving normalization
@@ -129,6 +132,7 @@ components/
   MarkdownBody.tsx    markdown renderer
   ModelsConfig.tsx    modal for editing models.json (opened from sidebar bottom)
   EnabledModelsSection.tsx  model switches inside ModelsConfig, backed by enabledModels
+  ModelContextWindow.tsx  compact managed-model context-budget draft field
   AgentsConfig.tsx    built-in subagent toggle + agent profile editor
   PluginsConfig.tsx   modal for installed package plugins
   SkillsConfig.tsx    modal for loaded/search/installable skills
@@ -147,7 +151,8 @@ hooks/
   useTerminalTheme.ts best-effort shared browser terminal palette
   useDragDrop.ts      shared drag/drop state
   useIsMobile.ts      responsive breakpoint hook
-  useTheme.ts         theme state
+  useTheme.ts         theme state and shared light/dark palette classification
+  useFontPreferences.ts browser-local live interface/mono families and base weights
 ```
 
 ---
@@ -158,5 +163,6 @@ hooks/
 --bg --bg-panel --bg-hover --bg-selected --border
 --text --text-muted --text-dim
 --accent --user-bg --tool-bg
---font-mono
+--font-ui --font-mono --font-ui-default --font-mono-default
+--font-ui-weight --font-mono-weight
 ```

@@ -11,6 +11,8 @@ const chatAppearanceHook = await readFile(new URL("../hooks/useChatAppearance.ts
 const jiti = createJiti(import.meta.url);
 const { clampChatContentWidth, clampChatContentFontSize } = await jiti.import("../hooks/useChatAppearance.ts");
 
+const appShell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
+
 const widthVariable = /var\(--chat-content-max-width, none\)/g;
 
 test("chat content defaults to full available width behind one shared variable", () => {
@@ -50,6 +52,14 @@ test("chat width validation preserves the default and supported range", () => {
   assert.equal(clampChatContentWidth(700), 820);
   assert.equal(clampChatContentWidth(1104), 1104);
   assert.equal(clampChatContentWidth(2400), 2000);
+});
+
+test("AppShell restores fonts independently and existing drafts remeasure family and weight changes", () => {
+  assert.match(appShell, /useFontPreferences\(\);/);
+  assert.match(chatInput, /useLayoutEffect\(resizeTextarea, \[value, fontSize, uiFontFamily, uiWeight, resizeTextarea\]\)/);
+  assert.match(globals, /--font-mono-default: var\(--font-noto-mono\)/);
+  assert.match(globals, /\.git-diff-code-view diffs-container \{[^}]*--diffs-font-family: var\(--font-mono\)[^}]*font-weight: var\(--font-mono-weight\)/);
+  assert.match(globals, /\.markdown-body :is\(h1, h2, h3, h4, h5, h6, strong, b\) code \{\s*font-weight: inherit/);
 });
 
 test("chat font size preserves the default and bounds stored or supplied values", () => {

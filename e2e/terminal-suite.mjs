@@ -58,6 +58,10 @@ let browser;
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
     const context = await harness.newContext(browser, { viewport, locale: "en-US", ...(viewport.width < 500 ? { hasTouch: true, isMobile: true } : {}) }, base);
     const page = await context.newPage();
+    // Desktop proves xterm's DOM measurement fallback; mobile retains ordinary capabilities.
+    if (viewport.width > 500) await page.addInitScript(() => {
+      Object.defineProperty(globalThis, "OffscreenCanvas", { configurable: true, writable: true, value: undefined });
+    });
     page.setDefaultTimeout(30_000);
     const errors = harness.errorsFor(context);
     const created = new Set();
@@ -69,6 +73,11 @@ let browser;
     });
     const ready = () => page.locator(".terminal-panel:visible .is-ready").waitFor();
     const text = () => page.locator(".terminal-panel:visible .xterm-rows").innerText();
+    const expectFontWeight = (weight, bold = false) => page.waitForFunction(({ weight, bold }) => {
+      const panel = [...document.querySelectorAll(".terminal-panel")].find(el => el.getBoundingClientRect().width > 0);
+      const character = panel?.querySelector(`.xterm-rows span${bold ? ".xterm-bold" : ":not(.xterm-bold)"}`);
+      return character && getComputedStyle(character).fontWeight === String(weight);
+    }, { weight, bold });
     const run = async (command) => {
       await page.locator(".terminal-panel:visible .xterm-helper-textarea").focus();
       await page.keyboard.type(command);
@@ -150,6 +159,28 @@ let browser;
         await visiblePanel();
         await waitFont(expected);
       }
+      // Change shared typography while the retained terminal is hidden. Nerd
+      // keeps its glyph family, System follows mono, and both take its base weight.
+      await hidePanel();
+      await showSidebar();
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.getByRole("textbox", { name: "Monospace font", exact: true }).fill("monospace");
+      await page.getByRole("slider", { name: "Monospace font weight", exact: true }).fill("600");
+      await page.keyboard.press("Escape");
+      if (viewport.width < 500) await page.locator("#session-sidebar").getByText("Terminal session one", { exact: true }).click();
+      await visiblePanel();
+      await expectFontWeight(600);
+      assert.match(await terminalPanel.locator(".xterm-rows").evaluate(el => getComputedStyle(el).fontFamily), /Pi Web Nerd Font/);
+      await fontSelect.selectOption("system");
+      await page.waitForFunction(() => {
+        const rows = [...document.querySelectorAll(".terminal-panel")].find(el => el.getBoundingClientRect().width > 0)?.querySelector(".xterm-rows");
+        return rows && getComputedStyle(rows).fontFamily.startsWith("monospace,");
+      });
+      await expectFontWeight(600);
+      await run("printf '\\033[1mBOLD_FONT\\033[0m\\n'");
+      await expectFontWeight(700, true);
+      await fontSelect.selectOption("nerd");
+      await expectFontWeight(600);
       assert.equal(streamRequests.length, originalStreams, "appearance changes retain the same SSE connection");
       assert.equal(created.size, 1, "appearance changes never create another PTY");
       await run("printf '\\nAPPEARANCE:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
@@ -219,14 +250,46 @@ let browser;
       await waitOutput(`EXPLORER:alive:${pid}`);
       assert.equal(created.size, 1, "Explorer round trip retains shell identity and environment");
 
+      let calibratedFont;
+      const setMono = async family => {
+        await showSidebar();
+        await page.getByRole("button", { name: "Settings", exact: true }).click();
+        await page.getByRole("textbox", { name: "Monospace font", exact: true }).fill(family);
+        await page.keyboard.press("Escape");
+      };
+      const gridFor = async marker => {
+        await run(`printf '\\n${marker}:%s\\n' "$(stty size)"`);
+        await waitOutput(`${marker}:[0-9]+ [0-9]+`);
+        return (await text()).match(new RegExp(`${marker}:([0-9]+ [0-9]+)`))[1];
+      };
+      if (viewport.width > 500) {
+        await terminalPanel.locator('.xterm-char-measure-element[aria-hidden="true"]').waitFor({ state: "attached" });
+        await fontSelect.selectOption("system");
+        await setMono("monospace");
+        const a = await gridFor("FONT_A");
+        await setMono("serif");
+        const b = await gridFor("FONT_B");
+        assert.notEqual(a, b, "calibration fonts must have different real PTY grids");
+        await setMono("monospace");
+        assert.equal(await gridFor("FONT_A_RESTORED"), a);
+        calibratedFont = b;
+      }
       await hidePanel();
       await showSidebar();
       await page.getByText("note.txt", { exact: true }).click();
       await page.getByText("File viewer fixture", { exact: true }).waitFor();
       assert.equal(await page.locator(".terminal-panel").count(), 1);
       assert.equal(await page.locator(".terminal-panel").isVisible(), false);
+      if (calibratedFont) await setMono("serif");
       await page.getByRole("tab", { name: "Terminal: workspace-a", exact: true }).click();
       await ready();
+      if (calibratedFont) {
+        assert.equal(await gridFor("FONT_HIDDEN_REVEAL"), calibratedFont, "hidden font changes must remeasure cells on reveal, not just refit old metrics");
+        assert.equal(streamRequests.length, originalStreams);
+        assert.equal(created.size, 1);
+        await setMono("monospace");
+        await fontSelect.selectOption("nerd");
+      }
       await hidePanel();
       await showSidebar();
       await page.getByText("Terminal session two", { exact: true }).click();
@@ -256,6 +319,8 @@ let browser;
       await page.getByRole("tab", { name: "Terminal: workspace-a", exact: true }).click();
       await ready();
       assert.equal(await fontSelect.inputValue(), "system", "font choice survives page reload");
+      await expectFontWeight(600);
+      assert.match(await terminalPanel.locator(".xterm-rows").evaluate(el => getComputedStyle(el).fontFamily), /^monospace,/);
       await fontSelect.selectOption("nerd");
       await run("printf '\\nREFRESH:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput(`REFRESH:alive:${pid}`);

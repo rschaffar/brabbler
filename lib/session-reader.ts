@@ -2,7 +2,7 @@ import {
   SessionManager,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { closeSync, type Dirent, fstatSync, openSync, readSync, statSync } from "fs";
+import { closeSync, constants, type Dirent, fstatSync, openSync, readSync, statSync } from "fs";
 import { readdir } from "fs/promises";
 import { isAbsolute, join, normalize as normalizePath, relative, resolve as resolvePath, sep } from "path";
 import type { AgentMessage, ImageContent, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
@@ -28,8 +28,9 @@ const SESSION_RESULT_MAX_BYTES = 256 * 1024;
 const SESSION_TAIL_PROBE_MAX_BYTES = 64 * 1024;
 
 function readBoundedLines(filePath: string, maxBytes: number, maxLines: number): string[] {
-  const fd = openSync(filePath, "r");
+  const fd = openSync(filePath, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
+    if (!fstatSync(fd).isFile()) return [];
     const chunks: Buffer[] = [];
     let position = 0;
     let newlineCount = 0;
@@ -547,7 +548,7 @@ export function openSessionManager(
   return sm;
 }
 
-export async function resolveSessionPath(sessionId: string): Promise<string | null> {
+export async function resolveSessionPath(sessionId: string, options: { allowCatalogueScan?: boolean } = {}): Promise<string | null> {
   const cached = getPathCache().get(sessionId);
   if (cached) return cached;
 
@@ -557,6 +558,8 @@ export async function resolveSessionPath(sessionId: string): Promise<string | nu
     return getPathCache().get(sessionId) ?? null;
   }
 
+  // Metrics must not trigger the catalogue's persisted scan index on an unknown ID.
+  if (options.allowCatalogueScan === false) return null;
   // Unknown layouts, malformed candidates, and duplicate IDs retain the
   // existing authoritative catalogue scan instead of negative-caching a miss.
   await listAllSessions();

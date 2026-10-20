@@ -16,6 +16,14 @@ export interface SessionFileStats {
   cost: number;
 }
 
+/** Recorded totals for one agent; time is an estimate, not elapsed family time. */
+export interface SessionUsageSummary {
+  tokens: SessionFileStats["tokens"];
+  cost: number;
+  toolCalls: number;
+  totalActiveMs: number;
+}
+
 function emptyStats(): SessionFileStats {
   return {
     userMessages: 0,
