@@ -2422,7 +2422,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                 options={modelOptions}
                 value={model}
                 onChange={onModelChange}
-                disabled={isStreaming}
+                onReselect={onModelChange}
+                disabled={isStreaming || isCompacting}
                 busy={modelSwitching}
                 isAutoSelection={isAutoModelSelection}
               />

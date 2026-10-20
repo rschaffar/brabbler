@@ -37,6 +37,7 @@ function setup(fetchImpl) {
     newSessionCwd: "/project", session: null, isNew: true, historyOnly: false,
     sessionIdRef: { current: null }, newSessionAccountsRef: { current: null }, thinkingLevelOverrideRef: { current: null },
     thinkingLevelPinsRef: { current: {} }, defaultThinkingLevelRef: { current: null },
+    modelsRequestVersionRef: { current: 0 }, modelSelectionVersionRef: { current: 0 }, sessionHookMountedRef: { current: true },
     asConcreteThinkingLevel: (value) => (!value || value === "auto" ? null : value),
     fetch: fetchImpl,
     MODELS_RETRY_DELAYS_MS: script(schedule.initializer.getText(source)).runInNewContext(),
@@ -79,6 +80,37 @@ test("model-load failures stay visible through bounded retries and clear on reco
   assert.ok(recovered.writes.some(([name, value]) => name === "ModelList" && value[0].id === "test"));
   assert.ok(recovered.writes.some(([name, value]) => name === "NewSessionDefaultModel" && value.modelId === "test"));
   assert.ok(recovered.writes.some(([name, value]) => name === "NewSessionDefaultThinkingLevel" && value === "high"));
+});
+
+test("late model lists cannot overwrite newer thinking capabilities and mappings", async () => {
+  const old = Promise.withResolvers(); let count = 0;
+  const state = setup(async () => {
+    const request = ++count;
+    if (request === 1) await old.promise;
+    return Response.json(request === 1 ? { models: { old: "Old" }, thinkingLevels: { old: ["high"] } }
+      : { models: { fresh: "Fresh" }, thinkingLevels: { fresh: ["off"] }, thinkingLevelMaps: { fresh: { high: "low" } } });
+  });
+  const stale = state.context.loadModels(state.context.controller.signal);
+  await state.context.loadModels(state.context.controller.signal);
+  const writesBefore = state.writes.length; old.resolve(); await stale;
+  assert.equal(state.writes.length, writesBefore);
+  assert.ok(state.writes.some(([name, value]) => name === "ModelThinkingLevels" && value.fresh[0] === "off"));
+  assert.ok(state.writes.some(([name, value]) => name === "ModelThinkingLevelMaps" && value.fresh.high === "low"));
+});
+
+test("model-selection, account/session changes and unmount invalidate pending model metadata reads", async () => {
+  for (const invalidate of [
+    context => { context.modelSelectionVersionRef.current++; },
+    context => { context.newSessionAccountsRef.current = { fixture: "another-account" }; },
+    context => { context.sessionIdRef.current = "another-session"; },
+    context => { context.sessionHookMountedRef.current = false; },
+  ]) {
+    const held = Promise.withResolvers();
+    const state = setup(async () => { await held.promise; return Response.json({ models: { stale: "Stale" } }); });
+    const reading = state.context.loadModels(state.context.controller.signal);
+    invalidate(state.context); held.resolve(); await reading;
+    assert.deepEqual(state.writes, []);
+  }
 });
 
 test("cancelling model loads prevents state writes and further retries", { timeout: 5_000 }, async () => {

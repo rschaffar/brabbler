@@ -107,7 +107,7 @@ export async function checkBlockedPreferences(page, base, sessionId) {
   console.log(`PASS: ${page.viewportSize().width}px completion sound and thinking defaults remain usable with blocked preference storage`);
 }
 
-export async function checkModelOverrides(page, base) {
+export async function checkModelOverrides(page, base, sessionId, cwd) {
   await openSettings(page, "Models");
   await page.getByText("e2e-followups", { exact: true }).click();
   await page.getByText("adaptive-fixture", { exact: true }).click();
@@ -157,6 +157,90 @@ export async function checkModelOverrides(page, base) {
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     assert.equal(await page.getByText(/STALE_CONNECTION_SENTINEL/).count(), 0);
   } finally { release(); await page.unroute("**/api/models-config/test", route); }
+  await page.getByText("Open sessions: select the model again while idle to apply saved changes.", { exact: true }).waitFor();
   await page.keyboard.press("Escape");
-  console.log(`PASS: ${page.viewportSize().width}px model endpoint/adaptive inheritance, real save/read, sibling isolation and stale-test refusal`);
+  // Model-speed setup intentionally scopes the picker to its own providers.
+  // Admit this synthetic provider through the real minimal-edit API first.
+  const enabled = await fetch(`${base}/api/models/enabled`, { method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ op: "provider", provider: "e2e-followups", enabled: true, cwd }) });
+  assert.equal(enabled.status, 200);
+  // The preceding file-link chain selected its own session. Bind this assertion
+  // chain to the same explicit session ID used by its command/response checks.
+  await page.goto(`${base}/?session=${sessionId}`, { waitUntil: "domcontentloaded" });
+  await page.getByText("E2E final answer", { exact: true }).waitFor();
+  const hideSidebar = page.getByRole("button", { name: "Hide sidebar", exact: true });
+  if (page.viewportSize().width < 768 && await hideSidebar.isVisible()) await hideSidebar.click();
+  const command = async body => {
+    const response = await fetch(`${base}/api/agent/${sessionId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    assert.equal(response.status, 200); return (await response.json()).data;
+  };
+  const reselect = async active => {
+    const collapse = page.getByRole("button", { name: "Collapse controls", exact: true });
+    if (await collapse.isVisible()) await collapse.click();
+    await page.locator(".model-selector.is-toolbar").getByRole("button").click();
+    const option = page.getByRole("listbox").getByRole("option", { name: "Adaptive fixture", exact: true });
+    await option.waitFor({ state: "visible" });
+    if (active) assert.equal(await option.getAttribute("aria-selected"), "true");
+    const [response] = await Promise.all([
+      page.waitForResponse(r => new URL(r.url()).pathname === `/api/agent/${sessionId}`
+        && r.request().method() === "POST" && r.request().postDataJSON()?.type === "set_model"),
+      option.click(),
+    ]);
+    assert.equal(response.status(), 200);
+    await page.waitForFunction(() => !document.querySelector('.model-selector.is-toolbar button[aria-busy="true"]'));
+  };
+  await reselect(false);
+  const before = await command({ type: "get_state" });
+  const config = await (await fetch(`${base}/api/models-config`)).json();
+  const nextWindow = before.contextUsage.contextWindow + 1024;
+  config.providers["e2e-followups"].models[0].contextWindow = nextWindow;
+  const savedResponse = await fetch(`${base}/api/models-config`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) });
+  assert.equal(savedResponse.status, 200);
+  assert.equal((await command({ type: "get_state" })).contextUsage.contextWindow, before.contextUsage.contextWindow, "save alone does not change the loaded model");
+  await command({ type: "reload" });
+  assert.equal((await command({ type: "get_state" })).contextUsage.contextWindow, before.contextUsage.contextWindow, "resource reload is not model reapplication");
+  await reselect(true);
+  const after = await command({ type: "get_state" });
+  assert.equal(after.contextUsage.contextWindow, nextWindow);
+  const windowLabel = `of ${nextWindow.toLocaleString("en-US")} tokens`;
+  await page.waitForFunction(label => [...document.querySelectorAll('button[aria-label="Session info"]')].some(button => button.title.includes(label)), windowLabel);
+  assert.ok((await page.locator('button[aria-label="Session info"]:visible').first().getAttribute("title")).includes(windowLabel));
+  assert.equal(after.thinkingLevel, before.thinkingLevel);
+  const persisted = readFileSync(after.sessionFile, "utf8");
+  await reselect(true);
+  assert.equal(readFileSync(after.sessionFile, "utf8"), persisted, "unchanged reselect writes no transcript metadata");
+  await command({ type: "set_thinking_level", level: "high" });
+  await reselect(true);
+  const thinking = page.getByRole("button", { name: "Change reasoning level", exact: true });
+  const showThinking = async () => {
+    if (!await thinking.isVisible()) await page.getByRole("button", { name: "More controls", exact: true }).click();
+  };
+  await showThinking();
+  assert.match(await thinking.getAttribute("title"), /high$/);
+  config.providers["e2e-followups"].models[0].thinkingLevelMap = { high: "low" };
+  const mapped = await fetch(`${base}/api/models-config`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) });
+  assert.equal(mapped.status, 200);
+  await reselect(true);
+  assert.equal((await command({ type: "get_state" })).thinkingLevel, "high");
+  await showThinking();
+  await page.waitForFunction(() => document.querySelector('button[aria-label="Change reasoning level"]')?.title.endsWith("low"));
+  config.providers["e2e-followups"].models[0].reasoning = false;
+  const clamped = await fetch(`${base}/api/models-config`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) });
+  assert.equal(clamped.status, 200);
+  await reselect(true);
+  assert.equal((await command({ type: "get_state" })).thinkingLevel, "off");
+  await showThinking();
+  await page.waitForFunction(() => document.querySelector('button[aria-label="Change reasoning level"]')?.title.endsWith("off"));
+  assert.match(await thinking.getAttribute("title"), /off$/);
+  await thinking.click();
+  assert.equal(await thinking.locator("..").getByRole("button").count(), 3, "refreshed capability list offers only auto/off plus its trigger");
+  await thinking.click();
+  config.providers["e2e-followups"].models[0].reasoning = true;
+  delete config.providers["e2e-followups"].models[0].thinkingLevelMap;
+  const restored = await fetch(`${base}/api/models-config`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) });
+  assert.equal(restored.status, 200);
+  await reselect(true);
+  const collapse = page.getByRole("button", { name: "Collapse controls", exact: true });
+  if (await collapse.isVisible()) await collapse.click();
+  console.log(`PASS: ${page.viewportSize().width}px model overrides, stale-test refusal and native idle reselection without save/reload rebinding`);
 }

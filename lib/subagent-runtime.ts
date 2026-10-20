@@ -48,6 +48,7 @@ import { SubagentQueue } from "./subagent-queue";
 import { addWorktree, currentLocalBranchTip, removeWorktree } from "./worktree";
 import { randomUUID } from "node:crypto";
 import { getSessionPause, removeSessionPause } from "./session-pause";
+import { acquireModelRuntimeUse, withModelRuntimeAccess } from "./session-model-refresh";
 
 interface HostSession {
   readonly inner: AgentSessionLike;
@@ -307,6 +308,7 @@ export function createSubagentController(
 
     let isolatedWorktree: { path: string; branch: string } | undefined;
     let unregisteredInner: AgentSessionLike | undefined;
+    const releaseRuntime = parent.inner.modelRuntime ? acquireModelRuntimeUse(parent.inner.modelRuntime) : () => {};
     try {
       const profile = resolveSubagentProfile(parent.cwd, request.profile);
       if (!profile) throw new Error(`Unknown or disabled subagent profile: ${request.profile}`);
@@ -432,7 +434,8 @@ export function createSubagentController(
       if (inheritedAccounts) appendSessionAccounts(sessionManager, inheritedAccounts);
       appendSessionModelSpeed(sessionManager, readSessionModelSpeed(parent.inner.sessionManager.getEntries() as SessionEntry[]));
       const speedAgent: { current?: Agent } = {};
-      services.modelRuntime = withSessionModelSpeed(services.modelRuntime, sessionManager, () => speedAgent.current);
+      services.modelRuntime = withModelRuntimeAccess(services.modelRuntime,
+        withSessionModelSpeed(services.modelRuntime, sessionManager, () => speedAgent.current));
       sessionManager.appendSessionInfo(metadata.description);
 
       const { session: inner } = await createAgentSessionFromServices({
@@ -480,7 +483,7 @@ export function createSubagentController(
         try { await removeWorktree(parent.cwd, isolatedWorktree.path); } catch { /* preserve setup failure and avoid force deletion */ }
       }
       throw error;
-    }
+    } finally { releaseRuntime(); }
   }
 
   async function resume(request: ResumeSubagentRequest): Promise<SubagentExecution> {

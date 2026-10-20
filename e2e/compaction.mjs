@@ -70,6 +70,7 @@ export async function checkCompactionVisibility(page, { base, id, artifacts, wid
     activity.compacting = true;
     await emit({ type: "compaction_start", reason: "threshold" });
     await status.waitFor();
+    assert.equal(await page.locator(".model-selector.is-toolbar").getByRole("button").isDisabled(), true, "standalone compaction locks model selection/reapplication");
     assert.match(await status.textContent(), /Compacting conversation….*Summarizing earlier messages/s);
     assert.equal(await status.getAttribute("role"), "status");
     const box = await status.boundingBox(), viewport = page.viewportSize();
@@ -88,6 +89,7 @@ export async function checkCompactionVisibility(page, { base, id, artifacts, wid
     activity.compacting = false;
     await page.evaluate(() => window.dispatchEvent(new Event("online")));
     await status.waitFor({ state: "hidden" });
+    assert.equal(await page.locator(".model-selector.is-toolbar").getByRole("button").isDisabled(), false);
 
     activity.compacting = true;
     await emit({ type: "auto_compaction_start" }); await status.waitFor();

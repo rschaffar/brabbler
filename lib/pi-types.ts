@@ -6,9 +6,11 @@ import type {
   PromptOptions,
   SlashCommandInfo,
   Theme,
+  ExtensionRunner,
+  ResourceLoader,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage as PiAgentMessage } from "@earendil-works/pi-agent-core";
-import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+import type { ImageContent, TextContent, ModelsRefreshOptions, ModelsRefreshResult } from "@earendil-works/pi-ai";
 
 export interface ContextUsage {
   percent: number | null;
@@ -71,11 +73,13 @@ interface SkillLike {
 }
 
 interface ResourceLoaderLike {
+  getExtensions?: ResourceLoader["getExtensions"];
   getSkills(): { skills: SkillLike[] };
   getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 }
 
 interface ExtensionRunnerLike {
+  createToolContext?: ExtensionRunner["createToolContext"];
   getRegisteredCommands(): Array<{
     invocationName: string;
     description?: string;
@@ -135,8 +139,11 @@ export interface AgentSessionLike {
   readonly model: ModelLike | undefined;
   readonly modelRuntime: {
     getModel: (provider: string, modelId: string) => ModelLike | undefined;
-    refresh: (options?: { allowNetwork?: boolean }) => Promise<unknown>;
+    refresh: (options?: ModelsRefreshOptions) => Promise<ModelsRefreshResult>;
+    getError: () => string | undefined;
   };
+  readonly scopedModels?: ReadonlyArray<{ model: ModelLike; thinkingLevel?: string }>;
+  setScopedModels(models: Array<{ model: ModelLike; thinkingLevel?: string }>): void;
   readonly sessionManager: SessionManager;
   readonly settingsManager: SettingsManager;
   readonly agent: {

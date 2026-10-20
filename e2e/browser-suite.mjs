@@ -689,7 +689,7 @@ let context;
       await checkFileWorkspace(page, base, fileLineFixtures, artifacts);
       await checkMarkdownMedia(page, { base, fixtures: mediaFixtures });
       await checkSkillInstructions(page, base, followupSettings);
-      await checkModelOverrides(page, base);
+      await checkModelOverrides(page, base, RICH, project);
       await checkManagedModelContext(page);
       await checkExternalReferenceBoundary(page, base, externalReferenceFixtures);
       await checkBlockedPreferences(page, base, RICH);
