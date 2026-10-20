@@ -24,9 +24,11 @@ export default function (pi) {
     }
     if (last?.role === "toolResult") return fauxAssistantMessage("Lifecycle parent report:\\n\\n" + text(last));
     const task = text(last);
+    // Native parallel tool setup has no array-order guarantee. Whichever child
+    // gets the single slot must hold it until Stop; the other remains unprompted.
     if (task === "queue-children") return fauxAssistantMessage([
-      fauxToolCall("Agent", { subagent_type: "e2e-lifecycle", prompt: "HOLD_CHILD", description: "Held lifecycle child", model: "e2e-subagents/child" }),
-      fauxToolCall("Agent", { subagent_type: "e2e-lifecycle", prompt: "Queued task", description: "Queued lifecycle child", model: "e2e-subagents/child" })
+      fauxToolCall("Agent", { subagent_type: "e2e-lifecycle", prompt: "HOLD_CHILD A", description: "Held lifecycle child A", model: "e2e-subagents/child" }),
+      fauxToolCall("Agent", { subagent_type: "e2e-lifecycle", prompt: "HOLD_CHILD B", description: "Held lifecycle child B", model: "e2e-subagents/child" })
     ], { stopReason: "toolUse" });
     if (task === "isolated-child") return fauxAssistantMessage([fauxToolCall("Agent", {
       subagent_type: "e2e-lifecycle", prompt: "Complete isolated task", description: "Isolated lifecycle child",
@@ -147,8 +149,10 @@ export async function checkSubagentLifecycle(page, { base, api, post, root, agen
       const sessions = (await response.json()).sessions;
       return sessions.some(session => session.relation?.parentSessionId === id && session.relation.status === "queued");
     }, parentId);
-    const queued = (await children()).find(child => child.relation.status === "queued");
+    const queueSnapshot = await children();
+    const queued = queueSnapshot.find(child => child.relation.status === "queued");
     assert.ok(queued);
+    assert.equal(queueSnapshot.filter(child => child.relation.status === "running").length, 1, "one foreground child owns the only slot regardless of parallel setup order");
     if (width <= 640) await page.getByRole("button", { name: "More controls", exact: true }).click();
     await page.getByRole("button", { name: "Stop", exact: true }).click();
     await waitForAsyncCondition(page, async id => {
