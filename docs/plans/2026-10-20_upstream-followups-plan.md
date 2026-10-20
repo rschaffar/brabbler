@@ -72,6 +72,12 @@ No test retry was unchanged, deadline raised, original scenario skipped or conso
 
 Local `rst-main` advanced during development to `3728eafde511b8c71040db29b7190ec76976f7e2` with Git checkout-role guidance/validation and explicit four/four acceptance guidance. These unrelated changes will be preserved by guarded rebase before full acceptance. Normal full command is `nix run .#test -- all --workers 4 --jobs 4` if admitted; read-only reviewers alone are not a reason to halve it.
 
+### Rebased-candidate verification
+
+- First guarded rebase onto `3728eaf` produced `0335f38eab13010055caafa7a7a0370f6f42ea4d`. At the user's request, rebased again onto new worktree-filter/bulk-move integration target `74554a9d8ef0b9a0c6ecfa831b921ce1c86b5724`. The initial conflict was aborted, original tip/cleanliness verified, and recovery branch `backup/upstream-followups-before-latest-rebase-20261020-144626` retained. A read-only merge preview identified only adjacent `move`/`terminal` documentation rows; the mechanical replay preserved both. Candidate `dd8e20793459cf0801d3bd4a13f4617ca6407571` is clean; range-diff confirms unchanged runtime commits and only the updated documentation context. No semantic conflict or target edit.
+- First complete `nix run .#test -- all --workers 4 --jobs 4` failed in **213 seconds command wall time**, including realization: `/tmp/pi-web-followups-all.PI9g7a.log`. Two old `lib/markdown-source-lines.test.mjs` regexes assumed source-coordinate attributes were first on headings; actual output retained the correct coordinates plus the new heading data. The runner honestly stopped remaining coverage and drained peers; no complete acceptance or deployment proof is claimed from this run.
+- Corrected assertions require both heading data and exact source coordinates independently of serialization order, and additionally reject forged incoming heading/source attributes. Focused `core --jobs 4 --file lib/markdown-source-lines.test.mjs --file lib/markdown-anchors.test.mjs --file components/FileViewer.probes.test.mjs` passed **3 files / 14 tests / 2 suites** in **41 seconds command wall time**; `/tmp/pi-web-followups-source-lines.YNQjcT.log`, `/tmp/pi-web-test-core.fBJs8f/run.json`. Application inputs were not changed by this correction. Complete fresh four/four acceptance remains pending below.
+
 ## Completion Checklist
 
 - [ ] Every requested item is implemented with meaningful focused evidence; any retraction/blocked item is explicitly accepted, not silently omitted.
