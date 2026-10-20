@@ -29,6 +29,12 @@ Tool names are passed at session creation (`POST /api/agent/new` -> `toolNames[]
 
 The last preset explicitly selected by the user is stored in browser `localStorage` and initializes fresh-session composers only. Existing sessions never trust that preference; they use their live `get_tools` state or pi's default when no wrapper exists.
 
+### Fresh composer and quote focus
+
+Explicit New actions request desktop composer focus once after the intended fresh draft mounts, with the caret after any restored draft. The request is bound to draft identity and navigation revision; mobile, visible modal/native dialogs, inline card/quote/picker ownership, subsequent pointer/key interaction and intervening control focus take priority. Covered/inert, hidden, disabled and composing textareas refuse the request. Ordinary mounting, session selection, polling and streaming never request this autofocus. The imperative focus handle changes only DOM focus/selection, not draft text or session configuration.
+
+Ask here leaves selection/focus to the existing insertion path and never clears document ranges afterwards. Insertion retains the surrounding draft and puts the caret after the inserted quote, not after a retained suffix. Ask in new chat retains its distinct source-entry-ID and immediate-send lifecycle.
+
 ### Context-file change notice
 A live ordinary session retains the context files (`AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`) loaded at startup or last session reload. `get_state` compares that snapshot to the SDK's read-only `loadProjectContextFiles()` discovery, so new, edited, removed, and newly overriding files offer a **Reload session** button in the selected chat. The browser polls while visible and checks on visibility return; it does not reload resources automatically or create a wrapper just to check. Chat-only sessions also load context files; subagents with context loading disabled do not show the notice. Other resources (skills, extensions, prompts, themes) are not monitored by this notice.
 

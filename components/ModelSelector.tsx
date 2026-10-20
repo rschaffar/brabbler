@@ -45,6 +45,33 @@ export function filterModelOptions(options: ModelSelectorOption[], query: string
   ));
 }
 
+/** Fixed panels use layout coordinates, not a bottom derived from keyboard height. */
+export function getModelPanelVerticalLayout(
+  anchor: { top: number; bottom: number },
+  viewportTop: number,
+  viewportHeight: number,
+  placement: "up" | "auto",
+): { openAbove: boolean; maxHeight: number; verticalPosition: CSSProperties } {
+  const visibleTop = viewportTop + 8;
+  const visibleBottom = Math.max(visibleTop, viewportTop + viewportHeight - 8);
+  const clamp = (value: number) => Math.max(visibleTop, Math.min(value, visibleBottom));
+  const aboveEnd = clamp(anchor.top - 6);
+  const belowStart = clamp(anchor.bottom + 6);
+  const spaceAbove = aboveEnd - visibleTop;
+  const spaceBelow = visibleBottom - belowStart;
+  // Prefer up, but a trigger at/above the visible top must still expose its filter.
+  const openAbove = placement === "up"
+    ? spaceAbove >= Math.min(120, spaceBelow)
+    : spaceAbove > spaceBelow;
+  return {
+    openAbove,
+    maxHeight: Math.max(0, Math.min(openAbove ? spaceAbove : spaceBelow, viewportHeight * 0.6)),
+    verticalPosition: openAbove
+      ? { top: aboveEnd, transform: "translateY(-100%)" }
+      : { top: belowStart },
+  };
+}
+
 export function ModelSelector({
   options,
   value,
@@ -95,6 +122,39 @@ export function ModelSelector({
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    let frameId: number | null = null;
+    const remeasure = () => {
+      if (frameId !== null) return;
+      frameId = requestAnimationFrame(() => {
+        frameId = null;
+        const rect = rootRef.current?.querySelector("button")?.getBoundingClientRect();
+        // Always refresh: the viewport may change even when the trigger does not.
+        if (rect?.height) setAnchorRect({ top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left, width: rect.width });
+      });
+    };
+    const viewport = window.visualViewport;
+    const observer = new MutationObserver(remeasure);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "data-keyboard-open"] });
+    const resizeObserver = new ResizeObserver(remeasure);
+    if (rootRef.current) resizeObserver.observe(rootRef.current);
+    window.addEventListener("resize", remeasure);
+    window.addEventListener("scroll", remeasure, true);
+    viewport?.addEventListener("resize", remeasure);
+    viewport?.addEventListener("scroll", remeasure);
+    remeasure();
+    return () => {
+      observer.disconnect();
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", remeasure);
+      window.removeEventListener("scroll", remeasure, true);
+      viewport?.removeEventListener("resize", remeasure);
+      viewport?.removeEventListener("scroll", remeasure);
+      if (frameId !== null) cancelAnimationFrame(frameId);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!locked) return;
@@ -217,13 +277,9 @@ export function ModelSelector({
       {open && anchorRect && (() => {
         const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
         const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
-        const spaceAbove = anchorRect.top - 8;
-        const spaceBelow = viewportHeight - anchorRect.bottom - 8;
-        const openAbove = placement === "up" || spaceAbove > spaceBelow;
-        const maxHeight = Math.max(120, Math.min(openAbove ? spaceAbove : spaceBelow, viewportHeight * 0.6));
-        const verticalPosition = openAbove
-          ? { bottom: viewportHeight - anchorRect.top + 6 }
-          : { top: anchorRect.bottom + 6 };
+        const { openAbove, maxHeight, verticalPosition } = getModelPanelVerticalLayout(
+          anchorRect, window.visualViewport?.offsetTop ?? 0, viewportHeight, placement,
+        );
         const horizontalPosition: CSSProperties = isMobile
           ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
           : { left: anchorRect.left, width: "max-content", minWidth: anchorRect.width, maxWidth: Math.max(anchorRect.width, viewportWidth - anchorRect.left - 8) };

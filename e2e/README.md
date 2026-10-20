@@ -39,12 +39,12 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | Group | Coverage |
 | --- | --- |
 | `state` | Installed-launcher rejection of reserved revalidation headers, API pagination/errors, externally appended JSONL, account validation/redaction/defaults/concurrent writes, live AGENTS reload and dependent durable account selection/deletion |
-| `history` | Version reload, session/mobile identity, observer pagination/node identity, recovery acknowledgement, rendering/thinking/compaction, minimap and reading/branch cancellation chain |
+| `history` | Version reload, session/mobile identity, observer pagination/node identity, recovery acknowledgement, rendering/thinking/compaction, minimap and reading/branch cancellation chain; explicit desktop New/restored-draft/modal focus and mobile model filtering through simulated keyboard shrink/pan/late IME settling |
 | `extension-dialogs` | Complete inline extension select/input/editor dialogs, keyboard/focus/expiry and retained receipts |
 | `mobile-sidebar` | Compact action geometry/keyboard, archive/search scopes, reconciled inline restore and subsequent project move |
 | `worktrees` | Management inventory, paging, trust boundaries, stale/lost preparation recovery and bounded cleanup receipts |
 | `session-launch` | Real SDK tool, exact approvals/settings, independent faux-provider sessions and receipt navigation |
-| `running-forks` | Newly submitted live-prompt forks without reload using a faux-provider turn, plus historical/root/quoted forks while the original SDK extension waits for input |
+| `running-forks` | Newly submitted live-prompt forks without reload using a faux-provider turn, plus historical/root/quoted forks while the original SDK extension waits for input; real Ask-here caret/typing with retained draft suffixes, streaming action-row geometry and visible Stop with a simulated mobile keyboard |
 | `model-speed` | Native writes, canonical packaged disk reader, persistence and ambiguous acknowledgement reconciliation |
 | `trust` | Worktree/project grants, revocation and restriction |
 | `git-plugin` | Bundled Git Workflow, approvals, immutable reviews, receipts, expiry/reconnect and cleanup |
@@ -62,6 +62,8 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `bulk` | Bulk archive/conflict/retry/restore/delete |
 | `move` | Full picker, plain/Git/worktree/Browse paths, superseded reads and proposal-only changes; independent stale-worktree filters, archive-inclusive recovery, missing-child subtrees and native-modal bulk Browse/Move |
 | `terminal` | Real shell/PTY, fonts, live palette/font-size changes without PTY/SSE replacement, coarse-touch portrait modifier/arrow input, reconnect/restart/exit, creation cancellation and workspace/Explorer coexistence |
+
+Keyboard simulations verify Chromium layout/focus and preserve the same filter node/value; they do not certify native iOS/Android keyboards, Safari or installed-PWA behavior. Physical keyboard/IME/device verification remains separately reported.
 
 Preserve distinct viewport heights/locales/preferences, not just desktop/mobile
 widths. History desktop acknowledges recovery before fresh mobile checks it;

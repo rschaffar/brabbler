@@ -9,14 +9,17 @@ interface ViewportHeightState {
   viewportScale: number;
 }
 
+// Ignore browser chrome, but account for the shrink caused by page zoom.
+export const KEYBOARD_MIN_HEIGHT_PX = 60;
+
 export function shouldUseVisualViewportHeight({
   hasFocusedEditable,
   innerHeight,
   viewportHeight,
   viewportScale,
 }: ViewportHeightState): boolean {
-  const isUnscaled = Math.abs(viewportScale - 1) < 0.01;
-  return hasFocusedEditable && isUnscaled && innerHeight - viewportHeight > 1;
+  const scale = viewportScale > 0 ? viewportScale : 1;
+  return hasFocusedEditable && innerHeight / scale - viewportHeight > KEYBOARD_MIN_HEIGHT_PX;
 }
 
 function hasFocusedEditableElement(): boolean {
@@ -41,9 +44,12 @@ export function useViewportHeight(): void {
 
     const root = document.documentElement;
     let frameId: number | null = null;
+    let settleTimer: number | null = null;
+    let settleIndex = 0;
+    // Sequential, non-restarting rereads: WebKit/IME may settle without events.
+    const settleDelays = [48, 120, 240, 420, 720];
 
     const update = () => {
-      frameId = null;
       const keyboardOpen = shouldUseVisualViewportHeight({
         hasFocusedEditable: hasFocusedEditableElement(),
         innerHeight: window.innerHeight,
@@ -52,8 +58,10 @@ export function useViewportHeight(): void {
       });
       if (keyboardOpen) {
         root.style.setProperty("--app-viewport-height", `${viewport.height}px`);
+        root.dataset.keyboardOpen = "true";
       } else {
         root.style.removeProperty("--app-viewport-height");
+        delete root.dataset.keyboardOpen;
       }
 
       const pageWasShifted = window.scrollX !== 0 || window.scrollY !== 0;
@@ -67,10 +75,32 @@ export function useViewportHeight(): void {
     // settled, especially when an installed PWA dismisses the keyboard. Reading
     // it on the next animation frame prevents the keyboard-height CSS value
     // from remaining after the keyboard has closed.
+    const settle = () => {
+      if (settleIndex >= settleDelays.length) {
+        settleTimer = null;
+        return;
+      }
+      settleTimer = window.setTimeout(() => {
+        update();
+        settleIndex += 1;
+        settle();
+      }, settleDelays[settleIndex]);
+    };
     const scheduleUpdate = () => {
       if (frameId !== null) window.cancelAnimationFrame(frameId);
-      frameId = window.requestAnimationFrame(update);
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        update();
+      });
+      if (settleTimer === null) {
+        settleIndex = 0;
+        settle();
+      }
     };
+    const onEditableActivity = () => {
+      if (hasFocusedEditableElement()) scheduleUpdate();
+    };
+    const editableEvents = ["compositionstart", "compositionupdate", "compositionend", "input", "keyup"];
 
     scheduleUpdate();
     viewport.addEventListener("resize", scheduleUpdate);
@@ -79,6 +109,7 @@ export function useViewportHeight(): void {
     window.addEventListener("focusin", scheduleUpdate);
     window.addEventListener("focusout", scheduleUpdate);
     window.addEventListener("pageshow", scheduleUpdate);
+    for (const event of editableEvents) document.addEventListener(event, onEditableActivity);
 
     return () => {
       viewport.removeEventListener("resize", scheduleUpdate);
@@ -87,8 +118,11 @@ export function useViewportHeight(): void {
       window.removeEventListener("focusin", scheduleUpdate);
       window.removeEventListener("focusout", scheduleUpdate);
       window.removeEventListener("pageshow", scheduleUpdate);
+      for (const event of editableEvents) document.removeEventListener(event, onEditableActivity);
       if (frameId !== null) window.cancelAnimationFrame(frameId);
+      if (settleTimer !== null) window.clearTimeout(settleTimer);
       root.style.removeProperty("--app-viewport-height");
+      delete root.dataset.keyboardOpen;
     };
   }, []);
 }
