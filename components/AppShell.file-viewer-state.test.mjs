@@ -17,7 +17,9 @@ test("views use stable identity and explicit location commands rather than navig
   assert.doesNotMatch(workspace, /key=\{[^\n]*viewerRevision/);
 });
 test("resource edit owners retain drafts, settle saves and guard close operations", () => {
-  assert.match(workspace, /if \(!selected && !session\.draft && !session\.saving\) return \[\]/);
+  assert.match(workspace, /const renderViewer = selected \|\| Boolean\(session\.draft \|\| session\.saving\)/);
+  assert.match(workspace, /if \(key !== props\.workspaceKey && !renderViewer\) return \[\]/);
+  assert.match(workspace, /\{renderViewer && <FileEditContext\.Provider/);
   assert.match(workspace, /if \(ids\.some\(id => protect\(key, id\)\.saving\)\) return false/);
   assert.match(workspace, /FileEditContext\.Provider/);
   assert.match(workspace, /edits\.dirty/);
