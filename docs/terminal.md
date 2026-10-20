@@ -30,7 +30,7 @@ mounted behind inactive tabs, hidden panels, and session or project switches.
 
 ## Appearance and touch keys
 
-The header's light/dark switch changes only the terminal, defaults dark, and persists best-effort as `pi-web:terminal-theme`. Open terminals share the browser choice; storage events synchronize other tabs. Failed persistence keeps the in-tab choice. Theme changes update live xterm options, not PTY/SSE ownership. The retained Nerd/System font selector is independent.
+The header's light/dark switch changes only the terminal, defaults dark, and persists best-effort as `pi-web:terminal-theme`. Open terminals share the browser choice; storage events synchronize other tabs. Failed persistence keeps the in-tab choice. Theme changes update live xterm options, not PTY/SSE ownership. The retained Nerd/System font selector (`pi-web:terminal-font`) is independent. **Nerd** keeps the bundled Pi Web Nerd Font family; **System** follows the shared monospace family in General → Fonts & layout, with its original fallback stack. Both modes follow the shared monospace base weight (100–600); terminal bold remains 700. Family/weight changes update xterm and refit live, including after hidden terminals become visible, without recreating a PTY or SSE stream. Font-family and weight resets are separate and never reset the terminal's mode, palette or shared size. Hidden terminals defer metric-option application until measurable. The lifetime-owned resize helper forces glyph remeasurement through public size options before fitting, and best-effort font readiness can refit the same instance; old completions cannot affect replacement terminals. This also handles xterm's DOM-measurement fallback, which otherwise retains stale nonzero dimensions while hidden.
 
 Settings → General → **Chat & terminal font size** also adjusts the terminal: chat 14 means terminal 13px, with 12–24 chat mapping to 11–23 terminal. There is no separate size preference. Changes refit through the existing resize writer, including after a hidden terminal becomes visible, without recreating the shell or stream.
 
@@ -77,8 +77,8 @@ Core lease fixtures retain their exact PTY records through expiry so teardown ca
 force-terminate an owned shell even after its registry entry is removed and mocked
 timers reset. The ignored-HUP regression requires native exit, including on failure.
 `nix run .#test -- core --file components/TerminalPanel.test.mjs` focuses those
-callbacks and client contracts. `nix run .#test -- e2e --group terminal` exercises
-real PTYs and pinned Chromium against the Nix-built production launcher in an
+callbacks and client contracts, including retained Nerd/System families and shared mono weights across hidden/visible refits. `nix run .#test -- e2e --group terminal` exercises
+real PTYs, live shared font family/base/bold weights and pinned Chromium against the Nix-built production launcher in an
 ordinary Nix sandbox. `nix run .#test -- service` separately proves a genuine HTTP
 PTY and its shutdown ownership in the Home Manager service's closure-only guest.
 The shared [browser harness](../e2e/README.md#diagnostics-and-settlement)

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { waitForAsyncCondition } from "./async-condition.mjs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { createOwnedRoutes } from "./owned-routes.mjs";
 
 export async function checkActivityOverview(page, width, { base, api, post, waitingSessionId, selectedSessionId, otherSessionId, artifacts, harness, seedInterruptedRun, subagentIds, seedSubagentCompletions }) {
   const mobile = width <= 640;
@@ -396,11 +397,12 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await setArchived(false);
   const [childA, childB, workingChild, otherChild] = subagentIds;
   const completed = seedSubagentCompletions();
+  let metricsChildRunning = true;
   await page.route("**/api/agent/running", async (route) => {
     const response = await route.fetch();
     const snapshot = await response.json();
     await route.fulfill({ response, json: { ...snapshot,
-      runningSessionIds: [...new Set([...snapshot.runningSessionIds, workingChild])],
+      runningSessionIds: [...new Set([...snapshot.runningSessionIds, ...(metricsChildRunning ? [workingChild] : [])])],
     } });
   });
   try {
@@ -411,6 +413,101 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
     await row(workingChild, "working").waitFor();
     const parentReady = reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Branch root" });
     await parentReady.waitFor();
+
+    // Extend this owned Activity chain: deterministic recorded usage, but real
+    // catalogue/navigation/review storage and the existing running-poll handler.
+    const statsURL = `${base}/api/sessions/stats`;
+    const amounts = new Map([[selectedSessionId, 100], [childA, 20], [childB, 30], [workingChild, 40]]);
+    const serveStats = async (route) => {
+      assert.equal(route.request().method(), "POST");
+      const body = route.request().postDataJSON();
+      assert.deepEqual(Object.keys(body), ["ids"]);
+      assert.ok(body.ids.length > 0 && body.ids.length <= 200);
+      const stats = Object.fromEntries(body.ids.filter((id) => amounts.has(id)).map((id) => {
+        const total = amounts.get(id);
+        return [id, { tokens: { input: total, output: 0, cacheRead: 0, cacheWrite: 0, total },
+          cost: total / 10000, toolCalls: 1, totalActiveMs: id === selectedSessionId ? 60000 : 30000 }];
+      }));
+      await route.fulfill({ headers: { "Cache-Control": "no-store" }, json: { stats } });
+    };
+    const statsRoutes = createOwnedRoutes(serveStats, serveStats);
+    const reviewBeforeMetrics = await api("/api/agent/running");
+    const metricReviewPosts = [];
+    const observeReview = (request) => {
+      if (request.method() === "POST" && new URL(request.url()).pathname === "/api/activity/review") {
+        const body = request.postDataJSON();
+        if (body.op === "ack" && body.entries.some(({ sessionId }) => amounts.has(sessionId))) metricReviewPosts.push(body);
+      }
+    };
+    page.on("request", observeReview);
+    await page.route(statsURL, statsRoutes.handler);
+    try {
+      await parentReady.click();
+      await page.waitForURL((url) => url.searchParams.get("session") === selectedSessionId);
+      await page.getByText("Active branch answer", { exact: true }).waitFor();
+      const agentsButton = page.getByRole("button", { name: "Agents · 1 running", exact: true });
+      await agentsButton.waitFor({ timeout: 15000 });
+      assert.equal(await agentsButton.locator("span[aria-hidden=true]").innerText(), "1");
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      assert.equal(await agentsButton.locator("svg.animate-spin").evaluate((node) => getComputedStyle(node).animationName), "none");
+      const toolbarStats = page.getByRole("button", { name: "Session info", exact: true });
+      const rootToolbarTitle = await toolbarStats.getAttribute("title");
+      await agentsButton.click();
+      const agents = page.getByRole("region", { name: "Agents", exact: true });
+      const familyUsage = agents.getByTestId("agent-family-usage");
+      await familyUsage.getByText("Summed estimated active time: 2m 30s · 190 tokens · $0.02 recorded", { exact: true }).waitFor();
+      assert.ok((await familyUsage.innerText()).includes("4/4 available"));
+      assert.equal(await toolbarStats.getAttribute("title"), rootToolbarTitle, "family usage never replaces selected-session toolbar counters");
+      const list = agents.getByRole("listbox", { name: "Agents" });
+      assert.equal(await list.getByRole("option").count(), 4);
+      assert.ok((await list.locator(`[data-agent-usage-id="${selectedSessionId}"]`).innerText()).includes("100 tokens"));
+      assert.ok((await list.locator(`[data-agent-usage-id="${childA}"]`).innerText()).includes("20 tokens"));
+      assert.equal(await list.locator("summary, details, button button").count(), 0, "breakdown controls are outside options and the listbox");
+      const familyDetails = familyUsage.locator("summary");
+      if (mobile) await familyDetails.tap();
+      else await familyDetails.click();
+      await familyUsage.locator("details p").waitFor();
+      assert.ok((await familyUsage.innerText()).includes("not an invoice"));
+      const selectedDetails = agents.locator("summary").filter({ hasText: "Selected agent usage breakdown" });
+      await selectedDetails.focus();
+      await page.keyboard.press("Enter");
+      const selectedUsage = agents.getByRole("region", { name: "Selected agent usage", exact: true });
+      await selectedUsage.getByText("$0.0100", { exact: true }).waitFor();
+      await list.locator(`[data-agent-usage-id="${childA}"]`).click();
+      await page.waitForURL((url) => url.searchParams.get("session") === childA);
+      await selectedUsage.getByText("$0.0020", { exact: true }).waitFor();
+      assert.ok((await familyUsage.innerText()).includes("190 tokens"), "selecting a child does not narrow the family sum");
+      await list.locator(`[data-agent-usage-id="${selectedSessionId}"]`).click();
+      await page.waitForURL((url) => url.searchParams.get("session") === selectedSessionId);
+      await agentsButton.click();
+      metricsChildRunning = false;
+      await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      const idleAgents = page.getByRole("button", { name: /^Agents · \d+ subagents$/ });
+      await idleAgents.waitFor({ timeout: 15000 });
+      assert.equal(await idleAgents.locator("span[aria-hidden=true]").innerText(), "3", "idle badge returns to the family child count");
+      metricsChildRunning = true;
+      await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await agentsButton.waitFor({ timeout: 15000 });
+      const afterMetrics = await api("/api/agent/running");
+      for (const id of amounts.keys()) {
+        assert.equal(afterMetrics.reviewedRuns.find((entry) => entry.sessionId === id)?.at,
+          reviewBeforeMetrics.reviewedRuns.find((entry) => entry.sessionId === id)?.at, "viewing usage does not acknowledge Activity");
+      }
+      // Restore the original chain's selected OTHER chat before its later
+      // reload/assertion; metrics navigation must not change those prerequisites.
+      await page.goto(`${base}/?session=${otherSessionId}`, { waitUntil: "domcontentloaded" });
+      await page.getByText("Other workspace task", { exact: true }).last().waitFor();
+      await page.getByRole("button", { name: /^Activity/ }).click();
+      await reloadedOverview.getByRole("combobox", { name: "Project" }).selectOption({ label: "project" });
+      await row(workingChild, "working").waitFor();
+      assert.deepEqual(metricReviewPosts, []);
+    } finally {
+      metricsChildRunning = true;
+      page.off("request", observeReview);
+      await statsRoutes.dispose((handler) => page.unroute(statsURL, handler));
+      await page.emulateMedia({ reducedMotion: null });
+    }
+
     const before = await api("/api/agent/running");
     const reviewedBefore = new Map(before.reviewedRuns.map(({ sessionId, at }) => [sessionId, at]));
     const bulkRead = reloadedOverview.getByRole("button", { name: "Mark all subagents as read", exact: true });

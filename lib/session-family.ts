@@ -78,3 +78,13 @@ export function getSessionFamily(
     || family.subagents.some((session) => session.id === sessionId)
   )) ?? null;
 }
+
+/** Only the registry-derived sidebar snapshot proves a subagent is running. */
+export function countRunningSubagents(subagents: readonly SessionInfo[], runningSessionIds: ReadonlySet<string>): number {
+  return new Set(subagents.filter((session) => runningSessionIds.has(session.id)).map((session) => session.id)).size;
+}
+
+export function getAgentsBadge(subagents: readonly SessionInfo[], runningSessionIds: ReadonlySet<string>): { count: number; running: boolean } {
+  const running = countRunningSubagents(subagents, runningSessionIds);
+  return running > 0 ? { count: running, running: true } : { count: new Set(subagents.map((session) => session.id)).size, running: false };
+}

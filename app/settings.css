@@ -320,6 +320,25 @@
   border-top: 1px solid var(--border);
 }
 
+.model-context-input {
+  flex-shrink: 0;
+  width: calc(8ch + 16px);
+  height: 26px;
+  box-sizing: border-box;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: right;
+}
+.model-context-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.model-context-input::placeholder { color: var(--text-dim); }
+.model-context-input[aria-invalid="true"] { border-color: #ef4444; }
+.model-context-input:disabled { opacity: 0.6; }
+
 .enabled-models-row-text {
   min-width: 0;
   flex: 1;
@@ -1155,51 +1174,52 @@
 .project-privacy-info strong { display: block; font-size: 12px; overflow-wrap: anywhere; }
 .project-privacy-info small { display: block; color: var(--text-dim); font-size: 10px; overflow-wrap: anywhere; }
 
+/* Five palettes per row, then three wide tiles. System is a neutral switch. */
 .settings-theme-options {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 3px;
-  width: 100%;
-  max-width: 420px;
-  padding: 3px;
+  grid-template-columns: repeat(15, minmax(0, 1fr));
+  grid-auto-rows: 44px;
+  gap: 10px;
+  max-width: 428px;
+  padding: 4px;
 }
+.settings-theme-option { position: relative; display: flex; grid-column: span 3; min-width: 0; border-radius: 9px; cursor: pointer; }
+.settings-theme-option[data-system] { grid-column: 1 / -1; }
+.settings-theme-option[data-wide] { grid-column: span 5; }
+.settings-theme-swatch { display: flex; flex: 1; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; }
+.settings-theme-fill { position: relative; flex: 1; min-width: 0; overflow: hidden; background: var(--bg); }
+.settings-theme-name { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--accent); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.settings-theme-option[data-wide] .settings-theme-name { font-size: 11px; line-height: 1.2; text-align: center; white-space: normal; }
+.settings-theme-system { align-items: center; justify-content: center; gap: 3px; background: var(--bg-panel); }
+.settings-theme-chip { width: 12px; height: 12px; border: 1px solid var(--border); border-radius: 3px; background: var(--bg); }
+.settings-theme-system-name { margin-left: 6px; color: var(--text); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.settings-theme-option:not(:has(input:checked)):hover { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--border); }
+.settings-theme-option:has(input:checked) { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.settings-theme-option:has(input:focus-visible) { outline: 2px dashed var(--accent); outline-offset: 6px; }
 
-.settings-theme-option {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
+.settings-font-rows { display: grid; gap: 16px; }
+.settings-font-row { display: grid; gap: 4px; min-width: 0; }
+.settings-chat-range-header.settings-font-header { grid-template-columns: 100px minmax(0, 1fr) 28px; }
+.settings-chat-range-option .settings-font-input {
   min-width: 0;
-  min-height: 44px;
-  padding: 0 6px;
-  border: 0;
+  height: 28px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--border);
   border-radius: 5px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-weight: var(--font-ui-weight);
   font-size: 12px;
-  font-weight: 400;
 }
-
-.settings-theme-option:has(input:checked) {
-  background: var(--bg-selected);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.settings-theme-option:not(:has(input:checked)):hover {
-  background: var(--bg-hover);
-}
-
-.settings-theme-option:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.settings-theme-option-label {
-  min-width: 0;
-  overflow-wrap: anywhere;
+.settings-chat-range-option .settings-font-input.is-mono { font-family: var(--font-mono); font-weight: var(--font-mono-weight); }
+.settings-font-input::placeholder { color: var(--text-dim); }
+.settings-font-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (max-width: 640px) {
+  .settings-chat-range-option .settings-font-input { height: 32px; font-size: 16px; }
+  .settings-chat-range-header.settings-font-header { grid-template-columns: minmax(0, 1fr) 28px; }
+  .settings-font-header label { grid-column: 1 / -1; }
 }
 
 .settings-chat-options {

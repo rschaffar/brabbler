@@ -111,11 +111,12 @@ function findElement(node, predicate) {
 
 // Execute the entire production component, not extracted/copied lifecycle logic.
 // The doubles expose public hooks/browser/xterm boundaries; no ref index is assumed.
-function terminalPanelHarness({ deleteFailures = 0, online = true, extraKeysVisible = false } = {}) {
+function terminalPanelHarness({ deleteFailures = 0, online = true, extraKeysVisible = false, deferFonts = false } = {}) {
   let appearanceSize = 14, theme = "dark", fits = 0;
+  let monoFamily = "", monoWeight = 400, computedMono = "monospace", active = true;
   const ExtraKeys = () => null;
   const refs = [], states = [], effects = [];
-  const sources = [], terminals = [], writers = [], requests = [], order = [];
+  const sources = [], terminals = [], writers = [], requests = [], order = [], fontLoads = [];
   const listeners = new Map();
   const creation = deferred();
   const container = { offsetWidth: 800, offsetHeight: 480 };
@@ -243,6 +244,7 @@ function terminalPanelHarness({ deleteFailures = 0, online = true, extraKeysVisi
       if (id === "@xterm/xterm") return { Terminal: FakeTerminal };
       if (id === "@xterm/addon-fit") return { FitAddon: class { fit() { fits++; } } };
       if (id === "@/hooks/useChatAppearance") return { terminalFontSize, useChatAppearance: () => ({ fontSize: appearanceSize }) };
+      if (id === "@/hooks/useFontPreferences") return { useFontPreferences: () => ({ mono: monoFamily, monoWeight }) };
       if (id === "@/hooks/useTerminalTheme") return { useTerminalTheme: () => theme, setTerminalTheme(next) { theme = next; dirty = true; } };
       if (id === "@/lib/terminal-theme") return { TERMINAL_XTERM_THEMES };
       if (id === "@/lib/terminal-extra-keys") return extraKeyHelpers;
@@ -255,8 +257,12 @@ function terminalPanelHarness({ deleteFailures = 0, online = true, extraKeysVisi
     ResizeObserver: class { observe() {} disconnect() {} },
     navigator: { onLine: online },
     localStorage: { getItem: () => null, setItem() {} },
-    document: { fonts: { load: () => Promise.resolve([]) } },
-    getComputedStyle: () => ({ getPropertyValue: () => "monospace" }),
+    document: { fonts: { load: () => {
+      const gate = deferred(); fontLoads.push(gate);
+      if (!deferFonts) gate.resolve([]);
+      return gate.promise;
+    } } },
+    getComputedStyle: () => ({ getPropertyValue: (key) => key === "--font-mono" ? computedMono : String(monoWeight) }),
     window: {
       addEventListener(type, callback) {
         if (!listeners.has(type)) listeners.set(type, new Set());
@@ -272,7 +278,7 @@ function terminalPanelHarness({ deleteFailures = 0, online = true, extraKeysVisi
     refCursor = stateCursor = effectCursor = 0;
     dirty = false;
     pendingEffects = [];
-    tree = loaded.exports.TerminalPanel({ tab, active: true, onRestart() {}, onClosed, onCloseError });
+    tree = loaded.exports.TerminalPanel({ tab, active, onRestart() {}, onClosed, onCloseError });
     // React cleans up changed effects before running their replacement callbacks.
     for (const { index } of pendingEffects) effects[index]?.cleanup?.();
     for (const { index, callback, deps } of pendingEffects) effects[index] = { deps, cleanup: callback() };
@@ -285,11 +291,14 @@ function terminalPanelHarness({ deleteFailures = 0, online = true, extraKeysVisi
     if (hostRef) hostRef.current = null;
   }
   return {
-    creation, sources, terminals, writers, requests, order, path, render, unmount,
+    creation, sources, terminals, writers, requests, order, fontLoads, path, render, unmount,
     get tab() { return tab; },
     get tree() { return tree; },
     get extraKeys() { return findElement(tree, element => element.type === ExtraKeys)?.props; },
     get fits() { return fits; },
+    get fontChoice() { return findElement(tree, node => node.type === "select" && node.props?.["aria-label"] === "terminal.font"); },
+    fonts(family, weight) { monoFamily = family; monoWeight = weight; computedMono = family ? `"${family}", monospace` : "monospace"; render(); },
+    hidden(hidden) { active = !hidden; container.offsetWidth = hidden ? 0 : 800; container.offsetHeight = hidden ? 0 : 480; render(); },
     appearance(size, nextTheme) { appearanceSize = size; theme = nextTheme; render(); },
     get closed() { return closed; },
     get closeErrors() { return closeErrors; },
@@ -335,6 +344,65 @@ test("live terminal theme/size and one-shot keys preserve PTY and stream ownersh
   assert.deepEqual(h.writers[0].writes, ["\x1b[1;5D", "\x03", "c"]);
   assert.equal(h.extraKeys.modifiers.ctrl, false);
   assert.equal(h.terminals.length, 1);
+});
+
+test("Nerd retains its bundled family, System follows shared mono, and both weights refit without replacing PTY/SSE", async t => {
+  const h = terminalPanelHarness();
+  t.after(() => h.unmount());
+  h.render();
+  h.creation.resolve({ id: h.tab.id });
+  await h.flush(); h.sources[0].open(); await h.flush();
+  const terminal = h.terminals[0], initialFits = h.fits;
+  assert.equal(terminal.options.fontWeight, 400);
+  h.fonts("Shared Mono", 600); await h.flush();
+  assert.equal(terminal.options.fontFamily, '"Pi Web Nerd Font", monospace');
+  assert.equal(terminal.options.fontWeight, 600);
+  assert.ok(h.fits > initialFits);
+  h.fontChoice.props.onChange({ target: { value: "system" } }); await h.flush();
+  assert.equal(terminal.options.fontFamily, '"Shared Mono", monospace');
+  h.hidden(true);
+  const hiddenFits = h.fits;
+  h.fonts("Hidden Mono", 200); await h.flush();
+  assert.equal(terminal.options.fontFamily, '"Shared Mono", monospace', "hidden terminals defer font application, not just fitting");
+  assert.equal(terminal.options.fontWeight, 600);
+  assert.equal(h.fits, hiddenFits, "hidden terminals defer fitting until visible");
+  h.hidden(false); await h.flush();
+  assert.equal(terminal.options.fontFamily, '"Hidden Mono", monospace');
+  assert.equal(terminal.options.fontWeight, 200);
+  assert.ok(h.fits > hiddenFits);
+  h.fontChoice.props.onChange({ target: { value: "nerd" } }); await h.flush();
+  assert.equal(terminal.options.fontFamily, '"Pi Web Nerd Font", monospace');
+  assert.equal(terminal.options.fontWeight, 200);
+  assert.equal(h.terminals.length, 1);
+  assert.equal(h.sources.length, 1);
+  assert.deepEqual(h.requests.map(({ method }) => method), ["POST"]);
+  assert.equal(terminal.disposed, false);
+});
+
+test("late font readiness waits for visibility and cannot refit a disposed terminal", async t => {
+  const h = terminalPanelHarness({ deferFonts: true });
+  t.after(() => h.unmount());
+  h.render(); h.creation.resolve({ id: h.tab.id }); await h.flush();
+  h.sources[0].open(); await h.flush();
+  const terminal = h.terminals[0];
+  h.fontChoice.props.onChange({ target: { value: "system" } }); await h.flush();
+  h.hidden(true);
+  const fits = h.fits;
+  h.fonts("Delayed Mono", 500);
+  for (const gate of [...h.fontLoads]) gate.resolve([]);
+  await h.flush();
+  assert.equal(h.fits, fits);
+  assert.equal(terminal.options.fontFamily, "monospace");
+  h.hidden(false); await h.flush();
+  assert.equal(terminal.options.fontFamily, '"Delayed Mono", monospace');
+  assert.equal(terminal.options.fontWeight, 500);
+  const visibleFits = h.fits;
+  h.unmount();
+  for (const gate of h.fontLoads) gate.resolve([]);
+  await h.flush();
+  assert.equal(h.fits, visibleFits);
+  assert.equal(h.terminals.length, 1);
+  assert.equal(h.sources.length, 1);
 });
 
 const methods = (harness) => harness.requests.map(({ method }) => method);

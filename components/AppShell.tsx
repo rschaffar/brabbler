@@ -25,6 +25,7 @@ import { SubagentIcon } from "./SubagentIcon";
 import { TerminalPanel } from "./TerminalPanel";
 import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
 import { useTheme } from "@/hooks/useTheme";
+import { useFontPreferences } from "@/hooks/useFontPreferences";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
@@ -69,7 +70,7 @@ import { requestFreshComposerFocus } from "@/lib/composer-focus";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
-import { getSessionFamily } from "@/lib/session-family";
+import { getAgentsBadge, getSessionFamily } from "@/lib/session-family";
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
 
 type SessionCopyField = "file" | "id" | "projectDir" | "gitBranch" | "gitWorktree";
@@ -92,6 +93,8 @@ export function AppShell() {
   const [initialNavigation, setInitialNavigation] = useState(() => getInitialNavigation(searchParams));
   // Keep the system-theme subscription mounted for the lifetime of the app.
   useTheme();
+  // Restore browser typography before opening Settings or a composer.
+  useFontPreferences();
   const { locale, t: translate } = useI18n();
   const isMobile = useIsMobile();
   useViewportHeight();
@@ -156,6 +159,10 @@ export function AppShell() {
   );
   const hasSubagentSessions = Boolean(activeSessionFamily?.subagents.length);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
+  const agentsBadge = getAgentsBadge(activeSessionFamily?.subagents ?? [], runningSessionIds);
+  const agentsButtonLabel = agentsBadge.running
+    ? translate("agentSwitcher.titleRunning", { count: agentsBadge.count })
+    : translate("agentSwitcher.titleIdle", { count: agentsBadge.count });
   const [queuedSessionIds, setQueuedSessionIds] = useState<Set<string>>(() => new Set());
   const handleQueuedSessionIdsChange = useCallback((ids: Set<string>) => {
     setQueuedSessionIds((previous) => previous.size === ids.size && [...ids].every((id) => previous.has(id)) ? previous : ids);
@@ -1560,8 +1567,8 @@ export function AppShell() {
           <button
             type="button"
             onClick={() => toggleTopPanel("agents")}
-            title={translate("agentSwitcher.title")}
-            aria-label={translate("agentSwitcher.title")}
+            title={agentsButtonLabel}
+            aria-label={agentsButtonLabel}
             aria-pressed={activeTopPanel === "agents"}
             style={{
               position: "relative",
@@ -1585,13 +1592,22 @@ export function AppShell() {
             <span
               aria-hidden="true"
               style={{
+                position: "relative",
                 minWidth: 15, height: 15, padding: "0 4px", display: "grid", placeItems: "center",
-                borderRadius: 7, background: "var(--bg-selected)", color: "var(--accent)",
+                borderRadius: 7, background: agentsBadge.running ? "color-mix(in srgb, var(--accent) 22%, var(--bg-panel))" : "var(--bg-selected)", color: "var(--accent)",
+                fontWeight: agentsBadge.running ? 600 : undefined,
                 fontSize: 10, lineHeight: 1, fontVariantNumeric: "tabular-nums",
                 ...(mobile ? { position: "absolute", top: 2, right: 2, minWidth: 13, height: 13, padding: "0 3px", fontSize: 9 } : {}),
               }}
             >
-              {activeSessionFamily!.subagents.length}
+              {agentsBadge.running && (
+                <svg className="animate-spin motion-reduce:animate-none" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                  style={{ position: "absolute", top: -3, left: -3, width: "calc(100% + 6px)", height: "calc(100% + 6px)", pointerEvents: "none" }}>
+                  <circle cx="12" cy="12" r="11" stroke="currentColor" strokeWidth="2" opacity="0.2" />
+                  <path d="M23 12a11 11 0 0 0-11-11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              )}
+              {agentsBadge.count}
             </span>
           </button>
         )}

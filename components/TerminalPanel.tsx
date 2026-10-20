@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { terminalFontSize, useChatAppearance } from "@/hooks/useChatAppearance";
+import { useFontPreferences } from "@/hooks/useFontPreferences";
 import { setTerminalTheme, useTerminalTheme } from "@/hooks/useTerminalTheme";
 import { TERMINAL_XTERM_THEMES } from "@/lib/terminal-theme";
 import { applyTerminalModifiers, NO_TERMINAL_MODIFIERS, terminalExtraKeySequence, type TerminalExtraKey, type TerminalModifier, type TerminalModifiers } from "@/lib/terminal-extra-keys";
@@ -53,6 +54,9 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
   const fontSize = terminalFontSize(useChatAppearance().fontSize);
   const fontSizeRef = useRef(fontSize);
   fontSizeRef.current = fontSize;
+  const { mono: monoFamily, monoWeight } = useFontPreferences();
+  const monoWeightRef = useRef(monoWeight);
+  monoWeightRef.current = monoWeight;
   const refitRef = useRef<() => void>(() => {});
   const consumeModifiers = useCallback(() => {
     const current = modifiersRef.current;
@@ -98,6 +102,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
         ? '"Pi Web Nerd Font", monospace'
         : getComputedStyle(container).getPropertyValue("--font-mono").trim() || "monospace",
       fontSize: fontSizeRef.current,
+      fontWeight: monoWeightRef.current,
       lineHeight: 1.25,
       scrollback: 8000,
       screenReaderMode: true,
@@ -128,8 +133,41 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     const onData = terminal.onData((data) => {
       if (connected && !exited && !inputFailed) writer.write(applyTerminalModifiers(data, consumeModifiers()));
     });
+    let appliedFont = "";
+    let fontLoadGeneration = 0;
+    let needsRemeasure = true;
     const fitAndResize = () => {
-      if (!container.offsetWidth || !container.offsetHeight) return;
+      // xterm's DOM fallback retains old nonzero glyph measurements while hidden.
+      // Apply metrics only when measurable, including after a retained tab is revealed.
+      if (disposed || terminalRef.current !== terminal || !container.offsetWidth || !container.offsetHeight) return;
+      const fontFamily = fontRef.current === "nerd"
+        ? '"Pi Web Nerd Font", monospace'
+        : getComputedStyle(container).getPropertyValue("--font-mono").trim() || "monospace";
+      const fontWeight = monoWeightRef.current;
+      const size = fontSizeRef.current;
+      const key = JSON.stringify([fontFamily, fontWeight, size]);
+      if (key !== appliedFont) {
+        appliedFont = key;
+        terminal.options.fontFamily = fontFamily;
+        terminal.options.fontWeight = fontWeight;
+        terminal.options.fontSize = size;
+        needsRemeasure = true;
+        const generation = ++fontLoadGeneration;
+        // Fallback is fitted immediately. Delayed font readiness remeasures the
+        // same instance; obsolete completions cannot touch a replacement terminal.
+        void document.fonts.load(`${fontWeight} ${size}px ${fontFamily}`).catch(() => []).then(() => {
+          if (disposed || generation !== fontLoadGeneration || terminalRef.current !== terminal) return;
+          needsRemeasure = true;
+          fitAndResize();
+        });
+      }
+      if (needsRemeasure) {
+        needsRemeasure = false;
+        // Public size changes force glyph remeasurement; fit alone and weight
+        // changes do not. No intermediate fit/PTY resize is emitted.
+        terminal.options.fontSize = size + 1;
+        terminal.options.fontSize = size;
+      }
       fit.fit();
     };
     const onResize = terminal.onResize(({ cols, rows }) => {
@@ -233,38 +271,16 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
   useEffect(() => {
     if (terminalRef.current) terminalRef.current.options.theme = TERMINAL_XTERM_THEMES[theme];
   }, [theme]);
+  // Appearance owns only live options/geometry, never transport or PTY lifetime.
   useEffect(() => {
-    const terminal = terminalRef.current;
-    if (!terminal || terminal.options.fontSize === fontSize) return;
-    terminal.options.fontSize = fontSize;
     refitRef.current();
-  }, [fontSize]);
-
-  // Font loads and font changes can alter cell width; refit without restarting
-  // the PTY (and let the existing resize handler update its dimensions).
-  useEffect(() => {
-    const terminal = terminalRef.current;
-    const fit = fitRef.current;
-    const container = containerRef.current;
-    if (!terminal || !fit || !container) return;
-    let cancelled = false;
-    const update = async () => {
-      if (font === "nerd") {
-        try { await document.fonts.load('13px "Pi Web Nerd Font"'); }
-        catch { /* Keep the fallback font when loading fails. */ }
-      }
-      if (cancelled) return;
-      terminal.options.fontFamily = font === "nerd"
-        ? '"Pi Web Nerd Font", monospace'
-        : getComputedStyle(container).getPropertyValue("--font-mono").trim() || "monospace";
-      if (container.offsetWidth && container.offsetHeight) fit.fit();
-    };
-    void update();
-    return () => { cancelled = true; };
-  }, [font]);
+  }, [font, monoFamily, monoWeight, fontSize]);
 
   useEffect(() => {
-    if (active) terminalRef.current?.focus();
+    if (active) {
+      refitRef.current();
+      terminalRef.current?.focus();
+    }
   }, [active]);
 
   useEffect(() => {
