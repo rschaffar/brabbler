@@ -123,7 +123,9 @@ Treat account files, API keys, session histories, and interaction receipts as pr
 
 ### Reviewing Activity
 
-In **Ready to review**, use **Mark all subagents as read** to acknowledge all ready subagents shown by the current project filter. Parent sessions and working, queued, blocked or interrupted subagents are left unchanged. Concealed projects are excluded unless revealed with the eye button. Read acknowledgements are saved on the server and survive reloads.
+In **Ready to review**, choose **Later** to keep a result unread in the **Later** section below it, or **Read** to acknowledge it. **Needs you** sessions can also be moved to Later: they keep the yellow dot, question details and **Open & answer** action. Deferring does not answer or dismiss a question; a new question needs its own Later choice. Later choices are saved on the server, shared across devices and survive reloads. New completed runs return to Ready to review; running work and new, non-deferred questions take priority. Archived sessions also appear when they have activity or unread results; idle archived history stays out of Activity. Opening a result never marks it read. Completed results in Later can still be marked Read; pending questions must be answered instead.
+
+Use **Mark all subagents as read** to acknowledge all ready subagents shown by the current project filter. Parent sessions and working, queued, blocked, interrupted or deferred subagents are left unchanged. Concealed projects are excluded unless revealed with the eye button. Read acknowledgements are saved on the server and survive reloads.
 
 ### Hidden projects in Activity
 

@@ -17,19 +17,22 @@ interface Props {
   queuedIds: ReadonlySet<string>;
   attention: SessionAttention[];
   reviewIds: ReadonlySet<string>;
+  laterIds: ReadonlySet<string>;
+  laterAttentionIds: ReadonlySet<string>;
   available: boolean;
   selectedId: string | null;
   onSelect: (session: SessionInfo, status?: ActivityStatus) => void;
   onMarkRead: (id: string) => void;
+  onMarkLater: (id: string, requestId?: string) => void;
   onClose: () => void;
   hidden?: boolean;
   recoveryRefreshKey?: number;
   privacy: ProjectPrivacy;
 }
 
-const STATUS_ORDER: ActivityStatus[] = ["needs-you", "working", "queued", "interrupted", "ready"];
+const STATUS_ORDER: ActivityStatus[] = ["needs-you", "working", "queued", "interrupted", "ready", "later"];
 
-export function ActivityOverview({ sessions, runningIds, queuedIds, attention, reviewIds, available, selectedId, onSelect, onMarkRead, onClose, hidden = false, recoveryRefreshKey = 0, privacy }: Props) {
+export function ActivityOverview({ sessions, runningIds, queuedIds, attention, reviewIds, laterIds, laterAttentionIds, available, selectedId, onSelect, onMarkRead, onMarkLater, onClose, hidden = false, recoveryRefreshKey = 0, privacy }: Props) {
   const { t, locale } = useI18n();
   const [projectFilter, setProjectFilter] = useState("");
   const [showHidden, setShowHidden] = useState(false);
@@ -90,11 +93,11 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
     };
   }, [hidden, recoveryRefreshKey]);
 
-  const concealed = useMemo(() => getActivitySections(privacyReady ? sessions : [], runningIds, attention, reviewIds, null, queuedIds, interruptedIds, privacy.keys ?? new Set()),
-    [privacyReady, privacy.keys, sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds]);
+  const concealed = useMemo(() => getActivitySections(privacyReady ? sessions : [], runningIds, attention, reviewIds, null, queuedIds, interruptedIds, privacy.keys ?? new Set(), laterIds, laterAttentionIds),
+    [privacyReady, privacy.keys, sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds, laterIds, laterAttentionIds]);
   const all = useMemo(() => revealing
-    ? getActivitySections(sessions, runningIds, attention, reviewIds, null, queuedIds, interruptedIds) : concealed,
-    [revealing, sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds, concealed]);
+    ? getActivitySections(sessions, runningIds, attention, reviewIds, null, queuedIds, interruptedIds, new Set(), laterIds, laterAttentionIds) : concealed,
+    [revealing, sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds, laterIds, laterAttentionIds, concealed]);
   const projects = useMemo(() => {
     const keys = new Map<string, string>();
     for (const item of Object.values(all).flat()) keys.set(item.projectKey, activityProjectName(item.session));
@@ -107,13 +110,13 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
     return [...keys].sort((a, b) => a[1].localeCompare(b[1]));
   }, [all, effectiveProjectFilter, sessions]);
   const sections = useMemo(() => effectiveProjectFilter
-    ? getActivitySections(privacyReady ? sessions : [], runningIds, attention, reviewIds, effectiveProjectFilter, queuedIds, interruptedIds, revealing ? new Set() : privacy.keys ?? new Set()) : all,
-  [effectiveProjectFilter, privacyReady, sessions, runningIds, attention, reviewIds, queuedIds, interruptedIds, revealing, privacy.keys, all]);
+    ? getActivitySections(privacyReady ? sessions : [], runningIds, attention, reviewIds, effectiveProjectFilter, queuedIds, interruptedIds, revealing ? new Set() : privacy.keys ?? new Set(), laterIds, laterAttentionIds) : all,
+  [effectiveProjectFilter, privacyReady, sessions, runningIds, attention, reviewIds, queuedIds, interruptedIds, laterIds, laterAttentionIds, revealing, privacy.keys, all]);
   const readySubagents = sections.ready.filter((item) => item.session.relation?.kind === "subagent");
   const total = Object.values(sections).reduce((count, items) => count + items.length, 0);
   const sectionTitle: Record<ActivityStatus, string> = {
     "needs-you": t("activity.needsYou"), working: t("activity.working"), queued: t("activity.queued"),
-    interrupted: t("activity.interrupted"), ready: t("activity.ready"),
+    interrupted: t("activity.interrupted"), ready: t("activity.ready"), later: t("activity.later"),
   };
   const methodLabel = (item: ActivityItem): string => {
     switch (item.attention?.method) {
@@ -169,15 +172,15 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
               {sections[status].map((item) => {
                 const { session } = item;
                 const label = activitySessionName(session);
-                const action = status === "needs-you" ? t("activity.openAndAnswer")
-                  : status === "ready" ? t("activity.review") : t("activity.open");
+                const action = item.attention ? t("activity.openAndAnswer")
+                  : status === "ready" || status === "later" ? t("activity.review") : t("activity.open");
                 return (
-                  <div role="listitem" key={session.id} className={status === "ready" ? "activity-review-item" : undefined}>
+                  <div role="listitem" key={session.id} className={status === "ready" || status === "later" || status === "needs-you" ? "activity-review-item" : undefined}>
                     <button
                       type="button"
-                      className={`activity-item activity-item-${status}${item.nested ? " activity-nested" : ""}${selectedId === session.id ? " activity-selected" : ""}`}
-                      onClick={() => onSelect(session, status)}
-                      aria-label={`${label} · ${activityProjectName(session)}${session.isWorktree && session.branch ? ` · ${session.branch}` : ""}${item.parentName ? ` · ${t("activity.childOf", { name: item.parentName })}` : ""}${session.relation?.kind === "subagent" ? ` · ${t("activity.subagent")}` : ""} · ${sectionTitle[status]}${status === "needs-you" ? ` · ${methodLabel(item)}${item.attention?.summary ? ` · ${item.attention.summary}` : ""}` : ""} · ${action}`}
+                      className={`activity-item activity-item-${status}${item.nested ? " activity-nested" : ""}${selectedId === session.id ? " activity-selected" : ""}${status === "later" && item.attention ? " activity-deferred-attention" : ""}`}
+                      onClick={() => onSelect(session, item.attention ? "needs-you" : status)}
+                      aria-label={`${label} · ${activityProjectName(session)}${session.isWorktree && session.branch ? ` · ${session.branch}` : ""}${item.parentName ? ` · ${t("activity.childOf", { name: item.parentName })}` : ""}${session.relation?.kind === "subagent" ? ` · ${t("activity.subagent")}` : ""} · ${sectionTitle[status]}${item.attention ? ` · ${status === "later" ? `${t("activity.needsYou")} · ` : ""}${methodLabel(item)}${item.attention?.summary ? ` · ${item.attention.summary}` : ""}` : ""} · ${action}`}
                     >
                       <span className="activity-item-top">
                         <span className="activity-dot" aria-hidden="true" />
@@ -193,13 +196,16 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
                         {item.parentName && !item.nested ? ` · ${t("activity.childOf", { name: item.parentName })}` : ""}
                       </span>
                       <SessionWorktreeBadge session={session} className="activity-item-meta" />
-                      {status === "needs-you" && <span className="activity-item-reason">
+                      {item.attention && <span className="activity-item-reason">
                         {methodLabel(item)}{item.attention?.summary ? ` · ${item.attention.summary}` : ""}
                         {item.attention?.since ? ` · ${new Date(item.attention.since).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}` : ""}
                       </span>}
                       {status === "interrupted" && <span className="activity-item-reason">{t("activity.interruptedHint")}</span>}
                     </button>
-                    {status === "ready" && <button type="button" className="activity-mark-read"
+                    {(status === "ready" || status === "needs-you") && <button type="button" className="activity-mark-read"
+                      aria-label={t("activity.markLaterSession", { name: label })}
+                      onClick={() => onMarkLater(session.id, item.attention?.requestId)}>{t("activity.later")}</button>}
+                    {(status === "ready" || status === "later" && !item.attention) && <button type="button" className="activity-mark-read"
                       aria-label={t("activity.markReadSession", { name: label })}
                       onClick={() => onMarkRead(session.id)}>{t("activity.markRead")}</button>}
                   </div>

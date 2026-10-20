@@ -170,14 +170,42 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   assert.equal(await overview.getByText("E2E browser question").count(), 1);
   assert.match(await card.getAttribute("aria-label"), /project.*E2E browser question/);
   await page.screenshot({ path: join(artifacts, `activity-${width}.png`) });
-  await card.click();
+  const questionDeferred = page.waitForResponse((response) => {
+    if (!response.url().endsWith("/api/activity/review") || response.request().method() !== "POST") return false;
+    return response.request().postDataJSON().op === "later-request";
+  });
+  void questionDeferred.catch(() => {});
+  await overview.getByRole("button", { name: "Review Render **E2E markdown** later", exact: true }).click();
+  const questionReceipt = await questionDeferred;
+  assert.equal(questionReceipt.status(), 200);
+  assert.ok((await questionReceipt.json()).laterRequests.some((entry) => entry.sessionId === waitingSessionId));
+  const deferredCard = overview.locator(".activity-item-later.activity-deferred-attention").filter({ hasText: "E2E browser question" });
+  await deferredCard.waitFor();
+  assert.equal(needsColor, await dotColor(deferredCard), "deferred questions keep their yellow Needs you dot");
+  assert.match(await deferredCard.getAttribute("aria-label"), /Later.*Needs you.*E2E browser question.*Open & answer/);
+  assert.equal(await overview.getByRole("button", { name: "Mark Render **E2E markdown** as read", exact: true }).count(), 0,
+    "deferring a pending question never makes it readable/acknowledged");
+  if (width === 1280) {
+    const context = await harness.newContext(page.context().browser(), { viewport: { width, height: 900 }, locale: "en-US" }, base);
+    const questionPeer = await context.newPage();
+    await questionPeer.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
+    await questionPeer.getByRole("button", { name: /^Activity/ }).click();
+    await questionPeer.getByRole("region", { name: "Activity" }).locator(".activity-deferred-attention").filter({ hasText: "E2E browser question" }).waitFor();
+    await harness.closeContext(context);
+  }
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /^Activity/ }).click();
+  await deferredCard.waitFor({ timeout: 15000 });
+  assert.equal(needsColor, await dotColor(deferredCard), "deferred attention survives a reload without losing its yellow dot");
+  await page.screenshot({ path: join(artifacts, `activity-later-question-${width}.png`) });
+  await deferredCard.click();
   const question = page.getByRole("group", { name: "E2E browser question" });
   await question.waitFor();
   if (mobile) {
     await overview.waitFor({ state: "hidden" });
     await page.getByRole("button", { name: "Back to Activity" }).click();
     await overview.waitFor({ state: "visible" });
-    await card.click();
+    await deferredCard.click();
     await question.waitFor();
   } else {
     assert.equal(await overview.isVisible(), true, "desktop keeps the queue beside the selected chat");
@@ -226,6 +254,16 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await post(`/api/agent/${otherSessionId}`, { type: "prompt", message: "/e2e-ask-user timeout" });
   const otherReady = overview.locator(".activity-item-ready").filter({ hasText: "Other workspace task" });
   await otherReady.waitFor({ timeout: 15000 });
+  const setArchived = async (archived) => {
+    const response = await page.request.patch(`${base}/api/sessions/${otherSessionId}`, { data: { archived } });
+    assert.equal(response.status(), 200);
+  };
+  await setArchived(true);
+  await waitForAsyncCondition(page, async (id) => {
+    const response = await fetch("/api/sessions?force=1");
+    return (await response.json()).sessions.some((session) => session.id === id && session.archived);
+  }, otherSessionId);
+  await otherReady.waitFor();
   await overview.getByRole("combobox", { name: "Project" }).selectOption({ label: "project" });
   await otherReady.waitFor({ state: "hidden" });
   await originalReady.waitFor();
@@ -252,8 +290,73 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   }
   await otherReady.click();
   await page.waitForURL((url) => url.searchParams.get("session") === otherSessionId);
+  await page.getByText("This session is archived.", { exact: false }).waitFor();
   if (mobile) await page.getByRole("button", { name: "Back to Activity" }).click();
   await otherReady.waitFor();
+  const deferred = page.waitForResponse((response) => {
+    if (!response.url().endsWith("/api/activity/review") || response.request().method() !== "POST") return false;
+    const body = response.request().postDataJSON();
+    return body.op === "later" && body.entries.some((entry) => entry.sessionId === otherSessionId);
+  });
+  void deferred.catch(() => {});
+  // Persist the write, but lose the usable response. No HTTP/console error is
+  // suppressed: malformed JSON exercises the client's response-loss catch path.
+  await page.route("**/api/activity/review", async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.op !== "later") return route.continue();
+    const response = await route.fetch();
+    assert.equal(response.status(), 200);
+    await route.fulfill({ response, body: "{" });
+  });
+  // Hold the next serialized poll before clicking, so its confirmation cannot
+  // clear the failure banner before the assertion observes it.
+  let releasePoll;
+  const pollGate = new Promise((resolve) => { releasePoll = resolve; });
+  const heldPoll = page.waitForRequest("**/api/agent/running");
+  void heldPoll.catch(() => {});
+  await page.route("**/api/agent/running", async (route) => { await pollGate; await route.continue(); });
+  const unavailable = overview.getByText("Live status unavailable. Showing the last known state.", { exact: true });
+  try {
+    await heldPoll;
+    await overview.getByRole("button", { name: "Review Other workspace task later", exact: true }).click();
+    assert.equal((await deferred).status(), 200);
+    await unavailable.waitFor();
+  } finally {
+    releasePoll();
+    await page.unroute("**/api/agent/running");
+    await page.unroute("**/api/activity/review");
+  }
+  await unavailable.waitFor({ state: "hidden", timeout: 15000 });
+  const otherLater = overview.locator(".activity-item-later").filter({ hasText: "Other workspace task" });
+  await otherLater.waitFor();
+  await otherReady.waitFor({ state: "hidden" });
+  if (peer) {
+    await peer.getByRole("region", { name: "Activity" }).locator(".activity-item-later")
+      .filter({ hasText: "Other workspace task" }).waitFor({ timeout: 15000 });
+  }
+  // Archive and Later never mask a live registry run or pending question.
+  let archivedQuestion = false;
+  await page.route("**/api/agent/running", async (route) => {
+    const response = await route.fetch();
+    const snapshot = await response.json();
+    await route.fulfill({ response, json: { ...snapshot,
+      runningSessionIds: [...new Set([...snapshot.runningSessionIds, otherSessionId])],
+      attention: archivedQuestion ? [...snapshot.attention, { sessionId: otherSessionId, method: "ask_user", summary: "Archived question", since: 1 }] : snapshot.attention,
+    } });
+  });
+  try {
+    await overview.locator(".activity-item-working").filter({ hasText: "Other workspace task" }).waitFor({ timeout: 15000 });
+    await otherLater.waitFor({ state: "hidden" });
+    archivedQuestion = true;
+    await overview.locator(".activity-item-needs-you").filter({ hasText: "Archived question" }).waitFor({ timeout: 15000 });
+  } finally {
+    await page.unroute("**/api/agent/running");
+  }
+  await otherLater.waitFor({ timeout: 15000 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /^Activity/ }).click();
+  await otherLater.waitFor({ timeout: 15000 });
+  await overview.getByRole("combobox", { name: "Project" }).selectOption({ label: "other-project" });
   // Local disappearance is optimistic; wait for persistence before reload can
   // cancel the acknowledgement (compact/mobile have no peer poll to wait for).
   const acknowledged = page.waitForResponse((response) => {
@@ -270,11 +373,11 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   const completion = persisted.completedRuns.find((entry) => entry.sessionId === otherSessionId);
   assert.ok(completion && persisted.reviewedRuns.some((entry) => entry.sessionId === otherSessionId && entry.at >= completion.at));
   if (peer) {
-    await peer.getByRole("region", { name: "Activity" }).locator(".activity-item-ready")
+    await peer.getByRole("region", { name: "Activity" }).locator(".activity-item-later")
       .filter({ hasText: "Other workspace task" }).waitFor({ state: "hidden", timeout: 15000 });
     await harness.closeContext(peerContext);
   }
-  await otherReady.waitFor({ state: "hidden" });
+  await otherLater.waitFor({ state: "hidden" });
   assert.equal(await overview.getByRole("combobox", { name: "Project" }).evaluate((select) => select.selectedOptions[0]?.textContent), "other-project",
     "a project filter stays visibly selected after its final row is reviewed");
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -285,6 +388,12 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   assert.equal(await reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Other workspace task" }).count(), 0,
     "server-reviewed runs must not reappear after reloading this browser");
   assert.equal(await page.evaluate(() => localStorage.getItem("pi-web:reviewed-run-times")), null);
+  await post(`/api/agent/${otherSessionId}`, { type: "prompt", message: "/e2e-ask-user timeout" });
+  const newerReady = reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Other workspace task" });
+  await newerReady.waitFor({ timeout: 15000 });
+  assert.equal(await reloadedOverview.locator(".activity-item-later").filter({ hasText: "Other workspace task" }).count(), 0,
+    "a new archived-session completion must not inherit the older Later receipt");
+  await setArchived(false);
   const [childA, childB, workingChild, otherChild] = subagentIds;
   const completed = seedSubagentCompletions();
   await page.route("**/api/agent/running", async (route) => {

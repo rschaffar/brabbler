@@ -1,4 +1,19 @@
-import type { SessionCompletion, SessionInfo } from "./types";
+import type { SessionAttention, SessionAttentionReceipt, SessionCompletion, SessionInfo } from "./types";
+
+export function activityRequestKey(receipt: SessionAttentionReceipt): string {
+  return JSON.stringify([receipt.sessionId, receipt.requestId]);
+}
+
+/** Validate the displayed token against the latest poll, never substitute a newer request. */
+export function isCurrentActivityRequest(attention: readonly SessionAttention[], receipt: SessionAttentionReceipt): boolean {
+  return attention.some((request) => request.sessionId === receipt.sessionId && request.requestId === receipt.requestId);
+}
+
+/** Exact request identity prevents an old deferral hiding a replacement question. */
+export function deferredAttentionIds(attention: readonly SessionAttention[], keys: ReadonlySet<string>): Set<string> {
+  return new Set(attention.filter((request) => request.requestId
+    && keys.has(activityRequestKey({ sessionId: request.sessionId, requestId: request.requestId }))).map((request) => request.sessionId));
+}
 
 export const REVIEWED_RUN_TIMES_STORAGE_KEY = "pi-web:reviewed-run-times";
 
@@ -52,15 +67,6 @@ export function reconcileCompletedRuns(
     if (runningIds.has(sessionId)) continue;
     const session = byId.get(sessionId);
     if (!session) continue; // A version-driven catalogue refresh may still be in flight.
-    const visited = new Set<string>();
-    let family: SessionInfo | undefined = session;
-    let archived = false;
-    while (family && !visited.has(family.id)) {
-      if (family.archived) { archived = true; break; }
-      visited.add(family.id);
-      family = family.relation?.kind === "subagent" ? byId.get(family.relation.parentSessionId) : undefined;
-    }
-    if (archived) continue;
     (session.relation?.kind === "subagent" ? subagentReady : rootReady).add(sessionId);
   }
   return { rootReady, subagentReady };

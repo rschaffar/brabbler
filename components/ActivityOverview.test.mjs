@@ -13,9 +13,10 @@ const session = (id, relation) => ({
   ...(relation ? { relation: { kind: "subagent", parentSessionId: relation, profile: "explore" } } : {}),
 });
 
-function render(sessions, runningIds, reviewIds, privacy = { keys: new Set(), error: false }) {
+function render(sessions, runningIds, reviewIds, privacy = { keys: new Set(), error: false }, laterIds = [], laterAttentionIds = [], attention = []) {
   return renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(ActivityOverview, {
-    sessions, runningIds: new Set(runningIds), queuedIds: new Set(), attention: [], reviewIds: new Set(reviewIds),
+    sessions, runningIds: new Set(runningIds), queuedIds: new Set(), attention, reviewIds: new Set(reviewIds),
+    laterIds: new Set(laterIds), laterAttentionIds: new Set(laterAttentionIds), onMarkLater() {},
     available: true, selectedId: null, onSelect() {}, onMarkRead() {}, onClose() {},
     privacy: { pendingKey: null, refresh() {}, setHidden() {}, ...privacy },
   })));
@@ -36,6 +37,31 @@ test("ready subagents are identified even when their parent is working or absent
   assert.match(html, /aria-label="Mark ready-root as read"[^>]*>Read<\/button>/);
   assert.match(html, /aria-label="Mark ready-child as read"[^>]*>Read<\/button>/);
   assert.match(html, /class="activity-mark-read activity-mark-all-subagents-read" title="[^"]+">Mark all subagents as read<\/button>/);
+});
+
+test("Later follows Ready to review, remains readable and is excluded from bulk ready subagent eligibility", () => {
+  const html = render([session("ready-root"), { ...session("later-child", "ready-root"), archived: true }], [],
+    ["ready-root", "later-child"], undefined, ["later-child"]);
+  assert.match(html, /aria-label="Review ready-root later"[^>]*>Later<\/button>/);
+  assert.match(html, /aria-label="later-child · project · in ready-root · Sub-agent · Later · Review"/);
+  assert.match(html, /aria-label="Mark later-child as read"/);
+  assert.doesNotMatch(html, /aria-label="Review later-child later"/);
+  assert.match(html, /activity-mark-all-subagents-read" disabled=""/);
+  assert.ok(html.indexOf('aria-label="Later"') > html.indexOf('aria-label="Ready to review"'));
+  const concealed = render([{ ...session("private-later"), archived: true }], [], ["private-later"],
+    { keys: new Set(["/project"]), error: false }, ["private-later"]);
+  assert.doesNotMatch(concealed, /private-later|aria-label="Later"/);
+});
+
+test("deferred Needs you keeps the yellow-dot class, question details and answer action, never Read", () => {
+  const attention = [{ sessionId: "question", requestId: "request", method: "ask_user", summary: "Choose wisely", since: 1 }];
+  const ready = render([session("question")], ["question"], [], undefined, [], [], attention);
+  assert.match(ready, /aria-label="Review question later"/);
+  const html = render([{ ...session("question"), archived: true }], ["question"], [], undefined, [], ["question"], attention);
+  assert.match(html, /activity-item-later activity-deferred-attention/);
+  assert.match(html, /Later · Needs you · Question · Choose wisely · Open &amp; answer/);
+  assert.match(html, /class="activity-item-reason"/);
+  assert.doesNotMatch(html, /aria-label="Mark question as read"|aria-label="Review question later"/);
 });
 
 test("worktree metadata accompanies ready roots and nested subagents without changing review actions", () => {

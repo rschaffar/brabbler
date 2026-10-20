@@ -222,9 +222,15 @@ export type BlockingExtensionUiRequest = Extract<
 /** Lightweight, read-only attention metadata from Pi Web's live wrappers. */
 export interface SessionAttention {
   sessionId: string;
+  requestId?: string;
   method: BlockingExtensionUiRequest["method"];
   summary: string;
   since: number;
+}
+
+export interface SessionAttentionReceipt {
+  sessionId: string;
+  requestId: string;
 }
 
 export interface SessionCompletion {
