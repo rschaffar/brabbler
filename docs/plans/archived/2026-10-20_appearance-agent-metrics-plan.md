@@ -30,9 +30,9 @@ Maintained architecture/feature/model/session/terminal/testing guides own ongoin
 - [x] Add managed-model context-budget draft fields and client/server validation without changing account/model scopes or runtime application lifecycle; cover save/clear/invalid/duplicate-provider and pinned-SDK resolution.
 - [x] Add bounded agent usage reads, accessible switcher metrics/family summary and running badge; cover zero startup, request bounds, stale responses, visibility, partial/unavailable state and ordinary navigation.
 - [x] Review all changes independently for reliability/security and interface/accessibility; resolve findings before source settlement.
-- [ ] Run focused Nix core/browser checks while iterating, then complete fresh `nix run .#test -- all --workers 4 --jobs 4` after resource admission and paused source export. Record exact inputs, widths, results, end-to-end runtime, available preparation/execution intervals and artifact paths; retain failures without weakening checks.
-- [ ] Commit coherent feature history, reassess current local rst-main and rebase/verify resulting candidate; ask completion intent and use exact-state non-FF integration approval if selected. Cleanup remains separate.
-- [ ] Hand maintained behavior to owning guides and archive completed implementation evidence at the verified handoff boundary.
+- [x] Run focused Nix core/browser checks while iterating, then complete fresh `nix run .#test -- all --workers 4 --jobs 4` after resource admission and paused source export. Record exact inputs, widths, results, end-to-end runtime, available preparation/execution intervals and artifact paths; retain failures without weakening checks.
+- [x] Commit coherent feature history, reassess current local rst-main and rebase/verify the resulting candidate; resolve completion intent and hand the verified candidate to the Git lifecycle for exact-state non-FF integration approval. Actual integration and cleanup remain separate gated operations.
+- [x] Hand maintained behavior to owning guides and archive completed implementation evidence at the verified handoff boundary.
 
 ## Risks and recovery
 
@@ -60,9 +60,24 @@ Retained failures and identified corrections:
 
 No unchanged retries, general error suppression, deadline increases or scenario removals. Every retry followed the identified correction. Complete stable-candidate acceptance remains pending below.
 
+## Complete acceptance and integration handoff
+
+Implementation commit `2b24f58120f40c82b784e094b57ed952def95a1f` rebased onto current local `rst-main` `ef90c809970aebf4c412d340a67d9918a10eb1dc` (Activity Later and owned-PTY fixture teardown), producing accepted candidate **`3d213b56ccf434e330605668d106770bbebb847d`**. Range-diff shows only contextual documentation/Activity-fixture changes; Later and every original scenario remain. The first rebase request refused a stale snapshot before effects; refs/policy/cleanliness were revalidated, and the user explicitly authorized one fresh request, which succeeded. No conflict cleanup or fallback was used.
+
+`nix run --offline --no-write-lock-file .#test -- all --offline --workers 4 --jobs 4` **passed in 636 seconds (10m36s) end-to-end command wall time**, including in-command realization. Requested/effective widths were four browser sandboxes and four core workers. Source: `/tmp/pi-web-test-source-ks95NX`, outer digest **`2673b2f8633d4e2016765aa21de7789f0c0fc0bcc23e3319b1ccffd7bc873ea8`**, selection `/tmp/pi-web-test-source-ks95NX/selection.json`; immutable common source `/nix/store/h9w2irkd1w78jzvhr2pid10n779vms0l-source`. Full log `/tmp/pi-web-appearance-all.BpTpDC.log`.
+
+- Core/static/bundled plugins: **351 files / 2,644 tests / 12 suites**, all passed, zero failed/skipped/cancelled/not-started; `/tmp/pi-web-test-core.5IT0BE/run.json`, output `/nix/store/qfv42k6h09v4r9s5j53vqwrzx2jmjswz-pi-web-core-checks`. Inclusive level 467.684s; realization/static preparation before first file 52.304s; file-execution window 414.882s. Requested/effective core width 4/4. No observed surviving owned processes or uncertain settlement.
+- Browser/terminal: **24 groups / 53 exact receipts**, every expected/completed chain and capsule verdict passed with artifact collection and settlement; `/tmp/pi-web-test-browser.kjZoVg/run.json`. Inclusive driver interval 542.309s, pre-first-capsule preparation/realization interval 111.997s and capsule span 430.166s. These are overlapping intervals, not sums of per-group times.
+- Genuine Home Manager deployment: `/tmp/pwv-GLxGTd/run.json`, acceptance `/tmp/pwv-GLxGTd/artifacts/acceptance.json`; activation/default-target, private environment/permissions, durable HTTP writes/restart and real HTTP PTY passed. Driver interval 86.852s; guest evidence 21.805s. Clients settled, artifacts collected, no errors; final service inactive/dead, MainPID zero, authenticated cgroup absent and port refused.
+- Browser and guest used the same production package `/nix/store/7l32f665vcx0nr6m9bsy7ri97kkj33ca-pi-web-0.9.3`. Existing baseline lint/export warnings remain nonfatal. No check deadline, inventory, isolation or error capture was weakened.
+
+The native x86_64 host has 32 CPUs. Before launch a competing Nix workload saturated CPUs; the parent waited roughly five minutes (coordination time, excluded from the command), retaining four/four rather than reducing it. Launch samples showed >55% CPU idle and about 52 GiB available; runner admission recorded 32 CPUs/about 50.5 GiB, with overlapping 16-CPU/27-GiB estimates, not reservations. Other work may continue; this is not a machine-exclusive or cold-cache performance claim. Earlier focused runs warmed prerequisites; there was no separate prewarming command for this full run. Preparation, test execution and model/coordination time are not conflated or added as serial intervals.
+
+The user chose **Prepare local integration**. Maintained behavior is in architecture/feature/model/session/terminal guides and e2e README; this plan is archived at the verified handoff boundary. The subsequent change is evidence/status-only: application, tests, package and Nix inputs remain identical to tested `3d213b5`. Proportional verification is diff/whitespace review and exact input equality, not a relabeled new-tip full run. The Git lifecycle's exact-state unsigned non-FF merge and separate cleanup gates own actual execution/results. No remote publication, host activation, live-provider testing or live-data migration is authorized or performed.
+
 ## Completion Checklist
 
-- [ ] Approved first-batch behavior is implemented; excluded features remain unchanged.
-- [ ] Independent reviews and focused regressions are resolved.
-- [ ] Complete core/static/plugin, browser/terminal and genuine deployment-VM acceptance passes on identified settled inputs.
-- [ ] Durable guides and coherent feature commits are ready for exact-state Git handoff; results distinguish integration, cleanup and deployment.
+- [x] Approved first-batch behavior is implemented; excluded features remain unchanged.
+- [x] Independent reviews and focused regressions are resolved.
+- [x] Complete core/static/plugin, browser/terminal and genuine deployment-VM acceptance passes on identified settled inputs.
+- [x] Durable guides and coherent feature commits are ready for exact-state Git handoff; results distinguish integration, cleanup and deployment.
