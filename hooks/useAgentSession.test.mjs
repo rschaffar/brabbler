@@ -276,7 +276,11 @@ test("stale fresh-session completion cannot replace the active composer", () => 
     cwdChangeSource,
     /currentProject === newProject\s*&& \(selectedSession !== null \|\| currentFreshCwd === cwd\)/,
   );
-  assert.match(cwdChangeSource, /if \(currentProject !== newProject\) \{[\s\S]*?setFileTabs\(\[\]\)/);
+  // Project changes hide the previous Files surface, but must not destroy a
+  // parked edit owner. The normal workspace is keyed by receiving session/cwd.
+  assert.match(cwdChangeSource, /if \(currentProject !== newProject\) \{[\s\S]*?setRightPanelOpen\(false\)/);
+  assert.match(appShellSource, /const currentFileWorkspaceKey = JSON\.stringify\(\[selectedSession\?\.id \?\? null, selectedSession\?\.cwd \?\? activeCwd \?\? null\]\)/);
+  assert.match(appShellSource, /workspaceKey=\{fileWorkspaceKey\}/);
   assert.match(
     appShellSource,
     /useLayoutEffect\(\(\) => \{\s*activeNewSessionDraftKeyRef\.current = newSessionDraftKey;/,

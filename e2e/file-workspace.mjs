@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 /** Runs in the existing Markdown inventory chain, with synthetic user files. */
-export async function checkFileWorkspace(page, base, fixture) {
+export async function checkFileWorkspace(page, base, fixture, artifacts) {
   await page.goto(`${base}/?session=${fixture.sessionId}`, { waitUntil: "domcontentloaded" });
   await page.getByRole("link", { name: "Split guide", exact: true }).click();
   const panel = page.locator("#file-panel"), guide = panel.getByRole("tabpanel", { name: "Pane 1 — split-guide.md", exact: true });
@@ -49,6 +49,7 @@ export async function checkFileWorkspace(page, base, fixture) {
   await guide.getByRole("link", { name: "Source 1", exact: true }).click();
   await panel.getByRole("tabpanel", { name: "Pane 2 — split-source-1.ts", exact: true }).locator('[data-line-number="40"][data-file-line-target]').waitFor();
   assert.equal(await panel.getByRole("tabpanel", { name: "Pane 3 — split-tests.ts", exact: true }).isVisible(), true);
+  if (artifacts) await page.screenshot({ path: join(artifacts, `file-workspace-three-panes-${originalViewport.width}x${originalViewport.height}.png`) });
   // An editor has one server-identified owner even across two file views.
   const code = panel.getByRole("tabpanel", { name: "Pane 2 — split-source-1.ts", exact: true });
   await code.getByRole("button", { name: "Edit", exact: true }).click();
@@ -135,6 +136,7 @@ export async function checkFileWorkspace(page, base, fixture) {
   await panel.getByRole("tabpanel", { name: "Pane 2 — split-source-2.ts", exact: true }).locator('[data-line-number="40"][data-file-line-target]').waitFor();
   assert.equal(await first.getByLabel("File link destination").inputValue(), "pane-2");
   assert.equal(await fourth.getByLabel("File link destination").inputValue(), "pane-3");
+  if (artifacts) await page.screenshot({ path: join(artifacts, `file-workspace-four-panes-${originalViewport.width}x${originalViewport.height}.png`) });
   await fourth.getByLabel("Pane actions").click();
   await fourth.getByRole("button", { name: /^Move tab to Pane 3/ }).click();
   await page.waitForFunction(() => document.querySelectorAll('[data-file-pane]').length === 3);

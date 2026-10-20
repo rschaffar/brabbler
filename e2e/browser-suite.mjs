@@ -654,7 +654,7 @@ let context;
       assert.ok(marker.padding >= marker.font * 3, JSON.stringify(marker));
       await checkMarkdownPreview(page, markdownFile);
       await checkFileLineLinks(page, base, fileLineFixtures);
-      await checkFileWorkspace(page, base, fileLineFixtures);
+      await checkFileWorkspace(page, base, fileLineFixtures, artifacts);
       await checkSkillInstructions(page, base, followupSettings);
       await checkModelOverrides(page, base);
       await checkManagedModelContext(page);
