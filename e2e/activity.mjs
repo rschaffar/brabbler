@@ -190,11 +190,14 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
     const context = await harness.newContext(page.context().browser(), { viewport: { width, height: 900 }, locale: "en-US" }, base);
     const questionPeer = await context.newPage();
     await questionPeer.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
+    await questionPeer.getByText("Active branch answer", { exact: true }).waitFor();
     await questionPeer.getByRole("button", { name: /^Activity/ }).click();
     await questionPeer.getByRole("region", { name: "Activity" }).locator(".activity-deferred-attention").filter({ hasText: "E2E browser question" }).waitFor();
     await harness.closeContext(context);
   }
   await page.reload({ waitUntil: "domcontentloaded" });
+  // URL-session restoration closes overviews; finish it before opening Activity.
+  await page.getByText("Active branch answer", { exact: true }).waitFor();
   await page.getByRole("button", { name: /^Activity/ }).click();
   await deferredCard.waitFor({ timeout: 15000 });
   assert.equal(needsColor, await dotColor(deferredCard), "deferred attention survives a reload without losing its yellow dot");
