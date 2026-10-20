@@ -7,7 +7,7 @@ development-server, in-place, host-service or non-Nix fallback.
 
 ```sh
 nix flake check --max-jobs 1 --cores 4 -L  # complete cacheable core/browser/service
-nix run .#test -- all                      # fresh complete acceptance, one snapshot
+nix run .#test -- all --workers 4 --jobs 4 # normal fresh complete acceptance, if admitted
 nix run .#test -- e2e                      # full browser/terminal, admitted sandboxes
 nix run .#test -- e2e --workers 2           # same coverage, two concurrent sandboxes
 nix run .#test -- service                  # genuine deployment, fixed small VM
@@ -21,7 +21,9 @@ Nix realizes pinned dependencies, package, Chromium and fonts automatically. No
 `npm ci`, Playwright download or checkout-local modules are required. Browser tests
 need ordinary Linux Nix sandboxing, not KVM or nspawn/experimental daemon features.
 Only deployment needs native Linux/KVM. See [testing](../docs/testing.md) for snapshots,
-offline operation, admission and cached/fresh evidence. Production builds occur only
+offline operation, admission and cached/fresh evidence. Use four/four for complete
+acceptance when resources permit; explain smaller budgets and report preparation
+separately as specified there. Production builds occur only
 in isolated Nix builders, never in checkout `.next`.
 
 ## Disjoint coverage inventory

@@ -20,8 +20,8 @@ From the physical Linux working-tree root:
 # Complete cacheable acceptance; bound independent Nix builders explicitly:
 nix flake check --max-jobs 1 --cores 4 -L
 
-# Fresh complete acceptance, one verified snapshot and resource-aware overlap:
-nix run .#test -- all
+# Normal fresh complete acceptance, if resources admit four/four:
+nix run .#test -- all --workers 4 --jobs 4
 # Or execute the three levels separately:
 nix run .#test -- core
 nix run .#test -- e2e
@@ -119,6 +119,27 @@ Missing cached inputs fail normally. There is no prerequisite scanner, hidden
 fallback, dependency-marker rewrite or cross-checkout dependency symlink.
 
 ## Coverage and resource admission
+
+For fresh complete acceptance, normally select explicit **four browser sandboxes /
+four core workers** with `nix run .#test -- all --workers 4 --jobs 4`, matching the
+measured budget below. Confirm available CPU/memory headroom and coordinate other
+resource-consuming runs first; admission estimates are not machine-wide reservations.
+If constrained by resources or concurrent work, select a smaller supported budget
+and state the concrete reason before launch. Record requested/effective widths and
+admission from `selection.json` and the level reports. A read-only reviewer alone
+does not justify reducing concurrency; a focused `core --jobs 2` example is not the
+full-acceptance recommendation. Never bypass admission or increase deadlines.
+
+This is invocation guidance, not a change to runner defaults: bare `all` uses two
+core workers when overlapping (four when serialized), while browser width is
+resource-admitted. Pass both flags explicitly for the measured four/four profile.
+Nix `--max-jobs` / `--cores` control realization, not these test-worker widths.
+
+Report the full command's end-to-end wall time, including any realization within
+that command, plus separately available prerequisite-preparation and test-execution
+intervals. Identify any prewarming done before the command. Overlapping intervals
+must not be added together or subtracted as if serial. Warm-prerequisite benchmark
+times are not cold-cache promises; keep model/review/coordination time separate.
 
 The core universe is recursive `*.test.mjs` under **app, components, hooks, lib,
 public and plugins**. Browser scripts and `.fixture.mjs` helpers are not silently
