@@ -47,6 +47,13 @@ test("a locally applied title survives until the catalogue carries it", () => {
   assert.equal(mergeCatalogRow(named, row({ name: "renamed on disk" })).name, "renamed on disk");
 });
 
+test("stale present metadata cannot readmit a known missing cwd, but a move can", () => {
+  const missing = row({ cwdState: "missing" });
+  assert.equal(mergeCatalogRow(missing, row({ cwdState: "present" })).cwdState, "missing");
+  assert.equal(mergeCatalogRow(missing, row({ cwd: "/destination", cwdState: "present" })).cwdState, "present");
+  assert.equal(mergeCatalogRow(row({ cwdState: "present" }), row({ cwdState: "unavailable" })).cwdState, "unavailable");
+});
+
 test("values the catalogue does carry always win", () => {
   const merged = mergeCatalogRow(row({ modified: "2026-01-02", messageCount: 1 }), row({ modified: "2026-06-01", messageCount: 99, relation: { kind: "subagent", parentSessionId: "p1" } }));
   assert.equal(merged.modified, "2026-06-01");

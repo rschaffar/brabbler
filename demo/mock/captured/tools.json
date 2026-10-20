@@ -297,14 +297,14 @@
     },
     "resume": {
      "type": "string",
-     "description": "Existing subagent session ID to continue instead of creating a new session."
+     "description": "Existing subagent session ID to continue with its saved model, thinking, resources and turn budget. Omit creation options."
     },
     "input_files": {
      "type": "array",
      "items": {
       "type": "string"
      },
-     "description": "UTF-8 text files under the session cwd to include with the task.",
+     "description": "UTF-8 text files under the session cwd to include with the task. Total file bytes are limited to about a tenth of the child model's context, at most 512 KiB. Use fewer/smaller files, or name paths in prompt when the child can read them.",
      "maxItems": 8
     },
     "description": {
@@ -317,7 +317,7 @@
     },
     "model": {
      "type": "string",
-     "description": "Optional provider/modelId override."
+     "description": "Optional provider/modelId override. Append :off, :minimal, :low, :medium, :high, :xhigh or :max to set thinking too. A registered literal model ID always wins; explicit thinking overrides the suffix."
     },
     "thinking": {
      "type": "string",

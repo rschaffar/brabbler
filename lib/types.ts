@@ -379,6 +379,8 @@ export interface SessionInfo {
   path: string;
   id: string;
   cwd: string;
+  /** Advisory directory snapshot; missing/unavailable sessions remain history-only in the UI. */
+  cwdState?: "present" | "missing" | "unavailable";
   name?: string;
   created: string;
   modified: string;

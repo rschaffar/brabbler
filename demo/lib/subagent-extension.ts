@@ -5,6 +5,7 @@ import type { SubagentRunInfo } from "./subagents";
 export interface SubagentToolDetails {
   kind: "pi-web-subagent";
   sessionId: string;
+  runId?: string;
   profile: string;
   description: string;
   status: SubagentRunInfo["status"];
@@ -15,4 +16,5 @@ export interface SubagentToolDetails {
   worktreePath?: string;
   worktreeBranch?: string;
   worktreeCleanupError?: string;
+  worktreeExists?: boolean;
 }

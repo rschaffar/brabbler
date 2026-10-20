@@ -15,6 +15,7 @@ import { MessageView } from "./MessageView";
 import { MarkdownBody } from "./MarkdownBody";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ProviderAccounts } from "./ProviderAccounts";
+import { isHistoryOnlySession } from "@/lib/session-directory";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { AnsiText } from "./AnsiText";
@@ -265,6 +266,7 @@ export function ChatWindow({ session, covered = false, searchTarget, onSearchTar
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
+  const historyOnly = isHistoryOnlySession(session);
 
   // Wrap onAgentEnd to play the completion sound. This is more reliable than
   // wrapping handleAgentEventRef because useAgentSession overwrites that ref
@@ -905,7 +907,13 @@ export function ChatWindow({ session, covered = false, searchTarget, onSearchTar
     ? (modelThinkingLevelMaps[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
     : null;
 
-  const chatInputElement = (
+  const chatInputElement = historyOnly ? (
+    <div role="status" className="px-4 py-3 text-sm text-text-muted" data-history-only="true">
+      {t(session?.cwdState === "missing" ? "chat.folderMissing" : "chat.folderUnavailable")}
+      {" "}{t("chat.historyOnly")}
+      {sessionRunning && <button type="button" onClick={handleAbort} className="ml-3 underline">{t("chat.stop")}</button>}
+    </div>
+  ) : (
     <ChatInput
       ref={chatInputRef}
       onSend={handleSend}

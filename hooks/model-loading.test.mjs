@@ -34,7 +34,7 @@ function setup(fetchImpl) {
   const context = {
     Error, DOMException, URLSearchParams,
     controller: new AbortController(),
-    newSessionCwd: "/project", session: null, isNew: true,
+    newSessionCwd: "/project", session: null, isNew: true, historyOnly: false,
     sessionIdRef: { current: null }, newSessionAccountsRef: { current: null }, thinkingLevelOverrideRef: { current: null },
     thinkingLevelPinsRef: { current: {} }, defaultThinkingLevelRef: { current: null },
     asConcreteThinkingLevel: (value) => (!value || value === "auto" ? null : value),
@@ -81,7 +81,7 @@ test("model-load failures stay visible through bounded retries and clear on reco
   assert.ok(recovered.writes.some(([name, value]) => name === "NewSessionDefaultThinkingLevel" && value === "high"));
 });
 
-test("cancelling model loads prevents state writes and further retries", async () => {
+test("cancelling model loads prevents state writes and further retries", { timeout: 5_000 }, async () => {
   for (const status of [200, 403]) {
     const reading = Promise.withResolvers();
     const state = setup(async (_url, { signal }) => ({
@@ -115,4 +115,12 @@ test("cancelling model loads prevents state writes and further retries", async (
   waiting.context.delay = async () => waiting.context.controller.abort();
   await waiting.run();
   assert.equal(attempts, 1);
+});
+
+test("history-only model loading performs no request, state writes or retries", async () => {
+  const state = setup(async () => assert.fail("history-only sessions must not probe models"));
+  state.context.historyOnly = true;
+  await state.run();
+  assert.deepEqual(state.writes, []);
+  assert.deepEqual(state.delays, []);
 });

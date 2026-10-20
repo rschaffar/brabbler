@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
+import { isHistoryOnlySession } from "@/lib/session-directory";
 import { WebVersionNotice } from "./WebVersionNotice";
 import { ActivityOverview } from "./ActivityOverview";
 import { useHiddenProjects } from "@/hooks/useHiddenProjects";
@@ -811,7 +812,7 @@ export function AppShell() {
     if (!isRestore && selectedSession) {
       const sameProject =
         workspaceKeyOf(selectedSession) === workspaceKeyOf(session);
-      if (selectedSession.id === session.id && sameProject && selectedSession.cwd === session.cwd) {
+      if (selectedSession.id === session.id && sameProject && selectedSession.cwd === session.cwd && selectedSession.cwdState === session.cwdState) {
         if (isMobile) setSidebarOpen(false);
         return;
       }
@@ -911,7 +912,8 @@ export function AppShell() {
     // Prefer the catalogue the sidebar already delivered: selecting from it
     // avoids a full detail round trip just to obtain the SessionInfo.
     const catalogued = sessionCatalog.find((s) => s.id === sessionId);
-    if (catalogued && !catalogued.transient) {
+    // A completed isolated child may have lost its checkout since this catalogue row.
+    if (catalogued && !catalogued.transient && catalogued.relation?.kind !== "subagent") {
       handleSelectSession(catalogued);
       return;
     }
@@ -1211,7 +1213,8 @@ export function AppShell() {
     : translate("i18n.newSession");
   const mobileProjectPath = selectedSession?.projectRoot ?? selectedSession?.cwd ?? effectiveNewSessionCwd;
   const mobileProjectName = mobileProjectPath ? getFileName(mobileProjectPath) || mobileProjectPath : null;
-  const projectTrustCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
+  const historyOnly = isHistoryOnlySession(selectedSession);
+  const projectTrustCwd = historyOnly ? null : selectedSession?.cwd ?? effectiveNewSessionCwd;
   const projectTrustCwdRef = useRef(projectTrustCwd);
   projectTrustCwdRef.current = projectTrustCwd;
   // While restoring initial session from URL, don't show the placeholder
@@ -1291,6 +1294,7 @@ export function AppShell() {
         onSessionDeleted={handleSessionDeleted}
         onSessionArchived={handleSessionDeleted}
         selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
+        selectedCwdState={selectedSession?.cwdState}
         onCwdChange={handleCwdChange}
         onOpenFile={handleOpenFile}
         onOpenTerminal={handleOpenTerminal}
@@ -1311,7 +1315,7 @@ export function AppShell() {
           ["models", translate("common.models")],
           ["skills", translate("common.skills")],
         ] as const).map(([section, label]) => {
-          const disabled = section !== "models" && !projectTrustCwd;
+          const disabled = historyOnly || (section !== "models" && !projectTrustCwd);
           return (
             <button
               key={section}
@@ -1338,6 +1342,7 @@ export function AppShell() {
         <button
           type="button"
           onClick={() => setSettingsSection(getLastSettingsSection(projectTrustCwd))}
+          disabled={historyOnly}
           title={translate("common.settings")}
           aria-label={translate("common.settings")}
           style={{
@@ -2487,7 +2492,7 @@ export function AppShell() {
             />
           )}
           {activeOverview === "git" && <div id="git-explorer-panel" className={`git-explorer-host${gitExplorerFullWidth ? " git-explorer-full-width" : ""}`}>
-            <GitExplorerPanel key={activeCwd ?? "no-worktree"} cwd={activeCwd} onClose={handleGitExplorerClose}
+            <GitExplorerPanel key={activeCwd ?? "no-worktree"} cwd={historyOnly && activeCwd === selectedSession?.cwd ? null : activeCwd} onClose={handleGitExplorerClose}
               expanded={gitExplorerFullWidth} canExpand={!isMobile} onToggleExpanded={handleGitExplorerExpandToggle} />
           </div>}
           <div inert={gitExplorerFullWidth || Boolean(activeOverview && isMobile && overviewMobileList)} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
