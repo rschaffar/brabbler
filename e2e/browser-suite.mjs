@@ -42,6 +42,7 @@ import { checkCompactionVisibility } from "./compaction.mjs";
 import { seedSourceHighlighting, checkSourceHighlighting } from "./source-highlighting.mjs";
 import { checkHighlightFailure } from "./highlight-failure.mjs";
 import { createOwnedRoutes } from "./owned-routes.mjs";
+import { seedToolArguments, checkToolArguments, checkStreamedToolArguments } from "./tool-arguments.mjs";
 
 // Validate one-hot ownership before the harness or any fixture side effects.
 const group = selectGroup(process.env);
@@ -187,6 +188,7 @@ let context;
       },
     ]),
   ];
+  const toolArgumentFixtures = group === "history" ? seedToolArguments({ entries: richEntries, message, project }) : null;
   for (const entry of richEntries) entry.message.timestamp = Date.parse(timestamp);
   Object.assign(richEntries.at(-1).message, {
     provider: "test", model: "E2E Model",
@@ -1082,6 +1084,7 @@ let context;
     await page.getByText("echo E2E tool output", { exact: true }).waitFor();
     await page.getByRole("button", { name: /bash.*echo E2E tool output/ }).click();
     await page.getByText("E2E tool output", { exact: true }).waitFor();
+    await checkToolArguments(page, toolArgumentFixtures, { artifacts, width: viewport.width });
     await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
     const heading = page.getByRole("heading", { name: "E2E compacted heading", exact: true });
     await heading.waitFor({ state: "attached" });
@@ -1176,6 +1179,7 @@ let context;
       await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
       await heading.waitFor({ state: "visible" });
     }
+    await checkStreamedToolArguments(page, { base, id: RICH, timestamp });
     await checkCompactionVisibility(page, { base, id: COMPACTED, artifacts, width: viewport.width });
     assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
     console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`);
