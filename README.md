@@ -105,6 +105,12 @@ Set `PI_WEB_APP_NAME` before starting the server, for example `PI_WEB_APP_NAME='
 
 Provider requests honor `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`.
 
+### Security boundaries
+
+Serve through the installed `pi-web` launcher or this repository's maintained npm dev/start scripts. They install a request-header guard before Next.js so a build's preview ID cannot bypass application authentication. Do not substitute the dependency's bare `next` server or an arbitrary custom server; those omit this boundary. No writable copy of the Nix store is needed.
+
+File references are a read-only exception for intentional conversation links and recognized coding/subagent sources, not permission derived from system prompts, remote-tool text or opaque receipts. This is not a sandbox for extensions or a general prompt-injection defense. See [the security boundary decision](docs/adr/0026-request-and-file-reference-boundaries.md) for limits. Existing processes need an explicitly deployed update/restart to acquire these fixes.
+
 ### Sessions and provider accounts
 
 **New session** on a saved user message copies the history before that message into an independent chat, even while the original is running. **Ask in new chat** on a saved response copies history through that response. Neither stops the original or copies its running tools, queued messages, or pending questions. **Edit from here** changes the original conversation and remains unavailable while it is running.
