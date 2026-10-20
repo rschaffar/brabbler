@@ -32,6 +32,29 @@ test("explicit context changes invalidate a pending workspace restore", () => {
   }
 });
 
+test("late initial session adoption preserves an explicitly opened overview, while sidebar navigation closes it", () => {
+  const callback = callbackBody("handleSidebarSelectSession", "handleOpenSession");
+  for (const initial of ["activity", "starred", "git", null]) {
+    let overview = initial;
+    const adopted = [];
+    const context = vm.createContext({ useCallback: fn => fn,
+      closeOverview: () => { overview = null; },
+      handleSelectSession: (...args) => adopted.push(args),
+    });
+    vm.runInContext(stripTypeScriptTypes(`${callback}\nglobalThis.select = handleSidebarSelectSession;`), context);
+    const session = { id: "url-session", cwd: "/project-worktree" };
+    context.select(session, true);
+    assert.equal(overview, initial, "background adoption cannot close a newer overview");
+    assert.deepEqual(adopted[0], [session, true, undefined, undefined]);
+    for (const explicit of [false, undefined]) {
+      overview = initial;
+      context.select(session, explicit, "source-entry", 2);
+      assert.equal(overview, null, "an explicit sidebar pick still closes every overview");
+      assert.deepEqual(adopted.at(-1), [session, explicit, "source-entry", 2]);
+    }
+  }
+});
+
 test("all active-session transitions share one persistence effect", () => {
   assert.match(
     source,

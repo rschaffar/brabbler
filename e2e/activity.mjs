@@ -4,6 +4,42 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createOwnedRoutes } from "./owned-routes.mjs";
 
+/** Deliberately open Activity before catalogue-driven URL session adoption.
+ * Join the exact held GETs before leaving; no provider or timeout manipulation. */
+async function checkOverviewDuringInitialRestore(page, base, sessionId) {
+  const gate = Promise.withResolvers();
+  const pattern = /\/api\/sessions(?:\?|$)/;
+  const owned = createOwnedRoutes(async route => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    await gate.promise;
+    await route.fulfill({ response });
+  }, route => route.continue());
+  const failures = [];
+  await page.route(pattern, owned.handler);
+  try {
+    await page.goto(`${base}/?session=${sessionId}`, { waitUntil: "domcontentloaded" });
+    const toggle = page.getByRole("button", { name: /^Activity/ });
+    await toggle.click();
+    const overview = page.getByRole("region", { name: "Activity" });
+    await overview.waitFor();
+    gate.resolve();
+    // Chat remains mounted behind the mobile overview. Adoption must complete,
+    // but must not silently close the overview the user just opened.
+    await page.getByText("Active branch answer", { exact: true }).waitFor({ state: "attached" });
+    assert.equal(await toggle.getAttribute("aria-pressed"), "true");
+    await overview.waitFor();
+    await overview.getByRole("button", { name: "Close Activity", exact: true }).click();
+  } catch (error) { failures.push(error); }
+  finally {
+    gate.resolve();
+    owned.beginDisposal();
+    try { await owned.dispose(handler => page.unroute(pattern, handler)); }
+    catch (error) { failures.push(error); }
+    if (failures.length) throw new AggregateError(failures, "Initial overview restoration fixture failed");
+  }
+}
+
 export async function checkActivityOverview(page, width, { base, api, post, waitingSessionId, selectedSessionId, otherSessionId, artifacts, harness, seedInterruptedRun, subagentIds, seedSubagentCompletions }) {
   const mobile = width <= 640;
   const { sessions } = await api("/api/sessions?force=1");
@@ -29,8 +65,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   }
   const dotColor = (row) => row.locator(".activity-item-top .activity-dot")
     .evaluate((dot) => getComputedStyle(dot).backgroundColor);
-  await page.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: /^Activity/ }).waitFor();
+  await checkOverviewDuringInitialRestore(page, base, selectedSessionId);
   await page.getByText("Active branch answer", { exact: true }).waitFor();
   assert.equal(await page.getByText("A previous run may have been interrupted", { exact: false }).count(), 0);
   seedInterruptedRun();
@@ -196,7 +231,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
     await harness.closeContext(context);
   }
   await page.reload({ waitUntil: "domcontentloaded" });
-  // URL-session restoration closes overviews; finish it before opening Activity.
+  // Finish URL-session adoption before asserting persisted Later state.
   await page.getByText("Active branch answer", { exact: true }).waitFor();
   await page.getByRole("button", { name: /^Activity/ }).click();
   await deferredCard.waitFor({ timeout: 15000 });

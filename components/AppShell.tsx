@@ -888,7 +888,9 @@ export function AppShell() {
     if (isMobile) setOverviewMobileList(false);
   }, [handleSelectSession, isMobile, selectedSession?.id]);
   const handleSidebarSelectSession = useCallback((session: SessionInfo, isRestore?: boolean, entryId?: string, blockIndex?: number) => {
-    closeOverview();
+    // Background URL adoption may finish after the user opens an overview.
+    // Only explicit sidebar navigation should close that newer reading surface.
+    if (!isRestore) closeOverview();
     handleSelectSession(session, isRestore, entryId, blockIndex);
   }, [closeOverview, handleSelectSession]);
 

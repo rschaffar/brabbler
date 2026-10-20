@@ -143,7 +143,7 @@ export async function GET(req: NextRequest) {
     const cache = getIndexCache();
     const now = Date.now();
     let cached = cache.get(cwd);
-    if (!cached || cached.expiresAt <= now) {
+    if (!cached || cached.expiresAt <= now || req.nextUrl.searchParams.get("refresh") === "1") {
       const listing = (await listWithGit(cwd)) ?? listWithWalk(cwd);
       for (const [key, entry] of cache) {
         if (entry.expiresAt <= now) cache.delete(key);
