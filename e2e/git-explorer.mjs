@@ -104,7 +104,7 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   assert.equal(contextReads.length, 0, "Opening committed diffs is patch-only until context is requested");
   assert.deepEqual([...new Set(patchReads)], ["base.txt"], "Only the initially expanded file is fetched (Strict Mode may cancel/restart its first read)");
   assert.equal(await detail.getByRole("group", { name: "Patch view" }).count(), 1);
-  assert.equal(await page.locator("#file-panel").getByRole("tab").count(), 0,
+  assert.equal(await page.locator("#file-panel [data-file-pane]").getByRole("tab").count(), 0,
     "Commit inspection should not create a file tab");
   const oid = execFileSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);

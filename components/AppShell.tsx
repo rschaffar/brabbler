@@ -12,10 +12,11 @@ import { useHiddenProjects } from "@/hooks/useHiddenProjects";
 import { StarredOverview } from "./StarredOverview";
 import { getActivitySections, type ActivityStatus } from "@/lib/activity";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
-import { FileViewer } from "./FileViewer";
+import { FileWorkspace, type FileWorkspaceHandle, type FileWorkspaceStatus } from "./FileWorkspace";
+import { FileLinkMenuContext } from "./LocalFileLink";
+import type { FileDisposition } from "@/lib/file-workspace";
 import { GitExplorerPanel } from "./GitExplorerPanel";
 import { TabBar, type Tab } from "./TabBar";
-import { openFileTab, saveFileViewerState, setFileSaving } from "./file-tab-state";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
 import { ProjectTrustDialog, type TrustChoice } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
@@ -69,7 +70,6 @@ import type { ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import { requestFreshComposerFocus } from "@/lib/composer-focus";
 import type { SessionStatsInfo } from "@/lib/pi-types";
-import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
 import { getAgentsBadge, getSessionFamily } from "@/lib/session-family";
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
@@ -502,18 +502,14 @@ export function AppShell() {
     return () => ro.disconnect();
   }, [activeTopPanel, isMobile]);
 
-  // Files unmount when inactive; workspace terminals stay mounted until closed.
-  const [fileTabs, setFileTabs] = useState<Tab[]>([]);
-  useEffect(() => {
-    if (!fileTabs.some((tab) => tab.draft && tab.draft.content !== tab.draft.baseline)) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [fileTabs]);
-  const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
+  // File workspaces park independently; terminal runtime hosts never move.
+  const fileWorkspaceRef = useRef<FileWorkspaceHandle>(null);
+  const [parkedFileWorkspaceKey, setParkedFileWorkspaceKey] = useState<string | null>(null);
+  const [fileStatus, setFileStatus] = useState<FileWorkspaceStatus>({ count: 0, groups: [], canSplit: false });
+  const [activeFileTabId, setActiveFileTabId] = useState<string | null>("files");
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
   const [terminalsRestored, setTerminalsRestored] = useState(false);
-  const panelTabs: Tab[] = [...fileTabs, ...terminalTabs.map((tab) => ({
+  const panelTabs: Tab[] = [{ id: "files", label: translate("workspace.files"), filePath: "" }, ...terminalTabs.map((tab) => ({
     id: tab.id,
     label: getFileName(tab.cwd) || tab.cwd,
     filePath: tab.cwd,
@@ -543,15 +539,6 @@ export function AppShell() {
       }));
     } catch { /* storage is optional */ }
   }, [terminalTabs, activeFileTabId, rightPanelOpen, terminalsRestored]);
-
-  const handleFileViewerStateChange = useCallback((
-    tabId: string,
-    viewerRevision: number,
-    viewerState: FileViewerState,
-    lineTargetHandled = false,
-  ) => {
-    setFileTabs((prev) => saveFileViewerState(prev, tabId, viewerRevision, viewerState, lineTargetHandled));
-  }, []);
 
   // Same @mention format as the chat input's @ autocomplete, so the agent's
   // read tool resolves it the same way (it strips the @ prefix).
@@ -768,11 +755,9 @@ export function AppShell() {
     setSystemInfoLoading(false);
     setActiveTopPanel(null);
     if (currentProject !== newProject) {
-      // File tabs are keyed by absolute path, so tabs opened in the previous
-      // project must not linger. Same-project worktree switches keep them.
-      setFileTabs([]);
-      if (!activeFileTabId || activeFileTabId.startsWith("file:") || activeFileTabId.startsWith("git:")) {
-        setActiveFileTabId(null);
+      // Park the previous file workspace without discarding its drafts.
+      if (!activeFileTabId || activeFileTabId === "files") {
+        setActiveFileTabId("files");
         setRightPanelOpen(false);
       }
       // Restore the workspace we switched to: its last open session, or keep
@@ -797,9 +782,8 @@ export function AppShell() {
     // Initial URL restoration is not a project switch. A terminal restored
     // from sessionStorage may not have reached this callback's render yet.
     if (activeProjectKeyRef.current !== projectKey && !(isRestore && activeProjectKeyRef.current === null)) {
-      setFileTabs([]);
-      if (!activeFileTabId || activeFileTabId.startsWith("file:") || activeFileTabId.startsWith("git:")) {
-        setActiveFileTabId(null);
+      if (!activeFileTabId || activeFileTabId === "files") {
+        setActiveFileTabId("files");
         setRightPanelOpen(false);
       }
       setActiveTopPanel(null);
@@ -1117,30 +1101,24 @@ export function AppShell() {
   const handleOpenFile = useCallback((
     filePath: string,
     fileName: string,
-    options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number; lineTarget?: import("@/lib/file-links").FileLineTarget },
+    options?: { sourceSessionId?: string | null; cwd?: string; disposition?: FileDisposition; modeHint?: "diff"; page?: number; lineTarget?: import("@/lib/file-links").FileLineTarget },
   ) => {
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
     const page = options?.page;
-    const tabId = `file:${filePath}`;
-    setFileTabs((prev) => openFileTab(prev, {
-      fileName,
-      filePath,
-      modeHint,
-      page,
-      lineTarget: options?.lineTarget,
-      sourceSessionId,
-      tabId,
-    }));
-    setActiveFileTabId(tabId);
+    fileWorkspaceRef.current?.open({
+      label: fileName, filePath, cwd: options?.cwd ?? activeCwd ?? undefined,
+      modeHint, page, lineTarget: options?.lineTarget, sourceSessionId,
+    }, options?.disposition);
+    setActiveFileTabId("files");
     setRightPanelOpen(true);
     // On mobile the file panel is full-screen; close the drawer so it shows.
     if (isMobile) setSidebarOpen(false);
-  }, [isMobile]);
+  }, [isMobile, activeCwd]);
 
-  const handleOpenLinkedFile = useCallback((filePath: string, page?: number, lineTarget?: import("@/lib/file-links").FileLineTarget) => {
-    handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, page, lineTarget });
-  }, [handleOpenFile, selectedSession?.id]);
+  const handleOpenLinkedFile = useCallback((filePath: string, page?: number, lineTarget?: import("@/lib/file-links").FileLineTarget, disposition?: FileDisposition) => {
+    handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, cwd: selectedSession?.cwd, page, lineTarget, disposition });
+  }, [handleOpenFile, selectedSession?.id, selectedSession?.cwd]);
 
   const handleOpenTerminal = useCallback((cwd: string) => {
     const existing = terminalTabs.find((tab) => tab.cwd === cwd);
@@ -1155,29 +1133,14 @@ export function AppShell() {
     const replacement = tab.closing === "restart" ? newTerminalTab(tab.cwd) : null;
     const remaining = terminalTabs.filter((item) => item.id !== tab.id);
     setTerminalTabs((tabs) => tabs.flatMap((item) => item.id !== tab.id ? [item] : replacement ? [replacement] : []));
-    setActiveFileTabId((current) => current !== tab.id ? current : replacement?.id ?? remaining.at(-1)?.id ?? fileTabs.at(-1)?.id ?? null);
-    if (!replacement && !remaining.length && !fileTabs.length) setRightPanelOpen(false);
+    setActiveFileTabId((current) => current !== tab.id ? current : replacement?.id ?? remaining.at(-1)?.id ?? "files");
+    if (!replacement && !remaining.length && !fileStatus.count) setRightPanelOpen(false);
   };
 
   const handleCloseFileTab = useCallback((tabId: string) => {
-    if (fileTabs.some((tab) => tab.id === tabId && tab.saving)) return;
-    const draft = fileTabs.find((tab) => tab.id === tabId)?.draft;
-    if (draft && draft.content !== draft.baseline && !window.confirm(translate("files.discardConfirm"))) return;
-    if (terminalTabs.some((tab) => tab.id === tabId)) {
-      setTerminalTabs((tabs) => tabs.map((tab) => tab.id === tabId && !tab.closing ? { ...tab, closing: "close" } : tab));
-      return;
-    }
-    setFileTabs((prev) => {
-      const next = prev.filter((t) => t.id !== tabId);
-      if (next.length === 0 && terminalTabs.length === 0) setRightPanelOpen(false);
-      return next;
-    });
-    setActiveFileTabId((cur) => {
-      if (cur !== tabId) return cur;
-      const remaining = fileTabs.filter((t) => t.id !== tabId);
-      return remaining.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? null;
-    });
-  }, [fileTabs, terminalTabs, translate]);
+    if (tabId === "files") { setRightPanelOpen(false); return; }
+    setTerminalTabs((tabs) => tabs.map((tab) => tab.id === tabId && !tab.closing ? { ...tab, closing: "close" } : tab));
+  }, []);
 
   const handleViewFullHistory = useCallback(() => {
     if (!selectedSession) return;
@@ -1266,7 +1229,10 @@ export function AppShell() {
     }
   }, [projectTrustBusy, projectTrustCwd]);
 
-  const activeFileTab = fileTabs.find((tab) => tab.id === activeFileTabId) ?? null;
+  const currentFileWorkspaceKey = JSON.stringify([selectedSession?.id ?? null, selectedSession?.cwd ?? activeCwd ?? null]);
+  const fileWorkspaceKey = parkedFileWorkspaceKey ?? currentFileWorkspaceKey;
+  const parkedFileCwd = parkedFileWorkspaceKey ? (JSON.parse(parkedFileWorkspaceKey) as [string | null, string | null])[1] ?? "" : "";
+  useEffect(() => { setParkedFileWorkspaceKey(null); }, [currentFileWorkspaceKey]);
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
   const windowTitle = activeCwdName ? `${activeCwdName} - Pi Web` : "Pi Web";
 
@@ -1916,7 +1882,7 @@ export function AppShell() {
   );
 
   return (
-    <>
+    <FileLinkMenuContext.Provider value={{ ...fileStatus, contextKey: fileWorkspaceKey }}>
     <style>{`
       @keyframes session-info-pop {
         0% {
@@ -2604,6 +2570,11 @@ export function AppShell() {
         ref={rightPanelResizer.panelRef}
         id="file-panel"
         inert={gitExplorerFullWidth}
+        onKeyDown={event => {
+          if (event.key === "Escape" && rightPanelFullWidth) {
+            event.preventDefault(); event.stopPropagation(); setRightPanelExpanded(false);
+          }
+        }}
         className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelFullWidth ? " right-panel-full-width" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
         style={{
           "--right-panel-width": `${rightPanelResizer.width}px`,
@@ -2670,45 +2641,24 @@ export function AppShell() {
 
         {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
-          {activeFileTab?.filePath ? (
-            <FileViewer
-              key={`${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}
-              filePath={activeFileTab.filePath}
-              cwd={activeCwd ?? undefined}
-              sourceSessionId={activeFileTab.sourceSessionId}
-              gitRefreshKey={explorerRefreshKey}
-              initialDisplayMode={activeFileTab.initialDisplayMode}
-              initialPage={activeFileTab.page}
-              initialLineTarget={activeFileTab.lineTarget}
-              initialState={activeFileTab.viewerState}
-              initialDraft={activeFileTab.draft}
-              savePending={activeFileTab.saving}
-              onDraftChange={(draft) => setFileTabs((tabs) => tabs.map((tab) =>
-                tab.id === activeFileTab.id && (tab.viewerRevision ?? 0) === (activeFileTab.viewerRevision ?? 0) ? { ...tab, draft } : tab
-              ))}
-              onSavingChange={(saving) => setFileTabs((tabs) => setFileSaving(
-                tabs, activeFileTab.id, activeFileTab.viewerRevision ?? 0, saving,
-              ))}
-              watchEnabled={rightPanelOpen}
-              onStateChange={(viewerState, lineTargetHandled) => handleFileViewerStateChange(
-                activeFileTab.id,
-                activeFileTab.viewerRevision ?? 0,
-                viewerState,
-                lineTargetHandled,
-              )}
-              onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
-              onAtMention={handleAtMention}
-              onOpenFile={(filePath, page, lineTarget) => handleOpenFile(
-                filePath,
-                getFileName(filePath),
-                { sourceSessionId: activeFileTab.sourceSessionId, page, lineTarget },
-              )}
-            />
-          ) : !terminalTabs.some((tab) => tab.id === activeFileTabId) ? (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
-               {translate("files.noneOpen")}
+          <div hidden={activeFileTabId !== "files"} style={{ height: "100%", display: activeFileTabId === "files" ? "flex" : "none", flexDirection: "column" }}>
+            <div hidden={!parkedFileWorkspaceKey} role="status" style={{ display: parkedFileWorkspaceKey ? "flex" : "none", alignItems: "center", gap: 8, padding: "5px 8px", fontSize: 12, borderBottom: "1px solid var(--border)" }}>
+              <span title={parkedFileCwd} style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{translate("workspace.parked", { cwd: parkedFileCwd })}</span>
+              <button type="button" className="file-workspace-return" onClick={() => { setParkedFileWorkspaceKey(null); fileWorkspaceRef.current?.focus(currentFileWorkspaceKey); }}>{translate("workspace.returnCurrent")}</button>
             </div>
-          ) : null}
+            <div style={{ flex: 1, minHeight: 0 }}>
+            <FileWorkspace ref={fileWorkspaceRef} workspaceKey={fileWorkspaceKey}
+              active={rightPanelOpen && activeFileTabId === "files"} presented={activeFileTabId === "files"} gitRefreshKey={explorerRefreshKey}
+              onStatus={setFileStatus} onShowFiles={() => { setActiveFileTabId("files"); setRightPanelOpen(true); }}
+              onEmpty={() => {
+                if (terminalTabs.length) setActiveFileTabId(terminalTabs.at(-1)!.id);
+                else setRightPanelOpen(false);
+              }}
+              onFocusWorkspace={key => setParkedFileWorkspaceKey(key === currentFileWorkspaceKey ? null : key)}
+              mentionCwd={selectedSession?.cwd ?? newSessionCwd ?? activeCwd ?? undefined}
+              onMentionLines={handleFileLineMention} onAtMention={handleAtMention} />
+            </div>
+          </div>
           {terminalTabs.map((tab) => (
             <div key={tab.id} hidden={tab.id !== activeFileTabId} style={{ width: "100%", height: "100%" }}>
               <TerminalPanel
@@ -2755,6 +2705,6 @@ export function AppShell() {
         onConfirm={(choice) => void handleTrustProject(choice)}
       />
     )}
-    </>
+    </FileLinkMenuContext.Provider>
   );
 }

@@ -87,7 +87,17 @@ export async function checkAppearanceThemes(page, openSettings) {
           && tile.contains(hit);
       });
     }), true, `All swatches, names and hit targets fit constrained Settings at ${viewport.width}px`);
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    const overflow = await page.evaluate(() => {
+      const describe = element => {
+        const box = element.getBoundingClientRect(), css = getComputedStyle(element);
+        return { tag: element.tagName, id: element.id, className: String(element.className), left: box.left, right: box.right,
+          width: box.width, position: css.position, overflowX: css.overflowX };
+      };
+      return { viewport: innerWidth, document: document.documentElement.scrollWidth,
+        tracked: [...document.querySelectorAll('#file-panel, .file-workspace, .file-workspace-status')].map(describe),
+        outside: [...document.querySelectorAll('body *')].filter(element => element.getBoundingClientRect().right > innerWidth + .5).slice(-12).map(describe) };
+    });
+    assert.equal(overflow.document <= overflow.viewport, true, `Constrained Settings page overflow: ${JSON.stringify(overflow)}`);
   }
   await radio("System").locator("..").click(); await expectTheme("light");
   await page.setViewportSize(originalViewport);

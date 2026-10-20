@@ -438,8 +438,11 @@ export async function PUT(
   try {
     const filePath = filePathFromApiSegments((await params).path);
     const roots = await getAllowedFileRoots();
-    const { content, expectedRevision } = body as { content: string; expectedRevision: string };
-    return NextResponse.json(saveEditableFile(filePath, roots, content, expectedRevision));
+    const { content, expectedRevision, expectedEditIdentity } = body as { content: string; expectedRevision: string; expectedEditIdentity?: unknown };
+    if (expectedEditIdentity !== undefined && (typeof expectedEditIdentity !== "string" || !/^[a-f0-9]{64}$/.test(expectedEditIdentity))) {
+      return NextResponse.json({ error: "Invalid edit identity" }, { status: 400 });
+    }
+    return NextResponse.json(saveEditableFile(filePath, roots, content, expectedRevision, expectedEditIdentity));
   } catch (error) {
     if (error instanceof FileEditError) return NextResponse.json({ error: error.message }, { status: error.status });
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });

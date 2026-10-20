@@ -8,6 +8,14 @@ const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const { TabBar } = await jiti.import("./TabBar.tsx");
 
+test("pane tab lists are named and target stable content hosts", () => {
+  const html = renderToStaticMarkup(React.createElement(I18nProvider, null,
+    React.createElement(TabBar, { tabs: [{ id: "view-1", label: "a.ts", filePath: "/p/a.ts" }],
+      activeTabId: "view-1", onSelectTab() {}, onCloseTab() {}, ariaLabel: "Pane 2", getPanelId: id => `panel-${id}` })));
+  assert.match(html, /role="tablist" aria-label="Pane 2"/);
+  assert.match(html, /role="tab" id="panel-view-1-tab" aria-controls="panel-view-1"/);
+});
+
 test("overflowing file and terminal tabs stretch above the scrollbar without fixed heights", () => {
   const tabs = Array.from({ length: 12 }, (_, index) => ({ id: `t${index}`, label: `file-${index}.ts`, filePath: `/p/file-${index}.ts`, ...(index === 11 ? { kind: "terminal" } : {}) }));
   const html = renderToStaticMarkup(React.createElement(I18nProvider, null,

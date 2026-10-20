@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 import { createJiti } from "jiti";
 import { checkFilePanel, checkFileDiffViews, checkEditableFile, checkMarkdownPreview, markdownPanelFixture, filePanelFixture } from "./file-panel.mjs";
 import { seedFileLineLinks, checkFileLineLinks } from "./file-line-links.mjs";
+import { checkFileWorkspace } from "./file-workspace.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
@@ -183,7 +184,7 @@ let context;
     usage: { input: 100, output: 20, cacheRead: 30, cacheWrite: 0, cost: { total: 0.0123 } },
   });
   writeSession(RICH, richEntries);
-  const fileLineFixtures = seedFileLineLinks({ project, writeSession, message });
+  const fileLineFixtures = seedFileLineLinks({ project, writeSession, message, workspacePeer: group === "markdown" });
   const externalReferenceFixtures = group === "markdown" ? seedExternalReferenceFixtures({ agentDir, writeSession, message }) : [];
   const followupSettings = group === "markdown" ? seedFollowupSettings({ agentDir }) : null;
   // The default page is 50 *visible* messages (user / assistant / compaction).
@@ -325,6 +326,7 @@ let context;
     if (response?.ok) {
       const { sessions } = await response.json();
       assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...WORKTREE_MANAGER_IDS, ...ACTIVITY_SUBAGENTS, ...externalReferenceFixtures.map((fixture) => fixture.id),
+        ...(group === "markdown" ? [fileLineFixtures.peerSessionId] : []),
         ...(group === "trust" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
       for (const id of ACTIVITY_SUBAGENTS) {
         assert.equal(sessions.find((session) => session.id === id)?.relation?.kind, "subagent", `${id} must have real subagent metadata`);
@@ -652,6 +654,7 @@ let context;
       assert.ok(marker.padding >= marker.font * 3, JSON.stringify(marker));
       await checkMarkdownPreview(page, markdownFile);
       await checkFileLineLinks(page, base, fileLineFixtures);
+      await checkFileWorkspace(page, base, fileLineFixtures, artifacts);
       await checkSkillInstructions(page, base, followupSettings);
       await checkModelOverrides(page, base);
       await checkManagedModelContext(page);

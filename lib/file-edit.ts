@@ -66,20 +66,35 @@ function canSave(filePath: string, stat: fs.Stats): boolean {
   } catch { return false; }
 }
 
+function editIdentityOf(filePath: string): string {
+  const physicalPath = fs.realpathSync(filePath);
+  return crypto.createHash("sha256")
+    .update(`file-edit-v1\0${process.platform === "win32" ? physicalPath.toLowerCase() : physicalPath}`).digest("hex");
+}
+
 export function loadEditableFile(filePath: string, roots: Set<string>) {
   const stat = checkTarget(filePath, roots);
+  const physicalIdentity = editIdentityOf(filePath);
   const snapshot = readSnapshot(filePath, stat);
-  return { ...snapshot, writable: canSave(filePath, stat) };
+  const writable = canSave(filePath, stat);
+  if (physicalIdentity !== editIdentityOf(filePath)) throw new FileEditError("File identity changed while reading", 409);
+  // Stable across compare-and-replace saves and parent-path aliases. This opaque
+  // browser coordination key is not a capability; every operation reauthorizes.
+  const editIdentity = writable ? physicalIdentity : undefined;
+  return { ...snapshot, writable, editIdentity };
 }
 
 /** Synchronous compare-and-replace: other Pi Web saves cannot interleave between
  * comparison and rename in this process. External filesystem writers can race. */
-export function saveEditableFile(filePath: string, roots: Set<string>, content: string, expectedRevision: string) {
+export function saveEditableFile(filePath: string, roots: Set<string>, content: string, expectedRevision: string, expectedEditIdentity?: string) {
   const bytes = Buffer.from(content, "utf8");
   if (bytes.length > MAX_EDIT_BYTES) throw new FileEditError("File too large to edit (1 MB limit)", 413);
   if (content.includes("\0")) throw new FileEditError("Not an editable text file", 415);
   const stat = checkTarget(filePath, roots);
   if (!canSave(filePath, stat)) throw new FileEditError("File is not writable", 403);
+  if (expectedEditIdentity !== undefined && expectedEditIdentity !== editIdentityOf(filePath)) {
+    throw new FileEditError("File identity changed; draft not saved", 409);
+  }
   if (!/^[a-f0-9]{64}$/.test(expectedRevision)) throw new FileEditError("Invalid revision", 400);
   const current = readSnapshot(filePath, stat);
   if (current.revision !== expectedRevision) throw new FileEditError("File changed on disk; draft not saved", 409);
@@ -93,7 +108,8 @@ export function saveEditableFile(filePath: string, roots: Set<string>, content: 
     fs.chmodSync(temp, stat.mode & 0o777);
     // Refuse a replaced target or escaped parent before installing the temp.
     const latest = checkTarget(filePath, roots);
-    if (latest.ino !== stat.ino || latest.dev !== stat.dev || readSnapshot(filePath, latest).revision !== expectedRevision) {
+    if (latest.ino !== stat.ino || latest.dev !== stat.dev || readSnapshot(filePath, latest).revision !== expectedRevision
+      || (expectedEditIdentity !== undefined && editIdentityOf(filePath) !== expectedEditIdentity)) {
       throw new FileEditError("File changed on disk; draft not saved", 409);
     }
     fs.renameSync(temp, filePath);

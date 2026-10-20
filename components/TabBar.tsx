@@ -3,41 +3,27 @@
 import { useState } from "react";
 import { getFileIcon } from "./FileIcons";
 import { useI18n } from "@/hooks/useI18n";
-import type { FileEditDraft, FileViewerDisplayMode, FileViewerState } from "@/lib/file-viewer-state";
-
-export interface Tab {
-  id: string;
-  label: string;
-  filePath: string;
-  kind?: "terminal";
-  closing?: boolean;
-  sourceSessionId?: string | null;
-  initialDisplayMode?: FileViewerDisplayMode;
-  /** PDF page requested by the link that opened this tab (`#page=N`). */
-  page?: number;
-  /** Pending explicit line jump; consumed when the viewer reports its state. */
-  lineTarget?: import("@/lib/file-links").FileLineTarget;
-  viewerState?: FileViewerState;
-  viewerRevision?: number;
-  draft?: FileEditDraft;
-  saving?: boolean;
-  pendingOpen?: import("./file-tab-state").OpenFileTabInput;
-}
+import type { FileTab as Tab } from "@/lib/file-tab";
+export type { FileTab as Tab } from "@/lib/file-tab";
 
 interface Props {
   tabs: Tab[];
   activeTabId: string;
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
+  onKeepTab?: (id: string) => void;
+  ariaLabel?: string;
+  getPanelId?: (id: string) => string;
 }
 
-export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
+export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onKeepTab, ariaLabel, getPanelId }: Props) {
   const { t } = useI18n();
   const [hoveredClose, setHoveredClose] = useState<string | null>(null);
 
   return (
     <div
       role="tablist"
+      aria-label={ariaLabel}
       style={{
         display: "flex",
         // Stretch above the horizontal scrollbar instead of clipping fixed-height tabs.
@@ -55,6 +41,8 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
           <div
             key={tab.id}
             role="tab"
+            id={getPanelId ? `${getPanelId(tab.id)}-tab` : undefined}
+            aria-controls={getPanelId?.(tab.id)}
             aria-label={tab.kind === "terminal" ? t("terminal.tabLabel", { name: tab.label }) :
               tab.draft && tab.draft.content !== tab.draft.baseline ? `${tab.label} — ${t("files.unsaved")}` : tab.label}
             aria-selected={isActive}
@@ -74,6 +62,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
               }
             }}
             onClick={() => onSelectTab(tab.id)}
+            onDoubleClick={() => onKeepTab?.(tab.id)}
             onMouseDown={(e) => {
               if (e.button === 1) e.preventDefault();
             }}
@@ -93,6 +82,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
               background: isActive ? "var(--bg)" : "var(--bg-panel)",
               cursor: "pointer",
               fontSize: 12,
+              fontStyle: tab.preview ? "italic" : undefined,
               color: isActive ? "var(--text)" : "var(--text-muted)",
               whiteSpace: "nowrap",
               maxWidth: 180,

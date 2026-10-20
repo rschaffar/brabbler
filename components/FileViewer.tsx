@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo, type ComponentProps, type CSSProperties, type MouseEvent } from "react";
+import { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo, type ComponentProps, type CSSProperties } from "react";
 import {
   Prism as SyntaxHighlighter,
   createElement as renderSyntaxNode,
@@ -10,6 +10,7 @@ import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
+import { useFileEditSession } from "@/hooks/useFileEditSession";
 import {
   DOCX_PREVIEW_MAX_BYTES,
   getFileExt,
@@ -19,7 +20,7 @@ import {
   isVideoPath,
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
-import { parseFileLineTarget, parsePdfPageFragment, resolveLocalFileHref, resolveLocalFileLink, shouldOpenLocalFileInApp, type FileLineTarget, type OpenFileLink } from "@/lib/file-links";
+import { parseFileLineTarget, parsePdfPageFragment, resolveLocalFileHref, resolveLocalFileLink, type FileLineTarget, type OpenFileLink } from "@/lib/file-links";
 import { navigateToFileLine } from "@/lib/file-line-navigation";
 import { rehypeMarkdownSourceLines } from "@/lib/markdown-source-lines";
 import { parseFrontmatter } from "@/lib/frontmatter";
@@ -29,6 +30,7 @@ import { DelimitedTable } from "./DelimitedTable";
 import { isDelimitedTablePath } from "@/lib/delimited-table";
 import { jumpToMarkdownFragment } from "@/lib/markdown-compat";
 import { BlockedFileLink } from "./BlockedFileLink";
+import { LocalFileLink } from "./LocalFileLink";
 import { FrontmatterCard } from "./FrontmatterCard";
 import { CommittedPatchDiff } from "./CommittedPatchDiff";
 import type { GitFileDiffResponse } from "@/lib/git-types";
@@ -54,9 +56,12 @@ interface Props {
   onAtMention?: (relativePath: string, isDir: boolean) => void;
   gitRefreshKey?: number;
   initialDisplayMode?: DisplayMode;
-  /** PDF page to open on first render (`#page=N` from a markdown link). */
+  /** PDF page requested by the current location command (`#page=N`). */
   initialPage?: number;
   initialLineTarget?: FileLineTarget;
+  navigationId?: number;
+  toolbar?: import("react").ReactNode;
+  onEditingChange?: () => void;
   initialState?: FileViewerState;
   onStateChange?: (state: FileViewerState, lineTargetHandled?: boolean) => void;
   initialDraft?: FileEditDraft;
@@ -89,12 +94,8 @@ function MarkdownPreviewLink({ href, children, ...props }: ComponentProps<"a"> &
   }
   const linkedFile = resolution?.kind === "local" ? resolution.filePath : null;
   if (!linkedFile || !onOpenFile) return <a href={href} {...props}>{children}</a>;
-  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!shouldOpenLocalFileInApp(event)) return;
-    event.preventDefault();
-    onOpenFile(linkedFile, parsePdfPageFragment(href) ?? undefined, parseFileLineTarget(href));
-  };
-  return <a href={href} {...props} onClick={handleClick}>{children}</a>;
+  return <LocalFileLink href={href} {...props} filePath={linkedFile} page={parsePdfPageFragment(href) ?? undefined}
+    lineTarget={parseFileLineTarget(href)} onOpenFile={onOpenFile}>{children}</LocalFileLink>;
 }
 
 // These functions are React element types, not render callbacks. Keep both
@@ -792,7 +793,7 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
   );
 }
 
-function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, watchEnabled = true }: Props) {
+function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, navigationId, watchEnabled = true }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -807,6 +808,9 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, watchEnab
   const previewUrl = isPdf
     ? `${getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined)}${pageFragment}`
     : getFileApiUrl(filePath, "preview", sourceSessionId, bust ? { v: bust } : undefined);
+  // Native PDF state is opaque: repeat page commands reload only this embed,
+  // never the stable file-view host or another file type's interactive state.
+  const previewKey = isPdf && initialPage ? `${previewUrl}:${navigationId ?? 0}` : previewUrl;
 
   useEffect(() => {
     setBust(0);
@@ -953,7 +957,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, watchEnab
           </div>
         ) : (
           <iframe
-            key={previewUrl}
+            key={previewKey}
             src={previewUrl}
             sandbox={isPdf ? undefined : "allow-same-origin"}
             title={t("i18n.previewFile", { file: getFileName(filePath) })}
@@ -977,6 +981,9 @@ export function FileViewer({
   initialState,
   initialPage,
   initialLineTarget,
+  navigationId,
+  toolbar,
+  onEditingChange,
   onStateChange,
   initialDraft,
   savePending,
@@ -994,7 +1001,7 @@ export function FileViewer({
     return <VideoViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
   }
   if (isDocumentPreviewPath(filePath)) {
-    return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} initialPage={initialPage} watchEnabled={watchEnabled} />;
+    return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} initialPage={initialPage} navigationId={navigationId} watchEnabled={watchEnabled} />;
   }
   return (
     <TextFileViewer
@@ -1007,6 +1014,9 @@ export function FileViewer({
       gitRefreshKey={gitRefreshKey}
       initialDisplayMode={initialDisplayMode}
       initialLineTarget={initialLineTarget}
+      navigationId={navigationId}
+      toolbar={toolbar}
+      onEditingChange={onEditingChange}
       initialState={initialState}
       onStateChange={onStateChange}
       initialDraft={initialDraft}
@@ -1028,6 +1038,9 @@ function TextFileViewer({
   gitRefreshKey,
   initialDisplayMode,
   initialLineTarget,
+  navigationId,
+  toolbar,
+  onEditingChange,
   initialState: restoredState,
   onStateChange,
   initialDraft,
@@ -1071,6 +1084,7 @@ function TextFileViewer({
   const probeEligibilityRef = useRef<{ path: string; cwd?: string; sessionId?: string | null; edit: boolean; gitDiff: boolean } | null>(null);
   const gitDiffRequestRef = useRef(0);
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const [viewportEpoch, setViewportEpoch] = useState(0);
   const autoDiffAppliedRef = useRef(false);
   const defaultPreviewEligibleRef = useRef(
     initialState === undefined && initialDisplayMode === undefined,
@@ -1091,14 +1105,16 @@ function TextFileViewer({
   const [editSnapshot, setEditSnapshot] = useState<{ content: string; revision: string; writable: boolean } | null>(
     initialDraft ? { content: initialDraft.baseline, revision: initialDraft.revision, writable: true } : null,
   );
-  const [draft, setDraft] = useState<FileEditDraft | undefined>(initialDraft);
+  const editSession = useFileEditSession();
+  const { draft, setDraft, saving, setSaving, bind: bindEditIdentity, identity: editIdentity } = editSession;
+  const savingRef = useRef(saving);
+  savingRef.current = saving;
   const draftRef = useRef(draft);
   const onDraftChangeRef = useRef(onDraftChange);
   onDraftChangeRef.current = onDraftChange;
   const onSavingChangeRef = useRef(onSavingChange);
   onSavingChangeRef.current = onSavingChange;
-  const [editing, setEditing] = useState(Boolean(!initialLineTarget && initialDraft && initialDraft.content !== initialDraft.baseline));
-  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(Boolean(!initialLineTarget && draft && draft.content !== draft.baseline));
   const savingElsewhere = Boolean(savePending && !saving);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [externalChange, setExternalChange] = useState(false);
@@ -1110,7 +1126,30 @@ function TextFileViewer({
     draftRef.current = next;
     setDraft(next);
     onDraftChangeRef.current?.(next);
-  }, []);
+  }, [setDraft]);
+
+  const navigationRestoreRef = useRef({ state: restoredState, mode: initialDisplayMode });
+  navigationRestoreRef.current = { state: restoredState, mode: initialDisplayMode };
+  // A location command is not a component identity. Clear even a stale highlight
+  // when a new target is beyond EOF, without remounting the reader/editor.
+  useEffect(() => {
+    navigatedModeRef.current = undefined;
+    lineTargetHandledRef.current = false;
+    previewNavigationAttemptedRef.current = false;
+    targetLoadOffsetRef.current = undefined;
+    contentRef.current?.querySelectorAll("[data-file-line-target]").forEach(element => element.removeAttribute("data-file-line-target"));
+    if (initialLineTarget) setEditing(false);
+    else if (navigationId !== undefined) {
+      const restore = navigationRestoreRef.current;
+      const mode = restore.state?.displayMode ?? restore.mode;
+      if (mode) { setDisplayMode(mode); viewerStateRef.current.displayMode = mode; }
+      if (restore.state) {
+        setWrapLines(restore.state.wrapLines);
+        viewerStateRef.current = { ...restore.state };
+        scrollRestorePendingRef.current = true;
+      }
+    }
+  }, [navigationId, initialLineTarget]);
 
   onStateChangeRef.current = onStateChange;
 
@@ -1180,6 +1219,7 @@ function TextFileViewer({
   }, [sourceSessionId, cwd]);
 
   const fetchEditable = useCallback(async (targetPath: string) => {
+    if (savingRef.current) return;
     const eligible = probeEligibilityRef.current;
     if (!eligible || eligible.path !== targetPath || eligible.cwd !== cwd || eligible.sessionId !== sourceSessionId) return;
     const requestId = ++editRequestRef.current;
@@ -1191,15 +1231,20 @@ function TextFileViewer({
     }
     try {
       const response = await fetch(getFileApiUrl(targetPath, "edit", sourceSessionId));
-      const next = await response.json() as { content?: string; revision?: string; writable?: boolean };
-      if (requestId !== editRequestRef.current) return;
+      const next = await response.json() as { content?: string; revision?: string; writable?: boolean; editIdentity?: string };
+      if (requestId !== editRequestRef.current || savingRef.current) return;
       if (!response.ok || typeof next.content !== "string" || typeof next.revision !== "string") {
         if (draftRef.current && draftRef.current.content !== draftRef.current.baseline) setExternalChange(true);
         else setEditSnapshot(null);
         return;
       }
       const currentDraft = draftRef.current;
-      setEditSnapshot({ content: next.content, revision: next.revision, writable: next.writable === true });
+      if (next.writable && next.editIdentity && !bindEditIdentity(next.editIdentity)) {
+        setEditSnapshot({ content: next.content, revision: next.revision, writable: false });
+        setExternalChange(true);
+        return;
+      }
+      setEditSnapshot({ content: next.content, revision: next.revision, writable: next.writable === true && Boolean(next.editIdentity) });
       if (currentDraft && currentDraft.content !== currentDraft.baseline) {
         setExternalChange(next.revision !== currentDraft.revision);
       } else {
@@ -1212,7 +1257,7 @@ function TextFileViewer({
         else setEditSnapshot(null);
       }
     }
-  }, [sourceSessionId, cwd, setFileDraft]);
+  }, [sourceSessionId, cwd, setFileDraft, bindEditIdentity]);
 
   const fetchGitDiff = useCallback(async (targetPath: string) => {
     const eligible = probeEligibilityRef.current;
@@ -1247,6 +1292,8 @@ function TextFileViewer({
     const eligible = probeEligibilityRef.current;
     if (!current || current.content === current.baseline || saving || savingElsewhere || !eligible?.edit
       || eligible.path !== filePath || eligible.cwd !== cwd || eligible.sessionId !== sourceSessionId) return;
+    editRequestRef.current += 1;
+    savingRef.current = true;
     setSaving(true);
     onSavingChangeRef.current?.(true);
     setSaveError(null);
@@ -1254,7 +1301,7 @@ function TextFileViewer({
       const response = await fetch(getFileApiUrl(filePath, "save", sourceSessionId), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: current.content, expectedRevision: current.revision }),
+        body: JSON.stringify({ content: current.content, expectedRevision: current.revision, expectedEditIdentity: editIdentity }),
       });
       const result = await response.json() as { revision?: string; error?: string };
       if (!response.ok || !result.revision) {
@@ -1274,10 +1321,12 @@ function TextFileViewer({
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {
+      editRequestRef.current += 1;
+      savingRef.current = false;
       setSaving(false);
       onSavingChangeRef.current?.(false);
     }
-  }, [filePath, cwd, sourceSessionId, saving, savingElsewhere, setFileDraft, fetchContent, fetchGitDiff]);
+  }, [filePath, cwd, sourceSessionId, saving, savingElsewhere, editIdentity, setSaving, setFileDraft, fetchContent, fetchGitDiff]);
 
   // Reset and load the file itself when its identity changes. Live watching is
   // managed separately so pausing it never clears the displayed content.
@@ -1539,12 +1588,13 @@ function TextFileViewer({
     if (requestedInitialDisplayMode === "diff" && hasGitDiff && displayMode !== "diff") return;
 
     const content = contentRef.current;
-    if (!content) return;
+    if (!content || !content.clientWidth || !content.clientHeight) return;
 
     content.scrollTop = viewerStateRef.current.scrollTop;
     content.scrollLeft = viewerStateRef.current.scrollLeft;
     scrollRestorePendingRef.current = false;
   }, [
+    viewportEpoch,
     data?.content,
     displayMode,
     error,
@@ -1554,6 +1604,14 @@ function TextFileViewer({
     loading,
     requestedInitialDisplayMode,
   ]);
+
+  useEffect(() => {
+    const root = contentRef.current;
+    if (!root) return;
+    const observer = new ResizeObserver(() => setViewportEpoch(epoch => epoch + 1));
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [loading, error]);
 
   useEffect(() => {
     if (editing || (effectiveDisplayMode !== "source" && !(isMarkdown && effectiveDisplayMode === "preview"))) {
@@ -1579,7 +1637,7 @@ function TextFileViewer({
       && !initialDisplayMode && !previewNavigationAttemptedRef.current) return;
     if (effectiveDisplayMode === "preview") previewNavigationAttemptedRef.current = true;
     const root = contentRef.current;
-    if (!root || navigatedModeRef.current === effectiveDisplayMode) return;
+    if (!root || !root.clientWidth || !root.clientHeight || navigatedModeRef.current === effectiveDisplayMode) return;
     // Missing/stale locations are not silently relabeled as the last line.
     if (initialLineTarget.line > sourceLines.length) {
       lineTargetHandledRef.current = true;
@@ -1595,7 +1653,7 @@ function TextFileViewer({
       // A document containing only hidden markup has no rendered block to target.
       updateDisplayMode("source");
     }
-  }, [initialLineTarget, loading, error, editing, data, isDeletedDiff, effectiveDisplayMode, isMarkdown, hasPreview, initialState, initialDisplayMode, sourceLines.length, loadingMore, fetchContent, filePath, updateDisplayMode]);
+  }, [viewportEpoch, navigationId, initialLineTarget, loading, error, editing, data, isDeletedDiff, effectiveDisplayMode, isMarkdown, hasPreview, initialState, initialDisplayMode, sourceLines.length, loadingMore, fetchContent, filePath, updateDisplayMode]);
 
   if (loading || (requestedInitialDisplayMode === "diff" && gitDiffLoading && !data)) {
     return (
@@ -1688,10 +1746,12 @@ function TextFileViewer({
           )}
 
           <div className="file-viewer-actions">
-            {(editSnapshot?.writable || dirty) && !isDeletedDiff && (
+            {toolbar}
+            {editSession.blocked && <button type="button" className="file-viewer-mode-button" onClick={editSession.focusOwner}>{t("workspace.goToEditor")}</button>}
+            {!editSession.blocked && (editSnapshot?.writable || dirty) && !isDeletedDiff && (
               <>
                 <button type="button" className="file-viewer-mode-button" aria-pressed={editing} disabled={savingElsewhere}
-                  onClick={() => setEditing((value) => !value)}>{t("files.edit")}</button>
+                  onClick={() => { if (editSession.claim()) { onEditingChange?.(); setEditing((value) => !value); } }}>{t("files.edit")}</button>
                 {dirty && <button type="button" className="file-viewer-mode-button"
                   disabled={saving || savingElsewhere || externalChange || !editSnapshot?.writable} onClick={() => void saveDraft()}>{saving ? t("files.saving") : t("i18n.save")}</button>}
               </>
@@ -1813,6 +1873,7 @@ function TextFileViewer({
         onScroll={(event) => {
           viewerStateRef.current.scrollTop = event.currentTarget.scrollTop;
           viewerStateRef.current.scrollLeft = event.currentTarget.scrollLeft;
+          onStateChangeRef.current?.({ ...viewerStateRef.current });
         }}
         style={{ flex: 1, overflow: "auto", background: "var(--bg)", paddingBottom: data?.truncated ? 48 : undefined }}
       >

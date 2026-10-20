@@ -278,6 +278,16 @@ let browser;
       await showSidebar();
       await page.getByText("note.txt", { exact: true }).click();
       await page.getByText("File viewer fixture", { exact: true }).waitFor();
+      if (viewport.width > 640) {
+        const pane = page.locator('#file-panel [data-file-pane="pane-1"]');
+        const streamsBeforeSplit = streamRequests.length;
+        await pane.getByLabel("Pane actions").click();
+        await pane.getByRole("button", { name: "Split below", exact: true }).click();
+        await page.waitForFunction(() => document.querySelectorAll('#file-panel [data-file-pane]').length === 2);
+        assert.equal(await terminalNode.evaluate(node => node.isConnected), true, "file splits retain the live xterm host");
+        assert.equal(created.size, 1, "file splits never create a PTY");
+        assert.equal(streamRequests.length, streamsBeforeSplit, "file geometry does not replace terminal SSE");
+      }
       assert.equal(await page.locator(".terminal-panel").count(), 1);
       assert.equal(await page.locator(".terminal-panel").isVisible(), false);
       if (calibratedFont) await setMono("serif");

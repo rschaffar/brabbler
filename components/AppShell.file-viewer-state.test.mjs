@@ -1,45 +1,35 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+const shell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
+const workspace = await readFile(new URL("./FileWorkspace.tsx", import.meta.url), "utf8");
 
-const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
-
-function fileContentBlock() {
-  const start = source.indexOf("{/* Only the active viewer");
-  const end = source.indexOf("</div>\n      </div>\n    </div>", start);
-  assert.notEqual(start, -1, "file content comment not found");
-  assert.notEqual(end, -1, "end of file content block not found");
-  return source.slice(start, end);
-}
-
-test("only the active file tab mounts a FileViewer", () => {
-  const block = fileContentBlock();
-  assert.match(block, /activeFileTab\?\.filePath \? \(/);
-  assert.doesNotMatch(block, /fileTabs\.map\(/);
-  assert.equal(block.match(/<FileViewer/g)?.length, 1);
+test("the shell delegates file lifetime to one retained workspace, independently of terminal hosts", () => {
+  assert.equal(shell.match(/<FileWorkspace /g)?.length, 1);
+  assert.doesNotMatch(shell, /<FileViewer/);
+  assert.match(shell, /terminalTabs\.map\(\(tab\) => \(/);
+  assert.match(shell, /active=\{rightPanelOpen && tab\.id === activeFileTabId\}/);
 });
-
-test("the active viewer restores tab state and saves it with a revision", () => {
-  const block = fileContentBlock();
-  assert.match(block, /key=\{`\$\{activeFileTab\.id\}:\$\{activeFileTab\.viewerRevision \?\? 0\}`\}/);
-  assert.match(block, /initialState=\{activeFileTab\.viewerState\}/);
-  assert.match(block, /handleFileViewerStateChange\(\s*activeFileTab\.id,\s*activeFileTab\.viewerRevision \?\? 0,/);
+test("views use stable identity and explicit location commands rather than navigation-key remounts", () => {
+  assert.match(workspace, /key=\{composite\(key, view\.id\)\}/);
+  assert.match(workspace, /navigationId=\{view\.viewerRevision\}/);
+  assert.match(workspace, /initialState=\{view\.viewerState\}/);
+  assert.doesNotMatch(workspace, /key=\{[^\n]*viewerRevision/);
 });
-
-test("dirty drafts persist per tab and a pending save blocks tab closure", () => {
-  const block = fileContentBlock();
-  assert.match(block, /initialDraft=\{activeFileTab\.draft\}/);
-  assert.match(block, /onDraftChange=\{\(draft\) => setFileTabs/);
-  assert.match(block, /onSavingChange=\{\(saving\) => setFileTabs/);
-  assert.match(source, /if \(fileTabs\.some\(\(tab\) => tab\.id === tabId && tab\.saving\)\) return/);
+test("resource edit owners retain drafts, settle saves and guard close operations", () => {
+  assert.match(workspace, /const renderViewer = selected \|\| Boolean\(session\.draft \|\| session\.saving\)/);
+  assert.match(workspace, /if \(key !== props\.workspaceKey && !renderViewer\) return \[\]/);
+  assert.match(workspace, /\{renderViewer && <FileEditContext\.Provider/);
+  assert.match(workspace, /if \(ids\.some\(id => protect\(key, id\)\.saving\)\) return false/);
+  assert.match(workspace, /FileEditContext\.Provider/);
+  assert.match(workspace, /edits\.dirty/);
 });
-
-test("closing the file panel pauses the active viewer watcher", () => {
-  assert.match(fileContentBlock(), /watchEnabled=\{rightPanelOpen\}/);
+test("hidden readers retain their host but pause their watcher", () => {
+  assert.match(workspace, /watchEnabled=\{visible && props\.active\}/);
+  assert.match(workspace, /hidden=\{!visible\} inert=\{!visible\}/);
 });
-
-test("markdown preview links forward a PDF page fragment to the viewer", () => {
-  const block = fileContentBlock();
-  assert.match(block, /onOpenFile=\{\(filePath, page, lineTarget\) => handleOpenFile\(/);
-  assert.match(block, /\{ sourceSessionId: activeFileTab\.sourceSessionId, page, lineTarget \}/);
+test("file links retain page, line and originating read context", () => {
+  assert.match(workspace, /onOpenFile=\{\(filePath, page, lineTarget, disposition\)/);
+  assert.match(workspace, /cwd: view\.cwd, sourceSessionId: view\.sourceSessionId, page, lineTarget/);
+  assert.match(workspace, /initialPage=\{view\.page\} initialLineTarget=\{view\.lineTarget\}/);
 });

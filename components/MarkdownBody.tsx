@@ -1,13 +1,14 @@
 "use client";
 
-import { createContext, useContext, useMemo, type ComponentProps, type MouseEvent } from "react";
+import { createContext, useContext, useMemo, type ComponentProps } from "react";
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
-import { parseFileLineTarget, parsePdfPageFragment, resolveInlineFileReference, resolveLocalFileHref, resolveLocalFileLink, shouldOpenLocalFileInApp, type OpenFileLink } from "@/lib/file-links";
+import { parseFileLineTarget, parsePdfPageFragment, resolveInlineFileReference, resolveLocalFileHref, resolveLocalFileLink, type OpenFileLink } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
 import { jumpToMarkdownFragment, markdownDocumentRehypePlugins, markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
 import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
 import { BlockedFileLink } from "./BlockedFileLink";
+import { LocalFileLink } from "./LocalFileLink";
 
 const MarkdownLinkContext = createContext(false);
 
@@ -27,11 +28,7 @@ function InlineFileCode({ children, className, cwd, onOpenFile, ...props }: Comp
     : null;
   const code = <code className={className} {...props}>{children}</code>;
   if (!reference || !onOpenFile) return code;
-  return <a href={String(children)} onClick={(event) => {
-    if (!shouldOpenLocalFileInApp(event)) return;
-    event.preventDefault();
-    onOpenFile(reference.filePath, undefined, reference.lineTarget);
-  }}>{code}</a>;
+  return <LocalFileLink href={String(children)} filePath={reference.filePath} lineTarget={reference.lineTarget} onOpenFile={onOpenFile}>{code}</LocalFileLink>;
 }
 
 function MarkdownImage({
@@ -118,19 +115,10 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
         );
       }
 
-      const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-        if (!shouldOpenLocalFileInApp(event)) return;
-        const target = event.currentTarget.getAttribute("target");
-        if (target && target !== "_self") return;
-        event.preventDefault();
-        openFile(filePath, parsePdfPageFragment(href) ?? undefined, parseFileLineTarget(href));
-      };
-
       return (
         <MarkdownLinkContext.Provider value={true}>
-          <a href={href} {...props} onClick={handleClick}>
-            {children}
-          </a>
+          <LocalFileLink href={href} {...props} filePath={filePath} page={parsePdfPageFragment(href) ?? undefined}
+            lineTarget={parseFileLineTarget(href)} onOpenFile={openFile}>{children}</LocalFileLink>
         </MarkdownLinkContext.Provider>
       );
     },
