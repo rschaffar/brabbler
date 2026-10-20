@@ -50,6 +50,13 @@ The archived 2026-10-20 easy-wins, security-boundaries and upstream-followups pl
 - Local manifest/lock/Nix pins are unchanged; `git diff --check` passed. Existing unrelated ref-cleanup lint warnings remain warnings.
 - **Acceptance coordination:** another task's two/two full run and focused activity run were observed. User chose **Wait, then run four/four** through `ask_user`. Do not reduce this batch's normal complete-acceptance width or touch the other task's processes/resources. Source writers remain paused during every export.
 
+### Rebase and complete-acceptance iteration
+
+- The coordinated peer runs finished before our full launch. Local target advanced to Activity Later merge `ef90c809970aebf4c412d340a67d9918a10eb1dc`; guarded rebase produced `61a837ab65a915e45a4a15444cae769609a916f5`. Range-diff confirms the feature patch is unchanged from `cdf717a9c26349042d4ea5df47a6b8f2afe5ba09`. Incoming Activity/terminal teardown changes are preserved.
+- First `nix run .#test -- all --workers 4 --jobs 4` on `61a837a` failed in **179s end-to-end**, including in-command realization: `/tmp/pi-web-composer-all.JkLhov.log`, core `/tmp/pi-web-test-core.Yb7INA/run.json`, browser `/tmp/pi-web-test-browser.tSJjrV/run.json`. Admission had 32 logical CPUs/about 56 GiB available, with peer acceptance no longer active. Core stopped on two old `MobilePwaLayout.test.mjs` source-shape contracts: direct `requestAnimationFrame(update)` and compact-only textarea flex. The replacement assertions require the actual frame-clearing/update callback and capability-aware stacked layout, retaining the viewport-width invariant. Behavioral viewport/layout regressions remain unchanged. The runner cancelled/drained browser peers; no full browser/deployment pass is claimed from this run.
+
+- Corrected layout contracts passed focused `core --jobs 4 --file components/MobilePwaLayout.test.mjs --file components/ChatInput.test.mjs --file hooks/useViewportHeight.test.mjs`: **3 files / 47 tests** plus static checks, **43s command wall time**; `/tmp/pi-web-composer-layout-core.MxVgzu.log`, `/tmp/pi-web-test-core.IEEltC/run.json`. No application inputs changed after `61a837a`.
+
 ## Risks and verification limits
 
 Browser event ordering is not established by source-regex tests. Upstream quote insertion is synchronous/native while local insertion is deferred. Upstream keyboard CSS assumes different toolbar structure and must not hide this fork's Stop. Native phone keyboards, Safari/PWA and physical IME behavior cannot be certified by Chromium viewport simulation; record that gap honestly. No persistent-format migration or credential handling is needed.

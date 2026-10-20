@@ -28,7 +28,7 @@ test("tracks the visual viewport while the software keyboard is open", () => {
   assert.match(appShellSource, /height: "var\(--app-viewport-height, 100dvh\)"/);
   assert.match(appShellSource, /data-mobile-toolbar-file=\{mobile \? "true" : undefined\}/);
   assert.match(viewportHookSource, /window\.visualViewport/);
-  assert.match(viewportHookSource, /window\.requestAnimationFrame\(update\)/);
+  assert.match(viewportHookSource, /window\.requestAnimationFrame\(\(\) => \{\s*frameId = null;\s*update\(\);\s*\}\)/);
   assert.match(viewportHookSource, /window\.addEventListener\("resize", scheduleUpdate\)/);
   assert.match(viewportHookSource, /window\.addEventListener\("focusout", scheduleUpdate\)/);
   assert.match(viewportHookSource, /--app-viewport-height/);
@@ -43,7 +43,8 @@ test("contains chat content and inputs within the mobile viewport", () => {
   assert.match(cssSource, /\.markdown-code-block \{[\s\S]*?min-width: 0;[\s\S]*?max-width: 100%;/);
   assert.match(chatWindowSource, /overflow-x-hidden overflow-y-auto/);
   assert.match(chatWindowSource, /maxHeight: "min\(760px, 100%\)"/);
-  assert.match(chatInputSource, /flex: compact \? "none" : 1,\s*minWidth: 0,\s*width: "100%",/);
+  assert.match(chatInputSource, /const stackedComposer = stacksComposerLayout\(compact, isMobile, isStreaming && Boolean\(onSteer \|\| onFollowUp\)\)/);
+  assert.match(chatInputSource, /flex: stackedComposer \? "none" : 1,\s*minWidth: 0,\s*width: "100%",/);
 });
 
 test("prevents iOS focus zoom from widening the layout", () => {
