@@ -87,10 +87,27 @@ export async function checkFileWorkspace(page, base, fixture) {
   await page.waitForFunction(() => document.querySelectorAll('[data-file-pane]').length === 4);
   assert.equal(await guideNode.evaluate(node => node.isConnected), true);
   const fourth = panel.locator('[data-file-pane="pane-4"]');
+  const secondGuide = panel.getByRole("tabpanel", { name: "Pane 4 — split-guide.md", exact: true });
+  await secondGuide.getByRole("heading", { name: "Guided review", exact: true }).waitFor();
+  const secondGuideNode = await secondGuide.elementHandle();
+  await fourth.getByLabel("File link destination").selectOption("pane-3");
+  await secondGuide.getByRole("link", { name: "Source 3", exact: true }).click();
+  await panel.getByRole("tabpanel", { name: "Pane 3 — split-source-3.ts", exact: true }).locator('[data-line-number="40"][data-file-line-target]').waitFor();
+  await guide.getByRole("link", { name: "Source 2", exact: true }).click();
+  await panel.getByRole("tabpanel", { name: "Pane 2 — split-source-2.ts", exact: true }).locator('[data-line-number="40"][data-file-line-target]').waitFor();
+  assert.equal(await first.getByLabel("File link destination").inputValue(), "pane-2");
+  assert.equal(await fourth.getByLabel("File link destination").inputValue(), "pane-3");
   await fourth.getByLabel("Pane actions").click();
-  await fourth.getByRole("button", { name: "Close pane", exact: true }).click();
-  await page.getByRole("dialog", { name: "Close pane", exact: true }).getByRole("button", { name: "Close tabs", exact: true }).click();
+  await fourth.getByRole("button", { name: /^Move tab to Pane 3/ }).click();
   await page.waitForFunction(() => document.querySelectorAll('[data-file-pane]').length === 3);
+  assert.equal(await secondGuideNode.evaluate(node => node.isConnected), true, "moving a live view must retain its host");
+  assert.equal(await panel.locator('[data-file-pane="pane-3"]').getByLabel("File link destination").inputValue(), "closed", "a moved guide cannot route into its own group");
+  await first.getByLabel("Pane actions").click();
+  await first.getByRole("button", { name: "Focus this pane", exact: true }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-file-pane]')].filter(node => node.getBoundingClientRect().width > 0).length === 1);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-file-pane]')].filter(node => node.getBoundingClientRect().width > 0).length === 3);
+  assert.equal(await panel.getByRole("button", { name: "Restore file panel width", exact: true }).getAttribute("aria-pressed"), "true", "pane Escape restores panes, not the outer workspace");
   // The same saved split tree survives a phone-sized projection and restoration.
   await page.setViewportSize({ ...originalViewport, width: 390 });
   await panel.getByLabel("Choose pane").waitFor();
@@ -113,6 +130,11 @@ export async function checkFileWorkspace(page, base, fixture) {
   assert.equal(await panel.locator("[data-file-pane]").count(), 2);
   await recovery.getByRole("button", { name: "Cancel", exact: true }).click();
   await guide.waitFor({ state: "visible" });
+  await first.getByLabel("Pane actions").click();
+  await first.getByRole("button", { name: "Reset file layout", exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-file-pane]').length === 1);
+  assert.equal(await guideNode.evaluate(node => node.isConnected), true, "reset retains the selected guide host");
+  assert.equal(await panel.getByRole("tab", { name: /^split-guide.md · View/ }).count(), 2, "reset retains and disambiguates both guide views");
   await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
   console.log("PASS: explicit three-pane guide routing, preview reuse, edit ownership, responsive projection and stale destination recovery");
 }
