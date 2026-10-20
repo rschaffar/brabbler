@@ -1,4 +1,5 @@
 import type { JsonAgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { withoutContentSignatures, withoutMessageSignatures } from "./message-signatures";
 
 export interface AgentEventLike {
   type: string;
@@ -71,14 +72,19 @@ export function toClientAgentEvent(
   // whole prompt plus every tool schema and are never rendered, so drop them
   // before they cost the browser bandwidth.
   if (isSystemMessageEvent(event)) return null;
+  if (event.type === "message_start" || event.type === "message_end") {
+    const message = withoutMessageSignatures(event.message);
+    if (message !== event.message) return { ...event, message };
+  }
 
   if (event.type === "message_update") {
-    const assistantMessageEvent = event.assistantMessageEvent;
-    if (
-      typeof assistantMessageEvent !== "object"
-      || assistantMessageEvent === null
-      || Array.isArray(assistantMessageEvent)
-    ) return null;
+    const raw = event.assistantMessageEvent;
+    if (!isObject(raw)) return null;
+    let assistantMessageEvent = raw;
+    if ("toolCall" in raw) {
+      const toolCall = withoutContentSignatures(raw.toolCall);
+      if (toolCall !== raw.toolCall) assistantMessageEvent = { ...raw, toolCall };
+    }
 
     if (!("partial" in assistantMessageEvent)) {
       return {

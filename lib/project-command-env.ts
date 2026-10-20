@@ -98,6 +98,9 @@ export function createProjectCommandBashExtension(options: {
       const displayDefinition = createBashToolDefinition(options.cwd);
       pi.registerTool({
         ...displayDefinition,
+        // This replaces built-in bash: only explicit tool/default selection may
+        // activate it, including after SDK resource reload.
+        defaultActive: false,
         execute(toolCallId, params, signal, onUpdate, context) {
           const executionDefinition = createBashToolDefinition(options.cwd, {
             commandPrefix: options.settings.getShellCommandPrefix(),

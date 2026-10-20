@@ -26,6 +26,8 @@ export interface SubagentProfile {
   systemPrompt: string;
   tools: string[];
   extensionTools?: string[];
+  /** Resolve raw extension denials against loaded aliases at spawn time. */
+  disallowedExtensionTools?: string[];
   loadSkills: boolean;
   loadExtensions: boolean;
   model?: string;
@@ -255,7 +257,9 @@ function unmanagedFrontmatter(stored: Record<string, unknown>): Record<string, u
  * another runtime's `ext:<name>` selectors on every save — carry them through.
  */
 function composeToolsField(tools: string[], storedTools: unknown): string {
-  const selectors = stringList(storedTools).filter((tool) => tool.startsWith("ext:"));
+  const selectors = stringList(storedTools).filter((tool) => tool.toLowerCase().startsWith("ext:"));
+  // Tool suffixes are case-sensitive; deduplicate only identical authored
+  // selectors rather than lowercasing Search and search into one grant.
   const combined = [...tools, ...selectors.filter((selector) => !tools.includes(selector))];
   return combined.length > 0 ? combined.join(", ") : "none";
 }
@@ -286,9 +290,10 @@ function parseProfileFile(filePath: string, scope: SubagentScope): SubagentProfi
     const maxTurnsValue = typeof data?.max_turns === "number" ? Math.floor(data.max_turns) : undefined;
     const tools = parseTools(data?.tools, DEFAULT_TOOLS);
     const disallowedTools = new Set(parseTools(data?.disallowed_tools, []));
-    const disallowedExtensionTools = new Set(parseExtensionToolSelectors(data?.disallowed_tools).map((tool) => tool.toLowerCase()));
-    const extensionTools = parseExtensionToolSelectors(data?.tools)
-      .filter((tool) => !disallowedExtensionTools.has(tool.toLowerCase()));
+    // Keep authored grants even if denied: an empty grant list is the legacy
+    // all-extension-tools fallback. Resolve both sides together at spawn time.
+    const disallowedExtensionTools = parseExtensionToolSelectors(data?.disallowed_tools);
+    const extensionTools = parseExtensionToolSelectors(data?.tools);
     return {
       name,
       displayName: stringValue(data?.display_name) ?? name,
@@ -296,6 +301,7 @@ function parseProfileFile(filePath: string, scope: SubagentScope): SubagentProfi
       systemPrompt: rest.trim(),
       tools: tools.filter((tool) => !disallowedTools.has(tool)),
       ...(extensionTools.length > 0 ? { extensionTools } : {}),
+      ...(disallowedExtensionTools.length > 0 ? { disallowedExtensionTools } : {}),
       loadSkills: resourceBoolean(data?.load_skills ?? data?.skills, false),
       loadExtensions: resourceBoolean(data?.load_extensions ?? data?.extensions, extensionTools.length > 0),
       ...(stringValue(data?.model) ? { model: stringValue(data?.model) } : {}),
@@ -553,32 +559,13 @@ export function withSubagentExtensionTools(
 ): string[] {
   return [...new Set([
     ...profileTools,
-    ...[...extensionToolNames].filter((name) => !SUBAGENT_CONTROL_TOOLS.has(name)),
+    // Extensions may replace a permitted built-in, never re-add a forbidden
+    // built-in through an ext:* grant (including PowerShell -> bash mapping).
+    ...[...extensionToolNames].filter((name) => !SUBAGENT_CONTROL_TOOLS.has(name) && !BUILTIN_TOOLS.has(name) && name !== "powershell"),
   ])];
 }
 
-export function selectSubagentExtensionTools(
-  extensions: Iterable<{ path: string; sourceInfo?: { source?: string }; tools: Map<string, unknown> }>,
-  selectors: readonly string[],
-): string[] {
-  const wanted = selectors.map((selector) => selector.slice(4).toLowerCase());
-  return [...extensions].flatMap((extension) => {
-    const pathName = extension.path.replaceAll("\\", "/").split("/").at(-2) ?? extension.path;
-    const sourceName = (extension.sourceInfo?.source ?? "").replace(/^npm:/, "");
-    const extensionNames = new Set([pathName.toLowerCase(), sourceName.toLowerCase()]);
-    const selected = wanted.some((selector) => {
-      if (selector === "*") return true;
-      const [extensionName, toolName] = selector.split("/", 2);
-      return extensionNames.has(extensionName) && (!toolName || extension.tools.has(toolName));
-    });
-    if (!selected) return [];
-    return [...extension.tools.keys()].filter((toolName) => wanted.some((selector) => {
-      if (selector === "*" || selector.endsWith("/*")) return selector === "*" || extensionNames.has(selector.slice(0, -2));
-      const [extensionName, selectedTool] = selector.split("/", 2);
-      return extensionNames.has(extensionName) && (!selectedTool || selectedTool === toolName);
-    }));
-  });
-}
+export { selectSubagentExtensionTools } from "./subagent-extension-selectors";
 
 export function readSubagentRun(entries: readonly SessionEntry[], sessionId: string, sessionPath: string): SubagentRunInfo | null {
   const data = subagentMetadataData(entries);
