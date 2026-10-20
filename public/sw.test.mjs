@@ -157,14 +157,89 @@ function installOfflineStub() {
 
 function dispatchFetch(url, { mode = "cors", method = "GET" } = {}) {
   let pending;
+  const background = [];
   const request = new Request(url, { method });
   Object.defineProperty(request, "mode", { value: mode });
   listeners.get("fetch")({
     request,
     respondWith: (promise) => { pending = promise; },
+    waitUntil: (promise) => { background.push(promise); },
   });
-  return pending;
+  return { pending, background };
 }
+
+test("install precaches offline assets but never the runtime manifest", async () => {
+  let pending, precached;
+  globalThis.caches = { open: async () => ({ addAll: async (urls) => { precached = urls; } }) };
+  self.skipWaiting = async () => {};
+  listeners.get("install")({ waitUntil: (promise) => { pending = promise; } });
+  await pending;
+  assert.deepEqual(precached, ["/offline.html", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png"]);
+});
+
+test("manifest bypasses even stale caches with query strings and navigation mode", () => {
+  globalThis.caches = { match: () => assert.fail("must bypass old manifest caches"), open: () => assert.fail("must not cache manifests") };
+  globalThis.fetch = () => assert.fail("the browser, not the worker, owns this request");
+  for (const path of ["/manifest.webmanifest", "/manifest.webmanifest?v=old"]) {
+    for (const mode of ["cors", "navigate"]) {
+      assert.deepEqual(dispatchFetch(`https://pi.test${path}`, { mode }), { pending: undefined, background: [] });
+    }
+  }
+});
+
+for (const phase of ["open", "put"]) test(`a delayed cache ${phase} cannot delay an asset response`, async () => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  let stored;
+  const cache = { put: async (_request, response) => { stored = response; if (phase === "put") await held; } };
+  globalThis.caches = { match: async () => undefined, open: async () => { if (phase === "open") await held; return cache; } };
+  globalThis.fetch = async () => {
+    const response = new Response("chunk");
+    Object.defineProperty(response, "type", { value: "basic" });
+    return response;
+  };
+  const { pending, background } = dispatchFetch("https://pi.test/_next/static/chunks/app.js");
+  let timer;
+  try {
+    const response = await Promise.race([pending, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("cache blocked response")), 1000); })]);
+    assert.equal(await response.text(), "chunk");
+    assert.equal(background.length, 1);
+    release();
+    await Promise.all(background);
+    assert.equal(await stored.text(), "chunk", "clone must remain readable after response consumption");
+  } finally { clearTimeout(timer); release(); }
+});
+
+for (const phase of ["open", "put"]) test(`a rejected cache ${phase} cannot discard a healthy asset response`, async () => {
+  globalThis.caches = {
+    match: async () => undefined,
+    open: async () => {
+      if (phase === "open") throw new Error("storage unavailable");
+      return { put: async () => { throw new Error("quota exceeded"); } };
+    },
+  };
+  globalThis.fetch = async () => {
+    const response = new Response("healthy");
+    Object.defineProperty(response, "type", { value: "basic" });
+    return response;
+  };
+  const { pending, background } = dispatchFetch("https://pi.test/_next/static/chunks/app.js");
+  assert.equal(await (await pending).text(), "healthy");
+  await Promise.all(background);
+});
+
+test("cache hits and non-cacheable responses schedule no cache write", async () => {
+  globalThis.caches = { match: async () => new Response("cached"), open: () => assert.fail("no write on a hit") };
+  globalThis.fetch = () => assert.fail("no fetch on a hit");
+  const hit = dispatchFetch("https://pi.test/_next/static/chunks/app.js");
+  assert.equal(await (await hit.pending).text(), "cached");
+  assert.deepEqual(hit.background, []);
+  globalThis.caches.match = async () => undefined;
+  globalThis.fetch = async () => new Response("unavailable", { status: 503 });
+  const miss = dispatchFetch("https://pi.test/_next/static/chunks/app.js");
+  assert.equal((await miss.pending).status, 503);
+  assert.deepEqual(miss.background, []);
+});
 
 /** fetch() that never settles until the signal it was handed is aborted. */
 function installHungNetwork() {
@@ -191,7 +266,7 @@ test("a stalled navigation falls back to offline.html", async () => {
 
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
-    const pending = dispatchFetch("https://pi.test/", { mode: "navigate" });
+    const { pending } = dispatchFetch("https://pi.test/", { mode: "navigate" });
     await flushMicrotasks();
     mock.timers.tick(8000);
     const response = await pending;
@@ -209,7 +284,7 @@ test("a stalled static asset request is bounded as well", async () => {
 
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
-    const pending = dispatchFetch("https://pi.test/_next/static/chunks/app.js");
+    const { pending } = dispatchFetch("https://pi.test/_next/static/chunks/app.js");
     // cacheFirst awaits the cache lookup before it reaches the network.
     await flushMicrotasks();
     mock.timers.tick(8000);
@@ -234,7 +309,8 @@ test("a response that arrives in time is not cut off mid-stream", async () => {
 
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
-    const response = await dispatchFetch("https://pi.test/", { mode: "navigate" });
+    const { pending } = dispatchFetch("https://pi.test/", { mode: "navigate" });
+    const response = await pending;
     // The budget only covers time to first byte: a long-lived body keeps
     // streaming past it (Next.js streams its SSR payload).
     mock.timers.tick(60000);

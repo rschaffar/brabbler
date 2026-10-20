@@ -15,6 +15,38 @@ export interface AgentEventStreamSession {
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
+// Queue sizes are bytes, not event counts. Slow/backgrounded clients may drop
+// repairable deltas; authoritative events instead force a reconnect at the cap.
+const STREAM_HIGH_WATER_MARK_BYTES = 512 * 1024;
+const DEFAULT_BACKLOG_LIMIT_BYTES = 16 * 1024 * 1024;
+const BACKPRESSURE_LOG_INTERVAL_MS = 60_000;
+let lastBackpressureLogAt = 0;
+
+function isDroppableEvent(event: AgentEventLike): boolean {
+  if (event.type === "tool_execution_update") return true;
+  if (event.type !== "message_update") return false;
+  const update = event.assistantMessageEvent;
+  return typeof update === "object"
+    && update !== null
+    && typeof (update as { type?: unknown }).type === "string"
+    && (update as { type: string }).type.endsWith("_delta");
+}
+
+function resolveBacklogLimitBytes(): number {
+  const raw = Number(process.env.PI_WEB_SSE_BACKLOG_LIMIT_BYTES);
+  return Number.isFinite(raw) && raw >= 64 * 1024 ? raw : DEFAULT_BACKLOG_LIMIT_BYTES;
+}
+
+function logBackpressure(sessionId: string, queuedBytes: number, limitBytes: number, droppedEvents: number, closing: boolean): void {
+  const now = Date.now();
+  if (now - lastBackpressureLogAt < BACKPRESSURE_LOG_INTERVAL_MS) return;
+  lastBackpressureLogAt = now;
+  const queued = `${Math.round(queuedBytes / 1024)} KB`;
+  console.warn(closing
+    ? `[pi-web] Agent event stream for ${sessionId} closed: client backlog ${queued} exceeds ${Math.round(limitBytes / 1024)} KB; it reconnects and re-snapshots.`
+    : `[pi-web] Agent event stream for ${sessionId} is behind (${queued} queued): dropping rebuildable deltas (${droppedEvents} so far).`);
+}
+
 /**
  * Registry of live SSE streams, closed from the SIGINT/SIGTERM hook in
  * instrumentation.ts.
@@ -71,7 +103,7 @@ export function createAgentEventStream(
       // chunked termination, so the socket stays ESTABLISHED and Next's
       // server.close() drain never completes (the original zombie bug).
       // "true": graceful close after we finished writing a final event.
-      const cleanup = (closeController: boolean | "error") => {
+      const cleanup = (closeController: boolean | "error", reason?: Error) => {
         if (closed) return;
         closed = true;
         releaseLease();
@@ -82,7 +114,7 @@ export function createAgentEventStream(
         unsubscribe = null;
         if (abortHandler) req.signal.removeEventListener("abort", abortHandler);
         if (closeController === "error") {
-          try { controller.error(new Error("pi-web server shutting down")); } catch { /* already closed */ }
+          try { controller.error(reason ?? new Error("pi-web server shutting down")); } catch { /* already closed */ }
         } else if (closeController) {
           try { controller.close(); } catch { /* stream already closed */ }
         }
@@ -91,21 +123,39 @@ export function createAgentEventStream(
       releaseLease = acquireSessionLivenessLease(sessionId).release;
       activeStreamClosers.add(cleanup);
 
-      const enqueueText = (text: string) => {
+      const backlogLimitBytes = resolveBacklogLimitBytes();
+      let droppedEvents = 0;
+      const enqueueText = (text: string, options?: { droppable?: boolean }) => {
         if (closed) return;
+        const desiredSize = controller.desiredSize;
+        if (desiredSize === null) {
+          cleanup(false);
+          return;
+        }
+        const queuedBytes = STREAM_HIGH_WATER_MARK_BYTES - desiredSize;
+        if (options?.droppable && queuedBytes > STREAM_HIGH_WATER_MARK_BYTES) {
+          droppedEvents += 1;
+          logBackpressure(sessionId, queuedBytes, backlogLimitBytes, droppedEvents, false);
+          return;
+        }
+        if (queuedBytes > backlogLimitBytes) {
+          logBackpressure(sessionId, queuedBytes, backlogLimitBytes, droppedEvents, true);
+          cleanup("error", new Error(`pi-web agent event stream closed: client backlog exceeded ${Math.round(backlogLimitBytes / 1024)} KB`));
+          return;
+        }
         try {
           controller.enqueue(encoder.encode(text));
         } catch {
           cleanup(false);
         }
       };
-      const encode = (data: unknown) => {
-        enqueueText(`data: ${JSON.stringify(data)}\n\n`);
+      const encode = (data: unknown, options?: { droppable?: boolean }) => {
+        enqueueText(`data: ${JSON.stringify(data)}\n\n`, options);
       };
       const forwardEvent = (event: AgentEventLike, snapshot: unknown) => {
         if (isEventIncludedInSnapshot(event, snapshot)) return;
         const clientEvent = toClientAgentEvent(event);
-        if (clientEvent) encode(clientEvent);
+        if (clientEvent) encode(clientEvent, { droppable: isDroppableEvent(clientEvent) });
       };
 
       const publishSession = async () => {
@@ -185,5 +235,8 @@ export function createAgentEventStream(
     cancel() {
       cancelStream(false);
     },
+  }, {
+    highWaterMark: STREAM_HIGH_WATER_MARK_BYTES,
+    size: (chunk) => chunk.byteLength,
   });
 }

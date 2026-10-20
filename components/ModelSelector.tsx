@@ -39,7 +39,7 @@ export function filterModelOptions(options: ModelSelectorOption[], query: string
   if (!normalizedQuery) return options;
 
   return options.filter((option) => (
-    `${option.name} ${option.modelId}`
+    `${option.name} ${option.modelId} ${option.provider}/${option.modelId}`
       .toLocaleLowerCase()
       .includes(normalizedQuery)
   ));
@@ -255,7 +255,8 @@ export function ModelSelector({
                   onChange={(event) => setFilter(event.target.value)}
                   placeholder={t("chat.filterModels")}
                   aria-label={t("chat.filterModels")}
-                  autoFocus
+                  // Keep the mobile list visible until the user taps to filter.
+                  autoFocus={!isMobile}
                   autoComplete="off"
                   spellCheck={false}
                   style={{

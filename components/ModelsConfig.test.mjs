@@ -9,6 +9,7 @@ const {
   hasModelCostDraftValue,
   modelCostToDraft,
   parseCompleteModelCost,
+  providerMatchesSearch,
   savedModelIds,
   serializeHeaderRows,
   setCompatBool,
@@ -18,6 +19,16 @@ const {
 
 const source = await readFile(new URL("./ModelsConfig.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/settings.css", import.meta.url), "utf8");
+
+test("provider search matches names and stable OAuth/API ids", () => {
+  const provider = { id: "fixture-subscription-id", label: "Friendly Subscription" };
+  assert.equal(providerMatchesSearch(" friendly ", provider.id, provider.label), true);
+  assert.equal(providerMatchesSearch(" FIXTURE-SUBSCRIPTION-ID ", provider.id, provider.label), true);
+  assert.equal(providerMatchesSearch("missing", provider.id, provider.label), false);
+  assert.equal(providerMatchesSearch("  ", provider.id, provider.label), true);
+  assert.match(source, /!p\.loggedIn && providerMatchesSearch\(q, p\.id, p\.name\)/);
+  assert.match(source, /!p\.configured && providerMatchesSearch\(q, p\.id, p\.displayName\)/);
+});
 
 test("uses shared sidebar sizing for providers and matching indented model rows", () => {
   const sidebar = source.slice(source.indexOf("<ConfigSidebar>"), source.indexOf("</ConfigSidebar>"));

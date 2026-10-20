@@ -35,6 +35,8 @@ A live ordinary session retains the context files (`AGENTS.md`, `AGENTS.override
 ### SSE reconnect on page refresh mid-stream
 On `ChatWindow` mount, the initial history load also reads `GET /api/sessions/[id]/state`. The selected session maintains SSE automatically; live `thinkingLevel`, streaming and `isCompacting` state are restored from this response. Periodic recovery uses `GET /api/agent/[id]`.
 
+Each agent SSE connection uses byte-based backpressure: beyond 512 KiB queued it drops only repairable message deltas and partial tool updates, never block starts/ends or control/receipt events. Authoritative end events repair the streamed content. `PI_WEB_SSE_BACKLOG_LIMIT_BYTES` selects the disconnect threshold (default 16 MiB; finite values at least 64 KiB). This is a backlog threshold, not a maximum frame size: an incoming frame may overshoot it, and the next non-droppable enqueue (including a heartbeat) errors the stream and releases its listener/liveness lease. Reconnection uses the existing snapshot/history/state reconciliation; it is not proof of instantaneous complete recovery. The pre-encoding check does not bound serialization or a single frame allocation.
+
 ### Compaction SSE events
 Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `auto_compaction_start` / `auto_compaction_end`. `handleAgentEvent` accepts both sets to keep `isCompacting` in sync. Manual compact is a blocking POST; both the toolbar and `/compact` show progress immediately, with SSE and authoritative state tracking the active phase.
 

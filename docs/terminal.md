@@ -37,7 +37,7 @@ an older cursor triggers a terminal reset and bounded history replay. This is
 bounded output history, not a serialized full-screen terminal snapshot. Slow
 SSE consumers are disconnected once their response queue fills.
 
-Input and resizes are serialized. Pending adjacent input is batched so remote
+Input and resizes are serialized. A mobile keyboard can shrink xterm to one row: client resizes clamp columns/rows to at least two, and the command route accepts integer row 1 and forwards row 2. Zero, fractional, nonnumeric and over-limit dimensions remain rejected; unrelated write failures still disable input rather than retrying commands. Pending adjacent input is batched so remote
 connections do not require one round trip per keystroke; large pastes are split
 without splitting Unicode characters. Failed input is not retried because its
 delivery may be ambiguous. Reconnect attaches to the same process with a fresh

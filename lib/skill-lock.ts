@@ -24,6 +24,7 @@ interface GlobalLockPathOptions {
 interface AnnotateSkillOptions {
   cwd: string;
   agentDir: string;
+  homeDir?: string;
   globalLockPath?: string;
   projectLockPath?: string;
 }
@@ -123,21 +124,24 @@ export function annotateSkillsWithInstallInfo(
   {
     cwd,
     agentDir,
-    globalLockPath = getGlobalSkillsLockPath(),
+    homeDir = homedir(),
+    globalLockPath = getGlobalSkillsLockPath({ homeDir }),
     projectLockPath = join(cwd, "skills-lock.json"),
   }: AnnotateSkillOptions,
 ): SkillInfo[] {
   const globalEntries = readSkillLock(globalLockPath);
   const projectEntries = readSkillLock(projectLockPath);
-  const globalSkillsRoot = join(agentDir, "skills");
-  const projectSkillsRoot = join(cwd, ".pi", "skills");
+  // The skills CLI uses Agent Skills roots in addition to the legacy Pi roots.
+  const globalSkillsRoots = [join(agentDir, "skills"), join(homeDir, ".agents", "skills")];
+  const projectSkillsRoots = [join(cwd, ".pi", "skills"), join(cwd, ".agents", "skills")];
+  const isWithinAny = (path: string, roots: string[]) => roots.some((root) => isWithin(path, root));
 
   return skills.map((skill) => {
     if (!existsSync(skill.filePath)) return skill;
 
-    const install = isWithin(skill.filePath, globalSkillsRoot)
+    const install = isWithinAny(skill.filePath, globalSkillsRoots)
       ? getInstallInfo(globalEntries, skill.name, "global")
-      : isWithin(skill.filePath, projectSkillsRoot)
+      : isWithinAny(skill.filePath, projectSkillsRoots)
         ? getInstallInfo(projectEntries, skill.name, "project")
         : undefined;
 

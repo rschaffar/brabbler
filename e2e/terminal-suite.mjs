@@ -123,6 +123,28 @@ let browser;
       const pid = (await text()).match(/TOKEN:alive:(\d+)/)[1];
       const [id] = created;
       assert.equal(created.size, 1);
+      const resized = await fetch(`${base}/api/terminal/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "resize", cols: 80, rows: 1 }) });
+      assert.equal(resized.status, 200, "one-row keyboard fits are accepted and clamped");
+      await run("printf '\\nCLAMP:%s\\n' \"$(stty size)\"");
+      await waitOutput("CLAMP:2 80");
+      for (const rows of [0, -1, 1.5, 1001, "1"]) {
+        const invalid = await fetch(`${base}/api/terminal/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "resize", cols: 80, rows }) });
+        assert.equal(invalid.status, 400, `invalid rows remain rejected: ${rows}`);
+      }
+      if (viewport.width <= 640) {
+        const host = page.locator(".terminal-panel:visible .terminal-xterm-host");
+        const previousStyle = await host.getAttribute("style");
+        const fitted = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/terminal/${id}`
+          && response.request().method() === "POST" && response.request().postDataJSON()?.type === "resize"
+          && response.request().postDataJSON()?.rows === 2);
+        void fitted.catch(() => {});
+        await host.evaluate((node) => { node.style.height = "1px"; node.style.flex = "none"; });
+        try { assert.equal((await fitted).status(), 200); }
+        finally { await host.evaluate((node, style) => { if (style === null) node.removeAttribute("style"); else node.setAttribute("style", style); }, previousStyle); }
+        await ready();
+        await run("printf '\\nKEYBOARD-RESTORED\\n'");
+        await waitOutput("KEYBOARD-RESTORED");
+      }
       const terminalNode = await page.locator(".terminal-panel").elementHandle();
       // Mobile's existing full-width terminal covers the top bar; hide, never terminate it.
       await hidePanel();

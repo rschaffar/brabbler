@@ -307,6 +307,32 @@ for (const restored of [false, true]) {
   });
 }
 
+test("a one-row mobile fit is clamped on open, resize and reconnect without disabling typing", async (t) => {
+  const h = terminalPanelHarness();
+  t.after(() => h.unmount());
+  h.render();
+  h.terminals[0].cols = 1;
+  h.terminals[0].rows = 1;
+  h.creation.resolve({ id: h.tab.id });
+  await h.flush();
+  h.sources[0].open();
+  await h.flush();
+  const writer = h.writers[0];
+  assert.deepEqual(writer.resizes.at(-1), { cols: 2, rows: 2 });
+  h.terminals[0].emitResize(80, 1);
+  assert.deepEqual(writer.resizes.at(-1), { cols: 80, rows: 2 });
+  h.dispatch("offline");
+  const count = writer.resizes.length;
+  h.terminals[0].emitResize(80, 1);
+  assert.equal(writer.resizes.length, count, "disconnected resizes must not write");
+  h.dispatch("online");
+  h.sources.at(-1).open();
+  h.terminals[0].emitData("still typing\\r");
+  assert.deepEqual(writer.resizes.at(-1), { cols: 2, rows: 2 });
+  assert.deepEqual(writer.writes, ["still typing\\r"]);
+  assert.equal(h.terminals[0].options.disableStdin, false);
+});
+
 test("closing during held creation never opens SSE and awaits creation and writer drain before DELETE", async (t) => {
   const h = terminalPanelHarness();
   t.after(() => h.unmount());

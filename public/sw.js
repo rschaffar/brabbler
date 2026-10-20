@@ -4,7 +4,6 @@ const STATIC_CACHE = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
 const PRECACHE_URLS = [
   OFFLINE_URL,
-  "/manifest.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/apple-touch-icon.png",
@@ -49,6 +48,9 @@ self.addEventListener("fetch", (event) => {
   // Session data and live agent traffic must always come from the local server.
   if (url.pathname.startsWith("/api/") || url.pathname === "/sw.js") return;
 
+  // Runtime configuration must bypass even manifests left in an older cache.
+  if (url.pathname === "/manifest.webmanifest") return;
+
   if (request.mode === "navigate") {
     event.respondWith(
       fetchWithTimeout(request, NAVIGATION_TIMEOUT_MS).catch(async () => {
@@ -64,7 +66,7 @@ self.addEventListener("fetch", (event) => {
     PRECACHE_URLS.includes(url.pathname);
 
   if (isStaticAsset) {
-    event.respondWith(cacheFirst(request));
+    event.respondWith(cacheFirst(request, event));
   }
 });
 
@@ -151,14 +153,20 @@ async function fetchWithTimeout(request, timeoutMs) {
   }
 }
 
-async function cacheFirst(request) {
+async function cacheFirst(request, event) {
   const cached = await caches.match(request);
   if (cached) return cached;
 
   const response = await fetchWithTimeout(request, ASSET_TIMEOUT_MS);
   if (response.ok && response.type === "basic") {
-    const cache = await caches.open(STATIC_CACHE);
-    await cache.put(request, response.clone());
+    // Clone before returning/consuming the response, but never put Cache
+    // Storage I/O on its delivery path. A failed write only costs a re-fetch.
+    const copy = response.clone();
+    event.waitUntil(
+      caches.open(STATIC_CACHE)
+        .then((cache) => cache.put(request, copy))
+        .catch(() => {}),
+    );
   }
   return response;
 }
