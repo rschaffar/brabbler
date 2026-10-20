@@ -1,9 +1,11 @@
 # Workspace Terminals
 
 The Explorer terminal action opens or focuses a terminal for its selected cwd
-in the right panel's existing tab bar. Each terminal tab keeps the cwd it was
-created with. Files still mount only their active viewer; terminal panels stay
-mounted behind inactive tabs, hidden panels, and session or project switches.
+in the right panel's outer tab bar beside **Files**. Each terminal tab keeps the
+cwd it was created with. Files has its own independently split tab groups;
+terminal hosts remain outside that geometry. Terminal panels stay mounted behind
+inactive tabs, hidden panels, file splits/moves and session or project switches.
+File splitting never duplicates or starts a terminal.
 
 ## Lifecycle
 

@@ -25,8 +25,11 @@ export function seedFileLineLinks({ project, writeSession, message }) {
   const paragraphLine = lines.indexOf("second line") + 1;
   const listLine = lines.indexOf("- Target list item") + 1;
   const codeLine = lines.indexOf("function markdownFunction() {}") + 1;
+  for (let i = 1; i <= 5; i++) writeFileSync(join(project, `split-source-${i}.ts`), Array.from({ length: 100 }, (_, n) => `// source ${i}, line ${n + 1}`).join("\n"));
+  writeFileSync(join(project, "split-tests.ts"), "// retained tests\nexport const testEvidence = true;\n");
+  writeFileSync(join(project, "split-guide.md"), "# Guided review\n\nKeep this explanation visible.\n\n" + Array.from({ length: 5 }, (_, i) => `[Source ${i + 1}](split-source-${i + 1}.ts#L40)`).join("\n\n") + "\n\n[Test evidence](split-tests.ts#L2)\n\n[Local section](#local-section)\n\n" + "Explanation paragraph.\n\n".repeat(50) + "## Local section\n\nEnd of guide.\n");
   writeSession(sessionId, [message("user", null, "user", "File line navigation"), message("answer", "user", "assistant", [
-    { type: "text", text: `[linkedFunction](line-target.ts#L180)\n\n\`line-target.ts:180:3\`\n\n[Range](line-target.ts#L180-L182)\n\n[Large file](large-line-target.txt#L1200)\n\n[Heading](line-target.md#L${headingLine})\n\n[Paragraph](line-target.md:${paragraphLine})\n\n[List item](line-target.md#L${listLine})\n\n[Markdown code](line-target.md#L${codeLine})\n\n[Frontmatter](line-target.md#L2)\n\n[Math](line-target.md#L7)\n\n[Missing line](line-target.ts#L9999)\n\n[Outside chat root](../other-project/sibling-line-target.ts#L2)\n\n[Encoded outside root](%2e%2e/other-project/sibling-line-target.ts#L2)\n\n[Absolute sibling](${sibling}#L2)\n\n[Nested preview](nested-links/links.md)\n\n[CSV preview](followups.csv)\n\n[CSV source line](followups.csv#L3)\n\n[TSV preview](followups.tsv)\n\n[Fragment preview](followups-anchors.md)` },
+    { type: "text", text: `[linkedFunction](line-target.ts#L180)\n\n\`line-target.ts:180:3\`\n\n[Range](line-target.ts#L180-L182)\n\n[Large file](large-line-target.txt#L1200)\n\n[Heading](line-target.md#L${headingLine})\n\n[Paragraph](line-target.md:${paragraphLine})\n\n[List item](line-target.md#L${listLine})\n\n[Markdown code](line-target.md#L${codeLine})\n\n[Frontmatter](line-target.md#L2)\n\n[Math](line-target.md#L7)\n\n[Missing line](line-target.ts#L9999)\n\n[Outside chat root](../other-project/sibling-line-target.ts#L2)\n\n[Encoded outside root](%2e%2e/other-project/sibling-line-target.ts#L2)\n\n[Absolute sibling](${sibling}#L2)\n\n[Nested preview](nested-links/links.md)\n\n[CSV preview](followups.csv)\n\n[CSV source line](followups.csv#L3)\n\n[TSV preview](followups.tsv)\n\n[Fragment preview](followups-anchors.md)\n\n[Split guide](split-guide.md)` },
   ])]);
   return { sessionId, headingLine, paragraphLine, listLine, codeLine, code, codeContent, nested: join(project, "nested-links", "links.md") };
 }
@@ -153,8 +156,8 @@ export async function checkFileLineLinks(page, base, fixture) {
     await click("Heading");
     await click("linkedFunction");
     await editor.waitFor();
-    assert.equal(await editor.getAttribute("readonly"), "", "a replacement viewer waits for the original save owner");
-    assert.equal(await panel.getByRole("button", { name: "Edit", exact: true }).isDisabled(), true);
+    assert.equal(await editor.getAttribute("readonly"), null, "the retained original save owner remains the only writable editor");
+    assert.equal(await editor.inputValue(), laterDraft, "tab activation does not construct a replacement draft");
     const saved = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).searchParams.get("type") === "save");
     releaseSave();
     await saved;

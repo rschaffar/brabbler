@@ -90,6 +90,9 @@ lib/
   model-context.ts     managed-model budget draft normalization, clearing and provider routing
   session-usage-reader.ts  non-writing disk usage snapshots; SDK legacy normalization only in memory
   agent-usage.ts       bounded single-flight family usage polling and qualified aggregation
+  file-tab.ts          file/view domain types, independent of tab presentation
+  file-workspace.ts    pure split geometry, group/view navigation, previews and history
+  file-edit-sessions.ts browser-local single-editor ownership; never authorization
   enabled-models.ts    pure minimal-edit engine for the `enabledModels` pattern list
   enabled-models-runtime.ts  SDK adapter: per-pattern resolution, provider kinds, settings IO
   markdown.ts          shared Markdown pipelines/source-preserving normalization
@@ -116,7 +119,9 @@ lib/
   git-graph-layout.ts   adapted MIT active-lane graph layout (see git-graph-layout.LICENSE)
 
 components/
-  AppShell.tsx        layout + URL state + tab management
+  AppShell.tsx        outer layout + URL/session state + retained terminal tabs
+  FileWorkspace.tsx   scoped file groups, stable view hosts, routing and responsive projection
+  LocalFileLink.tsx   resolved-local-link actions shared by chat and file Markdown
   SessionSidebar.tsx  session tree + FileExplorer
   ChatWindow.tsx      chat composition + completion sound wrapper
   GitExplorer.tsx    local-branch visual history for sidebar-selected worktree
@@ -142,13 +147,14 @@ components/
   FileExplorer.tsx    file tree inside sidebar
   FileIcons.tsx       file icon helpers
   FileViewer.tsx      file content in a tab
-  TabBar.tsx          tab bar (Chat + open file tabs)
+  TabBar.tsx          presentational tab strip for file groups and outer Files/terminals
 
 hooks/
   useAgentSession.ts  messages + streaming + SSE + fork/navigate/reconciliation logic
   useAudio.ts         completion sound + browser AudioContext unlock
   useStreamingSelector.ts  batched subscriptions without parent per-chunk renders
   useTerminalTheme.ts best-effort shared browser terminal palette
+  useFileEditSession.tsx per-view binding to shared draft/save ownership
   useDragDrop.ts      shared drag/drop state
   useIsMobile.ts      responsive breakpoint hook
   useTheme.ts         theme state and shared light/dark palette classification

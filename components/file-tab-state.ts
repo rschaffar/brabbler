@@ -1,15 +1,6 @@
 import type { FileViewerState } from "@/lib/file-viewer-state";
-import type { Tab } from "./TabBar";
-
-export interface OpenFileTabInput {
-  fileName: string;
-  filePath: string;
-  modeHint?: "diff";
-  page?: number;
-  lineTarget?: import("@/lib/file-links").FileLineTarget;
-  sourceSessionId?: string | null;
-  tabId: string;
-}
+import type { FileTab as Tab, OpenFileTabInput } from "../lib/file-tab";
+export type { OpenFileTabInput } from "../lib/file-tab";
 
 export function openFileTab(tabs: Tab[], input: OpenFileTabInput): Tab[] {
   const existing = tabs.find((tab) => tab.id === input.tabId);

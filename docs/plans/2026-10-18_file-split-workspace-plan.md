@@ -1,6 +1,6 @@
 # File split workspace — UX proposal
 
-Status: **Design proposal; not implemented.** The request authorizes this design artifact, not application changes. The user confirmed **opt-in link destinations per document**, not a global split mode.
+Status: **Implementation authorized and in progress.** The user subsequently requested implementation, with questions for material decisions. The confirmed UX is **opt-in link destinations per document**, not a global split mode. Work continues in the existing linked worktree on `docs/file-split-workspace-design`; no integration, publication or activation is authorized by this status.
 
 ## Goal
 
@@ -215,7 +215,7 @@ An IDE, multiple simultaneous chats, terminals in new geometric splits, synchron
 
 ## Plan
 
-These are **future implementation tasks**, not authority to execute them. No item is complete until its evidence exists.
+The user has authorized implementation. No item is complete until its evidence exists. First establish the stable-host/edit-identity seams and a testable three-pane vertical slice, then complete the remaining controls and acceptance. The earlier separate disposable user-prototype step is superseded by testing the actual interactive implementation; no unobserved usability validation is claimed.
 
 - [ ] Validate the two-/three-/four-file layouts and the next-chapter Open here tradeoff with the user using a disposable interactive prototype; record route discoverability and the ability to follow several links without losing the guide.
 - [ ] Spike resource/edit-owner identity, retained terminal hosts and nested resizing against the current code; document a concrete design that preserves save, watcher, source-access and PTY contracts before building the workspace shell.

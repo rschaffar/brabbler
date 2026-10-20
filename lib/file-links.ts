@@ -6,7 +6,7 @@ export interface FileLineTarget {
 }
 
 // Keep PDF's existing second argument compatible with callers that open whole files.
-export type OpenFileLink = (filePath: string, page?: number, lineTarget?: FileLineTarget) => void;
+export type OpenFileLink = (filePath: string, page?: number, lineTarget?: FileLineTarget, disposition?: import("./file-workspace").FileDisposition) => void;
 
 interface LocalFileClickEvent {
   defaultPrevented: boolean;
