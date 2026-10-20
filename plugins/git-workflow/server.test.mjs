@@ -195,6 +195,48 @@ test("rebase onto configured local target and merge non-FF; no cleanup", async (
   assert.equal(git(repo, "show", "-s", "--format=%P", "HEAD"), `${target} ${featureTip}`);
   assert.equal(existsSync(path), true);
 });
+for (const action of ["rebase", "merge"]) for (const dirty of [false, true]) test(`${action} ${dirty ? "dirty" : "clean"} wrong-checkout guidance names the required branch and path without checks or effects`, async () => {
+  const repo = fixture("-quote ' µ"); const path = feature(repo);
+  change(path); git(path, "add", "a"); git(path, "commit", "-m", "Feature");
+  const targetTip = git(repo, "rev-parse", "HEAD"); const featureTip = git(path, "rev-parse", "HEAD");
+  set(repo, { mergeChecks: [{ name: "Must not run", command: "exit 7" }] });
+  const selected = action === "merge" ? path : repo;
+  const required = action === "merge" ? repo : path;
+  const branch = action === "merge" ? "main" : "feature";
+  const selectedBranch = action === "merge" ? "feature" : "main";
+  if (dirty) writeFileSync(join(selected, "a"), "uncommitted wrong-checkout edit\n");
+  const selectedStatus = git(selected, "status", "--porcelain");
+  const selectedIndex = git(selected, "write-tree");
+  const result = await call(repo, { action, checkout: selected, featureBranch: "feature" }, {
+    pluginCard() { assert.fail("Wrong checkout must refuse before approval"); },
+  });
+  failed(result, new RegExp(`git_${action} checkout must be`));
+  const text = result.content[0].text;
+  assert.ok(text.includes(`${action === "merge" ? "target" : "feature"} branch ${JSON.stringify(branch)}`), text);
+  assert.ok(text.includes(`selected branch ${JSON.stringify(selectedBranch)} at ${JSON.stringify(selected)}`), text);
+  assert.ok(text.includes(`Use checkout: ${JSON.stringify(required)}`), text);
+  assert.equal(result.details.checksStarted, false); assert.equal(result.details.effectStarted, false);
+  assert.equal(git(repo, "rev-parse", "HEAD"), targetTip); assert.equal(git(path, "rev-parse", "HEAD"), featureTip);
+  assert.equal(git(repo, "branch", "--show-current"), "main"); assert.equal(git(path, "branch", "--show-current"), "feature");
+  assert.equal(git(selected, "status", "--porcelain"), selectedStatus);
+  assert.equal(git(selected, "write-tree"), selectedIndex); assert.equal(git(required, "status", "--porcelain"), "");
+});
+
+test("merge wrong-checkout guidance handles a target with no registered checkout without creating one", async () => {
+  const repo = fixture(); const path = feature(repo);
+  git(repo, "switch", "-c", "other");
+  const registrations = git(repo, "worktree", "list", "--porcelain");
+  const result = await call(repo, { action: "merge", checkout: path, featureBranch: "feature" }, {
+    pluginCard() { assert.fail("Missing target checkout must refuse before approval"); },
+  });
+  failed(result, /git_merge checkout must be.*target branch "main"/);
+  assert.match(result.content[0].text, /no registered checkout; arrange one explicitly/);
+  assert.doesNotMatch(result.content[0].text, /Use checkout:/);
+  assert.equal(result.details.checksStarted, false); assert.equal(result.details.effectStarted, false);
+  assert.equal(git(repo, "worktree", "list", "--porcelain"), registrations);
+  assert.equal(git(repo, "branch", "--show-current"), "other"); assert.equal(git(path, "branch", "--show-current"), "feature");
+});
+
 test("preflight refuses clean filters before even status can run them", async () => {
   const repo = fixture(); const marker = join(root, "filter-was-run");
   writeFileSync(join(repo, ".gitattributes"), "a filter=unsafe\n");
