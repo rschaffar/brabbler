@@ -1,3 +1,9 @@
+/** Match the provider's stable id as well as its displayed name. */
+export function providerMatchesSearch(search: string, id: string, label: string): boolean {
+  const query = search.trim().toLowerCase();
+  return !query || label.toLowerCase().includes(query) || id.toLowerCase().includes(query);
+}
+
 export interface CompatEntry {
   compat?: Record<string, unknown>;
 }

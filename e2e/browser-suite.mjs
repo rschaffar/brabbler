@@ -16,6 +16,7 @@ import { checkProjectTrustScopes } from "./project-trust-scopes.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
+import { checkUpstreamComposer, checkOverflowTabs } from "./upstream-easy-wins.mjs";
 import { MODEL_SPEED_IDS, seedModelSpeedFixtures, checkModelSpeed, checkModelSpeedPersistence } from "./model-speed.mjs";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
 import { RUNNING_FORK_IDS, seedRunningForkFixtures, checkRunningSessionForks } from "./running-session-forks.mjs";
@@ -40,6 +41,7 @@ const root = process.env.E2E_PACKAGE_ROOT;
 assert.match(root ?? "", /^\/nix\/store\//, "Nix-built application package required");
 const harness = createHarness(root, "browser");
 const { artifacts, agentDir, env: fixtureEnv } = harness;
+if (group === "history") fixtureEnv.PI_WEB_APP_NAME = "  E2E Pi Desk  ";
 let coverage;
 try {
 coverage = createCoverage(group, artifacts);
@@ -54,6 +56,8 @@ const previewFile = join(project, "preview.html");
 const editableFile = join(project, "editable.txt");
 writeFileSync(previewFile, filePanelFixture);
 writeFileSync(editableFile, "Initial text\n");
+const overflowFiles = group === "file-edit" ? Array.from({ length: 12 }, (_, i) => join(project, `upstream-overflow-tab-${i}.txt`)) : [];
+for (const path of overflowFiles) writeFileSync(path, "Overflow tab fixture\n");
 const markdownFile = join(project, "diagram.md");
 writeFileSync(markdownFile, markdownPanelFixture);
 mkdirSync(sessionDir, { recursive: true });
@@ -161,7 +165,9 @@ let context;
         "E2E final answer\n```js\nconsole.log('E2E code');\n```\n\n"
         + "E2E answer paragraph.\n\n".repeat(20)
         + "## E2E reading position\n\n"
-        + "E2E answer paragraph.\n\n".repeat(20),
+        + "E2E answer paragraph.\n\n".repeat(20)
+        + (overflowFiles.length ? "\n\n" + overflowFiles.map((path, i) => `[Overflow tab ${i}](${path})`).join(" · ") : "")
+        + (group === "markdown" ? "\n\n999. Upstream wide marker\n1000. Upstream wide continuation\n" : ""),
       },
     ]),
   ];
@@ -626,6 +632,12 @@ let context;
       await coverage.run(`markdown/preview-then-line-links@${inputId}`, async () => {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
+      const wideList = page.locator(".markdown-body ol").filter({ hasText: "Upstream wide marker" });
+      await wideList.waitFor();
+      const marker = await wideList.evaluate((node) => ({ digits: node.style.getPropertyValue("--ol-marker-digits"), padding: parseFloat(getComputedStyle(node).paddingLeft), font: parseFloat(getComputedStyle(node).fontSize), start: node.start }));
+      assert.equal(marker.digits, "4");
+      assert.equal(marker.start, 999);
+      assert.ok(marker.padding >= marker.font * 3, JSON.stringify(marker));
       await checkMarkdownPreview(page, markdownFile);
       await checkFileLineLinks(page, base, fileLineFixtures);
       assert.deepEqual(errors, [], "Browser errors during Markdown preview and line links");
@@ -640,6 +652,7 @@ let context;
       await checkFilePanel(page, previewFile);
       await checkFileDiffViews(page, editableFile);
       await checkEditableFile(page, editableFile);
+      await checkOverflowTabs(page);
       assert.deepEqual(errors, [], "Browser errors during file editing");
       await harness.closeContext(context);
       context = undefined; page = undefined;
@@ -856,6 +869,7 @@ let context;
     } finally {
       await versionPage.close();
     }
+    await checkUpstreamComposer(context, base, RICH, LONG, viewport.width);
     const stateReady = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/sessions/${LONG}/state`);
     await page.goto(`${base}/?session=${LONG}`, { waitUntil: "domcontentloaded" });
     assert.equal((await stateReady).status(), 200);

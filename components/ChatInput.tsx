@@ -22,6 +22,7 @@ import {
   buildEntriesFromFiles, buildAtInsertText, extractAtQuery, filterFileEntries,
   type AtQueryMatch, type FileIndexEntry,
 } from "@/lib/file-fuzzy";
+import { getMarkdownListContinuation } from "@/lib/markdown-list-continuation";
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { ImagePreview } from "./ImagePreview";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -922,6 +923,31 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     observer.observe(ta);
     return () => observer.disconnect();
   }, [resizeTextarea]);
+
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const continueList = (event: InputEvent) => {
+      if (event.inputType !== "insertLineBreak" || !event.cancelable || event.defaultPrevented
+        || event.isComposing || isComposingRef.current || ta.disabled || ta.readOnly
+        || Date.now() - lastCompositionEndAtRef.current < COMPOSITION_END_ENTER_GRACE_MS) return;
+      const edit = getMarkdownListContinuation(ta.value, ta.selectionStart, ta.selectionEnd);
+      if (!edit) return;
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      ta.setSelectionRange(edit.start, edit.end);
+      // Native editing retains undo and fires React's controlled input update.
+      // Only cancel the newline after a successful command; unsupported browsers
+      // retain their ordinary newline and original selection instead.
+      if (document.execCommand?.(edit.text ? "insertText" : "delete", false, edit.text)) {
+        event.preventDefault();
+      } else {
+        ta.setSelectionRange(start, end);
+      }
+    };
+    ta.addEventListener("beforeinput", continueList);
+    return () => ta.removeEventListener("beforeinput", continueList);
+  }, []);
 
   useEffect(() => {
     return () => {

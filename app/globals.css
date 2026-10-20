@@ -883,6 +883,8 @@ pre, code {
   margin: 5px 0 8px;
   list-style-position: outside;
 }
+/* Reserve room for the widest bold ordered-list marker. */
+.markdown-body ol { padding-left: calc(0.8em + var(--ol-marker-digits, 2) * 0.62em); }
 .markdown-body li { margin: 3px 0; padding-left: 2px; }
 .markdown-body ul > li { list-style-type: disc; }
 .markdown-body ol > li { list-style-type: decimal; }
@@ -1780,6 +1782,16 @@ span.token.table {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Opacity-only unread ring; no per-frame SVG geometry changes. */
+@keyframes unread-ping {
+  0%, 100% { opacity: 0.28; }
+  50% { opacity: 0.04; }
+}
+.unread-ping { animation: unread-ping 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .unread-ping { animation: none; opacity: 0.16; }
 }
 
 @keyframes pulse {

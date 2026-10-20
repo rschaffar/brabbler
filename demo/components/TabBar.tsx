@@ -35,9 +35,11 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
       role="tablist"
       style={{
         display: "flex",
-        alignItems: "flex-end",
+        // Stretch above the horizontal scrollbar instead of clipping fixed-height tabs.
+        alignItems: "stretch",
         background: "var(--bg-panel)",
         overflowX: "auto",
+        overflowY: "hidden",
         flexShrink: 0,
         height: 36,
       }}
@@ -79,7 +81,6 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
               display: "flex",
               alignItems: "center",
               gap: 6,
-              height: 36,
               paddingLeft: 12,
               paddingRight: 6,
               borderRight: "1px solid var(--border)",

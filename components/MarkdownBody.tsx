@@ -127,6 +127,13 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
     img(props) {
       return <MarkdownImage cwd={cwd} {...props} />;
     },
+    ol({ node, start, style, ...props }) {
+      const items = node?.children.filter((child) => child.type === "element" && child.tagName === "li").length ?? 0;
+      const first = start ?? 1;
+      const last = first + Math.max(items, 1) - 1;
+      const digits = Math.max(String(Math.abs(first)).length, String(Math.abs(last)).length, 2);
+      return <ol start={start} style={{ ...style, ["--ol-marker-digits" as string]: digits }} {...props} />;
+    },
     table({ children }) {
       return (
         <div className="markdown-table-wrap">

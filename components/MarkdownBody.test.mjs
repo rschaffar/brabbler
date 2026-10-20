@@ -26,6 +26,20 @@ function renderMarkdown(markdown, props = {}) {
   );
 }
 
+test("ordered lists reserve marker space from their start and direct item count", () => {
+  for (const [markdown, digits] of [
+    ["1. one\n2. two", 2],
+    ["99. one\n100. two", 3],
+    ["9999. one", 4],
+  ]) {
+    const html = renderMarkdown(markdown);
+    assert.match(html, new RegExp(`<ol[^>]*style="--ol-marker-digits:${digits}"`));
+    assert.doesNotMatch(html, /\snode=/);
+  }
+  const nested = renderMarkdown("99. outer\n    1. inner\n    2. inner\n100. outer");
+  assert.deepEqual([...nested.matchAll(/--ol-marker-digits:(\d+)/g)].map((match) => Number(match[1])), [3, 2]);
+});
+
 test("opens non-file markdown links in a safe new tab", () => {
   const html = renderMarkdown("[docs](https://example.com/docs)");
 

@@ -91,13 +91,17 @@ The project name is Pi Desk, but the code still uses inherited `pi-web` command 
 
 | Setting | Purpose | Default |
 | --- | --- | --- |
+| `PI_WEB_APP_NAME` | Installed PWA name; whitespace is trimmed and blank values use the default | `Pi Web` |
 | `PI_WEB_PASSWORD` | Enable browser password authentication | Disabled |
 | `PI_WEB_ALLOWED_HOSTS` | Allow additional exact proxy or custom hostnames | Unset |
 | `PI_WEB_SKIP_VERSION_CHECK=1` | Disable inherited upstream version checks and reload prompts | Unset |
 | `PI_WEB_IDLE_TIMEOUT_MS` | Idle-session eviction delay; `0` disables it | `600000` (10 minutes) |
+| `PI_WEB_SSE_BACKLOG_LIMIT_BYTES` | Agent SSE disconnect threshold in queued bytes (not a maximum frame size); see [session contracts](docs/session-internals.md#sse-reconnect-on-page-refresh-mid-stream) | `16777216` (16 MiB) |
 | `PI_CODING_AGENT_DIR` | Override Pi's agent-data directory | `~/.pi/agent` |
 
 The installed `pi-web` launcher supports `--port`, `--hostname`, and `--no-open`; use `pi-web --help` for details. `PORT`, `PI_WEB_HOSTNAME`, and `PI_WEB_NO_OPEN` are its corresponding environment options. The `npm run dev` script has its own fixed loopback address and port.
+
+Set `PI_WEB_APP_NAME` before starting the server, for example `PI_WEB_APP_NAME='Pi Desk' pi-web`. Restart after changing it; no rebuild is required. The browser manages when an already installed PWA adopts the new name. This setting changes neither page titles nor icons.
 
 Provider requests honor `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`.
 

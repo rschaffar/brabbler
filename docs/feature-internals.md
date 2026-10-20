@@ -74,7 +74,7 @@ New Git operations save exact review bundles once in private `pi-web/reviews/`; 
 - `/api/plugins` uses pi's `SettingsManager` + `DefaultPackageManager` for global/project package install, remove, update, enable, and disable. Disabling writes empty `extensions/skills/prompts/themes` arrays for that package entry.
 - `/api/skills` uses `DefaultResourceLoader` so settings paths, package skills, and project `.agents/skills` are listed the same way the runtime sees them.
 - Skill toggling edits only the `disable-model-invocation` frontmatter key on the target `SKILL.md`; keep that surgical so user formatting survives.
-- `/api/skills/install` shells through `npx skills add ... --agent pi`; project installs run with the selected cwd.
+- `/api/skills/install` shells through `npx skills add ... --agent pi`; project installs run with the selected cwd. Install metadata recognizes both legacy Pi skill roots and global/project `.agents/skills`, preserving each scope's lock file and XDG global-lock resolution; annotation does not discover or authorize extra skills.
 
 ### Browser-native `ask_user`
 - `ask_user` accepts either the legacy `question` form or `title` plus 1–6 ID-based `questions` (`single`, `multiple`, `text`). Batch related independent decisions, never dependent follow-ups. `lib/question-set.ts` validates complete answer sets atomically; the internal `ask_user_batch` request uses the existing pending UI lifecycle. Every batch question has an alternative written main answer and separate additive details, even for freeform answers; optional skip is explicit. `QuestionSetDialog` owns free navigation/review and preserves drafts until confirmed submission; `QuestionSetReview` is also the read-only receipt body. Recommendations are not defaults. Same-tab `sessionStorage` drafts are scoped to session/request/payload, cleared on observed settlement, and bounded to 12 sets/24 hours on load/save. They are never sent to the model; no cross-device or server-restart recovery. See [docs/questions.md](questions.md).
@@ -89,6 +89,12 @@ New Git operations save exact review bundles once in private `pi-web/reviews/`; 
 ### Chat appearance
 - Messages and the composer use the full available chat pane width by default, retaining padding, the desktop minimap and any open side panels. The composer width button switches to the reading column (820px by default) and back; it remains visible outside mobile More controls and does not change the draft or session.
 - `hooks/useChatAppearance.ts` shares the browser-tab appearance snapshot. `pi-chat-content-full-width` remembers the mode (only `false` opts into reading width), independently of the existing `pi-chat-content-width` numeric preference and font size. Existing numeric preferences remain available without overriding the new full-width default. Settings offers the same mode switch; adjusting or resetting the numeric reading width activates reading mode. `--chat-content-max-width` is `none` in full-width mode, not a larger fixed cap. Persistence is best-effort when browser storage is unavailable.
+
+### Composer lists and Markdown markers
+Native newlines (desktop Shift+Enter or mobile Enter) continue ordered, bullet, task and Chinese enumeration items; an empty item clears its marker. Selections, code, IME composition and ordinary sends retain their existing behavior. Native edits preserve undo and controlled drafts; when native editing is unavailable the ordinary newline remains. Deep indentation without a recognized shallower list is conservatively treated as code. Chat ordered lists size their indentation to their largest counter; the separate file-preview renderer retains the shared two-digit CSS fallback.
+
+### Installed app and asset caching
+`PI_WEB_APP_NAME` changes only the runtime PWA manifest name/short name (trimmed, blank defaults to `Pi Web`); identity, titles and icons remain unchanged. The worker neither precaches nor intercepts manifests, including stale-cache/query/navigation variants. Static network responses return without awaiting Cache Storage writes; `waitUntil` retains the cloned background write and cache failures do not discard healthy responses.
 
 ### Completion sound
 - `hooks/useAudio.ts` stores the toggle in `localStorage` as `pi-sound-enabled` and reuses one `AudioContext`.

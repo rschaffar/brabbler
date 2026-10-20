@@ -108,7 +108,8 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       fit.fit();
     };
     const onResize = terminal.onResize(({ cols, rows }) => {
-      if (connected && !exited && !inputFailed) writer.resize(cols, rows);
+      if (!connected || exited || inputFailed) return;
+      writer.resize(Math.max(2, cols), Math.max(2, rows));
     });
     const resizeObserver = new ResizeObserver(fitAndResize);
     resizeObserver.observe(container);
@@ -142,7 +143,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
         terminal.options.disableStdin = false;
         setStatus("ready");
         fitAndResize();
-        writer.resize(terminal.cols, terminal.rows);
+        writer.resize(Math.max(2, terminal.cols), Math.max(2, terminal.rows));
         if (container.offsetWidth && container.offsetHeight) terminal.focus();
       };
       events.onerror = () => {
