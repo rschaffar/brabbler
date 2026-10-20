@@ -2,7 +2,11 @@
 
 ## Goal
 
-Adopt and review the seven shortlisted upstream improvements and four attractive extras in one feature worktree, then integrate the fully verified batch into local `rst-main` with one non-fast-forward merge and exact-state approval. User authorized implementation and combined integration; no remote operation or publication is authorized.
+Adopt and review the seven shortlisted upstream improvements and four attractive extras in one feature worktree, delivering one fully verified candidate for exact-state approval and a single non-fast-forward merge into local `rst-main`. User authorized implementation and combined integration; no remote operation or publication is authorized.
+
+## Plan Relationship
+
+This implementation plan ends at the verified integration handoff. The global `git-worktrees` skill and harness Git policy own the subsequent exact-state merge approval/execution and separate cleanup; their durable operation receipts own the actual result. Archiving this implementation evidence does not claim that an integration or cleanup has already executed.
 
 ## Context
 
@@ -24,8 +28,8 @@ This batch does not own the separately identified preview-secret/transcript-auth
 - [x] Port ordered-list indentation (`8347ea5c`); test large starts/digit counts and unchanged nested-list rendering.
 - [x] Port overflowing panel-tab layout (`bf0730c1`); test desktop/mobile overflow without clipping and preserve tab actions.
 - [x] Obtain independent reliability and interface reviews of all eleven changes; resolve findings before final acceptance. Reliability review found no remaining findings; interface review confirmed fixes for list-contained fences/indented code and the memory-only draft fixture.
-- [ ] Run focused Nix checks while iterating, then complete core/static/plugin, all browser/terminal groups and genuine deployment VM acceptance after source/review settlement; record exact input identity, commands, runtime and artifacts.
-- [ ] Reassess current local target, rebase if required, inspect clean candidate and obtain exact-state approval through the merge tool for one unsigned non-FF merge.
+- [x] Run focused Nix checks while iterating, then complete core/static/plugin, all browser/terminal groups and genuine deployment VM acceptance after source/review settlement; record exact input identity, commands, runtime and artifacts. See final acceptance below.
+- [x] Reassess current local target, rebase and inspect the clean candidate for the single unsigned non-FF integration handoff. `git_rebase` confirmed `f30ac1a` up to date on `rst-main` `1fc4d38`; exact-state approval/execution remains with the Git lifecycle owner.
 
 ## Evidence so far
 
@@ -40,6 +44,17 @@ This batch does not own the separately identified preview-secret/transcript-auth
 - Corrected packaged history passed in 52 seconds command wall time (40.248 seconds browser execution): `/tmp/pi-web-test-browser.brnSaO/run.json`. It covers desktop/mobile focus, qualified provider search, native list undo/redo, IME/failure fallback, runtime PWA naming and memory-only SPA draft retention.
 - Three independent one-worker focused groups passed with source writers paused during export, combined wall time 152 seconds, digest `9410415627be2d15d8c1018135beacb69252abd7b52e9984d8dd5ab1396dac69`: terminal `/tmp/pi-web-test-browser.v0RlVq/run.json` (62.048 seconds execution), file-edit `/tmp/pi-web-test-browser.EBYwPK/run.json` (85.659 seconds), Markdown `/tmp/pi-web-test-browser.4OHWkf/run.json` (130.146 seconds). Logs: `/tmp/pi-web-easy-wins-focused.oVhimR/`. These remain focused evidence, not complete acceptance.
 
+## Final acceptance and handoff
+
+Tested source commit: `f30ac1adc257bdec77a0c5e947dec61072e1efdb`; local target: `1fc4d380dc7781f035a21008083ee0b81f739ce0`. `nix run .#test -- all --workers 4 --jobs 4` passed with fresh execution in **324 seconds command wall time**, separate from model/review/coordination work. The command includes Nix realization; no cold-cache or isolated preparation benchmark is claimed. Browser pre-first-capsule preparation/coordination was 6.858 seconds and the capsule span 248.138 seconds. The VM run took 61.688 seconds including realization/collection; its acceptance evidence reports 17.512 seconds execution. Core/browser overlap, so these intervals must not be summed.
+
+- Outer source content/mode SHA256: `73d7b43eb2a04ac6d6becc4504f336e062eb6d5e85727231e81b6197c1c857c8`; retained snapshot `/tmp/pi-web-test-source-DpqpAn/source.json`, selection `/tmp/pi-web-test-source-DpqpAn/selection.json`.
+- Core/static/plugin: **314 files / 2,454 tests / 10 suites**, none failed, cancelled or skipped; `/tmp/pi-web-test-core.hcqXG9/run.json` and `/nix/store/mw6n2hqhq5n1hh2jg6cafxdls60x2k0y-pi-web-core-checks`.
+- Browser/terminal: **all 24 groups / 53 exact scenario receipts**, all passed with settlement; `/tmp/pi-web-test-browser.w7HuCc/run.json`.
+- Genuine Home Manager deployment VM: passed activation, environment/permissions, durable write/restart, real HTTP PTY and shutdown/collection proofs; `/tmp/pwv-5EpOpU/run.json`.
+- Full command log: `/tmp/pi-web-easy-wins-all.ZdvhFs.log`. Existing unrelated ref-cleanup lint warnings remained warnings. A Nix eval-cache SQLite busy diagnostic was ignored by Nix itself; all declared verdicts passed.
+- Both independent reviewers found no remaining scoped findings after corrections. No application/runtime input changes followed this acceptance; the final plan/evidence archival is documentation-only and requires proportional diff/whitespace review, not a relabeled full run on the archival commit.
+
 ## Risks
 
 Textual patch applicability is not semantic verification. Adapt upstream tests to the fork's stronger contracts; do not import obsolete instructions, translations, dependency downgrades or upstream packaging/test commands. Browser event ordering, SSE replay, global skill-root identity and runtime manifest caching need explicit regression coverage.
@@ -47,6 +62,6 @@ Textual patch applicability is not semantic verification. Adapt upstream tests t
 ## Completion Checklist
 
 - [x] All eleven bounded improvements implemented and reviewed, with upstream attribution in coherent feature history (`cbfd137` plus reviewed fixture follow-up).
-- [ ] Full acceptance passes for the settled candidate; failures and unavailable evidence remain explicit.
-- [ ] One approved local non-FF integration is verified; no remote publication occurs.
-- [ ] Report feature/integration IDs, evidence, deferred scope and separately approved cleanup outcome.
+- [x] Full acceptance passes for the settled candidate; earlier failures and their artifacts remain explicit.
+- [x] Deliver the verified candidate and exact local non-FF integration intent to the Git lifecycle owner; no remote publication is authorized or performed.
+- [x] Provide source/target IDs, evidence and deferred scope. Actual integration/cleanup IDs and outcomes belong to the subsequent durable Git receipts and completion report.
