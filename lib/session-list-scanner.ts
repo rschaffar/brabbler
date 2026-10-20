@@ -1,14 +1,13 @@
-// Cache session-list metadata without building the SDK's unused allMessagesText.
-// Normal listings rescan only new/changed files; summary listings reuse whatever
-// the index already holds and fall back to header/stat metadata for the files
-// that changed, which a later normal listing hydrates.
-// ponytail: size/mtime fingerprints miss same-size edits with restored mtime;
-// use content hashes if detecting those edits becomes necessary.
-import { closeSync, createReadStream, existsSync, openSync, readFileSync, readSync } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
-import type { Dirent } from "node:fs";
+// Adapted from upstream 1a94341c: scan growing files from a validated checkpoint.
+// Sampling is not prefix integrity verification: same-inode edits outside the
+// header/boundary sample followed by growth can retain stale metadata. A full
+// hash would defeat the saved I/O. Cold summaries still scan archive markers.
+import { createHash } from "node:crypto";
+import fs, { existsSync, readFileSync } from "node:fs";
+import type { Dirent, Stats } from "node:fs";
+import { open, readdir, stat } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { createInterface } from "node:readline";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { SESSION_ARCHIVE_TYPE } from "./session-archive";
@@ -26,475 +25,508 @@ export interface ScannedSessionInfo {
 	archived?: boolean;
 	parentSessionPath?: string;
 	spawnedBy?: string;
-	/** True when only header/stat metadata was available for this listing. */
+	/** Transcript details are pending; archive state has already been resolved. */
 	detailsPending?: boolean;
 }
 
 interface Fingerprint {
 	size: number;
 	mtimeMs: number;
+	ctimeMs: number;
+	dev: number;
+	ino: number;
 }
 
-const SUMMARY_HEADER_MAX_BYTES = 64 * 1024;
+interface ResumePoint {
+	/** Just after the last LF-terminated run; incomplete bytes are reread. */
+	offset: number;
+	headerEnd: number;
+	check: string;
+	hasFirstMessage: boolean;
+	lastActivityTime?: number;
+}
 
 interface IndexEntry {
 	fp: Fingerprint;
 	info: ScannedSessionInfo;
+	resume?: ResumePoint;
 }
 
 type RawEntry = Record<string, unknown>;
+const SUMMARY_HEADER_MAX_BYTES = 64 * 1024;
+const RESUME_SAMPLE_BYTES = 512;
+// Bump whenever parsing/folding changes: resumed totals retain the old rules.
+const INDEX_FORMAT_VERSION = 2;
+const INDEX_PERSIST_DELAY_MS = 5_000;
+const MAX_CONCURRENT_SCANS = 10;
+
+interface PendingIndexSave {
+	path: string;
+	entries: Array<[string, IndexEntry]>;
+	timer: NodeJS.Timeout;
+}
+
+declare global {
+	var __piWebScanIndex: Map<string, IndexEntry> | undefined;
+	var __piWebScanIndexLoaded: boolean | undefined;
+	var __piWebScanIndexDir: string | undefined;
+	var __piWebScanIndexSave: PendingIndexSave | undefined;
+	var __piWebScanQueue: Promise<void> | undefined;
+}
 
 function isRecord(value: unknown): value is RawEntry {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-const INDEX_FORMAT_VERSION = 1;
-
-declare global {
-	var __piWebScanIndex: Map<string, IndexEntry> | undefined;
-	var __piWebScanIndexLoaded: boolean | undefined;
-	var __piWebScanIndexSaveQueued: boolean | undefined;
-}
-
 function parseLine(line: string): RawEntry | null {
 	if (!line.trim()) return null;
 	try {
-		const entry = JSON.parse(line) as RawEntry;
-		return entry && typeof entry === "object" ? entry : null;
+		const entry: unknown = JSON.parse(line);
+		return isRecord(entry) ? entry : null;
 	} catch {
 		return null;
 	}
 }
 
-/** Read only the first physical line needed to identify a session file. */
-function readSessionHeaderSummary(filePath: string): RawEntry | null {
-	const fd = openSync(filePath, "r");
+function fingerprint(stats: Stats): Fingerprint {
+	return { size: stats.size, mtimeMs: stats.mtimeMs, ctimeMs: stats.ctimeMs, dev: stats.dev, ino: stats.ino };
+}
+
+function sameFingerprint(a: Fingerprint, b: Fingerprint): boolean {
+	return a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs
+		&& a.dev === b.dev && a.ino === b.ino;
+}
+
+function hasGrown(cached: IndexEntry | undefined, fp: Fingerprint): cached is IndexEntry {
+	return Boolean(cached?.resume && fp.ino > 0 && cached.fp.dev === fp.dev
+		&& cached.fp.ino === fp.ino && fp.size > cached.fp.size);
+}
+
+async function readSessionHeaderSummary(filePath: string): Promise<RawEntry | null> {
+	const handle = await open(filePath, "r");
 	try {
 		const buffer = Buffer.allocUnsafe(SUMMARY_HEADER_MAX_BYTES);
-		const bytesRead = readSync(fd, buffer, 0, buffer.length, 0);
-		if (bytesRead <= 0) return null;
-		const source = buffer.subarray(0, bytesRead).toString("utf8");
-		for (const line of source.split("\n")) {
+		const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+		for (const line of buffer.subarray(0, bytesRead).toString("utf8").split("\n")) {
 			const entry = parseLine(line.replace(/\r$/, ""));
-			if (!entry) continue;
-			return entry.type === "session" ? entry : null;
+			if (entry) return entry.type === "session" ? entry : null;
 		}
 		return null;
-	} catch {
-		return null;
 	} finally {
-		closeSync(fd);
+		await handle.close();
 	}
 }
 
-function hasMatchingFingerprint(
-	cached: IndexEntry | undefined,
-	fingerprint: Fingerprint,
-): cached is IndexEntry {
-	return Boolean(
-		cached
-		&& cached.fp.size === fingerprint.size
-		&& cached.fp.mtimeMs === fingerprint.mtimeMs,
-	);
-}
-
-/** Build a session row from the header alone, without parsing the transcript. */
-function deferredSessionInfo(
-	filePath: string,
-	fingerprint: Fingerprint,
-): ScannedSessionInfo | null {
-	const header = readSessionHeaderSummary(filePath);
-	if (
-		!header
-		|| typeof header.id !== "string"
-		|| typeof header.cwd !== "string"
-		|| typeof header.timestamp !== "string"
-	) return null;
-
+async function deferredSessionInfo(filePath: string, fp: Fingerprint): Promise<ScannedSessionInfo | null> {
+	const header = await readSessionHeaderSummary(filePath);
+	if (!header || typeof header.id !== "string" || typeof header.cwd !== "string"
+		|| typeof header.timestamp !== "string") return null;
 	const created = new Date(header.timestamp);
 	if (!Number.isFinite(created.getTime())) return null;
-
 	return {
-		path: filePath,
-		id: header.id,
-		cwd: header.cwd,
-		created,
-		modified: new Date(fingerprint.mtimeMs),
-		messageCount: 0,
-		firstMessage: "",
+		path: filePath, id: header.id, cwd: header.cwd, created,
+		modified: new Date(fp.mtimeMs), messageCount: 0, firstMessage: "",
 		...(typeof header.parentSession === "string" ? { parentSessionPath: header.parentSession } : {}),
+		// Deliberately scan the whole transcript: an archive marker can be anywhere.
+		archived: await readArchiveState(filePath),
 		detailsPending: true,
 	};
-}
-
-async function readArchiveState(filePath: string): Promise<boolean> {
-	let archived = false;
-	const lines = createInterface({ input: createReadStream(filePath, { encoding: "utf8" }), crlfDelay: Infinity });
-	for await (const line of lines) {
-		if (!line.includes(SESSION_ARCHIVE_TYPE)) continue;
-		const entry = parseLine(line);
-		if (entry?.type !== "custom" || entry.customType !== SESSION_ARCHIVE_TYPE || !isRecord(entry.data)) continue;
-		if (entry.data.version === 1 && typeof entry.data.archived === "boolean") archived = entry.data.archived;
-	}
-	return archived;
 }
 
 function extractTextContent(message: RawEntry): string {
 	const content = message.content;
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
-	return content
-		.filter(
-			(block): block is { type: string; text: string } =>
-				!!block &&
-				typeof block === "object" &&
-				(block as RawEntry).type === "text" &&
-				typeof (block as RawEntry).text === "string",
-		)
-		.map((block) => block.text)
-		.join(" ");
+	return content.filter((block): block is { type: string; text: string } =>
+		isRecord(block) && block.type === "text" && typeof block.text === "string")
+		.map((block) => block.text).join(" ");
 }
 
 function activityTimeOf(entry: RawEntry): number | undefined {
-	const message = entry.message as RawEntry | undefined;
-	if (
-		!message ||
-		typeof message.role !== "string" ||
-		!("content" in message) ||
-		(message.role !== "user" && message.role !== "assistant")
-	) {
-		return undefined;
-	}
-	if (typeof message.timestamp === "number") return message.timestamp;
-	const t = new Date(entry.timestamp as string).getTime();
-	return Number.isNaN(t) ? undefined : t;
+	const message = entry.message;
+	if (!isRecord(message) || !("content" in message)
+		|| (message.role !== "user" && message.role !== "assistant")) return undefined;
+	const time = typeof message.timestamp === "number"
+		? message.timestamp : new Date(entry.timestamp as string).getTime();
+	return Number.isFinite(time) ? time : undefined;
 }
 
-// Uses the SDK's buildSessionInfo() semantics for displayed metadata.
-export async function scanSessionFileInfo(
-	filePath: string,
-): Promise<ScannedSessionInfo | null> {
-	try {
-		const stats = await stat(filePath);
-		let header: RawEntry | null = null;
-		let name: string | undefined;
-		let messageCount = 0;
-		let firstMessage = "";
-		let lastActivityTime: number | undefined;
-		let archived = false;
-		let spawnedBy: string | undefined;
+interface ScanTotals {
+	name?: string;
+	messageCount: number;
+	firstMessage: string;
+	lastActivityTime?: number;
+	archived: boolean;
+	spawnedBy?: string;
+}
 
-		const rl = createInterface({
-			input: createReadStream(filePath, { encoding: "utf8" }),
-			crlfDelay: Infinity,
-		});
+function archiveState(entry: RawEntry): boolean | undefined {
+	if (entry.type !== "custom" || entry.customType !== SESSION_ARCHIVE_TYPE || !isRecord(entry.data)) return undefined;
+	return entry.data.version === 1 && typeof entry.data.archived === "boolean" ? entry.data.archived : undefined;
+}
 
-		for await (const line of rl) {
-			const entry = parseLine(line);
-			if (!entry) continue;
+function foldEntry(totals: ScanTotals, entry: RawEntry, sessionId: string): void {
+	const archived = archiveState(entry);
+	if (archived !== undefined) totals.archived = archived;
+	if (entry.type === "custom" && entry.customType === SESSION_SPAWN_TYPE) {
+		totals.spawnedBy ??= readSessionSpawn(entry.data, sessionId)?.creatorSessionId;
+	}
+	if (entry.type === "session_info") {
+		totals.name = typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : undefined;
+	}
+	if (entry.type !== "message") return;
+	totals.messageCount++;
+	const activity = activityTimeOf(entry);
+	if (activity !== undefined) totals.lastActivityTime = Math.max(totals.lastActivityTime ?? 0, activity);
+	if (!totals.firstMessage && isRecord(entry.message) && entry.message.role === "user") {
+		totals.firstMessage = extractTextContent(entry.message);
+	}
+}
 
-			if (!header) {
-				if (entry.type !== "session") return null;
-				header = entry;
-				continue;
+function sampleCheck(head: Buffer, tail: Buffer): string {
+	return createHash("sha1").update(head).update(tail).digest("base64");
+}
+
+// Decode only whole LF-delimited byte runs, preserving split UTF-8 and raw
+// U+2028/U+2029 in JSON strings (unlike Node 24 readline). Retain lone-CR behavior.
+function linesOf(bytes: Buffer): string[] {
+	const text = bytes.toString("utf8");
+	return text.includes("\r") ? text.split("\r") : [text];
+}
+
+function keepLastBytes(parts: Buffer[]): Buffer[] {
+	let total = parts.reduce((sum, part) => sum + part.length, 0);
+	let first = 0;
+	while (first < parts.length - 1 && total - parts[first].length >= RESUME_SAMPLE_BYTES) {
+		total -= parts[first++].length;
+	}
+	return parts.slice(first);
+}
+
+interface LineScan { offset: number; sample: Buffer; rest: Buffer }
+
+async function readLines(
+	handle: FileHandle, filePath: string, start: number, size: number, sample: Buffer,
+	onLine: (bytes: Buffer, end: number) => boolean,
+): Promise<LineScan | null> {
+	let offset = start;
+	let pending: Buffer[] = [];
+	let read = [sample];
+	if (start < size) {
+		// Bind validation and parsing to one descriptor and a finite observed size.
+		// Share FileHandle ownership: early exit/error must not close an untracked
+		// numeric descriptor that another worker could reuse before finally runs.
+		const stream = fs.createReadStream(filePath, { fd: handle, autoClose: true, start, end: size - 1 });
+		for await (const chunk of stream as AsyncIterable<Buffer>) {
+			let newline = chunk.indexOf(0x0a);
+			if (newline === -1) { pending.push(chunk); continue; }
+			const carried = pending;
+			let lineStart = 0;
+			while (newline !== -1) {
+				const piece = chunk.subarray(lineStart, newline);
+				const bytes = pending.length ? Buffer.concat([...pending, piece]) : piece;
+				pending = [];
+				offset += bytes.length + 1;
+				if (!onLine(bytes, offset)) return null;
+				lineStart = newline + 1;
+				newline = chunk.indexOf(0x0a, lineStart);
 			}
-
-			if (entry.type === "custom" && entry.customType === SESSION_ARCHIVE_TYPE) {
-				const data = entry.data as RawEntry | undefined;
-				if (data?.version === 1 && typeof data.archived === "boolean") archived = data.archived;
-			}
-			if (entry.type === "custom" && entry.customType === SESSION_SPAWN_TYPE) {
-				spawnedBy ??= readSessionSpawn(entry.data, header.id as string)?.creatorSessionId;
-			}
-			if (entry.type === "session_info") {
-				name =
-					typeof entry.name === "string" && entry.name.trim()
-						? entry.name.trim()
-						: undefined;
-			}
-			if (entry.type !== "message") continue;
-			messageCount++;
-
-			const activityTime = activityTimeOf(entry);
-			if (typeof activityTime === "number") {
-				lastActivityTime = Math.max(lastActivityTime ?? 0, activityTime);
-			}
-
-			const message = entry.message as RawEntry | undefined;
-			if (
-				!message ||
-				typeof message.role !== "string" ||
-				!("content" in message)
-			)
-				continue;
-			if (message.role !== "user" && message.role !== "assistant") continue;
-
-			const textContent = extractTextContent(message);
-			if (!textContent) continue;
-			if (!firstMessage && message.role === "user") firstMessage = textContent;
+			read = keepLastBytes([...read, ...carried, chunk.subarray(0, lineStart)]);
+			if (lineStart < chunk.length) pending.push(chunk.subarray(lineStart));
 		}
+	}
+	const joined = Buffer.concat(read);
+	return { offset, sample: joined.subarray(Math.max(0, joined.length - RESUME_SAMPLE_BYTES)), rest: Buffer.concat(pending) };
+}
 
-		if (!header) return null;
+async function readArchiveState(filePath: string): Promise<boolean> {
+	const handle = await open(filePath, "r");
+	try {
+		let archived = false;
+		const fold = (bytes: Buffer) => {
+			for (const line of linesOf(bytes)) {
+				if (!line.includes(SESSION_ARCHIVE_TYPE)) continue;
+				const entry = parseLine(line);
+				const state = entry ? archiveState(entry) : undefined;
+				if (state !== undefined) archived = state;
+			}
+			return true;
+		};
+		const scan = await readLines(handle, filePath, 0, (await handle.stat()).size, Buffer.alloc(0), fold);
+		if (scan?.rest.length) fold(scan.rest);
+		return archived;
+	} finally {
+		await handle.close();
+	}
+}
 
-		const cwd = typeof header.cwd === "string" ? header.cwd : "";
-		const parentSessionPath =
-			typeof header.parentSession === "string"
-				? header.parentSession
-				: undefined;
-		const headerTime =
-			typeof header.timestamp === "string"
-				? new Date(header.timestamp).getTime()
-				: NaN;
-		const modified =
-			typeof lastActivityTime === "number" && lastActivityTime > 0
-				? new Date(lastActivityTime)
-				: !Number.isNaN(headerTime)
-					? new Date(headerTime)
-					: stats.mtime;
+async function readResumeSample(handle: FileHandle, resume: ResumePoint): Promise<{ head: Buffer; tail: Buffer } | null> {
+	const tailStart = Math.max(0, resume.offset - RESUME_SAMPLE_BYTES);
+	const head = Buffer.alloc(resume.headerEnd);
+	const tail = Buffer.alloc(resume.offset - tailStart);
+	const headRead = await handle.read(head, 0, head.length, 0);
+	const tailRead = await handle.read(tail, 0, tail.length, tailStart);
+	if (headRead.bytesRead !== head.length || tailRead.bytesRead !== tail.length) return null;
+	return sampleCheck(head, tail) === resume.check ? { head, tail } : null;
+}
 
+async function scanSessionFile(filePath: string, previous?: IndexEntry): Promise<{ entry: IndexEntry; stable: boolean } | null> {
+	let handle: FileHandle | undefined;
+	try {
+		handle = await open(filePath, "r");
+		const stats = await handle.stat();
+		const fp = fingerprint(stats);
+		const resumed = hasGrown(previous, fp) && previous.resume
+			? await readResumeSample(handle, previous.resume) : null;
+		let header: RawEntry | null = null;
+		let head: Buffer | undefined;
+		let headerEnd = 0;
+		let start = 0;
+		let sample: Buffer = Buffer.alloc(0);
+		const totals: ScanTotals = { messageCount: 0, firstMessage: "", archived: false };
+		if (resumed && previous?.resume) {
+			const { info, resume } = previous;
+			start = resume.offset;
+			sample = resumed.tail;
+			header = { id: info.id, cwd: info.cwd, timestamp: info.created.toISOString(), parentSession: info.parentSessionPath };
+			head = resumed.head;
+			headerEnd = resume.headerEnd;
+			Object.assign(totals, {
+				name: info.name, messageCount: info.messageCount,
+				firstMessage: resume.hasFirstMessage ? info.firstMessage : "",
+				lastActivityTime: resume.lastActivityTime, archived: info.archived === true, spawnedBy: info.spawnedBy,
+			});
+		}
+		let restCounted = false;
+		const parseLines = (bytes: Buffer, end: number | null): boolean => {
+			for (const line of linesOf(bytes)) {
+				const entry = parseLine(line);
+				if (!entry) continue;
+				if (end === null) restCounted = true;
+				if (!header) {
+					if (entry.type !== "session" || typeof entry.id !== "string" || typeof entry.timestamp !== "string"
+						|| !Number.isFinite(new Date(entry.timestamp).getTime())) return false;
+					header = entry;
+					// Unusual/oversized headers still scan fully, but never allocate a persisted-size buffer.
+					if (end !== null && end === bytes.length + 1 && end <= SUMMARY_HEADER_MAX_BYTES) {
+						head = Buffer.concat([bytes, Buffer.from("\n")]);
+						headerEnd = end;
+					}
+					continue;
+				}
+				foldEntry(totals, entry, header.id as string);
+			}
+			return true;
+		};
+		const scan = await readLines(handle, filePath, start, fp.size, sample, parseLines);
+		if (!scan || (scan.rest.length && !parseLines(scan.rest, null)) || !header) return null;
+		const created = new Date(header.timestamp as string);
+		const info: ScannedSessionInfo = {
+			path: filePath, id: header.id as string, cwd: typeof header.cwd === "string" ? header.cwd : "",
+			name: totals.name, parentSessionPath: typeof header.parentSession === "string" ? header.parentSession : undefined,
+			created,
+			modified: typeof totals.lastActivityTime === "number" && totals.lastActivityTime > 0
+				? new Date(totals.lastActivityTime) : created,
+			messageCount: totals.messageCount, firstMessage: totals.firstMessage || "(no messages)",
+			...(totals.archived ? { archived: true } : {}),
+			...(totals.spawnedBy ? { spawnedBy: totals.spawnedBy } : {}),
+		};
+		// The stream closes its FileHandle on exhaustion. Revalidate the pathname
+		// against the descriptor's original identity/stat, not a reopened tail.
+		const stable = sameFingerprint(fp, fingerprint(await stat(filePath)));
 		return {
-			path: filePath,
-			id: header.id as string,
-			cwd,
-			name,
-			parentSessionPath,
-			...(spawnedBy ? { spawnedBy } : {}),
-			created: new Date(header.timestamp as string),
-			modified,
-			messageCount,
-			firstMessage: firstMessage || "(no messages)",
-			...(archived ? { archived: true } : {}),
+			stable,
+			entry: {
+				fp, info,
+				resume: stable && head && headerEnd > 0 && !restCounted && fp.ino > 0
+					? { offset: scan.offset, headerEnd, check: sampleCheck(head, scan.sample),
+						hasFirstMessage: totals.firstMessage !== "",
+						...(totals.lastActivityTime !== undefined ? { lastActivityTime: totals.lastActivityTime } : {}) }
+					: undefined,
+			},
 		};
 	} catch {
 		return null;
+	} finally {
+		await handle?.close().catch(() => undefined);
 	}
+}
+
+/** Full metadata scan; also used as an independent baseline for tail-scan tests. */
+export async function scanSessionFileInfo(filePath: string): Promise<ScannedSessionInfo | null> {
+	return (await scanSessionFile(filePath))?.entry.info ?? null;
 }
 
 async function enumerateSessionFiles(sessionsDir: string): Promise<string[]> {
 	let dirs: Dirent[];
 	try {
-		const entries = await readdir(sessionsDir, { withFileTypes: true });
-		dirs = entries.filter(
-			(entry) => entry.isDirectory() || entry.isSymbolicLink(),
-		);
-	} catch {
-		return [];
-	}
-
+		dirs = (await readdir(sessionsDir, { withFileTypes: true })).filter((entry) => entry.isDirectory() || entry.isSymbolicLink());
+	} catch { return []; }
 	const files: string[] = [];
 	for (const dir of dirs) {
-		const dirPath = join(sessionsDir, dir.name);
 		try {
-			for (const f of await readdir(dirPath)) {
-				if (f.endsWith(".jsonl")) files.push(join(dirPath, f));
+			for (const file of await readdir(join(sessionsDir, dir.name))) {
+				if (file.endsWith(".jsonl")) files.push(join(sessionsDir, dir.name, file));
 			}
-		} catch {
-			// unreadable project dir: same skip-as-absent semantics as the SDK
-		}
+		} catch { /* Unreadable project directory: SDK skip-as-absent semantics. */ }
 	}
 	return files;
 }
 
-const MAX_CONCURRENT_SCANS = 10;
-
-async function runPool<T>(items: T[], worker: (item: T) => Promise<void>) {
+async function runPool<T>(items: T[], worker: (item: T) => Promise<void>): Promise<void> {
 	let next = 0;
-	const inFlight = new Set<Promise<void>>();
-	while (next < items.length || inFlight.size > 0) {
-		while (next < items.length && inFlight.size < MAX_CONCURRENT_SCANS) {
-			const item = items[next++];
-			const task = worker(item).finally(() => inFlight.delete(task));
-			inFlight.add(task);
-		}
-		if (inFlight.size > 0) await Promise.race(inFlight);
-	}
+	const settled = await Promise.allSettled(Array.from({ length: Math.min(MAX_CONCURRENT_SCANS, items.length) }, async () => {
+		while (next < items.length) await worker(items[next++]);
+	}));
+	const failed = settled.find((result) => result.status === "rejected");
+	if (failed?.status === "rejected") throw failed.reason;
 }
 
 function getIndex(): Map<string, IndexEntry> {
-	if (!globalThis.__piWebScanIndex) globalThis.__piWebScanIndex = new Map();
-	return globalThis.__piWebScanIndex;
+	return globalThis.__piWebScanIndex ??= new Map();
 }
 
-function indexFilePath(): string {
-	return join(getAgentDir(), "pi-web-session-index.json");
+function indexFilePath(agentDir: string): string {
+	return join(agentDir, "pi-web-session-index.json");
 }
 
-function loadPersistedIndex(): void {
+function readResumePoint(value: unknown, fp: Fingerprint): ResumePoint | undefined {
+	if (!isRecord(value) || fp.ino <= 0) return undefined;
+	const { offset, headerEnd, check, hasFirstMessage, lastActivityTime } = value;
+	if (typeof headerEnd !== "number" || !Number.isSafeInteger(headerEnd) || headerEnd <= 0 || headerEnd > SUMMARY_HEADER_MAX_BYTES
+		|| typeof offset !== "number" || !Number.isSafeInteger(offset) || offset < headerEnd || offset > fp.size
+		|| typeof check !== "string" || !/^[A-Za-z0-9+/]{27}=$/.test(check)
+		|| typeof hasFirstMessage !== "boolean"
+		|| (lastActivityTime !== undefined && (typeof lastActivityTime !== "number" || !Number.isFinite(lastActivityTime)))) return undefined;
+	return { offset, headerEnd, check, hasFirstMessage, ...(lastActivityTime !== undefined ? { lastActivityTime } : {}) };
+}
+
+function loadPersistedIndex(agentDir: string): void {
+	if (globalThis.__piWebScanIndexDir !== agentDir) {
+		persistIndex();
+		globalThis.__piWebScanIndex = new Map();
+		globalThis.__piWebScanIndexLoaded = undefined;
+		globalThis.__piWebScanIndexDir = agentDir;
+	}
 	if (globalThis.__piWebScanIndexLoaded) return;
 	globalThis.__piWebScanIndexLoaded = true;
-	const path = indexFilePath();
+	const path = indexFilePath(agentDir);
 	if (!existsSync(path)) return;
 	try {
 		const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
 		if (!isRecord(parsed) || parsed.version !== INDEX_FORMAT_VERSION || !isRecord(parsed.entries)) return;
-		const index = getIndex();
 		for (const [pathKey, entry] of Object.entries(parsed.entries)) {
 			if (!isRecord(entry) || !isRecord(entry.fp) || !isRecord(entry.info)) continue;
 			const { fp, info } = entry;
-			if (
-				typeof fp.size !== "number" || !Number.isSafeInteger(fp.size) || fp.size < 0 ||
-				typeof fp.mtimeMs !== "number" || !Number.isFinite(fp.mtimeMs) ||
-				info.path !== pathKey ||
-				typeof info.id !== "string" ||
-				typeof info.cwd !== "string" ||
-				typeof info.firstMessage !== "string" ||
-				(info.name !== undefined && typeof info.name !== "string") ||
-				(info.archived !== undefined && typeof info.archived !== "boolean") ||
-				(info.parentSessionPath !== undefined && typeof info.parentSessionPath !== "string") ||
-				(info.spawnedBy !== undefined && (typeof info.spawnedBy !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(info.spawnedBy))) ||
-				typeof info.messageCount !== "number" || !Number.isSafeInteger(info.messageCount) || info.messageCount < 0 ||
-				typeof info.created !== "string" || typeof info.modified !== "string"
-			) continue;
-			const created = new Date(info.created);
-			const modified = new Date(info.modified);
+			if (typeof fp.size !== "number" || !Number.isSafeInteger(fp.size) || fp.size < 0
+				|| typeof fp.mtimeMs !== "number" || !Number.isFinite(fp.mtimeMs)
+				|| typeof fp.ctimeMs !== "number" || !Number.isFinite(fp.ctimeMs)
+				|| typeof fp.dev !== "number" || !Number.isSafeInteger(fp.dev) || fp.dev < 0
+				|| typeof fp.ino !== "number" || !Number.isSafeInteger(fp.ino) || fp.ino < 0
+				|| info.path !== pathKey || typeof info.id !== "string" || typeof info.cwd !== "string"
+				|| typeof info.firstMessage !== "string" || (info.name !== undefined && typeof info.name !== "string")
+				|| (info.archived !== undefined && typeof info.archived !== "boolean")
+				|| (info.parentSessionPath !== undefined && typeof info.parentSessionPath !== "string")
+				|| (info.spawnedBy !== undefined && (typeof info.spawnedBy !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(info.spawnedBy)))
+				|| typeof info.messageCount !== "number" || !Number.isSafeInteger(info.messageCount) || info.messageCount < 0
+				|| typeof info.created !== "string" || typeof info.modified !== "string") continue;
+			const created = new Date(info.created), modified = new Date(info.modified);
 			if (!Number.isFinite(created.getTime()) || !Number.isFinite(modified.getTime())) continue;
-			index.set(pathKey, {
-				fp: { size: fp.size, mtimeMs: fp.mtimeMs },
-				info: {
-					path: pathKey,
-					id: info.id,
-					cwd: info.cwd,
-					name: info.name,
-					...(info.archived ? { archived: true } : {}),
-					parentSessionPath: info.parentSessionPath,
+			const restoredFp: Fingerprint = { size: fp.size, mtimeMs: fp.mtimeMs, ctimeMs: fp.ctimeMs, dev: fp.dev, ino: fp.ino };
+			getIndex().set(pathKey, {
+				fp: restoredFp,
+				info: { path: pathKey, id: info.id, cwd: info.cwd, name: info.name,
+					...(info.archived ? { archived: true } : {}), parentSessionPath: info.parentSessionPath,
 					...(typeof info.spawnedBy === "string" ? { spawnedBy: info.spawnedBy } : {}),
-					firstMessage: info.firstMessage,
-					messageCount: info.messageCount,
-					created,
-					modified,
-				},
+					firstMessage: info.firstMessage, messageCount: info.messageCount, created, modified },
+				resume: readResumePoint(entry.resume, restoredFp),
 			});
 		}
-	} catch {
-		// corrupt index => cold rebuild, never an error surfaced to callers
-	}
+	} catch { /* Corrupt/old index: cold rebuild, never a caller error. */ }
 }
 
-function queueIndexPersist(): void {
-	if (globalThis.__piWebScanIndexSaveQueued) return;
-	globalThis.__piWebScanIndexSaveQueued = true;
-	queueMicrotask(() => {
-		globalThis.__piWebScanIndexSaveQueued = undefined;
-		try {
-			const entries: Record<string, IndexEntry> = {};
-			for (const [pathKey, entry] of getIndex()) entries[pathKey] = entry;
-			writePrivateFileAtomicSync(
-				indexFilePath(),
-				JSON.stringify({ version: INDEX_FORMAT_VERSION, entries }),
-			);
-		} catch {
-			// persistence is best-effort; the in-memory index remains authoritative
-		}
-	});
+function persistIndex(): void {
+	const pending = globalThis.__piWebScanIndexSave;
+	if (!pending) return;
+	clearTimeout(pending.timer);
+	globalThis.__piWebScanIndexSave = undefined;
+	try {
+		writePrivateFileAtomicSync(pending.path, JSON.stringify({ version: INDEX_FORMAT_VERSION, entries: Object.fromEntries(pending.entries) }));
+	} catch { /* Best-effort cache; a lost save only costs a rescan. */ }
 }
 
-/**
- * Incremental equivalent of SessionManager.listAll(): rescans only files whose
- * (size, mtimeMs) changed since the last pass. Output ordering matches the SDK
- * catalogue (modified descending).
- */
-export async function listSessionsIncremental(
-	options: { deferDetails?: boolean } = {},
-): Promise<ScannedSessionInfo[]> {
-	loadPersistedIndex();
-	const deferDetails = options.deferDetails ?? false;
+function queueIndexPersist(agentDir: string): void {
+	const path = indexFilePath(agentDir), entries = [...getIndex()];
+	const pending = globalThis.__piWebScanIndexSave;
+	if (pending?.path === path) { pending.entries = entries; return; }
+	persistIndex();
+	const timer = setTimeout(persistIndex, INDEX_PERSIST_DELAY_MS);
+	timer.unref?.();
+	globalThis.__piWebScanIndexSave = { path, entries, timer };
+}
 
-	const sessionsDir = join(getAgentDir(), "sessions");
-	const files = await enumerateSessionFiles(sessionsDir);
-
-	const index = getIndex();
-	const present = new Set(files);
-	const stale: string[] = [];
+async function listSessionsInOrder(agentDir: string, deferDetails: boolean): Promise<ScannedSessionInfo[]> {
+	loadPersistedIndex(agentDir);
+	const files = await enumerateSessionFiles(join(agentDir, "sessions"));
+	const index = getIndex(), present = new Set(files);
+	let dirty = false;
 	for (const known of index.keys()) {
-		if (!present.has(known)) stale.push(known);
+		if (!present.has(known)) { index.delete(known); dirty = true; }
 	}
-	for (const pathKey of stale) index.delete(pathKey);
-
-	const fingerprints = await Promise.all(
-		files.map(async (filePath) => {
-			try {
-				const s = await stat(filePath);
-				return {
-					filePath,
-					fp: { size: s.size, mtimeMs: s.mtimeMs } as Fingerprint,
-				};
-			} catch {
-				return { filePath, fp: null as Fingerprint | null };
-			}
-		}),
-	);
-
-	const changed: Array<{ filePath: string; fp: Fingerprint; resultIndex: number }> = [];
-	const results: (ScannedSessionInfo | null)[] = new Array(files.length).fill(null);
-	const mtimes: number[] = new Array(files.length).fill(Number.NEGATIVE_INFINITY);
-	for (const [resultIndex, { filePath, fp }] of fingerprints.entries()) {
-		if (!fp) {
-			index.delete(filePath);
-			continue;
-		}
-		mtimes[resultIndex] = fp.mtimeMs;
+	const fingerprints = await Promise.all(files.map(async (filePath) => {
+		try { return fingerprint(await stat(filePath)); } catch { return null; }
+	}));
+	const results: Array<{ info: ScannedSessionInfo; mtimeMs: number } | null> = new Array(files.length).fill(null);
+	await runPool(files.map((filePath, i) => ({ filePath, i })), async ({ filePath, i }) => {
+		const fp = fingerprints[i];
+		if (!fp) { dirty = index.delete(filePath) || dirty; return; }
 		const cached = index.get(filePath);
-		if (hasMatchingFingerprint(cached, fp)) {
-			// Complete details are already in memory and the index is persisted
-			// across restarts, so on the common warm path every unchanged file
-			// can paint its real count and first message immediately. Blanking
-			// them would cost a request to get back what we are already holding.
-			results[resultIndex] = cached.info;
-			continue;
-		}
-		if (deferDetails) {
-			// Archive markers can occur anywhere in an append-only transcript.
-			// Resolve them even for pending rows so a cold first paint never
-			// briefly reveals an archived session as active.
-			const summary = deferredSessionInfo(filePath, fp);
-			if (summary) {
-				changed.push({ filePath, fp, resultIndex });
-				results[resultIndex] = summary;
-			} else index.delete(filePath);
-			continue;
-		}
-		changed.push({ filePath, fp, resultIndex });
-	}
-
-	await runPool(changed, async ({ filePath, fp, resultIndex }) => {
-		if (deferDetails) {
-			try {
-				const summary = results[resultIndex];
-				if (summary) summary.archived = await readArchiveState(filePath);
-			} catch {
-				results[resultIndex] = null;
-			}
+		if (cached && sameFingerprint(cached.fp, fp)) {
+			results[i] = { info: cached.info, mtimeMs: fp.mtimeMs };
 			return;
 		}
-		const info = await scanSessionFileInfo(filePath);
-		if (info) {
-			index.set(filePath, { fp, info });
-			results[resultIndex] = info;
-		} else {
-			index.delete(filePath);
+		if (deferDetails) {
+			try {
+				const info = await deferredSessionInfo(filePath, fp);
+				if (info) results[i] = { info, mtimeMs: fp.mtimeMs };
+				else dirty = index.delete(filePath) || dirty;
+			} catch { dirty = index.delete(filePath) || dirty; }
+			// Never replace a complete accumulator with a pending row.
+			return;
 		}
+		const scanned = await scanSessionFile(filePath, hasGrown(cached, fp) ? cached : undefined);
+		dirty = true;
+		if (scanned) {
+			if (scanned.stable) index.set(filePath, scanned.entry);
+			else index.delete(filePath); // External writer raced us: do not persist mixed totals/checkpoints.
+			results[i] = { info: scanned.entry.info, mtimeMs: scanned.entry.fp.mtimeMs };
+		} else index.delete(filePath);
 	});
-
-	if (changed.length > 0 || stale.length > 0) queueIndexPersist();
-
-	// Preserve catalogue order for timestamp ties, independently of cache hits
-	// and the order in which concurrent file reads complete. Since pi 0.86 the
-	// SDK reads files newest-mtime first (then reverse filename) so resume can
-	// show results progressively, and its stable sort keeps that order for
-	// sessions with equal activity time.
-	return results
-		.flatMap((info, resultIndex) => (info ? [{ info, mtimeMs: mtimes[resultIndex] }] : []))
-		.sort((a, b) =>
-			b.info.modified.getTime() - a.info.modified.getTime()
-			|| b.mtimeMs - a.mtimeMs
-			|| basename(b.info.path).localeCompare(basename(a.info.path)),
-		)
+	if (dirty) queueIndexPersist(agentDir);
+	return results.flatMap((row) => row ? [row] : [])
+		.sort((a, b) => b.info.modified.getTime() - a.info.modified.getTime()
+			|| b.mtimeMs - a.mtimeMs || basename(b.info.path).localeCompare(basename(a.info.path)))
 		.map(({ info }) => info);
 }
 
-/** Test seam: drop all in-memory index state. */
+/** Serialize index owners, including summaries and generation-invalidated scans. */
+export function listSessionsIncremental(options: { deferDetails?: boolean } = {}): Promise<ScannedSessionInfo[]> {
+	const agentDir = getAgentDir();
+	const operation = (globalThis.__piWebScanQueue ?? Promise.resolve())
+		.then(() => listSessionsInOrder(agentDir, options.deferDetails ?? false));
+	globalThis.__piWebScanQueue = operation.then(() => undefined, () => undefined);
+	return operation;
+}
+
+/** Test seam: persist without waiting for the coalescing window. */
+export function flushSessionScanIndexForTests(): void { persistIndex(); }
+
+/** Test seam: call only after outstanding listings settle. */
 export function resetSessionScanIndexForTests(): void {
+	clearTimeout(globalThis.__piWebScanIndexSave?.timer);
 	globalThis.__piWebScanIndex = undefined;
 	globalThis.__piWebScanIndexLoaded = undefined;
-	globalThis.__piWebScanIndexSaveQueued = undefined;
+	globalThis.__piWebScanIndexDir = undefined;
+	globalThis.__piWebScanIndexSave = undefined;
+	globalThis.__piWebScanQueue = undefined;
 }
