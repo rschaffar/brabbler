@@ -1,10 +1,11 @@
 "use client";
 import "./file-workspace.css";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { FileViewer } from "./FileViewer";
 import { TabBar } from "./TabBar";
 import { FileEditContext } from "@/hooks/useFileEditSession";
 import { FileEditSessions } from "@/lib/file-edit-sessions";
+import { FileWorkspaceStore } from "@/lib/file-workspace-store";
 import { FileLinkMenuContext } from "./LocalFileLink";
 import { useI18n } from "@/hooks/useI18n";
 import {
@@ -37,8 +38,8 @@ const position = (rect: FileRect) => ({ position: "absolute" as const, left: rec
 export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function FileWorkspace(props, ref) {
   const { t } = useI18n();
   const { onStatus, onFocusWorkspace, onShowFiles } = props;
-  const [bank, setBank] = useState<Record<string, FileWorkspaceState>>({});
-  const bankRef = useRef(bank);
+  const [store] = useState(() => new FileWorkspaceStore());
+  const bank = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   const [edits] = useState(() => new FileEditSessions());
   const root = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -57,7 +58,7 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
     ? { groups: { [projected]: { x: 0, y: 0, ...size } }, dividers: [] }
     : fileGeometry(state.tree, { x: 0, y: 0, ...size });
   const commit = useCallback((key: string, change: (state: FileWorkspaceState) => FileWorkspaceState, silent = false) => {
-    const previous = bankRef.current[key] ?? EMPTY;
+    const previous = store.snapshot()[key] ?? EMPTY;
     const next = change(previous);
     if (next === previous) return;
     const removed = Object.keys(previous.views).filter(id => !next.views[id]);
@@ -66,9 +67,8 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
       return session.owner === composite(key, id) && (session.saving || session.draft);
     })) return; // explicit close first resolves/discards the owner through canClose
     removed.forEach(id => edits.close(composite(key, id)));
-    bankRef.current = { ...bankRef.current, [key]: next };
-    if (!silent) setBank(bankRef.current);
-  }, [edits]);
+    store.set(key, next, silent);
+  }, [edits, store]);
   useEffect(() => {
     const element = root.current;
     if (!element) return;
@@ -88,7 +88,8 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
   const menuContext = useMemo(() => ({ groups: groupSignature ? groupSignature.split("\0").map(value => {
     const at = value.indexOf(":"); return { id: value.slice(0, at), label: value.slice(at + 1) };
   }) : [], canSplit: props.active }), [groupSignature, props.active]);
-  useEffect(() => onStatus({ count: Object.keys(state.views).length, ...menuContext }), [state.views, menuContext, onStatus]);
+  const viewCount = Object.keys(state.views).length;
+  useEffect(() => onStatus({ count: viewCount, ...menuContext }), [viewCount, menuContext, onStatus]);
   useEffect(() => { if (closing) closeDialog.current?.showModal(); }, [closing]);
   useEffect(() => { if (pending) routeDialog.current?.showModal(); }, [pending]);
   useEffect(() => {
@@ -109,7 +110,7 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
     });
   };
   const focusView = useCallback((owner: string) => {
-    for (const [key, workspace] of Object.entries(bankRef.current)) {
+    for (const [key, workspace] of Object.entries(store.snapshot())) {
       const id = Object.keys(workspace.views).find(id => composite(key, id) === owner);
       const group = id && viewGroup(workspace, id);
       if (id && group) {
@@ -119,7 +120,7 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
         return;
       }
     }
-  }, [commit, onFocusWorkspace, onShowFiles]);
+  }, [commit, store, onFocusWorkspace, onShowFiles]);
   const focusGroup = (id: string) => {
     const view = state.groups[id]?.active;
     if (view) focusView(composite(props.workspaceKey, view));
@@ -130,7 +131,7 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
   };
   const open = (location: FileLocation, origin?: string, disposition: FileDisposition = { kind: "normal" }, originWorkspace = props.workspaceKey) => {
     if (originWorkspace !== props.workspaceKey) return;
-    const current = bankRef.current[props.workspaceKey] ?? EMPTY;
+    const current = store.snapshot()[props.workspaceKey] ?? EMPTY;
     const source = origin ? current.views[origin] : undefined;
     const base = origin ? viewGroup(current, origin)! : current.activeGroup;
     if (disposition.kind === "split" && !canSplit(base, disposition.axis)) { setStatus(t("workspace.needSpace")); return; }
@@ -138,9 +139,10 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
       setPending({ key: props.workspaceKey, location, origin: origin! }); return;
     }
     const next = openWorkspaceFile(current, location, origin, disposition);
+    if (next === current) return;
     commit(props.workspaceKey, () => next);
-    const destination = Object.values(next.groups).find(group => group.active && next.views[group.active].filePath === location.filePath && group.id !== base);
-    if (compact && destination) {
+    const destination = next.lastOpen ? next.groups[next.lastOpen.group] : undefined;
+    if (compact && destination && destination.id !== base) {
       if (origin) setReturnView({ key: props.workspaceKey, id: origin });
       commit(props.workspaceKey, state => selectFileView(state, destination.id));
     }
@@ -165,7 +167,7 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
   };
   const finishClose = (moveTo?: string) => {
     if (!closing || closing.key !== props.workspaceKey) return;
-    const current = bankRef.current[closing.key] ?? EMPTY;
+    const current = store.snapshot()[closing.key] ?? EMPTY;
     const ids = current.groups[closing.id]?.views ?? [];
     if (ids.some(id => protect(props.workspaceKey, id).saving) || (!moveTo && !canClose(props.workspaceKey, ids))) return;
     if (!moveTo) ids.forEach(id => edits.close(composite(props.workspaceKey, id)));

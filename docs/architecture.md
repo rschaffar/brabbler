@@ -92,6 +92,7 @@ lib/
   agent-usage.ts       bounded single-flight family usage polling and qualified aggregation
   file-tab.ts          file/view domain types, independent of tab presentation
   file-workspace.ts    pure split geometry, group/view navigation, previews and history
+  file-workspace-store.ts current parked snapshots without shell-level scroll notifications
   file-edit-sessions.ts browser-local single-editor ownership; never authorization
   enabled-models.ts    pure minimal-edit engine for the `enabledModels` pattern list
   enabled-models-runtime.ts  SDK adapter: per-pattern resolution, provider kinds, settings IO

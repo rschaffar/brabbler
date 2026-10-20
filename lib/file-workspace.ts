@@ -37,6 +37,8 @@ export interface FileWorkspaceState {
   nextId: number;
   nextPane: number;
   focused?: string;
+  /** Result of an admitted open, never inferred from another pane's filename. */
+  lastOpen?: { group: string; view: string };
 }
 export type FileDisposition = { kind: "normal" | "here" } | { kind: "group"; id: string } | { kind: "split"; axis: SplitAxis };
 export const MIN_FILE_WIDTH = 320;
@@ -119,10 +121,14 @@ export function openWorkspaceFile(state: FileWorkspaceState, location: FileLocat
   const active = group.active ? state.views[group.active] : undefined;
   const match = active && sameResource(active, location) ? active : group.views.map(id => state.views[id]).filter(view => sameResource(view, location)).sort((a, b) => (b.lastActive ?? 0) - (a.lastActive ?? 0))[0];
   // Never replace an in-flight save's view. A different target may use another tab.
-  if (match?.saving) return selectFileView(patchFileView(state, match.id, { pendingOpen: {
-    tabId: match.id, fileName: location.label, filePath: location.filePath, sourceSessionId: location.sourceSessionId,
-    page: location.page, lineTarget: location.lineTarget, modeHint: location.modeHint,
-  } }), destination, match.id);
+  if (match?.saving) {
+    const queued = selectFileView(patchFileView(state, match.id, { pendingOpen: {
+      tabId: match.id, fileName: location.label, filePath: location.filePath, sourceSessionId: location.sourceSessionId,
+      page: location.page, lineTarget: location.lineTarget, modeHint: location.modeHint,
+    } }), destination, match.id);
+    return { ...queued, activeGroup: origin && disposition.kind === "normal" ? state.activeGroup : destination,
+      lastOpen: { group: destination, view: match.id } };
+  }
   const oldPreview = preview && !match ? group.views.find(id => state.views[id].preview && !state.views[id].saving && !state.views[id].draft) : undefined;
   const views = { ...state.views };
   if (oldPreview) delete views[oldPreview];
@@ -135,7 +141,7 @@ export function openWorkspaceFile(state: FileWorkspaceState, location: FileLocat
   if (location.modeHint) views[id].viewerState = { displayMode: location.modeHint, wrapLines: match?.viewerState?.wrapLines ?? false, scrollTop: 0, scrollLeft: 0 };
   const nextGroup = { ...group, active: id, views: [...group.views.filter(item => item !== oldPreview), ...(!match ? [id] : [])] };
   if (recordHistory && active) { nextGroup.back = [...group.back, locationOf(active)].slice(-100); nextGroup.forward = []; }
-  return { ...state, nextId: state.nextId + 1, views, groups: { ...state.groups, [destination]: nextGroup },
+  return { ...state, nextId: state.nextId + 1, views, groups: { ...state.groups, [destination]: nextGroup }, lastOpen: { group: destination, view: id },
     // Routed navigation retains the source as the explicitly active group.
     activeGroup: origin && disposition.kind === "normal" ? state.activeGroup : destination };
 }
