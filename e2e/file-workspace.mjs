@@ -36,6 +36,29 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
     assert.equal(await link.evaluate(node => document.activeElement === node), true, "routed navigation retains guide focus");
     assert.equal(await panel.locator('[data-file-pane="pane-2"] [role="tab"]').count(), 1, "following links reuse one preview");
   }
+  // Native PDF page commands refresh only the opaque embed, including repeats.
+  const pdfLink = guide.getByRole("link", { name: "PDF page", exact: true });
+  await pdfLink.focus();
+  const pdfScroll = await guideContent.evaluate(node => node.scrollTop);
+  const pdfRead = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname.endsWith("split-pages.pdf") && url.searchParams.get("type") === "read" && Number(url.searchParams.get("v")) > 0;
+  });
+  await pdfLink.click();
+  await (await pdfRead).finished();
+  const pdfPane = panel.getByRole("tabpanel", { name: "Pane 2 — split-pages.pdf", exact: true });
+  const pdfHost = await pdfPane.elementHandle(), pdfFrame = pdfPane.locator("iframe");
+  const originalPdf = await pdfFrame.elementHandle(), pdfUrl = await pdfFrame.getAttribute("src");
+  assert.match(pdfUrl, /#page=2$/);
+  await pdfLink.click();
+  await page.waitForFunction(node => !node.isConnected, originalPdf);
+  assert.equal(await pdfFrame.getAttribute("src"), pdfUrl, "same page/URL is still a fresh navigation command");
+  assert.equal(await pdfHost.evaluate(node => node.isConnected), true, "PDF navigation retains the file-view host");
+  assert.equal(await guideNode.evaluate(node => node.isConnected), true);
+  assert.equal(await guideContent.evaluate(node => node.scrollTop), pdfScroll);
+  assert.equal(await pdfLink.evaluate(node => document.activeElement === node), true);
+  await guide.getByRole("link", { name: "Source 5", exact: true }).click();
+  await panel.getByRole("tabpanel", { name: "Pane 2 — split-source-5.ts", exact: true }).locator('[data-line-number="40"][data-file-line-target]').waitFor();
   // Splitting below creates a third independently retained file view.
   const second = panel.locator('[data-file-pane="pane-2"]');
   await second.getByLabel("Pane actions").click();
@@ -175,6 +198,9 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   await page.waitForFunction(() => document.querySelectorAll('[data-file-pane]').length === 1);
   assert.equal(await guideNode.evaluate(node => node.isConnected), true, "reset retains the selected guide host");
   assert.equal(await panel.getByRole("tab", { name: /^split-guide.md · View/ }).count(), 2, "reset retains and disambiguates both guide views");
+  assert.equal(await page.evaluate(() => [...document.querySelectorAll('#file-panel [data-file-pane] [role="tab"]')]
+    .every(tab => document.getElementById(tab.getAttribute("aria-controls"))?.getAttribute("role") === "tabpanel")), true,
+  "inactive clean tabs retain valid panel references without mounting their readers");
   await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
   console.log("PASS: explicit three-pane guide routing, preview reuse, edit ownership, responsive projection and stale destination recovery");
 }

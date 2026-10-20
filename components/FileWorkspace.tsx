@@ -217,14 +217,16 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
     const visible = selected && props.presented && Boolean(geometry.groups[groupId]);
     const session = protect(key, view.id);
     // Hiding/expanding the outer panel and responsive projection retain each
-    // group's selected reader. Inactive tabs may unmount; edit owners settle.
-    if (!selected && !session.draft && !session.saving) return [];
+    // group's selected reader. Inactive tab panels keep their ARIA target, not
+    // a reader/subscription; edit owners remain alive until safe settlement.
+    const renderViewer = selected || Boolean(session.draft || session.saving);
+    if (key !== props.workspaceKey && !renderViewer) return [];
     const rect = geometry.groups[groupId] ?? { x: 0, y: 0, width: 0, height: 0 };
     return [<div key={composite(key, view.id)} id={`file-view-${encodeURIComponent(composite(key, view.id))}`} role="tabpanel" aria-label={`${t("workspace.pane", { number: groupId.slice(5) })} — ${view.label}`}
       hidden={!visible} inert={!visible} tabIndex={-1} className="file-workspace-view"
       onPointerDown={() => commit(key, state => selectFileView(state, groupId))}
       style={{ ...position({ ...rect, y: rect.y + HEADER, height: Math.max(0, rect.height - HEADER) }), display: visible ? "block" : "none" }}>
-      <FileEditContext.Provider value={contextFor(key, view.id)}>
+      {renderViewer && <FileEditContext.Provider value={contextFor(key, view.id)}>
         <FileLinkMenuContext.Provider value={{ ...menuContext, contextKey: props.workspaceKey }}>
           <FileViewer filePath={view.filePath} cwd={view.cwd} sourceSessionId={view.sourceSessionId} gitRefreshKey={props.gitRefreshKey}
             navigationId={view.viewerRevision} initialDisplayMode={view.initialDisplayMode} initialState={view.viewerState}
@@ -247,7 +249,7 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
             onOpenFile={(filePath, page, lineTarget, disposition) => open({ filePath, label: filePath.split(/[\\/]/).at(-1) ?? filePath,
               cwd: view.cwd, sourceSessionId: view.sourceSessionId, page, lineTarget }, view.id, disposition, key)} />
         </FileLinkMenuContext.Provider>
-      </FileEditContext.Provider>
+      </FileEditContext.Provider>}
     </div>];
   }));
   return <div className="file-workspace" style={{ height: "100%", display: "flex", flexDirection: "column" }}

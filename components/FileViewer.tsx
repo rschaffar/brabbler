@@ -56,7 +56,7 @@ interface Props {
   onAtMention?: (relativePath: string, isDir: boolean) => void;
   gitRefreshKey?: number;
   initialDisplayMode?: DisplayMode;
-  /** PDF page to open on first render (`#page=N` from a markdown link). */
+  /** PDF page requested by the current location command (`#page=N`). */
   initialPage?: number;
   initialLineTarget?: FileLineTarget;
   navigationId?: number;
@@ -793,7 +793,7 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
   );
 }
 
-function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, watchEnabled = true }: Props) {
+function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, navigationId, watchEnabled = true }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -808,6 +808,9 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, watchEnab
   const previewUrl = isPdf
     ? `${getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined)}${pageFragment}`
     : getFileApiUrl(filePath, "preview", sourceSessionId, bust ? { v: bust } : undefined);
+  // Native PDF state is opaque: repeat page commands reload only this embed,
+  // never the stable file-view host or another file type's interactive state.
+  const previewKey = isPdf && initialPage ? `${previewUrl}:${navigationId ?? 0}` : previewUrl;
 
   useEffect(() => {
     setBust(0);
@@ -954,7 +957,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, watchEnab
           </div>
         ) : (
           <iframe
-            key={previewUrl}
+            key={previewKey}
             src={previewUrl}
             sandbox={isPdf ? undefined : "allow-same-origin"}
             title={t("i18n.previewFile", { file: getFileName(filePath) })}
@@ -998,7 +1001,7 @@ export function FileViewer({
     return <VideoViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
   }
   if (isDocumentPreviewPath(filePath)) {
-    return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} initialPage={initialPage} watchEnabled={watchEnabled} />;
+    return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} initialPage={initialPage} navigationId={navigationId} watchEnabled={watchEnabled} />;
   }
   return (
     <TextFileViewer

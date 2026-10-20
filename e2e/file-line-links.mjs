@@ -2,6 +2,22 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+function twoPagePdf() {
+  const streams = [1, 2].map(page => `BT /F1 18 Tf 30 200 Td (Review page ${page}) Tj ET`);
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>",
+    ...[5, 6].map(stream => `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources << /Font << /F1 7 0 R >> >> /Contents ${stream} 0 R >>`),
+    ...streams.map(stream => `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`),
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = objects.map((object, index) => { const offset = pdf.length; pdf += `${index + 1} 0 obj\n${object}\nendobj\n`; return offset; });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n` + offsets.map(offset => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  return pdf + `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+}
+
 export function seedFileLineLinks({ project, writeSession, message, workspacePeer = false }) {
   const sessionId = "e2e-file-line-links";
   // The existing other-project session authorizes this sibling root; formatting alone grants no access.
@@ -26,8 +42,9 @@ export function seedFileLineLinks({ project, writeSession, message, workspacePee
   const listLine = lines.indexOf("- Target list item") + 1;
   const codeLine = lines.indexOf("function markdownFunction() {}") + 1;
   for (let i = 1; i <= 5; i++) writeFileSync(join(project, `split-source-${i}.ts`), Array.from({ length: 100 }, (_, n) => `// source ${i}, line ${n + 1}`).join("\n"));
+  writeFileSync(join(project, "split-pages.pdf"), twoPagePdf());
   writeFileSync(join(project, "split-tests.ts"), "// retained tests\nexport const testEvidence = true;\n");
-  writeFileSync(join(project, "split-guide.md"), "# Guided review\n\nKeep this explanation visible.\n\n" + Array.from({ length: 5 }, (_, i) => `[Source ${i + 1}](split-source-${i + 1}.ts#L40)`).join("\n\n") + "\n\n[Test evidence](split-tests.ts#L2)\n\n[Local section](#local-section)\n\n" + "Explanation paragraph.\n\n".repeat(50) + "## Local section\n\nEnd of guide.\n");
+  writeFileSync(join(project, "split-guide.md"), "# Guided review\n\nKeep this explanation visible.\n\n" + Array.from({ length: 5 }, (_, i) => `[Source ${i + 1}](split-source-${i + 1}.ts#L40)`).join("\n\n") + "\n\n[PDF page](split-pages.pdf#page=2)\n\n[Test evidence](split-tests.ts#L2)\n\n[Local section](#local-section)\n\n" + "Explanation paragraph.\n\n".repeat(50) + "## Local section\n\nEnd of guide.\n");
   const peerSessionId = "e2e-file-workspace-peer";
   if (workspacePeer) writeSession(peerSessionId, [
     { type: "session_info", id: "peer-name", parentId: null, timestamp: message("clock", null, "user", "").timestamp, name: "Split owner peer" },
