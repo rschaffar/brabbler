@@ -29,8 +29,8 @@ The archived 2026-10-20 easy-wins, security-boundaries and upstream-followups pl
 - [x] Adapt picker positioning/remeasurement and viewport settling; test zoom, IME, late changes, event/timer teardown and short-screen bounds without changing model/account selections.
 - [x] Update owning session/model/feature guides and browser documentation; obtain independent safety review and resolve findings.
 - [x] Run focused Nix core/static and packaged desktop/mobile browser checks, preserving failures and exact evidence.
-- [ ] Reassess/rebase current local target, run complete fresh `nix run .#test -- all --workers 4 --jobs 4` if resource-admitted, and record exact source/input identity, artifacts, runtime and available preparation/execution intervals.
-- [ ] Resolve completion intent through the Git lifecycle and hand off the clean verified candidate for exact-state non-FF integration approval. No host deployment or remote publication.
+- [x] Reassess/rebase current local target, run complete fresh `nix run .#test -- all --workers 4 --jobs 4` if resource-admitted, and record exact source/input identity, artifacts, runtime and available preparation/execution intervals.
+- [x] Resolve completion intent through the Git lifecycle and hand off the clean verified candidate for exact-state non-FF integration approval. No host deployment or remote publication.
 
 ## Focused evidence and scope correction
 
@@ -57,6 +57,18 @@ The archived 2026-10-20 easy-wins, security-boundaries and upstream-followups pl
 
 - Corrected layout contracts passed focused `core --jobs 4 --file components/MobilePwaLayout.test.mjs --file components/ChatInput.test.mjs --file hooks/useViewportHeight.test.mjs`: **3 files / 47 tests** plus static checks, **43s command wall time**; `/tmp/pi-web-composer-layout-core.MxVgzu.log`, `/tmp/pi-web-test-core.IEEltC/run.json`. No application inputs changed after `61a837a`.
 
+## Complete acceptance and integration handoff
+
+- Tested candidate **`c507c905e23d8b8dc75b401642ff949febce4e78`**, rebased onto clean local `rst-main` **`ef90c809970aebf4c412d340a67d9918a10eb1dc`**. Final archival changes are evidence/status-only, not a new application/test run.
+- **`nix run .#test -- all --workers 4 --jobs 4` passed**, **752 seconds end-to-end command wall time**, including in-command realization, excluding model/review/coordination and the user's chosen wait. Native x86_64 Linux; 32 logical CPUs and about **57 GiB available** at admission. Requested/effective widths were **four browser sandboxes / four core workers**, overlapping with the conservative **16 CPU / 27 GiB** admission estimate, not reservations or machine-exclusive measurement. No additional prewarming was performed for this invocation; prerequisites had been realized during recorded iterations. All executions were fresh. This is not a cold-cache or performance benchmark.
+- Full log: `/tmp/pi-web-composer-all.IzPtxI.log`; verified snapshot `/tmp/pi-web-test-source-WlV3iS`; outer content/mode SHA256 **`d0089210cb60202c1f13ebbe57a82d40e8dd9650368ad9ec0556868119e1753d`**; selection `/tmp/pi-web-test-source-WlV3iS/selection.json`.
+- **Core/static/plugin:** **347 files / 2,619 tests / 12 suites**, all passed, none failed/skipped/cancelled/not-started, no observed surviving owned processes or uncertain settlement. `/tmp/pi-web-test-core.nGj3CT/run.json`; immutable output `/nix/store/lrnrddsln7wr0iyj44x55gy2ady3snwi-pi-web-core-checks`. Inclusive level interval **710.950s**, pre-first-file realization/static interval **52.851s**, file-execution window **655.871s**. Core filtered source digest `e2d4f5412f3ac3464e04679a934e2d69b1331f6ff418aecc34cc4de82be25b14`.
+- **Browser/terminal:** all **24 groups / 53 exact expected/completed scenario receipts** passed, collected artifacts and settled execution/closed ports. `/tmp/pi-web-test-browser.pzmZYc/run.json`. Inclusive browser-driver interval **574.359s**, pre-first-capsule interval **7.314s**, inner-capsule timestamp span **566.490s**. Includes the new desktop/mobile/native-dialog focus, quote suffix/selection/caret/typing, model keyboard simulation, visible Stop/More and actual abort checks, plus the entire existing inventory.
+- **Genuine Home Manager deployment:** `/tmp/pwv-glfVCD/run.json` passed activation/default-target startup, environment/permissions, durable HTTP write/restart, genuine HTTP PTY, collection/probe and client/service settlement. Inclusive service interval **167.066s**, evidence interval **27.389s**; the difference is not an independently measured build phase. Final service inactive/dead, MainPID zero, authenticated cgroup absent, TCP port refused. Same production package as browsers: `/nix/store/wydb8sk6166f77xxl81fnm9r9zc0ai6y-pi-web-0.9.3`.
+- Overlapping level intervals must not be added to the command runtime. Historical failed/focused evidence above remains distinct; no retry was unchanged, no deadline increased, no inventory omitted and no console/HTTP error class suppressed.
+- Independent actual-diff review found no remaining blockers; the subsequent test-only source-contract correction retains original invariants and has focused plus complete passing evidence. Root/demo source parity was reviewed; no standalone-demo build or physical-device verification is claimed.
+- User chose **Integrate into local rst-main** via `ask_user` after complete acceptance. This archive records the completed implementation/verification handoff; the Git lifecycle owns exact-state unsigned non-FF merge approval/execution and separately approved cleanup. Its durable receipts, not this archive, own actual outcomes. No installed-host probing/activation, live-provider operation or remote publication was performed or authorized.
+
 ## Risks and verification limits
 
 Browser event ordering is not established by source-regex tests. Upstream quote insertion is synchronous/native while local insertion is deferred. Upstream keyboard CSS assumes different toolbar structure and must not hide this fork's Stop. Native phone keyboards, Safari/PWA and physical IME behavior cannot be certified by Chromium viewport simulation; record that gap honestly. No persistent-format migration or credential handling is needed.
@@ -64,6 +76,6 @@ Browser event ordering is not established by source-regex tests. Upstream quote 
 ## Completion Checklist
 
 - [x] Four scoped behaviors have passing meaningful tests and independent review, with preservation contracts intact.
-- [ ] Complete core/static/plugin, all browser/terminal groups and genuine Home Manager deployment VM acceptance pass on the settled candidate; failures and evidence identities are retained.
-- [ ] Durable documentation owns behavior; plan is archived only after implementation/verification handoff is complete.
-- [ ] Report exact feature/base IDs, test evidence, actual-device gap and retained/integrated state; integration, cleanup and deployment remain distinct.
+- [x] Complete core/static/plugin, all browser/terminal groups and genuine Home Manager deployment VM acceptance pass on the settled candidate; failures and evidence identities are retained.
+- [x] Durable documentation owns behavior; plan is archived only after implementation/verification handoff is complete.
+- [x] Report exact feature/base IDs, test evidence, actual-device gap and retained/integrated state; integration, cleanup and deployment remain distinct.
