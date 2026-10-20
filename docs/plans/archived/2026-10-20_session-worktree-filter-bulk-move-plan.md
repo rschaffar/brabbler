@@ -39,16 +39,16 @@ project preference/trust migration or a transactional relocation platform.
 
 ## Plan
 
-- [ ] Add bounded session-worktree inventory, verified main and guarded bulk preview/
+- [x] Add bounded session-worktree inventory, verified main and guarded bulk preview/
   execute endpoints; cover missing-vs-unavailable, archived/mixed families, overlap,
   destination and membership changes, partial failures and existing move compatibility.
-- [ ] Add independent Sidebar filter with missing-directory labels, matching search and
+- [x] Add independent Sidebar filter with missing-directory labels, matching search and
   selection scope; reuse picker in a bulk Move/recovery dialog with exact expanded counts.
-- [ ] Cover genuine desktop/mobile filtering, stale history and both move workflows in
+- [x] Cover genuine desktop/mobile filtering, stale history and both move workflows in
   existing browser fixtures; preserve scenario inventory/deadlines and current actions.
-- [ ] Complete independent review, focused checks, then full Nix core/browser/terminal/
+- [x] Complete independent review, focused checks, then full Nix core/browser/terminal/
   deployment acceptance on settled inputs. Record runtime and retained failure evidence.
-- [ ] Update maintained guides; create coherent unsigned commits and prepare exact-state
+- [x] Update maintained guides; create coherent unsigned commits and prepare exact-state
   integration into current local rst-main via non-FF approval. Manual tests may follow
   integration; host deployment and actual session moves remain separate operations.
 
@@ -85,10 +85,70 @@ Do not add persistent operation journals or credential/settings writes.
 - These focused runs used previously cached dependencies; model/review/coordination time
   is not included. Full acceptance remains open and must use the reconciled candidate.
 
+## Complete acceptance
+
+Implementation commit `260d640267428b06c6aaf1ace144a6d4cafc5a36` rebased cleanly onto
+local `rst-main` `3728eafde511b8c71040db29b7190ec76976f7e2`, producing tested candidate
+`06bcd307dec016f721800452e416e8fc9fd43bc8`. This includes main's current live-prompt
+and security-boundary changes. Independent backend/UI source reviews passed; the
+backend review's forged-path test was corrected to mutate a fresh, otherwise valid
+preview, so another stale binding cannot explain the refusal.
+
+`nix run --offline --no-write-lock-file .#test -- all --offline --workers 4 --jobs 4`
+passed on native x86_64 Linux in **392 seconds (6m32s)** end-to-end, including in-run
+realization. Core requested/effective workers were **4/4**, browser sandboxes **4/4**;
+levels overlapped with admission estimates of 16 CPUs/about 27 GiB, not reservations.
+The host had 32 logical CPUs/about 59 GiB available; no competing browser/VM test
+workload was observed. Earlier focused runs warmed dependencies; there was no extra
+prewarming command for this run. Package/driver realization remained in isolated
+Nix builders. Preparation, model/review/coordination and test time are not conflated.
+
+- Core/static/bundled plugins: **322 files / 2,515 tests / 10 suites**, all passed,
+  zero skipped/cancelled. Level interval **275.672s**; case-execution window **240.400s**.
+- Browser/terminal: **all 24 groups / 53 exact scenario receipts**, including both
+  desktop/mobile filter/search/recovery/bulk-Browse flows. Level interval **317.930s**;
+  capsule-execution window **235.984s**. The difference includes realization/driver
+  overhead; no independent preparation timer is claimed.
+- Genuine Home Manager deployment: all activation/environment/permission/durable-write/
+  restart/production-PTY and shutdown proofs passed. Level interval **69.314s**;
+  guest proof interval **19.604s**. Final service inactive, MainPID zero, authenticated
+  cgroup absent and TCP port refused. These are guest checks, not host deployment.
+- Intervals overlap and must not be added or subtracted as serial benchmark times.
+
+Evidence:
+
+- Command/candidate/timing: `/tmp/pi-web-session-worktrees-all.D7PYCJkR/`.
+- Source/selection: `/tmp/pi-web-test-source-GMItjt/`, digest
+  `070ad297f5b848ece0521376ff7a2d634cc065c53e08aa4f8d279e0d6e245c02`;
+  shared immutable source `/nix/store/nrgcry7zsw72khlfmlqz66bsff1nl9gm-source`.
+- Core: `/tmp/pi-web-test-core.TAW3i9/run.json`.
+- Browser: `/tmp/pi-web-test-browser.2JksbP/run.json`.
+- Deployment: `/tmp/pwv-UJD9oQ/run.json`.
+- Parent audit: `/tmp/pi-web-session-worktrees-audit.rh0WIMhb/acceptance.json` checks
+  all 1,028 exported source-file hashes/modes, common source/package, exact group
+  coverage, no skipped core cases, worker widths, settlement and deployment proofs.
+
+## Integration handoff
+
+The user selected **Prepare local integration**. Implementation/acceptance and the
+maintained-guide handoff are complete; this plan is archived at the integration-ready
+boundary. The parent session owns the remaining **exact-candidate approval, unsigned
+non-FF merge into local rst-main, result verification and separate cleanup** through
+the Git lifecycle tools. Their durable receipts, not this plan, record actual Git
+execution. No integration is claimed here before that approval/action. Any intervening
+source or target change requires reassessment, not reuse of stale approval.
+
+The final follow-up changes only this evidence/status document and its archive path;
+application/test/Nix inputs stay identical to tested `06bcd307`. Its proportional
+checks are documentation/link review, exact input comparison and `git diff --check`,
+not relabeling the earlier suite as a new-tip execution. Publication, host deployment
+and real session moves remain unauthorized and unperformed.
+
 ## Completion Checklist
 
-- [ ] Existing individual session moves remain compatible, including deleted source cwd.
-- [ ] Missing filters cannot change checkout or New/terminal destinations.
-- [ ] Recovery includes archived and missing-child-only histories, with descendants shown.
-- [ ] Focused and complete acceptance plus independent review pass; evidence recorded.
-- [ ] Verified exact integration approved/performed, or feature retained with explicit blocker.
+- [x] Existing individual session moves remain compatible, including deleted source cwd.
+- [x] Missing filters cannot change checkout or New/terminal destinations.
+- [x] Recovery includes archived and missing-child-only histories, with descendants shown.
+- [x] Focused and complete acceptance plus independent review pass; evidence recorded.
+- [x] Exact integration candidate prepared; remaining approval/execution/verification and
+  cleanup transferred explicitly to the parent session's Git lifecycle above.
