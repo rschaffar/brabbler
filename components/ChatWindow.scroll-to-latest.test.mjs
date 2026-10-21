@@ -139,5 +139,5 @@ test("exposes the detached-tail flag from the session hook without a ref read", 
     hookSource,
     /const shouldShow = shouldShowScrollToLatest\(scrollTop, clientHeight, scrollHeight\);\s*setShowScrollToBottom\(\(previous\) => \(previous === shouldShow \? previous : shouldShow\)\);/,
   );
-  assert.match(hookSource, /promptAnchorActive,\s*showScrollToBottom,\s*\/\/ Refs/);
+  assert.match(hookSource, /showScrollToBottom,\s*\/\/ Refs/);
 });

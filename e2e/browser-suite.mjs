@@ -10,6 +10,7 @@ import { checkFilePanel, checkFileDiffViews, checkEditableFile, checkMarkdownPre
 import { checkExplorerUploads } from "./explorer-uploads.mjs";
 import { seedFileLineLinks, checkFileLineLinks } from "./file-line-links.mjs";
 import { checkFileWorkspace } from "./file-workspace.mjs";
+import { checkChatBottomFollow } from "./chat-bottom-follow.mjs";
 import { seedMarkdownMediaFixtures, checkMarkdownMedia } from "./markdown-media.mjs";
 import { seedReviewNotebooks, checkReviewNotebooks } from "./review-notebooks.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
@@ -1200,6 +1201,7 @@ let nativeToolsFixture;
       await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
       await heading.waitFor({ state: "visible" });
     }
+    await checkChatBottomFollow(page, { base, id: RICH, timestamp });
     await checkStreamedToolArguments(page, { base, id: RICH, timestamp });
     await checkCompactionVisibility(page, { base, id: COMPACTED, artifacts, width: viewport.width });
     assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);

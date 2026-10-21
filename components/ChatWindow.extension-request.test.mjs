@@ -11,7 +11,7 @@ const dialogSource = source.slice(source.indexOf("function ExtensionDialog"), so
 const customSource = source.slice(source.indexOf("function ExtensionCustomPanel"));
 
 test("renders every blocking question inline at the live tail of the chat scroller", () => {
-  assert.match(source, /ref=\{scrollContainerRef\}[\s\S]*?ref=\{questionCardRef\}[\s\S]*?<AskUserDialog[\s\S]*?<ExtensionDialog[\s\S]*?ref=\{promptAnchorSpacerRef\}/);
+  assert.match(source, /ref=\{scrollContainerRef\}[\s\S]*?ref=\{questionCardRef\}[\s\S]*?<AskUserDialog[\s\S]*?<ExtensionDialog[\s\S]*?<ChatMinimap/);
   assert.match(source, /return followBlockingCard\(container, card, questionFollowRef\.current\)/);
   assert.match(source, /questionFollowRef\.current\?\.id !== questionId/);
   assert.match(source, /\[questionId, loading, covered, scrollContainerRef\]/);
