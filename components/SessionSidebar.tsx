@@ -958,9 +958,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       const completedAt = completedRunTimesRef.current.get(id);
       return Boolean(completedAt && completedAt > (reviewedRunTimesRef.current.get(id) ?? 0));
     };
+    const pausedSessionIds = new Set(pauses.map((row) => row.sessionId));
     const completedWithNotifications = completedInBackground.filter(
       (id) => !previousSuppressedCompletionSessionIdsRef.current.has(id)
-        && !knownSubagentIds.has(id) && unreviewedCompletion(id),
+        && !knownSubagentIds.has(id) && !pausedSessionIds.has(id) && unreviewedCompletion(id),
     );
     const newlyRunning = [...runningSessionIds].filter((id) => !previous.has(id));
 
@@ -980,7 +981,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         (id) => currentSuppressedCompletionSessionIdsRef.current.has(id) || knownSubagentIds.has(id),
       ),
     );
-  }, [runningSessionIds, selectedSessionId, allSessions, loadSessions, onBackgroundTaskDone]);
+  }, [runningSessionIds, selectedSessionId, allSessions, loadSessions, onBackgroundTaskDone, pauses]);
 
   useEffect(() => {
     if (explorerRefreshKey !== undefined) setExplorerKey((k) => k + 1);
