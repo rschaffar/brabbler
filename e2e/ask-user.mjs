@@ -71,7 +71,9 @@ export async function checkAskUserDialog(page, width) {
     await finish({ kind: "freeform", text: "My own answer", comment: "Extra detail" });
 
     const longContext = await start("long");
-    assert.equal(await longContext.getByText(/More background/).isVisible(), false, "Long context starts collapsed");
+    assert.equal(await longContext.getByText(/More background/).isVisible(), true, "Long context starts expanded");
+    await longContext.getByText("Context", { exact: true }).click();
+    assert.equal(await longContext.getByText(/More background/).isVisible(), false, "Context remains collapsible");
     await longContext.getByText("Context", { exact: true }).click();
     await longContext.getByText(/More background/).waitFor({ state: "visible" });
     await checkBlockingCard(longContext);
