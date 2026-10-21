@@ -6,7 +6,7 @@ import { allowFileRoot } from "@/lib/file-access";
 import { invalidateSessionListCache } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { isModelSpeed, type ModelSpeed } from "@/lib/model-speed";
-import { validateNativeResourceSelection } from "@/lib/session-native-resources";
+import { validateNativeResourceSelection, type NativeResourceSelection } from "@/lib/session-native-resources";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -60,7 +60,13 @@ export async function POST(req: Request) {
       throw new Error("provider and modelId must be provided together");
     }
     const explicitThinkingLevel = parseThinkingLevel(thinkingLevel);
-    const nativeSelection = nativeResources === undefined ? undefined : validateNativeResourceSelection(nativeResources);
+    let nativeSelection: NativeResourceSelection | undefined;
+    try { nativeSelection = nativeResources === undefined ? undefined : validateNativeResourceSelection(nativeResources); }
+    catch {
+      return NextResponse.json({ error: "Invalid native resource selection",
+        ...(commandType === "prompt" ? { code: "prompt_rejected", accepted: false } : {}),
+      }, { status: 400 });
+    }
 
     // Must be unique per request: startRpcSession coalesces concurrent callers
     // that share a key onto one session. Date.now() (ms resolution) collides for
