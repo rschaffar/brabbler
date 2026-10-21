@@ -1653,6 +1653,7 @@ export class AgentSessionWrapper {
               excludeFromContext: command.excludeFromContext as boolean | undefined,
               operations: createProjectCommandBashOperations({
                 shellPath: this.inner.settingsManager.getShellPath(),
+                sessionId: this.sessionId,
               }),
             },
           );

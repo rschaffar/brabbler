@@ -13,7 +13,7 @@ export const weights = Object.freeze({
   trust: 16, 'git-plugin': 216, appearance: 35, timestamps: 18,
   'diff-context': 110, markdown: 163, 'file-edit': 97, archive: 38, privacy: 113,
   activity: 169, accounts: 55, questions: 165, 'session-links': 16, bulk: 47,
-  move: 68, terminal: 48,
+  move: 68, 'ssh-agent': 30, terminal: 48,
 });
 export const coverageIds = group => group === 'terminal' ? ['terminal/full@production-pty'] : [...scenarios[group]];
 

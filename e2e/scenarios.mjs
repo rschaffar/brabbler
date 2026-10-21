@@ -20,6 +20,7 @@ export const browserInputs = {
 // Order is part of ownership: history desktop dismisses the recovery marker
 // before fresh mobile reads it; state and shared-account chains retain writes.
 export const scenarios = {
+  "ssh-agent": ["ssh-agent/webauthn-openssh@en-desktop", "ssh-agent/webauthn-openssh@en-mobile-tall"],
   "state": ["state/api-append-accounts@service", "state/agents-reload@default", "state/durable-account@default"],
   "history": ["history/reading-chain@legacy-desktop", "history/reading-chain@legacy-mobile"],
   "extension-dialogs": ["extension-dialogs/full@legacy-desktop", "extension-dialogs/full@legacy-mobile"],

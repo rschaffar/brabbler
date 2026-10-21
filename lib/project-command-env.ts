@@ -7,6 +7,7 @@ import {
   type LoadExtensionsResult,
 } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
+import { browserSshAgent } from "./browser-ssh-agent";
 
 const HOST_EXTENSION_NAME = "pi-web-project-command-environment";
 const HOST_EXTENSION_PATH = `<inline:${HOST_EXTENSION_NAME}>`;
@@ -22,6 +23,7 @@ type ProjectCommandBashOperationsOptions = {
   localOperations?: BashOperations;
   platform?: NodeJS.Platform;
   shellPath?: string;
+  sessionId?: string;
 };
 
 function isHostRuntimeVariable(name: string, platform: NodeJS.Platform): boolean {
@@ -79,6 +81,7 @@ export function createProjectCommandBashOperations(
         agentBinDir,
         platform,
       );
+      if (options.sessionId) Object.assign(environment, browserSshAgent().environment(options.sessionId));
       return localOperations.exec(command, cwd, {
         ...executionOptions,
         env: environment,
@@ -106,6 +109,7 @@ export function createProjectCommandBashExtension(options: {
             commandPrefix: options.settings.getShellCommandPrefix(),
             operations: createProjectCommandBashOperations({
               shellPath: options.settings.getShellPath(),
+              sessionId: context?.sessionManager.getSessionId(),
             }),
           });
           return executionDefinition.execute(toolCallId, params, signal, onUpdate, context);

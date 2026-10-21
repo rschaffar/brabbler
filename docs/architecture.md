@@ -81,8 +81,12 @@ app/api/
   push/config/route.ts            GET VAPID public key for push subscriptions
   push/subscribe/route.ts         POST register a push subscription
   tools/settings/route.ts         GET/PUT shell tool settings (PowerShell on Windows)
+  ssh-agent/route.ts              POST browser-owned FIDO agent lifecycle/signing, outside chat
 
 lib/
+  browser-ssh-protocol.ts WebAuthn assertion validation, web-safe payloads and OpenSSH wire encodings
+  browser-ssh-agent.ts private Unix socket/capability lifecycle and fail-closed per-session Bash binding
+  browser-ssh-client.ts browser ES256 enrollment/assertion and bounded management transport
   agent-client.ts      typed fetch helper for /api/agent commands
   draft-store.ts       local draft persistence helpers
   file-access.ts       allowed file roots for /api/files and worktrees
@@ -124,6 +128,7 @@ lib/
   git-graph-layout.ts   adapted MIT active-lane graph layout (see git-graph-layout.LICENSE)
 
 components/
+  BrowserSshAgent.tsx opt-in enrollment, connection and explicit signing UI independent of chat
   AppShell.tsx        outer layout + URL/session state + retained terminal tabs
   FileWorkspace.tsx   scoped file groups, stable view hosts, routing and responsive projection
   LocalFileLink.tsx   resolved-local-link actions shared by chat and file Markdown

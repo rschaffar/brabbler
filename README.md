@@ -190,6 +190,7 @@ For npm dependency changes, use `nix develop .#update` and `npm install --packag
 - [Worktrees and Git Explorer](./docs/worktrees.md)
 - [Optional Git Workflow plugin](./docs/git-workflow-plugin.md)
 - [Workspace terminal](./docs/terminal.md)
+- [Browser-backed FIDO SSH agent](./docs/browser-ssh-agent.md)
 - [English interface messages](./docs/i18n.md)
 - [Inherited release tooling](./docs/release.md)—not an authorization to publish under upstream's package name
 
