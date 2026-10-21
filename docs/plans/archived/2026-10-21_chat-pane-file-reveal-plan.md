@@ -11,9 +11,9 @@ The existing Git Explorer fullscreen plan owns whole-Explorer expansion. ADR 002
 ## Plan
 
 - [x] Remove the arbitrary wide-screen Files width cap, retain a 320px chat minimum, and add desktop chat hide/restore controls without unmounting chat or file views; focused layout core and file-edit browser checks pass (evidence below).
-- [ ] Add a file-pane Reveal in explorer action, carrying captured file context to an expanded, highlighted sidebar tree; verify nested paths, filtered/Changes views, repeated reveals and context boundaries.
-- [ ] Update feature documentation and add regression coverage; obtain independent read-only review.
-- [ ] Run complete Nix acceptance with admitted explicit four/four widths after source settles; record candidate/input identities, timings and artifacts.
+- [x] Add a file-pane Reveal in explorer action, carrying captured file context to an expanded, highlighted sidebar tree; nested/repeated/search/external-root browser proofs and executable sidebar Changes/search command tests pass.
+- [x] Update `docs/feature-internals.md` and add regression coverage; independent read-only review and re-review completed.
+- [x] Run complete Nix acceptance with admitted explicit four/four widths after source settles; candidate/input identities, timings and artifacts recorded below.
 
 ## Iteration evidence
 
@@ -26,6 +26,19 @@ Isolation: `feat/chat-pane-file-reveal` in `/home/robert/projects/3rdparty/pi-we
 - Markdown iteration failures remain retained: `/tmp/pi-web-test-browser.Ac81Eb/run.json` (162.830s end-to-end, 71.878s sandbox) used a folder-button label without its actual parentheses; screenshot confirmed correct revelation. `/tmp/pi-web-test-browser.UK6Nd0/run.json` (58.998s end-to-end, 47.422s sandbox) found both chat and preview links during panel-close animation; chat-link actions are now scoped to `#chat-content`. No deadline changes, forced clicks or unchanged retries.
 - Independent read-only review identified stale command replay/focus, pending Return cancellation and alternate-root upload destinations. The fixes consume commands independently of highlighting/focus, synchronously invalidate Return generations, and use the explicit browsing root for toolbar/background uploads. The reviewer rechecked all three and found no remaining concrete issue. No access grants or selected-checkout changes were added.
 
+## Complete acceptance and handoff
+
+`nix run .#test -- all --workers 4 --jobs 4` passed on implementation commit `f4d274d760e92bb727658981c400a1e4311ea183`. Export digest `932306b6f3c564d93524251a7d5d7a2728a3b7e9831535dadb65ab805bb5c34c`; retained export/selection `/tmp/pi-web-test-source-WayDJH/`. Requested/effective browser and core widths both four; admitted on 32 CPUs/about 42.8 GiB available memory, with aggregate 16-CPU/27-GiB estimates and core/browser overlap. Earlier focused runs warmed application/prerequisite outputs; this is fresh execution, not a cold-cache benchmark.
+
+- End-to-end command: **402.352s** including in-run realization.
+- Core: **384/384 files, 2,892/2,892 tests, 12 suites**, complete static/plugin checks. Level interval 350.976s; preparation to first test 52.800s; test-execution window 297.849s. `/tmp/pi-web-test-core.l4Wv0x/run.json`; immutable artifacts `/nix/store/ssappb1vy5rfxmkxv4h2ncn6g26ll1q5-pi-web-core-checks/artifacts/run-TbbSuw/`.
+- Browser/terminal: **24/24 groups** passed. Level interval 327.502s; pre-first-sandbox interval 7.225s; sandbox execution window 320.152s. `/tmp/pi-web-test-browser.PM7lpf/run.json` includes every capsule, trace and success-only coverage inventory.
+- Genuine Home Manager deployment VM: passed. Level interval 68.223s, VM test script 19.590s; remaining interval includes realization/boot/collection. `/tmp/pwv-NpHl5n/run.json`. It overlaps the end of core; intervals must not be added as serial time.
+
+`git_rebase` confirmed the feature already based on unchanged local `rst-main` at `b6c165ebf39e911bc38015d9023643047a042e74`, preserving implementation ID and tested inputs. The following archive/evidence-only commit does not change application or test inputs; its proportional checks are document/link review and `git diff --check`, not a relabelled full-suite run.
+
+The implementation plan is retired. The current session's Git workflow owns the remaining exact-state non-fast-forward merge approval into the primary checkout `/home/robert/projects/3rdparty/pi-web` and the separately gated cleanup of `feat/chat-pane-file-reveal` and its linked worktree. No installed-service activation, remote publication or cleanup is authorized by this document.
+
 ## Non-Goals
 
 No file-access grants, automatic project/session switching, persisted file layouts or chat visibility preference, docking framework, installed-service activation or remote publication.
@@ -33,6 +46,6 @@ No file-access grants, automatic project/session switching, persisted file layou
 ## Completion Checklist
 
 - [x] Chat resizes, hides and restores with draft and mounted viewer identity intact; file-edit browser coverage passes at 1280/390px, including 3440px resizing and a 900px transition.
-- [ ] Reveal opens the correct Explorer location without changing the selected chat or weakening path security.
-- [ ] Required acceptance and review have recorded outcomes; failures remain visible.
-- [ ] Local integration intent is resolved through current Git policy and exact-state approval; cleanup remains separate.
+- [x] Reveal opens the correct Explorer location without changing the selected chat or weakening path security.
+- [x] Required acceptance and review have recorded outcomes; iteration failures remain retained above.
+- [x] Local integration intent is resolved: the user selected preparing integration into local `rst-main`. Exact-state approval/execution and separate cleanup are explicitly handed off to this conversation's bounded Git workflow, not claimed as performed by this archived implementation plan.
