@@ -2110,7 +2110,7 @@ export function AppShell() {
               } else {
                 setOverviewMobileList(true);
                 setActiveOverview("activity");
-                setRightPanelOpen(false);
+                if (isMobile) setRightPanelOpen(false);
                 if (isMobile || window.innerWidth < 1000) setSidebarOpen(false);
               }
             }}
@@ -2136,7 +2136,7 @@ export function AppShell() {
               } else {
                 setOverviewMobileList(true);
                 setActiveOverview("starred");
-                setRightPanelOpen(false);
+                if (isMobile) setRightPanelOpen(false);
                 if (isMobile || window.innerWidth < 1000) setSidebarOpen(false);
               }
             }}

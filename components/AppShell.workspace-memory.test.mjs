@@ -55,6 +55,36 @@ test("late initial session adoption preserves an explicitly opened overview, whi
   }
 });
 
+test("Activity and Starred toggles preserve desktop Files and only hide Files on mobile", () => {
+  for (const panel of ["activity", "starred"]) {
+    const marker = source.indexOf(`if (activeOverview === "${panel}" && isMobile`);
+    const start = source.lastIndexOf("onClick={() => {", marker);
+    const end = source.indexOf("\n            }}", marker);
+    assert.ok(marker !== -1 && start !== -1 && end !== -1, `${panel} handler found`);
+    const handler = source.slice(start + "onClick={() => {".length, end);
+    for (const width of [390, 820, 1440]) {
+      for (const initialOpen of [false, true]) {
+        const context = vm.createContext({
+          isMobile: width <= 640, window: { innerWidth: width },
+          activeOverview: null, overviewMobileList: true, rightPanelOpen: initialOpen,
+          setActiveTopPanel() {}, setSidebarOpen() {},
+        });
+        context.setActiveOverview = value => { context.activeOverview = value; };
+        context.setOverviewMobileList = value => { context.overviewMobileList = value; };
+        context.setRightPanelOpen = value => { context.rightPanelOpen = value; };
+        context.closeOverview = () => { context.activeOverview = null; };
+        for (const previous of [null, panel === "activity" ? "starred" : "activity", panel]) {
+          context.activeOverview = previous;
+          vm.runInContext(`(() => {${handler}\n})()`, context);
+          assert.equal(context.rightPanelOpen, width <= 640 ? false : initialOpen,
+            `${panel} preserves Files visibility at ${width}px`);
+          assert.equal(context.activeOverview, previous === panel ? null : panel);
+        }
+      }
+    }
+  }
+});
+
 test("all active-session transitions share one persistence effect", () => {
   assert.match(
     source,
