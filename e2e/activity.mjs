@@ -65,25 +65,29 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   }
   const dotColor = (row) => row.locator(".activity-item-top .activity-dot")
     .evaluate((dot) => getComputedStyle(dot).backgroundColor);
-  const checkActionStrip = async (row) => {
+  const checkActionBox = async (row) => {
     assert.equal(await row.locator(".activity-item-action").count(), 0, "navigation needs no visible Open/Review label");
     const layout = await row.evaluate((button) => {
-      const card = button.parentElement;
-      const strip = card.querySelector(".activity-item-actions");
+      const card = button.parentElement.getBoundingClientRect();
+      const box = button.parentElement.querySelector(".activity-item-actions");
+      const bounds = box.getBoundingClientRect();
       const rect = button.getBoundingClientRect();
       const title = button.querySelector(".activity-item-title").getBoundingClientRect();
+      const controls = [...box.querySelectorAll("button")];
       return {
-        fullWidth: Math.abs(rect.width - card.getBoundingClientRect().width) < 1,
+        compactRightBox: bounds.left >= rect.right && bounds.right <= card.right && bounds.width <= 60 && bounds.width >= 24,
         titleUsesRightEdge: Math.abs(title.right - (rect.right - parseFloat(getComputedStyle(button).paddingRight))) < 1,
-        below: strip.getBoundingClientRect().top >= rect.bottom,
-        controlsFit: [...strip.querySelectorAll("button")].every((control) => {
-          const bounds = control.getBoundingClientRect();
-          return bounds.left >= rect.left && bounds.right <= rect.right && bounds.height >= (matchMedia("(pointer: coarse)").matches ? 44 : 32);
+        verticallyCentered: Math.abs((bounds.top + bounds.bottom) - (card.top + card.bottom)) < 1,
+        stackedTargets: controls.length > 0 && controls.every((control, index) => {
+          const target = control.getBoundingClientRect();
+          const previous = controls[index - 1]?.getBoundingClientRect();
+          return target.left >= bounds.left && target.right <= bounds.right && target.width >= 24 && target.height >= 24
+            && (!previous || target.top >= previous.bottom) && getComputedStyle(control).fontSize === "11px";
         }),
       };
     });
-    assert.deepEqual(layout, { fullWidth: true, titleUsesRightEdge: true, below: true, controlsFit: true },
-      "title keeps the full row width and visible action targets wrap below the metadata");
+    assert.deepEqual(layout, { compactRightBox: true, titleUsesRightEdge: true, verticallyCentered: true, stackedTargets: true },
+      "small text actions stack inside one narrow box beside the session, with separate usable targets");
   };
   await checkOverviewDuringInitialRestore(page, base, selectedSessionId);
   await page.getByText("Active branch answer", { exact: true }).waitFor();
@@ -99,6 +103,11 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
     "idle transcript history must not become a completed-run backlog");
   const interrupted = recoveryOverview.locator(".activity-item-interrupted").filter({ hasText: "Branch root" });
   await interrupted.waitFor();
+  assert.equal(await interrupted.evaluate((button) => {
+    const box = button.parentElement.querySelector(".activity-item-actions");
+    return getComputedStyle(box).display === "none"
+      && Math.abs(button.getBoundingClientRect().width - button.parentElement.getBoundingClientRect().width) < 1;
+  }), true, "rows with no actions reserve no empty right-hand space");
   await checkWorktreeBadge(interrupted);
   await interrupted.click();
   await page.getByText("A previous run may have been interrupted", { exact: false }).waitFor();
@@ -163,7 +172,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   const working = page.getByRole("region", { name: "Activity" }).locator(".activity-item-working").filter({ hasText: "Branch root" });
   await working.waitFor();
   await checkWorktreeBadge(working);
-  await checkActionStrip(working);
+  await checkActionBox(working);
   assert.equal(workingColor, await dotColor(working), "Starred and Activity use the same working dot");
   await page.getByRole("button", { name: "Starred", exact: true }).click();
   await page.unroute("**/api/agent/running");
@@ -223,7 +232,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await overview.getByRole("heading", { name: /Needs you/ }).waitFor();
   const card = overview.locator(".activity-item-needs-you").filter({ hasText: "E2E browser question" });
   await card.waitFor();
-  await checkActionStrip(card);
+  await checkActionBox(card);
   assert.equal(needsColor, await dotColor(card), "Starred and Activity use the same needs-you dot");
   assert.equal(await overview.getByText("E2E browser question").count(), 1);
   assert.match(await card.getAttribute("aria-label"), /project.*E2E browser question/);
@@ -233,7 +242,9 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
     return response.request().postDataJSON().op === "later-request";
   });
   void questionDeferred.catch(() => {});
-  await overview.getByRole("button", { name: "Review Render **E2E markdown** later", exact: true }).click();
+  const deferQuestion = overview.getByRole("button", { name: "Review Render **E2E markdown** later", exact: true });
+  await deferQuestion.focus();
+  await deferQuestion.press("Enter");
   const questionReceipt = await questionDeferred;
   assert.equal(questionReceipt.status(), 200);
   assert.ok((await questionReceipt.json()).laterRequests.some((entry) => entry.sessionId === waitingSessionId));
@@ -285,7 +296,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await page.getByRole("button", { name: "Activity", exact: true }).click();
   const waitingReady = overview.locator(".activity-item-ready").filter({ hasText: "Render **E2E markdown**" });
   await waitingReady.waitFor();
-  await checkActionStrip(waitingReady);
+  await checkActionBox(waitingReady);
   await page.screenshot({ path: join(artifacts, `activity-ready-${width}.png`) });
   assert.equal(readyColor, await dotColor(waitingReady), "Starred and Activity use the same ready-to-review dot");
   await overview.getByRole("button", { name: "Mark Render **E2E markdown** as read", exact: true }).click();
