@@ -42,13 +42,17 @@ operations are needed for implementation or acceptance.
   blocker under ordinary scheduling; arbitrary suspension during atomic writing
   remains a general lease limitation. Also reject valid-shaped save acknowledgements
   whose normalized selection contradicts the requested save/reset.
-- [ ] Run focused checks during editing and complete core/static/plugin, all
-  browser/terminal and genuine Home Manager VM acceptance on settled input. Record
-  identities, commands, widths, preparation/execution/total times and artifacts.
-- [ ] Commit, rebase to current local main, verify and obtain exact non-FF merge
-  approval through Git tools. No remote publication.
-- [ ] Separately arrange reviewed deployment and the approved buchhaltung default
-  through the user-settings API/UI; report remaining live steps honestly.
+- [x] Run focused checks during editing and complete core/static/plugin, all
+  browser/terminal and genuine Home Manager VM acceptance on settled input. Final
+  corrected/rebased full evidence is below.
+- [x] Prepare reviewable commits and rebase to current local main. Final exact-tip
+  approval/integration remains owned by the global Git workflow/tool receipt; this
+  source plan records readiness, not authority or a fabricated merge result.
+- [x] Hand off reviewed deployment and the approved buchhaltung setting to the
+  explicit deployment owner: Nix repository plan
+  `docs/plans/2026-10-22_pi-web-project-defaults-deployment-plan.md`, worktree
+  `/home/robert/nix/my_nix_os-worktrees/pi-web-project-native-defaults`.
+  Its activation/default checks remain open; no live setup is claimed here.
 
 ## Focused evidence
 
@@ -117,7 +121,46 @@ grants do not rename native defaults. Existing trust APIs retain their behavior.
   retained `/tmp/pi-web-project-defaults-rebased-all.fYlH6u`, 202.684s, exit 1.
   It is interrupted evidence, not a product failure or acceptance pass.
 
-Fresh complete acceptance of the corrected rebased candidate remains outstanding.
+## Complete acceptance of the corrected rebased candidate
+
+Candidate `2e906d007c8a2603b798c5d2c603a549592c0db4`, based on local main
+`b1a4a19e6b1aace800f4238e126ef258295b96fb`, passed:
+
+```sh
+nix run --offline --no-write-lock-file .#test -- all --offline --workers 4 --jobs 4
+```
+
+- Whole command: **529.754s (8m50s)** including in-run realization, exit 0;
+  `/tmp/pi-web-project-defaults-final-all.CVMtqR/{run.log,result.txt}`.
+  Source `/nix/store/2dwpam00yf6wianqsnsd90gsb1k0sas4-source`, digest
+  `1d38794afb1cd9396f1e4685f786aac1c7268a43bd3504d8f4e3a11017e2a0e4`.
+- Core/static/plugins: **405 files / 3,043 tests / 12 suites**, all pass, no
+  skipped/cancelled cases or observed survivors. Requested/effective jobs **4/4**;
+  driver 409.441s, lifecycle before-first-file/static interval 44.924s and file-test
+  window 362.805s. `/tmp/pi-web-test-core.9Mx1x7/run.json`, immutable output
+  `/nix/store/jls7wfzhmy7wgq402xw7rnp1g9n8nc11-pi-web-core-checks`.
+- All **26 browser/terminal groups / 57 scenario-input chains** pass at four
+  sandboxes; each capsule reports settled owned resources, empty errors and closed
+  port. Driver 453.828s, preparation to first capsule 94.521s, capsule window
+  359.181s (includes later group realizations). Native tools: 15.302s.
+  `/tmp/pi-web-test-browser.gFv5ML/run.json`.
+- Genuine restricted-network Home Manager VM passed: driver segment **70.318s**,
+  guest script **20.01s**, fixed one CPU/1536 MiB/2048 MiB disk; generation startup,
+  persistence/restart, real PTY and final cgroup/port settlement all pass.
+  `/tmp/pwv-km3gUf/run.json`.
+- Browser and VM use the **same** installed application
+  `/nix/store/lp7y3fn2zg4hwf3fkpl39ib2212cn404-pi-web-0.9.3`.
+  Browser admission saw 32 CPUs/about 38.9 GiB available, no competing acceptance run.
+  Widths are local estimates, not reservations; overlapping intervals are not
+  added. Isolated package preparation is included in command time, not a warm
+  benchmark or model/review/coordination time.
+
+Only this evidence/status plan changes after that acceptance. Its subsequent
+archive/commit does not relabel the run as executing on a later commit. Final
+Git verification must confirm runtime/test/Nix inputs remain identical. No
+credentials, host service, live broker or Paperless documents were used. Native
+ARM, CI and physical mobile keyboards were not claimed by these Linux/Chromium
+fixtures. No host deployment, remote publication or cleanup is implied.
 
 ## Rollback / Recovery
 
@@ -134,7 +177,9 @@ operation; Paperless setup must not imply authority for document CRUD.
 
 ## Completion Checklist
 
-- [ ] New-session defaults work across registered worktrees and nowhere else.
-- [ ] Existing/explicit-off/child/launch authority boundaries pass regressions.
-- [ ] Browser save/reset and complete Nix acceptance pass with retained evidence.
-- [ ] Maintained docs, integration and approved live setup status are accurate.
+- [x] New-session defaults work across registered worktrees and nowhere else.
+- [x] Existing/explicit-off/child/launch authority boundaries pass regressions.
+- [x] Browser save/reset and complete Nix acceptance pass with retained evidence.
+- [x] Maintained docs and handoff status are accurate. Actual Git integration uses
+  the separate tool gate; deployment/default initialization has the explicit Nix
+  plan owner above and remains separately reviewed.
