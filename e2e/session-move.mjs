@@ -5,6 +5,51 @@ export async function waitForMoveControl(page, selector) {
   await page.waitForFunction((target) => document.querySelector(target)?.disabled === false, selector);
 }
 
+/** Hold the actual move request so even fast local moves expose their pending UI. */
+export async function clickMoveWithProgress(page, dialog, pathname, bulk = false) {
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  let received;
+  const intercepted = new Promise(resolve => { received = resolve; });
+  let routeWork;
+  let interceptionTimer;
+  const matcher = url => url.pathname === pathname;
+  const handler = async route => {
+    if (bulk && route.request().postDataJSON()?.mode !== "execute") return route.continue();
+    routeWork = (async () => { await held; await route.continue(); })();
+    received();
+    await routeWork;
+  };
+  await page.route(matcher, handler);
+  try {
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await dialog.getByRole("button", { name: "Move", exact: true }).click();
+    await Promise.race([intercepted, new Promise((_, reject) => {
+      interceptionTimer = setTimeout(() => reject(new Error("Move request was not intercepted within 30000ms")), 30_000);
+    })]);
+    clearTimeout(interceptionTimer);
+    const status = dialog.getByRole("status").filter({ hasText: bulk ? "Moving sessions…" : "Moving session…" });
+    await status.waitFor();
+    assert.equal(await dialog.getByRole("button", { name: "Move", exact: true }).isDisabled(), true);
+    assert.equal(await dialog.getByRole("button", { name: "Cancel", exact: true }).isDisabled(), true);
+    assert.equal(await dialog.getByLabel("Destination project", { exact: true }).isDisabled(), true);
+    const spinner = status.locator('svg[aria-hidden="true"]');
+    assert.equal(await spinner.evaluate(node => getComputedStyle(node).animationName), "spin");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    assert.equal(await spinner.evaluate(node => getComputedStyle(node).animationName), "none");
+    await status.waitFor({ state: "visible" });
+  } finally {
+    clearTimeout(interceptionTimer);
+    release();
+    // Let the held request continue before removing its route handler.
+    try { await routeWork; }
+    finally {
+      try { await page.unroute(matcher, handler); }
+      finally { await page.emulateMedia({ reducedMotion: "no-preference" }); }
+    }
+  }
+}
+
 export async function checkSessionMovePicker(page, { base, api, sessionId, project, otherProject, gitProject, targetWorktree, mobile }) {
   const session = async () => (await api("/api/sessions?force=1")).sessions.find((item) => item.id === sessionId);
   const open = async () => {
@@ -18,7 +63,7 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
     return page.getByRole("dialog", { name: "Move to project…" });
   };
   const confirm = async (dialog, cwd) => {
-    await dialog.getByRole("button", { name: "Move", exact: true }).click();
+    await clickMoveWithProgress(page, dialog, `/api/sessions/${encodeURIComponent(sessionId)}/move`);
     await dialog.waitFor({ state: "detached" });
     assert.equal((await session()).cwd, cwd);
   };

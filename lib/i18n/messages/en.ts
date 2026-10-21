@@ -542,6 +542,7 @@ export const enLocale: LocalePlugin = {
     "sidebar.retry": "Retry",
     "sidebar.chooseProject": "Choose a project…",
     "sidebar.browseProject": "Browse another folder…",
+    "sidebar.moving": "Moving session…",
     "sidebar.moveRunning": "Stop the session before moving",
     "sidebar.move": "Move",
     "sidebar.rename": "Rename",

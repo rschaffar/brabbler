@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { SessionMovePlan } from "@/lib/session-worktrees-types";
 import { SessionMoveDestinationPicker } from "./SessionMoveDestinationPicker";
+import { SessionMoveStatus } from "./SessionMoveStatus";
 import { DirectoryPickerPortalContext } from "./DirectoryPicker";
 
 export interface BulkMoveRequest { project: string; ids?: string[]; missingOnly: boolean }
@@ -93,7 +94,7 @@ export function SessionBulkMoveDialog({ request, projects, onClose, onSettled }:
         <p className="text-xs text-text-muted">{t("sessionWorktrees.descendantsWarning")}</p>
         <p className="text-xs text-text-muted">{t("sessionWorktrees.partialWarning")}</p>
       </div>}
-      {busy && <p role="status">{t("sessionWorktrees.moving")}</p>}
+      {busy && <SessionMoveStatus>{t("sessionWorktrees.moving")}</SessionMoveStatus>}
       {!plan && !result && !error && (request.missingOnly || destination) && <p role="status">{t("sessionWorktrees.preparing")}</p>}
       {error && <div role="alert" className="text-sm text-red-500">{error}</div>}
       {result && <div className="space-y-2 text-sm" role="status">
