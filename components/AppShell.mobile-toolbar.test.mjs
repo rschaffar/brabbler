@@ -120,6 +120,8 @@ test("Explorer expansion disables covered siblings, not its center ancestor, and
   assert.match(source, /ref=\{topBarRef\} inert=\{gitExplorerFullWidth\}/);
   assert.match(source, /id="file-panel"\s*inert=\{gitExplorerFullWidth\}/);
   assert.match(source, /covered=\{chatCollapsed \|\| gitExplorerFullWidth \|\| rightPanelFullWidth\}/);
-  assert.match(source, /GitExplorerPanel key=\{activeCwd \?\? "no-worktree"\}/);
+  const explorerKey = source.match(/<GitExplorerPanel key=\{([^\n]+)\}/)?.[1];
+  assert.equal(explorerKey, 'reviewNavigation ? `review:${reviewNavigation.cwd}:${reviewNavigation.requestId}` : activeCwd ?? "no-worktree"');
+  assert.doesNotMatch(explorerKey, /expanded|width|mobile/i, "Layout changes never remount the selected history reader");
   assert.match(source, /const handleGitExplorerExpandToggle[\s\S]*?setRightPanelExpanded\(false\)/);
 });
