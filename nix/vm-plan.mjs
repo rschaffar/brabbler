@@ -14,6 +14,7 @@ export const weights = Object.freeze({
   'diff-context': 110, markdown: 163, 'file-edit': 97, archive: 38, privacy: 113,
   activity: 169, accounts: 55, questions: 165, 'session-links': 16, bulk: 47,
   move: 68, 'ssh-agent': 30, terminal: 48,
+  'native-tools': 10, // Installed-package desktop/mobile capsule: 9.451s (2026-10-21).
 });
 export const coverageIds = group => group === 'terminal' ? ['terminal/full@production-pty'] : [...scenarios[group]];
 

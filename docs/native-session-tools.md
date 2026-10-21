@@ -1,6 +1,6 @@
 # Native session tools
 
-The reduced feature composes SDK 1.3.0 MCP, tools-only Code-mode and Tool search for ordinary sessions. Focused desktop/mobile browser verification passes; complete acceptance is pending in the [active plan](plans/2026-10-21_native-session-tools-plan.md). It does not introduce a configuration-management system.
+The reduced feature composes SDK 1.3.0 MCP, tools-only Code-mode and Tool search for ordinary sessions. Complete Nix acceptance and desktop/mobile browser evidence are recorded in the [implementation plan](plans/2026-10-21_native-session-tools-plan.md). It does not introduce a configuration-management system.
 
 ## Configuration and selection
 
