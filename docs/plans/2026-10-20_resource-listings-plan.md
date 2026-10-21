@@ -26,8 +26,8 @@ Adapt cached upstream `feb40f6354704cf987739247ace0b872b7300c83`, with corrected
 - [x] Migrate provider and enabled-model listings; retain fresh settings and one-shot writes, account isolation and existing scope semantics.
 - [x] Wire plugin and both session reload invalidators; test failure paths and unchanged auth/runtime boundaries.
 - [x] Update owning guides and packaged browser fixtures; independently review and resolve findings.
-- [ ] Run focused Nix checks, then complete fresh `nix run .#test -- all --workers 4 --jobs 4` if admitted; record exact inputs, commands/results, artifacts and timing.
-- [ ] Commit coherent reviewed work and hand the verified candidate to the Git lifecycle for completion choice/exact-state non-FF integration into local rst-main and separate cleanup.
+- [ ] Reopened after target advancement: run complete fresh `nix run .#test -- all --workers 4 --jobs 4` on the new combination; record exact inputs, commands/results, artifacts and timing. Earlier candidate acceptance below remains valid only for its recorded inputs.
+- [ ] Commit coherent reviewed work and hand the verified candidate to the Git lifecycle for exact-state non-FF integration into current local rst-main and separate cleanup.
 
 ## Verification and blocker investigation
 
@@ -41,8 +41,29 @@ User explicitly chose to investigate the Git test before proceeding. Its fixture
 
 Focused four-worker contention selection ran the original server test alongside the same cleanup/discard/project-management peers, plus final listing/skill tests and gate regressions: **328 tests/8 files passed**, 163 seconds including static preparation/realization (`/tmp/pi-resource-listings-git-fix.ruIEac.log`, `/tmp/pi-web-test-core.xt2CTU/run.json`). Independent source review found no blocker; a final assertion independently checks the failed commit writes its marker. Full settled-candidate acceptance remains required. No deadline, inventory, isolation, console-error rule or runtime/dependency pin was weakened. All timings are end-to-end command time unless separately stated, not cold-cache benchmarks or model/coordination time.
 
+## Reconciliation and complete acceptance
+
+- Rebased cleanly first onto Activity Later target `ef90c809970aebf4c412d340a67d9918a10eb1dc`, producing `b080e89261190b49398db32a155f0be8c52f92bc`. Range-diff confirmed unchanged feature patches. Complete four/four acceptance then stopped after **671 seconds** at the newly integrated Activity Later browser assertion (`e2e/activity.mjs:198`, deferred pending question after reload). Evidence `/tmp/pi-resource-listings-all3.VHpUZ5.log`, core `/tmp/pi-web-test-core.XWXvIk/run.json`, browser `/tmp/pi-web-test-browser.ajiPXW/run.json`, source `/tmp/pi-web-test-source-YJPPaJ`. The corrected Git fixture and Markdown/listing browser coverage passed, but stopped coverage is not a complete pass. User instructed another rebase rather than changes to Activity.
+- Rebased cleanly onto new local target **`50b33cc9d04b952bd48606254a959b314c4a400e`**, preserving its append-tail scanner and composer changes. Tested feature candidate **`7f603490ba2c4d460549f6908c070a310e9b9bcf`** comprises `1eb4673` (listing optimization) and `7f60349` (test fixture correction); range-diff confirms unchanged feature patches.
+- First invocation at that candidate stopped before tests in **7 seconds**: immutable-source export refused `docs/screenshot2.png` changing during read. Evidence `/tmp/pi-resource-listings-all4.PnChzk.log`, snapshot `/tmp/pi-web-test-source-Zld3ZZ`, core `/tmp/pi-web-test-core.0i7Jhu/run.json`, browser `/tmp/pi-web-test-browser.ehZGfD/run.json`. The store file and outer snapshot matched SHA256 `f0ba3291be15304f9304804eec3fda7a6b55e0a4dda447501d95ff4c6f004f89`; observed store metadata subsequently stayed stable (368 hard links, ctime at ingestion). This is consistent with ingestion/deduplication metadata change, not proof of its cause. No exporter guard/source was changed. The next invocation used the same outer digest and passed; it is not claimed as an exporter fix.
+
+**Complete fresh acceptance passed:** `nix run --offline --no-write-lock-file .#test -- all --offline --workers 4 --jobs 4`, **499 seconds (8m19s) end-to-end**, including in-command realization. Native x86_64 Linux, 32 logical CPUs, about 48 GiB available at outer admission. Requested/effective widths **4/4 core workers and 4 browser sandboxes**, overlapping under the documented estimated 16-CPU/27-GiB budget, not a reservation. Earlier iteration runs warmed dependencies; no separate prewarming step was added. All executions were fresh. This is not a cold-cache benchmark or measured real-provider speedup.
+
+- Full command log: `/tmp/pi-resource-listings-all5.wyWsOl.log`.
+- Verified snapshot `/tmp/pi-web-test-source-jvEhjC`; outer content/mode SHA256 **`2276435caa8718100d0252f9cf3c7b3773b90a65a0417c60bba975faaa655f5b`**; selection `/tmp/pi-web-test-source-jvEhjC/selection.json`; immutable source `/nix/store/0qi3d51729csnac0k6lv49r4nf2h06yj-source`.
+- Core/static/bundled plugins: **353 files / 2,662 tests / 12 suites**, all passed, zero skipped/cancelled/not-started or observed surviving owned processes. `/tmp/pi-web-test-core.WWk2A5/run.json`, output `/nix/store/px3d82d21inv5c01win1r0qymga3mk8z-pi-web-core-checks`. Core interval **420.541s**, including **62.134s** before first test file and **357.981s** file-execution span. Core filtered digest `0f628dc49449417edb450e42daa5199a2661f7c88938314ae5bdfe7b1e49f5b1`.
+- Browser/terminal: **all 24 groups / 53 exact scenario receipts**, matching expected/completed inventory, all errors empty, artifacts collected, ports closed and settlement passed. `/tmp/pi-web-test-browser.31VuQ1/run.json`. Browser interval **437.240s**, including **135.090s** before first capsule (realization/preparation/coordination) and **302.041s** capsule span. Includes actual repeated concurrent listing requests with no new extension factory executions and the target's Activity/composer scenarios.
+- Genuine Home Manager deployment: `/tmp/pwv-ftmXGC/run.json`, all activation/default-target, environment/permissions, durable HTTP writes/restart and genuine HTTP PTY proofs passed. Collection and clients settled; final service inactive/dead, MainPID zero, cgroup absent and port refused. Service interval **56.245s**, guest proof **19.026s**. Browser and guest use the same production package `/nix/store/2rsv0256fd7v5k8fv432gplhl9fh2ljl-pi-web-0.9.3`.
+- These level intervals overlap; never add them to obtain command runtime. Model/review/coordination time is separate. Existing unrelated ref-cleanup lint warnings remain warnings; no deadlines or general error capture were relaxed.
+
+## Integration handoff
+
+User selected **Integrate into local rst-main** after complete acceptance. Before final handoff, target advanced to `c999fadf4a4121b4dd4cd02dfcf4ca8910df3d90` with 147 changed files (appearance/metrics, subagent lifecycle, file workspace, Explorer uploads and inline media). User chose to **hold further integrations while this feature rebases and verifies**. Final acceptance/handoff is reopened; do not label the earlier run as evidence for the new combination. This plan remains active until that revalidation.
+
+The Git lifecycle owns subsequent exact-state approval, unsigned non-fast-forward merge and separately approved cleanup. Its durable receipts, not this plan, own actual integration/cleanup outcomes. This evidence update is documentation-only relative to `7f60349`. No remote publication, installed-host deployment/restart or live-provider/credential access was performed. Failed evidence remains retained.
+
 ## Completion Checklist
 
-- [ ] Listing optimization verified without weakening account/trust/content authorization.
-- [ ] Independent review and complete core/static/plugin/browser/terminal/deployment acceptance pass.
-- [ ] Maintained guides own behavior; evidence and unexecuted lifecycle/deployment boundaries are explicit.
+- [x] Listing optimization verified without weakening account/trust/content authorization.
+- [ ] Complete core/static/plugin/browser/terminal/deployment acceptance passes for the final rebased combination; independent feature/fixture reviews remain resolved.
+- [ ] Maintained guides and final evidence are handed off with unexecuted lifecycle/deployment boundaries explicit.
