@@ -70,6 +70,12 @@ Native shared-runtime regressions cover success, failure, timeout/late settlemen
 
 The corrected source passed `nix run .#test -- core --jobs 4 --file lib/session-pause.test.mjs --file lib/session-model-refresh.test.mjs --file lib/rpc-manager-model-config.integration.test.mjs --file lib/subagent-runtime.integration.test.mjs --file lib/rpc-manager.test.mjs`: **5 files / 109 tests**, zero failed/cancelled/skipped, plus static preparation, in **57 seconds command wall time**. Evidence: `/tmp/pi-web-model-reselection-pause-green.Bq9N7P.log`, `/tmp/pi-web-test-core.3ipium/run.json`. Complete acceptance remains pending.
 
+### Complete acceptance attempts
+
+The first `nix run .#test -- all --workers 4 --jobs 4` on `2b65966e4ccffecd92c421a636f1308472694ba7` stopped after **255 seconds command wall time**, including realization: `/tmp/pi-web-model-reselection-all.QbmFD4.log`, snapshot `/tmp/pi-web-test-source-WnQRDk`, digest `fef7461c4335fde2d3e116792afe428642fcbf323f7efb4304a7d592dd157289`. Core completed 233 files, failed one and did not start 148: an existing extracted receipt-read fixture omitted the new model-selection version binding (`/tmp/pi-web-test-core.qHUShp/run.json`). The browser peer was aborted/drained by fail-fast (`/tmp/pi-web-test-browser.SU6vEX/run.json`); deployment was not admitted. This is not complete acceptance.
+
+Only that fixture changed: provide the version bindings and additionally assert model-selection changes supersede delayed canonical reads. Application source is unchanged. `nix run .#test -- core --jobs 4 --file hooks/interaction-receipts.test.mjs` passed **21/21 tests** plus static preparation in **51 seconds command wall time**: `/tmp/pi-web-model-reselection-receipt-fixture.LSHJUY.log`, `/tmp/pi-web-test-core.2OsGYh/run.json`. A new complete run is required for remaining coverage.
+
 ## Risks and Recovery
 
 SDK refresh is not transactional and cancellation is not rollback. Never admit a run merely because a timeout response returned while refresh is still executing. Partial failure must remain visibly unavailable until a successful safe refresh or deliberate reconstruction. Native provider/extension callbacks are not sandboxed by `allowNetwork:false`. Preserve immutable account/store binding and shared-subagent safety, not just the selected wrapper's idle flag. No persistence migration is intended; reverting code does not revert user-saved definitions.
