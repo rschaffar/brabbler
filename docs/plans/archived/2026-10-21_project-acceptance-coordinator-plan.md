@@ -24,12 +24,12 @@ Existing Nix/parallel acceptance plans and ADR 0025 own the repository's test de
 
 ## Plan
 
-- [ ] Implement and test profile validation/private configuration, physical project admission and verified snapshot capture; reject malformed recipes, escapes, secrets/generated paths, changing/symlink inputs and mismatched project identity.
-- [ ] Implement and test durable coordinator/execution ownership, idempotency, in-flight joins, one-slot FIFO scheduling, cancellation and restart/unknown blocking; verify persistence failure and cancellation never release unproven resources.
+- [x] Implement and test profile validation/private configuration, physical project admission and verified snapshot capture; reject malformed recipes, escapes, secrets/generated paths, detected changing/symlink inputs and mismatched project identity. Full acceptance includes the real Nix-template capture/exporter round-trip.
+- [x] Implement and test durable coordinator/execution ownership, idempotency, in-flight joins, one-slot FIFO scheduling, cancellation and restart/unknown blocking; verify persistence failure and cancellation never release unproven resources. All 16 coordinator and 3 lock-owner interruption cases passed on the final candidate.
 - [x] Add real session-aware tools and authenticated browser API, with profile-scoped Ask/Allow and no model-accessible settings mutation; verify caller/control isolation and request retry behavior. Initial full core passed the three tool/API cases, including caller namespace separation.
 - [x] Add accessible project Acceptance configuration/status/log dialog and packaged browser scenario; verify queue/shared status, exact input display and explicit control semantics without invoking real acceptance recursively. Packaged Activity passed all desktop/tablet/mobile variants after fixing the observed initial-load editor race.
 - [x] Obtain independent read-only safety review, resolve findings, and update owning guide/ADR/source map. Final narrow follow-up confirmed lock-owner mutation repair closes the last reported blocker; focused 16 scheduler + 3 recovery-process cases passed.
-- [ ] Freeze candidate, run complete fresh Nix core/browser/deployment acceptance with admitted four/four profile, record command/runtime/input/artifact evidence, then commit and prepare exact-state local main non-FF integration.
+- [x] Freeze candidate, run complete fresh Nix core/browser/deployment acceptance with admitted four/four profile, record command/runtime/input/artifact evidence, then commit and prepare exact-state local main non-FF integration. Candidate `307b8a42961bf1a70c804afe3f355d7f27ce3bec` passed after rebasing onto current main `2c476b00fe9d980b6281a66d6c578610cdea1619`; integration remains a separate exact-state tool approval.
 
 ## Non-Goals
 
@@ -52,9 +52,27 @@ Profile programs execute trusted project code as the Pi Web OS user, not a new s
 
 - Final focused recovery: `/tmp/pi-acceptance-coordinator-final-recovery.OSrOxV/driver.log`, two fresh Nix invocations passed 16 scheduler and 3 lock-owning-process cases plus static checks in 138s total. Evidence `/tmp/pi-web-test-core.Star5O/run.json` and `/tmp/pi-web-test-core.Y5vs9J/run.json`. The helper-loss test kills the same process that performs critical writes; the surviving parent performs no unlocked recovery writes.
 
+## Final complete acceptance
+
+Tested feature commit `307b8a42961bf1a70c804afe3f355d7f27ce3bec`, rebased on main `2c476b00fe9d980b6281a66d6c578610cdea1619`. From the physical feature worktree:
+
+```sh
+nix run --no-write-lock-file .#test -- all --workers 4 --jobs 4
+```
+
+- **Passed in 619s (10m19s) end-to-end**, including in-command production/support and deployment-driver realization. No separate prewarming was performed for this command; pinned dependencies/previous artifacts were already cached. This is not a cold-cache promise or comparison with historical warm benchmarks. Model/review/coordination time is excluded.
+- Host native x86_64 Linux: 32 effective logical CPUs; initial admission about 37.9 GiB available. Requested/effective browser 4/4 and core 4/4; combined estimated 16 CPUs / 27 GiB including realization, not an OS reservation. Core overlaps browser followed by deployment; intervals must not be added as serial.
+- Outer source content/mode SHA256 `63b027cd01ff4e8ea792e6e95e51c8e9f55837d5b05ba4c54aaa5ea36a014ffe`. Export/selection `/tmp/pi-web-test-source-gEq8Wu/{source.json,selection.json}`. Command log/result `/tmp/pi-acceptance-coordinator-all.rYjVPm/{driver.log,result.txt}`.
+- Core/static/plugins: **404/404 files, 3,029/3,029 tests, 12 suites**, zero skipped/cancelled/unstarted cases, observed survivors or uncertain settlement. Level interval 443.193s, including about 45.221s inner preparation before first file and 395.644s test-file execution span. Report `/tmp/pi-web-test-core.dyRQmS/run.json`; immutable evidence `/nix/store/d73ylwkxb3a9mk1mdqf3hk9d72zfg5zg-pi-web-core-checks`.
+- Browser/terminal: **26/26 groups, 57/57 exact scenario receipts**, all passed with execution/settlement validation, including this feature's real installed-package desktop/tablet/mobile assertions. Level 509.668s: 98.903s before the first capsule (realization/queue preparation) and 410.561s capsule execution span; small remaining publication overhead. Report `/tmp/pi-web-test-browser.jUrhPK/run.json` retains each exact immutable capsule output.
+- Genuine Home Manager deployment: **passed all ordered environment, activation, durable write/restart, paused state, PTY and final service/cgroup/port shutdown proofs**. Level 100.826s includes driver realization; VM test script 24.04s. `/tmp/pwv-12YDne/{run.json,artifacts/acceptance.json}` retains observations/hashes and confirmed outer execution settlement. Fixed guest 1 vCPU / 1536 MiB / 2 GiB sparse disk; not a measured minimum.
+- Browser and deployment used the same package `/nix/store/2kii0agd10iqwjcbjgiang0wkvs3dg67-pi-web-0.9.3`. No installed host service, checkout production build, deployment or publication was used.
+
+Evidence/status-only archival follows this tested source. It does not claim the complete suite reran on a later documentation commit. Durable behavior belongs in `docs/acceptance.md`, ADR 0031 and the maintained feature/session/architecture references. Linux-only execution, cooperative control over managed jobs only, mutable non-pinned external toolchains, and no automatic artifact GC remain explicit limits, not unfulfilled implementation promises.
+
 ## Completion Checklist
 
-- [ ] Focused regressions and genuine packaged browser feature assertions pass.
-- [ ] All required complete acceptance levels pass on identified candidate inputs; timing and retained artifacts recorded.
-- [ ] Safety review findings resolved or explicitly accepted; maintained contracts updated.
-- [ ] Feature history is reviewable; local integration uses exact-state approval and required non-FF main method. No remote operation performed.
+- [x] Focused regressions and genuine packaged browser feature assertions pass.
+- [x] All required complete acceptance levels pass on identified candidate inputs; timing and retained artifacts recorded.
+- [x] Safety review findings resolved; maintained guide, ADR, feature/session contracts and source map updated. No remaining concrete blocker reported in final scoped review.
+- [x] Feature history is reviewable and ready for exact-state approval of the required local main non-FF method. No remote operation performed; integration/cleanup remain separately gated, not claimed by this checklist.
