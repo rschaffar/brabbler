@@ -7,6 +7,7 @@
   "session-launch": { "suite": "browser", "selector": "E2E_SESSION_LAUNCH_ONLY" },
   "running-forks": { "suite": "browser", "selector": "E2E_RUNNING_FORKS_ONLY" },
   "model-speed": { "suite": "browser", "selector": "E2E_MODEL_SPEED_ONLY" },
+  "native-tools": { "suite": "browser", "selector": "E2E_NATIVE_TOOLS_ONLY" },
   "trust": { "suite": "browser", "selector": "E2E_TRUST_ONLY" },
   "git-plugin": { "suite": "browser", "selector": "E2E_GIT_WORKFLOW_PLUGIN_ONLY" },
   "appearance": { "suite": "browser", "selector": "E2E_CHAT_APPEARANCE_ONLY" },

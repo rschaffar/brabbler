@@ -49,6 +49,8 @@ import {
   type ClientAssistantMessageEvent,
 } from "@/lib/streaming-message";
 
+import { NO_NATIVE_RESOURCES, validateNativeResourceSelection, type NativeResourceSelection } from "@/lib/session-native-resources";
+
 export interface SessionData {
   sessionId: string;
   filePath: string;
@@ -56,6 +58,7 @@ export interface SessionData {
   tree: SessionTreeNode[];
   leafId: string | null;
   toolNames?: string[];
+  nativeResources?: NativeResourceSelection;
   modelSpeed?: ModelSpeed;
   /** Opaque freshness token for the session view cache (summary tree reads). */
   snapshotRevision?: string | null;
@@ -438,6 +441,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const ensuringNewSessionRef = useRef<Promise<string | null> | null>(null);
   const newSessionPromotedRef = useRef(false);
+  const nativeToolsApplyingRef = useRef(false);
   const newSessionModelOverrideRef = useRef<SelectedModel | null>(null);
   const newSessionAccountsRef = useRef<Record<string, string> | null>(null);
   const thinkingLevelOverrideRef = useRef<ConcreteThinkingLevel | null>(null);
@@ -866,6 +870,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const tools = await sendAgentCommand<ToolEntry[]>(sid, { type: "get_tools" });
       if (!tools || !sessionHookMountedRef.current || sessionIdRef.current !== sid) return null;
       const { getPresetFromTools } = await import("@/lib/tool-presets");
+      if (!sessionHookMountedRef.current || sessionIdRef.current !== sid) return null;
       setToolPresetState(sessionToolsPinnedRef.current ? getPresetFromTools(tools) : CONFIGURED_TOOL_PRESET);
       onSystemToolsChange?.(tools);
       return tools;
@@ -1611,6 +1616,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         break;
       }
       case "tool_execution_start": {
+        if (typeof event.parentToolCallId === "string" && event.parentToolCallId) break;
         const id = event.toolCallId as string;
         const name = event.toolName as string;
         setAgentPhase((prev) => {
@@ -1621,11 +1627,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         break;
       }
       case "tool_execution_update": {
+        if (typeof event.parentToolCallId === "string" && event.parentToolCallId) break;
         const id = event.toolCallId as string;
         const name = event.toolName as string;
         const partialResult = event.partialResult as Partial<ToolResultMessage> | undefined;
         const content = partialResult?.content;
-        if ((name === "bash" || name === "powershell") && Array.isArray(content)) {
+        if ((name === "bash" || name === "powershell" || name === "codemode") && Array.isArray(content)) {
           setActiveToolResults((prev) => {
             const next = new Map(prev);
             next.set(id, {
@@ -1656,6 +1663,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         break;
       }
       case "tool_execution_end": {
+        if (typeof event.parentToolCallId === "string" && event.parentToolCallId) break;
         const id = event.toolCallId as string;
         setActiveToolResults((prev) => {
           if (!prev.has(id)) return prev;
@@ -2556,6 +2564,67 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [isNew]);
 
+  const handleNativeResourcesChange = useCallback(async (requested: NativeResourceSelection): Promise<NativeResourceSelection> => {
+    if (nativeToolsApplyingRef.current) throw new Error(t("nativeTools.busy"));
+    const nativeResources = validateNativeResourceSelection(requested);
+    nativeToolsApplyingRef.current = true;
+    const context = sessionPropIdRef.current;
+    let sid: string | null = null;
+    const current = () => sessionHookMountedRef.current && sessionPropIdRef.current === context && sessionIdRef.current === sid;
+    try {
+      sid = sessionIdRef.current ?? await ensureNewSession();
+      if (!sid || !current()) throw new Error(t("nativeTools.sessionChanged"));
+      cancelEventStreamGrace(); closeEvents();
+      const result = await sendAgentCommand<{ sessionId: string; nativeResources: NativeResourceSelection }>(sid, {
+        type: "set_native_resources", nativeResources,
+      });
+      if (!current()) throw new Error(t("nativeTools.sessionChanged"));
+      if (result.sessionId !== sid) throw new Error(t("nativeTools.identityChanged"));
+      const actual = validateNativeResourceSelection(result.nativeResources);
+      deleteSessionViewSnapshot(sid);
+      setData(value => value ? { ...value, nativeResources: actual } : value);
+      setSlashCommands([]); setExtensionStatuses([]); setExtensionWidgets([]);
+      const speedRevision = modelSpeedRevisionRef.current;
+      const [state] = await Promise.all([sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" }), loadTools(sid)]);
+      if (current()) { setSystemPrompt(state.systemPrompt ?? ""); syncLiveModel(state, speedRevision); }
+      return actual;
+    } catch (failure) {
+      // Reconcile an uncertain acknowledgement, never retry the mutation. Only
+      // update selection metadata; keep the transcript/navigation/draft untouched.
+      if (sid && current()) {
+        try {
+          const response = await fetch(`/api/sessions/${encodeURIComponent(sid)}?tree=summary&tail=1`, { cache: "no-store" });
+          if (response.ok) {
+            const saved = await response.json() as SessionData;
+            if (current()) setData(value => value ? { ...value, nativeResources: saved.nativeResources ?? NO_NATIVE_RESOURCES } : value);
+          }
+        } catch { /* The dialog retains an explicit unconfirmed state. */ }
+        try {
+          const speedRevision = modelSpeedRevisionRef.current;
+          const modelRevision = modelSelectionVersionRef.current;
+          const response = await fetch(`/api/agent/${encodeURIComponent(sid)}?tools=1`, { cache: "no-store" });
+          if (response.ok) {
+            const live = await response.json() as { running?: boolean; state?: AgentStateResponse; tools?: ToolEntry[] };
+            if (current()) {
+              setSlashCommands([]);
+              setExtensionStatuses(live.state?.extensionStatuses ?? []); setExtensionWidgets(live.state?.extensionWidgets ?? []);
+              setSystemPrompt(live.state?.systemPrompt ?? null);
+              if (modelSelectionVersionRef.current === modelRevision) syncLiveModel(live.state, speedRevision);
+              if (live.tools) {
+                setToolPresetState(sessionToolsPinnedRef.current ? getPresetFromToolNames(live.tools.filter(tool => tool.active).map(tool => tool.name)) : CONFIGURED_TOOL_PRESET);
+                onSystemToolsChange?.(live.tools);
+              } else if (!live.running) onSystemToolsChange?.([]);
+            }
+          }
+        } catch { /* No runtime is opened merely to repair a failed status read. */ }
+      }
+      throw failure;
+    } finally {
+      nativeToolsApplyingRef.current = false;
+      if (sid && current()) maintainEventsConnected(sid);
+    }
+  }, [t, ensureNewSession, cancelEventStreamGrace, closeEvents, loadTools, syncLiveModel, maintainEventsConnected, onSystemToolsChange, setToolPresetState]);
+
   const handleToolPresetChange = useCallback(async (preset: ToolPreset) => {
     const toolNames = getToolNamesForPreset(preset);
     setPreferredToolPreset(preset);
@@ -2962,7 +3031,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handleRecallQueue,
     handleBuiltinSlashCommand,
     setNoticePaused: setPausedNoticeId,
-    handleToolPresetChange, handleThinkingLevelChange, handleModelSpeedChange, loadTools, loadSlashCommands, setActiveLeafId, setData, setMessages, loadContext,
+    handleToolPresetChange, handleNativeResourcesChange, handleThinkingLevelChange, handleModelSpeedChange, loadTools, loadSlashCommands, setActiveLeafId, setData, setMessages, loadContext,
     scrollToBottom, scrollUserMsgToTop, scrollToMessage,
     dispatch, setAgentRunning, setForkingEntryId,
     bashRunning, pendingBash,

@@ -80,6 +80,7 @@ interface ResourceLoaderLike {
 
 interface ExtensionRunnerLike {
   createToolContext?: ExtensionRunner["createToolContext"];
+  getToolDefinition?: ExtensionRunner["getToolDefinition"];
   getRegisteredCommands(): Array<{
     invocationName: string;
     description?: string;

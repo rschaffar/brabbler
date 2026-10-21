@@ -28,7 +28,7 @@ in isolated Nix builders, never in checkout `.next`.
 
 ## Disjoint coverage inventory
 
-`nix/e2e-groups.json` is the CLI/browser inventory: **24 browser groups and terminal**.
+`nix/e2e-groups.json` is the CLI/browser inventory: **25 browser groups and terminal**.
 `e2e/scenarios.mjs` assigns reviewed scenario/input variants to exactly one owner.
 The independent baseline inventory/order tests protect the extraction; runtime
 `coverage.json` records completion only after each whole assertion chain returns.
@@ -46,6 +46,7 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `session-launch` | Real SDK tool, exact approvals/settings, independent faux-provider sessions and receipt navigation |
 | `running-forks` | Newly submitted live-prompt forks without reload using a faux-provider turn, plus historical/root/quoted forks while the original SDK extension waits for input; real Ask-here caret/typing with retained draft suffixes, streaming action-row geometry and visible Stop with a simulated mobile keyboard |
 | `model-speed` | Native writes, canonical packaged disk reader, persistence and ambiguous acknowledgement reconciliation |
+| `native-tools` | Inert MCP catalogue, selected-session Code-mode/MCP apply, native stdio/QuickJS and read-only denial, parent nested-call progress/error-success/history, unrelated busy-session independence, stable-ID/draft preservation and lost-ack reconciliation at desktop/mobile sizes |
 | `trust` | Worktree/project grants, revocation and restriction |
 | `git-plugin` | Bundled Git Workflow, approvals, immutable reviews, receipts, expiry/reconnect and cleanup |
 | `appearance` | Default/full/reading widths, numeric legacy preference and fresh preference inputs; all thirteen palette swatches plus System, native-radio arrows, reload/dark classification/contrast and constrained Settings geometry; font families/base weights, independent resets, cross-tab sync and draft remeasurement |

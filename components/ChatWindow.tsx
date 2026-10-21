@@ -1,4 +1,6 @@
 "use client";
+
+import { SessionToolsControl } from "./SessionToolsControl";
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import Image from "next/image";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -298,7 +300,7 @@ export function ChatWindow({ session, covered = false, searchTarget, onSearchTar
   const [restoreAnchorReady, setRestoreAnchorReady] = useState(false);
 
   const {
-    loading, error, possibleInterruptedRun, dismissPossibleInterruption, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamingStore,
+    data, loading, error, possibleInterruptedRun, dismissPossibleInterruption, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamingStore,
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel, modelSpeed, modelSpeedChanging,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, modelSwitching, sessionStats,
@@ -315,7 +317,7 @@ export function ChatWindow({ session, covered = false, searchTarget, onSearchTar
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
-    handleToolPresetChange, handleThinkingLevelChange, handleModelSpeedChange, loadSlashCommands, scrollUserMsgToTop,
+    handleToolPresetChange, handleNativeResourcesChange, handleThinkingLevelChange, handleModelSpeedChange, loadSlashCommands, scrollUserMsgToTop,
     loadContext, activeLeafId, scrollToBottom, scrollToMessage,
   } = useAgentSession({
     session, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd: wrappedOnAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked,
@@ -952,6 +954,15 @@ export function ChatWindow({ session, covered = false, searchTarget, onSearchTar
           await loadModels();
         }}
         onAccountsChanged={async () => { await loadModels(); }}
+      />}
+      nativeToolsControl={session?.relation?.kind !== "subagent" && (session?.cwd ?? newSessionCwd) && <SessionToolsControl
+        key={session?.id ?? newSessionDraftKey ?? newSessionCwd}
+        cwd={(session?.cwd ?? newSessionCwd)!}
+        sessionId={session?.id ?? sessionIdRef.current}
+        selection={data?.nativeResources}
+        busy={sessionBusy || isCompacting || modelSwitching || modelSpeedChanging}
+        chatOnly={toolPreset === "none"}
+        onApply={handleNativeResourcesChange}
       />}
       onCompact={session || isNew ? handleCompact : undefined}
       onAbortCompaction={handleAbortCompaction}

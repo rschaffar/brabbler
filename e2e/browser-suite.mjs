@@ -27,6 +27,7 @@ import { checkRequestHeaderBoundary, seedExternalReferenceFixtures, checkExterna
 import { seedFollowupSettings, checkSkillInstructions, checkModelOverrides, checkBlockedPreferences } from "./upstream-followups.mjs";
 import { checkManagedModelContext } from "./managed-model-context.mjs";
 import { MODEL_SPEED_IDS, seedModelSpeedFixtures, checkModelSpeed, checkModelSpeedPersistence } from "./model-speed.mjs";
+import { seedNativeToolsFixtures, checkNativeTools } from "./native-tools.mjs";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
 import { RUNNING_FORK_IDS, seedRunningForkFixtures, checkRunningSessionForks } from "./running-session-forks.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
@@ -121,6 +122,7 @@ let browser;
 let page;
 let context;
 let reviewNotebookFixture;
+let nativeToolsFixture;
 
   const activityReview = ACTIVITY_SUBAGENTS.length
     ? await createJiti(import.meta.url).import(join(root, "lib/activity-review-server.ts")) : null;
@@ -131,6 +133,7 @@ let reviewNotebookFixture;
   mkdirSync(join(agentDir, "extensions"));
   writeFileSync(join(agentDir, "extensions", "e2e-dialog.js"), extensionSource);
   writeFileSync(join(agentDir, "extensions", "e2e-session-launch.js"), sessionLaunchFixtureSource(root));
+  if (group === "native-tools") nativeToolsFixture = seedNativeToolsFixtures({ root, agentDir, project, env: fixtureEnv, writeSession, message, timestamp });
   if (group === "activity") {
     writeFileSync(join(agentDir, "extensions", "e2e-subagent-lifecycle.js"), subagentLifecycleFixtureSource(root));
     writeFileSync(join(agentDir, "extensions", "e2e-session-pause.js"), sessionPauseFixtureSource(root, agentDir));
@@ -440,6 +443,16 @@ let reviewNotebookFixture;
     await runRunningForkChecks();
   } else if (group === "model-speed") {
     await runModelSpeedChecks();
+  } else if (group === "native-tools") {
+    browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`native-tools/full@${inputId}`, async () => {
+      const { viewport } = browserInputs[inputId].options;
+      context = await newInputContext(inputId); page = await context.newPage(); page.setDefaultTimeout(30_000);
+      const errors = harness.errorsFor(context);
+      await checkNativeTools(page, { base, api, post, fixture: nativeToolsFixture, artifacts, width: viewport.width });
+      assert.deepEqual(errors, [], `Native-tools browser/server errors at ${viewport.width}px`);
+      await harness.closeContext(context); context = undefined; page = undefined;
+    });
   } else if (group === "trust") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
     for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`trust/full@${inputId}`, async () => {

@@ -29,6 +29,7 @@ export const scenarios = {
   "session-launch": ["session-launch/full@en-desktop", "session-launch/full@en-mobile-tall"],
   "running-forks": ["running-forks/full@en-desktop", "running-forks/full@en-mobile-tall"],
   "model-speed": ["model-speed/exercise@en-desktop", "model-speed/fresh@en-desktop", "model-speed/exercise@en-mobile-tall", "model-speed/fresh@en-mobile-tall"],
+  "native-tools": ["native-tools/full@en-desktop", "native-tools/full@en-mobile-tall"],
   "trust": ["trust/full@en-desktop", "trust/full@en-mobile-tall"],
   "git-plugin": ["git-plugin/full@en-desktop", "git-plugin/full@en-mobile-tall"],
   "appearance": ["appearance/full@numeric-wide", "appearance/full@legacy-desktop"],

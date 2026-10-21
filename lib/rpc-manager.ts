@@ -13,6 +13,8 @@ import { abortModelRuntimeRefresh, acquireModelRuntimeUse, applySessionModelDefi
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { isModelSpeed, supportsModelSpeed, type ModelSpeed } from "./model-speed";
 import { appendSessionModelSpeed, readSessionModelSpeed } from "./session-model-speed";
+import { appendNativeResourceSelection, readNativeResourceSelection, validateNativeResourceSelection, effectiveNativeResourceSelection, NO_NATIVE_RESOURCES, type NativeResourceSelection } from "./session-native-resources";
+import { createNativeSessionTools, type NativeSessionTools } from "./native-session-tools";
 import { withSessionModelSpeed } from "./session-model-speed-runtime";
 import { samePath } from "./paths";
 import { readSessionHeader } from "./session-reader";
@@ -162,6 +164,7 @@ type AgentSessionWrapperOptions = {
   exactSystemPrompt?: () => string;
   chatOnly?: boolean;
   monitorContextFiles?: boolean;
+  nativeSessionTools?: NativeSessionTools;
   onAgentRunComplete?: AgentRunCompleteListener;
   suppressCompletionNotifications?: boolean;
 };
@@ -214,6 +217,7 @@ export interface RpcSessionStartOptions {
   /** Host-only, single-use exclusive admission for a fresh destination. Never wire data. */
   initialPromptOwner?: symbol;
   toolNames?: string[];
+  nativeResources?: NativeResourceSelection;
   accounts?: AccountSelection;
   initialModel?: { provider: string; modelId: string };
   allowInitialModelFallback?: boolean;
@@ -261,7 +265,7 @@ export function withExtensionTools(session: AgentSessionLike, toolNames: string[
 
   const codingToolNames = new Set(CODING_TOOL_NAMES);
   const selectedToolNames = resolveShellTools(toolNames, session.settingsManager.getDefaultTools());
-  const extensionToolNames = session.getAllTools().filter((t) => t.exposure !== "hidden").map((t) => t.name)
+  const extensionToolNames = session.getAllTools().filter((t) => !["hidden", "deferred", "codemode"].includes(t.exposure ?? "")).map((t) => t.name)
     .filter((name) => !codingToolNames.has(name));
   return [...new Set([...selectedToolNames, ...extensionToolNames])];
 }
@@ -307,13 +311,15 @@ export class AgentSessionWrapper {
   private readonly exactSystemPrompt?: () => string;
   private readonly chatOnly: boolean;
   private readonly monitorContextFiles: boolean;
+  private readonly nativeSessionTools?: NativeSessionTools;
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
   private unsubscribe: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
   private shutdownPromise: Promise<void> | null = null;
-  private sessionShutdownEmitted = false;
+  private extensionShutdown: Promise<unknown> | null = null;
+  private extensionsEnded = false;
   private forceShutdownOnIdle = false;
   private _alive = true;
   private pause?: SessionPause;
@@ -348,6 +354,13 @@ export class AgentSessionWrapper {
     this.pause = getSessionPause(inner.sessionId);
     this.exactSystemPrompt = options.exactSystemPrompt;
     this.chatOnly = options.chatOnly ?? false;
+    this.nativeSessionTools = options.nativeSessionTools;
+    this.nativeSessionTools?.bindToolRegistry(name => this.inner.extensionRunner.getToolDefinition?.(name)?.execute);
+    if (this.nativeSessionTools?.enabled) {
+      // Native resources are fixed for this wrapper. The agent route replaces
+      // the selected idle wrapper; SDK/extension callbacks cannot hot-reload it.
+      inner.reload = async () => { throw new Error("Native session tools require explicit idle session replacement"); };
+    }
     this.monitorContextFiles = options.monitorContextFiles ?? false;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
@@ -511,11 +524,9 @@ export class AgentSessionWrapper {
     return Promise.race([work, initial.refusal]);
   }
 
-  /** Retire only an unaccepted destination owned by this launch, never an ordinary wrapper. */
-  refuseInitialPrompt(owner: symbol, error: unknown): boolean {
-    const initial = this.initialPrompt;
-    if (!initial || initial.owner !== owner || initial.state !== "pending") return false;
-    // Publish the SDK-ID barrier before callbacks can reenter startup on this ID.
+  /** Publish before callbacks can reenter startup on the same SDK identity. */
+  private publishResourceRetirement(): void {
+    if (this.ownedRetirement) return;
     let resolve!: () => void, reject!: (error: unknown) => void;
     const completion = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
     this.ownedRetirement = { completion, resolve, reject };
@@ -527,6 +538,13 @@ export class AgentSessionWrapper {
     void barrier.then(() => {
       if (retirements.get(sdkId) === barrier) retirements.delete(sdkId);
     }, () => { /* A failed public disposal permanently blocks same-ID reuse. */ });
+  }
+
+  /** Retire only an unaccepted destination owned by this launch, never an ordinary wrapper. */
+  refuseInitialPrompt(owner: symbol, error: unknown): boolean {
+    const initial = this.initialPrompt;
+    if (!initial || initial.owner !== owner || initial.state !== "pending") return false;
+    this.publishResourceRetirement();
     initial.state = "refused";
     initial.error = error;
     initial.reject(error);
@@ -603,6 +621,17 @@ export class AgentSessionWrapper {
 
   isChatOnly(): boolean {
     return this.chatOnly;
+  }
+
+  hasNativeSessionTools(): boolean { return this.nativeSessionTools?.enabled ?? false; }
+
+  /** Persist setup-only intent without fabricating a message or changing SDK ID. */
+  saveNativeResourceIntent(selection: NativeResourceSelection): void {
+    this.assertInitialPromptAccess("set_native_resources");
+    if (this.isRunning()) throw new Error("Cannot change native resources while this session is running");
+    if (!this.inner.sessionManager.isPersisted() || !this.sessionFile) throw new Error("Native tools require a persistent session");
+    appendNativeResourceSelection(this.inner.sessionManager, selection);
+    this.persistSessionWithoutAssistant();
   }
 
   hasSuppressedCompletionNotifications(): boolean {
@@ -1332,6 +1361,9 @@ export class AgentSessionWrapper {
           modelDefinitionRefresh: this.inner.modelRuntime ? modelRuntimeRefreshState(this.inner.modelRuntime, this.inner) : undefined,
           extensionStatuses: this.getExtensionStatuses(),
           extensionWidgets: this.getExtensionWidgets(),
+          nativeResources: readNativeResourceSelection(this.inner.sessionManager.getEntries()),
+          effectiveNativeResources: this.nativeSessionTools?.selection ?? NO_NATIVE_RESOURCES,
+          mcpServers: this.nativeSessionTools?.status() ?? [],
         };
       }
 
@@ -1393,6 +1425,7 @@ export class AgentSessionWrapper {
         const destination = SessionManager.open(newSessionFile, sessionDir);
         if (accountSelection) appendSessionAccounts(destination, accountSelection);
         appendSessionModelSpeed(destination, readSessionModelSpeed(sourceEntries));
+        appendNativeResourceSelection(destination, readNativeResourceSelection(sourceEntries));
         const newSessionId = forkedManager.getSessionId();
         cacheSessionPath(newSessionId, newSessionFile);
         invalidateSessionListCache();
@@ -1417,6 +1450,7 @@ export class AgentSessionWrapper {
         const accountSelection = readSessionAccounts(sourceEntries);
         if (accountSelection) appendSessionAccounts(forkedManager, accountSelection);
         appendSessionModelSpeed(forkedManager, readSessionModelSpeed(sourceEntries));
+        appendNativeResourceSelection(forkedManager, readNativeResourceSelection(sourceEntries));
         const newSessionId = forkedManager.getSessionId();
         cacheSessionPath(newSessionId, forkedPath);
         invalidateSessionListCache();
@@ -1448,6 +1482,7 @@ export class AgentSessionWrapper {
           const accountSelection = readSessionAccounts(sourceEntries);
           if (accountSelection) appendSessionAccounts(clonedManager, accountSelection);
           appendSessionModelSpeed(clonedManager, readSessionModelSpeed(sourceEntries));
+          appendNativeResourceSelection(clonedManager, readNativeResourceSelection(sourceEntries));
           const newSessionId = clonedManager.getSessionId();
           cacheSessionPath(newSessionId, clonedPath);
           invalidateSessionListCache();
@@ -1693,8 +1728,23 @@ export class AgentSessionWrapper {
     this.destroyInternal(false);
   }
 
+  /** One shared completion, never an 'emitted means finished' flag. Native
+   * direct eviction also waits for startup binding before shutting resources down. */
+  private endExtensions(): Promise<unknown> {
+    return this.extensionShutdown ??= Promise.resolve().then(async () => {
+      if (this.nativeSessionTools?.enabled || this.shutdownPromise) {
+        try { await this.waitForExtensionsBound(); }
+        catch (error) { console.error("[pi-web] extension binding failed before session shutdown:", error); }
+      }
+      return this.inner.extensionRunner?.emit?.({ type: "session_shutdown", reason: "quit" });
+    }).then(result => { this.extensionsEnded = true; return result; });
+  }
+
   private destroyInternal(ownedRefusal: boolean): void {
     if (!this._alive) return;
+    const nativeRetirement = !ownedRefusal && (this.nativeSessionTools?.enabled || this.shutdownPromise !== null);
+    if (nativeRetirement) this.publishResourceRetirement();
+    this.nativeSessionTools?.retire();
     this._alive = false;
     this.releaseModelRuntime();
     // Tell attached SSE listeners to drop this instance so the browser
@@ -1717,16 +1767,18 @@ export class AgentSessionWrapper {
 
     const finishDispose = () => {
       try {
-        this.inner.dispose();
-      } finally {
-        this.onDestroyCallback?.();
+        try { this.inner.dispose(); }
+        finally { this.onDestroyCallback?.(); }
+        if (nativeRetirement) this.ownedRetirement!.resolve();
+      } catch (error) {
+        if (nativeRetirement) this.ownedRetirement!.reject(error);
+        throw error;
       }
     };
 
     if (ownedRefusal) {
       // Disposal invalidates the owned destination; it does not certify that arbitrary
       // extension JS/processes have settled. Never wait on poisoned SDK abort/idle.
-      this.sessionShutdownEmitted = true;
       let disposed = false;
       const disposeOnce = () => {
         if (disposed) return;
@@ -1744,7 +1796,7 @@ export class AgentSessionWrapper {
         console.error(`[pi-web] refused initial prompt extension shutdown timed out after ${INITIAL_PROMPT_SHUTDOWN_GRACE_MS}ms`);
         disposeOnce();
       }, INITIAL_PROMPT_SHUTDOWN_GRACE_MS);
-      void Promise.resolve().then(() => this.inner.extensionRunner?.emit?.({ type: "session_shutdown", reason: "quit" }))
+      void this.endExtensions()
         .catch((error) => { console.error("[pi-web] refused initial prompt extension shutdown failed:", error); })
         .finally(disposeOnce);
       return;
@@ -1753,29 +1805,23 @@ export class AgentSessionWrapper {
     // Always emit session_shutdown before dispose, even when callers skip
     // shutdown() (process exit, direct destroy). Await when possible so
     // extension MCP children can reap before the runner is invalidated.
-    if (this.sessionShutdownEmitted) {
-      finishDispose();
-      return;
-    }
-
-    this.sessionShutdownEmitted = true;
+    if (this.extensionsEnded) { finishDispose(); return; }
     const emit = this.inner.extensionRunner?.emit;
     if (typeof emit !== "function") {
       finishDispose();
       return;
     }
 
-    void (async () => emit.call(
-      this.inner.extensionRunner,
-      { type: "session_shutdown", reason: "quit" },
-    ))()
+    void this.endExtensions()
       .catch((error) => {
+        if (nativeRetirement) this.ownedRetirement!.reject(error);
         console.error(
           "[pi-web] session_shutdown before dispose failed:",
           error instanceof Error ? error.message : error,
         );
       })
-      .finally(finishDispose);
+      .finally(finishDispose)
+      .catch((error) => { console.error("[pi-web] session disposal failed:", error); });
   }
 
   async shutdown(): Promise<void> {
@@ -1785,25 +1831,16 @@ export class AgentSessionWrapper {
     if (this.ownedRetirement) return this.ownedRetirement.completion;
     if (this.shutdownPromise) return this.shutdownPromise;
     if (!this._alive) return;
+    this.nativeSessionTools?.retire();
 
     this.shutdownPromise = (async () => {
       try {
         const refresh = this.inner.modelRuntime && pendingModelRuntimeRefresh(this.inner.modelRuntime);
         if (refresh) await refresh;
-        try {
-          await this.waitForExtensionsBound();
-        } catch (error) {
-          console.error(
-            "[pi-web] extension binding failed before session shutdown:",
-            error instanceof Error ? error.message : error,
-          );
-        }
-        if (!this.sessionShutdownEmitted) {
-          this.sessionShutdownEmitted = true;
-          await this.inner.extensionRunner.emit?.({ type: "session_shutdown", reason: "quit" });
-        }
+        await this.endExtensions();
       } finally {
         this.destroy();
+        if (this.ownedRetirement) await this.ownedRetirement.completion;
       }
     })();
     return this.shutdownPromise;
@@ -2669,6 +2706,7 @@ export async function setRpcSessionTools(
   const model = existing.inner.model;
   const currentThinkingLevel = existing.inner.agent.state?.thinkingLevel;
   const modelSpeed = readSessionModelSpeed(existing.inner.sessionManager.getEntries() as unknown as SessionEntry[]);
+  const nativeResources = readNativeResourceSelection(existing.inner.sessionManager.getEntries());
   await existing.shutdown();
 
   if (persistedFile) {
@@ -2677,7 +2715,7 @@ export async function setRpcSessionTools(
   }
 
   const started = await startRpcSessionInternal(`__recreate__${randomUUID()}`, "", sessionCwd, {
-    modelSpeed,
+    modelSpeed, nativeResources,
     ...(toolNames !== undefined ? { toolNames } : {}),
     ...(model ? { initialModel: { provider: model.provider, modelId: model.id } } : {}),
     allowInitialModelFallback: true,
@@ -2686,6 +2724,50 @@ export async function setRpcSessionTools(
       : {}),
   });
   return { session: started.session, sessionId: started.realSessionId, recreated: true };
+}
+
+/** Explicit selected-session replacement, serialized with account changes. No
+ * other wrapper's activity is awaited and no SDK session_start callback prepares
+ * resources. Preflight is inert; shutdown precedes new connection ownership. */
+export async function setRpcSessionNativeResources(sessionId: string, sessionFile: string | undefined, requested: unknown): Promise<SetRpcSessionToolsResult> {
+  const nativeResources = validateNativeResourceSelection(requested);
+  const locks = (globalThis.__piAccountSwitchLocks ??= new Map<string, Promise<void>>());
+  const previous = locks.get(sessionId);
+  let release!: () => void;
+  const finished = new Promise<void>(resolve => { release = resolve; });
+  locks.set(sessionId, finished);
+  try {
+    if (previous) await previous;
+    // A persisted session may be restoring before registry publication. Wait
+    // for this ID's startup, then replace that actual owner rather than adopting it.
+    const starting = getLocks().get(sessionId);
+    if (starting) await starting;
+    const existing = getRpcSession(sessionId);
+    if (existing?.isRunning()) throw new Error("Cannot change native resources while this session is running");
+    if (existing?.isAlive()) assertModelRuntimeSessionReady(existing.inner);
+    const manager = existing?.isAlive() ? existing.inner.sessionManager : sessionFile ? SessionManager.open(sessionFile, undefined) : undefined;
+    if (!manager || manager.getSessionId() !== sessionId) throw new Error("Session not found");
+    if (readSubagentSessionResources(manager.getEntries() as unknown as SessionEntry[])) throw new Error("Native resources are not available to child sessions");
+    const toolNames = readSessionToolSelection(manager.getEntries() as unknown as SessionEntry[]);
+    const persisted = manager.getSessionFile();
+    if (!manager.isPersisted() || !persisted) throw new Error("Native tools require a persistent session");
+    const agentDir = getAgentDir();
+    const preflight = await createNativeSessionTools({ agentDir, cwd: manager.getCwd(), selection: effectiveNativeResourceSelection(nativeResources, {
+      chatOnly: existing?.isAlive() ? existing.isChatOnly() : toolNames?.length === 0,
+      projectTrusted: getProjectTrustStatus(manager.getCwd(), agentDir).trusted,
+    }) });
+    preflight.retire();
+    if (getRpcSession(sessionId) !== existing || getLocks().has(sessionId)
+      || existing && (!existing.isAlive() || existing.isRunning())) throw new Error("Session changed during native resource preflight");
+    if (existing?.isAlive()) existing.saveNativeResourceIntent(nativeResources);
+    else appendNativeResourceSelection(manager, nativeResources);
+    if (!existsSync(persisted)) throw new Error("Native resource intent was not persisted");
+    invalidateSessionListCache();
+    if (existing?.isAlive()) await existing.shutdown();
+    if (getRpcSession(sessionId)?.isAlive() || getLocks().has(sessionId)) throw new Error("Session changed during native resource replacement");
+    const started = await startRpcSession(sessionId, persisted, undefined);
+    return { session: started.session, sessionId: started.realSessionId, recreated: true };
+  } finally { release(); if (locks.get(sessionId) === finished) locks.delete(sessionId); }
 }
 
 export function waitForSessionAccountSwitch(sessionId: string): Promise<void> | undefined {
@@ -2730,6 +2812,7 @@ export async function setRpcSessionAccount(sessionId: string, sessionFile: strin
     const started = await startRpcSessionInternal(`__recreate__${randomUUID()}`, "", manager.getCwd(), {
       accounts: next,
       modelSpeed: readSessionModelSpeed(manager.getEntries() as unknown as SessionEntry[]),
+      nativeResources: readNativeResourceSelection(manager.getEntries()),
       ...(pinnedTools !== undefined ? { toolNames: pinnedTools } : {}),
       ...(model ? { initialModel: { provider: model.provider, modelId: model.id } } : {}),
       allowInitialModelFallback: true,
@@ -2964,6 +3047,15 @@ async function startRpcSessionInternal(
       ? undefined
       : readSessionToolSelection(sessionManager.getEntries() as unknown as SessionEntry[]);
     const selectedToolNames = subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
+    const requestedNativeResources = subagentResources ? NO_NATIVE_RESOURCES
+      : sessionFile ? readNativeResourceSelection(sessionManager.getEntries())
+      : options.nativeResources === undefined ? NO_NATIVE_RESOURCES : validateNativeResourceSelection(options.nativeResources);
+    if (options.initialPromptOwner !== undefined && (requestedNativeResources.codeMode || requestedNativeResources.mcpServers.length)) {
+      // Launch-owned pre-acceptance refusal has a bounded disposal path. Native
+      // resources are enabled only by the user after that independent launch.
+      throw new Error("Launch-owned sessions cannot enable native tools before initial prompt acceptance");
+    }
+    if (!sessionFile && !subagentResources) appendNativeResourceSelection(sessionManager, requestedNativeResources);
     // Project defaults are snapshotted only at creation. Old sessions with no
     // entry remain bound to Pi's default auth.json, regardless of project changes.
     const accounts = readSessionAccounts(sessionManager.getEntries() as unknown as SessionEntry[])
@@ -2983,6 +3075,10 @@ async function startRpcSessionInternal(
     // Some extensions access the SDK's global theme even outside the terminal UI.
     if (!chatOnly) initTheme();
     const agentDir = getAgentDir();
+    const nativeSelection = effectiveNativeResourceSelection(requestedNativeResources, {
+      chatOnly, projectTrusted: getProjectTrustStatus(sessionCwd, agentDir).trusted,
+    });
+    const nativeSessionTools = await createNativeSessionTools({ agentDir, cwd: sessionCwd, selection: nativeSelection });
 
     // Determine which tools to pass based on requested toolNames.
     // Since v0.68.0, session creation expects string[] tool names instead of Tool[] instances.
@@ -3047,6 +3143,7 @@ async function startRpcSessionInternal(
               : {}),
             appendSystemPrompt: subagentResources.appendSystemPrompt,
             extensionFactories: [
+              ...nativeSessionTools.factories,
               ...(usesExactSystemPrompt ? [exactSystemPromptExtension] : [createLocalFileLinkGuidanceExtension()]),
               ...(subagentResources.loadExtensions ? [createAskUserExtension()] : []),
             ],
@@ -3056,6 +3153,7 @@ async function startRpcSessionInternal(
           ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension, createSessionReferenceExtension(), ...promptObserver] }
         : {
             extensionFactories: [
+              ...nativeSessionTools.factories,
               createSessionReferenceExtension(),
               createPiWebSourceExtension(),
               createLocalFileLinkGuidanceExtension(),
@@ -3163,6 +3261,7 @@ async function startRpcSessionInternal(
       chatOnly,
       initialPromptOwner: options.initialPromptOwner,
       monitorContextFiles: !subagentResources,
+      nativeSessionTools,
       onAgentRunComplete: (completedSessionId) => {
         void notifySessionComplete(completedSessionId).catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);

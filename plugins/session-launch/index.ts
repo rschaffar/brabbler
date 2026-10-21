@@ -9,7 +9,7 @@ export const sessionLaunchPlugin: BundledPlugin = {
   manifest: sessionLaunchManifest,
   extension(cwd) {
     const launch = defineTool({
-      name: "start_session", label: "Start session", executionMode: "sequential",
+      name: "start_session", label: "Start session", executionMode: "sequential", exposure: "model-only",
       description: "Start one fresh ordinary Pi Web session with an initial prompt, only when the user requested a session launch. It runs independently, with no copied conversation history or completion report to you. Defaults copy your directory, model/account, thinking, speed and tool preset; explicit changes are shown for approval. Destination-project Deny/Ask/Allow applies; Allow skips approval but NEVER grants unsolicited delegation. Never modify your own permissions. Request changes returns user feedback without creating a session; propose a revised exact prompt. The result links to the new session; do not wait for its task to finish or retry an accepted/partially created launch.",
       parameters: Type.Object({
         prompt: Type.String({ minLength: 1, maxLength: 100000, description: "Exact initial user prompt. Include all needed task context explicitly; conversation history is not copied." }),
