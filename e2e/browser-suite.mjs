@@ -23,6 +23,7 @@ import { checkProjectPrivacy } from "./project-privacy.mjs";
 import { checkProjectTrustScopes } from "./project-trust-scopes.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
+import { checkScratchpad } from "./scratchpad.mjs";
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
 import { checkUpstreamComposer, checkOverflowTabs } from "./upstream-easy-wins.mjs";
 import { checkRequestHeaderBoundary, seedExternalReferenceFixtures, checkExternalReferenceBoundary } from "./security-boundaries.mjs";
@@ -497,6 +498,14 @@ let nativeToolsFixture;
       await page.locator(".markdown-code-block pre").waitFor();
       await checkChatAppearance(page);
       assert.deepEqual(errors, [], "Chat appearance browser/server errors");
+      await harness.closeContext(context); context = undefined; page = undefined;
+    });
+    for (const inputId of ["en-desktop", "en-mobile-short"]) await coverage.run(`appearance/scratchpad@${inputId}`, async () => {
+      context = await newInputContext(inputId);
+      page = await context.newPage();
+      const errors = harness.errorsFor(context);
+      await checkScratchpad(page, { base, sessionId: RICH, otherId: OTHER, inputId });
+      assert.deepEqual(errors, [], `Scratchpad browser/server errors: ${inputId}`);
       await harness.closeContext(context); context = undefined; page = undefined;
     });
   } else if (group === "timestamps") {

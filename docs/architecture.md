@@ -34,6 +34,7 @@ app/api/
   sessions/[id]/route.ts          GET/PATCH/DELETE session
   sessions/[id]/move/route.ts     POST relocate an idle session family to another cwd
   starred-sessions/route.ts        GET list | POST set/import stars
+  scratchpad/route.ts              GET/PUT revisioned global or session personal notes
   activity/review/route.ts         POST acknowledge/import settled completions
   sessions/[id]/context/route.ts  GET ?leafId= — context for a specific leaf
   sessions/[id]/export/route.ts   GET exported HTML for a session
@@ -90,6 +91,9 @@ lib/
   browser-ssh-client.ts browser ES256 enrollment/assertion and bounded management transport
   agent-client.ts      typed fetch helper for /api/agent commands
   draft-store.ts       local draft persistence helpers
+  scratchpad.ts        bounded personal-note wire contract
+  scratchpad-server.ts private locked atomic note storage and content revisions
+  scratchpad-client.ts per-note autosave, same-tab recovery and undo/redo ownership
   file-access.ts       allowed file roots for /api/files and worktrees
   file-paths.ts        client/server path encoding helpers
   model-context.ts     managed-model budget draft normalization, clearing and provider routing
@@ -130,6 +134,7 @@ lib/
   git-graph-layout.ts   adapted MIT active-lane graph layout (see git-graph-layout.LICENSE)
 
 components/
+  ScratchpadPanel.tsx native two-editor personal Notes modal
   BrowserSshAgent.tsx opt-in enrollment, connection and explicit signing UI independent of chat
   AppShell.tsx        outer layout + URL/session state + retained terminal tabs
   AcceptancePanel.tsx project acceptance recipes, shared queue/status/logs and explicit controls

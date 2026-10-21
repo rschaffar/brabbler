@@ -1,0 +1,34 @@
+import assert from "node:assert/strict";
+import { after, test } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createJiti } from "jiti";
+const previous = process.env.PI_CODING_AGENT_DIR;
+const agent = mkdtempSync(join(tmpdir(), "scratchpad-route-"));
+process.env.PI_CODING_AGENT_DIR = agent;
+after(() => { if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous; rmSync(agent, { recursive: true, force: true }); });
+const { GET, PUT } = await createJiti(import.meta.url, { alias: { "@": process.cwd() } }).import("./route.ts");
+const request = (body, headers = {}) => new Request("http://localhost/api/scratchpad", { method: "PUT", headers: { Host: "localhost", "Content-Type": "application/json", ...headers }, body: typeof body === "string" ? body : JSON.stringify(body) });
+const read = (query = "", headers = {}) => GET(new Request(`http://localhost/api/scratchpad${query}`, { headers: { Host: "localhost", ...headers } }));
+test("guarded note API supports global/session persistence, no-store reads and explicit conflicts", async () => {
+  const response = await read(); assert.equal(response.headers.get("cache-control"), "no-store");
+  const initial = await response.json();
+  const saved = await PUT(request({ sessionId: null, text: "global", revision: initial.revision })); assert.equal(saved.status, 200);
+  const conflict = await PUT(request({ sessionId: null, text: "stale", revision: initial.revision })); assert.equal(conflict.status, 409);
+  assert.equal((await conflict.json()).current.text, "global");
+  assert.equal((await PUT(request({ sessionId: "session", text: "local", revision: initial.revision }))).status, 200);
+  assert.equal((await (await read("?sessionId=session")).json()).text, "local");
+  assert.equal((await (await read()).json()).text, "global");
+});
+test("rejects hostile origins/hosts, malformed scopes, non-JSON, malformed and oversized input", async () => {
+  assert.equal((await read("", { Host: "evil.example" })).status, 403);
+  assert.equal((await read("", { Origin: "https://evil.example" })).status, 403);
+  assert.equal((await read("?sessionId=")).status, 400);
+  assert.equal((await PUT(request({}, { Origin: "https://evil.example" }))).status, 403);
+  assert.equal((await PUT(request({}, { "Content-Type": "text/plain" }))).status, 415);
+  for (const body of ["{", "null", "[]", "42", {}, { sessionId: null, text: "no", revision: "bad" }]) assert.equal((await PUT(request(body))).status, 400);
+  assert.equal((await PUT(request("x".repeat(1_000_001)))).status, 413);
+  const revision = (await (await read()).json()).revision;
+  assert.equal((await PUT(request({ sessionId: null, text: "x".repeat(100_001), revision }))).status, 400);
+});
