@@ -1,6 +1,6 @@
 # ADR 0028: Cooperative pause with explicit main-session continuation
 
-- Status: Accepted user direction, 2026-10-21; verification tracked in the [plan](../plans/2026-10-21_durable-session-pause-plan.md)
+- Status: Accepted and verified, 2026-10-21; [implementation and acceptance evidence](../plans/archived/2026-10-21_durable-session-pause-plan.md)
 - Scope: Pi Web-managed sessions and built-in subsessions, not external Pi processes
 
 ## Decision
