@@ -228,7 +228,6 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, p
                         )}
                         {revealing && hiddenIds.has(session.id) && <span className="activity-private-marker" title={t("privacy.hiddenProject")} aria-label={t("privacy.hiddenProject")}><PrivacyEyeIcon concealed /></span>}
                         <span className="activity-item-title" title={label}>{label}</span>
-                        <span className="activity-item-action">{action}</span>
                       </span>
                       <span className="activity-item-meta" title={session.projectRoot ?? session.cwd}>
                         {activityProjectName(session)}
@@ -244,23 +243,25 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, p
                       {item.pause?.error && <span role="alert" className="activity-item-reason">{t("activity.pauseError", { error: item.pause.error })}</span>}
                       {status === "paused" && <span className="activity-item-reason">{t(item.pause?.interrupted ? "activity.pauseInterruptedHint" : session.relation?.kind === "subagent" ? "activity.pausedChildHint" : "activity.pausedHint")}</span>}
                     </button>
-                    {(status === "working" || status === "queued" || status === "needs-you" || status === "later" && item.attention) && (!item.pause || item.pause.state === "resuming") && <button type="button" className="activity-mark-read"
-                      disabled={!available || pausePending} aria-label={t("activity.pauseSession", { name: label })}
-                      onClick={() => void control("pause", item)}>{t("activity.pause")}</button>}
-                    {status === "pausing" && <button type="button" className="activity-mark-read" disabled>{t("activity.pausing")}</button>}
-                    {status === "pausing" && item.pause?.error && session.relation?.kind !== "subagent" && <button type="button" className="activity-mark-read"
-                      disabled={!available || pausePending} onClick={() => void control("pause", item)}>{t("activity.retryPause")}</button>}
-                    {status === "paused" && item.pause && session.relation?.kind !== "subagent" && !item.pause.parentSessionId && <button type="button" className="activity-mark-read"
-                      disabled={!available || pausePending || resumePending} aria-label={t("activity.resumeSession", { name: label })}
-                      onClick={() => void control("resume", item)}>{t("activity.resume")}</button>}
-                    {status === "paused" && mainSession.id !== session.id && <button type="button" className="activity-mark-read"
-                      onClick={() => onSelect(mainSession)}>{t("activity.openMainSession")}</button>}
-                    {(status === "ready" || status === "needs-you") && <button type="button" className="activity-mark-read"
-                      aria-label={t("activity.markLaterSession", { name: label })}
-                      onClick={() => onMarkLater(session.id, item.attention?.requestId)}>{t("activity.later")}</button>}
-                    {(status === "ready" || status === "later" && !item.attention) && <button type="button" className="activity-mark-read"
-                      aria-label={t("activity.markReadSession", { name: label })}
-                      onClick={() => onMarkRead(session.id)}>{t("activity.markRead")}</button>}
+                    <div className="activity-item-actions">
+                      {(status === "working" || status === "queued" || status === "needs-you" || status === "later" && item.attention) && (!item.pause || item.pause.state === "resuming") && <button type="button" className="activity-mark-read"
+                        disabled={!available || pausePending} aria-label={t("activity.pauseSession", { name: label })}
+                        onClick={() => void control("pause", item)}>{t("activity.pause")}</button>}
+                      {status === "pausing" && <button type="button" className="activity-mark-read" disabled>{t("activity.pausing")}</button>}
+                      {status === "pausing" && item.pause?.error && session.relation?.kind !== "subagent" && <button type="button" className="activity-mark-read"
+                        disabled={!available || pausePending} onClick={() => void control("pause", item)}>{t("activity.retryPause")}</button>}
+                      {status === "paused" && item.pause && session.relation?.kind !== "subagent" && !item.pause.parentSessionId && <button type="button" className="activity-mark-read"
+                        disabled={!available || pausePending || resumePending} aria-label={t("activity.resumeSession", { name: label })}
+                        onClick={() => void control("resume", item)}>{t("activity.resume")}</button>}
+                      {status === "paused" && mainSession.id !== session.id && <button type="button" className="activity-mark-read"
+                        onClick={() => onSelect(mainSession)}>{t("activity.openMainSession")}</button>}
+                      {(status === "ready" || status === "needs-you") && <button type="button" className="activity-mark-read"
+                        aria-label={t("activity.markLaterSession", { name: label })}
+                        onClick={() => onMarkLater(session.id, item.attention?.requestId)}>{t("activity.later")}</button>}
+                      {(status === "ready" || status === "later" && !item.attention) && <button type="button" className="activity-mark-read"
+                        aria-label={t("activity.markReadSession", { name: label })}
+                        onClick={() => onMarkRead(session.id)}>{t("activity.markRead")}</button>}
+                    </div>
                   </div>
                 );
               })}

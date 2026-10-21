@@ -39,6 +39,18 @@ test("ready subagents are identified even when their parent is working or absent
   assert.match(html, /class="activity-mark-read activity-mark-all-subagents-read" title="[^"]+">Mark all subagents as read<\/button>/);
 });
 
+test("session titles have no redundant navigation label and real actions follow the metadata outside the navigation button", () => {
+  const html = render([session("ready"), session("working"), session("later")], ["working"], ["ready", "later"], undefined, ["later"]);
+  assert.doesNotMatch(html, /class="activity-item-action"/);
+  assert.equal((html.match(/class="activity-item-title"/g) ?? []).length, 3);
+  assert.match(html, /<\/button><div class="activity-item-actions"><button[^>]*aria-label="Review ready later"[^>]*>Later<\/button><button[^>]*aria-label="Mark ready as read"[^>]*>Read<\/button><\/div>/);
+  assert.match(html, /<\/button><div class="activity-item-actions"><button[^>]*aria-label="Pause working and its subsessions"[^>]*>Pause<\/button><\/div>/);
+  assert.match(html, /<\/button><div class="activity-item-actions"><button[^>]*aria-label="Mark later as read"/);
+  // Accessible navigation intent remains, even without a visible Open/Review label.
+  assert.match(html, /aria-label="ready · project · Ready to review · Review"/);
+  assert.match(html, /aria-label="working · project · Working · Open"/);
+});
+
 test("Later follows Ready to review, remains readable and is excluded from bulk ready subagent eligibility", () => {
   const html = render([session("ready-root"), { ...session("later-child", "ready-root"), archived: true }], [],
     ["ready-root", "later-child"], undefined, ["later-child"]);
