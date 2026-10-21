@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { executeSessionMoves, previewSessionMoves, sessionMoveErrorMessage } from "@/lib/session-worktrees";
+import { executeSessionMoves, previewSessionMoves, reconcileSessionMoves, sessionMoveErrorMessage } from "@/lib/session-worktrees";
 import { readSessionMoveRequest, SessionWorktreeError } from "@/lib/session-worktrees-plan";
 import { SessionMoveConflict } from "@/lib/session-move";
 
@@ -9,7 +9,8 @@ export async function POST(req: Request) {
   try {
     const body = await readSessionMoveRequest(req);
     if (body.mode === "preview") return NextResponse.json(await previewSessionMoves(body), { headers });
-    return NextResponse.json(await executeSessionMoves(body.plan, req.signal), { headers });
+    if (body.mode === "reconcile") return NextResponse.json(await reconcileSessionMoves(body.plan, body.rootIds), { headers });
+    return NextResponse.json(await executeSessionMoves(body.plan, req.signal, body.rootIds), { headers });
   } catch (error) {
     const code = (error as NodeJS.ErrnoException | null)?.code;
     const status = error instanceof SessionWorktreeError ? error.status : error instanceof SessionMoveConflict ? 409

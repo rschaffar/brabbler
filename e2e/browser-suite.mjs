@@ -1322,7 +1322,13 @@ let nativeToolsFixture;
       await moveDialog.locator(`button[role="option"][data-value="${otherProject}"]`).click();
       await moveDialog.getByRole("button", { name: "Move", exact: true }).click();
       await moveDialog.waitFor({ state: "detached" });
-      await row.waitFor({ state: "detached" });
+      // Moving the open chat now retargets its replacement working context to
+      // the confirmed destination (also safe when the source has vanished).
+      // Verify the refreshed destination list, not disappearance from a source
+      // list the UI no longer displays.
+      await page.getByRole("button").and(page.getByTitle(otherProject, { exact: true })).waitFor();
+      await row.waitFor({ state: "visible" });
+      await page.locator(`[data-session-id="${OTHER}"]`).waitFor({ state: "visible" });
       const moved = (await api("/api/sessions?force=1")).sessions.find((session) => session.id === ARCHIVE);
       assert.equal(moved?.cwd, otherProject);
       assert.equal(moved?.projectRoot, otherProject);

@@ -249,7 +249,7 @@ Each session still remembers the working directory it was created with. That mea
 - A session started in the main checkout continues to use the main checkout.
 - If a worktree has been removed, old sessions from it stay visible under the project so you can still find the history.
 
-Use the session row’s **Move to project…** action for explicit relocation. Choose a **Destination project**, then a **Worktree/directory** showing its branch and path. The current project remains available for moves between its registered checkouts; only the exact current directory is disabled. Projects without worktrees offer their directory directly, and **Browse another folder…** accepts another existing directory, including non-Git directories. Selection only proposes a destination: it does not switch the sidebar checkout or relocate anything until you press **Move**.
+Use the session row’s **Move to project…** action for explicit relocation. Choose a **Destination project**, then a **Worktree/directory** showing its branch and path. Choose the destination project explicitly; the current project remains available for moves between its registered checkouts, but is not loaded automatically because its directory may have disappeared. Only the exact current directory is disabled. Projects without worktrees offer their directory directly, and **Browse another folder…** accepts another existing directory, including non-Git directories. Selection only proposes a destination: it does not switch the sidebar checkout or relocate anything until you press **Move**.
 
 Stop running sessions first. This moves the session and its subagents, not checkout files; independent forks remain in place with repaired parent references. Moving also works after the old worktree directory has been deleted: choose an existing destination, without recreating the old checkout.
 
@@ -288,11 +288,20 @@ subtree descendants participate, and archive state remains unchanged. Recovery i
 unavailable if the real main checkout cannot be verified. Arbitrary historical
 paths with unknown project ownership must be moved manually; no ownership is guessed.
 
-Batches can partially succeed. Review moved/skipped/failed results; failure does not
-undo earlier successful families. A lost response can leave the outcome uncertain:
-refresh and inspect before reviewing another attempt, rather than automatically
-replaying it. Closing a page is not cancellation of dispatched server work. Checkout
-files, project preferences, trust grants and plugin project bindings are **not moved**.
+Batches can partially succeed. The browser sends at most five reviewed families per
+request, reports acknowledged family/session counts, and continues only after a valid
+response. The server also yields between families after a ten-second budget; a single
+family is never interrupted mid-transaction. The reviewed 4096-session limit includes
+incoming reference repairs across the entire selection, not a fresh allowance per request.
+
+A lost, malformed or non-JSON response stops new execution. The dialog checks saved
+family locations without retrying any move and lists destination/source/changed/unknown
+observations separately from acknowledged results. Those observations are not execution
+receipts. Inspect the refreshed list and review a fresh selection before another attempt;
+unattempted or unknown families are not reported as moved. A very slow family, lock wait
+or failed observation can still leave an unknown outcome. Closing a page is not
+cancellation of dispatched server work. Checkout files, project preferences, trust grants
+and plugin project bindings are **not moved**.
 
 ## Troubleshooting
 

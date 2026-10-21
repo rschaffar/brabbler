@@ -7,6 +7,7 @@ import { sessionFamiliesForWorktree } from "@/lib/session-worktree-filter";
 import { useSessionWorktrees } from "@/hooks/useSessionWorktrees";
 import { SessionBulkMoveDialog, type BulkMoveRequest } from "./SessionBulkMoveDialog";
 import { runBulkSessionAction, type BulkSessionAction } from "@/lib/bulk-session-actions";
+import { readSessionMoveResponse, SessionMoveResponseError } from "@/lib/session-move-client";
 import { loadExplorerOpen, saveExplorerOpen } from "@/lib/file-explorer-state";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
 import { sessionDeepLink } from "@/lib/session-reference";
@@ -140,7 +141,7 @@ interface Props {
   skipInitialProjectSelection?: boolean;
   onInitialRestoreDone?: () => void;
   refreshKey?: number;
-  onSessionDeleted?: (sessionId: string) => void;
+  onSessionDeleted?: (sessionId: string, replacementCwd?: string | null, refreshCatalogue?: boolean) => void;
   onSessionArchived?: (sessionId: string) => void;
   selectedCwd?: string | null;
   selectedCwdState?: SessionInfo["cwdState"];
@@ -453,8 +454,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
-  const directoryUnavailable = isHistoryOnlySession({ cwdState: selectedCwd === selectedCwdProp
-    ? selectedCwdStateProp : allSessions.find((session) => session.cwd === selectedCwd)?.cwdState });
+  const lastSyncedCwdPropRef = useRef<string | null>(null);
+  // Canonical metadata can relocate the selected chat before the sync effect
+  // updates the sidebar cwd. Do not issue working reads for the outgoing path
+  // in that render. A manual switch with an unchanged prop remains independent.
+  const cwdPropPending = Boolean(selectedCwdProp && selectedCwdProp !== lastSyncedCwdPropRef.current && selectedCwd !== selectedCwdProp);
+  const directoryUnavailable = cwdPropPending || isHistoryOnlySession({ cwdState: (selectedCwd === selectedCwdProp
+    ? selectedCwdStateProp : undefined) ?? allSessions.find((session) => session.cwd === selectedCwd)?.cwdState });
   const [homeDir, setHomeDir] = useState<string>("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
@@ -1064,7 +1070,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // worktrees in a project share one list, so clicking a session from another
   // worktree should move the effective cwd there. Only fires when the prop
   // value changes, so a manual switcher change is not snapped back.
-  const lastSyncedCwdPropRef = useRef<string | null>(null);
   useEffect(() => {
     if (selectedCwdProp && selectedCwdProp !== lastSyncedCwdPropRef.current) {
       lastSyncedCwdPropRef.current = selectedCwdProp;
@@ -1341,19 +1346,22 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cwd: moveDestination }),
       });
-      const data = await response.json() as { error?: string; movedIds?: string[] };
-      if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
+      const data = await readSessionMoveResponse<{ movedIds?: string[] }>(response);
       // An open chat's cwd and wrapper no longer match the relocated file.
       // Close it rather than letting it send a prompt against the old project.
-      if (selectedSessionId && data.movedIds?.includes(selectedSessionId)) onSessionDeleted?.(selectedSessionId);
+      if (selectedSessionId && data.movedIds?.includes(selectedSessionId)) {
+        setSelectedCwd(moveDestination);
+        onSessionDeleted?.(selectedSessionId, moveDestination, false);
+      }
       setMovingSession(null);
       void loadSessions(false, true);
     } catch (error) {
-      setMoveError(String(error));
+      setMoveError(`${error instanceof SessionMoveResponseError ? t("sessionWorktrees.invalidResponse", { status: error.status }) : String(error)} ${t("sessionWorktrees.unknownOutcome")}`);
+      void loadSessions(false, true);
     } finally {
       setMoveBusy(false);
     }
-  }, [movingSession, moveDestination, moveBusy, selectedSessionId, onSessionDeleted, loadSessions, setMovingSession, setMoveError]);
+  }, [movingSession, moveDestination, moveBusy, selectedSessionId, onSessionDeleted, loadSessions, setMovingSession, setMoveError, t]);
 
   const recentProjects = useMemo(() => {
     const projects = getRecentProjects(allSessions);
@@ -1518,8 +1526,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           onReturnFocus={() => wtDropdownRef.current?.querySelector("button")?.focus({ preventScroll: true })} />
       )}
       {bulkMoveRequest && <SessionBulkMoveDialog request={bulkMoveRequest} projects={recentProjects}
-        onClose={() => setBulkMoveRequest(null)} onSettled={async (movedIds, failedIds) => {
-          if (selectedSessionIdRef.current && movedIds.includes(selectedSessionIdRef.current)) onSessionDeleted?.(selectedSessionIdRef.current);
+        onClose={() => setBulkMoveRequest(null)} onSettled={async (movedIds, failedIds, invalidatedIds, destinationCwd) => {
+          // Unknown effects must invalidate a possibly stale chat, separately
+          // from acknowledged/observed moved-result accounting.
+          if (selectedSessionIdRef.current && [...movedIds, ...invalidatedIds].includes(selectedSessionIdRef.current)) {
+            const confirmedDestination = movedIds.includes(selectedSessionIdRef.current) ? destinationCwd : undefined;
+            if (confirmedDestination) setSelectedCwd(confirmedDestination);
+            // This settlement owns the awaited refresh below; avoid racing it
+            // against a parent-triggered catalogue refresh.
+            onSessionDeleted?.(selectedSessionIdRef.current, confirmedDestination ?? null, false);
+          }
           if (failedIds === null) setBulkError(t("sessionWorktrees.unknownOutcome"));
           else if (failedIds.length) {
             setBulkSelectedIds(new Set(failedIds));

@@ -60,8 +60,8 @@ function rewriteFile(content: string, cwd: string | null, relocated: Map<string,
   return lines.join("\n");
 }
 
-/** Serialize Pi Web relocations so overlapping families cannot stage stale copies. */
-export async function moveSessionFamily(id: string, cwd: string, options: SessionMoveOptions = {}): Promise<{ movedIds: string[]; skipped?: boolean }> {
+/** Serialize relocations and read-only observations of an uncertain relocation. */
+export async function withSessionMoveLock<T>(operation: (move: typeof moveSessionFamilyUnlocked) => Promise<T>): Promise<T> {
   const previous = globalThis.__piSessionMoveLock ?? Promise.resolve();
   let release!: () => void;
   const turn = new Promise<void>((resolve) => { release = resolve; });
@@ -69,11 +69,15 @@ export async function moveSessionFamily(id: string, cwd: string, options: Sessio
   globalThis.__piSessionMoveLock = current;
   try {
     await previous;
-    return await moveSessionFamilyUnlocked(id, cwd, options);
+    return await operation(moveSessionFamilyUnlocked);
   } finally {
     release();
     if (globalThis.__piSessionMoveLock === current) globalThis.__piSessionMoveLock = undefined;
   }
+}
+
+export async function moveSessionFamily(id: string, cwd: string, options: SessionMoveOptions = {}): Promise<{ movedIds: string[]; skipped?: boolean }> {
+  return withSessionMoveLock(move => move(id, cwd, options));
 }
 
 /** Move a persisted session family; forks are independent but their origin paths must be repaired. */
