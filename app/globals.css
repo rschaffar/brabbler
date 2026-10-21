@@ -2578,13 +2578,21 @@ span.token.table {
 .activity-item-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 550; }
 .activity-item-action { flex: none; color: var(--accent); font-size: 11px; }
 .activity-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex: none; }
-.activity-review-item { display: flex; align-items: stretch; }
+.activity-review-item { display: flex; flex-direction: column; min-width: 0; }
+.activity-item-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 8px 34px; }
+.activity-item-actions:empty { display: none; }
+.activity-nested + .activity-item-actions { padding-left: 51px; }
+.activity-item-actions > .activity-mark-read { min-height: 32px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); }
+.activity-item-actions > .activity-mark-read:hover, .activity-item-actions > .activity-mark-read:focus-visible { color: var(--text); text-decoration: none; }
+@media (pointer: coarse) {
+  .activity-item-actions > .activity-mark-read { min-height: 44px; min-width: 44px; }
+}
 .activity-pause-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; }
 .activity-pause-controls small { flex-basis: 100%; color: var(--text-muted); }
 .activity-mark-read:disabled { opacity: .55; cursor: default; }
 .activity-item-pausing .activity-dot { background: #d97706; }
 .activity-item-paused .activity-dot { background: var(--text-muted); }
-.activity-review-item > .activity-item { flex: 1; min-width: 0; }
+.activity-review-item > .activity-item { min-width: 0; }
 .activity-mark-read { flex: none; padding: 0 16px; border: 0; background: transparent; color: var(--accent); font-size: 11px; cursor: pointer; }
 .activity-mark-read:hover, .activity-mark-read:focus-visible { background: var(--bg-hover); text-decoration: underline; }
 .activity-item-needs-you .activity-dot, .activity-item-later.activity-deferred-attention .activity-dot { background: #e59a37; }

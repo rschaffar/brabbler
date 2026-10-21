@@ -65,6 +65,26 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   }
   const dotColor = (row) => row.locator(".activity-item-top .activity-dot")
     .evaluate((dot) => getComputedStyle(dot).backgroundColor);
+  const checkActionStrip = async (row) => {
+    assert.equal(await row.locator(".activity-item-action").count(), 0, "navigation needs no visible Open/Review label");
+    const layout = await row.evaluate((button) => {
+      const card = button.parentElement;
+      const strip = card.querySelector(".activity-item-actions");
+      const rect = button.getBoundingClientRect();
+      const title = button.querySelector(".activity-item-title").getBoundingClientRect();
+      return {
+        fullWidth: Math.abs(rect.width - card.getBoundingClientRect().width) < 1,
+        titleUsesRightEdge: Math.abs(title.right - (rect.right - parseFloat(getComputedStyle(button).paddingRight))) < 1,
+        below: strip.getBoundingClientRect().top >= rect.bottom,
+        controlsFit: [...strip.querySelectorAll("button")].every((control) => {
+          const bounds = control.getBoundingClientRect();
+          return bounds.left >= rect.left && bounds.right <= rect.right && bounds.height >= (matchMedia("(pointer: coarse)").matches ? 44 : 32);
+        }),
+      };
+    });
+    assert.deepEqual(layout, { fullWidth: true, titleUsesRightEdge: true, below: true, controlsFit: true },
+      "title keeps the full row width and visible action targets wrap below the metadata");
+  };
   await checkOverviewDuringInitialRestore(page, base, selectedSessionId);
   await page.getByText("Active branch answer", { exact: true }).waitFor();
   assert.equal(await page.getByText("A previous run may have been interrupted", { exact: false }).count(), 0);
@@ -143,6 +163,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   const working = page.getByRole("region", { name: "Activity" }).locator(".activity-item-working").filter({ hasText: "Branch root" });
   await working.waitFor();
   await checkWorktreeBadge(working);
+  await checkActionStrip(working);
   assert.equal(workingColor, await dotColor(working), "Starred and Activity use the same working dot");
   await page.getByRole("button", { name: "Starred", exact: true }).click();
   await page.unroute("**/api/agent/running");
@@ -202,6 +223,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await overview.getByRole("heading", { name: /Needs you/ }).waitFor();
   const card = overview.locator(".activity-item-needs-you").filter({ hasText: "E2E browser question" });
   await card.waitFor();
+  await checkActionStrip(card);
   assert.equal(needsColor, await dotColor(card), "Starred and Activity use the same needs-you dot");
   assert.equal(await overview.getByText("E2E browser question").count(), 1);
   assert.match(await card.getAttribute("aria-label"), /project.*E2E browser question/);
@@ -263,6 +285,8 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await page.getByRole("button", { name: "Activity", exact: true }).click();
   const waitingReady = overview.locator(".activity-item-ready").filter({ hasText: "Render **E2E markdown**" });
   await waitingReady.waitFor();
+  await checkActionStrip(waitingReady);
+  await page.screenshot({ path: join(artifacts, `activity-ready-${width}.png`) });
   assert.equal(readyColor, await dotColor(waitingReady), "Starred and Activity use the same ready-to-review dot");
   await overview.getByRole("button", { name: "Mark Render **E2E markdown** as read", exact: true }).click();
   await waitingReady.waitFor({ state: "hidden" });
