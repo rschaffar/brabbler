@@ -1,4 +1,6 @@
 /** Shared wire contract. A serialized plan is a proposal, never move authority. */
+export const SESSION_MOVE_BATCH_ROOT_LIMIT = 5;
+export const SESSION_MOVE_BATCH_BUDGET_MS = 10_000;
 export interface SessionWorktree {
   path: string;
   branch: string | null;
@@ -25,6 +27,8 @@ export interface SessionMovePlan {
   roots: SessionMovePlanRoot[];
   sessionCount: number;
   archivedCount: number;
+  /** Entire reviewed write footprint, including incoming fork/subagent references. */
+  affectedIds: string[];
 }
 export interface SessionMovePreviewRequest {
   mode: "preview";
@@ -36,8 +40,14 @@ export interface SessionMovePreviewRequest {
 export interface SessionMoveExecuteRequest {
   mode: "execute";
   plan: SessionMovePlan;
+  rootIds?: string[];
 }
-export type SessionMoveRequest = SessionMovePreviewRequest | SessionMoveExecuteRequest;
+export interface SessionMoveReconcileRequest {
+  mode: "reconcile";
+  plan: SessionMovePlan;
+  rootIds: string[];
+}
+export type SessionMoveRequest = SessionMovePreviewRequest | SessionMoveExecuteRequest | SessionMoveReconcileRequest;
 export interface SessionMovePreviewResponse {
   plan: SessionMovePlan;
   skippedAlreadyThere?: string[];
@@ -47,4 +57,10 @@ export interface SessionMoveExecuteResponse {
   failed: { id: string; error: string }[];
   skipped: string[];
   movedIds: string[];
+  /** Reviewed roots not attempted in this request; never failures. */
+  pending: string[];
+}
+export type SessionMoveObservedState = "destination" | "source" | "changed" | "unknown";
+export interface SessionMoveReconcileResponse {
+  roots: { id: string; state: SessionMoveObservedState; memberIds: string[] }[];
 }

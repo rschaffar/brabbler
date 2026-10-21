@@ -108,7 +108,81 @@ test("genuine inventory and bulk recovery use the existing mover and preserve ar
   await post({ mode: "preview", project: dirname(root), ids: [liveParent.getSessionId()], cwd: main, authority: true }, 400);
   await post({ mode: "preview", project: dirname(root), ids: [liveParent.getSessionId()], cwd: main }, 403);
 
-  const { moveSessionFamily } = await jiti.import("../../../lib/session-move.ts");
+  // One reviewed selection spans several bounded requests. Older clients cannot
+  // accidentally submit the whole operation as one unbounded execution.
+  const many = Array.from({ length: 12 }, () => create(live));
+  const manyIds = many.map(manager => manager.getSessionId());
+  const { plan: bounded } = await post({ mode: "preview", project: main, cwd: main, ids: manyIds });
+  await post({ mode: "execute", plan: bounded }, 400);
+  assert.ok(many.every(manager => existsSync(manager.getSessionFile())), "oversized request has no effects");
+  for (let offset = 0; offset < manyIds.length; offset += 5) {
+    const response = await post({ mode: "execute", plan: bounded, rootIds: manyIds.slice(offset, offset + 5) });
+    assert.equal(response.failed.length, 0); assert.deepEqual(response.pending, []);
+  }
+  const observation = await post({ mode: "reconcile", plan: bounded, rootIds: manyIds.slice(0, 5) });
+  assert.ok(observation.roots.every(root => root.state === "destination"));
+
+  const pendingRoots = [create(live), create(live)];
+  const { plan: timed } = await post({ mode: "preview", project: main, cwd: main, ids: pendingRoots.map(manager => manager.getSessionId()) });
+  let clock = 0;
+  const timer = t.mock.method(performance, "now", () => clock += 11_000);
+  let yielded;
+  try { yielded = await post({ mode: "execute", plan: timed }); }
+  finally { timer.mock.restore(); }
+  assert.equal(yielded.succeeded.length, 1); assert.equal(yielded.pending.length, 1); assert.equal(yielded.failed.length, 0);
+
+  // New incoming links must fit the original reviewed write footprint, not a
+  // client-supplied running counter that could reset the 4096-session ceiling.
+  const linkedRoot = create(live);
+  const { plan: beforeLink } = await post({ mode: "preview", project: main, cwd: main, ids: [linkedRoot.getSessionId()] });
+  const lateFork = create(live), latePath = lateFork.getSessionFile();
+  const lateLines = readFileSync(latePath, "utf8").split("\n"), lateHeader = JSON.parse(lateLines[0]);
+  lateHeader.parentSession = linkedRoot.getSessionFile(); lateLines[0] = JSON.stringify(lateHeader);
+  writeFileSync(latePath, lateLines.join("\n")); invalidateSessionListCache();
+  const lateBytes = readFileSync(latePath, "utf8");
+  const lateRefusal = await post({ mode: "execute", plan: beforeLink });
+  assert.match(lateRefusal.failed[0].error, /Linked sessions changed/);
+  assert.equal(readFileSync(latePath, "utf8"), lateBytes);
+
+  const { moveSessionFamily, withSessionMoveLock } = await jiti.import("../../../lib/session-move.ts");
+  // Observation cannot see an in-flight staging window and does not append,
+  // evict wrappers, create sessions or retry mutations.
+  const observedRoot = create(live), observedChild = create(live, observedRoot);
+  const { plan: observePlan } = await post({ mode: "preview", project: main, cwd: main, ids: [observedRoot.getSessionId()] });
+  const observedBytes = [observedRoot, observedChild].map(manager => readFileSync(manager.getSessionFile(), "utf8"));
+  let unlock;
+  const held = new Promise(resolve => { unlock = resolve; });
+  const holding = withSessionMoveLock(() => held);
+  let observed = false;
+  const waiting = post({ mode: "reconcile", plan: observePlan, rootIds: [observedRoot.getSessionId()] }).then(value => { observed = true; return value; });
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(observed, false);
+  unlock(); await holding;
+  assert.equal((await waiting).roots[0].state, "source");
+  globalThis.__piSessions.set(observedChild.getSessionId(), { isRunning: () => true });
+  assert.equal((await post({ mode: "reconcile", plan: observePlan, rootIds: [observedRoot.getSessionId()] })).roots[0].state, "unknown");
+  globalThis.__piSessions.delete(observedChild.getSessionId());
+  assert.deepEqual([observedRoot, observedChild].map(manager => readFileSync(manager.getSessionFile(), "utf8")), observedBytes);
+  const observedChildPath = observedChild.getSessionFile();
+  const changedLines = observedBytes[1].split("\n"), changedHeader = JSON.parse(changedLines[0]);
+  changedHeader.cwd = main; changedLines[0] = JSON.stringify(changedHeader);
+  writeFileSync(observedChildPath, changedLines.join("\n")); invalidateSessionListCache();
+  assert.equal((await post({ mode: "reconcile", plan: observePlan, rootIds: [observedRoot.getSessionId()] })).roots[0].state, "changed");
+  writeFileSync(observedChildPath, observedBytes[1]); invalidateSessionListCache();
+  const extraChild = create(live, observedRoot); invalidateSessionListCache();
+  assert.equal((await post({ mode: "reconcile", plan: observePlan, rootIds: [observedRoot.getSessionId()] })).roots[0].state, "changed");
+  rmSync(extraChild.getSessionFile()); invalidateSessionListCache();
+  rmSync(observedChildPath); invalidateSessionListCache();
+  assert.equal((await post({ mode: "reconcile", plan: observePlan, rootIds: [observedRoot.getSessionId()] })).roots[0].state, "unknown");
+
+  // A completed last-source move removes its session-derived source admission.
+  // Read-only reconciliation can still use the independently admitted target.
+  const plain = join(root, "last-source"); mkdirSync(plain);
+  const last = create(plain);
+  globalThis.__piAllowedRootsCache = undefined; invalidateSessionListCache();
+  const { plan: lastPlan } = await post({ mode: "preview", project: plain, cwd: main, ids: [last.getSessionId()] });
+  await post({ mode: "execute", plan: lastPlan });
+  globalThis.__piAllowedRootsCache = undefined; invalidateSessionListCache();
+  assert.equal((await post({ mode: "reconcile", plan: lastPlan, rootIds: [last.getSessionId()] })).roots[0].state, "destination");
   const guardedRoot = create(live), guardedChild = create(live, guardedRoot);
   const guardedBytes = [guardedRoot, guardedChild].map(manager => readFileSync(manager.getSessionFile(), "utf8"));
   let stoppedRunningChild = false;
@@ -124,6 +198,33 @@ test("genuine inventory and bulk recovery use the existing mover and preserve ar
   assert.equal(stoppedRunningChild, false, "a late-running wrapper must not be shut down implicitly");
   globalThis.__piSessions.clear();
   assert.deepEqual([guardedRoot, guardedChild].map(manager => readFileSync(manager.getSessionFile(), "utf8")), guardedBytes);
+
+  // An observation queued behind family A cannot overtake family B in the
+  // same lost-ack request. It must wait for the entire dispatched batch.
+  const batchA = create(live), batchB = create(live);
+  const batchIds = [batchA.getSessionId(), batchB.getSessionId()];
+  const { plan: lockedBatch } = await post({ mode: "preview", project: main, cwd: main, ids: batchIds });
+  let enterBatch, releaseBatch;
+  const enteredBatch = new Promise(resolve => { enterBatch = resolve; });
+  const batchGate = new Promise(resolve => { releaseBatch = resolve; });
+  globalThis.__piSessions.set(batchA.getSessionId(), { isRunning: () => false, shutdown: async () => {
+    enterBatch(); await batchGate; globalThis.__piSessions.delete(batchA.getSessionId());
+  } });
+  const executingBatch = post({ mode: "execute", plan: lockedBatch });
+  await enteredBatch;
+  const observingBatch = post({ mode: "reconcile", plan: lockedBatch, rootIds: batchIds });
+  releaseBatch();
+  const afterBatch = await observingBatch;
+  assert.ok(afterBatch.roots.every(root => root.state === "destination"), "observation waits for B as well as A");
+  assert.equal((await executingBatch).succeeded.length, 2);
+
+  // Duplicate saved identities are detected before live merging can collapse them.
+  const duplicateSession = create(live);
+  const { plan: duplicatePlan } = await post({ mode: "preview", project: main, cwd: main, ids: [duplicateSession.getSessionId()] });
+  const duplicatePath = join(dirname(duplicateSession.getSessionFile()), `duplicate_${duplicateSession.getSessionId()}.jsonl`);
+  writeFileSync(duplicatePath, readFileSync(duplicateSession.getSessionFile())); invalidateSessionListCache();
+  assert.equal((await post({ mode: "reconcile", plan: duplicatePlan, rootIds: [duplicateSession.getSessionId()] })).roots[0].state, "unknown");
+  rmSync(duplicatePath); invalidateSessionListCache();
 
   const replacement = create(live); const replacementBytes = readFileSync(replacement.getSessionFile(), "utf8");
   let validations = 0;

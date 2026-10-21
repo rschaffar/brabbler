@@ -1,6 +1,7 @@
 import { isAbsolute } from "node:path";
 import { samePath } from "./paths";
 import type { SessionInfo } from "./types";
+import { SESSION_MOVE_BATCH_ROOT_LIMIT } from "./session-worktrees-types";
 import type { SessionMovePlan, SessionMoveRequest, SessionMovePlanRoot } from "./session-worktrees-types";
 
 export const SESSION_MOVE_LIMIT = 4096;
@@ -36,7 +37,7 @@ function count(value: unknown): number {
   return value as number;
 }
 export function parseSessionMovePlan(value: unknown): SessionMovePlan {
-  const v = object(value, ["project", "cwd", "missingOnly", "roots", "sessionCount", "archivedCount"], "Plan");
+  const v = object(value, ["project", "cwd", "missingOnly", "roots", "sessionCount", "archivedCount", "affectedIds"], "Plan");
   if (typeof v.missingOnly !== "boolean") invalid("Plan missingOnly must be a boolean");
   if (!Array.isArray(v.roots) || v.roots.length > SESSION_MOVE_LIMIT) invalid("Invalid plan roots");
   const seen = new Set<string>();
@@ -59,13 +60,23 @@ export function parseSessionMovePlan(value: unknown): SessionMovePlan {
   });
   const sessionCount = count(v.sessionCount), archivedCount = count(v.archivedCount);
   if (sessionCount !== seen.size || archivedCount > sessionCount) invalid("Plan counts do not match its families");
-  return { project: path(v.project, "Project"), cwd: path(v.cwd, "Destination"), missingOnly: v.missingOnly as boolean, roots, sessionCount, archivedCount };
+  const affectedIds = ids(v.affectedIds, true);
+  if ([...seen].some(id => !affectedIds.includes(id))) invalid("Plan write footprint is incomplete");
+  return { project: path(v.project, "Project"), cwd: path(v.cwd, "Destination"), missingOnly: v.missingOnly as boolean, roots, sessionCount, archivedCount, affectedIds };
 }
 export function parseSessionMoveRequest(value: unknown): SessionMoveRequest {
   if (!value || typeof value !== "object") invalid("A move request is required");
-  if ((value as { mode?: unknown }).mode === "execute") {
-    const v = object(value, ["mode", "plan"], "Request");
-    return { mode: "execute", plan: parseSessionMovePlan(v.plan) };
+  const mode = (value as { mode?: unknown }).mode;
+  if (mode === "execute" || mode === "reconcile") {
+    const v = object(value, ["mode", "plan", "rootIds"], "Request");
+    const plan = parseSessionMovePlan(v.plan);
+    const rootIds = v.rootIds === undefined ? undefined : ids(v.rootIds);
+    selectSessionMoveRoots(plan, rootIds);
+    if (mode === "reconcile") {
+      if (!rootIds) invalid("Select roots to reconcile");
+      return { mode, plan, rootIds: rootIds! };
+    }
+    return { mode, plan, ...(rootIds ? { rootIds } : {}) };
   }
   const v = object(value, ["mode", "project", "ids", "cwd", "missingOnly"], "Request");
   if (v.mode !== "preview") invalid("Choose preview or execute mode");
@@ -76,6 +87,15 @@ export function parseSessionMoveRequest(value: unknown): SessionMoveRequest {
   if (v.missingOnly !== true && v.cwd === undefined) invalid("Destination directory is required");
   return { mode: "preview", project: path(v.project, "Project"), ...(selected ? { ids: selected } : {}),
     ...(v.cwd === undefined ? {} : { cwd: path(v.cwd, "Destination") }), ...(v.missingOnly === undefined ? {} : { missingOnly: v.missingOnly as boolean }) };
+}
+
+/** A request may execute/observe only a bounded subset of the reviewed roots. */
+export function selectSessionMoveRoots(plan: SessionMovePlan, rootIds?: readonly string[]): SessionMovePlanRoot[] {
+  const selected = rootIds ?? plan.roots.map(root => root.id);
+  if (selected.length > SESSION_MOVE_BATCH_ROOT_LIMIT) invalid(`Choose at most ${SESSION_MOVE_BATCH_ROOT_LIMIT} roots per move request`);
+  if (new Set(selected).size !== selected.length) invalid("Duplicate selected roots");
+  const byId = new Map(plan.roots.map(root => [root.id, root]));
+  return selected.map(id => byId.get(id) ?? invalid("Selected root is not in the reviewed plan"));
 }
 
 /** Stream the bound as bytes, including requests without Content-Length. */

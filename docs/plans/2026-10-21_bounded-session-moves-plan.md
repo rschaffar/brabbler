@@ -1,0 +1,30 @@
+# Bounded session moves and uncertain-response recovery
+
+## Goal
+Prevent a project-scale move from depending on one long HTTP request, retain exact family validation, and report observed state honestly after a lost acknowledgement.
+
+## Context / plan relationship
+The existing picker plan owns the original Project/Worktree UI, and session contracts own relocation. This follow-up fixes the confirmed 2026-10-21 nginx timeout: 66 of 908 historical project sessions had moved when the response was lost. It does not migrate live user data, raise proxy deadlines, deploy/activate, add background workers, or weaken path/trust checks. Repeated catalogue scans remain a later profiling/optimization concern.
+
+## Plan
+- [x] Bound execution to five selected family roots and a cooperative ten-second between-family budget per request; reject oversized execution selections before mutation and return unattempted roots explicitly.
+- [x] Add transcript/runtime-read-only, whole-batch-lock family reconciliation that observes destination/source/changed/unknown without starting agents, replaying writes, or trusting serialized paths as authority. Preserve post-last-source-move authorization via independently admitted destination access.
+- [x] Add a sequential client coordinator with aggregate progress, response-shape validation, safe non-JSON errors, and stop-and-reconcile on any uncertain acknowledgement. Never automatically retry mutations.
+- [x] Start the destination picker without an implicit source selection, so opening a missing-source move never probes that vanished directory. Preserve same-project choice and Browse.
+- [x] Cover bounds, pending work, lost HTML/JSON/network acknowledgements, changed/missing/live families, duplicate identities, whole-dispatch observation ordering, write-footprint limits, authorization, and genuine desktop/mobile flows. Update maintained guides. Latest focused core: 10 files / 74 tests plus static checks passed (`/tmp/pi-web-test-core.U8fkrQ/run.json`). Latest focused `move`: desktop/mobile passed including combined missing-source/lost-execution-response/failed-observation coverage, 33.428s browser execution (`/tmp/pi-web-test-browser.GnkXYD/run.json`, diagnostics `/nix/store/144pa39rif1p2rws4zkb4sriky78nmh3-pi-web-browser-move-diagnostics`). Earlier focused passes remain in the retained logs; they predate this combined regression.
+- [ ] Run independent safety review and complete Nix acceptance (`all --workers 4 --jobs 4` if resource admission still permits). Record exact input/result/artifact and end-to-end versus preparation/execution timings.
+- [ ] Commit reviewable changes, rebase/verify the candidate onto current local `main` (renamed from `rst-main` during concurrent work), then present the exact local non-FF integration through the Git tool. No publication or deployment by implication.
+
+## Evidence / corrections
+Initial focused failures are retained: the newly seeded native fixture needed allowed-root cache invalidation before its first source admission; a successful-status `{ error }` listing envelope must remain an application error; the genuine missing-source browser case exposed replacement composers using vanished source cwds, now corrected; the fixture's synthetic old project is explicitly admitted while it exists, before renaming, rather than expecting disk seeding to grant physical access. No deadlines were increased, console errors suppressed or installed services touched. Review also found/fixed whole-batch observation ordering, uncertain chat invalidation and persisted duplicate identity ambiguity. Final review added the combined missing-source/unknown-location regression: uncertain chats remain read-only, working reads pause during canonical-cwd synchronization, and move settlement owns one awaited catalogue refresh rather than racing a parent-triggered refresh. Normal catalogue-index persistence is explicitly outside the transcript/runtime-read-only promise.
+
+Full acceptance is intentionally deferred until implementation/review are done and the feature is rebased onto the current local target, per the user's concurrent-work instruction. Focused logs and retained failure references: `/tmp/pi-desk-move-fix.MjUJBe/`.
+
+## Rollback / recovery
+Execution remains per-family staged relocation with existing rollback. Unknown responses stop further execution and trigger a read-only observation after the whole dispatched batch settles under the mover lock. Observation is current location, not a durable execution receipt or retry authorization. A fresh user-reviewed plan is required for another attempt. One unusually slow family may still outlive an HTTP timeout; it must reconcile rather than be interrupted mid-transaction. No live data is used by tests.
+
+## Completion checklist
+- [x] All move/source/header/family/queue/running checks remain enforced; the reviewed bounded write footprint also includes incoming reference repairs across requests.
+- [x] No automatic mutation replay after unknown responses; progress distinguishes acknowledged effects from observed destination state and uncertain chat invalidation.
+- [ ] Complete required acceptance and independent review pass, or blockers remain explicit.
+- [ ] Maintained contracts document limits and recovery; feature/integration/deployment state reported accurately.

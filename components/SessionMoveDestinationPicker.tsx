@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { normalizeFilePathSlashes } from "@/lib/file-paths";
 import { DirectoryPicker } from "./DirectoryPicker";
+import { readSessionMoveResponse, SessionMoveResponseError } from "@/lib/session-move-client";
 
 interface DirectoryOption {
   path: string;
@@ -132,7 +133,9 @@ interface Props {
 
 export function SessionMoveDestinationPicker({ projects, currentProject, currentCwd, destination, onChange, disabled }: Props) {
   const { t } = useI18n();
-  const [project, setProject] = useState(() => projects.find((item) => sameMoveDirectory(item.root, currentProject))?.root ?? currentProject);
+  // Source history can outlive its directory. Do not probe it implicitly as a
+  // destination (or turn a valid missing-source move into an opening 403).
+  const [project, setProject] = useState("");
   const [browsePath, setBrowsePath] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [listing, setListing] = useState<{ project: string; options: DirectoryOption[]; error?: string } | null>(null);
@@ -145,17 +148,17 @@ export function SessionMoveDestinationPicker({ projects, currentProject, current
     void (async () => {
       try {
         const response = await fetch(`/api/worktrees?cwd=${encodeURIComponent(project)}`, { signal: controller.signal });
-        const data = await response.json() as { worktrees?: DirectoryOption[]; error?: string };
-        if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+        const data = await readSessionMoveResponse<{ worktrees?: DirectoryOption[] }>(response);
         if (cancelled) return;
         setListing({ project, options: moveDirectoryOptions(project, data.worktrees ?? []) });
         onChange(sameMoveDirectory(project, currentProject) || sameMoveDirectory(project, currentCwd) ? "" : project);
       } catch (error) {
-        if (!cancelled) setListing({ project, options: [], error: String(error) });
+        if (!cancelled) setListing({ project, options: [], error: error instanceof SessionMoveResponseError
+          ? t("sessionWorktrees.invalidResponse", { status: error.status }) : String(error) });
       }
     })();
     return () => { cancelled = true; controller.abort(); };
-  }, [project, currentProject, currentCwd, onChange, attempt]);
+  }, [project, currentProject, currentCwd, onChange, attempt, t]);
 
   const options = listing?.project === project ? listing.options : [];
   const projectOptions = projects.map((item) => ({ value: item.root, label: item.root }));
@@ -180,7 +183,7 @@ export function SessionMoveDestinationPicker({ projects, currentProject, current
       }} />
     <label style={{ fontSize: 12 }} htmlFor="move-session-directory">{t("sidebar.moveDirectory")}</label>
     <MoveDestinationSelect key={project} id="move-session-directory" value={destination} options={directoryOptions}
-      disabled={disabled || loading || Boolean(listing?.error)} onChange={onChange}
+      disabled={disabled || (!project && !destination) || loading || Boolean(listing?.error)} onChange={onChange}
       placeholder={loading ? t("sidebar.loading") : t("sidebar.chooseDirectory")}
       filterLabel={t("sidebar.filterWorktrees")} emptyLabel={t("sidebar.noMatchingWorktrees")} />
     {listing?.project === project && listing.error && <div role="alert" style={{ color: "#ef4444", fontSize: 12 }}>

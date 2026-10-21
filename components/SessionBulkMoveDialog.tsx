@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
-import type { SessionMovePlan } from "@/lib/session-worktrees-types";
+import type { SessionMovePlan, SessionMovePreviewResponse } from "@/lib/session-worktrees-types";
+import { readSessionMoveResponse, runSessionMoveBatches, SessionMoveResponseError } from "@/lib/session-move-client";
+import type { SessionMoveBatchResult, SessionMoveProgress } from "@/lib/session-move-client";
 import { SessionMoveDestinationPicker } from "./SessionMoveDestinationPicker";
 import { SessionMoveStatus } from "./SessionMoveStatus";
 import { DirectoryPickerPortalContext } from "./DirectoryPicker";
@@ -12,7 +14,7 @@ export function SessionBulkMoveDialog({ request, projects, onClose, onSettled }:
   request: BulkMoveRequest;
   projects: readonly { root: string; key: string }[];
   onClose: () => void;
-  onSettled: (movedIds: string[], failedIds: string[] | null) => Promise<void>;
+  onSettled: (movedIds: string[], failedIds: string[] | null, invalidatedIds: string[], destinationCwd: string) => Promise<void>;
 }) {
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -22,7 +24,10 @@ export function SessionBulkMoveDialog({ request, projects, onClose, onSettled }:
   const [alreadyThere, setAlreadyThere] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ succeeded: string[]; failed: { id: string; error: string }[]; skipped: string[]; movedIds: string[] } | null>(null);
+  const [result, setResult] = useState<SessionMoveBatchResult | null>(null);
+  const [progress, setProgress] = useState<SessionMoveProgress | null>(null);
+  const describeError = useCallback((cause: unknown) => cause instanceof SessionMoveResponseError
+    ? t("sessionWorktrees.invalidResponse", { status: cause.status }) : String(cause), [t]);
   const [attempt, setAttempt] = useState(0);
   const operation = useRef(false);
   const proposeDestination = useCallback((value: string) => {
@@ -47,33 +52,34 @@ export function SessionBulkMoveDialog({ request, projects, onClose, onSettled }:
         const response = await fetch("/api/sessions/move", { method: "POST", signal: controller.signal,
           headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "preview", ...request,
             ...(!request.missingOnly ? { cwd: destination } : {}) }) });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
+        const data = await readSessionMoveResponse<SessionMovePreviewResponse>(response);
         if (!controller.signal.aborted) { setPlan(data.plan); setAlreadyThere(data.skippedAlreadyThere?.length ?? 0); }
       } catch (cause) {
-        if (!controller.signal.aborted) setError(String(cause));
+        if (!controller.signal.aborted) setError(describeError(cause));
       }
     })();
     return () => controller.abort();
-  }, [request, destination, attempt]);
+  }, [request, destination, attempt, describeError]);
   const execute = async () => {
     if (!plan || operation.current) return;
     operation.current = true; setBusy(true); setError(null);
-    let movedIds: string[] = plan.roots.flatMap(root => root.memberIds);
+    let movedIds: string[] = [];
+    let invalidatedIds = plan.roots.flatMap(root => root.memberIds);
     let failedIds: string[] | null = null;
     try {
-      const response = await fetch("/api/sessions/move", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "execute", plan }) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
-      movedIds = data.movedIds; failedIds = data.failed.map((item: { id: string }) => item.id); setResult(data); setPlan(null);
+      const data = await runSessionMoveBatches(plan, setProgress);
+      movedIds = [...data.movedIds, ...data.observedDestinationIds];
+      invalidatedIds = data.invalidatedIds;
+      failedIds = data.uncertain ? null : data.failed.map(item => item.id);
+      setResult(data); setPlan(null);
+      if (data.uncertain) setError(`${describeError(data.error)} ${t("sessionWorktrees.unknownOutcome")}`);
     } catch (cause) {
       setPlan(null);
-      setError(`${String(cause)} ${t("sessionWorktrees.unknownOutcome")}`);
+      setError(`${describeError(cause)} ${t("sessionWorktrees.unknownOutcome")}`);
     } finally {
       // Refresh also after lost responses: a network failure is not an unchanged batch.
-      try { await onSettled(movedIds, failedIds); }
-      catch { setError(t("sessionWorktrees.refreshFailed")); }
+      try { await onSettled(movedIds, failedIds, invalidatedIds, plan.cwd); }
+      catch { setError(previous => [previous, t("sessionWorktrees.refreshFailed")].filter(Boolean).join(" ")); }
       operation.current = false; setBusy(false);
     }
   };
@@ -94,11 +100,18 @@ export function SessionBulkMoveDialog({ request, projects, onClose, onSettled }:
         <p className="text-xs text-text-muted">{t("sessionWorktrees.descendantsWarning")}</p>
         <p className="text-xs text-text-muted">{t("sessionWorktrees.partialWarning")}</p>
       </div>}
-      {busy && <SessionMoveStatus>{t("sessionWorktrees.moving")}</SessionMoveStatus>}
+      {busy && <SessionMoveStatus>{t(progress?.checking ? "sessionWorktrees.checking" : "sessionWorktrees.moving")}
+        {progress && <span className="block">{t("sessionWorktrees.progress", { done: progress.completedRoots, total: progress.totalRoots, moved: progress.movedSessions })}</span>}
+      </SessionMoveStatus>}
       {!plan && !result && !error && (request.missingOnly || destination) && <p role="status">{t("sessionWorktrees.preparing")}</p>}
       {error && <div role="alert" className="text-sm text-red-500">{error}</div>}
       {result && <div className="space-y-2 text-sm" role="status">
         <p>{t("sessionWorktrees.results", { moved: result.movedIds.length, skipped: result.skipped.length + alreadyThere, failed: result.failed.length })}</p>
+        {result.uncertain && <p>{t("sessionWorktrees.unconfirmed", { count: result.pending.length })}</p>}
+        {result.observation && <div>
+          <p>{t("sessionWorktrees.observedLocations")}</p>
+          <ul className="max-h-40 overflow-y-auto">{result.observation.roots.map(root => <li key={root.id} className="break-all">{root.id}: {t(`sessionWorktrees.observed.${root.state}`)}</li>)}</ul>
+        </div>}
         {result.failed.length > 0 && <ul className="max-h-40 overflow-y-auto text-red-500">{result.failed.map(item => <li key={item.id} className="break-all">{item.id}: {item.error}</li>)}</ul>}
       </div>}
       <div className="flex justify-end gap-3">

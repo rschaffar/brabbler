@@ -1125,12 +1125,26 @@ export function AppShell() {
     setRefreshKey((key) => key + 1);
   }, []);
 
-  const handleSessionDeleted = useCallback((sessionId: string) => {
+  const handleSessionDeleted = useCallback((sessionId: string, replacementCwd?: string | null, refreshCatalogue = true) => {
     invalidateWorkspaceRestore();
-    setRefreshKey((k) => k + 1);
+    if (refreshCatalogue) setRefreshKey((k) => k + 1);
+    if (selectedSession?.id === sessionId && replacementCwd === null) {
+      // An uncertain move is not a deletion or a confirmed destination. Keep
+      // history mounted read-only until canonical metadata/reselection rebinds
+      // it; never create a working composer in a possibly vanished source.
+      setSelectedSession({ ...selectedSession, cwdState: "unavailable" });
+      setSessionKey((k) => k + 1);
+      return;
+    }
     if (selectedSession?.id === sessionId) {
       clearTabOpenSession(sessionId);
-      const cwd = selectedSession.cwd;
+      const cwd = replacementCwd ?? selectedSession.cwd;
+      // A confirmed relocation must not create the replacement composer or
+      // Files view in a vanished source directory.
+      if (replacementCwd) {
+        setActiveCwd(replacementCwd);
+        activeProjectKeyRef.current = replacementCwd;
+      }
       const draftId = typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;

@@ -4,15 +4,19 @@ import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } fro
 import { physicalDirectoryPath } from "./path-security";
 import { managementRegistrations } from "./worktree-management";
 import { resolveProjectUncached } from "./worktree";
-import { listAllSessions } from "./session-reader";
-import { moveSessionFamily, SessionMoveConflict } from "./session-move";
+import { listAllSessions, mergeSessionLists, readSessionHeader } from "./session-reader";
+import { getRpcSession, getRpcSessionInfos } from "./rpc-manager";
+import { getQueuedSubagentSessionIds } from "./subagent-runtime";
+import { SessionMoveConflict, withSessionMoveLock } from "./session-move";
 import { assertMoveDestination, assertMissingMoveSource, validateSessionMoveSource } from "./session-move-validation";
 import { samePath } from "./paths";
+import { sessionPathKey } from "./session-path";
 import { projectIdentityKey } from "./project-identity";
 import { sessionDirectoryState, sessionWorktreeInventory } from "./session-worktrees-inventory";
-import { effectiveSessionArchived, familyAlreadyThere, sameSessionIds, sessionFamilyGraph, SESSION_MOVE_LIMIT, SessionWorktreeError } from "./session-worktrees-plan";
+import { effectiveSessionArchived, familyAlreadyThere, sameSessionIds, selectSessionMoveRoots, sessionFamilyGraph, SESSION_MOVE_LIMIT, SessionWorktreeError } from "./session-worktrees-plan";
 import type { SessionInfo } from "./types";
-import type { SessionMoveExecuteResponse, SessionMovePlan, SessionMovePreviewRequest, SessionMovePreviewResponse, SessionWorktree } from "./session-worktrees-types";
+import { SESSION_MOVE_BATCH_BUDGET_MS } from "./session-worktrees-types";
+import type { SessionMoveExecuteResponse, SessionMovePlan, SessionMovePreviewRequest, SessionMovePreviewResponse, SessionMoveReconcileResponse, SessionWorktree } from "./session-worktrees-types";
 
 export function sessionCwdState(cwd: string): SessionWorktree["state"] {
   return sessionDirectoryState(cwd, statSync);
@@ -113,7 +117,7 @@ export async function previewSessionMoves(request: SessionMovePreviewRequest): P
     }
   }
   const roots = graph.roots(selected), skippedAlreadyThere: string[] = [];
-  const plan: SessionMovePlan = { project, cwd, missingOnly, roots: [], sessionCount: 0, archivedCount: 0 };
+  const plan: SessionMovePlan = { project, cwd, missingOnly, roots: [], sessionCount: 0, archivedCount: 0, affectedIds: [] };
   for (const id of roots) {
     const root = graph.byId.get(id)!;
     await assertMembership(root, project);
@@ -130,6 +134,15 @@ export async function previewSessionMoves(request: SessionMovePreviewRequest): P
     plan.archivedCount += members.filter(member => effectiveSessionArchived(member, graph.byId)).length;
     if (plan.sessionCount > SESSION_MOVE_LIMIT) throw new SessionWorktreeError("A move may affect at most 4096 sessions", 409);
   }
+  const affected = new Set(plan.roots.flatMap(root => root.memberIds));
+  const relocated = new Set(plan.roots.flatMap(root => root.bindings.map(binding => sessionPathKey(binding.path))));
+  for (const session of sessions) {
+    if (affected.has(session.id) || (session.relation?.kind !== "fork" && session.relation?.kind !== "subagent")) continue;
+    const header = readSessionHeader(session.path);
+    if (header?.parentSession && relocated.has(sessionPathKey(header.parentSession))) affected.add(session.id);
+  }
+  if (affected.size > SESSION_MOVE_LIMIT) throw new SessionWorktreeError("A move may affect at most 4096 sessions, including linked references", 409);
+  plan.affectedIds = [...affected];
   access();
   return { plan, ...(skippedAlreadyThere.length ? { skippedAlreadyThere } : {}) };
 }
@@ -137,17 +150,29 @@ export async function previewSessionMoves(request: SessionMovePreviewRequest): P
 /** The wire shape binds root cwd, exact family IDs and every descendant cwd/path
  * observed during preview. All bindings are rechecked under the move lock.
  * No serialized field bypasses live membership or ordinary move validation. */
-export async function executeSessionMoves(plan: SessionMovePlan, signal?: AbortSignal): Promise<SessionMoveExecuteResponse> {
+export async function executeSessionMoves(plan: SessionMovePlan, signal?: AbortSignal, rootIds?: readonly string[]): Promise<SessionMoveExecuteResponse> {
+  const roots = selectSessionMoveRoots(plan, rootIds);
+  // Own the whole dispatched request, not only individual family transactions.
+  // An observation queued after a lost response must not overtake later roots.
+  return withSessionMoveLock(async moveFamily => {
   await authorizeProject(plan.project);
-  const result: SessionMoveExecuteResponse = { succeeded: [], failed: [], skipped: [], movedIds: [] };
+  const result: SessionMoveExecuteResponse = { succeeded: [], failed: [], skipped: [], movedIds: [], pending: [] };
   const affected = new Set<string>();
-  for (const proposed of plan.roots) {
+  const started = performance.now();
+  for (const [index, proposed] of roots.entries()) {
+    // A family is indivisible. Yield only between families; never time out a
+    // staged transaction or label an unattempted root as a failure.
+    if (signal?.aborted || (index > 0 && performance.now() - started >= SESSION_MOVE_BATCH_BUDGET_MS)) {
+      result.pending = roots.slice(index).map(root => root.id);
+      break;
+    }
     try {
       signal?.throwIfAborted();
       const bindings = proposed.bindings;
       let affectedByMove: readonly string[] = [];
-      const moved = await moveSessionFamily(proposed.id, plan.cwd, {
+      const moved = await moveFamily(proposed.id, plan.cwd, {
         assertAffected: (ids) => {
+          if (ids.some(id => !plan.affectedIds.includes(id))) throw new SessionWorktreeError("Linked sessions changed; review the move again", 409);
           if (new Set([...affected, ...ids]).size > SESSION_MOVE_LIMIT) throw new SessionWorktreeError("A move may affect at most 4096 sessions, including linked references", 409);
           affectedByMove = ids;
         },
@@ -186,7 +211,49 @@ export async function executeSessionMoves(plan: SessionMovePlan, signal?: AbortS
     }
   }
   return result;
+  });
 }
+/** Observe, never replay. Waiting on the mover lock avoids reporting its staging
+ * window as missing history. A failed observation remains unknown to the client. */
+export async function reconcileSessionMoves(plan: SessionMovePlan, rootIds: readonly string[]): Promise<SessionMoveReconcileResponse> {
+  const roots = selectSessionMoveRoots(plan, rootIds);
+  return withSessionMoveLock(async () => {
+    const allowed = await getAllowedFileRoots();
+    // The last source session may already have left. Its independently admitted
+    // destination is then the authority for this read, not a serialized source.
+    try { assertProjectAccess(plan.project, allowed); }
+    catch (error) {
+      if (!(error instanceof SessionWorktreeError) || error.status !== 403) throw error;
+      assertProjectAccess(plan.cwd, allowed);
+    }
+    const persisted = await sessionMoveCatalogue();
+    // mergeSessionLists is deliberately ID-keyed; detect persisted ambiguity
+    // before live supplements can hide duplicate saved identities.
+    const duplicateIdentity = new Set(persisted.map(session => session.id)).size !== persisted.length;
+    const sessions = mergeSessionLists(persisted, getRpcSessionInfos({ includeTransient: true }));
+    const graph = sessionFamilyGraph(sessions);
+    const queued = new Set(getQueuedSubagentSessionIds());
+    return { roots: roots.map(proposed => {
+      const observed = (state: SessionMoveReconcileResponse["roots"][number]["state"]) => ({ id: proposed.id, state, memberIds: proposed.memberIds });
+      if (duplicateIdentity) return observed("unknown");
+      const members = proposed.memberIds.map(id => graph.byId.get(id));
+      if (members.some(member => {
+        if (!member || member.transient || !member.path || getRpcSession(member.id)?.isRunning() || queued.has(member.id)) return true;
+        const header = readSessionHeader(member.path);
+        return !header || header.id !== member.id || !samePath(header.cwd, member.cwd);
+      })) return observed("unknown");
+      try { if (!sameSessionIds(graph.family(proposed.id), proposed.memberIds)) return observed("changed"); }
+      catch { return observed("unknown"); }
+      if (members.every(member => samePath(member!.cwd, plan.cwd))) return observed("destination");
+      if (proposed.bindings.every(binding => {
+        const current = graph.byId.get(binding.id)!;
+        return samePath(current.cwd, binding.cwd) && samePath(current.path, binding.path);
+      })) return observed("source");
+      return observed("changed");
+    }) };
+  });
+}
+
 export function sessionMoveErrorMessage(error: unknown): string {
   if (error instanceof SessionWorktreeError || error instanceof SessionMoveConflict) return error.message;
   if (error instanceof AggregateError) return "Move failed; recovery files may remain. Check the session files before retrying.";
