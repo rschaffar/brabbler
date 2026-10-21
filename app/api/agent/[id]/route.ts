@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveSessionPath } from "@/lib/session-reader";
-import { startRpcSession, getRpcSession, setRpcSessionTools, waitForSessionAccountSwitch } from "@/lib/rpc-manager";
+import { startRpcSession, getRpcSession, setRpcSessionTools, setRpcSessionNativeResources, waitForSessionAccountSwitch } from "@/lib/rpc-manager";
+import { readNativeResourceSelection } from "@/lib/session-native-resources";
 
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(
@@ -27,6 +28,14 @@ export async function POST(
     await waitForSessionAccountSwitch(id);
     // Fast path: already-running session
     const existing = getRpcSession(id);
+    if (body.type === "set_native_resources" || body.type === "reload" && existing?.hasNativeSessionTools()) {
+      const filePath = existing?.sessionFile || await resolveSessionPath(id) || undefined;
+      if (!existing?.isAlive() && !filePath) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      const selection = body.type === "reload" ? readNativeResourceSelection(existing!.inner.sessionManager.getEntries()) : body.nativeResources;
+      const changed = await setRpcSessionNativeResources(id, filePath, selection);
+      return NextResponse.json({ success: true, data: { sessionId: changed.sessionId, recreated: true,
+        nativeResources: readNativeResourceSelection(changed.session.inner.sessionManager.getEntries()) } });
+    }
     if (body.type === "set_tools") {
       const filePath = existing?.sessionFile || await resolveSessionPath(id) || undefined;
       if (!existing?.isAlive() && !filePath) {
@@ -57,6 +66,11 @@ export async function POST(
     const { session } = await startRpcSession(id, filePath, undefined, {
       ...(toolNames !== undefined ? { toolNames } : {}),
     });
+    if (body.type === "reload" && session.hasNativeSessionTools()) {
+      const changed = await setRpcSessionNativeResources(id, filePath, readNativeResourceSelection(session.inner.sessionManager.getEntries()));
+      return NextResponse.json({ success: true, data: { sessionId: changed.sessionId, recreated: true,
+        nativeResources: readNativeResourceSelection(changed.session.inner.sessionManager.getEntries()) } });
+    }
     const result = await session.send(body);
     promptAccepted = body.type === "prompt";
 
@@ -73,7 +87,7 @@ export async function POST(
 
 // GET /api/agent/[id] - Get current agent state
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
@@ -85,7 +99,11 @@ export async function GET(
     }
 
     const state = await session.send({ type: "get_state" });
-    return NextResponse.json({ running: true, state });
+    // Explicit UI reconciliation only; use this captured live wrapper, never the
+    // POST route's lazy-start path after an uncertain mutation acknowledgement.
+    const tools = new URL(req.url).searchParams.get("tools") === "1"
+      ? await session.send({ type: "get_tools" }) : undefined;
+    return NextResponse.json({ running: true, state, ...(tools ? { tools } : {}) });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

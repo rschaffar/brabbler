@@ -108,6 +108,7 @@ export function toClientAgentEvent(
       toolCallId: event.toolCallId,
       toolName: event.toolName,
       partialResult: event.partialResult,
+      ...(typeof event.parentToolCallId === "string" ? { parentToolCallId: event.parentToolCallId } : {}),
     };
   }
 

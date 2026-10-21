@@ -67,7 +67,7 @@ evidence as a new-tip run.
 | Nix check | Coverage | Environment |
 | --- | --- | --- |
 | `checks.<system>.core` | Exporter contracts, genuine Next type generation, TypeScript, lint, recursive core and bundled-plugin tests | Ordinary Nix sandbox, shared immutable modules |
-| `checks.<system>.e2e` | All 24 browser groups plus terminal, preserving existing scenario/input chains and deadlines | One ordinary Nix sandbox per whole group, installed production launcher, pinned Chromium and fonts |
+| `checks.<system>.e2e` | All 25 browser groups plus terminal, preserving existing scenario/input chains and deadlines | One ordinary Nix sandbox per whole group, installed production launcher, pinned Chromium and fonts |
 | `checks.<system>.service` | Genuine Home Manager activation/default-target startup, environment/permissions, durable HTTP writes/restart, real HTTP PTY and shutdown ownership | Small restricted-network, closure-only NixOS/KVM guest |
 
 Core does not depend on the production bundle, Chromium or VM. Browser and service

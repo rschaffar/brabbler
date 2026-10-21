@@ -1,5 +1,7 @@
 "use client";
 
+import { NativeCallDetails } from "./NativeCallDetails";
+
 import { memo, useState, useRef, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import { MarkdownBody } from "./MarkdownBody";
@@ -1152,6 +1154,8 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
       {/* Rich views retain full raw/copy access; edits without one keep their input. */}
       {expanded && <ToolArguments block={block} inputText={getToolCallInputText(block)}
         hasRichView={!isStreamingInput && Boolean(patchFiles || (isEditTool && resultDiff))} isError={isError} />}
+
+      {expanded && block.toolName === "codemode" && result && <NativeCallDetails details={result.details} />}
 
       {/* ── Result images — always visible, independent of the collapsed details ── */}
       {resultImages.length > 0 && <ResultImages images={resultImages} isError={isError} />}

@@ -29,6 +29,7 @@ import { appendSessionArchiveState, isSessionArchived } from "@/lib/session-arch
 import { jsonResponse } from "@/lib/json-response";
 import { clearSessionRunRecovery, readPossibleInterruptedRun } from "@/lib/session-run-recovery";
 import { readSessionPauses, removeSessionPause } from "@/lib/session-pause";
+import { readNativeResourceSelection, NO_NATIVE_RESOURCES } from "@/lib/session-native-resources";
 
 export async function GET(
   req: Request,
@@ -142,10 +143,12 @@ export async function GET(
     try { possibleInterruptedRun = readPossibleInterruptedRun(id); }
     catch (error) { console.error("[pi-web] Could not inspect run journal:", error); }
 
+    const nativeResources = subagent ? NO_NATIVE_RESOURCES : readNativeResourceSelection(entries as never);
     return perf?.attach(jsonResponse(
       req,
       {
         sessionId: id,
+        nativeResources,
         modelSpeed: readSessionModelSpeed(entries as unknown as SessionEntry[]),
         filePath,
         info,
@@ -164,6 +167,7 @@ export async function GET(
       req,
       {
         sessionId: id,
+        nativeResources,
         modelSpeed: readSessionModelSpeed(entries as unknown as SessionEntry[]),
         filePath,
         info,

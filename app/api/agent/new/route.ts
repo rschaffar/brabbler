@@ -6,6 +6,7 @@ import { allowFileRoot } from "@/lib/file-access";
 import { invalidateSessionListCache } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { isModelSpeed, type ModelSpeed } from "@/lib/model-speed";
+import { validateNativeResourceSelection, type NativeResourceSelection } from "@/lib/session-native-resources";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
     }
 
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
-    const { provider, modelId, toolNames, thinkingLevel, modelSpeed, accounts, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; modelSpeed?: unknown; accounts?: unknown; [key: string]: unknown };
+    const { provider, modelId, toolNames, thinkingLevel, modelSpeed, accounts, nativeResources, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; modelSpeed?: unknown; accounts?: unknown; [key: string]: unknown };
     if (modelSpeed !== undefined && !isModelSpeed(modelSpeed)) {
       return NextResponse.json({ error: "Invalid model speed: expected standard or fast",
         ...(commandType === "prompt" ? { code: "prompt_rejected", accepted: false } : {}),
@@ -59,6 +60,13 @@ export async function POST(req: Request) {
       throw new Error("provider and modelId must be provided together");
     }
     const explicitThinkingLevel = parseThinkingLevel(thinkingLevel);
+    let nativeSelection: NativeResourceSelection | undefined;
+    try { nativeSelection = nativeResources === undefined ? undefined : validateNativeResourceSelection(nativeResources); }
+    catch {
+      return NextResponse.json({ error: "Invalid native resource selection",
+        ...(commandType === "prompt" ? { code: "prompt_rejected", accepted: false } : {}),
+      }, { status: 400 });
+    }
 
     // Must be unique per request: startRpcSession coalesces concurrent callers
     // that share a key onto one session. Date.now() (ms resolution) collides for
@@ -66,6 +74,7 @@ export async function POST(req: Request) {
     const tempKey = `__new__${randomUUID()}`;
     const { session, realSessionId } = await startRpcSession(tempKey, "", cwd, {
       ...(toolNames ? { toolNames } : {}),
+      ...(nativeSelection ? { nativeResources: nativeSelection } : {}),
       ...(accounts ? { accounts: accounts as Record<string, string> } : {}),
       ...(provider && modelId ? { initialModel: { provider, modelId } } : {}),
       ...(explicitThinkingLevel ? { thinkingLevel: explicitThinkingLevel } : {}),

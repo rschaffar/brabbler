@@ -44,6 +44,10 @@ Tool names are passed at session creation (`POST /api/agent/new` -> `toolNames[]
 
 The last preset explicitly selected by the user is stored in browser `localStorage` and initializes fresh-session composers only. Existing sessions never trust that preference; they use their live `get_tools` state or pi's default when no wrapper exists.
 
+### Native session tools
+
+[Native session tools](native-session-tools.md) owns explicit MCP/Code-mode intent, inert configured-server metadata and ordinary-session admission. Native-enabled wrappers use selected-session idle replacement on explicit HTTP Reload/Apply, not SDK in-place reload; other wrappers retain their native configuration. Setup-only selection is persisted without a message and retains its SDK ID. Native shutdown/disposal shares a completion barrier before same-ID reuse. Child/launch defaults remain off; OAuth and configuration editing are deferred.
+
 ### Fresh composer and quote focus
 
 Explicit New actions request desktop composer focus once after the intended fresh draft mounts, with the caret after any restored draft. The request is bound to draft identity and navigation revision; mobile, visible modal/native dialogs, inline card/quote/picker ownership, subsequent pointer/key interaction and intervening control focus take priority. Covered/inert, hidden, disabled and composing textareas refuse the request. Ordinary mounting, session selection, polling and streaming never request this autofocus. The imperative focus handle changes only DOM focus/selection, not draft text or session configuration.

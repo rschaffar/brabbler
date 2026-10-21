@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 import vm from "node:vm";
+import { createJiti } from "jiti";
+
+const nativeResourceSelection = await createJiti(import.meta.url).import("../../../../lib/session-native-resources.ts");
 
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
@@ -20,6 +23,7 @@ function fixture() {
     "@/lib/file-access": { allowFileRoot: (path) => calls.push(["allow", path]) },
     "@/lib/session-reader": { invalidateSessionListCache: () => calls.push(["invalidate"]) },
     "@/lib/model-speed": { isModelSpeed: (value) => value === "standard" || value === "fast" },
+    "@/lib/session-native-resources": nativeResourceSelection,
     "@/lib/rpc-manager": { startRpcSession: async (...args) => {
       calls.push(["start", ...args]);
       return { realSessionId: "fixture-session", session: { send: async (command) => {
@@ -52,6 +56,19 @@ test("ordinary creation forwards startup choices before sending the prompt", asy
   assert.deepEqual(calls.filter(([name]) => name === "send"), [
     ["send", { type: "get_state" }], ["send", { type: "prompt", message: "fixture" }],
   ]);
+});
+
+test("native intent is validated before startup and is never a prompt field", async () => {
+  const { calls, post } = fixture();
+  const nativeResources = { version: 1, codeMode: true, mcpServers: [{ scope: "global", name: "fixture" }] };
+  const response = await post({ cwd: "/fixture", type: "ensure_session", nativeResources });
+  assert.equal(response.status, 200);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.find(([name]) => name === "start")[4])), { nativeResources });
+  assert.deepEqual(calls.filter(([name]) => name === "send"), [["send", { type: "get_state" }]]);
+  for (const nativeResources of [null, {}, { version: 1, codeMode: true, mcpServers: [{ scope: "invalid", name: "fixture" }] }]) {
+    const rejected = fixture(); const response = await rejected.post({ cwd: "/fixture", type: "ensure_session", nativeResources });
+    assert.equal(response.status, 400); assert.equal(rejected.calls.some(([name]) => name === "start"), false);
+  }
 });
 
 test("speed is a separate startup option, never leaked into the prompt command", async () => {

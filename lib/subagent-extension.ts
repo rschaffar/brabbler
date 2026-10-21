@@ -165,6 +165,7 @@ export function createSubagentExtension(
       const availableTypes = profileNames.length > 0 ? profileNames.join(", ") : "none";
       pi.registerTool(defineTool({
         name: "Agent",
+        exposure: "model-only",
         label: "Agent",
         description: `Delegate a focused task to a configured subagent. Each subagent runs as a full, inspectable Pi session. Use background mode for independent work and foreground mode when the result is needed immediately.\n\nAvailable agent types:\n${agentTypeDescription(profiles)}`,
         promptSnippet: "Delegate a focused task to an inspectable subagent session",
@@ -273,6 +274,7 @@ export function createSubagentExtension(
 
       pi.registerTool(defineTool({
         name: "get_subagent_result",
+        exposure: "model-only",
         label: "Get agent result",
         description: "Check an inspectable subagent session and retrieve its latest result.",
         parameters: Type.Object({
@@ -311,6 +313,7 @@ export function createSubagentExtension(
 
       pi.registerTool(defineTool({
         name: "steer_subagent",
+        exposure: "model-only",
         label: "Steer agent",
         description: "Send a steering message to a currently running subagent session.",
         parameters: Type.Object({

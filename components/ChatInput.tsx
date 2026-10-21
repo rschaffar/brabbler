@@ -61,6 +61,7 @@ interface Props {
   modelSwitching?: boolean;
   /** Compact provider-account control beside the model selector. */
   accountControl?: React.ReactNode;
+  nativeToolsControl?: React.ReactNode;
   onCompact?: () => void;
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
@@ -582,7 +583,7 @@ export function ModelScopeWarningBanner({ warnings }: { warnings?: string[] }) {
 }
 
 export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching, accountControl,
+  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching, accountControl, nativeToolsControl,
   onCompact, onAbortCompaction, isCompacting, compactError, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, modelSpeed = "standard", modelSpeedChanging = false, onModelSpeedChange,
   isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
@@ -2429,6 +2430,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
               />
             )}
             {accountControl}
+            {nativeToolsControl}
           </div>
 
           {/* spacer */}
