@@ -3,7 +3,7 @@
 let
   inherit (pkgs) lib;
   groups = builtins.fromJSON (builtins.readFile ./e2e-groups.json);
-  tools = [ pkgs.nodejs_24 pkgs.git pkgs.bash pkgs.coreutils pkgs.findutils
+  tools = [ pkgs.nodejs_24 pkgs.git pkgs.openssh pkgs.bash pkgs.coreutils pkgs.findutils
     pkgs.gnugrep pkgs.gnused pkgs.diffutils pkgs.which pkgs.curl pkgs.util-linux
     pkgs.gnutar pkgs.gzip pkgs.chromium ];
   fontconfig = pkgs.makeFontsConf {

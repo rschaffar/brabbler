@@ -28,7 +28,7 @@ in isolated Nix builders, never in checkout `.next`.
 
 ## Disjoint coverage inventory
 
-`nix/e2e-groups.json` is the CLI/browser inventory: **23 browser groups and terminal**.
+`nix/e2e-groups.json` is the CLI/browser inventory: **24 browser groups and terminal**.
 `e2e/scenarios.mjs` assigns reviewed scenario/input variants to exactly one owner.
 The independent baseline inventory/order tests protect the extraction; runtime
 `coverage.json` records completion only after each whole assertion chain returns.
@@ -61,6 +61,7 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `session-links` | Desktop/mobile copying and following the copied link |
 | `bulk` | Bulk archive/conflict/retry/restore/delete |
 | `move` | Full picker, plain/Git/worktree/Browse paths, superseded reads and proposal-only changes; independent stale-worktree filters, archive-inclusive recovery, missing-child subtrees and native-modal bulk Browse/Move |
+| `ssh-agent` | Native Chromium WebAuthn virtual USB key enrollment/UV, real OpenSSH agent signing/verification, explicit denial, stalled-prompt cancellation, cookie/capability isolation, binding, public-metadata reload and explicit reconnection at desktop/mobile sizes |
 | `terminal` | Real shell/PTY, retained Nerd/System families with shared mono base/bold weights, live palette/font-size changes without PTY/SSE replacement, coarse-touch portrait modifier/arrow input, reconnect/restart/exit, creation cancellation and workspace/Explorer coexistence |
 
 Keyboard simulations verify Chromium layout/focus and preserve the same filter node/value; they do not certify native iOS/Android keyboards, Safari or installed-PWA behavior. Physical keyboard/IME/device verification remains separately reported.

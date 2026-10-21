@@ -48,6 +48,10 @@ import { seedToolArguments, checkToolArguments, checkStreamedToolArguments } fro
 // Validate one-hot ownership before the harness or any fixture side effects.
 const group = selectGroup(process.env);
 
+if (group === "ssh-agent") {
+  const { runBrowserSshSuite } = await import("./browser-ssh-suite.mjs");
+  await runBrowserSshSuite();
+} else {
 // Package acceptance runs only in the disposable NixOS guest. The service
 // independently receives its private environment and real module UMask.
 process.umask(0o077);
@@ -1393,4 +1397,5 @@ let reviewNotebookFixture;
   await harness.fail(error);
 } finally {
   await harness.finish();
+}
 }

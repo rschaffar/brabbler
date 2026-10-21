@@ -22,5 +22,6 @@
   "session-links": { "suite": "browser", "selector": "E2E_SESSION_LINK_ONLY" },
   "bulk": { "suite": "browser", "selector": "E2E_BULK_ONLY" },
   "move": { "suite": "browser", "selector": "E2E_MOVE_ONLY" },
+  "ssh-agent": { "suite": "browser", "selector": "E2E_SSH_AGENT_ONLY" },
   "terminal": { "suite": "terminal", "selector": null }
 }

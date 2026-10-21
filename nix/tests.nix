@@ -12,7 +12,7 @@ let
     printf '%s\n' ${lib.escapeShellArg publicGit} > "$out/share/pi-web-test/public-git"
   '';
   tools = [
-    forwarder nodejs pkgs.git pkgs.bash pkgs.coreutils pkgs.findutils
+    forwarder nodejs pkgs.git pkgs.openssh pkgs.bash pkgs.coreutils pkgs.findutils
     pkgs.gnugrep pkgs.gnused pkgs.diffutils pkgs.which pkgs.python3 pkgs.util-linux
   ];
   # The core runner owns bounded file jobs and the SDK/latency-only barrier.

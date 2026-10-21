@@ -23,6 +23,7 @@ import { ReviewNavigationContext } from "./ReviewNotebookBlock";
 import type { ReviewCommitReference, ReviewNavigation } from "@/lib/review-notebook";
 import { TabBar, type Tab } from "./TabBar";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
+import { BrowserSshAgent } from "./BrowserSshAgent";
 import { ProjectTrustDialog, type TrustChoice } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { SystemPromptPanel } from "./SystemPromptPanel";
@@ -238,6 +239,7 @@ export function AppShell() {
   const [fileRevealRequest, setFileRevealRequest] = useState<FileRevealRequest>();
   const fileRevealId = useRef(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  const [sshPanelOpen, setSshPanelOpen] = useState(false);
   const [pluginSettingsSession, setPluginSettingsSession] = useState<{ id: string; cwd: string } | null>(null);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
@@ -1355,6 +1357,10 @@ export function AppShell() {
             </button>
           );
         })}
+        <button type="button" onClick={() => setSshPanelOpen(true)} aria-label={translate("browserSsh.title")} title={translate("browserSsh.title")}
+          style={{ flex: 1, height: 32, background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}>
+          SSH
+        </button>
         <button
           type="button"
           onClick={() => setSettingsSection(getLastSettingsSection(projectTrustCwd))}
@@ -2794,6 +2800,7 @@ export function AppShell() {
         onConfirm={(choice) => void handleTrustProject(choice)}
       />
     )}
+    <BrowserSshAgent open={sshPanelOpen} onClose={() => setSshPanelOpen(false)} onRequest={() => setSshPanelOpen(true)} sessionId={selectedSession?.id ?? null} />
     </FileLinkMenuContext.Provider>
     </ReviewNavigationContext.Provider>
   );

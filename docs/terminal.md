@@ -30,6 +30,14 @@ File splitting never duplicates or starts a terminal.
 - Explicit termination and expiry signal the shell, escalating to SIGKILL after
   two seconds if it ignores SIGHUP. Server shutdown force-kills shells immediately.
 
+## Browser-backed SSH
+
+The sidebar **SSH** panel can provide a browser FIDO-backed agent. Copy its export
+command into a terminal explicitly; creating a terminal never replaces the global
+or forwarded agent automatically. Reconnection creates a different socket, so
+existing shells need the new command. See [browser SSH](browser-ssh-agent.md) for
+compatibility, approval, session Bash bindings and fail-closed recovery.
+
 ## Appearance and touch keys
 
 The header's light/dark switch changes only the terminal, defaults dark, and persists best-effort as `pi-web:terminal-theme`. Open terminals share the browser choice; storage events synchronize other tabs. Failed persistence keeps the in-tab choice. Theme changes update live xterm options, not PTY/SSE ownership. The retained Nerd/System font selector (`pi-web:terminal-font`) is independent. **Nerd** keeps the bundled Pi Web Nerd Font family; **System** follows the shared monospace family in General → Fonts & layout, with its original fallback stack. Both modes follow the shared monospace base weight (100–600); terminal bold remains 700. Family/weight changes update xterm and refit live, including after hidden terminals become visible, without recreating a PTY or SSE stream. Font-family and weight resets are separate and never reset the terminal's mode, palette or shared size. Hidden terminals defer metric-option application until measurable. The lifetime-owned resize helper forces glyph remeasurement through public size options before fitting, and best-effort font readiness can refit the same instance; old completions cannot affect replacement terminals. This also handles xterm's DOM-measurement fallback, which otherwise retains stale nonzero dimensions while hidden.
