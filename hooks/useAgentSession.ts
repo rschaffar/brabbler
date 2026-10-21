@@ -94,6 +94,7 @@ interface LastAssistantTextResponse {
 }
 
 type AgentStateResponse = {
+  nativeResources?: NativeResourceSelection;
   model?: { provider: string; id: string };
   modelDefinitionRefresh?: { refreshing: boolean; error?: string };
   contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
@@ -911,7 +912,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }, provisionalDraftKey);
   }, [isNew, newSessionCwd, newSessionDraftKey, onSessionCreated, opts.chatInputRef]);
 
-  const ensureNewSession = useCallback(async () => {
+  const ensureNewSession = useCallback(async (nativeResources?: NativeResourceSelection) => {
     if (sessionIdRef.current) return sessionIdRef.current;
     if (!isNew || !newSessionCwd) return sessionIdRef.current;
     if (ensuringNewSessionRef.current) return ensuringNewSessionRef.current;
@@ -935,6 +936,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           cwd: newSessionCwd,
           type: "ensure_session",
           modelSpeed: selectedModelSpeed,
+          ...(nativeResources !== undefined ? { nativeResources } : {}),
           ...(newSessionAccountsRef.current ? { accounts: newSessionAccountsRef.current } : {}),
           ...(toolNames !== undefined ? { toolNames } : {}),
           ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
@@ -2570,19 +2572,24 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [isNew]);
 
   const handleNativeResourcesChange = useCallback(async (requested: NativeResourceSelection): Promise<NativeResourceSelection> => {
-    if (nativeToolsApplyingRef.current) throw new Error(t("nativeTools.busy"));
+    if (nativeToolsApplyingRef.current || (!sessionIdRef.current && ensuringNewSessionRef.current)) throw new Error(t("nativeTools.busy"));
     const nativeResources = validateNativeResourceSelection(requested);
     nativeToolsApplyingRef.current = true;
     const context = sessionPropIdRef.current;
     let sid: string | null = null;
     const current = () => sessionHookMountedRef.current && sessionPropIdRef.current === context && sessionIdRef.current === sid;
     try {
-      sid = sessionIdRef.current ?? await ensureNewSession();
+      const existingSid = sessionIdRef.current;
+      // Send an explicit draft override at creation: opting out must never first
+      // connect the project default. Refuse adoption of an in-flight ensure above.
+      sid = existingSid ?? await ensureNewSession(nativeResources);
       if (!sid || !current()) throw new Error(t("nativeTools.sessionChanged"));
       cancelEventStreamGrace(); closeEvents();
-      const result = await sendAgentCommand<{ sessionId: string; nativeResources: NativeResourceSelection }>(sid, {
-        type: "set_native_resources", nativeResources,
-      });
+      const result = existingSid
+        ? await sendAgentCommand<{ sessionId: string; nativeResources: NativeResourceSelection }>(sid, {
+          type: "set_native_resources", nativeResources,
+        })
+        : { sessionId: sid, nativeResources: (await sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" })).nativeResources };
       if (!current()) throw new Error(t("nativeTools.sessionChanged"));
       if (result.sessionId !== sid) throw new Error(t("nativeTools.identityChanged"));
       const actual = validateNativeResourceSelection(result.nativeResources);

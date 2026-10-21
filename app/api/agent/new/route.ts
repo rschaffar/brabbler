@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { existsSync } from "fs";
 import { randomUUID } from "crypto";
 import { allowFileRoot } from "@/lib/file-access";
@@ -7,6 +8,7 @@ import { invalidateSessionListCache } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { isModelSpeed, type ModelSpeed } from "@/lib/model-speed";
 import { validateNativeResourceSelection, type NativeResourceSelection } from "@/lib/session-native-resources";
+import { projectNativeResourceSelection } from "@/lib/project-native-resources";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -68,6 +70,10 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
+    // Defaults apply only to this fresh ordinary entry point, never generic
+    // reopen/child/launch startup. Explicit selection (including off) wins.
+    if (nativeSelection === undefined) nativeSelection = projectNativeResourceSelection(cwd, getAgentDir());
+
     // Must be unique per request: startRpcSession coalesces concurrent callers
     // that share a key onto one session. Date.now() (ms resolution) collides for
     // requests in the same millisecond, merging two new sessions into one.
@@ -80,6 +86,8 @@ export async function POST(req: Request) {
       ...(explicitThinkingLevel ? { thinkingLevel: explicitThinkingLevel } : {}),
       ...(modelSpeed !== undefined ? { modelSpeed } : {}),
     });
+
+    if (nativeSelection !== undefined) session.persistInitialNativeResourceIntent();
 
     // Keep the files-route allowed-roots cache (see app/api/files/[...path]/route.ts)
     // in sync so the new cwd is immediately readable via /api/files. Without this,

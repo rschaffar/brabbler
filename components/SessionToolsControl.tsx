@@ -5,9 +5,11 @@ import { useI18n } from "@/hooks/useI18n";
 import { NO_NATIVE_RESOURCES, validateNativeResourceSelection, type NativeResourceSelection } from "@/lib/session-native-resources";
 import type { McpConfigurationListing } from "@/lib/native-mcp-configuration";
 import type { NativeMcpStatus } from "@/lib/native-session-tools";
+import type { ProjectNativeResources } from "@/lib/project-native-resources";
 
 interface Metadata {
   configuration: McpConfigurationListing;
+  projectDefault?: ProjectNativeResources;
   live?: { nativeResources: NativeResourceSelection; effectiveNativeResources: NativeResourceSelection; mcpServers: NativeMcpStatus[] };
 }
 interface Props {
@@ -26,7 +28,11 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
   const [draft, setDraft] = useState<NativeResourceSelection>(NO_NATIVE_RESOURCES);
   const [loading, setLoading] = useState(false), [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null), [uncertain, setUncertain] = useState(false);
+  const [savingDefault, setSavingDefault] = useState(false), [defaultUncertain, setDefaultUncertain] = useState(false);
+  const [defaultNotice, setDefaultNotice] = useState<string | null>(null);
   const [read, setRead] = useState(0);
+  const context = `${cwd}\0${sessionId ?? ""}`, currentContext = useRef(context);
+  currentContext.current = context;
   const reconcile = useRef(true), mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
@@ -41,7 +47,8 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
       setMetadata(result as Metadata);
       if (reconcile.current) {
         if (result.live) setDraft(checked(result.live.nativeResources));
-        reconcile.current = false; setError(null); setUncertain(false);
+        else if (!sessionId) setDraft(checked(result.projectDefault?.selection ?? NO_NATIVE_RESOURCES));
+        reconcile.current = false; setError(null); setUncertain(false); setDefaultUncertain(false);
       }
     }).catch(reason => {
       if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : t("nativeTools.unavailable"));
@@ -53,7 +60,7 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
   for (const server of draft.mcpServers) if (!rows.some(row => key(row) === key(server))) rows.push({ ...server,
     enabled: false, projectOverride: false, eligible: false, transport: "stdio", limitation: "disabled" });
   const apply = async () => {
-    if (pending || busy || loading || uncertain) return;
+    if (pending || savingDefault || busy || loading || uncertain) return;
     reconcile.current = false;
     setPending(true); setError(null);
     try {
@@ -65,9 +72,39 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
       setError(reason instanceof Error ? reason.message : t("nativeTools.unavailable")); setUncertain(true);
     } finally { if (mounted.current) setPending(false); }
   };
+  const saveDefault = async (selection: NativeResourceSelection | null) => {
+    const project = metadata?.projectDefault;
+    if (!project?.supported || !project.revision || pending || savingDefault || loading || defaultUncertain) return;
+    const capturedContext = context;
+    setSavingDefault(true); setDefaultNotice(null); setError(null);
+    try {
+      const response = await fetch("/api/native-tools", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd, revision: project.revision, nativeResources: selection }),
+      });
+      const result = await response.json();
+      const returned = result.projectDefault as ProjectNativeResources | undefined;
+      if (!response.ok || !returned?.supported || returned.projectRoot !== project.projectRoot
+        || typeof returned.revision !== "string" || !/^[a-f0-9]{64}$/.test(returned.revision)) {
+        throw new Error(result.error ?? t("nativeTools.defaultUnavailable"));
+      }
+      const actual = { ...returned, selection: returned.selection === null ? null : validateNativeResourceSelection(returned.selection) };
+      if (JSON.stringify(actual.selection) !== JSON.stringify(selection)) throw new Error(result.error ?? t("nativeTools.defaultUnavailable"));
+      if (!mounted.current || currentContext.current !== capturedContext) return;
+      setMetadata(value => value ? { ...value, projectDefault: actual } : value);
+      setDefaultNotice(t(selection === null ? "nativeTools.defaultCleared" : "nativeTools.defaultSaved"));
+    } catch (failure) {
+      if (mounted.current && currentContext.current === capturedContext) {
+        setError(failure instanceof Error ? failure.message : t("nativeTools.defaultUnavailable"));
+        setDefaultUncertain(true);
+      }
+    } finally {
+      if (mounted.current) setSavingDefault(false);
+    }
+  };
   return <>
     <button type="button" aria-haspopup="dialog" onClick={() => {
-      reconcile.current = true; setMetadata(null); setError(null); setUncertain(false);
+      reconcile.current = true; setMetadata(null); setError(null); setUncertain(false); setDefaultUncertain(false); setDefaultNotice(null);
       setDraft(checked(selection)); dialog.current?.showModal(); setOpen(true);
     }} style={{ height: 32, border: 0, borderRadius: 9, padding: "0 8px", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}>
       {t("nativeTools.title")}
@@ -80,7 +117,7 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
       {chatOnly && <p className="mb-3 text-xs text-text-muted">{t("nativeTools.chatOnly")}</p>}
       {busy && <p role="status" className="mb-3 text-xs text-text-muted">{t("nativeTools.busy")}</p>}
       {loading && <p role="status" className="mb-3 text-xs">{t("nativeTools.loading")}</p>}
-      <fieldset disabled={pending || loading || busy}>
+      <fieldset disabled={pending || savingDefault || loading || busy}>
         <label className="flex items-center gap-2 py-2 text-sm">
           <input type="checkbox" checked={draft.codeMode} onChange={event => setDraft({ ...draft, codeMode: event.target.checked })} />
           {t("nativeTools.codeMode")}
@@ -109,13 +146,34 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
           </label>;
         })}
       </fieldset>
+      <section className="mt-3 border-t border-border pt-3" aria-label={t("nativeTools.projectDefault")}>
+        <h3 className="text-sm font-medium">{t("nativeTools.projectDefault")}</h3>
+        {metadata?.projectDefault?.supported ? <>
+          <p className="mt-1 break-words text-xs text-text-muted">{t("nativeTools.defaultScope", { project: metadata.projectDefault.projectRoot ?? cwd })}</p>
+          <p className="mt-2 break-words text-xs text-text-muted">{metadata.projectDefault.selection
+            ? t("nativeTools.defaultSummary", {
+              servers: metadata.projectDefault.selection.mcpServers.map(server => `${server.scope}:${server.name}`).join(", ") || t("nativeTools.noServers"),
+              codeMode: t(metadata.projectDefault.selection.codeMode ? "nativeTools.on" : "nativeTools.off"),
+            }) : t("nativeTools.noDefault")}</p>
+          <div className="mt-2 flex flex-wrap gap-3 text-sm">
+            <button type="button" disabled={pending || savingDefault || loading || defaultUncertain} onClick={() => void saveDefault(validateNativeResourceSelection(draft))}>
+              {t(savingDefault ? "nativeTools.savingDefault" : "nativeTools.saveDefault")}
+            </button>
+            <button type="button" disabled={pending || savingDefault || loading || defaultUncertain || !metadata.projectDefault.selection} onClick={() => void saveDefault(null)}>
+              {t("nativeTools.clearDefault")}
+            </button>
+          </div>
+        </> : metadata && <p className="mt-1 text-xs text-text-muted">{t("nativeTools.defaultUnsupported")}</p>}
+        {defaultNotice && <p role="status" className="mt-2 text-xs text-text-muted">{defaultNotice}</p>}
+        {defaultUncertain && <p className="mt-2 text-xs text-text-muted">{t("nativeTools.defaultReconcile")}</p>}
+      </section>
       <p className="mt-3 text-xs text-text-muted">{t("nativeTools.configurationHelp")}</p>
       {error && <p role="alert" className="mt-3 text-xs text-red-500">{error}</p>}
       {uncertain && <p className="mt-2 text-xs text-text-muted">{t("nativeTools.reconcile")}</p>}
       <div className="mt-4 flex flex-wrap justify-end gap-3 text-sm">
-        <button type="button" disabled={pending || loading} onClick={() => { if (uncertain) { reconcile.current = true; setDraft(checked(selection)); } setError(null); setRead(value => value + 1); }}>{t("nativeTools.refresh")}</button>
-        <button type="button" disabled={pending} onClick={() => dialog.current?.close()}>{t("nativeTools.cancel")}</button>
-        <button type="button" disabled={pending || loading || busy || uncertain || !metadata} onClick={() => { void apply(); }}>{t(pending ? "nativeTools.applying" : "nativeTools.apply")}</button>
+        <button type="button" disabled={pending || savingDefault || loading} onClick={() => { if (uncertain || defaultUncertain) { reconcile.current = true; setDraft(checked(selection)); } setError(null); setRead(value => value + 1); }}>{t("nativeTools.refresh")}</button>
+        <button type="button" disabled={pending || savingDefault} onClick={() => dialog.current?.close()}>{t("nativeTools.cancel")}</button>
+        <button type="button" disabled={pending || savingDefault || loading || busy || uncertain || !metadata} onClick={() => { void apply(); }}>{t(pending ? "nativeTools.applying" : "nativeTools.apply")}</button>
       </div>
     </dialog>
   </>;
