@@ -241,12 +241,30 @@ async function sessionSnapshot(base, plan, diagnostics) {
 
 function seed(plan) {
   const service = plan.registry.service;
+  const extensions = path.join(service.agentDir, 'extensions');
+  fs.mkdirSync(extensions, { recursive: true, mode: 0o700 });
+  // Only synthetic guest credentials: cold restoration requires configured auth
+  // even though the faux provider never opens a network connection.
+  fs.writeFileSync(path.join(service.agentDir, 'auth.json'), JSON.stringify({ 'vm-pause': { type: 'api_key', key: 'synthetic-unused' } }), { flag: 'wx', mode: 0o600 });
+  fs.writeFileSync(path.join(service.agentDir, 'settings.json'), JSON.stringify({ defaultProvider: 'vm-pause', defaultModel: 'faux-1', enabledModels: ['vm-pause/**'] }), { flag: 'wx', mode: 0o600 });
+  fs.writeFileSync(path.join(extensions, 'vm-pause.js'), `import { fauxProvider, fauxAssistantMessage, fauxToolCall } from ${JSON.stringify(path.join(plan.registry.package, 'node_modules/@earendil-works/pi-ai/dist/providers/faux.js'))};
+export default pi => {
+  const faux = fauxProvider({ provider: 'vm-pause', api: 'vm-pause' });
+  pi.registerProvider(faux.provider);
+  pi.on('before_agent_start', (event, ctx) => {
+    if (ctx.model?.provider !== 'vm-pause') return;
+    faux.setResponses(event.prompt.startsWith('[Pi Web resume ')
+      ? [fauxAssistantMessage('VM pause resumed')]
+      : [fauxAssistantMessage([fauxToolCall('ask_user', { question: 'VM restart question', options: [{ title: 'Keep working' }], allowFreeform: true })], { stopReason: 'toolUse' }), fauxAssistantMessage('Must not run before Resume')]);
+  });
+};\n`, { flag: 'wx', mode: 0o600 });
   fs.mkdirSync(path.dirname(plan.session.file), { recursive: true, mode: 0o700 });
   writePrivateEnvironment(service.envFile, 'PI_WEB_SERVICE_FILE="runtime file $literal"\nPI_WEB_SERVICE_OVERRIDE=runtime-file-wins\n');
   const timestamp = '2026-10-15T00:00:00.000Z';
   const entries = [
     { type: 'session', version: 3, id: plan.session.id, timestamp, cwd: service.home },
-    { type: 'message', id: 'm1', parentId: null, timestamp,
+    { type: 'model_change', id: 'model1', parentId: null, timestamp, provider: 'vm-pause', modelId: 'faux-1' },
+    { type: 'message', id: 'm1', parentId: 'model1', timestamp,
       message: { role: 'user', content: [{ type: 'text', text: 'Private VM deployment fixture' }] } },
   ];
   fs.writeFileSync(plan.session.file, entries.map(entry => JSON.stringify(entry)).join('\n') + '\n', { flag: 'wx', mode: 0o600 });
@@ -334,6 +352,45 @@ function guestPlan(file) {
   return createServicePlan(registry);
 }
 
+async function pauseObservation(base, plan, diagnostics, predicate) {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    const snapshot = await requestJSON(base, '/api/agent/running', { diagnostics, timeoutMs: Math.max(1, Math.min(5000, deadline - Date.now())) });
+    if (predicate(snapshot)) return snapshot;
+    assert.ok(Date.now() < deadline, 'VM pause observation deadline exceeded');
+    await new Promise(done => setTimeout(done, 50));
+  }
+}
+
+async function pauseBeforeRestart(base, plan, diagnostics) {
+  assert.equal((await requestJSON(base, `/api/agent/${plan.session.id}`, { method: 'POST', body: { type: 'prompt', message: 'Prepare VM restart' }, diagnostics })).success, true);
+  await pauseObservation(base, plan, diagnostics, snapshot => snapshot.attention.some(row => row.sessionId === plan.session.id && row.summary === 'VM restart question'));
+  assert.deepEqual((await requestJSON(base, '/api/activity/pause', { method: 'POST', body: { action: 'pause', sessionId: plan.session.id }, diagnostics })).errors, []);
+  const snapshot = await pauseObservation(base, plan, diagnostics, value => value.pauses.some(row => row.sessionId === plan.session.id && row.state === 'paused') && !value.runningSessionIds.includes(plan.session.id));
+  assert.equal(snapshot.attention.some(row => row.sessionId === plan.session.id), false);
+  const file = path.join(plan.registry.service.agentDir, 'pi-web', 'session-pauses.json');
+  physical(file, '0600', plan.registry.service.uid);
+  const pause = JSON.parse(fs.readFileSync(file, 'utf8')).sessions.find(row => row.sessionId === plan.session.id);
+  assert.ok(pause.waiting.some(value => value.includes('VM restart question')));
+  assert.equal(fs.readFileSync(plan.session.file, 'utf8').includes('VM pause resumed'), false);
+}
+
+async function resumeAfterRestart(base, plan, diagnostics) {
+  const snapshot = await requestJSON(base, '/api/agent/running', { diagnostics });
+  const pause = snapshot.pauses.find(row => row.sessionId === plan.session.id);
+  assert.equal(pause?.state, 'paused'); assert.equal(pause.interrupted, undefined);
+  assert.equal(snapshot.runningSessionIds.includes(plan.session.id), false);
+  assert.equal(snapshot.attention.some(row => row.sessionId === plan.session.id), false);
+  assert.equal(fs.readFileSync(plan.session.file, 'utf8').includes('[Pi Web resume '), false, 'restart must not auto-continue');
+  assert.deepEqual((await requestJSON(base, '/api/activity/pause', { method: 'POST', body: { action: 'resume', sessionId: plan.session.id, pauseId: pause.id }, diagnostics })).errors, []);
+  await pauseObservation(base, plan, diagnostics, value => !value.runningSessionIds.includes(plan.session.id) && !value.pauses.some(row => row.sessionId === plan.session.id));
+  const detail = await requestJSON(base, `/api/sessions/${plan.session.id}`, { diagnostics });
+  assert.ok(JSON.stringify(detail).includes('VM pause resumed'));
+  const entries = fs.readFileSync(plan.session.file, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  const resumes = entries.filter(entry => entry.type === 'message' && entry.message.role === 'user' && JSON.stringify(entry.message.content).includes('[Pi Web resume '));
+  assert.equal(resumes.length, 1); assert.ok(JSON.stringify(resumes[0]).includes('VM restart question'));
+}
+
 async function main() {
   const [mode, file, extra] = process.argv.slice(2), plan = guestPlan(file);
   process.umask(0o077);
@@ -342,7 +399,11 @@ async function main() {
     if (mode === 'seed') return seed(plan);
     if (mode === 'activation') return activation(plan);
     if (mode === 'permissions') return permissions(plan, extra);
-    if (mode === 'restart-read') return sessionSnapshot(base, plan, diagnostics);
+    if (mode === 'restart-read') {
+      const session = await sessionSnapshot(base, plan, diagnostics);
+      await resumeAfterRestart(base, plan, diagnostics);
+      return session;
+    }
     if (mode === 'http-write') {
       const initial = await requestJSON(base, '/api/sessions', { diagnostics });
       assert.deepEqual(initial.sessions.map(session => session.id), [plan.session.id]);
@@ -352,6 +413,7 @@ async function main() {
       const created = await requestJSON(base, '/api/default-cwd', { method: 'POST', diagnostics });
       const workspace = physical(created.cwd, '0700', plan.registry.service.uid);
       validateWorkspace(workspace, plan.registry);
+      await pauseBeforeRestart(base, plan, diagnostics);
       return { session: await sessionSnapshot(base, plan, diagnostics), workspace };
     }
     return productionPty(base, plan, extra, diagnostics);

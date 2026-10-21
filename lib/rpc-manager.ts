@@ -1,4 +1,4 @@
-import type { Agent, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Agent, AgentMessage as SdkAgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
@@ -54,8 +54,11 @@ import {
   readSubagentSessionResources,
   SUBAGENT_CONTROL_TOOL_NAMES,
 } from "./subagents";
-import { createSubagentController } from "./subagent-runtime";
+import { createSubagentController, hasUnsettledSubagentExecution } from "./subagent-runtime";
 import { isBuiltInSubagentsEnabled } from "./subagent-settings";
+import { getSessionPause, readSessionPauses, requestSessionPause, changeSessionPause, type SessionPause } from "./session-pause";
+import { installSessionPauseBoundary } from "./session-pause-boundary";
+import { installSessionPauseIngress } from "./session-pause-ingress";
 import { resolveShellTools } from "./powershell-settings";
 import { CHAT_ONLY_RESOURCE_LOADER_OPTIONS, contextFilesSystemPrompt } from "./chat-only";
 import { haveContextFilesChanged } from "./context-file-changes";
@@ -312,6 +315,23 @@ export class AgentSessionWrapper {
   private sessionShutdownEmitted = false;
   private forceShutdownOnIdle = false;
   private _alive = true;
+  private pause?: SessionPause;
+  private disposePauseBoundary?: () => void;
+  private disposePauseIngress?: () => void;
+  private sdkPrompts = 0;
+  private sdkQueueAdmissions = 0;
+  private initialRequestPermits = new Set<object>();
+  private queuedInputOwed = false;
+  private queuedInputObjects = new Set<SdkAgentMessage>();
+  private parkedQueueSave?: Promise<void>;
+  private queuedInputIds = new WeakMap<object, string>();
+  private pendingChildHandoffs = new Map<string, { anchor: string | null; id: string }>();
+  private subagentSettlementComplete = false;
+  private pauseFailure?: string;
+  private queueAdmissionWaiters = new Set<() => void>();
+  private resumePermit = false;
+  private resumeRequestError?: Error;
+  private pendingResume?: { message: string; resolve: () => void; reject: (error: unknown) => void; error?: Error; observed?: boolean };
 
   constructor(
     public readonly inner: AgentSessionLike,
@@ -323,6 +343,7 @@ export class AgentSessionWrapper {
       void refusal.catch(() => {});
       this.initialPrompt = { owner: options.initialPromptOwner, state: "pending", submitted: false, refusal, reject };
     }
+    this.pause = getSessionPause(inner.sessionId);
     this.exactSystemPrompt = options.exactSystemPrompt;
     this.chatOnly = options.chatOnly ?? false;
     this.monitorContextFiles = options.monitorContextFiles ?? false;
@@ -355,7 +376,121 @@ export class AgentSessionWrapper {
   }
 
   isRunning(): boolean {
-    return this._alive && (this.initialPrompt?.state === "pending" || this.pendingPromptCount > 0 || this.pendingCheckoutAdmissions > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning);
+    return this._alive && (hasUnsettledSubagentExecution(this.sessionId) || this.initialPrompt?.state === "pending" || this.pendingPromptCount > 0 || this.pendingCheckoutAdmissions > 0 || this.sdkPrompts > 0 || this.sdkQueueAdmissions > 0 || this.parkedQueueSave !== undefined || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning);
+  }
+
+  onSubagentSettled(): void { this.notifyAgentRunCompleteIfIdle(); }
+
+  getPauseError(): string | undefined { return this.pauseFailure; }
+
+  pauseFailed(error: unknown): void {
+    this.pauseFailure = String(error).slice(0, 1000);
+    if (this.pause) {
+      try { this.pause = changeSessionPause(this.sessionId, this.pause.id, (row) => { row.error = this.pauseFailure; if (row.state === "paused") row.state = "pausing"; }); }
+      catch (failure) { console.error("[pi-web] could not persist pause failure:", failure); }
+    }
+    this.emit({ type: "pause_error", errorMessage: this.pauseFailure });
+  }
+
+  clearPause(expectedId?: string): void {
+    if (expectedId !== undefined && this.pause?.id !== expectedId) return;
+    this.pause = undefined;
+    this.subagentSettlementComplete = false;
+    this.resumeRequestError = undefined;
+    this.pauseFailure = undefined;
+    if (this.extensionUiAbortController.signal.aborted) this.extensionUiAbortController = new AbortController();
+  }
+
+  isPauseRequested(): boolean {
+    return Boolean(this.pause && (this.pause.state !== "resuming" || !this.pendingResume?.observed));
+  }
+
+  requestPause(parentSessionId?: string): SessionPause {
+    this.assertInitialPromptAccess("pause");
+    this.pause = requestSessionPause(this.sessionId, parentSessionId);
+    this.pauseFailure = undefined;
+    if (this.pause.error) this.pause = changeSessionPause(this.sessionId, this.pause.id, (row) => { delete row.error; });
+    this.pendingResume?.reject(new Error("Resume superseded by a new Pause request"));
+    // Save first: cancellation must never destroy the only copy of a waiting card.
+    for (const request of this.pendingUiRequests.values()) this.capturePauseWaiting(request);
+    this.extensionUiAbortController.abort(new DOMException("Waiting card cancelled by Pause; ask again after Resume", "AbortError"));
+    for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
+    this.finishPause();
+    return this.pause;
+  }
+
+  private capturePauseWaiting(request: unknown): void {
+    if (!this.pause) return;
+    const snapshot = JSON.stringify(request);
+    this.pause = changeSessionPause(this.sessionId, this.pause.id, (row) => {
+      if (!row.waiting.includes(snapshot)) row.waiting.push(snapshot);
+    });
+  }
+
+  /** Children settle only after their partial result and retention record are saved. */
+  finishPause(childSettled = false): void {
+    if (childSettled) this.subagentSettlementComplete = true;
+    childSettled ||= this.subagentSettlementComplete;
+    if (!this.isPauseRequested() || this.pause?.state === "paused" || this.pauseFailure || this.pause?.error) return;
+    const inputBusy = this.pendingPromptCount > 0 || this.pendingCheckoutAdmissions > 0 || this.sdkPrompts > 0 || this.sdkQueueAdmissions > 0
+      || this.parkedQueueSave !== undefined || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning;
+    if (childSettled ? inputBusy : this.isRunning()) return;
+    if (this.hasQueuedPauseInput()) {
+      void this.settleIdlePauseInput().then(() => this.finishPause(childSettled), (error) => {
+        console.error("[pi-web] could not save idle pause input:", error);
+        this.pauseFailed(error);
+      });
+      return;
+    }
+    if (!childSettled && readSubagentRun(this.inner.sessionManager.getEntries() as unknown as SessionEntry[], this.sessionId, this.sessionFile)) return;
+    try {
+      this.pause = changeSessionPause(this.sessionId, this.pause!.id, (row) => {
+        row.state = "paused"; row.pausedAt = Date.now(); row.leafId = this.inner.sessionManager.getLeafId() ?? undefined; delete row.error;
+      });
+    } catch (error) { this.pauseFailed(error); if (childSettled) throw error; return; }
+    this.pauseFailure = undefined;
+    this.agentRunNeedsCompletion = false;
+    this.emit({ type: "session_paused" });
+  }
+
+  async resumeFromPause(message: string, pauseId: string): Promise<void> {
+    const record = getSessionPause(this.sessionId);
+    if (!record || record.id !== pauseId || record.state !== "resuming") throw new Error("Pause changed before Resume");
+    if (this.activeMutatingCommands) throw new Error("Another session command is still pending; retry Resume after it settles");
+    this.pause = record;
+    let resolve!: () => void, reject!: (error: unknown) => void;
+    const persisted = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+    void persisted.catch(() => {});
+    const attempt = { message, resolve, reject };
+    this.pendingResume = attempt;
+    this.resumeRequestError = undefined;
+    this.resumePermit = true;
+    const unsubscribe = this.onEvent((event) => {
+      if (event.type === "prompt_error" || event.type === "prompt_done") {
+        this.checkResumePersistence();
+        reject(new Error(String(event.errorMessage ?? "Resume did not persist its literal continuation")));
+      }
+    });
+    try {
+      const sending = this.send({ type: "prompt", message }, { literal: true, pauseId, validate: (disposition) => {
+        const current = getSessionPause(this.sessionId);
+        if (!current || current.id !== pauseId || current.state !== "resuming") throw new Error("Pause changed before Resume admission");
+        if (record.leafId && !this.inner.sessionManager.getBranch().some((entry) => entry.id === record.leafId)) throw new Error("The active branch changed before Resume dispatch");
+        if (disposition !== undefined && disposition !== "started") throw new Error("Resume was intercepted or queued; pause information was retained");
+      } });
+      await Promise.all([sending, persisted]);
+      this.clearPause(pauseId);
+    } finally {
+      unsubscribe(); this.resumePermit = false;
+      if (this.pendingResume === attempt) this.pendingResume = undefined;
+    }
+  }
+
+  private checkResumePersistence(): void {
+    const attempt = this.pendingResume;
+    if (!attempt?.observed || attempt.error) return;
+    const manager = this.inner.sessionManager;
+    if (this.sessionFile && readLatestSessionEntryId(this.sessionFile) === manager.getLeafId()) attempt.resolve();
   }
 
   /** Race host setup/binding against permanent owned refusal; observe late work. */
@@ -406,6 +541,7 @@ export class AgentSessionWrapper {
   /** Direct subagent prompts bypass send(); keep their OWN session busy during preflight. */
   beginCheckoutPromptAdmission(): () => void {
     this.assertInitialPromptAccess("prompt");
+    if (this.isPauseRequested()) throw new Error("Session is paused; continue through its main session");
     assertDirectoryAdmissionAllowed(this.cwd);
     this.pendingCheckoutAdmissions += 1;
     let released = false;
@@ -413,6 +549,7 @@ export class AgentSessionWrapper {
       if (released) return;
       released = true;
       this.pendingCheckoutAdmissions = Math.max(0, this.pendingCheckoutAdmissions - 1);
+      this.notifyAgentRunCompleteIfIdle();
     };
   }
 
@@ -457,8 +594,193 @@ export class AgentSessionWrapper {
     return this.suppressCompletionNotifications;
   }
 
+  /** Child pause records are a durable handoff even if an in-memory background
+   * notification was lost at restart. Reconcile on explicit main-session input.
+   */
+  private async preparePausedChildContext(): Promise<void> {
+    const manager = this.inner.sessionManager;
+    if (readSubagentRun(manager.getEntries() as unknown as SessionEntry[], this.sessionId, this.sessionFile)) return;
+    for (const pause of readSessionPauses().filter((row) => row.parentSessionId)) {
+      if (hasUnsettledSubagentExecution(pause.sessionId)) continue;
+      const child = await SUBAGENT_CONTROLLER.get(pause.sessionId);
+      if (!child) continue;
+      let parentId = child.parentSessionId;
+      const visited = new Set<string>();
+      while (parentId !== this.sessionId && !visited.has(parentId)) {
+        visited.add(parentId);
+        const parent = await SUBAGENT_CONTROLLER.get(parentId);
+        if (!parent) break;
+        parentId = parent.parentSessionId;
+      }
+      if (parentId !== this.sessionId) continue;
+      const branch = manager.getBranch();
+      if (branch.some((entry) => entry.type === "custom_message" && entry.customType === "pi-web:paused-subsession-context"
+        && (entry.details as { pauseId?: unknown } | undefined)?.pauseId === pause.id)) { this.pendingChildHandoffs.delete(pause.id); continue; }
+      const pending = this.pendingChildHandoffs.get(pause.id);
+      if (pending && (pending.anchor === null || branch.some((entry) => entry.id === pending.anchor))) continue;
+      const handoff = { anchor: manager.getLeafId(), id: randomUUID() };
+      this.pendingChildHandoffs.set(pause.id, handoff);
+      try { await this.inner.sendCustomMessage({ customType: "pi-web:paused-subsession-context", display: true,
+        content: `The following is saved information about a paused subsession, not a new user goal or permission. Inspect recorded outcomes before deciding whether more delegated work is needed.\nSession: ${child.sessionId}\nDescription: ${child.description}\nOriginal task: ${child.task}\n${pause.state === "pausing" ? "Pause was not confirmed before restart; outcomes may be unknown.\n" : "The subsession was paused, not completed.\n"}${child.result ? `Partial output:\n${child.result}\n` : "Inspect the saved transcript/tool results for partial work.\n"}${pause.waiting.length ? `Cancelled waiting cards (ask again; never reuse an old approval):\n${pause.waiting.join("\n\n")}` : ""}`,
+        details: { pauseId: pause.id, childSessionId: child.sessionId, handoffId: handoff.id },
+      }, { triggerTurn: false }); }
+      catch (error) { if (this.pendingChildHandoffs.get(pause.id)?.id === handoff.id) this.pendingChildHandoffs.delete(pause.id); throw error; }
+    }
+  }
+
+  hasQueuedPauseInput(): boolean {
+    return Boolean((this.inner.agent as Agent | undefined)?.hasQueuedMessages?.());
+  }
+
+  /** A steering admission can complete after its old SDK run became idle. Save
+   * the real undelivered envelopes as context, never certify then lose images.
+   * Snapshot/write/clear is synchronous; only the final SDK context refresh awaits.
+   */
+  private settleIdlePauseInput(): Promise<void> {
+    if (this.parkedQueueSave) return this.parkedQueueSave;
+    if (!this.isPauseRequested() || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning || !this.hasQueuedPauseInput()) return Promise.resolve();
+    const work = (async () => {
+      const agent = this.inner.agent as Agent;
+      const manager = this.inner.sessionManager;
+      while (this.isPauseRequested() && !this.inner.isStreaming && !this.inner.isCompacting && !this.inner.isBashRunning && agent.hasQueuedMessages()) {
+        const save = (message: SdkAgentMessage) => {
+          if (message.role !== "user" && message.role !== "custom") throw new Error("Unsupported idle queue envelope; pause remains unconfirmed");
+          const content = typeof message.content === "string" ? [{ type: "text" as const, text: message.content }] : message.content;
+          if (content.some((part) => part.type !== "text" && part.type !== "image")) throw new Error("Unsupported queued content; pause remains unconfirmed");
+          let inputId = this.queuedInputIds.get(message);
+          if (!inputId) { inputId = randomUUID(); this.queuedInputIds.set(message, inputId); }
+          const exists = manager.getBranch().some((entry) => entry.type === "custom_message" && entry.customType === "pi-web:undelivered-input"
+            && (entry.details as { inputId?: unknown } | undefined)?.inputId === inputId);
+          if (!exists) manager.appendCustomMessageEntry("pi-web:undelivered-input", [
+            { type: "text", text: `Accepted ${message.role} input was saved without processing it before Pause. Review it on explicit continuation; this is context, not permission to replay an operation.` },
+            ...content,
+          ], true, { inputId, originalRole: message.role });
+          this.persistSessionWithoutAssistant();
+          if (readLatestSessionEntryId(this.sessionFile) !== manager.getLeafId()) throw new Error("Queued input persistence was not confirmed");
+          this.capturePauseWaiting({ method: "undelivered_input", inputId, sessionFile: this.sessionFile,
+            text: content.filter((part) => part.type === "text").map((part) => part.text).join("\n"),
+            note: "Any image envelopes remain in the saved session context; inspect before continuing." });
+        };
+        const steeringMode = agent.steeringMode, followUpMode = agent.followUpMode;
+        const seen = new Set<SdkAgentMessage>();
+        try {
+          agent.steeringMode = "all"; agent.followUpMode = "all";
+          for (const message of agent.peekQueuedMessages()) { save(message); seen.add(message); }
+          agent.clearSteeringQueue();
+          for (const message of agent.peekQueuedMessages()) if (!seen.has(message)) save(message);
+          agent.clearFollowUpQueue();
+          this.inner.clearQueue();
+        } finally { agent.steeringMode = steeringMode; agent.followUpMode = followUpMode; }
+        await this.inner.sendCustomMessage({ customType: "pi-web:pause-input-saved", display: true,
+          content: "Undelivered accepted input was saved in this conversation without executing it. Review it after Resume." }, { triggerTurn: false });
+        invalidateSessionListCache();
+      }
+    })();
+    const settled = work.catch((error) => { this.pauseFailed(error); throw error; })
+      .finally(() => { if (this.parkedQueueSave === settled) this.parkedQueueSave = undefined; });
+    this.parkedQueueSave = settled;
+    return settled;
+  }
+
+  private hasAdmittedPauseInput(agent: Agent): boolean {
+    return this.initialRequestPermits.size > 0 || this.sdkQueueAdmissions > 0 || agent.hasQueuedMessages() || this.queuedInputOwed;
+  }
+
+  private waitForQueueAdmissions(signal?: AbortSignal): Promise<void> {
+    if (!this.sdkQueueAdmissions || signal?.aborted) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => { signal?.removeEventListener("abort", done); this.queueAdmissionWaiters.delete(done); resolve(); };
+      this.queueAdmissionWaiters.add(done); signal?.addEventListener("abort", done, { once: true });
+      if (signal?.aborted) done();
+    });
+  }
+
+  private installPauseHooks(): void {
+    if (!this.inner.agent) return;
+    this.disposePauseIngress = installSessionPauseIngress(this.inner, {
+      blocked: () => Boolean(this.pause),
+      takeResumePermit: (text) => {
+        if (!this.resumePermit || text !== this.pendingResume?.message) return false;
+        this.resumePermit = false; return true;
+      },
+      begin: (initiallyQueued) => {
+        const permit = {};
+        let queued = initiallyQueued;
+        const add = () => { if (queued) this.sdkQueueAdmissions++; else { this.sdkPrompts++; this.initialRequestPermits.add(permit); } };
+        const remove = () => { this.initialRequestPermits.delete(permit); if (queued) this.sdkQueueAdmissions--; else this.sdkPrompts--; };
+        const wake = () => { if (!this.sdkQueueAdmissions) { for (const done of this.queueAdmissionWaiters) done(); this.queueAdmissionWaiters.clear(); } };
+        add();
+        return {
+          setQueued: (next) => { if (next === queued) return; remove(); queued = next; add(); wake(); },
+          release: () => { remove(); wake(); this.notifyAgentRunCompleteIfIdle(); },
+        };
+      },
+      settle: () => this.settleIdlePauseInput(),
+    });
+    const agent = this.inner.agent as Agent;
+    const previousSteer = agent.steer, previousFollowUp = agent.followUp, previousClear = agent.clearAllQueues;
+    const steer: typeof agent.steer = (message) => { this.queuedInputObjects.add(message); previousSteer.call(agent, message); };
+    const followUp: typeof agent.followUp = (message) => { this.queuedInputObjects.add(message); previousFollowUp.call(agent, message); };
+    const clear: typeof agent.clearAllQueues = () => { this.queuedInputObjects.clear(); previousClear.call(agent); };
+    agent.steer = steer; agent.followUp = followUp; agent.clearAllQueues = clear;
+    const previousPrepareRequest = agent.prepareRequest;
+    const previousContinue = agent.continue;
+    const continueAgent: typeof agent.continue = async () => {
+      if (this.isPauseRequested() && !this.hasAdmittedPauseInput(agent)) {
+        void this.inner.abort().catch((error) => console.error("[pi-web] pause continuation stop failed:", error));
+        return;
+      }
+      return previousContinue.call(agent);
+    };
+    agent.continue = continueAgent;
+    const prepareRequest: NonNullable<typeof agent.prepareRequest> = async (context, signal) => {
+      if (this.resumeRequestError) {
+        // Reject before the provider, and suppress the session's outer recovery loop.
+        void this.inner.abort().catch((error) => console.error("[pi-web] rejected Resume stop failed:", error));
+        throw this.resumeRequestError;
+      }
+      const update = (await previousPrepareRequest?.(context, signal)) ?? undefined;
+      if (this.isPauseRequested() && !this.initialRequestPermits.size) await this.waitForQueueAdmissions(signal);
+      if (this.isPauseRequested() && !this.hasAdmittedPauseInput(agent)) {
+        void this.inner.abort().catch((error) => console.error("[pi-web] pause request stop failed:", error));
+        throw new Error("Paused before the next model request");
+      }
+      const permit = this.initialRequestPermits.values().next().value;
+      if (permit) this.initialRequestPermits.delete(permit);
+      this.queuedInputOwed = false;
+      return update;
+    };
+    agent.prepareRequest = prepareRequest;
+    const disposeIngress = this.disposePauseIngress;
+    this.disposePauseIngress = () => {
+      disposeIngress();
+      if (agent.prepareRequest === prepareRequest) agent.prepareRequest = previousPrepareRequest;
+      if (agent.continue === continueAgent) agent.continue = previousContinue;
+      if (agent.steer === steer) agent.steer = previousSteer;
+      if (agent.followUp === followUp) agent.followUp = previousFollowUp;
+      if (agent.clearAllQueues === clear) agent.clearAllQueues = previousClear;
+    };
+    this.disposePauseBoundary = installSessionPauseBoundary(this.inner, () => this.isPauseRequested(), (error) => {
+      console.error("[pi-web] pause stop failed:", error); this.pauseFailed(error);
+    }, () => this.waitForQueueAdmissions());
+  }
+
   start(): void {
+    this.installPauseHooks();
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
+      if (event.type === "message_start" && event.message && this.queuedInputObjects.delete(event.message as SdkAgentMessage)) this.queuedInputOwed = true;
+      if (event.type === "message_end") {
+        const message = event.message as { role?: string; customType?: string; details?: { pauseId?: string; handoffId?: string } } | undefined;
+        const details = message?.details;
+        if (message?.role === "custom" && message.customType === "pi-web:paused-subsession-context" && details?.pauseId && details.handoffId) {
+          queueMicrotask(() => {
+            if (this.pendingChildHandoffs.get(details.pauseId!)?.id !== details.handoffId) return;
+            const saved = this.inner.sessionManager.getEntries().some((entry) => entry.type === "custom_message" && entry.customType === message.customType
+              && (entry.details as { handoffId?: unknown } | undefined)?.handoffId === details.handoffId);
+            if (saved) this.pendingChildHandoffs.delete(details.pauseId!);
+          });
+        }
+      }
       if (event.type === "agent_start") this.agentRunNeedsCompletion = true;
       if (event.type === "agent_end") {
         invalidateSessionListCache();
@@ -479,6 +801,17 @@ export class AgentSessionWrapper {
         // Bind by object identity, never by text or a possibly unrelated leaf.
         queueMicrotask(() => {
           if (!this.isAlive()) return;
+          if (message.role === "user" && this.pendingResume) {
+            const content = (event.message as { content?: unknown }).content;
+            const text = typeof content === "string" ? content : Array.isArray(content) ? content.filter((part) => part?.type === "text").map((part) => part.text).join("\n") : "";
+            if (text === this.pendingResume.message) this.pendingResume.observed = true;
+            else {
+              this.pendingResume.error = new Error("An extension changed the Resume message; pause information was retained");
+              this.resumeRequestError = this.pendingResume.error;
+              this.pendingResume.reject(this.pendingResume.error);
+            }
+          }
+          this.checkResumePersistence();
           const leaf = this.inner.sessionManager.getLeafEntry();
           this.emit(leaf?.type === "message" && leaf.message === event.message
             ? { ...event, entryId: leaf.id }
@@ -493,6 +826,10 @@ export class AgentSessionWrapper {
   }
 
   private notifyAgentRunCompleteIfIdle(): void {
+    if (this.isPauseRequested()) {
+      this.finishPause();
+      return;
+    }
     if (!this.agentRunNeedsCompletion || this.isRunning()) return;
     this.agentRunNeedsCompletion = false;
     recordRpcSessionCompletion(this.sessionId);
@@ -587,6 +924,7 @@ export class AgentSessionWrapper {
       return await operation();
     } finally {
       this.resetIdleTimer();
+      this.finishPause();
     }
   }
 
@@ -709,8 +1047,12 @@ export class AgentSessionWrapper {
     }
   }
 
-  async send(command: Record<string, unknown>, promptGuard?: { validate: (disposition?: string) => void; literal?: boolean; owner?: symbol }): Promise<unknown> {
+  async send(command: Record<string, unknown>, promptGuard?: { validate: (disposition?: string) => void; literal?: boolean; owner?: symbol; pauseId?: string }): Promise<unknown> {
     const type = command.type as string;
+    if (type === "navigate_tree" && (this.pendingResume || this.pause && this.isRunning())) throw new Error("Cannot change branches during Resume or Pause settlement");
+    if (["prompt", "steer", "follow_up"].includes(type) && this.pause && promptGuard?.pauseId !== this.pause.id) {
+      throw new Error("Session is paused or pausing; use Resume on the main session");
+    }
     if (type === "abort" && this.initialPrompt?.state === "pending") {
       this.refuseInitialPrompt(this.initialPrompt.owner, new DOMException("Initial prompt cancelled by Stop", "AbortError"));
       return null;
@@ -745,6 +1087,7 @@ export class AgentSessionWrapper {
       }
 
       if (type === "prompt" || type === "steer" || type === "follow_up") {
+        if (this.pause && promptGuard?.pauseId !== this.pause.id) throw new Error("Session is paused or pausing; use Resume on the main session");
         const imageError = validateAgentImages(command.images);
         if (imageError) throw new Error(imageError);
       }
@@ -763,7 +1106,14 @@ export class AgentSessionWrapper {
           // Recheck after extension binding and the serialized admission wait.
           // No await may separate this check from publishing pendingPromptCount.
           this.assertInitialPromptAccess(type, promptGuard?.owner);
+          if (this.pause && promptGuard?.pauseId !== this.pause.id) throw new Error("Session is paused or pausing; use Resume on the main session");
           assertDirectoryAdmissionAllowed(this.cwd);
+          if (!promptGuard?.pauseId) {
+            await this.preparePausedChildContext();
+            this.assertInitialPromptAccess(type, promptGuard?.owner);
+            if (this.pause) throw new Error("Session is paused or pausing; use Resume on the main session");
+            assertDirectoryAdmissionAllowed(this.cwd);
+          }
           // Trusted host-only launch guard, after extension binding and admission awaits.
           // HTTP/tool arguments cannot supply a callable guard.
           promptGuard?.validate();
@@ -847,6 +1197,15 @@ export class AgentSessionWrapper {
                   this.assertInitialPromptAccess(type, promptGuard?.owner);
                 } catch (error) {
                   if (ownedSubmission) this.refuseInitialPrompt(promptGuard!.owner!, error);
+                  if (promptGuard?.pauseId && disposition === "started") {
+                    // SDK 1.3 invokes this outside its cleanup try/finally. Do not
+                    // poison its busy flag by throwing: enter a cancelled run whose
+                    // prepareRequest gate refuses before any provider/tool dispatch.
+                    this.resumeRequestError = error instanceof Error ? error : new Error(String(error));
+                    this.pendingResume?.reject(error); rejectPreflight(error);
+                    void this.inner.abort().catch((failure) => console.error("[pi-web] stale Resume stop failed:", failure));
+                    return;
+                  }
                   throw error;
                 }
                 // No await between final guarded admission and releasing exclusivity.
@@ -1319,6 +1678,9 @@ export class AgentSessionWrapper {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     if (!ownedRefusal && this.inner.isBashRunning) this.inner.abortBash();
     this.unsubscribe?.();
+    this.disposePauseBoundary?.();
+    this.disposePauseIngress?.();
+    this.pendingResume?.reject(new Error("Session shut down during Resume; pause information was retained"));
     for (const pending of this.pendingUiResponses.values()) pending.cancel();
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
     this.pendingUiResponses.clear();
@@ -1791,6 +2153,10 @@ export class AgentSessionWrapper {
     timeout?: number,
     signal?: AbortSignal,
   ): Promise<T> {
+    if (this.isPauseRequested()) {
+      this.capturePauseWaiting(request);
+      return Promise.reject(new Error("Session is pausing; ask again after Resume"));
+    }
     if (signal?.aborted) return Promise.resolve(defaultValue);
     const stopSignal = this.extensionUiAbortController.signal;
     if (stopSignal.aborted) return Promise.reject(stopSignal.reason);

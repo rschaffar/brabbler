@@ -9,6 +9,7 @@ import { isHistoryOnlySession } from "@/lib/session-directory";
 import { MarkdownMediaScope } from "./MarkdownMedia";
 import { WebVersionNotice } from "./WebVersionNotice";
 import { ActivityOverview } from "./ActivityOverview";
+import type { SessionPauseSnapshot } from "@/lib/session-pause";
 import { useHiddenProjects } from "@/hooks/useHiddenProjects";
 import { StarredOverview } from "./StarredOverview";
 import { getActivitySections, type ActivityStatus } from "@/lib/activity";
@@ -170,6 +171,7 @@ export function AppShell() {
     setQueuedSessionIds((previous) => previous.size === ids.size && [...ids].every((id) => previous.has(id)) ? previous : ids);
   }, []);
   const [activityAttention, setActivityAttention] = useState<SessionAttention[]>([]);
+  const [activityPauses, setActivityPauses] = useState<SessionPauseSnapshot[]>([]);
   const [reviewSessionIds, setReviewSessionIds] = useState<Set<string>>(() => new Set());
   const [laterSessionIds, setLaterSessionIds] = useState<Set<string>>(() => new Set());
   const [laterAttentionSessionIds, setLaterAttentionSessionIds] = useState<Set<string>>(() => new Set());
@@ -186,7 +188,8 @@ export function AppShell() {
   const [activityAvailable, setActivityAvailable] = useState(true);
   const [recoveryRefreshKey, setRecoveryRefreshKey] = useState(0);
   const handleRecoveryDismissed = useCallback(() => setRecoveryRefreshKey((key) => key + 1), []);
-  const handleActivityChange = useCallback((attention: SessionAttention[], reviewIds: Set<string>, available: boolean, laterIds: Set<string>, laterAttentionIds: Set<string>) => {
+  const handleActivityChange = useCallback((attention: SessionAttention[], reviewIds: Set<string>, available: boolean, laterIds: Set<string>, laterAttentionIds: Set<string>, pauses: SessionPauseSnapshot[]) => {
+    setActivityPauses((previous) => JSON.stringify(previous) === JSON.stringify(pauses) ? previous : pauses);
     setActivityAttention((previous) => previous.length === attention.length && previous.every((item, index) => {
       const next = attention[index];
       return item.sessionId === next.sessionId && item.method === next.method
@@ -2432,6 +2435,7 @@ export function AppShell() {
               laterIds={laterSessionIds}
               laterAttentionIds={laterAttentionSessionIds}
               onMarkLater={handleMarkReviewLater}
+              pauses={activityPauses}
               sessions={sessionsWithSelection}
               runningIds={runningSessionIds}
               queuedIds={queuedSessionIds}

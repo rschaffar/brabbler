@@ -13,9 +13,9 @@ const session = (id, relation) => ({
   ...(relation ? { relation: { kind: "subagent", parentSessionId: relation, profile: "explore" } } : {}),
 });
 
-function render(sessions, runningIds, reviewIds, privacy = { keys: new Set(), error: false }, laterIds = [], laterAttentionIds = [], attention = []) {
+function render(sessions, runningIds, reviewIds, privacy = { keys: new Set(), error: false }, laterIds = [], laterAttentionIds = [], attention = [], pauses = []) {
   return renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(ActivityOverview, {
-    sessions, runningIds: new Set(runningIds), queuedIds: new Set(), attention, reviewIds: new Set(reviewIds),
+    sessions, runningIds: new Set(runningIds), queuedIds: new Set(), attention, pauses, reviewIds: new Set(reviewIds),
     laterIds: new Set(laterIds), laterAttentionIds: new Set(laterAttentionIds), onMarkLater() {},
     available: true, selectedId: null, onSelect() {}, onMarkRead() {}, onClose() {},
     privacy: { pendingKey: null, refresh() {}, setHidden() {}, ...privacy },
@@ -113,6 +113,23 @@ test("loading and failed privacy state withhold Activity rather than treating it
     assert.match(html, error ? /Project privacy settings are unavailable/ : /Loading project privacy settings/);
     if (error) assert.match(html, />Retry<\/button>/);
   }
+});
+
+test("paused main sessions have Resume, subsessions do not, and global controls explain their scope", () => {
+  const pauses = ["main", "child"].map(id => ({ id: `pause-${id}`, sessionId: id, state: "paused", requestedAt: 1, ...(id === "child" ? { parentSessionId: "main" } : {}) }));
+  const html = render([session("main"), session("child", "main"), session("working")], ["working"], [], undefined, [], [], [], pauses);
+  assert.match(html, /aria-label="Resume main"[^>]*>Resume<\/button>/);
+  assert.doesNotMatch(html, /aria-label="Resume child"/);
+  assert.match(html, /aria-label="Pause working and its subsessions"/);
+  assert.match(html, />Pause all<\/button>/); assert.match(html, />Resume all<\/button>/);
+  assert.match(html, /All sessions, including hidden projects/);
+  assert.match(html, /Partial work is saved for the main session/);
+});
+
+test("pausing rows stay visibly pending and never offer premature Resume", () => {
+  const html = render([session("main")], ["main"], [], undefined, [], [], [], [{ id: "pause", sessionId: "main", state: "pausing", requestedAt: 1 }]);
+  assert.match(html, /Pausing…/); assert.match(html, /Finishing current tools/);
+  assert.doesNotMatch(html, /aria-label="Resume main"/);
 });
 
 test("nested subagents retain their indentation and icon", () => {

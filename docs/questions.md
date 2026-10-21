@@ -20,7 +20,7 @@ Batch drafts use this browser tab's `sessionStorage`, scoped to the session ID, 
 
 Settlement events and confirmed submission clear the draft. Reconnecting also supplies an authoritative pending-request snapshot: drafts and forms for settled or lost requests are removed for that session. Orphaned drafts in sessions not revisited are pruned on later saves: at most 12 sets are retained, with a 24-hour age limit checked on load/save. Closing the browser tab normally ends its session storage (browser session-restoration behavior is browser-dependent). This is not a secret-input form; don't enter credentials. Submitted answers and details become session history/model input like ordinary chat.
 
-No cross-device syncing or pending-request recovery after a server restart is provided. Storage recovery does not keep a server request alive or reset its deadline. Browser refresh returns to the first question with answers restored.
+No cross-device draft syncing or exact pending-request recovery after a server restart is provided. For deliberate restart preparation, Activity **Pause** saves the waiting card's contents and then cancels it. Main-session **Resume** sends that context in a new continuation message so the agent can ask again; it does not restore the old form, submit drafts or reuse approval authority. Storage recovery does not keep a server request alive or reset its deadline. Browser refresh returns to the first question with answers restored.
 
 ## Tool contract
 

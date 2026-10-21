@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { activityProjectName, activitySessionName, getActivitySections, hiddenActivitySessionIds, type ActivityItem, type ActivityStatus } from "@/lib/activity";
 import type { SessionAttention, SessionInfo } from "@/lib/types";
+import type { SessionPauseSnapshot } from "@/lib/session-pause";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { SubagentIcon } from "./SubagentIcon";
 import { SessionWorktreeBadge } from "./SessionWorktreeBadge";
@@ -16,6 +17,7 @@ interface Props {
   runningIds: ReadonlySet<string>;
   queuedIds: ReadonlySet<string>;
   attention: SessionAttention[];
+  pauses?: SessionPauseSnapshot[];
   reviewIds: ReadonlySet<string>;
   laterIds: ReadonlySet<string>;
   laterAttentionIds: ReadonlySet<string>;
@@ -30,11 +32,31 @@ interface Props {
   privacy: ProjectPrivacy;
 }
 
-const STATUS_ORDER: ActivityStatus[] = ["needs-you", "working", "queued", "interrupted", "ready", "later"];
+const STATUS_ORDER: ActivityStatus[] = ["needs-you", "working", "pausing", "paused", "queued", "interrupted", "ready", "later"];
+const NO_PAUSES: SessionPauseSnapshot[] = [];
 
-export function ActivityOverview({ sessions, runningIds, queuedIds, attention, reviewIds, laterIds, laterAttentionIds, available, selectedId, onSelect, onMarkRead, onMarkLater, onClose, hidden = false, recoveryRefreshKey = 0, privacy }: Props) {
+export function ActivityOverview({ sessions, runningIds, queuedIds, attention, pauses = NO_PAUSES, reviewIds, laterIds, laterAttentionIds, available, selectedId, onSelect, onMarkRead, onMarkLater, onClose, hidden = false, recoveryRefreshKey = 0, privacy }: Props) {
   const { t, locale } = useI18n();
   const [projectFilter, setProjectFilter] = useState("");
+  const [pausePending, setPausePending] = useState(false);
+  const [resumePending, setResumePending] = useState(false);
+  const sessionById = useMemo(() => new Map(sessions.map((row) => [row.id, row])), [sessions]);
+  const [controlError, setControlError] = useState("");
+  const pauseById = useMemo(() => new Map(pauses.map((row) => [row.sessionId, row])), [pauses]);
+  const control = async (action: "pause" | "resume" | "pause-all" | "resume-all", item?: ActivityItem) => {
+    const pausing = action === "pause" || action === "pause-all";
+    if (pausing ? pausePending : resumePending) return;
+    const setPending = pausing ? setPausePending : setResumePending;
+    setPending(true); setControlError("");
+    try {
+      const response = await fetch("/api/activity/pause", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...(item ? { sessionId: item.session.id, pauseId: item.pause?.id } : {}) }) });
+      const result = await response.json() as { error?: string; errors?: string[] };
+      if (!response.ok) throw new Error(result.error ?? `HTTP ${response.status}`);
+      if (result.errors?.length) setControlError(t("activity.pausePartial", { count: result.errors.length }));
+    } catch (error) { setControlError(`${t("activity.pauseFailed")} ${String(error)}`); }
+    finally { setPending(false); window.dispatchEvent(new Event("pi-web:activity-refresh")); }
+  };
   const [showHidden, setShowHidden] = useState(false);
   // Restore after hydration; server rendering always starts concealed.
   useEffect(() => { setShowHidden(getShowHiddenProjects()); }, []);
@@ -93,11 +115,11 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
     };
   }, [hidden, recoveryRefreshKey]);
 
-  const concealed = useMemo(() => getActivitySections(privacyReady ? sessions : [], runningIds, attention, reviewIds, null, queuedIds, interruptedIds, privacy.keys ?? new Set(), laterIds, laterAttentionIds),
-    [privacyReady, privacy.keys, sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds, laterIds, laterAttentionIds]);
+  const concealed = useMemo(() => getActivitySections(privacyReady ? sessions : [], runningIds, attention, reviewIds, null, queuedIds, interruptedIds, privacy.keys ?? new Set(), laterIds, laterAttentionIds, pauseById),
+    [privacyReady, privacy.keys, sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds, laterIds, laterAttentionIds, pauseById]);
   const all = useMemo(() => revealing
-    ? getActivitySections(sessions, runningIds, attention, reviewIds, null, queuedIds, interruptedIds, new Set(), laterIds, laterAttentionIds) : concealed,
-    [revealing, sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds, laterIds, laterAttentionIds, concealed]);
+    ? getActivitySections(sessions, runningIds, attention, reviewIds, null, queuedIds, interruptedIds, new Set(), laterIds, laterAttentionIds, pauseById) : concealed,
+    [revealing, sessions, runningIds, queuedIds, attention, reviewIds, interruptedIds, laterIds, laterAttentionIds, pauseById, concealed]);
   const projects = useMemo(() => {
     const keys = new Map<string, string>();
     for (const item of Object.values(all).flat()) keys.set(item.projectKey, activityProjectName(item.session));
@@ -110,13 +132,14 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
     return [...keys].sort((a, b) => a[1].localeCompare(b[1]));
   }, [all, effectiveProjectFilter, sessions]);
   const sections = useMemo(() => effectiveProjectFilter
-    ? getActivitySections(privacyReady ? sessions : [], runningIds, attention, reviewIds, effectiveProjectFilter, queuedIds, interruptedIds, revealing ? new Set() : privacy.keys ?? new Set(), laterIds, laterAttentionIds) : all,
-  [effectiveProjectFilter, privacyReady, sessions, runningIds, attention, reviewIds, queuedIds, interruptedIds, laterIds, laterAttentionIds, revealing, privacy.keys, all]);
+    ? getActivitySections(privacyReady ? sessions : [], runningIds, attention, reviewIds, effectiveProjectFilter, queuedIds, interruptedIds, revealing ? new Set() : privacy.keys ?? new Set(), laterIds, laterAttentionIds, pauseById) : all,
+  [effectiveProjectFilter, privacyReady, sessions, runningIds, attention, reviewIds, queuedIds, interruptedIds, laterIds, laterAttentionIds, pauseById, revealing, privacy.keys, all]);
   const readySubagents = sections.ready.filter((item) => item.session.relation?.kind === "subagent");
   const total = Object.values(sections).reduce((count, items) => count + items.length, 0);
   const sectionTitle: Record<ActivityStatus, string> = {
     "needs-you": t("activity.needsYou"), working: t("activity.working"), queued: t("activity.queued"),
     interrupted: t("activity.interrupted"), ready: t("activity.ready"), later: t("activity.later"),
+    pausing: t("activity.pausing"), paused: t("activity.paused"),
   };
   const methodLabel = (item: ActivityItem): string => {
     switch (item.attention?.method) {
@@ -151,6 +174,14 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
           <PrivacyEyeIcon concealed={!revealing} />
         </button>
       </div>
+      <div className="activity-pause-controls">
+        <button type="button" className="activity-mark-read" disabled={!available || pausePending || runningIds.size + queuedIds.size === 0 && !pauses.some((row) => row.state === "resuming")}
+          onClick={() => void control("pause-all")}>{t("activity.pauseAll")}</button>
+        <button type="button" className="activity-mark-read" disabled={!available || pausePending || resumePending || !pauses.some((row) => !row.parentSessionId && (row.state === "paused" || row.interrupted))}
+          onClick={() => void control("resume-all")}>{t("activity.resumeAll")}</button>
+        <small>{t("activity.pauseAllScope")}</small>
+      </div>
+      {controlError && <p role="alert" className="activity-unavailable">{controlError}</p>}
       {privacy.error && <p role="alert" className="activity-unavailable">{t("privacy.unavailable")} <button type="button" onClick={privacy.refresh}>{t("privacy.retry")}</button></p>}
       {!privacyReady && !privacy.error && <p role="status" className="activity-unavailable">{t("privacy.loading")}</p>}
       {!available && <p role="status" className="activity-unavailable">{t("activity.unavailable")}</p>}
@@ -172,10 +203,18 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
               {sections[status].map((item) => {
                 const { session } = item;
                 const label = activitySessionName(session);
+                let mainSession = session;
+                const visited = new Set<string>();
+                while (mainSession.relation?.kind === "subagent" && !visited.has(mainSession.id)) {
+                  visited.add(mainSession.id);
+                  const parent = sessionById.get(mainSession.relation.parentSessionId);
+                  if (!parent) break;
+                  mainSession = parent;
+                }
                 const action = item.attention ? t("activity.openAndAnswer")
                   : status === "ready" || status === "later" ? t("activity.review") : t("activity.open");
                 return (
-                  <div role="listitem" key={session.id} className={status === "ready" || status === "later" || status === "needs-you" ? "activity-review-item" : undefined}>
+                  <div role="listitem" key={session.id} className="activity-review-item">
                     <button
                       type="button"
                       className={`activity-item activity-item-${status}${item.nested ? " activity-nested" : ""}${selectedId === session.id ? " activity-selected" : ""}${status === "later" && item.attention ? " activity-deferred-attention" : ""}`}
@@ -201,7 +240,21 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, r
                         {item.attention?.since ? ` · ${new Date(item.attention.since).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}` : ""}
                       </span>}
                       {status === "interrupted" && <span className="activity-item-reason">{t("activity.interruptedHint")}</span>}
+                      {status === "pausing" && <span className="activity-item-reason">{t("activity.pausingHint")}</span>}
+                      {item.pause?.error && <span role="alert" className="activity-item-reason">{t("activity.pauseError", { error: item.pause.error })}</span>}
+                      {status === "paused" && <span className="activity-item-reason">{t(item.pause?.interrupted ? "activity.pauseInterruptedHint" : session.relation?.kind === "subagent" ? "activity.pausedChildHint" : "activity.pausedHint")}</span>}
                     </button>
+                    {(status === "working" || status === "queued" || status === "needs-you" || status === "later" && item.attention) && (!item.pause || item.pause.state === "resuming") && <button type="button" className="activity-mark-read"
+                      disabled={!available || pausePending} aria-label={t("activity.pauseSession", { name: label })}
+                      onClick={() => void control("pause", item)}>{t("activity.pause")}</button>}
+                    {status === "pausing" && <button type="button" className="activity-mark-read" disabled>{t("activity.pausing")}</button>}
+                    {status === "pausing" && item.pause?.error && session.relation?.kind !== "subagent" && <button type="button" className="activity-mark-read"
+                      disabled={!available || pausePending} onClick={() => void control("pause", item)}>{t("activity.retryPause")}</button>}
+                    {status === "paused" && item.pause && session.relation?.kind !== "subagent" && !item.pause.parentSessionId && <button type="button" className="activity-mark-read"
+                      disabled={!available || pausePending || resumePending} aria-label={t("activity.resumeSession", { name: label })}
+                      onClick={() => void control("resume", item)}>{t("activity.resume")}</button>}
+                    {status === "paused" && mainSession.id !== session.id && <button type="button" className="activity-mark-read"
+                      onClick={() => onSelect(mainSession)}>{t("activity.openMainSession")}</button>}
                     {(status === "ready" || status === "needs-you") && <button type="button" className="activity-mark-read"
                       aria-label={t("activity.markLaterSession", { name: label })}
                       onClick={() => onMarkLater(session.id, item.attention?.requestId)}>{t("activity.later")}</button>}

@@ -602,7 +602,7 @@ export function readSubagentRun(entries: readonly SessionEntry[], sessionId: str
   const statusData = statusEntry?.type === "custom" && isRecord(statusEntry.data) ? statusEntry.data : undefined;
   const lifecycle = result ?? statusData;
   if (data.turnLimit !== undefined && (!Number.isSafeInteger(data.turnLimit) || (data.turnLimit as number) < 0)) return null;
-  const persistedStatus = result && (result.status === "completed" || result.status === "failed" || result.status === "aborted")
+  const persistedStatus = result && (result.status === "completed" || result.status === "failed" || result.status === "aborted" || result.status === "paused")
     ? result.status
     : statusData?.version === 1 && (statusData.status === "queued" || statusData.status === "running")
       ? statusData.status
