@@ -61,10 +61,14 @@ Physical tokens/PIN UX, actual remote SSH login, third-party destinations and no
 
 Disconnect closes this bridge, fails pending requests and removes only its owned socket/runtime directory. Clearing a session binding restores that session's ordinary inherited SSH environment; a binding whose bridge disappeared must fail closed rather than silently use another identity. Existing child processes cannot have their environment retroactively changed. Reload/restart invalidates bridge capabilities and requires explicit reconnection. Forgetting local public metadata does not delete the authenticator credential or revoke authorized keys: explain separate server-side revocation. No deployment or host-agent changes are part of this task.
 
+## Git handoff
+
+Implementation is committed as `6a674611eff990ca988b96264c115751f3d4136a`. The implementation, tests and maintained docs are complete; this status/archive follow-up changes no application, test, dependency or Nix inputs. The parent coding session remains the explicit owner of the required local Git lifecycle: resolve completion intent, rebase onto the current local `rst-main`, present exact IDs/evidence for the ordinary unsigned non-FF merge, then handle separately gated feature cleanup. Archiving this implementation plan does not claim those operations have executed. Hardware/destination verification and deployment remain separate human-authorized work, with current limitations owned by `docs/browser-ssh-agent.md`.
+
 ## Completion Checklist
 
 - [x] Protocol compatibility and security/lifecycle tests pass with no private/hardware credentials accessed.
 - [x] Browser and session integration is reviewed; ordinary local SSH behavior remains unchanged when disabled.
 - [x] Required complete acceptance passes and evidence/timings are recorded; real-device limitations are explicit.
 - [x] Maintained documentation owns the resulting behavior; plan status matches verified evidence.
-- [ ] A coherent unsigned implementation commit exists; required integration/exact-state approval and separate cleanup are handed to this coding session's global Git lifecycle, targeting local `rst-main` by non-FF merge. This implementation plan does not grant those approvals, remote publication or deployment authority.
+- [x] A coherent unsigned implementation commit exists (`6a674611eff990ca988b96264c115751f3d4136a`); required integration/exact-state approval and separate cleanup are handed to this coding session's global Git lifecycle, targeting local `rst-main` by non-FF merge. This implementation plan does not grant those approvals, remote publication or deployment authority.
