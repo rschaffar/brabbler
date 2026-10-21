@@ -20,7 +20,7 @@ No global/chat-wide routes, automatic pane creation on ordinary clicks, historic
 - [x] Expose Follow links only for originating file views, with explicit new right/below/existing-pane choices; label one-shot actions Right once / Below once, retain keyboard/touch/Escape and no inline spacing. Verify component contracts and real Markdown browser chain.
 - [x] Regress the user's consecutive-link path, same-file range/repeated jumps, cross-file pane reuse and per-document independence; retain all existing scenario inventory/deadlines.
 - [x] Update maintained feature documentation, independently review safety, and run complete resource-admitted Nix acceptance after focused checks settle. Record exact candidate, commands/results/artifacts and separate timing intervals.
-- [ ] Resolve completion intent, rebase/reverify as needed, and use exact-state unsigned non-FF integration approval; cleanup remains separately approved.
+- [x] Resolve completion intent, rebase/reverify as needed, and use exact-state unsigned non-FF integration approval; cleanup remains separately approved.
 
 ## Evidence so far
 
@@ -42,7 +42,7 @@ No global/chat-wide routes, automatic pane creation on ordinary clicks, historic
 
 ## Current handoff
 
-Rebased merge preparation and complete acceptance are finished; current local target remains `main` `c9ab433`. Exact-state unsigned non-FF integration approval is still required. No integration, feature cleanup, remote publication or host-service deployment has been performed. The plan remains active until integration is resolved; the separate authoring-guidance work is untouched.
+Integrated into local `main` by approved unsigned non-FF merge `581fd63b21e7595b5d239af1010dfba9f0d80180`, with verified parents `c9ab433a542b44de1d22bde07afe026c2815f4ba` and `75fc2d6690a790a24b3e3d40cb49bad1d6b4cfbd` and exact accepted tree `159586763946589123260e08e9ad6d2f08d680cb`. Primary checkout was clean after integration; author email `robert@projektbuero.at`, no signature header. This documentation-only follow-up archives the completed plan; maintained mechanisms remain in the feature/notebook guides. Feature cleanup still needs its separate approval. No remote publication or host-service deployment occurred; the separate authoring-guidance work is untouched.
 
 ## Completion Checklist
 
