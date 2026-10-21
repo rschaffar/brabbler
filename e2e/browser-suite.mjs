@@ -299,6 +299,10 @@ let nativeToolsFixture;
     writeFileSync(join(gitProject, "draft.txt"), Array.from({ length: 5000 }, (_, index) => `Plugin context ${index + 1}\n`).join(""));
     mkdirSync(join(gitProject, "checks"));
     writeFileSync(join(gitProject, "checks", "fixture.txt"), "Tracked modern check working directory\n");
+    if (group === "markdown") {
+      writeFileSync(join(gitProject, "review-source.tsx"), '// Outside the excerpt\nexport const greeting = "<script>not executable</script>";\n\nexport const view = <a title="pinned">Hello</a>;\n/* Multiline\n   comment */\n');
+      git("add", "review-source.tsx");
+    }
     git("add", "base.txt", "checks/fixture.txt", "z-context.txt", "draft.txt"); commit("base fixture");
     git("switch", "-c", "feature");
     writeFileSync(join(gitProject, "first.txt"), "First feature patch\n");

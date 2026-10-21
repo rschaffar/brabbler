@@ -20,6 +20,7 @@ export function seedReviewNotebooks({ gitProject, targetWorktree, env, writeSess
   const source = { ...common, kind: "source", id: "pinned-code", title: "Pinned code", path: "z-context.txt", start: 49, end: 51 };
   const text = "# Review notebook\n\nFollow the important change, not the mutable checkout.\n\n" + fence(source) + "\n\n" +
     fence({ ...source, id: "unchanged-context", title: "Unchanged context", oid: prior }) + "\n\n" +
+    fence({ ...source, id: "highlighted-code", title: "Highlighted code", path: "review-source.tsx", start: 2, end: 6 }) + "\n\n" +
     fence({ ...common, kind: "commit", id: "feature-commit", title: "Feature changes" }) + "\n\n" +
     fence({ ...common, kind: "commit", id: "deep-history", title: "Earlier review step", branch: "review-history", oid: deepOid }) + "\n\n" +
     fence({ ...source, version: 99, title: "<script>globalThis.REVIEW_BAD=true</script>" }) + "\n\n" +
@@ -30,6 +31,7 @@ export function seedReviewNotebooks({ gitProject, targetWorktree, env, writeSess
     message("review-answer", "review-user", "assistant", [{ type: "text", text: text +
       `\n\n[Open review document](${document})\n\n[Open working source](${join(gitProject, "z-context.txt")}#L50)` }])], targetWorktree);
   writeFileSync(join(gitProject, "z-context.txt"), readFileSync(join(gitProject, "z-context.txt"), "utf8").replace("Explorer changed 50\n", "WORKING TREE ONLY\n"));
+  writeFileSync(join(gitProject, "review-source.tsx"), "WORKING CODE ONLY\n");
   return { id, document, gitProject, targetWorktree, oid, prior, deepOid, git };
 }
 
@@ -62,8 +64,9 @@ export async function checkReviewNotebooks(page, { base, fixture: f }) {
       const n = requests.length;
       await activate(source.getByRole("button", { name: "Expand source", exact: true }));
       await source.getByRole("region", { name: "Pinned source z-context.txt", exact: true }).waitFor();
-      assert.deepEqual(await source.locator(".review-notebook-source-line").allTextContents(), ["49Context line 49", "50Explorer changed 50", "51Context line 51"]);
+      assert.deepEqual((await source.locator(".review-notebook-source-line").allTextContents()).map(line => line.replace(/\n$/, "")), ["49Context line 49", "50Explorer changed 50", "51Context line 51"]);
       assert.equal(requests.slice(n).filter(url => ["patch", "context"].includes(url.searchParams.get("op"))).length, 0);
+      assert.equal(await source.locator(".review-notebook-source .token").count(), 0, "Unknown/plain filenames remain uncolored");
       const identity = requests.slice(n).find(url => url.searchParams.get("op") === "source");
       assert.equal(identity.searchParams.get("oid"), f.oid); assert.equal(identity.searchParams.get("head"), f.oid);
       assert.equal(identity.searchParams.get("branch"), "feature"); assert.equal(identity.searchParams.get("start"), "49");
@@ -83,6 +86,21 @@ export async function checkReviewNotebooks(page, { base, fixture: f }) {
       await unchanged.getByRole("button", { name: "Expand source", exact: true }).click();
       await unchanged.getByText("Context line 50", { exact: true }).waitFor();
       await unchanged.getByRole("button", { name: "Collapse source", exact: true }).click();
+      const code = stop(scope, "highlighted-code");
+      await activate(code.getByRole("button", { name: "Expand source", exact: true }));
+      const region = code.getByRole("region", { name: "Pinned source review-source.tsx", exact: true });
+      // Inline theme styles consume semantic classes such as `keyword`.
+      const keyword = region.locator(".token").filter({ hasText: /^export$/ }).first();
+      await keyword.waitFor();
+      assert.deepEqual(await region.locator(".review-notebook-source-line > span:first-child").allTextContents(), ["2", "3", "4", "5", "6"]);
+      assert.equal((await region.locator(".review-notebook-source-line").nth(1).textContent()).replace(/\n$/, ""), "3", "Blank source lines retain their coordinates");
+      assert.match(await region.innerText(), /<script>not executable<\/script>/);
+      assert.doesNotMatch(await region.innerText(), /WORKING CODE ONLY|Outside the excerpt/);
+      assert.equal(await region.locator("script").count(), 0, "Source text remains escaped");
+      assert.equal(await region.locator(".token.attr-equals").count() > 0, true, "TSX attributes use the filename grammar");
+      assert.equal(await region.locator(".review-notebook-source-line").last().locator(".token").count() > 0, true, "Multiline tokens span source rows");
+      assert.equal(await keyword.evaluate(token => getComputedStyle(token).color !== getComputedStyle(token.closest("code")).color), true, "Tokens have visible syntax colors");
+      await code.getByRole("button", { name: "Collapse source", exact: true }).click();
       const commit = stop(scope, "feature-commit");
       await commit.getByRole("button", { name: "Expand commit", exact: true }).click();
       await commit.getByRole("region", { name: "Git commit details", exact: true }).waitFor();

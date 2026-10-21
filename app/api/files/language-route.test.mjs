@@ -16,11 +16,12 @@ const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, intero
 const { GET } = await jiti.import("./[...path]/route.ts");
 const { allowFileRoot } = await jiti.import("../../../lib/file-access.ts");
 const { loadPrismLanguages } = await jiti.import("../../../lib/prism-languages.ts");
+const { getFileLanguage } = await jiti.import("../../../lib/file-language.ts");
 allowFileRoot(root);
 await loadPrismLanguages();
 
-const source = fs.readFileSync(new URL("./[...path]/route.ts", import.meta.url), "utf8");
-const file = ts.createSourceFile("route.ts", source, ts.ScriptTarget.Latest, true);
+const source = fs.readFileSync(new URL("../../../lib/file-language.ts", import.meta.url), "utf8");
+const file = ts.createSourceFile("file-language.ts", source, ts.ScriptTarget.Latest, true);
 let map;
 file.forEachChild(function visit(node) {
   if (ts.isVariableDeclaration(node) && node.name.getText(file) === "EXT_TO_LANGUAGE") map = node.initializer;
@@ -52,6 +53,11 @@ test("preview languages remain exclusive to HTML and Markdown, not templates", a
   assert.deepEqual(preview.sort(), ["htm", "html", "md", "mdx"]);
   for (const ext of ["vue", "svelte", "astro"]) assert.equal(await languageOf(`App.${ext}`), "markup");
   for (const name of ["plot.m", "server.conf", "unknown.xyz", "table.csv", "table.tsv"]) assert.equal(await languageOf(name), "text");
+});
+
+test("shared presentation mapping accepts either path separator and unknown names stay plain", () => {
+  for (const file of ["src/View.TSX", "C:\\src\\View.TSX", "//server/share/View.TSX"]) assert.equal(getFileLanguage(file), "tsx");
+  for (const file of ["", "unknown.xyz", "constructor", "__proto__", "file.toString"]) assert.equal(getFileLanguage(file), "text");
 });
 
 test("JSX/TSX tags and attributes tokenize, styles have their own grammar", async () => {
