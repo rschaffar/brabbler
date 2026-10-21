@@ -505,12 +505,19 @@ export async function checkModelSpeed(page, options) {
   if (width > 600) {
     // The latest speed custom entry follows this assistant leaf. Neither copied
     // branch includes it, so inheritance cannot rely on copying branch metadata.
+    const copiedIds = [];
     for (const command of [{ type: "clone", leafId: "20000004" }, { type: "fork", entryId: "20000003" }]) {
       const { data } = await post(`/api/agent/${B}`, command);
       assert.equal(data.cancelled, false);
       assert.ok(data.newSessionId && data.newSessionId !== B);
       await checkSaved(options, data.newSessionId, "fast");
+      copiedIds.push(data.newSessionId);
     }
+    // Real API completion precedes the sidebar's asynchronous catalogue refresh.
+    // Wait for both mutations to reach its DOM before computing click geometry;
+    // the normal locator click still owns visibility/stability and the URL check.
+    await showSidebar(page);
+    await page.waitForFunction(ids => ids.every(id => document.querySelector(`.session-row[data-session-id="${id}"]`)), copiedIds);
   }
   await pickSession(page, B, "fast");
   await changeSavedSpeed(page, options, B, "standard");
