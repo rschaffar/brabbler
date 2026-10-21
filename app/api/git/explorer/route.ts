@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import { NextRequest, NextResponse } from "next/server";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
-import { explorerCommit, explorerFileContext, explorerLog, explorerPatch, GitExplorerError } from "@/lib/git-explorer";
+import { explorerCommit, explorerFileContext, explorerLog, explorerPatch, explorerSource, GitExplorerError } from "@/lib/git-explorer";
 import { DiffContextError } from "@/lib/git-file-context";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,8 @@ export async function GET(request: NextRequest) {
   const op = params.get("op");
   const fields = op === "log" ? ["cwd", "op", ...(params.has("skip") ? ["skip"] : []), ...(params.has("head") ? ["head"] : []), ...(params.has("branch") ? ["branch"] : [])]
     : op === "commit" ? ["cwd", "op", "head", "oid", ...(params.has("branch") ? ["branch"] : [])]
-    : op === "patch" || op === "context" ? ["cwd", "op", "head", "oid", "path", ...(params.has("branch") ? ["branch"] : [])] : [];
+    : op === "patch" || op === "context" ? ["cwd", "op", "head", "oid", "path", ...(params.has("branch") ? ["branch"] : [])]
+    : op === "source" ? ["cwd", "op", "head", "oid", "path", "start", "end", ...(params.has("branch") ? ["branch"] : [])] : [];
   if (!fields.length || params.size !== fields.length || fields.some((field) => !params.has(field)) ||
     !cwd || (params.has("branch") && !params.get("branch")) ||
     (!cwd.startsWith("/") && !isWindowsAbsolutePath(cwd))) return failure("Invalid Git Explorer request", 400);
@@ -33,6 +34,11 @@ export async function GET(request: NextRequest) {
     }
     const head = params.get("head") ?? "";
     const oid = params.get("oid") ?? "";
+    if (op === "source") {
+      const start = params.get("start") ?? "", end = params.get("end") ?? "";
+      if (!/^[1-9]\d*$/.test(start) || !/^[1-9]\d*$/.test(end)) return failure("Invalid source range", 400);
+      return NextResponse.json(await explorerSource(cwd, head, oid, params.get("path") ?? "", Number(start), Number(end), params.get("branch") ?? undefined));
+    }
     if (op === "commit") return NextResponse.json(await explorerCommit(cwd, head, oid, params.get("branch") ?? undefined));
     if (op === "patch") return NextResponse.json(await explorerPatch(cwd, head, oid, params.get("path") ?? "", params.get("branch") ?? undefined));
     if (op === "context") return NextResponse.json(await explorerFileContext(cwd, head, oid, params.get("path") ?? "", params.get("branch") ?? undefined));

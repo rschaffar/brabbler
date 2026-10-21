@@ -5,25 +5,29 @@ import { useI18n } from "@/hooks/useI18n";
 import { deepActiveElement, panelTabStops } from "@/lib/panel-focus";
 import { GitExplorer } from "./GitExplorer";
 import { GitCommitViewer } from "./GitCommitViewer";
+import type { ReviewNavigation } from "@/lib/review-notebook";
 
 type SelectedCommit = { branch: string; head: string; oid: string };
 
 /** Worktree-scoped, read-only history alongside chat. The detail never opens a file tab. */
-export function GitExplorerPanel({ cwd, onClose, expanded, canExpand, onToggleExpanded }: {
+export function GitExplorerPanel({ cwd, onClose, expanded, canExpand, onToggleExpanded, initialSelection, onReturnToWorkspace }: {
   cwd: string | null;
   onClose: () => void;
   expanded: boolean;
   canExpand: boolean;
   onToggleExpanded: () => void;
+  initialSelection?: ReviewNavigation;
+  onReturnToWorkspace?: () => void;
 }) {
   const { t } = useI18n();
-  const [selected, setSelected] = useState<SelectedCommit | null>(null);
-  const [mobileDetail, setMobileDetail] = useState(false);
+  const [selected, setSelected] = useState<SelectedCommit | null>(initialSelection ?? null);
+  const [mobileDetail, setMobileDetail] = useState(Boolean(initialSelection));
   const panelRef = useRef<HTMLElement>(null);
   const expandRef = useRef<HTMLButtonElement>(null);
   const wasExpanded = useRef(false);
   const clearSelection = () => { setSelected(null); setMobileDetail(false); };
 
+  useEffect(() => { if (initialSelection) panelRef.current?.focus(); }, [initialSelection]);
   useEffect(() => {
     if (expanded || wasExpanded.current) {
       // CSS-only expansion keeps the reader mounted. Restore focus after inert clears.
@@ -68,9 +72,13 @@ export function GitExplorerPanel({ cwd, onClose, expanded, canExpand, onToggleEx
         <button type="button" className="activity-close" onClick={onClose} aria-label={t("gitExplorer.close")} title={t("gitExplorer.close")}>×</button>
       </div>
     </div>
+    {onReturnToWorkspace && <div className="border-b border-border px-3 py-2 text-xs text-text-muted">
+      {t("review.referencedRepository")}
+      <button type="button" className="ml-2 text-accent underline" onClick={onReturnToWorkspace}>{t("review.returnHistory")}</button>
+    </div>}
     {cwd ? <div className={`git-explorer-columns${mobileDetail ? " git-explorer-mobile-detail" : ""}`}>
       <div className="git-explorer-graph">
-        <GitExplorer cwd={cwd} onBranchChange={clearSelection} onOpenCommit={(branch, head, oid) => {
+        <GitExplorer cwd={cwd} initialSelection={initialSelection} onBranchChange={clearSelection} onOpenCommit={(branch, head, oid) => {
           setSelected({ branch, head, oid });
           setMobileDetail(true);
         }} />

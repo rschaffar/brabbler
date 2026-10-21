@@ -44,10 +44,20 @@ test("read-only Git Explorer routes bind a physical allowed checkout and capture
   assert.equal(patch.status, 200);
   assert.match((await patch.json()).patch, /\+base/);
   assert.equal((await request({ cwd, op: "patch", oid: head, head, path: ".git/config" })).status, 404);
+  const source = { cwd, op: "source", branch: "main", oid: head, head, path: "base.txt", start: "1", end: "1" };
+  assert.deepEqual(await (await request(source)).json(), { oid: head, path: "base.txt", start: 1, end: 1, totalLines: 1, contents: "base" });
+  assert.equal((await request({ ...source, cwd: parent })).status, 403);
+  assert.equal((await request({ ...source, path: "../base.txt" })).status, 400);
+  assert.equal((await request({ ...source, end: "401" })).status, 400);
+  assert.equal((await request({ ...source, start: "01" })).status, 400);
+  assert.equal((await request({ ...source, start: "1e0" })).status, 400);
+  assert.equal((await request({ ...source, extra: "unknown" })).status, 400);
+  assert.equal((await GET(new NextRequest(`http://localhost/api/git/explorer?${new URLSearchParams(source)}&start=1`))).status, 400);
   writeFileSync(join(cwd, "base.txt"), "new\n");
   git(cwd, "add", "base.txt");
   git(cwd, "commit", "-qm", "next");
   assert.equal((await request({ cwd, op: "commit", oid: head, head })).status, 409);
+  assert.equal((await request(source)).status, 409);
 });
 
 test("route binds selected local-branch detail and patch to its unchanged tip", async (t) => {

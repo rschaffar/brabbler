@@ -491,7 +491,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
           ) : (
           <>
           {imageBlocksNode}
-          {content && <SafeMarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile} enableInlineMedia sourceSessionId={sessionId}>{content}</SafeMarkdownBody>}
+          {content && <SafeMarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile} enableInlineMedia enableReviewBlocks sourceSessionId={sessionId}>{content}</SafeMarkdownBody>}
           </>
           )}
         </div>
@@ -935,7 +935,7 @@ function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDur
 }
 
 function TextBlock({ block, isStreaming, cwd, onOpenFile, sessionId }: { block: TextContent; isStreaming?: boolean; cwd?: string; onOpenFile?: React.ComponentProps<typeof MarkdownBody>["onOpenFile"]; sessionId?: string }) {
-  return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} enableInlineMedia sourceSessionId={sessionId}>{block.text}</SafeMarkdownBody>;
+  return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} enableInlineMedia enableReviewBlocks sourceSessionId={sessionId}>{block.text}</SafeMarkdownBody>;
 }
 
 // Do not memoize pieces: retained sliced props can pin old large stream strings.

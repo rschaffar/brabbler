@@ -67,18 +67,26 @@ test("Activity and Starred toggles preserve desktop Files and only hide Files on
         const context = vm.createContext({
           isMobile: width <= 640, window: { innerWidth: width },
           activeOverview: null, overviewMobileList: true, rightPanelOpen: initialOpen,
+          reviewNavigationId: { current: 0 }, reviewNavigation: "pending",
           setActiveTopPanel() {}, setSidebarOpen() {},
         });
+        context.setReviewNavigation = value => { context.reviewNavigation = value; };
         context.setActiveOverview = value => { context.activeOverview = value; };
         context.setOverviewMobileList = value => { context.overviewMobileList = value; };
         context.setRightPanelOpen = value => { context.rightPanelOpen = value; };
         context.closeOverview = () => { context.activeOverview = null; };
         for (const previous of [null, panel === "activity" ? "starred" : "activity", panel]) {
           context.activeOverview = previous;
+          context.reviewNavigationId.current = 0;
+          context.reviewNavigation = "pending";
           vm.runInContext(`(() => {${handler}\n})()`, context);
           assert.equal(context.rightPanelOpen, width <= 640 ? false : initialOpen,
             `${panel} preserves Files visibility at ${width}px`);
           assert.equal(context.activeOverview, previous === panel ? null : panel);
+          if (previous !== panel) {
+            assert.equal(context.reviewNavigationId.current, 1, "Opening an overview supersedes pending review reveals");
+            assert.equal(context.reviewNavigation, null);
+          }
         }
       }
     }

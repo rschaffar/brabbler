@@ -6,7 +6,9 @@ import { gitExecEnv } from "./git-exec.ts";
 // @ts-expect-error Native Node tests require the .ts suffix; Next resolves it too.
 import { samePath, toNativePath } from "./paths.ts";
 // @ts-expect-error Native Node tests require the .ts suffix; Next resolves it too.
-import { readGitFileContext } from "./git-file-context.ts";
+import { readGitFileContext, readGitTreeFile } from "./git-file-context.ts";
+// @ts-expect-error Native Node tests require the .ts suffix; Next resolves it too.
+import { isReviewSourcePath, isReviewSourceRange, type ReviewSource } from "./review-notebook.ts";
 
 const exec = promisify(execFile);
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -194,6 +196,22 @@ export async function explorerCommit(cwd: string, head: string, oid: string, bra
   const files = await commitFiles(cwd, oid, parents);
   await anchored(cwd, head, branch);
   return { oid: requireOid(parts[0]), parents, author: parts[2], date: parts[3], message: parts[4].trimEnd(), files };
+}
+
+/** An unchanged file is valid source context too, but only from an authorized immutable tree. */
+export async function explorerSource(cwd: string, head: string, oid: string, path: string,
+  start: number, end: number, branch?: string): Promise<ReviewSource> {
+  if (!isReviewSourcePath(path) || !isReviewSourceRange(start, end)) throw new GitExplorerError("INVALID", "Invalid source path or range (maximum 400 lines)");
+  await anchored(cwd, head, branch);
+  await reachable(cwd, head, oid);
+  const file = await readGitTreeFile(cwd, oid, path);
+  if (!file) throw new GitExplorerError("NOT_FOUND", "File is absent at this commit");
+  const lines = file.contents.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  if (lines.length > 50_000) throw new GitExplorerError("TOO_LARGE", "Source exceeds the 50,000-line text limit");
+  if (end > lines.length) throw new GitExplorerError("INVALID", "Source range extends beyond this file version");
+  await anchored(cwd, head, branch);
+  return { oid, path, start, end, totalLines: lines.length, contents: lines.slice(start - 1, end).join("\n") };
 }
 
 /** Full-file context under exactly the same captured history/path authority as a patch. */
