@@ -26,8 +26,8 @@ Adapt cached upstream `feb40f6354704cf987739247ace0b872b7300c83`, with corrected
 - [x] Migrate provider and enabled-model listings; retain fresh settings and one-shot writes, account isolation and existing scope semantics.
 - [x] Wire plugin and both session reload invalidators; test failure paths and unchanged auth/runtime boundaries.
 - [x] Update owning guides and packaged browser fixtures; independently review and resolve findings.
-- [ ] Reopened after target advancement: run complete fresh `nix run .#test -- all --workers 4 --jobs 4` on the new combination; record exact inputs, commands/results, artifacts and timing. Earlier candidate acceptance below remains valid only for its recorded inputs.
-- [ ] Commit coherent reviewed work and hand the verified candidate to the Git lifecycle for exact-state non-FF integration into current local rst-main and separate cleanup.
+- [x] Reopened after target advancement: complete fresh four/four acceptance passes on the final combination below; earlier acceptance remains attached only to its recorded inputs.
+- [x] Commit coherent reviewed work and hand the verified candidate to the Git lifecycle for exact-state non-FF integration into current local rst-main and separate cleanup.
 
 ## Verification and blocker investigation
 
@@ -56,14 +56,26 @@ Focused four-worker contention selection ran the original server test alongside 
 - Genuine Home Manager deployment: `/tmp/pwv-ftmXGC/run.json`, all activation/default-target, environment/permissions, durable HTTP writes/restart and genuine HTTP PTY proofs passed. Collection and clients settled; final service inactive/dead, MainPID zero, cgroup absent and port refused. Service interval **56.245s**, guest proof **19.026s**. Browser and guest use the same production package `/nix/store/2rsv0256fd7v5k8fv432gplhl9fh2ljl-pi-web-0.9.3`.
 - These level intervals overlap; never add them to obtain command runtime. Model/review/coordination time is separate. Existing unrelated ref-cleanup lint warnings remain warnings; no deadlines or general error capture were relaxed.
 
+## Final held-target acceptance
+
+Before final handoff, target advanced to `c999fadf4a4121b4dd4cd02dfcf4ca8910df3d90` with 147 changed files (appearance/metrics, subagent lifecycle, file workspace, Explorer uploads and inline media). User chose to **hold further integrations while this feature rebases and verifies**. One already-in-flight target integration completed, establishing held target **`8cb018d94c18780d3cc980cd0604ef1dbd292e57`**, including lazy source highlighting.
+
+The guarded rebase stopped on three additive conflicts. It was aborted first; original clean tip `78a3aa4298328377146e1f9c8d15fd204f7b97db` was verified and a timestamped `backup/resource-listings-before-target-rebase-*` branch retained. A merge-tree preview showed only adjacent documentation and fixture setup conflicts. Retried resolution retained both managed-model/listing documentation sections, the combined Markdown inventory row and all media/highlighting seeds while supplying the listing seed's project argument. No conflicting runtime logic. Manual continuation completed; range-diff confirmed unchanged production patches, with only those contexts adapted. Final candidate **`2ed10187dcbfc014db6fb4a1c3c5d87133e1292b`** comprises `4b17228`, `839d642`, and evidence-only `2ed1018`. Post-rebase independent review found no composition blocker: context-window metadata survives detached snapshots and offline refresh applies saved managed-model overrides; session/account/catalog ownership remains separate.
+
+Complete fresh `nix run --offline --no-write-lock-file .#test -- all --offline --workers 4 --jobs 4` **passed in 531 seconds (8m51s)** including realization. Native x86_64 Linux, 32 logical CPUs/about 39 GiB available at admission; requested/effective widths **4/4 core and 4 browser sandboxes**, overlap estimated at 16 CPUs/27 GiB, not a reservation. Earlier commands warmed prerequisites; no separate prewarming step. All executions fresh; no cold-cache or real-provider speedup claim.
+
+- Full log `/tmp/pi-resource-listings-held-all.DG1MOh.log`; snapshot `/tmp/pi-web-test-source-UDTdNa`, selection `/tmp/pi-web-test-source-UDTdNa/selection.json`, outer content/mode digest **`4690ee3a35c2268e3206aadc8b1c1a3981c5a48d63af11f5a82ea3554630b00c`**, immutable source `/nix/store/rhrl2n75p22669nhajkgm345nvf9889c-source`.
+- Core/static/plugins: **378 files / 2,811 tests / 12 suites**, all passed, none skipped/cancelled/not-started, no observed surviving owned processes. `/tmp/pi-web-test-core.7rUJOo/run.json`, output `/nix/store/lddv4shyfhaa80yijaq2wi9w8kf72lm1-pi-web-core-checks`, filtered digest `9e3425f69b6f8397371e2232611259d289724b42d62641d356cc1e72be4abdd4`. Inclusive interval **408.216s**, before-first-file **42.295s**, execution span **365.393s**.
+- Browser/terminal: **24 groups / 53 exact receipts**, all matching coverage, collected artifacts, no browser/server errors, closed ports and settled owned resources. `/tmp/pi-web-test-browser.n5qze2/run.json`. Inclusive browser interval **456.853s**, before-first-capsule preparation/realization/coordination **93.634s**, capsule span **363.083s**.
+- Genuine deployment: `/tmp/pwv-tLXl1Y/run.json`, activation/default target, environment/private permissions, durable HTTP writes/restart, real HTTP PTY, collection and shutdown all passed. Final inactive/dead, MainPID zero, cgroup absent and port refused. Inclusive service **67.749s**, guest proofs **21.248s**. Same browser/service production package `/nix/store/b646y4sl6b748nagbd9bdf8yg6s289j0-pi-web-0.9.3`.
+- Intervals overlap; never sum them as serial command runtime. Model/review/coordination work is separate. Pins/deadlines/inventory/isolation remain unchanged. No runtime input changes follow this acceptance.
+
 ## Integration handoff
 
-User selected **Integrate into local rst-main** after complete acceptance. Before final handoff, target advanced to `c999fadf4a4121b4dd4cd02dfcf4ca8910df3d90` with 147 changed files (appearance/metrics, subagent lifecycle, file workspace, Explorer uploads and inline media). User chose to **hold further integrations while this feature rebases and verifies**. Final acceptance/handoff is reopened; do not label the earlier run as evidence for the new combination. This plan remains active until that revalidation.
-
-The Git lifecycle owns subsequent exact-state approval, unsigned non-fast-forward merge and separately approved cleanup. Its durable receipts, not this plan, own actual integration/cleanup outcomes. This evidence update is documentation-only relative to `7f60349`. No remote publication, installed-host deployment/restart or live-provider/credential access was performed. Failed evidence remains retained.
+User selected **Integrate into local rst-main**. Implementation and final held-target acceptance are complete; this plan is archived at the integration-ready handoff. The Git lifecycle owns subsequent exact-state approval, unsigned non-fast-forward merge and separately approved cleanup. Its durable receipts, not this plan, own actual integration/cleanup outcomes. The final evidence/archive delta is documentation-only relative to `2ed1018`; application/test/Nix input equality and whitespace review are its proportional checks, not a relabeled full run. No remote publication, installed-host deployment/restart or live-provider/credential access was performed. Failed evidence and the recovery branch remain retained.
 
 ## Completion Checklist
 
 - [x] Listing optimization verified without weakening account/trust/content authorization.
-- [ ] Complete core/static/plugin/browser/terminal/deployment acceptance passes for the final rebased combination; independent feature/fixture reviews remain resolved.
-- [ ] Maintained guides and final evidence are handed off with unexecuted lifecycle/deployment boundaries explicit.
+- [x] Complete core/static/plugin/browser/terminal/deployment acceptance passes for the final rebased combination; independent feature/fixture/composition reviews are resolved.
+- [x] Maintained guides and final evidence are handed off with unexecuted lifecycle/deployment boundaries explicit.
