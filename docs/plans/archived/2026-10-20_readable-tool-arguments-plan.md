@@ -18,8 +18,8 @@ Earlier easy-wins/security/followup ports are complete and archived. This plan o
 - [x] Add escaped, accessible argument rows, raw disclosure and canonical full copying; preserve rich views and show edit input without a usable diff. Verify MessageView rendering and desktop/mobile browser interactions.
 - [x] Mirror bounded presentation changes in demo without replacing its renderer; inspect exact helper/component/clipboard parity and update maintained owning guides.
 - [x] Obtain independent read-only safety review and resolve concrete findings before final acceptance. Final bounded follow-up found no remaining blockers; no reviewer ran tests or wrote source.
-- [ ] Run focused Nix core/history checks, then fresh full `nix run .#test -- all --workers 4 --jobs 4` after admission; record exact identities, commands, results, timings and artifacts, retaining failures.
-- [ ] Commit coherent reviewed changes; resolve completion intent and hand the verified clean candidate to the mandatory local `rst-main` non-FF integration lifecycle.
+- [x] Run focused Nix core/history checks, then fresh full `nix run .#test -- all --workers 4 --jobs 4` after admission; record exact identities, commands, results, timings and artifacts, retaining failures.
+- [x] Commit coherent reviewed changes; resolve completion intent and hand the verified clean candidate to the mandatory local `rst-main` non-FF integration lifecycle. User selected local integration through `ask_user`; the exact-state merge card and durable Git receipt own approval/execution, not this archive.
 
 ## Risks
 
@@ -48,8 +48,19 @@ Long labels must not clip on phones; multiline scroll regions need keyboard acce
 - Same source passed desktop 1280px/touch-mobile 390px history, **118s command wall time** including isolated package realization, **31.137s browser execution**: `/tmp/pi-web-tool-arguments-rebased-history.s3C5GX.log`, `/tmp/pi-web-test-browser.u5m7iW/run.json`. The expanded keyboard/IME/reading-position chain remains intact alongside argument-copy/streaming proofs. These are focused passes, not complete acceptance or a cold/warm benchmark.
 - Independent rebase review found no separate blockers; font-weight correction addresses table cells not covered by the target's global `pre, code` rule. App/demo helpers, argument component and clipboard source remain identical; dependency/Nix inputs are unchanged relative to the selected target.
 
+## Complete acceptance and handoff
+
+- Accepted application/test candidate: **`02ccf2a5f93a43bf5a71b7e3d8db3dfb04f0efc8`**, based on local **`2cdddaba1fcc70f9a7ed57fc88ef28155f9035cf`**. Subsequent evidence/status archival changes only this document; earlier runs are not relabeled as new-tip execution.
+- Fresh **`nix run .#test -- all --workers 4 --jobs 4` passed**, **408s command wall time**, including in-command realization. Native x86_64 Linux, 32 logical CPUs, about 36 GiB available at admission; no other matching acceptance process was observed immediately before launch, not a continuous exclusivity claim. Requested/effective widths: four browser sandboxes and four core workers; conservative combined estimate 16 CPUs / 27 GiB, not a reservation. Prerequisites were warm from the recorded focused runs; no extra prewarming was performed. These are not cold-cache or performance-comparison results.
+- Log `/tmp/pi-web-tool-arguments-rebased-all.rVO4wx.log`; verified snapshot `/tmp/pi-web-test-source-gbjaCR`; outer content/mode digest **`d34c403f38cfd5604e7e9946933f876730a0cd8265d7c85a7793bc47bb504dc2`**, selection `/tmp/pi-web-test-source-gbjaCR/selection.json`. Core filtered digest `4d3f25770dcb138c3afe8b55f3d03b0828fcc96eda1a90f9080deaa545dbe2df`.
+- Core/static/plugin: **388 files / 2,918 tests / 12 suites**, all passed, none failed/skipped/cancelled/not-started; `/tmp/pi-web-test-core.8ATsFq/run.json`, `/nix/store/0pspymcv0vvibqk6fciawmsmzgvxql8s-pi-web-core-checks`. Inclusive core interval **347.789s**, including realization/static preparation; no separate core-preparation measurement is claimed. Bounded process observations and runner settlement passed.
+- Browser/terminal: **24 groups / 53 exact scenario receipts**, every group passed with matching inventory, collected artifacts, settled execution and closed ports; `/tmp/pi-web-test-browser.oFBTp8/run.json`. Browser-driver interval **332.960s**, initial preparation/first-capsule interval **7.154s**, inner-capsule span **325.688s**. Existing source links, receipts, keyboard/IME, split workspaces and full browser inventory remain included.
+- Genuine Home Manager VM passed activation/default-target startup, private environment/permissions, durable write/restart, real HTTP PTY, collection and settlement; `/tmp/pwv-CmnOmg/run.json`. Service inactive/dead, MainPID zero, authenticated cgroup absent, port refused. Inclusive service interval **67.591s**, guest evidence interval **19.185s**. Browser and VM use the same production package `/nix/store/z0jcq1rd9svf7yp960z5b7ilm9yh8vgf-pi-web-0.9.3`. Overlapping level intervals must not be summed into command runtime.
+- Maintained behavior is owned by `docs/feature-internals.md`, `docs/session-internals.md` and `e2e/README.md`. Independent reviews are resolved. Demo parity is source-reviewed, not separately browser-tested or deployed. SDK/Node/Next/Nix pins are unchanged relative to target; no remote/provider/live-secret or installed-host operation was performed.
+- User chose **integrate into local `rst-main`** after acceptance. This completed plan is archived at the verified handoff. Exact-state approval, unsigned non-FF execution and separate cleanup remain with the Git lifecycle and its receipts. The backup branch and retained failures are outside ordinary feature cleanup; no archive entry claims an unexecuted merge, publication or host deployment.
+
 ## Completion Checklist
 
-- [ ] Rows/write/raw/copy/fallback behavior is covered without changing historical entry IDs, source links, receipts or process grouping.
-- [ ] Independent review resolved and full core/static/plugin, browser/terminal and genuine deployment-VM acceptance passed for the recorded candidate.
-- [ ] Maintained guides updated; exact feature/integration status and any gaps reported without claiming deployment or publication.
+- [x] Rows/write/raw/copy/fallback behavior is covered without changing historical entry IDs, source links, receipts or process grouping.
+- [x] Independent review resolved and full core/static/plugin, browser/terminal and genuine deployment-VM acceptance passed for the recorded candidate.
+- [x] Maintained guides updated; exact feature/integration handoff status and demo evidence limit reported without claiming deployment or publication.
