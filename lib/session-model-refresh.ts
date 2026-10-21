@@ -168,7 +168,9 @@ export function registerModelRuntimeSession(
       for (const name of ["setActiveTools", "refreshTools"] as const) {
         const original = extensionRuntime[name];
         extensionRuntime[name] = (...args: Parameters<typeof original>) => {
-          if (!alive()) throw new Error("Session is unavailable");
+          // Late global settings notifications may still reach a retired loader.
+          // It has no live registry to update and must not abort other listeners.
+          if (!alive()) return;
           // Native cross-model model_select handlers may synchronously update
           // tools. Permit only these non-running registry actions during bind;
           // never give callbacks a run/provider/credential admission bypass.
