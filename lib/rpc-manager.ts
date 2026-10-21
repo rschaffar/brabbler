@@ -354,7 +354,10 @@ export class AgentSessionWrapper {
     this.releaseModelRuntime = registerModelRuntimeSession(inner,
       (requester) => this.isRunning() || this.activeMutatingCommands > (requester === inner ? 1 : 0)
         || Boolean(this.shutdownPromise) || (!this.chatOnly && !this.extensionsBound),
-      () => this._alive && !this.shutdownPromise, () => this.persistSessionWithoutAssistant());
+      () => this._alive && !this.shutdownPromise, () => this.persistSessionWithoutAssistant(), () => {
+        try { this.finishPause(); }
+        catch (error) { this.pauseFailed(error); }
+      });
   }
 
   get sessionId(): string {
@@ -440,7 +443,8 @@ export class AgentSessionWrapper {
     childSettled ||= this.subagentSettlementComplete;
     if (!this.isPauseRequested() || this.pause?.state === "paused" || this.pauseFailure || this.pause?.error) return;
     const inputBusy = this.pendingPromptCount > 0 || this.pendingCheckoutAdmissions > 0 || this.sdkPrompts > 0 || this.sdkQueueAdmissions > 0
-      || this.parkedQueueSave !== undefined || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning;
+      || this.parkedQueueSave !== undefined || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning
+      || Boolean(this.inner.modelRuntime && modelRuntimeRefreshState(this.inner.modelRuntime).refreshing);
     if (childSettled ? inputBusy : this.isRunning()) return;
     if (this.hasQueuedPauseInput()) {
       void this.settleIdlePauseInput().then(() => this.finishPause(childSettled), (error) => {

@@ -8,6 +8,7 @@ type Member = {
   busy: (requester: AgentSessionLike) => boolean;
   alive: () => boolean;
   persist: () => void;
+  settled?: () => void;
   bind: AgentSessionLike["setModel"];
   selectionRequired: boolean;
   binding: boolean;
@@ -133,11 +134,12 @@ export function registerModelRuntimeSession(
   busy: Member["busy"],
   alive: Member["alive"],
   persist: () => void = () => {},
+  settled?: () => void,
 ): () => void {
   const runtime = session.modelRuntime;
   if (!runtime) return () => {}; // Legacy host/test doubles without a runtime.
   const state = access(runtime);
-  const member: Member = { session, busy, alive, persist, bind: session.setModel?.bind(session), selectionRequired: false, binding: false };
+  const member: Member = { session, busy, alive, persist, settled, bind: session.setModel?.bind(session), selectionRequired: false, binding: false };
   state.members.add(member);
   const guardedRunners = new WeakSet<object>();
   const installExtensionGuards = () => {
@@ -291,6 +293,13 @@ export async function applySessionModelDefinition(
       clearTimeout(timer);
       state.refreshing = false;
       state.abort = undefined;
+      // Timeout only settles the caller. Wake idle lifecycle observers on every
+      // sharing session after the actual SDK refresh/bind work has settled.
+      for (const member of state.members) {
+        if (!member.alive()) continue;
+        try { member.settled?.(); }
+        catch { console.error("[pi-web] model refresh settlement observer failed"); }
+      }
     }
   })();
   state.settlement = work.then(() => {}, () => {});
