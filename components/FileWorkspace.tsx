@@ -155,7 +155,9 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
     const current = store.snapshot()[props.workspaceKey] ?? EMPTY;
     const source = origin ? current.views[origin] : undefined;
     const base = origin ? viewGroup(current, origin)! : current.activeGroup;
-    if (disposition.kind === "split" && !canSplit(base, disposition.axis)) { setStatus(t("workspace.needSpace")); return; }
+    if (disposition.kind === "follow" && !source) return;
+    const target = disposition.kind === "follow" ? disposition.target : disposition;
+    if (target.kind === "split" && !canSplit(base, target.axis)) { setStatus(t("workspace.needSpace")); return; }
     if (disposition.kind === "normal" && source?.route && source.filePath !== location.filePath && !current.groups[source.route]) {
       setPending({ key: props.workspaceKey, location, origin: origin! }); return;
     }
@@ -228,7 +230,8 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
       onPointerDown={() => commit(key, state => selectFileView(state, groupId))}
       style={{ ...position({ ...rect, y: rect.y + HEADER, height: Math.max(0, rect.height - HEADER) }), display: visible ? "block" : "none" }}>
       {renderViewer && <FileEditContext.Provider value={contextFor(key, view.id)}>
-        <FileLinkMenuContext.Provider value={{ ...menuContext, contextKey: props.workspaceKey }}>
+        <FileLinkMenuContext.Provider value={{ ...menuContext, contextKey: props.workspaceKey,
+          follow: { sourceGroup: groupId, right: canSplit(groupId, "right"), below: canSplit(groupId, "below") } }}>
           <FileViewer filePath={view.filePath} cwd={view.cwd} sourceSessionId={view.sourceSessionId} gitRefreshKey={props.gitRefreshKey}
             navigationId={view.viewerRevision} initialDisplayMode={view.initialDisplayMode} initialState={view.viewerState}
             initialPage={view.page} initialLineTarget={view.lineTarget} watchEnabled={visible && props.active}

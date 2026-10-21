@@ -6,7 +6,10 @@ import type { FileDisposition } from "@/lib/file-workspace";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
 
-export const FileLinkMenuContext = createContext<{ groups: { id: string; label: string }[]; canSplit: boolean; contextKey?: string }>({ groups: [], canSplit: false });
+export const FileLinkMenuContext = createContext<{
+  groups: { id: string; label: string }[]; canSplit: boolean; contextKey?: string;
+  follow?: { sourceGroup: string; right: boolean; below: boolean };
+}>({ groups: [], canSplit: false });
 export function LocalFileLink({ href, filePath, page, lineTarget, onOpenFile, children, ...props }:
   Omit<ComponentProps<"a">, "onClick"> & { filePath: string; page?: number; lineTarget?: FileLineTarget; onOpenFile: OpenFileLink; children: ReactNode }) {
   const { t } = useI18n();
@@ -15,7 +18,7 @@ export function LocalFileLink({ href, filePath, page, lineTarget, onOpenFile, ch
   const popup = useRef<HTMLSpanElement>(null);
   const id = useId();
   const [active, setActive] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [panel, setPanel] = useState<"more" | "follow" | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -26,7 +29,7 @@ export function LocalFileLink({ href, filePath, page, lineTarget, onOpenFile, ch
   const touchStart = useRef<{ x: number; y: number } | undefined>(undefined);
   const focusPending = useRef(false);
   const keyboardAnchor = useRef(false);
-  const identity = JSON.stringify([choices.contextKey, filePath, href, page, lineTarget?.line, lineTarget?.endLine, lineTarget?.column]);
+  const identity = JSON.stringify([choices.contextKey, choices.follow?.sourceGroup, filePath, href, page, lineTarget?.line, lineTarget?.endLine, lineTarget?.column]);
   const currentIdentity = useRef(identity);
   currentIdentity.current = identity;
   const openingIdentity = useRef<string | undefined>(undefined);
@@ -36,7 +39,7 @@ export function LocalFileLink({ href, filePath, page, lineTarget, onOpenFile, ch
   const close = useCallback((restoreFocus = false) => {
     clearTimers(); dismissed.current = true; focusPending.current = false;
     if (popup.current?.matches(":popover-open")) popup.current.hidePopover();
-    setActive(false); setExpanded(false);
+    setActive(false); setPanel(null);
     if (restoreFocus && anchor.current?.isConnected && anchor.current.getClientRects().length) anchor.current.focus({ preventScroll: true });
     // Native hiding can briefly restore focus outside this wrapper before our return focus.
     queueMicrotask(() => { dismissed.current = false; });
@@ -44,7 +47,7 @@ export function LocalFileLink({ href, filePath, page, lineTarget, onOpenFile, ch
   const show = (more = false, focus = false) => {
     if (currentIdentity.current !== identity || !popup.current?.showPopover || !anchor.current?.getClientRects().length) return;
     clearTimers(); dismissed.current = false; openingIdentity.current = identity; focusPending.current = focus;
-    setExpanded(more); setActive(true);
+    setPanel(more ? "more" : null); setActive(true);
     for (const other of document.querySelectorAll<HTMLElement>(".file-link-hover:popover-open")) if (other !== popup.current) other.hidePopover();
     if (!popup.current.matches(":popover-open")) { popup.current.style.visibility = "hidden"; popup.current.showPopover(); }
   };
@@ -95,7 +98,7 @@ export function LocalFileLink({ href, filePath, page, lineTarget, onOpenFile, ch
     window.addEventListener("pointerdown", outside, true);
     window.addEventListener("keydown", escape, true);
     return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener("scroll", scroll, true); window.removeEventListener("pointerdown", outside, true); window.removeEventListener("keydown", escape, true); };
-  }, [active, expanded, close]);
+  }, [active, panel, close]);
 
   const open = (disposition: FileDisposition) => {
     const valid = openingIdentity.current === currentIdentity.current;
@@ -116,7 +119,7 @@ export function LocalFileLink({ href, filePath, page, lineTarget, onOpenFile, ch
         if (event.pointerType === "touch") return;
         clearTimeout(leaveTimer.current); dismissed.current = false; keyboardAnchor.current = false;
         pointer.current = { x: event.clientX, y: event.clientY };
-        hoverTimer.current = setTimeout(() => show(), 180);
+        if (!popup.current?.matches(":popover-open")) hoverTimer.current = setTimeout(() => show(), 180);
       }} onPointerLeave={leave}
       onFocus={event => {
         if (!dismissed.current && event.currentTarget.matches(":focus-visible")) { keyboardAnchor.current = true; pointer.current = undefined; show(); }
@@ -148,7 +151,7 @@ export function LocalFileLink({ href, filePath, page, lineTarget, onOpenFile, ch
     {/* Manual light dismissal avoids native auto-popover dismissal when a held touch is released. */}
     <span ref={popup} id={id} popover="manual" role="toolbar" className="file-link-hover" aria-label={t("workspace.linkActions")}
       onBeforeToggle={event => { if (event.newState === "closed") { dismissed.current = true; queueMicrotask(() => { dismissed.current = false; }); } }}
-      onToggle={() => { if (!popup.current?.matches(":popover-open")) { clearTimers(); setActive(false); setExpanded(false); } }}
+      onToggle={() => { if (!popup.current?.matches(":popover-open")) { clearTimers(); setActive(false); setPanel(null); } }}
       onPointerEnter={() => { clearTimeout(leaveTimer.current); clearTimeout(hoverTimer.current); }} onPointerLeave={leave}
       onKeyDown={event => {
         const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")].filter(button => button.getClientRects().length);
@@ -160,11 +163,18 @@ export function LocalFileLink({ href, filePath, page, lineTarget, onOpenFile, ch
       {active && <>
         <span className="file-link-hover-bar">
           <button type="button" aria-label={t("workspace.openHere")} title={t("workspace.openHere")} onClick={() => open({ kind: "here" })}>{t("workspace.hoverHere")}</button>
-          <button type="button" disabled={!choices.canSplit} aria-label={t("workspace.openRight")} title={t("workspace.openRight")} onClick={() => open({ kind: "split", axis: "right" })}>▥ {t("workspace.hoverRight")}</button>
-          <button type="button" disabled={!choices.canSplit} aria-label={t("workspace.openBelow")} title={t("workspace.openBelow")} onClick={() => open({ kind: "split", axis: "below" })}>▤ {t("workspace.hoverBelow")}</button>
-          <button type="button" aria-label={t("workspace.moreActions")} aria-expanded={expanded} aria-controls={expanded ? `${id}-more` : undefined} onClick={() => setExpanded(value => !value)}>{t("workspace.hoverMore")} ⋯</button>
+          <button type="button" disabled={!(choices.follow?.right ?? choices.canSplit)} aria-label={t("workspace.openRight")} title={t("workspace.openRight")} onClick={() => open({ kind: "split", axis: "right" })}>▥ {t("workspace.hoverRight")}</button>
+          <button type="button" disabled={!(choices.follow?.below ?? choices.canSplit)} aria-label={t("workspace.openBelow")} title={t("workspace.openBelow")} onClick={() => open({ kind: "split", axis: "below" })}>▤ {t("workspace.hoverBelow")}</button>
+          {choices.follow && <button type="button" aria-label={t("workspace.followLinks")} title={t("workspace.followHint")} aria-expanded={panel === "follow"} aria-controls={`${id}-follow`} onClick={() => setPanel(value => value === "follow" ? null : "follow")}>{t("workspace.followLinks")} ▾</button>}
+          <button type="button" aria-label={t("workspace.moreActions")} aria-expanded={panel === "more"} aria-controls={panel === "more" ? `${id}-more` : undefined} onClick={() => setPanel(value => value === "more" ? null : "more")}>{t("workspace.hoverMore")} ⋯</button>
         </span>
-        <span id={`${id}-more`} className="file-link-hover-more" hidden={!expanded} role="group" aria-label={t("workspace.moreActions")}>
+        {choices.follow && <span id={`${id}-follow`} className="file-link-hover-more" hidden={panel !== "follow"} role="group" aria-label={t("workspace.followLinks")}>
+          <span className="file-link-hover-note">{t("workspace.followHint")}</span>
+          <button type="button" disabled={!choices.follow.right} onClick={() => open({ kind: "follow", target: { kind: "split", axis: "right" } })}>{t("workspace.followRight")}</button>
+          <button type="button" disabled={!choices.follow.below} onClick={() => open({ kind: "follow", target: { kind: "split", axis: "below" } })}>{t("workspace.followBelow")}</button>
+          {choices.groups.filter(group => group.id !== choices.follow!.sourceGroup).map(group => <button type="button" key={group.id} onClick={() => open({ kind: "follow", target: { kind: "group", id: group.id } })}>{t("workspace.followIn", { pane: group.label })}</button>)}
+        </span>}
+        <span id={`${id}-more`} className="file-link-hover-more" hidden={panel !== "more"} role="group" aria-label={t("workspace.moreActions")}>
           {choices.groups.map(group => <button type="button" key={group.id} onClick={() => open({ kind: "group", id: group.id })}>{t("workspace.openIn", { pane: group.label })}</button>)}
           <button type="button" onClick={() => { void copyText(href ?? filePath); close(true); }}>{t("workspace.copyLink")}</button>
         </span>
