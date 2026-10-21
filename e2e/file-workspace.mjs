@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { checkFileLinkHover, checkFileLinkHoverFocus } from "./file-link-hover.mjs";
 
 /** Runs in the existing Markdown inventory chain, with synthetic user files. */
 export async function checkFileWorkspace(page, base, fixture, artifacts) {
@@ -52,6 +53,7 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   assert.equal(await panel.locator("[data-file-pane]").count(), 1);
   const originalViewport = page.viewportSize();
   if (originalViewport.width <= 640) {
+    await checkFileLinkHover(page, panel, guide, artifacts);
     await panel.locator('[data-file-pane="pane-1"]').getByLabel("File link destination").selectOption("here");
     await guide.getByRole("link", { name: "Source 1", exact: true }).click();
     await panel.getByRole("tabpanel", { name: "Pane 1 — split-source-1.ts", exact: true }).locator('[data-line-number="40"][data-file-line-target]').waitFor();
@@ -59,8 +61,10 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
     await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
     return;
   }
+  await checkFileLinkHoverFocus(page, guide);
   await panel.getByRole("button", { name: "Expand file panel", exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('[data-file-pane="pane-1"] option[value="new-right"]')?.disabled);
+  await checkFileLinkHover(page, panel, guide, artifacts);
   let guideNode = await guide.elementHandle();
   await panel.locator('[data-file-pane="pane-1"]').getByLabel("File link destination").selectOption("new-right");
   await page.waitForFunction(() => document.querySelectorAll('[data-file-pane]').length === 2);
@@ -107,7 +111,7 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   assert.equal(await second.locator("details").getAttribute("open"), null, "pane actions close after activation");
   await page.waitForFunction(() => document.querySelectorAll('[data-file-pane]').length === 3);
   await guide.getByRole("link", { name: "Test evidence", exact: true }).click({ button: "right" });
-  const menu = page.getByRole("dialog", { name: "File link actions", exact: true });
+  const menu = page.getByRole("toolbar", { name: "File link actions", exact: true });
   await menu.getByRole("button", { name: /^Open in Pane 3/ }).click();
   await panel.getByRole("tabpanel", { name: "Pane 3 — split-tests.ts", exact: true }).locator('[data-line-number="2"][data-file-line-target]').waitFor();
   await guide.getByRole("link", { name: "Source 1", exact: true }).click();

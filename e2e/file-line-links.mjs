@@ -44,7 +44,7 @@ export function seedFileLineLinks({ project, writeSession, message, workspacePee
   for (let i = 1; i <= 5; i++) writeFileSync(join(project, `split-source-${i}.ts`), Array.from({ length: 100 }, (_, n) => `// source ${i}, line ${n + 1}`).join("\n"));
   writeFileSync(join(project, "split-pages.pdf"), twoPagePdf());
   writeFileSync(join(project, "split-tests.ts"), "// retained tests\nexport const testEvidence = true;\n");
-  writeFileSync(join(project, "split-guide.md"), "# Guided review\n\nKeep this explanation visible.\n\n" + Array.from({ length: 5 }, (_, i) => `[Source ${i + 1}](split-source-${i + 1}.ts#L40)`).join("\n\n") + "\n\n[PDF page](split-pages.pdf#page=2)\n\n[Test evidence](split-tests.ts#L2)\n\n[Local section](#local-section)\n\n" + "Explanation paragraph.\n\n".repeat(50) + "## Local section\n\nEnd of guide.\n");
+  writeFileSync(join(project, "split-guide.md"), "# Guided review\n\nKeep this explanation visible.\n\nDense review: [Dense one](split-source-1.ts#L40), [Dense two](split-source-2.ts#L40) and [Dense three](split-tests.ts#L2).\n\n" + Array.from({ length: 5 }, (_, i) => `[Source ${i + 1}](split-source-${i + 1}.ts#L40)`).join("\n\n") + "\n\n[PDF page](split-pages.pdf#page=2)\n\n[Test evidence](split-tests.ts#L2)\n\n[Local section](#local-section)\n\n" + "Explanation paragraph.\n\n".repeat(50) + "## Local section\n\nEnd of guide.\n");
   const peerSessionId = "e2e-file-workspace-peer";
   if (workspacePeer) writeSession(peerSessionId, [
     { type: "session_info", id: "peer-name", parentId: null, timestamp: message("clock", null, "user", "").timestamp, name: "Split owner peer" },
