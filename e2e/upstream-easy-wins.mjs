@@ -97,7 +97,13 @@ export async function checkOverflowTabs(page) {
   for (let i = 0; i < 12; i++) {
     const hide = panel.getByRole("button", { name: "Hide file panel", exact: true, includeHidden: true });
     if (await hide.getAttribute("aria-expanded") === "true") await hide.click();
-    await page.getByRole("link", { name: `Overflow tab ${i}`, exact: true }).click();
+    await panel.waitFor({ state: "hidden" });
+    const link = page.getByRole("link", { name: `Overflow tab ${i}`, exact: true });
+    await link.scrollIntoViewIfNeeded();
+    // Re-present the uncovered/scrolled chat before choosing pointer coordinates.
+    // This is a rendering opportunity, not a global scroll-stability guarantee.
+    await link.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await link.click();
     await panel.getByRole("tab", { name: `upstream-overflow-tab-${i}.txt`, exact: true }).waitFor();
   }
   const list = panel.locator('[data-file-pane="pane-1"]').getByRole("tablist");

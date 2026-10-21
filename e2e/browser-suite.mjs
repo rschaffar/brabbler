@@ -38,6 +38,9 @@ import { WORKTREE_MANAGER_IDS, seedWorktreeManagerFixtures, checkWorktreeManager
 import { browserInputs, createCoverage, selectGroup } from "./scenarios.mjs";
 import { historyPageResponse } from "./history-pagination.mjs";
 import { checkCompactionVisibility } from "./compaction.mjs";
+import { seedSourceHighlighting, checkSourceHighlighting } from "./source-highlighting.mjs";
+import { checkHighlightFailure } from "./highlight-failure.mjs";
+import { createOwnedRoutes } from "./owned-routes.mjs";
 
 // Validate one-hot ownership before the harness or any fixture side effects.
 const group = selectGroup(process.env);
@@ -190,6 +193,7 @@ let context;
   const externalReferenceFixtures = group === "markdown" ? seedExternalReferenceFixtures({ agentDir, writeSession, message }) : [];
   const followupSettings = group === "markdown" ? seedFollowupSettings({ agentDir }) : null;
   const mediaFixtures = group === "markdown" ? seedMarkdownMediaFixtures({ project, agentDir, writeSession, message }) : null;
+  const highlightingFixture = group === "markdown" ? seedSourceHighlighting({ project, writeSession, message }) : null;
   // The default page is 50 *visible* messages (user / assistant / compaction).
   // toolResults ride along free after #810, so 48 tool-call assistants + the
   // final answer + the divider fill that window; the user prompt is the 51st
@@ -330,6 +334,7 @@ let context;
       const { sessions } = await response.json();
       assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...WORKTREE_MANAGER_IDS, ...ACTIVITY_SUBAGENTS, ...externalReferenceFixtures.map((fixture) => fixture.id), ...(mediaFixtures ? [mediaFixtures.id, mediaFixtures.otherId] : []),
         ...(group === "markdown" ? [fileLineFixtures.peerSessionId] : []),
+        ...(highlightingFixture ? [highlightingFixture.sessionId, highlightingFixture.fencesId] : []),
         ...(group === "trust" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
       for (const id of ACTIVITY_SUBAGENTS) {
         assert.equal(sessions.find((session) => session.id === id)?.relation?.kind, "subagent", `${id} must have real subagent metadata`);
@@ -340,10 +345,12 @@ let context;
     await delay(250);
   }
 
-  async function newInputContext(inputId) {
+  async function newInputContext(inputId, extraOptions) {
     const input = browserInputs[inputId];
     assert.ok(input, `Unknown browser input: ${inputId}`);
-    const next = await harness.newContext(browser, input.options, base);
+    const next = extraOptions
+      ? await harness.newContext(browser, { ...input.options, ...extraOptions }, base)
+      : await harness.newContext(browser, input.options, base);
     if (input.piLocale) {
       // Legacy interface preferences must not change controls/dates on reload.
       await next.addInitScript(({ locale, origin }) => {
@@ -647,6 +654,24 @@ let context;
     }
     if (group === "markdown") {
       await coverage.run(`markdown/preview-then-line-links@${inputId}`, async () => {
+      // This added chunk-interception fixture needs no service worker. Existing
+      // Markdown scenarios below retain their original, independent context.
+      const highlightContext = await newInputContext(inputId, { serviceWorkers: "block" });
+      const highlightErrors = harness.errorsFor(highlightContext);
+      try {
+        const highlightPage = await highlightContext.newPage();
+        highlightPage.setDefaultTimeout(30_000);
+        await checkSourceHighlighting(highlightPage, base, highlightingFixture);
+        assert.deepEqual(highlightErrors, [], "Browser errors during source highlighting");
+      } finally { await harness.closeContext(highlightContext); }
+      const failureContext = await newInputContext(inputId, { serviceWorkers: "block" });
+      const failureErrors = harness.errorsFor(failureContext);
+      try {
+        const failurePage = await failureContext.newPage();
+        failurePage.setDefaultTimeout(30_000);
+        await checkHighlightFailure(failurePage, base, highlightingFixture);
+        assert.deepEqual(failureErrors, [], "Browser errors during grammar failure/retry");
+      } finally { await harness.closeContext(failureContext); }
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       const wideList = page.locator(".markdown-body ol").filter({ hasText: "Upstream wide marker" });
@@ -874,27 +899,43 @@ let context;
     }
     if (group === "history") {
     await coverage.run(`history/reading-chain@${inputId}`, async () => {
-    // Use a separate tab: a deliberate full-page reload must not alter the
-    // reading-position and session-history fixtures exercised below.
-    const versionPage = await context.newPage();
+    // Interception needs its own SW-blocked context. The original history/PWA
+    // context below stays unchanged, and reload cannot alter its reading state.
+    const versionContext = await newInputContext(inputId, { serviceWorkers: "block" });
+    const versionErrors = harness.errorsFor(versionContext);
+    const versionPage = await versionContext.newPage();
+    versionPage.setDefaultTimeout(30_000);
+    const versionPattern = "**/api/app-version";
+    const versionRoute = createOwnedRoutes(route => route.fulfill({ json: { version: "99.99.99" } }), route => route.continue());
     try {
+      const initialVersion = versionPage.waitForResponse(response => new URL(response.url()).pathname === "/api/app-version");
+      void initialVersion.catch(() => {});
+      await versionPage.bringToFront();
       await versionPage.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
+      assert.equal(await versionPage.evaluate(() => document.visibilityState), "visible");
+      assert.equal((await (await initialVersion).json()).version, null, "isolated fixtures disable live version checks");
+      await versionPage.getByText("E2E final answer", { exact: true }).waitFor();
       const reloadWeb = versionPage.getByRole("button", { name: "Reload Pi Web" });
       assert.equal(await reloadWeb.count(), 0, "The running version should not show a reload prompt");
-      await versionPage.route("**/api/app-version", (route) => route.fulfill({ json: { version: "99.99.99" } }));
+      await versionPage.route(versionPattern, versionRoute.handler);
+      const changedVersion = versionPage.waitForResponse(response => new URL(response.url()).pathname === "/api/app-version");
+      void changedVersion.catch(() => {});
       await versionPage.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      assert.equal((await (await changedVersion).json()).version, "99.99.99");
       await reloadWeb.waitFor();
       assert.ok(await versionPage.getByText("Pi Web v99.99.99 is running.").isVisible());
       versionPage.once("dialog", (dialog) => dialog.dismiss());
       await reloadWeb.click();
       await reloadWeb.waitFor();
-      await versionPage.unroute("**/api/app-version");
+      await versionRoute.dispose(handler => versionPage.unroute(versionPattern, handler));
       versionPage.once("dialog", (dialog) => dialog.accept());
       await Promise.all([versionPage.waitForNavigation(), reloadWeb.click()]);
       await reloadWeb.waitFor({ state: "detached" });
+      assert.deepEqual(versionErrors, [], "Browser errors during version mismatch/reload");
       console.log(`PASS: ${viewport.width}px version mismatch prompts before page reload`);
     } finally {
-      await versionPage.close();
+      try { await versionRoute.dispose(handler => versionPage.unroute(versionPattern, handler)); }
+      finally { await harness.closeContext(versionContext); }
     }
     await checkUpstreamComposer(context, base, RICH, LONG, viewport.width);
     const stateReady = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/sessions/${LONG}/state`);

@@ -68,11 +68,16 @@ function renderCode(props) {
   );
 }
 
-test("CodeBlock highlights code when not streaming", () => {
-  const html = renderCode({ code: "const x = 1;", lang: "javascript" });
-
-  assert.match(html, /class="token/);
-  assert.match(html, /const/);
+test("CodeBlock initially renders escaped plain code, even after grammars loaded on the server", async () => {
+  const props = { code: 'const x = "<script>sentinel</script>";', lang: "javascript" };
+  const cold = renderCode(props);
+  const { loadPrismLanguages } = await jiti.import("@/lib/prism-languages");
+  await loadPrismLanguages();
+  const warm = renderCode(props);
+  assert.equal(warm, cold, "initial hydration cannot depend on process-wide grammar readiness");
+  assert.doesNotMatch(warm, /class="token|<script>/);
+  assert.match(warm, /&lt;script&gt;sentinel&lt;\/script&gt;/);
+  assert.match(warm, /react-syntax-highlighter-line-number/);
 });
 
 test("CodeBlock renders plain text without tokenization while streaming", () => {
