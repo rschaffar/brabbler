@@ -303,11 +303,14 @@ test("delayed canonical reads are discarded before installing a newer branch's d
   const bindings = {
     res: { json: async () => ({ leafId: "old-live" }) }, shouldApply: undefined,
     branchViewRevisionRef: { current: 1 }, viewRevisionAtRead: 0,
+    modelSelectionVersionRef: { current: 0 }, selectionVersionAtRead: 0,
     sessionIdRef: { current: "session" }, sid: "session",
   };
   assert.equal(await new AsyncFunction(...Object.keys(bindings), js)(...Object.values(bindings)), "superseded");
   bindings.branchViewRevisionRef.current = 0;
   assert.equal(await new AsyncFunction(...Object.keys(bindings), js)(...Object.values(bindings)), "apply");
+  bindings.modelSelectionVersionRef.current++;
+  assert.equal(await new AsyncFunction(...Object.keys(bindings), js)(...Object.values(bindings)), "superseded");
 });
 
 test("warm cache restoration updates live refs before starting its canonical freshness read", () => {

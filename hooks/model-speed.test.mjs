@@ -26,7 +26,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 function harness({ ignoreAbort = false } = {}) {
   const requests = [], deadlines = [], intervals = [], notices = [];
-  let speed = "standard", changing = false, recoveryId = null, data = { modelSpeed: "standard" };
+  let speed = "standard", changing = false, recoveryId = null, modelDefinitionError = null, data = { modelSpeed: "standard" };
   const document = new EventTarget(); document.visibilityState = "visible";
   const window = new EventTarget();
   const bindings = {
@@ -41,7 +41,7 @@ function harness({ ignoreAbort = false } = {}) {
     sessionIdRef: { current: "session-a" }, sessionHookMountedRef: { current: true }, ensuringNewSessionRef: { current: null },
     setModelSpeed: (next) => { speed = next; }, setModelSpeedChanging: (next) => { changing = next; },
     setModelSpeedRecovery: (id) => { recoveryId = id; }, setData: (update) => { data = update(data); },
-    setLiveModel() {}, setLiveThinkingLevel() {}, asConcreteThinkingLevel: (level) => level,
+    setLiveModel() {}, setLiveThinkingLevel() {}, setModelDefinitionError: (error) => { modelDefinitionError = error; }, asConcreteThinkingLevel: (level) => level,
     addNotice: (notice) => notices.push(notice),
     setInterval: (fn, ms) => { const interval = { fn, ms, active: true }; intervals.push(interval); return interval; },
     clearInterval: (interval) => { interval.active = false; },
@@ -61,7 +61,7 @@ function harness({ ignoreAbort = false } = {}) {
   const change = evaluate(initializer("handleModelSpeedChange"), bindings);
   const sync = evaluate(initializer("syncLiveModel"), bindings);
   return { change, sync, requests, deadlines, intervals, notices, bindings, document, window,
-    state: () => ({ speed, changing, recoveryId, data }),
+    state: () => ({ speed, changing, recoveryId, modelDefinitionError, data }),
     recover: () => evaluate(recovery, { ...bindings, modelSpeedRecovery: recoveryId })(),
   };
 }
@@ -89,11 +89,13 @@ test("a state read begun during saving cannot roll back the confirmed speed afte
   const change = h.change("fast");
   const revisionDuringSave = h.bindings.modelSpeedRevisionRef.current;
   h.requests[0].resolve({ modelSpeed: "fast" }); await change;
-  h.sync({ modelSpeed: "standard" }, revisionDuringSave);
+  h.sync({ modelSpeed: "standard", modelDefinitionRefresh: { error: "Synthetic definition error" } }, revisionDuringSave);
   assert.equal(h.state().speed, "fast"); assert.equal(h.bindings.modelSpeedRef.current, "fast");
   assert.equal(h.state().changing, false);
+  assert.equal(h.state().modelDefinitionError, "Synthetic definition error");
   h.sync({ modelSpeed: "standard" }, h.bindings.modelSpeedRevisionRef.current);
   assert.equal(h.state().speed, "standard", "A genuinely later authoritative read still applies");
+  assert.equal(h.state().modelDefinitionError, null);
 });
 
 test("recreation during failed-save reconciliation keeps Send blocked until the replacement is confirmed", async () => {

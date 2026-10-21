@@ -9,6 +9,7 @@ import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { getProjectAccounts, validateAccountSelection, type AccountSelection } from "./provider-accounts";
 import { createAccountModelRuntime } from "./account-model-runtime";
+import { abortModelRuntimeRefresh, acquireModelRuntimeUse, applySessionModelDefinition, assertModelRuntimeSessionReady, modelRuntimeRefreshState, pendingModelRuntimeRefresh, registerModelRuntimeSession, withModelRuntimeAccess } from "./session-model-refresh";
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { isModelSpeed, supportsModelSpeed, type ModelSpeed } from "./model-speed";
 import { appendSessionModelSpeed, readSessionModelSpeed } from "./session-model-speed";
@@ -332,6 +333,7 @@ export class AgentSessionWrapper {
   private resumePermit = false;
   private resumeRequestError?: Error;
   private pendingResume?: { message: string; resolve: () => void; reject: (error: unknown) => void; error?: Error; observed?: boolean };
+  private readonly releaseModelRuntime: () => void;
 
   constructor(
     public readonly inner: AgentSessionLike,
@@ -349,6 +351,13 @@ export class AgentSessionWrapper {
     this.monitorContextFiles = options.monitorContextFiles ?? false;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
+    this.releaseModelRuntime = registerModelRuntimeSession(inner,
+      (requester) => this.isRunning() || this.activeMutatingCommands > (requester === inner ? 1 : 0)
+        || Boolean(this.shutdownPromise) || (!this.chatOnly && !this.extensionsBound),
+      () => this._alive && !this.shutdownPromise, () => this.persistSessionWithoutAssistant(), () => {
+        try { this.finishPause(); }
+        catch (error) { this.pauseFailed(error); }
+      });
   }
 
   get sessionId(): string {
@@ -376,7 +385,8 @@ export class AgentSessionWrapper {
   }
 
   isRunning(): boolean {
-    return this._alive && (hasUnsettledSubagentExecution(this.sessionId) || this.initialPrompt?.state === "pending" || this.pendingPromptCount > 0 || this.pendingCheckoutAdmissions > 0 || this.sdkPrompts > 0 || this.sdkQueueAdmissions > 0 || this.parkedQueueSave !== undefined || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning);
+    return this._alive && (hasUnsettledSubagentExecution(this.sessionId) || this.initialPrompt?.state === "pending" || this.pendingPromptCount > 0 || this.pendingCheckoutAdmissions > 0 || this.sdkPrompts > 0 || this.sdkQueueAdmissions > 0 || this.parkedQueueSave !== undefined || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning
+      || Boolean(this.inner.modelRuntime && modelRuntimeRefreshState(this.inner.modelRuntime).refreshing));
   }
 
   onSubagentSettled(): void { this.notifyAgentRunCompleteIfIdle(); }
@@ -433,7 +443,8 @@ export class AgentSessionWrapper {
     childSettled ||= this.subagentSettlementComplete;
     if (!this.isPauseRequested() || this.pause?.state === "paused" || this.pauseFailure || this.pause?.error) return;
     const inputBusy = this.pendingPromptCount > 0 || this.pendingCheckoutAdmissions > 0 || this.sdkPrompts > 0 || this.sdkQueueAdmissions > 0
-      || this.parkedQueueSave !== undefined || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning;
+      || this.parkedQueueSave !== undefined || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning
+      || Boolean(this.inner.modelRuntime && modelRuntimeRefreshState(this.inner.modelRuntime).refreshing);
     if (childSettled ? inputBusy : this.isRunning()) return;
     if (this.hasQueuedPauseInput()) {
       void this.settleIdlePauseInput().then(() => this.finishPause(childSettled), (error) => {
@@ -529,6 +540,9 @@ export class AgentSessionWrapper {
     const initial = this.initialPrompt;
     if (initial?.state === "refused") throw initial.error;
     if (!this._alive) throw new Error("Session is unavailable");
+    if (this.shutdownPromise && !this.sessionReplacement && !COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT.has(type) && type !== "abort") {
+      throw new Error("Session is shutting down");
+    }
     if (owner !== undefined && (!initial || initial.owner !== owner || initial.state !== "pending")) {
       throw new Error("Invalid or consumed initial prompt capability");
     }
@@ -542,6 +556,7 @@ export class AgentSessionWrapper {
   beginCheckoutPromptAdmission(): () => void {
     this.assertInitialPromptAccess("prompt");
     if (this.isPauseRequested()) throw new Error("Session is paused; continue through its main session");
+    assertModelRuntimeSessionReady(this.inner);
     assertDirectoryAdmissionAllowed(this.cwd);
     this.pendingCheckoutAdmissions += 1;
     let released = false;
@@ -856,6 +871,7 @@ export class AgentSessionWrapper {
     if (this.extensionBindingPromise) return this.extensionBindingPromise;
 
     this.extensionBindingError = null;
+    const releaseRuntime = this.inner.modelRuntime ? acquireModelRuntimeUse(this.inner.modelRuntime) : () => {};
     this.extensionBindingPromise = (async () => {
       if (!this._alive) return;
       const uiContext = this.createExtensionUiContext();
@@ -893,7 +909,7 @@ export class AgentSessionWrapper {
     })().catch((err) => {
       this.extensionBindingError = err;
       throw err;
-    });
+    }).finally(releaseRuntime);
 
     return this.extensionBindingPromise;
   }
@@ -929,6 +945,7 @@ export class AgentSessionWrapper {
   }
 
   setActiveToolSelection(toolNames: string[]): void {
+    assertModelRuntimeSessionReady(this.inner);
     this.inner.setActiveToolsByName(withExtensionTools(this.inner, toolNames));
   }
 
@@ -1072,6 +1089,7 @@ export class AgentSessionWrapper {
     }
 
     const tracksMutation = !allowedDuringReplacement;
+    if (tracksMutation && !["set_model", "abort", "abort_compaction", "abort_bash"].includes(type)) assertModelRuntimeSessionReady(this.inner);
     if (tracksMutation) this.activeMutatingCommands += 1;
 
     try {
@@ -1082,6 +1100,7 @@ export class AgentSessionWrapper {
         await (this.initialPrompt?.state === "pending" ? Promise.race([binding, this.initialPrompt.refusal]) : binding);
       }
       this.assertInitialPromptAccess(type, promptGuard?.owner);
+      if (tracksMutation && !["set_model", "abort", "abort_compaction", "abort_bash"].includes(type)) assertModelRuntimeSessionReady(this.inner);
       if (this.sessionReplacement && !allowedDuringReplacement) {
         throw new Error("Session is being copied to a new session");
       }
@@ -1193,6 +1212,7 @@ export class AgentSessionWrapper {
                 if (guardedPreflightRefused) throw new Error("Deferred launch was already refused; propose again");
                 try {
                   this.assertInitialPromptAccess(type, promptGuard?.owner);
+                  assertModelRuntimeSessionReady(this.inner);
                   promptGuard?.validate(disposition);
                   this.assertInitialPromptAccess(type, promptGuard?.owner);
                 } catch (error) {
@@ -1268,6 +1288,7 @@ export class AgentSessionWrapper {
       }
 
       case "abort":
+        if (this.inner.modelRuntime) abortModelRuntimeRefresh(this.inner.modelRuntime);
         this.forceShutdownOnIdle = true;
         // Stop must unwind extension commands that have not started the agent yet.
         this.extensionUiAbortController.abort(new DOMException("Extension UI cancelled by Stop", "AbortError"));
@@ -1308,6 +1329,7 @@ export class AgentSessionWrapper {
             : false,
           thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
           modelSpeed: readSessionModelSpeed(this.inner.sessionManager.getEntries() as unknown as SessionEntry[]),
+          modelDefinitionRefresh: this.inner.modelRuntime ? modelRuntimeRefreshState(this.inner.modelRuntime, this.inner) : undefined,
           extensionStatuses: this.getExtensionStatuses(),
           extensionWidgets: this.getExtensionWidgets(),
         };
@@ -1315,13 +1337,12 @@ export class AgentSessionWrapper {
 
       case "set_model": {
         const { provider, modelId } = command as { provider: string; modelId: string };
-        let model = this.inner.modelRuntime.getModel(provider, modelId);
-        if (!model) {
-          await this.inner.modelRuntime.refresh({ allowNetwork: false });
-          model = this.inner.modelRuntime.getModel(provider, modelId);
-        }
-        if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
-        await this.inner.setModel(model);
+        if (typeof provider !== "string" || !provider.trim() || typeof modelId !== "string" || !modelId.trim()) throw new Error("Invalid model selection");
+        // Chat-only has no user-extension UI lifecycle to initialize. In
+        // particular an unbound child must still be able to repair its family.
+        if (this.chatOnly) await this.waitForExtensionsBound();
+        else await this.ensureExtensionsBound();
+        const model = await applySessionModelDefinition(this.inner, provider, modelId);
         invalidateModelsCache();
         invalidateSessionListCache();
         return { id: model.id, provider: model.provider };
@@ -1666,12 +1687,15 @@ export class AgentSessionWrapper {
       this.refuseInitialPrompt(this.initialPrompt.owner, new DOMException("Initial prompt cancelled by session destruction", "AbortError"));
       return;
     }
+    const refresh = this.inner.modelRuntime && pendingModelRuntimeRefresh(this.inner.modelRuntime);
+    if (refresh) { void refresh.then(() => this.destroy()); return; }
     this.destroyInternal(false);
   }
 
   private destroyInternal(ownedRefusal: boolean): void {
     if (!this._alive) return;
     this._alive = false;
+    this.releaseModelRuntime();
     // Tell attached SSE listeners to drop this instance so the browser
     // EventSource errors and reconnects instead of staying OPEN on a dead wrapper.
     this.emit({ type: "session_shutdown" });
@@ -1763,6 +1787,8 @@ export class AgentSessionWrapper {
 
     this.shutdownPromise = (async () => {
       try {
+        const refresh = this.inner.modelRuntime && pendingModelRuntimeRefresh(this.inner.modelRuntime);
+        if (refresh) await refresh;
         try {
           await this.waitForExtensionsBound();
         } catch (error) {
@@ -2616,6 +2642,7 @@ export async function setRpcSessionTools(
   }
 
   if (existing.isRunning()) throw new Error("Cannot change tools while the session is running");
+  assertModelRuntimeSessionReady(existing.inner);
   if (readSubagentSessionResources(existing.inner.sessionManager.getEntries() as unknown as SessionEntry[])) {
     throw new Error("Subagent tool selection is fixed by its profile");
   }
@@ -2674,6 +2701,7 @@ export async function setRpcSessionAccount(sessionId: string, sessionFile: strin
     if (previous) await previous;
     const existing = getRpcSession(sessionId);
     if (existing?.isRunning()) throw new Error("Cannot switch accounts while the session is running");
+    if (existing?.isAlive()) assertModelRuntimeSessionReady(existing.inner);
     const manager = existing?.isAlive() ? existing.inner.sessionManager
       : sessionFile ? SessionManager.open(sessionFile, undefined) : undefined;
     if (!manager) throw new Error("Session not found");
@@ -3048,7 +3076,8 @@ async function startRpcSessionInternal(
       ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
     });
     const speedAgent: { current?: Agent } = {};
-    services.modelRuntime = withSessionModelSpeed(services.modelRuntime, sessionManager, () => speedAgent.current);
+    services.modelRuntime = withModelRuntimeAccess(services.modelRuntime,
+      withSessionModelSpeed(services.modelRuntime, sessionManager, () => speedAgent.current));
     const scope = await resolveVisibleModels(
       services.modelRuntime,
       services.settingsManager.getEnabledModels(),
@@ -3064,13 +3093,13 @@ async function startRpcSessionInternal(
     const branch = sessionManager.getBranch();
     // System messages carry the prompt and tool loadout, not a conversation.
     const hasExistingMessages = branch.some((entry) => entry.type === "message" && entry.message.role !== "system");
-    const savedModel = hasExistingMessages
+    const savedModel = sessionFile
       ? getLatestModelChange(branch as unknown as SessionEntry[])
       : null;
     const restoredModel = savedModel
       ? services.modelRuntime.getModel(savedModel.provider, savedModel.modelId)
       : undefined;
-    const initial = hasExistingMessages ? null : selectInitialModelScope(scope, {
+    const initial = hasExistingMessages || savedModel ? null : selectInitialModelScope(scope, {
         ...(effectiveInitialModel ? { requestedModel: effectiveInitialModel } : {}),
         ...(defaultProvider && defaultModelId
           ? { defaultModel: { provider: defaultProvider, modelId: defaultModelId } }
@@ -3080,11 +3109,17 @@ async function startRpcSessionInternal(
     const startupModel = restoredModel && services.modelRuntime.hasConfiguredAuth(restoredModel.provider)
       ? restoredModel
       : initial?.model;
+    // SDK restoration keys off message presence, but an explicit model/thinking
+    // selection is durable even before the first conversation message.
+    const savedThinking = sessionFile
+      ? branch.findLast((entry) => entry.type === "thinking_level_change")?.thinkingLevel : undefined;
+    const startupThinking = initial?.thinkingLevel ?? (savedThinking && THINKING_LEVEL_NAMES.has(savedThinking as ThinkingLevel)
+      ? savedThinking as ThinkingLevel : undefined);
     const { session: inner } = await createAgentSessionFromServices({
       services,
       sessionManager,
       ...(startupModel ? { model: startupModel } : {}),
-      ...(initial?.thinkingLevel ? { thinkingLevel: initial.thinkingLevel } : {}),
+      ...(startupThinking ? { thinkingLevel: startupThinking } : {}),
       ...(scope.scopedModels.length > 0 ? { scopedModels: [...scope.scopedModels] } : {}),
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
       ...(subagentResources ? { excludeTools: [...SUBAGENT_CONTROL_TOOL_NAMES] } : {}),

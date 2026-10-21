@@ -92,6 +92,7 @@ interface LastAssistantTextResponse {
 
 type AgentStateResponse = {
   model?: { provider: string; id: string };
+  modelDefinitionRefresh?: { refreshing: boolean; error?: string };
   contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
   systemPrompt?: string;
   thinkingLevel?: string;
@@ -358,6 +359,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
   const [modelList, setModelList] = useState<ModelEntry[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [modelDefinitionError, setModelDefinitionError] = useState<string | null>(null);
   const [modelScopeWarnings, setModelScopeWarnings] = useState<string[]>([]);
   const [modelThinkingLevels, setModelThinkingLevels] = useState<Record<string, string[]>>({});
   const [modelThinkingLevelMaps, setModelThinkingLevelMaps] = useState<Record<string, Record<string, string | null>>>({});
@@ -447,6 +449,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const promptRunIdRef = useRef(0);
   const optimisticUserMessageKeyRef = useRef<string | null>(null);
   const modelSwitchPendingRef = useRef(false);
+  const modelSelectionVersionRef = useRef(0);
+  const modelsRequestVersionRef = useRef(0);
+  const loadModelsRef = useRef<((signal?: AbortSignal) => Promise<void>) | null>(null);
   const draftKeyAliasesRef = useRef(new Map<string, string>());
   const sessionHookMountedRef = useRef(true);
   // In-flight session reads, keyed by session id (or force:<id> for fresh reads).
@@ -525,6 +530,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const composerDraftKey = session?.id ?? newSessionDraftKey ?? undefined;
 
   const syncLiveModel = useCallback((state: AgentStateResponse | undefined, speedRevision: number) => {
+    setModelDefinitionError(state?.modelDefinitionRefresh?.error ?? null);
     if (isModelSpeed(state?.modelSpeed) && speedRevision === modelSpeedRevisionRef.current && !modelSpeedChangingRef.current) {
       modelSpeedRef.current = state.modelSpeed;
       setModelSpeed(state.modelSpeed);
@@ -591,11 +597,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } satisfies SessionStatsInfo;
   }, [messages, sessionStatsOverride, contextUsage, data?.context.messages, data?.filePath, data?.totalActiveMs, data?.stats, session?.id, session?.name]);
 
-  const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false, options?: { force?: boolean }, shouldApply?: () => boolean) => {
+  const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false, options?: { force?: boolean; fresh?: boolean }, shouldApply?: () => boolean) => {
+    const selectionVersionAtRead = modelSelectionVersionRef.current;
     // Single-flight: concurrent reads for the same session (mount + SSE settle +
-    // reconcile) share one request unless the caller forces a fresh read.
+    // reconcile) share one request unless the caller asks for a fresh read.
+    // fresh bypasses client coalescing; force also probes disk for external writes.
     const flightKey = options?.force ? `force:${sid}` : sid;
-    const inflight = options?.force || shouldApply ? undefined : loadFlightsRef.current.get(flightKey);
+    const inflight = options?.force || options?.fresh || shouldApply ? undefined : loadFlightsRef.current.get(flightKey);
     if (inflight) return await inflight;
   const flight = (async (): Promise<unknown> => {
     const speedRevisionAtRead = modelSpeedRevisionRef.current;
@@ -611,7 +619,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (options?.force) params.set("force", "1");
       const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}?${params}`);
       if (sessionIdRef.current !== sid) return null;
-      if ((shouldApply && !shouldApply()) || branchViewRevisionRef.current !== viewRevisionAtRead) return "superseded";
+      if ((shouldApply && !shouldApply()) || branchViewRevisionRef.current !== viewRevisionAtRead
+        || modelSelectionVersionRef.current !== selectionVersionAtRead) return "superseded";
       if (res.status === 404) {
         if (showLoading) {
           setData(null);
@@ -628,7 +637,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d = await res.json() as SessionData;
-      if ((shouldApply && !shouldApply()) || branchViewRevisionRef.current !== viewRevisionAtRead) return "superseded";
+      if ((shouldApply && !shouldApply()) || branchViewRevisionRef.current !== viewRevisionAtRead
+        || modelSelectionVersionRef.current !== selectionVersionAtRead) return "superseded";
       if (sessionIdRef.current !== sid) return null;
       // Freshness check: when the disk snapshot is unchanged (same opaque
       // revision), keep any history the user already paged in instead of
@@ -736,7 +746,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const stateRes = await fetch(`/api/sessions/${encodeURIComponent(sid)}/state`);
         if (!stateRes.ok) throw new Error(`HTTP ${stateRes.status}`);
         const agentState = await stateRes.json() as { running: boolean; state?: AgentStateResponse };
-        if (sessionIdRef.current !== sid) return null;
+        if (sessionIdRef.current !== sid || modelSelectionVersionRef.current !== selectionVersionAtRead) return null;
 
         const liveState = agentState.state;
         syncLiveModel(liveState, speedRevisionAtRead);
@@ -756,7 +766,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         return null;
       }
     } catch (e) {
-      if (shouldApply && !shouldApply()) return "superseded";
+      if ((shouldApply && !shouldApply()) || modelSelectionVersionRef.current !== selectionVersionAtRead) return "superseded";
       setError(String(e));
       return "error";
     } finally {
@@ -764,7 +774,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (showLoading && !messagesLoaded) setLoading(false);
     }
     })();
-    if (!options?.force && !shouldApply) loadFlightsRef.current.set(flightKey, flight);
+    if (!options?.force && !options?.fresh && !shouldApply) loadFlightsRef.current.set(flightKey, flight);
     flight.finally(() => {
       if (loadFlightsRef.current.get(flightKey) === flight) loadFlightsRef.current.delete(flightKey);
     });
@@ -931,6 +941,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       };
       const realId = result.sessionId;
       sessionIdRef.current = realId;
+      // Anonymous composer reads cannot certify the new session's account scope.
+      // Reload metadata for the captured binding; loadModels owns visible errors.
+      void loadModelsRef.current?.().catch(() => {});
       if (isModelSpeed(result.modelSpeed) && modelSpeedRevisionRef.current === selectedSpeedRevision) {
         modelSpeedRef.current = result.modelSpeed;
         setModelSpeed(result.modelSpeed);
@@ -1976,23 +1989,65 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, []);
 
   const handleModelChange = useCallback(async (provider: string, modelId: string) => {
+    if (modelSwitchPendingRef.current) return;
+    const version = ++modelSelectionVersionRef.current;
+    const current = (sid: string | null) => sessionHookMountedRef.current
+      && modelSelectionVersionRef.current === version && sessionIdRef.current === sid;
+    const reloadModelOptions = async () => {
+      try { await loadModelsRef.current?.(); }
+      catch { /* loadModels retains its visible error; native selection may already be durable. */ }
+    };
     if (isNew) {
-      const selectedModel = { provider, modelId };
-      newSessionModelOverrideRef.current = selectedModel;
-      setNewSessionModel(selectedModel);
-      setPendingModel(selectedModel);
-      if (thinkingLevelOverrideRef.current === null) {
-        const pinned = thinkingLevelPinsRef.current[`${provider}/${modelId}`];
-        setNewSessionDefaultThinkingLevel(
-          asConcreteThinkingLevel(pinned) ?? defaultThinkingLevelRef.current,
-        );
-      }
-      const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
-      if (!sid) return;
+      // Serialize before optimistic updates or waiting for composer creation.
+      // A second click must not display a choice that was never sent.
+      modelSwitchPendingRef.current = true;
+      setModelSwitching(true);
+      let sid = sessionIdRef.current;
+      const speedRevision = modelSpeedRevisionRef.current;
+      const acceptState = (state: AgentStateResponse) => {
+        syncLiveModel(state, speedRevision);
+        if (state.model) {
+          const actual = { provider: state.model.provider, modelId: state.model.id };
+          newSessionModelOverrideRef.current = actual;
+          setNewSessionModel(actual);
+          setPendingModel(actual);
+        }
+        if (state.thinkingLevel !== undefined) {
+          const level = asConcreteThinkingLevel(state.thinkingLevel);
+          if (thinkingLevelOverrideRef.current === null) setNewSessionDefaultThinkingLevel(level);
+          else { thinkingLevelOverrideRef.current = level; setNewSessionThinkingLevel(level); }
+        }
+      };
       try {
+        const selectedModel = { provider, modelId };
+        newSessionModelOverrideRef.current = selectedModel;
+        setNewSessionModel(selectedModel);
+        setPendingModel(selectedModel);
+        if (thinkingLevelOverrideRef.current === null) {
+          const pinned = thinkingLevelPinsRef.current[`${provider}/${modelId}`];
+          setNewSessionDefaultThinkingLevel(asConcreteThinkingLevel(pinned) ?? defaultThinkingLevelRef.current);
+        }
+        sid = sid ?? await ensuringNewSessionRef.current;
+        if (!sid || !current(sid)) return;
         await sendAgentCommand(sid, { type: "set_model", provider, modelId });
+        if (!current(sid)) return;
+        const state = await sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" });
+        if (current(sid)) {
+          acceptState(state);
+          await reloadModelOptions();
+        }
       } catch (e) {
-        console.error("Failed to set model:", e);
+        if (!current(sid)) return;
+        addNotice({ type: "error", message: `Failed to switch model: ${e instanceof Error ? e.message : String(e)}` });
+        if (sid) {
+          // Lost acknowledgements are not proof of rejection for warmed composers.
+          try {
+            const state = await sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" });
+            if (current(sid)) { acceptState(state); await reloadModelOptions(); }
+          } catch { /* Keep the visible failure; never invent an effective model. */ }
+        }
+      } finally {
+        if (current(sid)) { modelSwitchPendingRef.current = false; setModelSwitching(false); }
       }
       return;
     }
@@ -2005,12 +2060,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setModelSwitching(true);
     try {
       const selected = await sendAgentCommand<{ provider: string; id: string }>(sid, { type: "set_model", provider, modelId });
+      if (!current(sid)) return;
+      setModelDefinitionError(null);
       setLiveModel({ provider: selected.provider, modelId: selected.id });
       // Pi persists model_change synchronously. Reload the canonical session so
       // the model, thinking level, and active leaf all advance together.
       modelSwitchPendingRef.current = false;
-      await loadSession(sid);
+      await loadSession(sid, false, true, { fresh: true });
+      if (current(sid)) await reloadModelOptions();
     } catch (e) {
+      if (!current(sid)) return;
       console.error("Failed to set model:", e);
       modelSwitchPendingRef.current = false;
       setCurrentModelOverride(previousOverride);
@@ -2020,12 +2079,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       });
       // A failed response can still follow a server-side write (for example, a
       // dropped connection), so let the session file settle the displayed model.
-      await loadSession(sid, false, true);
+      await loadSession(sid, false, true, { fresh: true });
+      if (current(sid)) await reloadModelOptions();
     } finally {
-      modelSwitchPendingRef.current = false;
-      setModelSwitching(false);
+      if (current(sid)) {
+        modelSwitchPendingRef.current = false;
+        setModelSwitching(false);
+      }
     }
-  }, [addNotice, currentModelOverride, isNew, loadSession, setNewSessionModel]);
+  }, [addNotice, currentModelOverride, isNew, loadSession, setNewSessionModel, syncLiveModel]);
 
   const handleCompact = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -2050,6 +2112,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const loadModels = useCallback(async (signal?: AbortSignal) => {
     if (historyOnly) return;
+    const requestVersion = ++modelsRequestVersionRef.current;
+    const selectionVersion = modelSelectionVersionRef.current;
+    const sid = sessionIdRef.current;
+    const accounts = newSessionAccountsRef.current;
+    const current = () => requestVersion === modelsRequestVersionRef.current
+      && selectionVersion === modelSelectionVersionRef.current && sid === sessionIdRef.current
+      && accounts === newSessionAccountsRef.current && sessionHookMountedRef.current;
     const modelCwd = newSessionCwd ?? session?.cwd ?? "";
     const modelsParams = new URLSearchParams();
     if (modelCwd) modelsParams.set("cwd", modelCwd);
@@ -2075,11 +2144,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       d = await res.json() as ModelsResponse;
       signal?.throwIfAborted();
     } catch (e) {
+      if (!current()) return;
       if (!signal?.aborted && !(e instanceof DOMException && e.name === "AbortError")) {
         setModelError(e instanceof Error ? e.message : String(e));
       }
       throw e;
     }
+    if (!current()) return;
     setModelNames(d.models);
     setModelError(d.modelError ?? null);
     setModelScopeWarnings(d.modelScopeWarnings ?? []);
@@ -2107,6 +2178,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
     }
   }, [historyOnly, isNew, newSessionCwd, session?.cwd]);
+  loadModelsRef.current = loadModels;
 
   const handleBuiltinSlashCommand = useCallback(async (text: string): Promise<BuiltinSlashCommandResult> => {
     if (!text.startsWith("/")) return { handled: false };
@@ -2618,6 +2690,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // Load session on mount
   useEffect(() => {
     sessionHookMountedRef.current = true;
+    modelSelectionVersionRef.current += 1;
+    modelSwitchPendingRef.current = false;
+    setModelSwitching(false);
+    setModelDefinitionError(null);
     if (session) {
       sessionIdRef.current = session.id;
       // Snapshot fast path: show the cached history window immediately, then
@@ -2866,7 +2942,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   return {
     // State
     data, loading, error, possibleInterruptedRun, dismissPossibleInterruption, activeLeafId, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamingStore,
-    agentRunning, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel, modelSpeed, modelSpeedChanging,
+    agentRunning, modelNames, modelList, modelError: modelDefinitionError ?? modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel, modelSpeed, modelSpeedChanging,
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, modelSwitching, sessionStats, autoCompactionEnabled,
     slashCommands, slashCommandsLoading, queuedMessages,

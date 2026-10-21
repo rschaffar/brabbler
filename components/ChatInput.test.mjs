@@ -16,6 +16,28 @@ const { ModelSelector } = await jiti.import("./ModelSelector.tsx");
 const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } = await jiti.import("@/lib/draft-store.ts");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 
+test("composer active-row reselection is explicit and other model pickers retain their no-op", () => {
+  const sourceText = readFileSync(new URL("./ModelSelector.tsx", import.meta.url), "utf8");
+  const source = ts.createSourceFile("ModelSelector.tsx", sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  function findChoose(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(source) === "choose") return node.initializer;
+    return ts.forEachChild(node, findChoose);
+  }
+  const script = new Script(ts.transpileModule(findChoose(source).getText(source), { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText);
+  const option = { provider: "fixture", modelId: "one" };
+  const calls = [];
+  const choose = (overrides = {}) => script.runInNewContext({ value: option, isAutoSelection: false,
+    onChange: (...args) => calls.push(["change", ...args]), setOpen() {}, setFilter() {}, onReselect: undefined, ...overrides });
+  choose()(option); assert.deepEqual(calls, []);
+  choose({ onReselect: (...args) => calls.push(["reselect", ...args]) })(option);
+  choose({ isAutoSelection: true })(option);
+  choose()({ provider: "other", modelId: "one" });
+  assert.deepEqual(calls, [["reselect", "fixture", "one"], ["change", "fixture", "one"], ["change", "other", "one"]]);
+  const composer = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  assert.match(composer, /onReselect=\{onModelChange\}/);
+  assert.match(composer, /disabled=\{isStreaming \|\| isCompacting\}/);
+});
+
 test("preserves pasted HTML links as Markdown without changing plain text layout", () => {
   const link = (label, href, occurrence = 0) => ({ label, href, occurrence });
 

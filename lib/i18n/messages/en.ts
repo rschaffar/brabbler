@@ -931,7 +931,7 @@ export const enLocale: LocalePlugin = {
     "models.contextForModel": "Context window for {model}",
     "models.contextInvalid": "Context window of {model}: enter a positive whole number of tokens.",
     "models.contextOverrideHelp": "Global context budgets in tokens; Save applies these draft edits. Blank removes the override. Placeholders show Pi-default account metadata, which may differ for another account. This changes Pi's accounting, not the provider's actual limit.",
-    "models.savedEditsApply": "Saved model edits apply to new runtimes. Existing sessions require wrapper recreation to reliably apply them; Reload session alone does not rebind model metadata.",
+    "models.savedEditsApply": "Open sessions: select the model again while idle to apply saved changes.",
     "models.configUnreadable": "Could not read models.json, so saving is disabled to avoid overwriting it. Fix the file, then reopen this panel. {error}",
     "models.discoveryAdded": "added",
     "models.discoveryShowing": "Showing first {shown} of {total}",
