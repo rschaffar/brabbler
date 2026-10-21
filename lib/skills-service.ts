@@ -5,7 +5,10 @@ import { getProjectTrustStatus, projectTrustReloadOptions } from "@/lib/project-
 
 export async function loadSkillsWithInstallInfo(cwd: string): Promise<SkillsResponse> {
   const agentDir = getAgentDir();
-  const loader = new DefaultResourceLoader({ cwd, agentDir });
+  // Listings never bind a session or run resources_discover. Loading extension
+  // factories here adds side effects without contributing skills. Keep discovery
+  // fresh: this result also authorizes the skill-content reader.
+  const loader = new DefaultResourceLoader({ cwd, agentDir, noExtensions: true });
   await loader.reload(projectTrustReloadOptions(cwd, agentDir));
   const { skills, diagnostics } = loader.getSkills();
   return {

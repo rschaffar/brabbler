@@ -191,7 +191,7 @@ let context;
   writeSession(RICH, richEntries);
   const fileLineFixtures = seedFileLineLinks({ project, writeSession, message, workspacePeer: group === "markdown" });
   const externalReferenceFixtures = group === "markdown" ? seedExternalReferenceFixtures({ agentDir, writeSession, message }) : [];
-  const followupSettings = group === "markdown" ? seedFollowupSettings({ agentDir }) : null;
+  const followupSettings = group === "markdown" ? seedFollowupSettings({ agentDir, project }) : null;
   const mediaFixtures = group === "markdown" ? seedMarkdownMediaFixtures({ project, agentDir, writeSession, message }) : null;
   const highlightingFixture = group === "markdown" ? seedSourceHighlighting({ project, writeSession, message }) : null;
   // The default page is 50 *visible* messages (user / assistant / compaction).

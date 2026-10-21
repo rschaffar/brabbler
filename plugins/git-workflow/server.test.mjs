@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test, { after } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { createJiti } from "jiti";
+import { writeCommitGate } from "./commit-gate.fixture.mjs";
 const root = mkdtempSync(join(tmpdir(), "pi-git-plugin-tests-"));
 const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -276,11 +277,15 @@ test("disabling or Stop after native commit starts lets its write settle honestl
   const shim = join(root, "git-shim"); mkdirSync(shim);
   const marker = join(shim, "started");
   const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
-  writeFileSync(join(shim, "git"), `#!${process.execPath}\nconst {spawnSync}=require('node:child_process'); const fs=require('node:fs'); const args=process.argv.slice(2); if(args.includes('commit')) { fs.writeFileSync(${JSON.stringify(marker)},'started'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,250); } const result=spawnSync(${JSON.stringify(realGit)},args,{stdio:'inherit'}); process.exit(result.status ?? 1);`, { mode: 0o700 });
+  // Only commit needs the Node delay. Wrapping every preflight Git call in
+  // Node startup consumed this test's ten-second marker budget under load.
+  writeCommitGate(shim, { gitPath: realGit, nodePath: process.execPath,
+    shellPath: execFileSync("which", ["sh"], { encoding: "utf8" }).trim(), marker });
   const oldPath = process.env.PATH; process.env.PATH = `${shim}:${oldPath}`;
+  const controller = new AbortController();
+  let pending;
   try {
-    const controller = new AbortController();
-    const pending = call(repo, commit(repo), {}, controller.signal);
+    pending = call(repo, commit(repo), {}, controller.signal);
     const deadline = Date.now() + 10000;
     while (!existsSync(marker)) { assert.ok(Date.now() < deadline); await delay(10); }
     updatePluginSettings(gitWorkflowManifest, "global", repo, { enabled: false }, []);
@@ -288,7 +293,10 @@ test("disabling or Stop after native commit starts lets its write settle honestl
     success(await pending);
     assert.equal(git(repo, "log", "-1", "--format=%s"), "Exact message");
     failed(await call(repo, commit(repo)), /disabled/);
-  } finally { process.env.PATH = oldPath; }
+  } finally {
+    controller.abort();
+    try { await pending; } finally { process.env.PATH = oldPath; }
+  }
 });
 
 test("cross-repository commits use selected permissions and checks, preserving the caller", async () => {

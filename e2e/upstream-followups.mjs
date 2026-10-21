@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export function seedFollowupSettings({ agentDir }) {
+export function seedFollowupSettings({ agentDir, project }) {
+  const factoryLog = join(agentDir, "listing-factories.log");
+  writeFileSync(factoryLog, "");
+  writeFileSync(join(agentDir, "extensions", "listing-probe.ts"), `import { appendFileSync } from "node:fs";
+export default function () { appendFileSync(${JSON.stringify(factoryLog)}, "factory\\n"); }`);
   const skill = join(agentDir, "skills", "followup-instructions");
   mkdirSync(join(skill, "refs"), { recursive: true });
   writeFileSync(join(skill, "SKILL.md"), "---\nname: followup-instructions\ndescription: Followup reader fixture\n---\n\n# Full instructions\n\n[Read the guide](refs/guide.md#details)\n\n[Local heading](#full-instructions)\n");
@@ -15,7 +19,7 @@ export function seedFollowupSettings({ agentDir }) {
     { id: "adaptive-fixture", name: "Adaptive fixture", reasoning: true }, { id: "sibling-fixture", name: "Sibling fixture" },
   ] };
   writeFileSync(file, JSON.stringify(config));
-  return { skillPath: join(skill, "SKILL.md") };
+  return { skillPath: join(skill, "SKILL.md"), factoryLog, project };
 }
 
 async function openSettings(page, section) {
@@ -57,6 +61,21 @@ export async function checkSkillInstructions(page, base, fixture) {
   const denied = await fetch(`${base}/api/files/${fixture.skillPath.split("/").filter(Boolean).map(encodeURIComponent).join("/")}?type=read`);
   assert.equal(denied.status, 403, "reading a loaded skill must not admit its folder as a general file root");
   await denied.arrayBuffer();
+  // Genuine installed-package requests: settings reuse registrations and skill
+  // reads/content do not execute factories. No provider calls or mocked routes.
+  const urls = ["/api/auth/providers", `/api/models/enabled?cwd=${encodeURIComponent(fixture.project)}`,
+    `/api/skills?cwd=${encodeURIComponent(fixture.project)}`,
+    `/api/skills/content?${new URLSearchParams({ cwd: fixture.project, filePath: fixture.skillPath })}`];
+  const readListings = () => Promise.all(urls.map(async (url) => {
+    const response = await fetch(`${base}${url}`);
+    assert.equal(response.status, 200, url);
+    return response.json();
+  }));
+  const first = await readListings();
+  const before = readFileSync(fixture.factoryLog, "utf8");
+  const second = await readListings();
+  assert.deepEqual(second, first, "unchanged concurrent listings retain their payloads");
+  assert.equal(readFileSync(fixture.factoryLog, "utf8"), before, "repeated listings never execute extension factories");
   await page.keyboard.press("Escape");
   console.log(`PASS: ${page.viewportSize().width}px loaded-skill instructions, keyboard/nested/heading/footnote navigation and no new file roots`);
 }

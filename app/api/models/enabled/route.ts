@@ -1,6 +1,6 @@
 import { stat } from "fs/promises";
 import { resolve } from "path";
-import { getAgentDir, SettingsManager, type ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import {
   clearEnabledModels,
@@ -22,26 +22,39 @@ import {
   type EnabledModelsView,
 } from "@/lib/enabled-models-runtime";
 import type { EnabledModelsInput } from "@/lib/enabled-models";
-import { createModelRuntimeWithExtensions } from "@/lib/model-runtime";
+import { readSettingsListing } from "@/lib/settings-listing-runtime";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { invalidateModelsCache } from "@/lib/models-cache";
 
 export const dynamic = "force-dynamic";
 
 interface RequestContext {
-  modelRuntime: ModelRuntime;
   models: readonly Model<Api>[];
+  providerNames: Map<string, string>;
+  customProviders: ReadonlySet<string>;
+  modelError?: string;
   settingsManager: SettingsManager;
   /** Where the two settings files live, for the banner to name one. */
   paths: { cwd: string; agentDir: string };
 }
 
 async function loadContext(cwd: string): Promise<RequestContext> {
-  const modelRuntime = await createModelRuntimeWithExtensions();
   const agentDir = getAgentDir();
+  // Detach the entire catalog under the listing queue. Settings edits below run
+  // once, outside cache acquisition; invalidation must never replay a write.
+  const catalog = await readSettingsListing(async (runtime) => ({
+    models: (await runtime.getAvailable()).map((model) => {
+      const copy = { ...model };
+      // Pattern resolution needs catalog metadata, never request credentials.
+      delete copy.headers;
+      return copy;
+    }),
+    providerNames: new Map(runtime.getProviders().map((provider) => [provider.id, provider.name])),
+    customProviders: customProviderIds(runtime),
+    modelError: runtime.getError(),
+  }));
   return {
-    modelRuntime,
-    models: await modelRuntime.getAvailable(),
+    ...catalog,
     settingsManager: SettingsManager.create(cwd, agentDir),
     paths: { cwd, agentDir },
   };
@@ -50,15 +63,12 @@ async function loadContext(cwd: string): Promise<RequestContext> {
 async function buildView(context: RequestContext): Promise<EnabledModelsView> {
   const { patterns, scope, path } = readEnabledModelsSettings(context.settingsManager, context.paths);
   const input = await buildEnabledModelsInput(patterns, context.models);
-  const providerNames = new Map(
-    context.modelRuntime.getProviders().map((provider) => [provider.id, provider.name]),
-  );
-  const modelError = context.modelRuntime.getError();
+  const { providerNames, customProviders, modelError } = context;
   return buildEnabledModelsView({
     input,
     models: context.models,
     providerNames,
-    customProviders: customProviderIds(context.modelRuntime),
+    customProviders,
     scope,
     settingsPath: path,
     ...(modelError ? { modelError } : {}),
