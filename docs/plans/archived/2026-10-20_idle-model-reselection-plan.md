@@ -25,8 +25,8 @@ No automatic refresh on save, timer, resource `/reload` rebinding, resource-list
 - [x] Preserve canonical durable model selection and stale request/session guards, including lost acknowledgements and malformed/removed definitions; actual callback/loader regressions cover pending creation, superseded reads, fresh client coalescing bypass and metadata recovery.
 - [x] Add focused native SDK synthetic lifecycle/definition/payload tests and installed-browser coverage, without live model calls; focused evidence below is not full acceptance.
 - [x] Update maintained model/session guides and user-facing instructions; two read-only reviewers identified concrete boundary/UI issues, now resolved with regressions. The latest lost-ack metadata and Chat-only repair follow-ups passed focused checks.
-- [ ] Commit coherent reviewed changes, reassess/rebase current local target, and run complete fresh Nix core/static/plugin, all browser/terminal and genuine deployment-VM acceptance. Record candidate, input identity, commands, failures, runtime and artifacts.
-- [ ] Deliver the clean verified candidate to the Git lifecycle's completion decision and exact-state non-FF merge approval; separate cleanup remains separately gated.
+- [x] Commit coherent reviewed changes, rebase current local target, and pass complete fresh Nix core/static/plugin, all browser/terminal and genuine deployment-VM acceptance; exact candidate and evidence below.
+- [x] Hand off the accepted candidate to the parent session's Git lifecycle. Remaining exact-state non-FF approval/integration and separate cleanup are owned by that session under `AGENTS.md`'s Project Git Profile and the global `git-worktrees` contract, with durable tool receipts. They are not claimed executed by this implementation plan.
 
 ## Implementation and focused evidence
 
@@ -80,12 +80,26 @@ The next identical full command on `fb5f80f5e5df4060f08a0e1a81483829d74e3728` st
 
 The complete `nix run .#test -- core --jobs 4` on `5b084fe2ad4d76ae3b62b57c3f0bf493dc15d963` ran all **382 files / 2,880 tests / 12 suites** in **317 seconds**; 381 files passed and only Session Launch's permission-deny subtest plus its aggregate failed (`/tmp/pi-web-model-reselection-complete-core.3Itidy.log`, `/tmp/pi-web-test-core.CwU558/run.json`). A late settings notification reached a retired loader's new registry guard and threw, interrupting live notification fanout. Retired synchronous registry operations now return before invoking SDK mutation; live refresh/failed/removed gates and retained session/nested-tool retirement refusal remain intact. A narrow independent safety review found no blocker. No original Session Launch assertion changed. The three affected files passed **73 tests** plus static preparation in **59 seconds** (`/tmp/pi-web-model-reselection-retired-registry.dq2wuo.log`, `/tmp/pi-web-test-core.a8MD60/run.json`); complete acceptance must use the resulting application candidate.
 
+## Accepted candidate and Git lifecycle handoff
+
+Complete acceptance passed on `4c9265860bfe41583ea88e2b5ab1015530dab524`, based on local `rst-main` `c1a1ae5f3e7ea6c868e170723aad5d23528edce0`. All three fresh entry points independently exported the same immutable source `/nix/store/295x95ywsrvg6d4280885knapjinhyf0-source`, SHA-256 `e477d31ad6c786a031e9943263d84bae12885a5fd62e3b41b7726a208345df79`. Browser and deployment use the identical installed package `/nix/store/nb0jjl2sf80qlh9b5glv1cm37c0f2rkr-pi-web-0.9.3`.
+
+| Exact command | Result | End-to-end command time, including in-run realization | Retained evidence |
+| --- | --- | --- | --- |
+| `nix run .#test -- core --jobs 4` | **382/382 files, 2,881 tests, 12 suites**, no failures/cancellations/skips; static/exporter/plugin checks pass | **317s** | `/tmp/pi-web-model-reselection-core-accepted.0hrPee.log`; `/tmp/pi-web-test-core.j9GeXW/run.json` |
+| `nix run .#test -- e2e --workers 4` | **24/24 browser/terminal groups, 53 exact ordered scenario receipts**; every capsule passes coverage and settlement | **431s** | `/tmp/pi-web-model-reselection-e2e-accepted.sj2nVM.log`; `/tmp/pi-web-test-browser.0orIBF/run.json` |
+| `nix run .#test -- service` | Genuine Home Manager activation, permissions, durable HTTP write/restart, PTY and final shutdown/closed-port proofs pass | **88s** | `/tmp/pi-web-model-reselection-service-accepted.RJEvXh.log`; `/tmp/pwv-TldMwF/run.json` |
+
+Budgets: native x86_64 host with 32 logical CPUs; core requested/effective **4/4**, about 28.7 GiB available at inner admission; browser requested/effective **4/4** sandboxes, about 31.8 GiB available at admission. VM remains **1 vCPU / 1536 MiB / 2 GiB sparse state**. These are admission estimates, not machine-wide reservations or exclusive benchmarks. Core's inner preparation was **39.760s**, runner-event window **269.543s**. Browser first-to-last capsule window was **332.759s**; the preceding **93.516s** from runner start includes prerequisite realization/scheduling, not a separately measured pure execution interval. Service script was **20.05s**, with the rest of its command including source export/realization/driver overhead. Earlier attempts warmed some prerequisites; no separate unreported prewarming command was used. Model work, read-only review and coordination are outside these command intervals. Do not compare the summed sequential commands with the historical overlapped warm benchmark.
+
+All outer executions and native capsule/VM settlement evidence pass; no host service, provider credentials or publication were used. The final plan archive/evidence commit changes documentation only; its narrow review must confirm application/test/toolchain inputs remain identical to this accepted candidate. Integration and cleanup remain pending at this handoff and belong to the parent session's exact-state Git tools; later execution receipts and chat report own their results. Backups and failed historical artifacts are retained unless separately authorized.
+
 ## Risks and Recovery
 
 SDK refresh is not transactional and cancellation is not rollback. Never admit a run merely because a timeout response returned while refresh is still executing. Partial failure must remain visibly unavailable until a successful safe refresh or deliberate reconstruction. Native provider/extension callbacks are not sandboxed by `allowNetwork:false`. Preserve immutable account/store binding and shared-subagent safety, not just the selected wrapper's idle flag. No persistence migration is intended; reverting code does not revert user-saved definitions.
 
 ## Completion Checklist
 
-- [ ] Explicit reselection behavior and failure/busy choices have meaningful focused/native/browser evidence.
-- [ ] Complete Nix acceptance and independent review pass for the settled source; earlier failures remain recorded.
-- [ ] Maintained guides own durable semantics, and exact local integration/cleanup results are distinguished from implementation evidence.
+- [x] Explicit reselection behavior and failure/busy choices have meaningful focused/native/browser evidence.
+- [x] Complete Nix acceptance and independent review pass for the settled source; earlier failures remain recorded.
+- [x] Maintained guides own durable semantics; exact local integration/cleanup are explicitly handed to the parent Git lifecycle, not represented as implementation acceptance.
