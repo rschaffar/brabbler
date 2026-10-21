@@ -29,6 +29,7 @@ Browser                Next.js Server              AgentSession (in-process)
 
 ```
 app/api/
+  acceptance/route.ts             GET project queue/logs | POST configured managed runs, cancellation and browser configuration/recovery
   sessions/route.ts               GET  list all sessions
   sessions/[id]/route.ts          GET/PATCH/DELETE session
   sessions/[id]/move/route.ts     POST relocate an idle session family to another cwd
@@ -112,6 +113,7 @@ lib/
   npx.ts               npx runner used by skill install
   plugin-updates.ts    npm view update checks for /api/plugins/check
   pi-types.ts          local structural types for pi SDK objects
+  acceptance/         verified project snapshots, private profiles, durable one-slot coordinator, owned Linux supervisor and session tools
   rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession
   session-reader.ts   SessionManager wrappers + path cache + buildSessionContext adapter
   session-move.ts     staged JSONL relocation + fork/subagent path repair
@@ -130,6 +132,7 @@ lib/
 components/
   BrowserSshAgent.tsx opt-in enrollment, connection and explicit signing UI independent of chat
   AppShell.tsx        outer layout + URL/session state + retained terminal tabs
+  AcceptancePanel.tsx project acceptance recipes, shared queue/status/logs and explicit controls
   FileWorkspace.tsx   scoped file groups, stable view hosts, routing and responsive projection
   LocalFileLink.tsx   resolved-local-link actions shared by chat and file Markdown
   SessionSidebar.tsx  session tree + FileExplorer

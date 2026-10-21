@@ -24,6 +24,7 @@ import type { ReviewCommitReference, ReviewNavigation } from "@/lib/review-noteb
 import { TabBar, type Tab } from "./TabBar";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
 import { BrowserSshAgent } from "./BrowserSshAgent";
+import { AcceptancePanel } from "./AcceptancePanel";
 import { ProjectTrustDialog, type TrustChoice } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { SystemPromptPanel } from "./SystemPromptPanel";
@@ -240,6 +241,7 @@ export function AppShell() {
   const fileRevealId = useRef(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
   const [sshPanelOpen, setSshPanelOpen] = useState(false);
+  const [acceptanceOpen, setAcceptanceOpen] = useState(false);
   const [pluginSettingsSession, setPluginSettingsSession] = useState<{ id: string; cwd: string } | null>(null);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
@@ -2223,6 +2225,11 @@ export function AppShell() {
               <path d="M6 6v12M6 15c0-4 3-8 10-8" />
             </svg>
           </button>
+          <button type="button" className="activity-top-button" aria-label={translate("acceptance.title")} title={translate("acceptance.title")} disabled={!activeCwd}
+            onClick={() => { setActiveTopPanel(null); setAcceptanceOpen(true); }}
+            style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0, border: 0, borderRight: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: activeCwd ? "pointer" : "default" }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m7 12 3 3 7-7" /><rect x="3" y="3" width="18" height="18" rx="4" /></svg>
+          </button>
           {showChat && selectedSession?.relation?.kind === "subagent" && (
             <span role="img" aria-label={translate("activity.subagent")} title={translate("activity.subagent")}
               style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, borderRight: "1px solid var(--border)", color: "var(--accent)" }}>
@@ -2563,7 +2570,7 @@ export function AppShell() {
           </div>}
           <div inert={gitExplorerFullWidth || Boolean(activeOverview && isMobile && overviewMobileList)} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
           {showChat ? (
-            <MarkdownMediaScope key={sessionKey} active={!chatCollapsed && settingsSection === null && !projectTrustDialogOpen && !gitExplorerFullWidth && !rightPanelFullWidth && !(isMobile && (rightPanelOpen || sidebarOpen)) && !(activeOverview && isMobile && overviewMobileList)}>
+            <MarkdownMediaScope key={sessionKey} active={!chatCollapsed && settingsSection === null && !projectTrustDialogOpen && !acceptanceOpen && !gitExplorerFullWidth && !rightPanelFullWidth && !(isMobile && (rightPanelOpen || sidebarOpen)) && !(activeOverview && isMobile && overviewMobileList)}>
             <ChatWindow
               key={sessionKey}
               session={selectedSession}
@@ -2802,6 +2809,7 @@ export function AppShell() {
         onManageTrust={() => { setProjectTrustError(null); setProjectTrustDialogOpen(true); }}
       />
     )}
+    {acceptanceOpen && activeCwd && <AcceptancePanel key={activeCwd} cwd={activeCwd} onClose={() => setAcceptanceOpen(false)} />}
     {projectTrustDialogOpen && projectTrustCwd && (
       <ProjectTrustDialog
         cwd={projectTrustCwd}

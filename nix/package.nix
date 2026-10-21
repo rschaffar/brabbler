@@ -1,4 +1,4 @@
-{ lib, stdenv, makeWrapper, nodejs, git, noto-fonts, src, modules }:
+{ lib, stdenv, makeWrapper, nodejs, git, util-linux, noto-fonts, src, modules }:
 let
   manifest = builtins.fromJSON (builtins.readFile (src + "/package.json"));
 in
@@ -37,7 +37,7 @@ stdenv.mkDerivation {
     ln -s ${modules}/node_modules "$app/node_modules"
     makeWrapper ${nodejs}/bin/node "$out/bin/pi-web" \
       --add-flags "$app/bin/pi-web.js" \
-      --prefix PATH : ${lib.makeBinPath [ nodejs git ]}
+      --prefix PATH : ${lib.makeBinPath ([ nodejs git ] ++ lib.optionals stdenv.hostPlatform.isLinux [ util-linux ])}
     runHook postInstall
   '';
   passthru = { inherit modules; };
