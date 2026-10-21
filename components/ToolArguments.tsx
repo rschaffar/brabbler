@@ -10,6 +10,7 @@ const TEXT_STYLE: CSSProperties = {
   margin: 0,
   color: "var(--text-muted)",
   fontFamily: "var(--font-mono)",
+  fontWeight: "var(--font-mono-weight, 400)",
   fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",
   lineHeight: 1.5,
   whiteSpace: "pre-wrap",

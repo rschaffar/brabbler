@@ -69,6 +69,16 @@ export async function checkToolArguments(page, fixtures, { artifacts, width }) {
       } finally {
         await args.evaluate((el, old) => old ? el.style.setProperty("--chat-font-size-offset", old) : el.style.removeProperty("--chat-font-size-offset"), old);
       }
+      const oldWeight = await args.evaluate((el) => {
+        const old = el.style.getPropertyValue("--font-mono-weight");
+        el.style.setProperty("--font-mono-weight", "600"); return old;
+      });
+      try {
+        assert.equal(await args.locator("td").first().evaluate((el) => getComputedStyle(el).fontWeight), "600");
+        assert.equal(await pre.evaluate((el) => getComputedStyle(el).fontWeight), "600");
+      } finally {
+        await args.evaluate((el, old) => old ? el.style.setProperty("--font-mono-weight", old) : el.style.removeProperty("--font-mono-weight"), oldWeight);
+      }
     } else if (call.name === "write") {
       assert.equal(await args.locator("[data-tool-file-text]").textContent(), call.arguments.content);
     } else {

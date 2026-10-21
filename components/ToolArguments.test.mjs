@@ -87,6 +87,7 @@ test("collapsed input stays unmounted and multiline values are bounded, keyboard
   assert.match(html, /max-height:260px/);
   assert.match(html, /tabindex="0"/);
   assert.match(html, /table-layout:fixed/);
+  assert.match(html, /font-weight:var\(--font-mono-weight, 400\)/);
   assert.match(html, /overflow-wrap:anywhere/);
   assert.match(html, /&lt;img/);
   assert.doesNotMatch(html, /<img|href=|<a /);
