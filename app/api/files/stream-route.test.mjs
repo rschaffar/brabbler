@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { EventEmitter } from "node:events";
 import { stripTypeScriptTypes } from "node:module";
 import test from "node:test";
@@ -30,6 +31,53 @@ test("file body streams preserve binary chunks and encode string chunks as UTF-8
   const bytes = Buffer.from(await new Response(body).arrayBuffer());
   assert.deepEqual(bytes, Buffer.concat([Buffer.from([0, 255, 128]), Buffer.from("Grüße")]));
   assert.equal(destroyed, false);
+});
+
+test("single-range responses preserve exact bytes, headers and cancellation ownership", async () => {
+  const streams = [];
+  const helper = stripTypeScriptTypes(source.slice(source.indexOf("function createFileBodyStream"), end));
+  const streamFile = new Function("fs", "path", `${helper}; return streamFile;`)({
+    createReadStream(file, range) {
+      const stream = new EventEmitter();
+      stream.destroyed = false;
+      stream.destroy = () => { stream.destroyed = true; };
+      streams.push(stream);
+      queueMicrotask(() => {
+        if (stream.destroyed) return;
+        stream.emit("data", Buffer.from([0, 1, 2, 255, 4, 5]).subarray(range?.start ?? 0, (range?.end ?? 5) + 1));
+        stream.emit("end");
+      });
+      return stream;
+    },
+  }, path);
+  for (const [range, status, expected, contentRange] of [
+    [null, 200, [0, 1, 2, 255, 4, 5], null],
+    ["bytes=1-3", 206, [1, 2, 255], "bytes 1-3/6"],
+    ["bytes=3-", 206, [255, 4, 5], "bytes 3-5/6"],
+    ["bytes=-2", 206, [4, 5], "bytes 4-5/6"],
+    ["bytes=4-999", 206, [4, 5], "bytes 4-5/6"],
+  ]) {
+    const response = streamFile("take.wav", { size: 6 }, "audio/wav", range);
+    assert.equal(response.status, status);
+    assert.equal(response.headers.get("content-range"), contentRange);
+    assert.equal(response.headers.get("content-length"), String(expected.length));
+    assert.equal(response.headers.get("accept-ranges"), "bytes");
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.deepEqual([...new Uint8Array(await response.arrayBuffer())], expected);
+  }
+  for (const range of ["bytes=9-", "bytes=4-2", "bytes=0-1,3-4", "items=0-1", "bytes=-0"]) {
+    const before = streams.length;
+    const response = streamFile("take.wav", { size: 6 }, "audio/wav", range);
+    assert.equal(response.status, 416);
+    assert.equal(response.headers.get("content-range"), "bytes */6");
+    assert.equal(streams.length, before, "invalid ranges never acquire a file stream");
+  }
+  const response = streamFile("take.wav", { size: 6 }, "audio/wav", "bytes=0-");
+  const stream = streams.at(-1);
+  await response.body.cancel();
+  assert.equal(stream.destroyed, true);
+  stream.emit("data", Buffer.from([1]));
+  stream.emit("error", new Error("late cancelled stream"));
 });
 
 test("streamed responses are not content-type sniffable", () => {

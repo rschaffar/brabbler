@@ -1162,6 +1162,28 @@ pre, code {
   margin: 8px 0;
   border-radius: 6px;
 }
+.markdown-body .markdown-media {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(640px, 100%);
+  min-width: 0;
+  max-width: 100%;
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  vertical-align: top;
+}
+.markdown-body .markdown-media-audio { width: min(360px, 100%); }
+.markdown-media-label { overflow-wrap: anywhere; }
+.markdown-media audio { width: 100%; min-width: 0; }
+.markdown-media video { width: 100%; max-height: 360px; object-fit: contain; }
+.markdown-media-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; font-size: 12px; }
+.markdown-media button { cursor: pointer; color: var(--accent); text-align: left; }
+.markdown-media-load { min-height: 44px; overflow-wrap: anywhere; }
+.markdown-media-error { color: var(--text-muted); font-size: 13px; }
 .markdown-body .markdown-inline-code {
   background: var(--bg-subtle);
   border-radius: 5px;

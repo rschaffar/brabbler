@@ -26,6 +26,55 @@ function renderMarkdown(markdown, props = {}) {
   );
 }
 
+test("opted-in local media has explicit activation and no eager media or image source", () => {
+  for (const href of ["out/take.wav", "/outside/take.mp4", "file:///outside/take.wav", "C:/work/take.wav", "file://host/share/take.wav"]) {
+    const html = renderMarkdown(`![Recording](${href})`, { enableInlineMedia: true, sourceSessionId: "origin-session" });
+    assert.match(html, /Load (audio|video): Recording/);
+    assert.match(html, /type=download&amp;sessionId=origin-session/);
+    assert.doesNotMatch(html, /<(?:audio|video|img|source)\b|\ssrc=|autoplay/i);
+  }
+  const blank = renderMarkdown("![](out/take.wav)", { enableInlineMedia: true });
+  assert.match(blank, /Load audio: take.wav/);
+});
+
+test("media preserves link semantics and blocks traversal without eager fallback requests", () => {
+  const props = { enableInlineMedia: true };
+  const remote = renderMarkdown("![Remote](https://example.com/movie.mp4?v=2)", props);
+  assert.match(remote, /<a href="https:\/\/example.com\/movie.mp4\?v=2" target="_blank" rel="noopener noreferrer">Remote<\/a>/);
+  const linked = renderMarkdown("[![Demo](demo.webm)](https://example.com/docs)", props);
+  assert.equal((linked.match(/<a /g) ?? []).length, 1);
+  assert.doesNotMatch(linked, /<button|<video|<img/);
+  for (const href of ["../outside/take.wav", "%2e%2e/outside/take.wav"]) {
+    const blocked = renderMarkdown(`![Blocked](${href})`, props);
+    assert.match(blocked, /blocked-file-link/);
+    assert.doesNotMatch(blocked, /src=|href=|Load audio/);
+  }
+  const streaming = renderMarkdown("![Recording](take.wav)", { ...props, isStreaming: true });
+  assert.doesNotMatch(streaming, /Load audio|<img|<audio|type=read/);
+  assert.match(renderMarkdown("[Recording](take.wav)", props), /<a href="take.wav">Recording<\/a>/);
+});
+
+test("encoded and browser-normalized media URLs never fall through to eager images", () => {
+  for (const source of [
+    '![Remote](https://example.com/clip.%6dp4)',
+    '<img alt="Remote" src="https://example.com/clip.mp4 ">',
+    '<img alt="Remote" src="https://example.com/clip.mp&#9;4">',
+    '![API](/api/files/tmp/take.%77av?type=read)',
+  ]) {
+    const html = renderMarkdown(source, { enableInlineMedia: true });
+    assert.doesNotMatch(html, /<img|<audio|<video|<source|\ssrc=/);
+  }
+  const ordinaryFileImage = renderMarkdown('![Image](file:///outside/image.png)', { enableInlineMedia: true });
+  assert.doesNotMatch(ordinaryFileImage, /src=|\/api\/files/);
+});
+
+test("media opt-in never enables raw media HTML, script URLs or other renderer contexts", () => {
+  const html = renderMarkdown('<video src="take.mp4" autoplay></video><audio src="take.wav"></audio><img src="javascript:take.wav" onerror="alert(1)">', { enableInlineMedia: true });
+  assert.doesNotMatch(html, /<video|<audio|javascript:|onerror=|autoplay/);
+  assert.doesNotMatch(renderMarkdown("![Recording](take.wav)"), /Load audio/);
+  assert.doesNotMatch(renderMarkdown("![Recording](take.wav)", { enableInlineMedia: true, onNavigateLink() {} }), /Load audio/);
+});
+
 test("ordered lists reserve marker space from their start and direct item count", () => {
   for (const [markdown, digits] of [
     ["1. one\n2. two", 2],

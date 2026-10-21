@@ -10,6 +10,7 @@ import { checkFilePanel, checkFileDiffViews, checkEditableFile, checkMarkdownPre
 import { checkExplorerUploads } from "./explorer-uploads.mjs";
 import { seedFileLineLinks, checkFileLineLinks } from "./file-line-links.mjs";
 import { checkFileWorkspace } from "./file-workspace.mjs";
+import { seedMarkdownMediaFixtures, checkMarkdownMedia } from "./markdown-media.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
@@ -188,6 +189,7 @@ let context;
   const fileLineFixtures = seedFileLineLinks({ project, writeSession, message, workspacePeer: group === "markdown" });
   const externalReferenceFixtures = group === "markdown" ? seedExternalReferenceFixtures({ agentDir, writeSession, message }) : [];
   const followupSettings = group === "markdown" ? seedFollowupSettings({ agentDir }) : null;
+  const mediaFixtures = group === "markdown" ? seedMarkdownMediaFixtures({ project, agentDir, writeSession, message }) : null;
   // The default page is 50 *visible* messages (user / assistant / compaction).
   // toolResults ride along free after #810, so 48 tool-call assistants + the
   // final answer + the divider fill that window; the user prompt is the 51st
@@ -326,7 +328,7 @@ let context;
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...WORKTREE_MANAGER_IDS, ...ACTIVITY_SUBAGENTS, ...externalReferenceFixtures.map((fixture) => fixture.id),
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...WORKTREE_MANAGER_IDS, ...ACTIVITY_SUBAGENTS, ...externalReferenceFixtures.map((fixture) => fixture.id), ...(mediaFixtures ? [mediaFixtures.id, mediaFixtures.otherId] : []),
         ...(group === "markdown" ? [fileLineFixtures.peerSessionId] : []),
         ...(group === "trust" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
       for (const id of ACTIVITY_SUBAGENTS) {
@@ -656,6 +658,7 @@ let context;
       await checkMarkdownPreview(page, markdownFile);
       await checkFileLineLinks(page, base, fileLineFixtures);
       await checkFileWorkspace(page, base, fileLineFixtures, artifacts);
+      await checkMarkdownMedia(page, { base, fixtures: mediaFixtures });
       await checkSkillInstructions(page, base, followupSettings);
       await checkModelOverrides(page, base);
       await checkManagedModelContext(page);
