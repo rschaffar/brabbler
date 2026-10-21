@@ -264,10 +264,47 @@ export async function checkFilePanel(page, filePath) {
   const toggle = panel.getByRole("button", { name: "Expand file panel", exact: true });
   if (page.viewportSize().width <= 640) {
     assert.equal(await toggle.isVisible(), false, "Mobile already uses full width");
+    assert.equal(await page.getByRole("button", { name: "Hide chat panel", exact: true }).count(), 0);
   } else {
     // Include a manually resized split in the round trip.
     const separator = page.locator('[data-resize-handle="right-panel"]');
-    if (await separator.isVisible()) await separator.press("ArrowLeft");
+    if (await separator.isVisible()) {
+      const viewport = page.viewportSize();
+      const composer = page.locator(".chat-input-textarea");
+      const draft = await composer.inputValue();
+      await composer.fill("Retained while chat is hidden");
+      const composerNode = await composer.elementHandle();
+      await page.setViewportSize({ ...viewport, width: 3440 });
+      const bounds = await separator.boundingBox();
+      await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + 100);
+      await page.mouse.down();
+      await page.mouse.move(bounds.x - 450, bounds.y + 100, { steps: 8 });
+      await page.mouse.up();
+      await separator.press("End");
+      assert.ok(await width() > 1200, "Files can grow past the former arbitrary cap");
+      assert.ok(await page.locator(".app-center").evaluate(el => el.getBoundingClientRect().width) <= 321, "the right divider can shrink chat to its usable minimum");
+      const splitWidth = await width(), savedWidths = await storedWidths();
+      await page.getByRole("button", { name: "Hide chat panel", exact: true }).click();
+      assert.equal(await composer.isVisible(), false);
+      assert.equal(await composerNode.evaluate(el => el.isConnected), true);
+      assert.equal(await page.locator("#chat-content").evaluate(el => el.inert), true);
+      assert.equal(await frame.evaluate(() => window.previewInstance), instance);
+      assert.equal(await frame.locator("#notes").inputValue(), "Keep this note");
+      assert.ok(await width() > splitWidth);
+      await page.getByRole("button", { name: "Show chat panel", exact: true }).press("Enter");
+      assert.equal(await composer.inputValue(), "Retained while chat is hidden");
+      assert.equal(await width(), splitWidth);
+      assert.deepEqual(await storedWidths(), savedWidths);
+      await page.getByRole("button", { name: "Hide chat panel", exact: true }).click();
+      await page.setViewportSize({ ...viewport, width: 900 });
+      assert.equal(await page.getByRole("button", { name: "Show chat panel", exact: true }).count(), 0, "compact layout restores chat and retains its existing Files overlay");
+      await page.setViewportSize(viewport);
+      await separator.press("Enter");
+      await page.getByRole("button", { name: "Hide chat panel", exact: true }).waitFor();
+      assert.equal(await frame.evaluate(() => window.previewInstance), instance);
+      await composer.fill(draft);
+      await separator.press("ArrowLeft");
+    }
     const originalWidth = await width();
     const originalStored = await storedWidths();
     const sessionInfo = page.getByRole("button", { name: "Session info", exact: true });

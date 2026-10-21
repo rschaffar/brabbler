@@ -29,6 +29,7 @@ interface Props {
   onShowFiles: () => void;
   onEmpty: () => void;
   onFocusWorkspace: (key: string) => void;
+  onRevealFile?: (location: FileLocation) => void;
   mentionCwd?: string;
   onMentionLines: (path: string, start: number, end: number) => void;
   onAtMention: (path: string, isDir: boolean) => void;
@@ -304,6 +305,9 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
               <option value="new-right" disabled={!canSplit(id, "right")}>{t("workspace.newRight")}</option>
               <option value="new-below" disabled={!canSplit(id, "below")}>{t("workspace.newBelow")}</option>
             </select>}
+            {view && props.onRevealFile && <button type="button" title={t("files.revealInExplorer")} aria-label={t("files.revealInExplorer")} onClick={() => props.onRevealFile?.(view)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2M3 12h11m-4-4 4 4-4 4" /></svg>
+            </button>}
             {view?.preview && <button type="button" onClick={() => { commit(props.workspaceKey, state => patchFileView(state, view.id, { preview: false })); focusPaneDom(props.workspaceKey, id); }}>{t("workspace.keep")}</button>}
             <details className="file-workspace-options" onClick={event => {
               if ((event.target as Element).closest("button")) {

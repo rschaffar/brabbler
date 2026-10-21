@@ -6,6 +6,7 @@ import { useSyncExternalStore } from "react";
 const MOBILE_QUERY = "(max-width: 640px)";
 // Narrow phones keep secondary toolbar actions behind the More button.
 const NARROW_MOBILE_QUERY = "(max-width: 480px)";
+const SPLIT_LAYOUT_QUERY = "(min-width: 960px)";
 
 function subscribeToQuery(query: string, cb: () => void): () => void {
   if (typeof window === "undefined" || !window.matchMedia) return () => {};
@@ -23,6 +24,8 @@ const subscribeMobile = (cb: () => void) => subscribeToQuery(MOBILE_QUERY, cb);
 const getMobileSnapshot = () => queryMatches(MOBILE_QUERY);
 const subscribeNarrowMobile = (cb: () => void) => subscribeToQuery(NARROW_MOBILE_QUERY, cb);
 const getNarrowMobileSnapshot = () => queryMatches(NARROW_MOBILE_QUERY);
+const subscribeSplitLayout = (cb: () => void) => subscribeToQuery(SPLIT_LAYOUT_QUERY, cb);
+const getSplitLayoutSnapshot = () => queryMatches(SPLIT_LAYOUT_QUERY);
 
 function getServerSnapshot(): boolean {
   return false;
@@ -35,6 +38,11 @@ function getServerSnapshot(): boolean {
  */
 export function useIsMobile(): boolean {
   return useSyncExternalStore(subscribeMobile, getMobileSnapshot, getServerSnapshot);
+}
+
+/** Matches the CSS breakpoint where Files shares the desktop layout with chat. */
+export function useIsSplitLayout(): boolean {
+  return useSyncExternalStore(subscribeSplitLayout, getSplitLayoutSnapshot, getServerSnapshot);
 }
 
 /** Returns true when the compact mobile toolbar should collapse extra actions. */

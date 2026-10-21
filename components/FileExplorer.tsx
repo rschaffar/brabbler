@@ -16,6 +16,7 @@ import { buildSearchTree, type SearchTreeNode } from "@/lib/search-tree";
 import { useI18n } from "@/hooks/useI18n";
 import { hasFileDrag, readDroppedFiles, uploadDirectoryForNode } from "@/lib/file-drop";
 import { ExplorerUpload, idleUploadState } from "@/lib/explorer-upload";
+import { explorerContains, explorerPathKey, explorerRevealRoot, type FileRevealRequest } from "@/lib/explorer-reveal";
 type Translate = ReturnType<typeof useI18n>["t"];
 
 interface FileEntry {
@@ -36,6 +37,8 @@ interface FileNode {
 
 interface Props {
   cwd: string;
+  revealRequest?: FileRevealRequest;
+  onRevealSettled?: (id: number) => void;
   onOpenFile: (filePath: string, fileName: string, options?: OpenFileOptions) => void;
   refreshKey?: number;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
@@ -161,6 +164,8 @@ function TreeNode({
   onToggleExpanded,
   refreshToken,
   highlightedPaths,
+  revealSelection,
+  onRevealFocus,
   gitStatusByPath,
   changedDirectoryPaths,
   uploadBusy,
@@ -180,6 +185,8 @@ function TreeNode({
   onToggleExpanded: (fullPath: string, open: boolean) => void;
   refreshToken?: string;
   highlightedPaths: Set<string>;
+  revealSelection?: { path: string; id: number; focus?: boolean };
+  onRevealFocus?: (id: number) => void;
   gitStatusByPath: Map<string, GitFileStatus>;
   changedDirectoryPaths: Set<string>;
   uploadBusy: boolean;
@@ -190,6 +197,20 @@ function TreeNode({
   projection?: boolean;
   t: Translate;
 }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const revealed = Boolean(revealSelection && explorerPathKey(revealSelection.path) === explorerPathKey(node.fullPath));
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!revealed || !row || revealSelection?.focus === false) return;
+    row.focus({ preventScroll: true });
+    const scroller = row.closest<HTMLElement>("[data-explorer-scroll]");
+    if (scroller) {
+      const bounds = row.getBoundingClientRect(), viewport = scroller.getBoundingClientRect();
+      if (bounds.top < viewport.top) scroller.scrollTop += bounds.top - viewport.top;
+      else if (bounds.bottom > viewport.bottom) scroller.scrollTop += bounds.bottom - viewport.bottom;
+    }
+    if (revealSelection) onRevealFocus?.(revealSelection.id);
+  }, [revealed, revealSelection, onRevealFocus]);
   const open = expandedPaths.has(node.fullPath);
   const highlighted = highlightedPaths.has(node.fullPath);
   const normalizedPath = normalizeFilePathSlashes(node.fullPath);
@@ -244,6 +265,14 @@ function TreeNode({
   return (
     <div>
       <div
+        ref={rowRef}
+        tabIndex={0}
+        aria-label={node.fullPath}
+        data-explorer-revealed={revealed ? "true" : undefined}
+        onKeyDown={event => {
+          if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
+          event.preventDefault(); handleClick();
+        }}
         data-upload-directory={destination}
         onClick={handleClick}
         onDragOver={(event) => {
@@ -265,7 +294,7 @@ function TreeNode({
           paddingRight: 8,
           height: 24,
           cursor: "pointer",
-          background: node.isDir && dropTarget === destination ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
+          background: revealed || (node.isDir && dropTarget === destination) ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
           outline: node.isDir && dropTarget === destination ? "1px solid var(--accent)" : undefined,
           borderRadius: 4,
           userSelect: "none",
@@ -426,6 +455,8 @@ function TreeNode({
               onToggleExpanded={onToggleExpanded}
               refreshToken={refreshToken}
               highlightedPaths={highlightedPaths}
+              revealSelection={revealSelection}
+              onRevealFocus={onRevealFocus}
               gitStatusByPath={gitStatusByPath}
               changedDirectoryPaths={changedDirectoryPaths}
               uploadBusy={uploadBusy}
@@ -595,8 +626,19 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   onChangesCountChange,
   fileSearchOpen = false,
   onFileSearchOpenChange,
+  revealRequest,
+  onRevealSettled,
 }, ref) {
   const { t } = useI18n();
+  const [browseRoot, setBrowseRoot] = useState(cwd);
+  const browseRootRef = useRef(browseRoot);
+  browseRootRef.current = browseRoot;
+  const [revealSelection, setRevealSelection] = useState<{ path: string; id: number; focus?: boolean }>();
+  const handleRevealFocus = useCallback((id: number) => {
+    setRevealSelection(previous => previous?.id === id ? { ...previous, focus: false } : previous);
+  }, []);
+  const [revealNotice, setRevealNotice] = useState<string>();
+  const revealGeneration = useRef(0);
   const [roots, setRoots] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -769,8 +811,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   }, [prepareUpload]);
 
   useImperativeHandle(ref, () => ({
-    openUploadPicker() { openUploadHere(cwd); },
-  }), [cwd, openUploadHere]);
+    openUploadPicker() { openUploadHere(browseRoot); },
+  }), [browseRoot, openUploadHere]);
 
   useEffect(() => {
     onUploadBusyChange?.(uploadBusy);
@@ -779,8 +821,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   useEffect(() => () => onUploadBusyChange?.(false), [onUploadBusyChange]);
 
   useEffect(() => {
-    const cwdChanged = prevCwdRef.current !== cwd;
-    prevCwdRef.current = cwd;
+    const cwdChanged = prevCwdRef.current !== browseRoot;
+    prevCwdRef.current = browseRoot;
 
     // Reset expanded state only when cwd changes, not on refreshKey bumps
     if (cwdChanged) {
@@ -793,12 +835,57 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     setLoading(cwdChanged);
     setError(null);
     let cancelled = false;
-    fetchEntries(cwd)
+    fetchEntries(browseRoot)
       .then((entries) => { if (!cancelled) setRoots(entries); })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [cwd, refreshKey, treeRefreshKey]);
+  }, [browseRoot, refreshKey, treeRefreshKey]);
+
+  useEffect(() => {
+    if (!revealRequest || fileSearchOpen) return;
+    let cancelled = false;
+    const generation = ++revealGeneration.current;
+    const isCurrent = () => !cancelled && generation === revealGeneration.current;
+    const root = explorerRevealRoot(revealRequest.filePath, cwd, browseRootRef.current);
+    setBrowseRoot(root);
+    setRevealSelection(undefined);
+    setRevealNotice(t("files.locating"));
+    void (async () => {
+      let directory = root;
+      const ancestors: string[] = [];
+      while (isCurrent()) {
+        const entries = await fetchEntries(directory);
+        if (!isCurrent()) return;
+        const target = entries.find(entry => !entry.isDir && explorerPathKey(entry.fullPath) === explorerPathKey(revealRequest.filePath));
+        if (target) {
+          setExpandedPaths(previous => new Set([...previous, ...ancestors]));
+          setRevealSelection({ path: target.fullPath, id: revealRequest.id });
+          setRevealNotice(undefined);
+          onRevealSettled?.(revealRequest.id);
+          return;
+        }
+        const child = entries.find(entry => entry.isDir && explorerContains(entry.fullPath, revealRequest.filePath));
+        if (!child) throw new Error(t("files.revealNotShown"));
+        ancestors.push(child.fullPath);
+        directory = child.fullPath;
+      }
+    })().catch(() => {
+      if (!isCurrent()) return;
+      setRevealNotice(t("files.revealUnavailable"));
+      onRevealSettled?.(revealRequest.id);
+    });
+    return () => { cancelled = true; };
+  }, [revealRequest, cwd, fileSearchOpen, onRevealSettled, t]);
+
+  useEffect(() => {
+    if (fileSearchOpen) {
+      if (revealRequest) onRevealSettled?.(revealRequest.id);
+      setBrowseRoot(cwd);
+      setRevealSelection(undefined);
+      setRevealNotice(undefined);
+    }
+  }, [fileSearchOpen, cwd, revealRequest, onRevealSettled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -841,12 +928,12 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         event.preventDefault();
         event.stopPropagation();
         event.dataTransfer.dropEffect = uploadBusy ? "none" : "copy";
-        if (!uploadBusy) setDropTarget(cwd);
+        if (!uploadBusy) setDropTarget(browseRoot);
       }}
       onDragLeave={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null);
       }}
-      onDrop={(event) => handleFileDrop(event, cwd)}
+      onDrop={(event) => handleFileDrop(event, browseRoot)}
       style={{ minHeight: "100%", position: "relative" }}
     >
       <input ref={uploadInputRef} type="file" multiple hidden onChange={handleUploadInput} />
@@ -1075,6 +1162,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         </div>
       )}
 
+      {revealNotice && <div role="status" style={{ padding: "6px 10px", fontSize: 11 }}>{revealNotice}</div>}
+      {browseRoot !== cwd && <div style={{ padding: "6px 10px", fontSize: 11, overflowWrap: "anywhere" }}>
+        <div title={browseRoot}>{browseRoot}</div>
+        <button type="button" onClick={() => { revealGeneration.current++; if (revealRequest) onRevealSettled?.(revealRequest.id); setBrowseRoot(cwd); setRevealSelection(undefined); setRevealNotice(undefined); }}>{t("files.returnWorkspaceFolder")}</button>
+      </div>}
       {(changesCollapsed || gitFiles.length === 0) && (!fileSearchOpen || !hasSearchQuery) && (
         <div style={{ padding: "2px 4px" }}>
           {loading ? (
@@ -1094,6 +1186,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                 onToggleExpanded={handleToggleExpanded}
                 refreshToken={refreshToken}
                 highlightedPaths={highlightedPaths}
+                revealSelection={revealSelection}
+                onRevealFocus={handleRevealFocus}
                 gitStatusByPath={gitStatusByPath}
                 changedDirectoryPaths={changedDirectoryPaths}
                 uploadBusy={uploadBusy}

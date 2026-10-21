@@ -2200,6 +2200,46 @@ span.token.table {
   }
 }
 
+.chat-visibility-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chat-visibility-button:hover, .chat-visibility-button:focus-visible {
+  color: var(--text);
+  background: var(--bg-selected);
+}
+/* Keep a small restore rail; neither chat nor the active file reader unmounts. */
+@media (min-width: 960px) {
+  .chat-collapsed .app-toolbar-row {
+    flex-direction: column;
+    height: auto !important;
+  }
+  .chat-collapsed .app-toolbar-row > :not(.sidebar-toggle-button):not(.chat-visibility-button),
+  .chat-collapsed .app-topbar > :not(.app-toolbar-row) {
+    display: none !important;
+  }
+  .right-panel-container.right-panel-open.chat-is-hidden {
+    flex: 1;
+    width: 0;
+    min-width: 0;
+    transition: none;
+  }
+  .right-panel-container.chat-is-hidden > * {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 /* Compact desktop file panel: overlay the chat instead of collapsing it. */
 @media (min-width: 641px) and (max-width: 959px) {
   .right-panel-resize-handle {

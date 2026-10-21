@@ -5,8 +5,49 @@ import { dirname, join } from "node:path";
 /** Runs in the existing Markdown inventory chain, with synthetic user files. */
 export async function checkFileWorkspace(page, base, fixture, artifacts) {
   await page.goto(`${base}/?session=${fixture.sessionId}`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("link", { name: "Split guide", exact: true }).click();
-  const panel = page.locator("#file-panel"), guide = panel.getByRole("tabpanel", { name: "Pane 1 — split-guide.md", exact: true });
+  const panel = page.locator("#file-panel");
+  const mobile = page.viewportSize().width <= 640;
+  const dismissSidebar = async () => {
+    if (mobile) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: page.viewportSize().width - 10, y: 200 } });
+  };
+  const reopenFiles = async () => {
+    await dismissSidebar();
+    if (mobile) await page.getByRole("button", { name: "Show file panel", exact: true }).click();
+  };
+  await page.locator("#chat-content").getByRole("link", { name: "Nested preview", exact: true }).click();
+  const nestedHost = await panel.locator(".markdown-file-preview").elementHandle();
+  if (!mobile) await panel.getByRole("button", { name: "Expand file panel", exact: true }).click();
+  await panel.getByRole("button", { name: "Reveal in explorer", exact: true }).click();
+  const revealed = page.locator('[data-explorer-revealed="true"]');
+  await revealed.waitFor({ state: "visible" });
+  assert.equal(await revealed.getAttribute("aria-label"), fixture.nested.replace(/\\/g, "/"));
+  assert.equal(await revealed.evaluate(el => document.activeElement === el), true);
+  assert.equal(await page.locator("#session-sidebar").evaluate(el => el.inert), false);
+  assert.equal(await nestedHost.evaluate(el => el.isConnected), true, "reveal retains the selected reader");
+  await page.getByRole("button", { name: `Collapse folder (${dirname(fixture.nested).replace(/\\/g, "/")})`, exact: true }).click();
+  await reopenFiles();
+  await panel.getByRole("button", { name: "Reveal in explorer", exact: true }).click();
+  await revealed.waitFor({ state: "visible" });
+  assert.equal(await revealed.getAttribute("aria-label"), fixture.nested.replace(/\\/g, "/"), "repeat command expands a manually collapsed ancestor");
+  if (!mobile) {
+    await page.getByRole("button", { name: "Search files", exact: true }).click();
+    await page.getByRole("textbox", { name: "Search files", exact: true }).fill("not-a-match");
+    await panel.getByRole("button", { name: "Reveal in explorer", exact: true }).click();
+    await revealed.waitFor({ state: "visible" });
+    assert.equal(await page.getByRole("textbox", { name: "Search files", exact: true }).count(), 0, "reveal leaves a filtered projection");
+  }
+  await dismissSidebar();
+  if (!mobile) await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
+  await page.locator("#chat-content").getByRole("link", { name: "Absolute sibling", exact: true }).click();
+  await panel.getByRole("button", { name: "Reveal in explorer", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-explorer-revealed="true"]')?.getAttribute("aria-label")?.endsWith("/other-project/sibling-line-target.ts"));
+  assert.match(await revealed.getAttribute("aria-label"), /other-project\/sibling-line-target\.ts$/);
+  assert.equal(new URL(page.url()).searchParams.get("session"), fixture.sessionId, "Explorer-only browsing never changes the selected chat");
+  await page.getByRole("button", { name: "Return to workspace folder", exact: true }).click();
+  await dismissSidebar();
+  if (!mobile) await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
+  await page.locator("#chat-content").getByRole("link", { name: "Split guide", exact: true }).click();
+  const guide = panel.getByRole("tabpanel", { name: "Pane 1 — split-guide.md", exact: true });
   await guide.getByRole("heading", { name: "Guided review", exact: true }).waitFor();
   assert.equal(await panel.locator("[data-file-pane]").count(), 1);
   const originalViewport = page.viewportSize();
