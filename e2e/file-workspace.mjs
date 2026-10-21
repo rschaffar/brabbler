@@ -17,6 +17,17 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   };
   await page.locator("#chat-content").getByRole("link", { name: "Nested preview", exact: true }).click();
   const nestedHost = await panel.locator(".markdown-file-preview").elementHandle();
+  if (page.viewportSize().width >= 960) {
+    // Opening, switching and closing overviews must not collapse the shown file.
+    for (const name of ["Activity", "Starred", "Activity", "Activity", "Starred", "Starred"]) {
+      const toggle = page.getByRole("button", { name: name === "Activity" ? /^Activity/ : "Starred", exact: name !== "Activity" });
+      await toggle.click();
+      await panel.waitFor({ state: "visible" });
+      assert.equal(await nestedHost.evaluate(el => el.isConnected && el.getClientRects().length > 0), true,
+        `${name} retains the visible file reader`);
+      assert.equal(new URL(page.url()).searchParams.get("session"), fixture.sessionId);
+    }
+  }
   if (!mobile) await panel.getByRole("button", { name: "Expand file panel", exact: true }).click();
   await panel.getByRole("button", { name: "Reveal in explorer", exact: true }).click();
   const revealed = page.locator('[data-explorer-revealed="true"]');
