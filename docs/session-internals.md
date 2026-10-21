@@ -44,6 +44,10 @@ Tool names are passed at session creation (`POST /api/agent/new` -> `toolNames[]
 
 The last preset explicitly selected by the user is stored in browser `localStorage` and initializes fresh-session composers only. Existing sessions never trust that preference; they use their live `get_tools` state or pi's default when no wrapper exists.
 
+### Managed acceptance tools
+
+Ordinary coding sessions and extension-enabled subagents load the host acceptance factory; Chat-only and extension-denied profiles retain their tool restrictions. `acceptance_run` binds the caller to its actual SDK session ID and physical own-project identity, never model-supplied caller/control identity. Admitted jobs are independent project operations, not child sessions or active session turns. Session Stop/Pause cancels pre-admission/tool waiting only; explicit acceptance cancellation remains separate and owner checked. No automatic completion turn, startup replay or restoration of saved approval occurs. [Shared project acceptance](acceptance.md) owns snapshots, scheduling, evidence, browser controls and restart recovery.
+
 ### Native session tools
 
 [Native session tools](native-session-tools.md) owns explicit MCP/Code-mode intent, inert configured-server metadata and ordinary-session admission. Native-enabled wrappers use selected-session idle replacement on explicit HTTP Reload/Apply, not SDK in-place reload; other wrappers retain their native configuration. Setup-only selection is persisted without a message and retains its SDK ID. Native shutdown/disposal shares a completion barrier before same-ID reuse. Child/launch defaults remain off; OAuth and configuration editing are deferred.

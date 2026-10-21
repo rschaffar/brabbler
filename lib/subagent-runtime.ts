@@ -35,6 +35,7 @@ import { appendSessionModelSpeed, readSessionModelSpeed } from "./session-model-
 import { withSessionModelSpeed } from "./session-model-speed-runtime";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createLocalFileLinkGuidanceExtension } from "./local-file-link-guidance";
+import { createAcceptanceExtension } from "./acceptance/extension";
 import { createAskUserExtension, preferPiWebAskUserExtension } from "./ask-user-extension";
 import { appendSubagentInputFiles, loadSubagentInputFiles, assertSubagentInputBudget, subagentInputLimits } from "./subagent-input";
 import { parseSubagentModel, SUBAGENT_THINKING_LEVELS } from "./subagent-model";
@@ -375,7 +376,7 @@ export function createSubagentController(
             ...(promptPlan.exactSystemPrompt !== undefined
               ? [createExactSystemPromptExtension(() => promptPlan.exactSystemPrompt)] : []),
             ...(!chatOnly && promptPlan.exactSystemPrompt === undefined ? [createLocalFileLinkGuidanceExtension()] : []),
-            ...(profile.loadExtensions ? [createAskUserExtension()] : []),
+            ...(profile.loadExtensions ? [createAskUserExtension(), createAcceptanceExtension()] : []),
           ],
           ...(profile.loadExtensions ? { extensionsOverride: preferPiWebAskUserExtension } : {}),
         },
