@@ -3,7 +3,7 @@ import { waitForAsyncCondition } from "./async-condition.mjs";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { checkBlockingCard } from "./blocking-card.mjs";
+import { checkBlockingCard, checkBlockingCardArrival } from "./blocking-card.mjs";
 import { withExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
 
 /** Fixture-only command delegates to the production plugin implementation, no model. */
@@ -111,7 +111,7 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   const start = async (mode, title = "Git commit") => {
     const input = page.locator("textarea").last(); await input.fill(`/e2e-git-plugin ${mode}-${width}`);
     await page.getByRole("button", { name: "Send", exact: true }).click();
-    const card = page.getByRole("group", { name: title, exact: true }); await card.waitFor(); await checkBlockingCard(card); return card;
+    const card = page.getByRole("group", { name: title, exact: true }); await card.waitFor(); await checkBlockingCardArrival(card); await checkBlockingCard(card); return card;
   };
   const finish = async (mode, result) => {
     await page.getByText(`Git plugin fixture ${mode}-${width}: ${result}`, { exact: true }).waitFor();
@@ -121,7 +121,23 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     }, sessionId);
   };
   const before = tip();
-  let card = await start("decline");
+  // Hold the patch until the loading-state card has arrived. Its later growth
+  // must reveal the footer without a Playwright action scrolling it for us.
+  const patchPattern = `**/api/sessions/${sessionId}/reviews/*?patch=1`;
+  let releasePatch;
+  const patchGate = new Promise((resolve) => { releasePatch = resolve; });
+  const holdPatch = async (route) => { await patchGate; await route.continue(); };
+  await page.route(patchPattern, holdPatch);
+  let card;
+  try {
+    card = await start("decline");
+    releasePatch();
+    await card.getByRole("region", { name: "File changes: draft.txt", exact: true }).waitFor();
+    await checkBlockingCardArrival(card);
+  } finally {
+    releasePatch();
+    await page.unroute(patchPattern, holdPatch);
+  }
   await card.getByRole("button", { name: "Reject", exact: true }).click();
   await finish("decline", "refused"); assert.equal(tip(), before);
 
@@ -200,6 +216,7 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     await page.reload({ waitUntil: "domcontentloaded" });
     card = page.getByRole("group", { name: "Git commit", exact: true }); await card.waitFor();
     await card.getByText(/Plugin browser commit reconnect/).first().waitFor();
+    await checkBlockingCardArrival(card);
     const first = card.getByRole("region", { name: "File changes: draft.txt", exact: true });
     const second = card.getByRole("region", { name: "File changes: second-draft.txt", exact: true });
     await card.getByRole("button", { name: "Side by side", exact: true }).click();

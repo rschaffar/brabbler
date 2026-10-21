@@ -1,5 +1,17 @@
 import assert from "node:assert/strict";
 
+/** Observe automatic arrival without Playwright scrolling the card or its actions. */
+export async function checkBlockingCardArrival(card) {
+  await card.page().waitForFunction((element) => {
+    const scroller = element.closest(".overflow-y-auto");
+    const footer = element.querySelector(".blocking-card-footer");
+    if (!scroller || !footer) return false;
+    const viewport = scroller.getBoundingClientRect();
+    const actions = footer.getBoundingClientRect();
+    return actions.height > 0 && actions.top >= viewport.top && actions.bottom <= viewport.bottom + 1;
+  }, await card.elementHandle());
+}
+
 /** Long bodies scroll without moving header/actions or overflowing the viewport. */
 export async function checkBlockingCard(card) {
   await card.scrollIntoViewIfNeeded();
