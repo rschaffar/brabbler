@@ -93,7 +93,11 @@ export async function checkReviewNotebooks(page, { base, fixture: f }) {
     await explorer.getByRole("region", { name: "Git commit details", exact: true }).getByText("second feature", { exact: true }).waitFor();
     assert.equal(page.url(), urlBefore, "Reveal does not relocate the session");
     if (page.viewportSize().width < 700) await explorer.getByRole("button", { name: "← Back to commits", exact: true }).click();
-    assert.equal(await explorer.getByRole("combobox", { name: "History branch", exact: true }).inputValue(), "feature");
+    const historyBranch = explorer.getByRole("combobox", { name: "History branch", exact: true });
+    // Detail and graph load independently. Wait for this graph's actual branch inventory,
+    // not merely the faster commit-detail response, before asserting its selection.
+    await historyBranch.locator('option[value="feature"]').waitFor({ state: "attached" });
+    assert.equal(await historyBranch.inputValue(), "feature");
     await explorer.locator("[aria-pressed=true]").filter({ hasText: "second feature" }).waitFor();
     await activate(explorer.getByRole("button", { name: "Return to workspace history", exact: true }));
     await page.waitForFunction(() => Boolean(document.activeElement?.closest("#git-explorer-panel")));
