@@ -71,7 +71,53 @@ operations are needed for implementation or acceptance.
   regression; before the final one-line ack equality check. All are focused only.
 - All checks use isolated Nix source exports, synthetic data and no live host
   service, provider or Paperless calls. Two pre-existing ReviewFileBrowser lint
-  warnings remain. Full acceptance is still outstanding.
+  warnings remain.
+
+### Pre-rebase acceptance and fixture correction (superseded)
+
+The first full command on `6159769` exited 1 after 428.376s. Complete core passed
+400 files / 3,010 tests, while the model-speed desktop browser chain failed after
+clone/fork. Exact trace `z91hzy3wfmz5fn4q32n56ljvnl4xqgnr` showed a forced catalog
+response landing between click-coordinate calculation and dispatch: B moved from
+index 1 to 4, by 162px. The fixture now waits for both returned copy IDs in the
+sidebar DOM before its original single click and URL assertion. No retries,
+force-clicks, changed speed assertions or longer deadlines. Independent trace
+review confirmed the bounded synchronization gap and correction.
+
+- Failure: `/tmp/pi-web-project-defaults-all.qbLuXk`; full core report
+  `/tmp/pi-web-test-core.9sRYYL/run.json`. Focused corrected model-speed passed
+  56s / capsule 41.416s, `/tmp/pi-web-project-defaults-model-speed.7I1IYd.log`.
+- Separate complete browser run on `d1404d6` passed all 26 groups/57 chains in
+  382.942s with four workers: `/tmp/pi-web-project-defaults-complete.EaPmfK/browser.log`,
+  `/tmp/pi-web-test-browser.iusDsV/run.json`. Genuine VM passed in 65.118s,
+  guest script 20.73s: that root's `service.log`, `/tmp/pwv-KmdisR/run.json`.
+- Final fixture static/core selection passed four files / 32 tests in 92s:
+  `/tmp/pi-web-project-defaults-fixture-core.OjS2ba.log`.
+
+### Requested rebase and integration correction
+
+The user requested another rebase. It completed without conflicts onto local
+main `b1a4a19e6b1aace800f4238e126ef258295b96fb`, producing `1772b3a` and `ef9d7d5`.
+New main adds the acceptance coordinator and changes runtime/package inputs, so
+pre-rebase acceptance above is not final evidence for the combined candidate.
+
+Source review found that initializing the trust identity during a default save
+would rename the new coordinator's project identity and strand profiles/jobs.
+The correction uses a separate, domain-separated `pi-web-native-resources-id`
+marker. Default saves do not create the trust marker, and later explicit trust
+grants do not rename native defaults. Existing trust APIs retain their behavior.
+
+- Regression red: exactly the new acceptance-identity assertion failed (8/9
+  passed), 49s; `/tmp/pi-web-project-defaults-identity-red.PzJJyM.log`.
+- Corrected focused green: five files / 39 tests plus static checks passed in 58s;
+  `/tmp/pi-web-project-defaults-identity-green.kUxahi.log`,
+  `/tmp/pi-web-test-core.ylL9mg/run.json`.
+- The in-progress rebased full run used the prior identity code and was deliberately
+  superseded. Its exact owned controller received SIGINT and both drivers settled;
+  retained `/tmp/pi-web-project-defaults-rebased-all.fYlH6u`, 202.684s, exit 1.
+  It is interrupted evidence, not a product failure or acceptance pass.
+
+Fresh complete acceptance of the corrected rebased candidate remains outstanding.
 
 ## Rollback / Recovery
 

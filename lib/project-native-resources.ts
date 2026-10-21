@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import lockfile from "proper-lockfile";
 import { writePrivateFileAtomicSync } from "./atomic-file";
-import { ensureGitRepositoryIdentity, trustedGitRepository, type TrustedGitRepository } from "./project-trust-repository";
+import { nativeResourcesGitRepository, type TrustedGitRepository } from "./project-trust-repository";
 import { validateNativeResourceSelection, type NativeResourceSelection } from "./session-native-resources";
 
 export interface ProjectNativeResources {
@@ -68,7 +68,7 @@ function metadata(repository: TrustedGitRepository | null, entries: Map<string, 
 
 /** Inert: no identity marker, configuration engine, transport or trust write. */
 export function readProjectNativeResources(cwd: string, agentDir: string): ProjectNativeResources {
-  return metadata(trustedGitRepository(cwd), readStore(storePath(agentDir)));
+  return metadata(nativeResourcesGitRepository(cwd), readStore(storePath(agentDir)));
 }
 
 export class ProjectNativeResourcesConflict extends Error {
@@ -91,12 +91,12 @@ export function saveProjectNativeResources(cwd: string, agentDir: string, revisi
     if (Math.max(performance.now() - started, Date.now() - wallStarted) > 30_000) throw new Error("Project default save exceeded its lease budget");
   };
   try {
-    const entries = readStore(file), repository = trustedGitRepository(cwd);
+    const entries = readStore(file), repository = nativeResourcesGitRepository(cwd);
     assertWriteBudget();
     if (!repository) throw new Error("Project defaults require a registered Git checkout root");
     if (metadata(repository, entries).revision !== revision) throw new ProjectNativeResourcesConflict();
     const instance = JSON.stringify(repositoryInstance(repository));
-    const identified = selection ? ensureGitRepositoryIdentity(cwd) : repository;
+    const identified = selection ? nativeResourcesGitRepository(cwd, true) : repository;
     assertWriteBudget();
     if (JSON.stringify(repositoryInstance(identified)) !== instance || repository.key && identified.key !== repository.key) throw new ProjectNativeResourcesConflict();
     if (identified.key) {
@@ -108,7 +108,7 @@ export function saveProjectNativeResources(cwd: string, agentDir: string, revisi
     const contents = `${JSON.stringify({ version: 1, projects }, null, 2)}\n`;
     if (Buffer.byteLength(contents) > MAX_BYTES) throw new Error("Too many project native-tool defaults");
     // Verify current membership/identity once more before the atomic write.
-    if (trustedGitRepository(cwd)?.key !== identified.key) throw new ProjectNativeResourcesConflict();
+    if (nativeResourcesGitRepository(cwd)?.key !== identified.key) throw new ProjectNativeResourcesConflict();
     assertWriteBudget();
     writePrivateFileAtomicSync(file, contents);
     return metadata(identified, entries);

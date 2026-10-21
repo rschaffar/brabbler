@@ -17,23 +17,24 @@ export interface TrustedGitRepository {
 }
 
 const MARKER = "pi-web-trust-id";
+const NATIVE_MARKER = "pi-web-native-resources-id";
 const MARKER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-function readMarker(common: string): string | null {
-  const path = join(common, MARKER);
+function readMarker(common: string, marker = MARKER): string | null {
+  const path = join(common, marker);
   if (!existsSync(path)) return null;
   if (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink()) throw new Error("Invalid Git trust identity marker");
   const id = readFileSync(path, "utf8").trim();
   if (!MARKER_ID.test(id)) throw new Error("Invalid Git trust identity marker");
   return id;
 }
-function ensureMarker(common: string): string {
-  const existing = readMarker(common);
+function ensureMarker(common: string, marker = MARKER): string {
+  const existing = readMarker(common, marker);
   if (existing) return existing;
   let fd: number;
-  try { fd = openSync(join(common, MARKER), "wx", 0o600); }
+  try { fd = openSync(join(common, marker), "wx", 0o600); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    const concurrent = readMarker(common);
+    const concurrent = readMarker(common, marker);
     if (!concurrent) throw new Error("Git project identity is unavailable");
     return concurrent;
   }
@@ -71,19 +72,32 @@ export function trustedGitRepository(cwd: string): TrustedGitRepository | null {
   }
 }
 
-/** Initialize only the shared repository identity, never a trust grant. Explicit
- * user-settings saves may use it; metadata reads and session startup must not. */
-export function ensureGitRepositoryIdentity(cwd: string): TrustedGitRepository {
+/** Native defaults have their own shared identity. Creating their marker must
+ * not rename acceptance/trust settings, and later trust grants must not rename
+ * defaults. Only explicit settings saves may request marker initialization. */
+export function nativeResourcesGitRepository(cwd: string, createIdentity: true): TrustedGitRepository;
+export function nativeResourcesGitRepository(cwd: string, createIdentity?: false): TrustedGitRepository | null;
+export function nativeResourcesGitRepository(cwd: string, createIdentity = false): TrustedGitRepository | null {
   const before = trustedGitRepository(cwd);
-  if (!before) throw new Error("Select a registered Git checkout root");
-  const identity = statSync(before.common, { bigint: true });
-  const id = ensureMarker(before.common);
-  const after = trustedGitRepository(cwd), current = statSync(before.common, { bigint: true });
-  if (!after || after.key !== JSON.stringify([before.common, id])
-    || identity.dev !== current.dev || identity.ino !== current.ino || identity.birthtimeNs !== current.birthtimeNs) {
-    throw new Error("Git project changed while saving settings");
+  if (!before) {
+    if (createIdentity) throw new Error("Select a registered Git checkout root");
+    return null;
   }
-  return after;
+  try {
+    const identity = statSync(before.common, { bigint: true });
+    const id = createIdentity ? ensureMarker(before.common, NATIVE_MARKER) : readMarker(before.common, NATIVE_MARKER);
+    const key = id ? JSON.stringify(["native-resources", before.common, id]) : null;
+    if (!createIdentity) return { ...before, key };
+    const after = trustedGitRepository(cwd), current = statSync(before.common, { bigint: true });
+    if (!after || after.common !== before.common || readMarker(after.common, NATIVE_MARKER) !== id
+      || identity.dev !== current.dev || identity.ino !== current.ino || identity.birthtimeNs !== current.birthtimeNs) {
+      throw new Error("Git project changed while saving settings");
+    }
+    return { ...after, key };
+  } catch (error) {
+    if (createIdentity) throw error;
+    return null;
+  }
 }
 
 function storePath(agentDir: string): string { return join(agentDir, "pi-web", "trusted-git-repositories.json"); }
