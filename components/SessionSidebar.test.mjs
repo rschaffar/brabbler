@@ -118,7 +118,13 @@ test("server review snapshot includes subagents in Activity without adding subag
   assert.match(source, /setUnreadSessionIds\(\(prev\) => sameIdSet\(prev, reviewed\.rootReady\) \? prev : reviewed\.rootReady\)/);
   assert.match(source, /completedWithNotifications = completedInBackground\.filter\([\s\S]*?!previousSuppressedCompletionSessionIdsRef\.current\.has\(id\)[\s\S]*?!knownSubagentIds\.has\(id\)/);
   assert.match(source, /if \(completedWithNotifications\.length > 0\) \{\s*onBackgroundTaskDone\?\.\(\)/);
-  assert.match(source, /onActivityChange\?\.\(attention, new Set\(\[\.\.\.unreadSessionIds, \.\.\.subagentReviewIds\]\), activityAvailable, laterSessionIds, laterAttentionSessionIds\)/);
+  assert.match(source, /onActivityChange\?\.\(attention, new Set\(\[\.\.\.unreadSessionIds, \.\.\.subagentReviewIds\]\), activityAvailable, laterSessionIds, laterAttentionSessionIds, pauses\)/);
+});
+
+test("pause cannot turn an older unread completion into a new completion sound", () => {
+  assert.match(source, /pausedSessionIds = new Set\(pauses\.map\(\(row\) => row\.sessionId\)\)/);
+  assert.match(source, /completedWithNotifications = completedInBackground\.filter\([\s\S]*?!pausedSessionIds\.has\(id\)[\s\S]*?unreviewedCompletion\(id\)/);
+  assert.match(source, /\[runningSessionIds, selectedSessionId, allSessions, loadSessions, onBackgroundTaskDone, pauses\]/);
 });
 
 test("Later validates the displayed request token instead of substituting a replacement question", () => {

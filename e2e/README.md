@@ -55,7 +55,7 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `file-edit` | Panel setup, all modified/added/deleted/context diff variants, editor/read-only/draft retention; Explorer root/nested/file/Changes-row drops, closed-folder refresh, keyboard/touch pickers, conflicts, filtered-search refresh and upload-driven clean/dirty viewer sync |
 | `archive` | Focused archive/restore flow, distinct from the mobile search/restore/move chain |
 | `privacy` | Concealment/loading/failure behavior, independent contexts and tablet coverage |
-| `activity` | Full overview, real worktree/subagent/recovery fixtures, running/fallback Agents badge with reduced motion, deterministic recorded per-agent/family usage and keyboard/touch breakdowns without review acknowledgement, selected-session-only toolbar, and tablet coverage; native model-issued child runs, saved IDs/history, removed-worktree resume refusal, suffix settings and never-prompted queued Stop; gated initial-session adoption preserves a user-opened overview, with post-adoption reload readiness for Later persistence |
+| `activity` | Full overview, real worktree/subagent/recovery fixtures, running/fallback Agents badge with reduced motion, deterministic recorded per-agent/family usage and keyboard/touch breakdowns without review acknowledgement, selected-session-only toolbar, and tablet coverage; native model-issued child runs, saved IDs/history, removed-worktree resume refusal, suffix settings and never-prompted queued Stop; gated initial-session adoption preserves a user-opened overview, with post-adoption reload readiness for Later persistence; native waiting-card Pause, cooperative tool drain, main-only literal continuation and concealed-project global controls |
 | `accounts` | Separate created/deleted and shared-device OAuth variants, retaining locale and mobile-height differences |
 | `questions` | Native tool ownership plus mixed question sets, draft/reload/cancel/receipts |
 | `session-links` | Desktop/mobile copying and following the copied link |
@@ -132,7 +132,7 @@ Mandatory ordered proofs:
    runtime substitution, UMask/private physical paths and denied reads as `nobody`.
 3. Persist a real HTTP session rename in the synthetic session file/workspace.
 4. Explicitly restart the genuine user unit; require a new InvocationID and the
-   same durable session/name through HTTP.
+   same durable session/name through HTTP. The same fixture also pauses a native synthetic-provider question before restart, verifies durable paused state/no automatic continuation afterwards, and explicitly Resumes once with the saved question context.
 5. Exercise real HTTP PTY creation/SSE output, proving TTY, UID, cwd, dimensions and
    synthetic environment. Leave its shell running for the final shutdown proof.
 6. Settle clients, stop the exact service and require inactive state, MainPID zero,

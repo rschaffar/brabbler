@@ -28,6 +28,7 @@ import { readSessionModelSpeed } from "@/lib/session-model-speed";
 import { appendSessionArchiveState, isSessionArchived } from "@/lib/session-archive";
 import { jsonResponse } from "@/lib/json-response";
 import { clearSessionRunRecovery, readPossibleInterruptedRun } from "@/lib/session-run-recovery";
+import { readSessionPauses, removeSessionPause } from "@/lib/session-pause";
 
 export async function GET(
   req: Request,
@@ -386,6 +387,7 @@ export async function DELETE(
       invalidateSessionManagerCache(deletedPath);
     }
     for (const deletedId of deletedSessionIds) clearSessionRunRecovery(deletedId);
+    for (const pause of readSessionPauses()) if (deletedSessionIds.has(pause.sessionId)) removeSessionPause(pause.sessionId, pause.id);
     invalidateSessionListCache();
     return NextResponse.json({ ok: true });
   } catch (error) {

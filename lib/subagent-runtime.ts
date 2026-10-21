@@ -47,6 +47,7 @@ import { isBuiltInSubagentsEnabled, readSubagentSettings } from "./subagent-sett
 import { SubagentQueue } from "./subagent-queue";
 import { addWorktree, currentLocalBranchTip, removeWorktree } from "./worktree";
 import { randomUUID } from "node:crypto";
+import { getSessionPause, removeSessionPause } from "./session-pause";
 
 interface HostSession {
   readonly inner: AgentSessionLike;
@@ -56,6 +57,12 @@ interface HostSession {
   isRunning(): boolean;
   waitUntilReady(): Promise<void>;
   beginCheckoutPromptAdmission(): () => void;
+  isPauseRequested?(): boolean;
+  requestPause?(parentSessionId?: string): unknown;
+  finishPause?(childSettled?: boolean): void;
+  clearPause?(): void;
+  onSubagentSettled?(): void;
+  pauseFailed?(error: unknown): void;
 }
 
 export interface SubagentRuntimeDependencies {
@@ -109,6 +116,20 @@ function lastAssistantStop(sessionManager: { getEntries?: () => unknown }): { ab
 function getSubagentRuns(): Map<string, StoredSubagentExecution> {
   if (!globalThis.__piSubagentRuns) globalThis.__piSubagentRuns = new Map();
   return globalThis.__piSubagentRuns;
+}
+
+/** Include settlement/cleanup and failed durable-result writes in live ownership. */
+export function hasUnsettledSubagentExecution(sessionId: string): boolean {
+  const stored = getSubagentRuns().get(sessionId);
+  return Boolean(stored && stored.run.status !== "queued");
+}
+
+/** A stale queue snapshot must never turn cooperative Pause into running Stop. */
+export async function cancelQueuedSubagentForPause(sessionId: string): Promise<void> {
+  const stored = getSubagentRuns().get(sessionId);
+  if (stored?.run.status !== "queued" || !stored.cancelQueued?.()) return;
+  stored.abortRequested = true;
+  await stored.completion;
 }
 
 /** Only live queue entries, not an on-disk `queued` status left by a server restart. */
@@ -204,23 +225,32 @@ export function createSubagentController(
       if (settled) return stored.run;
       settled = true;
       signal?.removeEventListener("abort", handleParentAbort);
-      const cleanupError = await cleanup();
+      const pauseBeforeCleanup = wrapper.isPauseRequested?.() === true;
+      const cleanupError = pauseBeforeCleanup ? undefined : await cleanup();
+      const paused = wrapper.isPauseRequested?.() === true;
+      if (paused) run = { ...run, status: "paused", ...(!pauseBeforeCleanup ? { worktreeCleanupError: "Pause arrived after cleanup started; inspect the recorded worktree observation." } : {}) };
       const result = { ...run, ...(cleanupError ? { worktreeCleanupError: cleanupError } : {}) };
       try {
         stored.run = recordSubagentResult(manager, result);
         // Never release live ownership before the terminal record is durable.
+        if (paused) wrapper.finishPause?.(true);
         getSubagentRuns().delete(initialRun.sessionId);
+        try { wrapper.onSubagentSettled?.(); }
+        catch (error) { console.error("[pi-web] child settlement listener failed:", error); }
       } catch (error) {
         // Retain the failed live record for inspection; do not claim durable success.
         stored.run = { ...result, status: "failed", error: `${result.error ? `${result.error}. ` : ""}Could not persist subagent result: ${error instanceof Error ? error.message : String(error)}` };
+        if (wrapper.isPauseRequested?.()) wrapper.pauseFailed?.(error);
       }
       update();
       resolveCompletion(stored.run);
       return stored.run;
     };
-    const stopped = () => finish({ ...initialRun, status: "aborted", completedAt: new Date().toISOString() });
+    const stopped = () => finish({ ...initialRun, status: queueError ? "failed" : "aborted", completedAt: new Date().toISOString(),
+      ...(queueError ? { error: String(queueError) } : {}) });
     const execute = async () => {
-      if (stored.abortRequested) return stopped();
+      if (dependencies.getSession(initialRun.parentSessionId)?.isPauseRequested?.()) wrapper.requestPause?.(initialRun.parentSessionId);
+      if (stored.abortRequested || wrapper.isPauseRequested?.()) return stopped();
       let limiter: ReturnType<typeof installSubagentTurnLimit> | undefined;
       let result: SubagentRunInfo;
       try {
@@ -257,6 +287,11 @@ export function createSubagentController(
       update();
     }, async () => { await stopped(); });
     stored.cancelQueued = queued.cancel;
+    if (stored.run.status === "queued" && dependencies.getSession(initialRun.parentSessionId)?.isPauseRequested?.()) {
+      try { wrapper.requestPause?.(initialRun.parentSessionId); }
+      catch (error) { queueError = error; }
+      queued.cancel();
+    }
     void queued.promise.catch((error) => finish({ ...initialRun, status: "failed", completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) }));
     return { run: stored.run, completion };
   }
@@ -267,6 +302,7 @@ export function createSubagentController(
     const parentSessionId = request.parentContext.sessionManager.getSessionId();
     const parent = dependencies.getSession(parentSessionId);
     if (!parent?.isAlive()) throw new Error("Parent session is no longer available");
+    if (parent.isPauseRequested?.()) throw new Error("Parent session is paused or pausing");
     if (!parent.sessionFile) throw new Error("Parent session must be persisted before starting a subagent");
 
     let isolatedWorktree: { path: string; branch: string } | undefined;
@@ -451,6 +487,7 @@ export function createSubagentController(
     const enabled = dependencies.isBuiltInSubagentsEnabled ?? isBuiltInSubagentsEnabled;
     if (!enabled()) throw new Error("Pi Web built-in sub-agents are disabled");
     const parentSessionId = request.parentContext.sessionManager.getSessionId();
+    if (dependencies.getSession(parentSessionId)?.isPauseRequested?.()) throw new Error("Parent session is paused or pausing");
     const existing = await get(request.sessionId);
     if (!existing) throw new Error(`Subagent not found: ${request.sessionId}`);
     if (existing.parentSessionId !== parentSessionId) throw new Error("Subagent does not belong to this parent session");
@@ -465,6 +502,9 @@ export function createSubagentController(
     if (!wrapper?.isAlive()) wrapper = await dependencies.reopenSession(request.sessionId, sessionPath);
     if (!wrapper.isAlive()) throw new Error("Subagent session is no longer available");
     if (wrapper.isRunning()) throw new Error("Subagent is already running");
+    const pause = getSessionPause(request.sessionId);
+    if (pause) removeSessionPause(request.sessionId, pause.id);
+    wrapper.clearPause?.();
     if (wrapper.inner.sessionId !== request.sessionId) throw new Error("Subagent session ID changed during reopen");
     assertSubagentDirectory(wrapper.cwd);
 
@@ -527,7 +567,10 @@ export function createSubagentController(
     expectNotification(run);
     try {
       if (takeResultConsumed(run)) return;
+      const pauseIntent = run.status === "paused" || getSessionPause(run.sessionId) !== undefined || dependencies.getSession(run.sessionId)?.isPauseRequested?.() === true;
       let parent = dependencies.getSession(run.parentSessionId);
+      // A cold paused parent receives this saved child result in its Resume prompt.
+      if (!parent?.isAlive() && (pauseIntent || getSessionPause(run.parentSessionId))) return;
       if (!parent?.isAlive()) {
         const sessionFile = await dependencies.resolveSessionPath(run.parentSessionId);
         if (!sessionFile) throw new Error(`Parent session not found: ${run.parentSessionId}`);
@@ -538,7 +581,7 @@ export function createSubagentController(
       // and `deliverAs: "followUp"` would only queue the message until that turn ends anyway.
       // Hold the notification until the parent is idle and re-check the mark, so a result the
       // parent already consumed never triggers a duplicate turn.
-      while (parent.isAlive() && parent.isRunning()) {
+      while (parent.isAlive() && parent.isRunning() && !parent.isPauseRequested?.() && !pauseIntent) {
         if (takeResultConsumed(run)) return;
         await new Promise<void>((resolve) => { setTimeout(resolve, PARENT_IDLE_POLL_MS); });
       }
@@ -549,7 +592,7 @@ export function createSubagentController(
         content: subagentNotificationText(run),
         display: true,
         details: subagentToolDetails(run),
-      }, { deliverAs: "followUp", triggerTurn: true });
+      }, parent.isPauseRequested?.() || pauseIntent ? { triggerTurn: false } : { deliverAs: "followUp", triggerTurn: true });
     } finally {
       const key = resultKey(run);
       if (key) getSubagentNotifications().delete(key);
@@ -562,6 +605,7 @@ export function createSubagentController(
     if (stored?.run.status === "queued") {
       stored.abortRequested = true;
       if (!stored.cancelQueued?.()) throw new Error("Subagent is no longer queued");
+      await stored.completion;
       return;
     }
     if (!wrapper?.isAlive() || !wrapper.isRunning()) throw new Error("Subagent is not running");

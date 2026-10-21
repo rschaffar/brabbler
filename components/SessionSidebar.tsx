@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import type { SessionInfo } from "@/lib/types";
+import type { SessionPauseSnapshot } from "@/lib/session-pause";
 import { sessionFamiliesForWorktree } from "@/lib/session-worktree-filter";
 import { useSessionWorktrees } from "@/hooks/useSessionWorktrees";
 import { SessionBulkMoveDialog, type BulkMoveRequest } from "./SessionBulkMoveDialog";
@@ -157,7 +158,7 @@ interface Props {
   onBackgroundTaskDone?: () => void;
   onRunningSessionIdsChange?: (ids: Set<string>) => void;
   onQueuedSessionIdsChange?: (ids: Set<string>) => void;
-  onActivityChange?: (attention: SessionAttention[], reviewIds: Set<string>, available: boolean, laterIds: Set<string>, laterAttentionIds: Set<string>) => void;
+  onActivityChange?: (attention: SessionAttention[], reviewIds: Set<string>, available: boolean, laterIds: Set<string>, laterAttentionIds: Set<string>, pauses: SessionPauseSnapshot[]) => void;
   onReviewReadReady?: (markRead: ((id: string) => void) | null) => void;
   onReviewLaterReady?: (markLater: ((id: string, requestId?: string) => void) | null) => void;
   onSessionsChange?: (sessions: SessionInfo[]) => void;
@@ -497,6 +498,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [subagentReviewIds, setSubagentReviewIds] = useState<Set<string>>(new Set());
   const [storageReady, setStorageReady] = useState(false);
   const [attention, setAttention] = useState<SessionAttention[]>([]);
+  const [pauses, setPauses] = useState<SessionPauseSnapshot[]>([]);
   const [activityAvailable, setActivityAvailable] = useState(true);
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
   const currentSuppressedCompletionSessionIdsRef = useRef<Set<string>>(new Set());
@@ -831,6 +833,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           queuedSessionIds?: string[];
           completionNotificationSuppressedSessionIds?: string[];
           attention?: SessionAttention[];
+          pauses?: SessionPauseSnapshot[];
           completedRuns?: SessionCompletion[];
           reviewedRuns?: SessionCompletion[];
           laterRuns?: SessionCompletion[];
@@ -840,6 +843,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         if (stopped || controller !== current) return;
         runningPollAuthoritativeRef.current = true;
         setAttention(data.attention ?? []);
+        setPauses(data.pauses ?? []);
         const running = new Set(data.runningSessionIds ?? []);
         completedRunTimesRef.current = new Map((data.completedRuns ?? []).map(({ sessionId, at }) => [sessionId, at]));
         const serverReviewed = new Map((data.reviewedRuns ?? []).map(({ sessionId, at }) => [sessionId, at]));
@@ -916,11 +920,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
     void poll();
     document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pi-web:activity-refresh", onVisibilityChange);
     return () => {
       stopped = true;
       clearTimer();
       controller?.abort();
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pi-web:activity-refresh", onVisibilityChange);
     };
   }, [flushReviewAcks, loadSessions, storageReady]);
 
@@ -933,8 +939,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [onQueuedSessionIdsChange, queuedSessionIds]);
 
   useEffect(() => {
-    onActivityChange?.(attention, new Set([...unreadSessionIds, ...subagentReviewIds]), activityAvailable, laterSessionIds, laterAttentionSessionIds);
-  }, [onActivityChange, attention, unreadSessionIds, subagentReviewIds, activityAvailable, laterSessionIds, laterAttentionSessionIds]);
+    onActivityChange?.(attention, new Set([...unreadSessionIds, ...subagentReviewIds]), activityAvailable, laterSessionIds, laterAttentionSessionIds, pauses);
+  }, [onActivityChange, attention, unreadSessionIds, subagentReviewIds, activityAvailable, laterSessionIds, laterAttentionSessionIds, pauses]);
 
   useEffect(() => {
     onSessionsChange?.(allSessions);
@@ -952,9 +958,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       const completedAt = completedRunTimesRef.current.get(id);
       return Boolean(completedAt && completedAt > (reviewedRunTimesRef.current.get(id) ?? 0));
     };
+    const pausedSessionIds = new Set(pauses.map((row) => row.sessionId));
     const completedWithNotifications = completedInBackground.filter(
       (id) => !previousSuppressedCompletionSessionIdsRef.current.has(id)
-        && !knownSubagentIds.has(id) && unreviewedCompletion(id),
+        && !knownSubagentIds.has(id) && !pausedSessionIds.has(id) && unreviewedCompletion(id),
     );
     const newlyRunning = [...runningSessionIds].filter((id) => !previous.has(id));
 
@@ -974,7 +981,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         (id) => currentSuppressedCompletionSessionIdsRef.current.has(id) || knownSubagentIds.has(id),
       ),
     );
-  }, [runningSessionIds, selectedSessionId, allSessions, loadSessions, onBackgroundTaskDone]);
+  }, [runningSessionIds, selectedSessionId, allSessions, loadSessions, onBackgroundTaskDone, pauses]);
 
   useEffect(() => {
     if (explorerRefreshKey !== undefined) setExplorerKey((k) => k + 1);

@@ -2521,6 +2521,11 @@ span.token.table {
 .activity-item-action { flex: none; color: var(--accent); font-size: 11px; }
 .activity-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex: none; }
 .activity-review-item { display: flex; align-items: stretch; }
+.activity-pause-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; }
+.activity-pause-controls small { flex-basis: 100%; color: var(--text-muted); }
+.activity-mark-read:disabled { opacity: .55; cursor: default; }
+.activity-item-pausing .activity-dot { background: #d97706; }
+.activity-item-paused .activity-dot { background: var(--text-muted); }
 .activity-review-item > .activity-item { flex: 1; min-width: 0; }
 .activity-mark-read { flex: none; padding: 0 16px; border: 0; background: transparent; color: var(--accent); font-size: 11px; cursor: pointer; }
 .activity-mark-read:hover, .activity-mark-read:focus-visible { background: var(--bg-hover); text-decoration: underline; }

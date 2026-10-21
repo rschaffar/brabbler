@@ -1,12 +1,14 @@
 import type { SessionAttention, SessionInfo } from "./types";
+import type { SessionPauseSnapshot } from "./session-pause";
 import { workspaceKeyOf } from "./workspace-memory";
 import { hasResolvedProjectIdentity } from "./hidden-projects";
 
-export type ActivityStatus = "needs-you" | "working" | "queued" | "interrupted" | "ready" | "later";
+export type ActivityStatus = "needs-you" | "working" | "queued" | "interrupted" | "ready" | "later" | "pausing" | "paused";
 export interface ActivityItem {
   session: SessionInfo;
   status: ActivityStatus;
   attention?: SessionAttention;
+  pause?: SessionPauseSnapshot;
   /** The immediate parent is in this section, so the row can be indented. */
   nested: boolean;
   parentName?: string;
@@ -67,10 +69,11 @@ export function getActivitySections(
   hiddenProjectKeys: ReadonlySet<string> = new Set(),
   laterIds: ReadonlySet<string> = new Set(),
   laterAttentionIds: ReadonlySet<string> = new Set(),
+  pauses: ReadonlyMap<string, SessionPauseSnapshot> = new Map(),
 ): ActivitySections {
   const byId = new Map(sessions.map((session) => [session.id, session]));
   const attentionById = new Map(attention.map((request) => [request.sessionId, request]));
-  const sections: ActivitySections = { "needs-you": [], working: [], queued: [], interrupted: [], ready: [], later: [] };
+  const sections: ActivitySections = { "needs-you": [], working: [], queued: [], interrupted: [], ready: [], later: [], pausing: [], paused: [] };
   const statusById = new Map<string, ActivityStatus>();
   const hiddenIds = hiddenActivitySessionIds(sessions, hiddenProjectKeys);
 
@@ -81,13 +84,17 @@ export function getActivitySections(
     const request = attentionById.get(session.id);
     // A live run supersedes an old unread marker; an actual dialog supersedes both.
     const live = liveSessionActivityStatus(session.id, runningIds, attentionById);
-    const status = live === "needs-you" && laterAttentionIds.has(session.id) ? "later" : live
+    const pause = pauses.get(session.id);
+    const pauseStatus = pause ? pause.state === "pausing" && !pause.interrupted ? "pausing"
+      : pause.state === "resuming" && !pause.interrupted ? "working" : "paused" : null;
+    const status = pauseStatus ?? (live === "needs-you" && laterAttentionIds.has(session.id) ? "later" : live
       ?? (queuedIds.has(session.id) ? "queued"
+        : session.relation?.kind === "subagent" && session.relation.status === "paused" ? "paused"
         : !session.transient && interruptedIds.has(session.id) ? "interrupted"
-        : reviewIds.has(session.id) ? laterIds.has(session.id) ? "later" : "ready" : null);
+        : reviewIds.has(session.id) ? laterIds.has(session.id) ? "later" : "ready" : null));
     if (!status) continue;
     statusById.set(session.id, status);
-    sections[status].push({ session, status, ...(request ? { attention: request } : {}), nested: false, projectKey });
+    sections[status].push({ session, status, ...(request ? { attention: request } : {}), ...(pause ? { pause } : {}), nested: false, projectKey });
   }
   for (const items of Object.values(sections)) {
     for (const item of items) {

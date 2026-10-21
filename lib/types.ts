@@ -365,6 +365,7 @@ export type SubagentSessionStatus =
   | "completed"
   | "failed"
   | "aborted"
+  | "paused"
   | "interrupted";
 
 export interface SessionTreeNode {

@@ -15,6 +15,7 @@ import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
 import { checkSubagentLifecycle, subagentLifecycleFixtureSource } from "./subagent-lifecycle.mjs";
+import { checkSessionPause, sessionPauseFixtureSource } from "./session-pause.mjs";
 import { checkProjectPrivacy } from "./project-privacy.mjs";
 import { checkProjectTrustScopes } from "./project-trust-scopes.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
@@ -123,7 +124,10 @@ let context;
   mkdirSync(join(agentDir, "extensions"));
   writeFileSync(join(agentDir, "extensions", "e2e-dialog.js"), extensionSource);
   writeFileSync(join(agentDir, "extensions", "e2e-session-launch.js"), sessionLaunchFixtureSource(root));
-  if (group === "activity") writeFileSync(join(agentDir, "extensions", "e2e-subagent-lifecycle.js"), subagentLifecycleFixtureSource(root));
+  if (group === "activity") {
+    writeFileSync(join(agentDir, "extensions", "e2e-subagent-lifecycle.js"), subagentLifecycleFixtureSource(root));
+    writeFileSync(join(agentDir, "extensions", "e2e-session-pause.js"), sessionPauseFixtureSource(root, agentDir));
+  }
   if (group === "git-plugin") writeFileSync(join(agentDir, "extensions", "e2e-git-plugin.js"), gitPluginFixtureSource(root));
   // Simulate the recognized external package so the browser owns ask_user exactly once.
   mkdirSync(join(agentDir, "extensions", "pi-ask-user"));
@@ -756,6 +760,7 @@ let context;
         },
       });
       await checkSubagentLifecycle(page, { base, api, post, root, agentDir, width: viewport.width, returnSessionId: BRANCH });
+      await checkSessionPause(page, { base, api, post, root, agentDir, artifacts, width: viewport.width, returnSessionId: BRANCH });
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
       await harness.closeContext(context);
       context = undefined;

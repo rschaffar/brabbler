@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getSessionPauseSnapshot } from "@/lib/session-pause-runtime";
 import { getSessionListVersion } from "@/lib/session-reader";
 import { readActivityReview } from "@/lib/activity-review-server";
 import { getQueuedSubagentSessionIds } from "@/lib/subagent-runtime";
@@ -20,6 +21,7 @@ export async function GET() {
       runningSessionIds: getRunningRpcSessionIds(),
       queuedSessionIds: getQueuedSubagentSessionIds(),
       attention: getRpcSessionAttention(),
+      pauses: getSessionPauseSnapshot(),
       completedRuns: review.completedRuns,
       reviewedRuns: review.reviewedRuns,
       laterRuns: review.laterRuns,

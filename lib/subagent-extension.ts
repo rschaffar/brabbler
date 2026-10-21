@@ -16,7 +16,7 @@ export const HOST_SUBAGENT_EXTENSION_NAME = "pi-web-subagents";
 const HOST_SUBAGENT_EXTENSION_PATH = `<inline:${HOST_SUBAGENT_EXTENSION_NAME}>`;
 const SUBAGENT_TOOL_NAMES = new Set<string>(SUBAGENT_CONTROL_TOOL_NAMES);
 const LEGACY_SUBAGENT_PACKAGE_NAME = "pi-subagents";
-const TERMINAL_SUBAGENT_STATUSES = new Set<SubagentRunInfo["status"]>(["completed", "failed", "aborted", "interrupted"]);
+const TERMINAL_SUBAGENT_STATUSES = new Set<SubagentRunInfo["status"]>(["completed", "failed", "aborted", "paused", "interrupted"]);
 
 export interface SubagentToolDetails {
   kind: "pi-web-subagent";
@@ -128,6 +128,7 @@ export function subagentFinalText(run: SubagentRunInfo): string {
     const result = run.result?.trim();
     return result ? `${status(`Subagent ${run.sessionId} completed.`)}\n\n${result}` : status(`Subagent ${run.sessionId} completed without text output.`);
   }
+  if (run.status === "paused") return `${status(`Subagent ${run.sessionId} was paused by the user, not completed. Its saved transcript/tool results remain available. Worktree retention follows the recorded observation below; cleanup already underway may have finished.`)}${run.result?.trim() ? `\n\nPartial output:\n\n${run.result.trim()}` : ""}`;
   if (run.status === "aborted") return status(`Subagent ${run.sessionId} was stopped.`);
   if (run.status === "interrupted") return `Subagent ${run.sessionId} was interrupted before completion.`;
   const failure = status(`Subagent ${run.sessionId} failed: ${run.error ?? "Unknown error"}`);
