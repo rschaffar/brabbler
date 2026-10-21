@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { waitForMoveControl } from "./session-move.mjs";
+import { clickMoveWithProgress, waitForMoveControl } from "./session-move.mjs";
 
 /** Extend the existing move scenario; all writes are synthetic sandbox fixtures. */
 export async function checkSessionWorktreeMoves(page, { base, api, post, agentDir, otherProject, mobile }) {
@@ -105,8 +105,9 @@ export async function checkSessionWorktreeMoves(page, { base, api, post, agentDi
   await picker.getByRole("button", { name: "Select this folder", exact: true }).click();
   await picker.waitFor({ state: "detached" });
   await dialog.getByText("Move 2 sessions in 2 selected roots/subtrees (0 archived).", { exact: true }).waitFor();
-  await dialog.getByRole("button", { name: "Move", exact: true }).click();
+  await clickMoveWithProgress(page, dialog, "/api/sessions/move", true);
   await dialog.getByText("2 sessions moved; 0 roots already at destination; 0 roots failed.", { exact: true }).waitFor();
+  await dialog.getByRole("status").filter({ hasText: "Moving sessions…" }).waitFor({ state: "detached" });
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   const bulkAfter = (await api("/api/sessions?force=1")).sessions;
   for (const id of [bulkA, bulkB]) assert.equal(bulkAfter.find(row => row.id === id).cwd, otherProject);

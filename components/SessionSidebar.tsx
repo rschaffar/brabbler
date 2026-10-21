@@ -26,6 +26,7 @@ import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { SessionMoveDestinationPicker } from "./SessionMoveDestinationPicker";
+import { SessionMoveStatus } from "./SessionMoveStatus";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import type { FileRevealRequest } from "@/lib/explorer-reveal";
 import { isHistoryOnlySession } from "@/lib/session-directory";
@@ -1535,6 +1536,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("sidebar.moveSessionHint")}</div>
             <SessionMoveDestinationPicker projects={recentProjects} currentProject={movingSession.projectRoot ?? movingSession.cwd} currentCwd={movingSession.cwd} destination={moveDestination} onChange={proposeMoveDestination} disabled={moveBusy} />
             {moveDestination && <div style={{ fontSize: 11, overflowWrap: "anywhere" }}>{moveDestination}</div>}
+            {moveBusy && <SessionMoveStatus>{t("sidebar.moving")}</SessionMoveStatus>}
             {moveError && <div role="alert" style={{ color: "#ef4444", fontSize: 12 }}>{moveError}</div>}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button type="button" disabled={moveBusy} onClick={() => setMovingSession(null)}>{t("sidebar.cancel")}</button>
