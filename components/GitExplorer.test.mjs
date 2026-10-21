@@ -20,9 +20,9 @@ function fixture(tags = []) {
     ],
   };
 }
-function render(page) {
+function render(page, initialSelection) {
   // Seed loaded state only; browser tests exercise fetch, selection and cancellation.
-  const states = { 2: page, 3: page.refs, 4: page.branch, 6: false };
+  const states = { 3: page, 4: page.refs, 5: page.branch, 7: false, 9: initialSelection?.oid ?? null };
   let index = 0;
   const component = new Module(new URL("./GitExplorer.tsx", import.meta.url).pathname);
   component.filename = new URL("./GitExplorer.tsx", import.meta.url).pathname;
@@ -33,11 +33,12 @@ function render(page) {
       index++; return [value, () => {}];
     } };
     if (id === "@/lib/git-graph-layout") return graph;
+    if (id === "@/hooks/useI18n") return { useI18n: () => ({ t: key => key }) };
     return realRequire(id);
   };
   component._compile(compiled, component.filename);
   return renderToStaticMarkup(React.createElement(component.exports.GitExplorer, {
-    cwd: "/repo", onOpenCommit() {}, onBranchChange() {},
+    cwd: "/repo", initialSelection, onOpenCommit() {}, onBranchChange() {},
   }));
 }
 const rows = (html) => [...html.matchAll(/<button[^>]*aria-pressed="[^"]*"[\s\S]*?<\/button>/g)].map(([row]) => row);
@@ -55,6 +56,16 @@ test("local tags are distinct, fully named display badges, not branch-picker ent
   assert.doesNotMatch(oldest, /Local tag:/, "A tag is only shown on its matching commit");
   assert.match(source, /onOpenCommit\(page\.branch, page\.head, commit\.oid\)/);
   assert.match(source, /branch: page\.branch, head: page\.head, skip: String\(page\.nextSkip\)/);
+});
+
+test("referenced commits are selected only in matching graph rows, with an honest off-page notice", () => {
+  const reference = { cwd: "/repo", branch: "main", head, oid: root, requestId: 1 };
+  const html = render(fixture(), reference);
+  assert.match(rows(html)[1], /aria-pressed="true"/);
+  assert.doesNotMatch(html, /review.outsidePage/);
+  const offPage = render(fixture(), { ...reference, oid: "c".repeat(40) });
+  assert.match(offPage, /review.outsidePage/);
+  assert.ok(rows(offPage).every(row => row.includes('aria-pressed="false"')));
 });
 
 test("long tag names are contained and escaped without shortening accessible names or tooltips", () => {

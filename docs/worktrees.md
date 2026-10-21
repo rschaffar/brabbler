@@ -65,6 +65,17 @@ switches branches, merges or contacts remotes.
 
 The graph layout adapts [binaryplease/git-graph](https://github.com/binaryplease/git-graph) under the MIT license (`lib/git-graph-layout.LICENSE`); Pi Web runs its own bounded read API and does not depend on that project's server.
 
+#### References from review guides
+
+[Review notebook](review-notebooks.md) blocks in settled chat or Markdown-file
+previews can reveal an exact local commit. Explorer labels this **Referenced
+repository**, preserving the authored branch/commit and captured tip without
+switching the sidebar checkout, session, URL or terminal. **Return to workspace
+history** restores ordinary selected-checkout browsing; closing drops the
+reference. On mobile Reveal opens detail first. A commit outside the loaded graph
+page retains exact detail and offers ordinary older-history paging, not an
+unbounded automatic search. Newer navigation/close/return supersedes late reveals.
+
 #### Full-file diff review
 
 Explorer, Files-panel and Git approval/receipt diffs share virtualized Pierre

@@ -119,7 +119,8 @@ lib/
   types.ts            shared TypeScript types
   normalize.ts        normalizeToolCalls() — field name mismatch between file format and our types
   worktree.ts         project/worktree resolution and git worktree operations
-  git-explorer.ts       session-independent bounded selected-worktree history/commit/patch reads
+  git-explorer.ts       session-independent bounded selected-worktree history/commit/patch/source reads
+  review-notebook.ts    client-safe declarative Markdown review schema, literal ranges and read-only references
   git-graph-layout.ts   adapted MIT active-lane graph layout (see git-graph-layout.LICENSE)
 
 components/
@@ -139,6 +140,7 @@ components/
   BranchNavigator.tsx in-session branch switcher
   ChatMinimap.tsx     scroll minimap alongside the message list
   MarkdownBody.tsx    markdown renderer
+  ReviewNotebookBlock.tsx opt-in lazy pinned source/commit fences and explicit Explorer navigation
   ModelsConfig.tsx    modal for editing models.json (opened from sidebar bottom)
   EnabledModelsSection.tsx  model switches inside ModelsConfig, backed by enabledModels
   ModelContextWindow.tsx  compact managed-model context-budget draft field

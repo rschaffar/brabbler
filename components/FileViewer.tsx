@@ -26,6 +26,7 @@ import { rehypeMarkdownSourceLines } from "@/lib/markdown-source-lines";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, markdownUrlTransform, normalizeDisplayMathWithSourceMap } from "@/lib/markdown";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
+import { ReviewNotebookBlock } from "./ReviewNotebookBlock";
 import { DelimitedTable } from "./DelimitedTable";
 import { isDelimitedTablePath } from "@/lib/delimited-table";
 import { jumpToMarkdownFragment } from "@/lib/markdown-compat";
@@ -107,6 +108,7 @@ const markdownCodeComponents: Components = {
     const raw = String(children);
     const isBlock = className?.includes("language-") || raw.includes("\n");
     if (isBlock) {
+      if (lang === "pi-review") return <ReviewNotebookBlock source={raw.replace(/\n$/, "")} />;
       if (lang === "mermaid") {
         return <MermaidBlock code={raw.replace(/\n$/, "")} defaultPreview />;
       }

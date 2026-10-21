@@ -11,6 +11,7 @@ import { checkExplorerUploads } from "./explorer-uploads.mjs";
 import { seedFileLineLinks, checkFileLineLinks } from "./file-line-links.mjs";
 import { checkFileWorkspace } from "./file-workspace.mjs";
 import { seedMarkdownMediaFixtures, checkMarkdownMedia } from "./markdown-media.mjs";
+import { seedReviewNotebooks, checkReviewNotebooks } from "./review-notebooks.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
@@ -115,6 +116,7 @@ function writeSession(id, entries, cwd = project, parentSessionId) {
 let browser;
 let page;
 let context;
+let reviewNotebookFixture;
 
   const activityReview = ACTIVITY_SUBAGENTS.length
     ? await createJiti(import.meta.url).import(join(root, "lib/activity-review-server.ts")) : null;
@@ -304,7 +306,7 @@ let context;
     git("worktree", "add", targetWorktree, "target");
     writeSession(GIT, [message("root", null, "user", "E2E Git browsing conversation"),
       message("answer", "root", "assistant", "Ready to browse Git history")], gitProject);
-
+    if (group === "markdown") reviewNotebookFixture = seedReviewNotebooks({ gitProject, targetWorktree, env: fixtureEnv, writeSession, message });
   }
 
   const base = process.env.E2E_BASE_URL;
@@ -341,6 +343,7 @@ let context;
       assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...WORKTREE_MANAGER_IDS, ...ACTIVITY_SUBAGENTS, ...externalReferenceFixtures.map((fixture) => fixture.id), ...(mediaFixtures ? [mediaFixtures.id, mediaFixtures.otherId] : []),
         ...(group === "markdown" ? [fileLineFixtures.peerSessionId] : []),
         ...(highlightingFixture ? [highlightingFixture.sessionId, highlightingFixture.fencesId] : []),
+        ...(reviewNotebookFixture ? [reviewNotebookFixture.id] : []),
         ...(group === "trust" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
       for (const id of ACTIVITY_SUBAGENTS) {
         assert.equal(sessions.find((session) => session.id === id)?.relation?.kind, "subagent", `${id} must have real subagent metadata`);
@@ -690,6 +693,7 @@ let context;
       await checkFileLineLinks(page, base, fileLineFixtures);
       await checkFileWorkspace(page, base, fileLineFixtures, artifacts);
       await checkMarkdownMedia(page, { base, fixtures: mediaFixtures });
+      await checkReviewNotebooks(page, { base, fixture: reviewNotebookFixture });
       await checkSkillInstructions(page, base, followupSettings);
       await checkModelOverrides(page, base, RICH, project);
       await checkManagedModelContext(page);

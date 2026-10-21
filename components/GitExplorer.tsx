@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { layoutGitGraph } from "@/lib/git-graph-layout";
 import type { ExplorerCommit } from "@/lib/git-explorer";
+import type { ReviewNavigation } from "@/lib/review-notebook";
+import { useI18n } from "@/hooks/useI18n";
 
 type Page = { head: string; branch: string; refs: { branch: string; oid: string }[]; commits: ExplorerCommit[]; nextSkip: number | null };
 // Pixel height shared by the SVG coordinates and commit rows (not rem-based h-9).
@@ -23,32 +25,45 @@ async function load(address: string, signal: AbortSignal): Promise<Page> {
 function laneColor(lane: number) { return colors[lane % colors.length]; }
 
 /** Read-only local-branch history for the selected checkout, not the open chat. */
-export function GitExplorer({ cwd, onOpenCommit, onBranchChange }: {
+export function GitExplorer({ cwd, onOpenCommit, onBranchChange, initialSelection }: {
   cwd: string;
   onOpenCommit: (branch: string, head: string, oid: string) => void;
   onBranchChange: () => void;
+  initialSelection?: ReviewNavigation;
 }) {
+  const { t } = useI18n();
   const [revision, setRevision] = useState(0);
-  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(initialSelection?.branch ?? null);
+  const [expectedHead, setExpectedHead] = useState<string | null>(initialSelection?.head ?? null);
   const [page, setPage] = useState<Page | null>(null);
   const [availableRefs, setAvailableRefs] = useState<Page["refs"]>([]);
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [moreLoading, setMoreLoading] = useState(false);
-  const [selectedOid, setSelectedOid] = useState<string | null>(null);
+  const [selectedOid, setSelectedOid] = useState<string | null>(initialSelection?.oid ?? null);
+  const graphViewport = useRef<HTMLDivElement>(null);
+  const pendingGraphReveal = useRef(initialSelection?.oid ?? null);
   const moreController = useRef<AbortController | null>(null);
 
   useEffect(() => () => { moreController.current?.abort(); }, [cwd, revision, selectedBranch]);
   useEffect(() => {
     const controller = new AbortController();
-    setPage(null); setSelectedOid(null); setError(null); setLoading(true); setMoreLoading(false);
-    void load(address(cwd, selectedBranch ? { branch: selectedBranch } : {}), controller.signal)
+    setPage(null); setSelectedOid(expectedHead ? initialSelection?.oid ?? null : null); setError(null); setLoading(true); setMoreLoading(false);
+    void load(address(cwd, { ...(selectedBranch ? { branch: selectedBranch } : {}), ...(expectedHead ? { head: expectedHead } : {}) }), controller.signal)
       .then((result) => { if (!controller.signal.aborted) { setPage(result); setAvailableRefs(result.refs); setCurrentBranch(result.branch); } })
       .catch((cause) => { if (!controller.signal.aborted) setError(errorText(cause)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [cwd, revision, selectedBranch]);
+  }, [cwd, revision, selectedBranch, expectedHead, initialSelection?.oid]);
+
+  useEffect(() => {
+    const index = page?.commits.findIndex(commit => commit.oid === pendingGraphReveal.current) ?? -1;
+    if (index >= 0 && graphViewport.current) {
+      graphViewport.current.scrollTop = index * ROW;
+      pendingGraphReveal.current = null;
+    }
+  }, [page]);
 
   const graph = useMemo(() => layoutGitGraph(page?.commits ?? []), [page?.commits]);
   const graphWidth = Math.max(28, graph.laneCount * GAP + 16);
@@ -78,16 +93,17 @@ export function GitExplorer({ cwd, onOpenCommit, onBranchChange }: {
     <div className="flex items-center gap-2 border-b border-border px-2 py-1 text-text-muted">
       <select aria-label="History branch" className="min-w-0 flex-1 rounded border border-border bg-bg px-1 py-1 text-text"
         value={selectedBranch ?? page?.branch ?? currentBranch ?? ""} disabled={!availableRefs.length}
-        onChange={(event) => { onBranchChange(); setPage(null); setSelectedBranch(event.target.value); }}>
+        onChange={(event) => { pendingGraphReveal.current = null; onBranchChange(); setExpectedHead(null); setPage(null); setSelectedBranch(event.target.value); }}>
         {!availableRefs.length && <option value="">Loading branches…</option>}
         {availableRefs.map((ref) => <option key={ref.branch} value={ref.branch}>{ref.branch}</option>)}
       </select>
-      <button type="button" className="shrink-0 text-accent" onClick={() => { onBranchChange(); setPage(null); setRevision((n) => n + 1); }}>Refresh</button>
+      <button type="button" className="shrink-0 text-accent" onClick={() => { pendingGraphReveal.current = null; onBranchChange(); setExpectedHead(null); setPage(null); setRevision((n) => n + 1); }}>Refresh</button>
     </div>
     {page && <p className="truncate px-2 py-1 font-mono text-[10px] text-text-dim" title={cwd}>{page.head.slice(0, 10)} · {cwd}</p>}
     {loading && <p className="p-2 text-text-muted" role="status">Loading Git history…</p>}
     {error && <p className="p-2 text-red-400" role="alert">{error}</p>}
-    {page && <div className="min-h-0 flex-1 overflow-auto" aria-label="Commit graph">
+    {page && selectedOid && !page.commits.some(commit => commit.oid === selectedOid) && <p className="p-2 text-text-muted" role="status">{t("review.outsidePage")}</p>}
+    {page && <div ref={graphViewport} className="min-h-0 flex-1 overflow-auto" aria-label="Commit graph">
       <div className="relative" style={{ minWidth: graphWidth + 135, height: page.commits.length * ROW }}>
         <svg aria-hidden="true" className="pointer-events-none absolute left-0 top-0 z-10" width={graphWidth} height={page.commits.length * ROW}>
           {graph.links.map((link, index) => {
@@ -103,7 +119,7 @@ export function GitExplorer({ cwd, onOpenCommit, onBranchChange }: {
         </svg>
         {page.commits.map((commit) => <button key={commit.oid} type="button" aria-pressed={selectedOid === commit.oid}
           className="flex w-full min-w-0 flex-col justify-center pr-2 text-left text-text hover:bg-bg-hover aria-pressed:bg-bg-selected"
-          style={{ height: ROW, paddingLeft: graphWidth }} onClick={() => { setSelectedOid(commit.oid); onOpenCommit(page.branch, page.head, commit.oid); }}
+          style={{ height: ROW, paddingLeft: graphWidth }} onClick={() => { pendingGraphReveal.current = null; setSelectedOid(commit.oid); onOpenCommit(page.branch, page.head, commit.oid); }}
           title={[commit.oid, `${commit.author} · ${commit.date}`, commit.subject,
             ...(refs.get(commit.oid) ?? []).map((branch) => `Local branch: ${branch}`),
             ...(commit.tags ?? []).map((tag) => `Local tag: ${tag}`)].join("\n")}>

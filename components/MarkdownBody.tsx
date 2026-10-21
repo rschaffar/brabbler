@@ -7,6 +7,7 @@ import { encodeFilePathForApi } from "@/lib/file-paths";
 import { jumpToMarkdownFragment, markdownDocumentRehypePlugins, markdownMediaRehypePlugins, markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
 import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
+import { ReviewNotebookBlock } from "./ReviewNotebookBlock";
 import { BlockedFileLink } from "./BlockedFileLink";
 import { LocalFileLink } from "./LocalFileLink";
 import { MarkdownMedia } from "./MarkdownMedia";
@@ -24,6 +25,7 @@ interface MarkdownBodyProps {
   onOpenFile?: OpenFileLink;
   onNavigateLink?: (href: string) => void;
   enableInlineMedia?: boolean;
+  enableReviewBlocks?: boolean;
   sourceSessionId?: string;
 }
 
@@ -75,7 +77,7 @@ function MarkdownImage({
   );
 }
 
-export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onNavigateLink, enableInlineMedia = false, sourceSessionId }: MarkdownBodyProps) {
+export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onNavigateLink, enableInlineMedia = false, enableReviewBlocks = false, sourceSessionId }: MarkdownBodyProps) {
   const normalizedMarkdown = useMemo(() => normalizeDisplayMath(children), [children]);
   // Stable renderer identities keep stateful blocks mounted across message hover updates.
   const components = useMemo<Components>(() => ({
@@ -85,6 +87,7 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
       const raw = String(children);
       const isBlock = className?.includes("language-") || raw.includes("\n");
       if (isBlock) {
+        if (lang === "pi-review" && enableReviewBlocks && !onNavigateLink) return <ReviewNotebookBlock source={raw.replace(/\n$/, "")} isStreaming={isStreaming} />;
         if (lang === "mermaid") {
           return (
             <MermaidBlock
@@ -159,7 +162,7 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
         </div>
       );
     },
-  }), [cwd, isStreaming, onOpenFile, onNavigateLink, enableInlineMedia, sourceSessionId]);
+  }), [cwd, isStreaming, onOpenFile, onNavigateLink, enableInlineMedia, enableReviewBlocks, sourceSessionId]);
 
   return (
     <div className={["markdown-body", className].filter(Boolean).join(" ")}>

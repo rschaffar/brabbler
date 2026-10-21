@@ -19,6 +19,8 @@ import { FileLinkMenuContext } from "./LocalFileLink";
 import type { FileDisposition } from "@/lib/file-workspace";
 import type { FileRevealRequest } from "@/lib/explorer-reveal";
 import { GitExplorerPanel } from "./GitExplorerPanel";
+import { ReviewNavigationContext } from "./ReviewNotebookBlock";
+import type { ReviewCommitReference, ReviewNavigation } from "@/lib/review-notebook";
 import { TabBar, type Tab } from "./TabBar";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
 import { ProjectTrustDialog, type TrustChoice } from "./ProjectTrustDialog";
@@ -247,9 +249,13 @@ export function AppShell() {
   const [overviewMobileList, setOverviewMobileList] = useState(true);
   const [gitExplorerExpanded, setGitExplorerExpanded] = useState(false);
   const gitExplorerTriggerRef = useRef<HTMLButtonElement>(null);
+  const [reviewNavigation, setReviewNavigation] = useState<ReviewNavigation | null>(null);
+  const reviewNavigationId = useRef(0);
   const closeOverview = useCallback(() => {
+    ++reviewNavigationId.current;
     setGitExplorerExpanded(false);
     setActiveOverview(null);
+    setReviewNavigation(null);
     setOverviewMobileList(true);
   }, []);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
@@ -577,6 +583,28 @@ export function AppShell() {
 
   const initialSessionId = initialNavigation.sessionId;
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
+  const reviewNavigationScope = JSON.stringify([selectedSession?.id, selectedSession?.cwd, activeCwd]);
+  useEffect(() => { ++reviewNavigationId.current; setReviewNavigation(null); }, [reviewNavigationScope]);
+  const reviewNavigationScopeRef = useRef(reviewNavigationScope);
+  useLayoutEffect(() => { reviewNavigationScopeRef.current = reviewNavigationScope; }, [reviewNavigationScope]);
+  const handleReviewNavigation = useCallback(() => {
+    const requestId = ++reviewNavigationId.current;
+    return (reference: ReviewCommitReference, head: string) => {
+      if (reviewNavigationScopeRef.current !== reviewNavigationScope || reviewNavigationId.current !== requestId) return;
+      setReviewNavigation({ cwd: reference.cwd, branch: reference.branch, oid: reference.oid, head, requestId });
+      setActiveTopPanel(null);
+      setActiveOverview("git");
+      setOverviewMobileList(true);
+      setGitExplorerExpanded(false);
+      setRightPanelExpanded(false);
+      if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
+    };
+  }, [isMobile, reviewNavigationScope]);
+  const returnToWorkspaceHistory = useCallback(() => {
+    ++reviewNavigationId.current;
+    setReviewNavigation(null);
+    requestAnimationFrame(() => document.querySelector<HTMLElement>("#git-explorer-panel section")?.focus());
+  }, []);
   const activeProjectKeyRef = useRef<string | null>(null);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId);
@@ -1904,6 +1932,7 @@ export function AppShell() {
   );
 
   return (
+    <ReviewNavigationContext.Provider value={handleReviewNavigation}>
     <FileLinkMenuContext.Provider value={{ ...fileStatus, contextKey: fileWorkspaceKey }}>
     <style>{`
       @keyframes session-info-pop {
@@ -2109,6 +2138,8 @@ export function AppShell() {
                 closeOverview();
               } else {
                 setOverviewMobileList(true);
+                ++reviewNavigationId.current;
+                setReviewNavigation(null);
                 setActiveOverview("activity");
                 if (isMobile) setRightPanelOpen(false);
                 if (isMobile || window.innerWidth < 1000) setSidebarOpen(false);
@@ -2135,6 +2166,8 @@ export function AppShell() {
                 closeOverview();
               } else {
                 setOverviewMobileList(true);
+                ++reviewNavigationId.current;
+                setReviewNavigation(null);
                 setActiveOverview("starred");
                 if (isMobile) setRightPanelOpen(false);
                 if (isMobile || window.innerWidth < 1000) setSidebarOpen(false);
@@ -2154,6 +2187,8 @@ export function AppShell() {
               setActiveTopPanel(null);
               if (activeOverview === "git") closeOverview();
               else {
+                ++reviewNavigationId.current;
+                setReviewNavigation(null);
                 setOverviewMobileList(true);
                 setActiveOverview("git");
                 setRightPanelOpen(false);
@@ -2501,7 +2536,9 @@ export function AppShell() {
             />
           )}
           {activeOverview === "git" && <div id="git-explorer-panel" className={`git-explorer-host${gitExplorerFullWidth ? " git-explorer-full-width" : ""}`}>
-            <GitExplorerPanel key={activeCwd ?? "no-worktree"} cwd={historyOnly && activeCwd === selectedSession?.cwd ? null : activeCwd} onClose={handleGitExplorerClose}
+            <GitExplorerPanel key={reviewNavigation ? `review:${reviewNavigation.cwd}:${reviewNavigation.requestId}` : activeCwd ?? "no-worktree"}
+              cwd={reviewNavigation?.cwd ?? (historyOnly && activeCwd === selectedSession?.cwd ? null : activeCwd)} onClose={handleGitExplorerClose}
+              initialSelection={reviewNavigation ?? undefined} onReturnToWorkspace={reviewNavigation ? returnToWorkspaceHistory : undefined}
               expanded={gitExplorerFullWidth} canExpand={!isMobile} onToggleExpanded={handleGitExplorerExpandToggle} />
           </div>}
           <div inert={gitExplorerFullWidth || Boolean(activeOverview && isMobile && overviewMobileList)} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
@@ -2758,5 +2795,6 @@ export function AppShell() {
       />
     )}
     </FileLinkMenuContext.Provider>
+    </ReviewNavigationContext.Provider>
   );
 }
