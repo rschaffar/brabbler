@@ -23,7 +23,7 @@ export const extensionSource = `export default function (pi) {
     handler: async (mode, ctx) => {
       if (mode.startsWith("batch")) {
         const answer = await ctx.ui.askUserBatch({ title: "E2E question set", context: "Related decisions", questions: [
-          { id: "scope", shortLabel: "Scope", question: "Choose scope", type: "single", required: true, options: [
+          { id: "scope", shortLabel: "Scope", question: "Choose scope", context: "Scope background", type: "single", required: true, options: [
             { id: "small", title: "Small", description: "Start small", recommended: true }, { id: "large", title: "Large" },
           ] },
           { id: "platforms", shortLabel: "Platforms", question: "Choose platforms", type: "multiple", required: true, options: [
@@ -44,7 +44,7 @@ export const extensionSource = `export default function (pi) {
         allowMultiple: mode === "multi",
         allowFreeform: true,
         allowComment: true,
-        contextExpanded: false,
+        contextExpanded: true,
       };
       const answer = await ctx.ui.askUser(question, mode === "timeout" ? 2500 : undefined);
       ctx.ui.notify("E2E ask_user result: " + JSON.stringify(answer));

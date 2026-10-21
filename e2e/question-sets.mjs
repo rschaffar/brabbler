@@ -28,6 +28,13 @@ export async function checkQuestionSets(page, width) {
   try {
     await start();
     const id = await live.getAttribute("data-question-set");
+    assert.equal(await card.getByText("Related decisions", { exact: true }).isVisible(), true, "Set context starts expanded");
+    assert.equal(await card.getByText("Scope background", { exact: true }).isVisible(), true, "Question context starts expanded");
+    for (const section of await card.locator("details").all()) {
+      await section.locator("summary").click();
+      assert.equal(await section.evaluate((element) => element.open), false, "Context remains collapsible");
+      await section.locator("summary").click();
+    }
     assert.equal(await card.getByRole("radio", { checked: true }).count(), 0, "recommendations are not defaults");
     await card.getByRole("radio", { name: /Small/ }).check();
     await details().fill("Keep the first release small");

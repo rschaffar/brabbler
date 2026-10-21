@@ -68,7 +68,7 @@ export function createAskUserExtension(): InlineExtension {
           allowComment: Type.Optional(Type.Boolean({ description: "Collect additional details alongside choices or a written answer. Default: PI_ASK_USER_ALLOW_COMMENT env var if set, otherwise true." })),
           displayMode: Type.Optional(Type.Unsafe<"overlay" | "inline">({ type: "string", enum: ["overlay", "inline"], description: "UI rendering mode. Pi Web presents a browser form regardless of terminal layout." })),
           singleSelectLayout: Type.Optional(Type.Unsafe<"auto" | "list">({ type: "string", enum: ["auto", "list"], description: "Terminal single-select layout; ignored by Pi Web." })),
-          contextExpanded: Type.Optional(Type.Boolean({ description: "Start with oversized context expanded. Default: PI_ASK_USER_CONTEXT_EXPANDED env var if set, otherwise false." })),
+          contextExpanded: Type.Optional(Type.Boolean({ description: "Start with oversized context expanded. Default: PI_ASK_USER_CONTEXT_EXPANDED env var if set, otherwise true." })),
           overlayToggleKey: Type.Optional(Type.String({ description: "Terminal overlay shortcut; ignored by Pi Web." })),
           commentToggleKey: Type.Optional(Type.String({ description: "Terminal comment shortcut; ignored by Pi Web." })),
           timeout: Type.Optional(Type.Number({ description: "Auto-dismiss after N milliseconds. Returns null (cancelled) when expired." })),
@@ -111,7 +111,7 @@ export function createAskUserExtension(): InlineExtension {
             allowMultiple: params.allowMultiple ?? false,
             allowFreeform: params.allowFreeform ?? true,
             allowComment: params.allowComment ?? parseAskUserPreference(process.env.PI_ASK_USER_ALLOW_COMMENT) ?? true,
-            contextExpanded: params.contextExpanded ?? parseAskUserPreference(process.env.PI_ASK_USER_CONTEXT_EXPANDED) ?? false,
+            contextExpanded: params.contextExpanded ?? parseAskUserPreference(process.env.PI_ASK_USER_CONTEXT_EXPANDED) ?? true,
           };
           const details = (response: AskUserAnswer | null): AskUserDetails => ({
             question: question.question, context: question.context, options, response, cancelled: response === null,

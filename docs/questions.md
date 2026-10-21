@@ -4,6 +4,8 @@
 
 ## Answering a set
 
+Context sections start expanded in live question cards, including set-level and per-question context, and remain collapsible. Legacy single questions also expand long context by default; an explicit `contextExpanded` argument or `PI_ASK_USER_CONTEXT_EXPANDED` environment preference still overrides that default. Completed receipts remain collapsed.
+
 - Use the labelled question buttons (desktop), question selector (mobile), or Back/Next to move freely. Required questions must have a main answer. Optional questions must be answered or explicitly skipped.
 - Single choice, multiple choice and text questions can be mixed. Recommendations are labels, never defaults. An exclusive option such as None cannot be combined with another option; an empty selection is not an answer.
 - **Write an alternative answer** replaces the main choice(s). **Additional details** is a separate field that adds to either choices or written text. It never replaces the main answer and cannot satisfy a required question by itself.

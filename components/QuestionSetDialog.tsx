@@ -105,7 +105,7 @@ export function QuestionSetDialog({ request, sessionId, onRespond }: {
       </>}>
       {error && <p role="alert" className="text-xs text-red-400">{t("chat.questionsSendFailed")}</p>}
       {!storageAvailable && <p role="status" className="text-xs text-text-muted">{t("chat.questionsStorageUnavailable")}</p>}
-      {request.context && <details className="min-w-0 text-xs text-text-muted">
+      {request.context && <details open className="min-w-0 text-xs text-text-muted">
         <summary className="blocking-card-section-title cursor-pointer">{t("chat.askUserContext")}</summary>
         <MarkdownBody>{request.context}</MarkdownBody>
       </details>}
@@ -132,7 +132,7 @@ export function QuestionSetDialog({ request, sessionId, onRespond }: {
         <QuestionSetReview set={request} answers={answers} onEdit={submitting ? undefined : setPage} />
       </> : question && draft && <fieldset disabled={submitting} className="m-0 grid min-w-0 gap-3 border-0 p-0">
         <legend className="blocking-card-section-title">{t(question.required ? "chat.questionsRequired" : "chat.questionsOptional")}</legend>
-        {question.context && <details className="min-w-0 text-xs text-text-muted">
+        {question.context && <details open className="min-w-0 text-xs text-text-muted">
           <summary className="cursor-pointer">{t("chat.questionsWhy")}</summary>
           <MarkdownBody>{question.context}</MarkdownBody>
         </details>}
