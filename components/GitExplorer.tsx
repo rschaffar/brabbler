@@ -58,11 +58,20 @@ export function GitExplorer({ cwd, onOpenCommit, onBranchChange, initialSelectio
   }, [cwd, revision, selectedBranch, expectedHead, initialSelection?.oid]);
 
   useEffect(() => {
-    const index = page?.commits.findIndex(commit => commit.oid === pendingGraphReveal.current) ?? -1;
-    if (index >= 0 && graphViewport.current) {
-      graphViewport.current.scrollTop = index * ROW;
+    const viewport = graphViewport.current;
+    if (!viewport || !pendingGraphReveal.current) return;
+    const reveal = () => {
+      // Mobile starts in detail; a display:none graph cannot consume its jump yet.
+      if (!viewport.clientHeight || !viewport.clientWidth) return;
+      const index = page?.commits.findIndex(commit => commit.oid === pendingGraphReveal.current) ?? -1;
+      if (index < 0) return;
+      viewport.scrollTop = index * ROW;
       pendingGraphReveal.current = null;
-    }
+    };
+    const observer = new ResizeObserver(reveal);
+    observer.observe(viewport);
+    reveal();
+    return () => observer.disconnect();
   }, [page]);
 
   const graph = useMemo(() => layoutGitGraph(page?.commits ?? []), [page?.commits]);

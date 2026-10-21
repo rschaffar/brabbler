@@ -9,11 +9,19 @@ export function seedReviewNotebooks({ gitProject, targetWorktree, env, writeSess
   const git = (...args) => execFileSync("git", ["-C", gitProject, ...args], { env, encoding: "utf8" }).trim();
   const id = "e2e-review-notebook";
   const oid = git("rev-parse", "feature"), prior = git("rev-parse", "comparison-base");
+  const tree = git("rev-parse", `${oid}^{tree}`);
+  let historyTip = oid, deepOid;
+  for (let i = 0; i < 45; i++) {
+    historyTip = git("commit-tree", tree, "-p", historyTip, "-m", `Review history ${i}`);
+    if (i === 14) deepOid = historyTip; // row 30: loaded, but below either viewport.
+  }
+  git("branch", "review-history", historyTip);
   const common = { version: 1, cwd: gitProject, branch: "feature", oid, priority: "thorough" };
   const source = { ...common, kind: "source", id: "pinned-code", title: "Pinned code", path: "z-context.txt", start: 49, end: 51 };
   const text = "# Review notebook\n\nFollow the important change, not the mutable checkout.\n\n" + fence(source) + "\n\n" +
     fence({ ...source, id: "unchanged-context", title: "Unchanged context", oid: prior }) + "\n\n" +
     fence({ ...common, kind: "commit", id: "feature-commit", title: "Feature changes" }) + "\n\n" +
+    fence({ ...common, kind: "commit", id: "deep-history", title: "Earlier review step", branch: "review-history", oid: deepOid }) + "\n\n" +
     fence({ ...source, version: 99, title: "<script>globalThis.REVIEW_BAD=true</script>" }) + "\n\n" +
     "```pi-review\n{broken JSON\n```\n\n";
   const document = join(targetWorktree, "review-notebook.md");
@@ -22,11 +30,11 @@ export function seedReviewNotebooks({ gitProject, targetWorktree, env, writeSess
     message("review-answer", "review-user", "assistant", [{ type: "text", text: text +
       `\n\n[Open review document](${document})\n\n[Open working source](${join(gitProject, "z-context.txt")}#L50)` }])], targetWorktree);
   writeFileSync(join(gitProject, "z-context.txt"), readFileSync(join(gitProject, "z-context.txt"), "utf8").replace("Explorer changed 50\n", "WORKING TREE ONLY\n"));
-  return { id, document, gitProject, targetWorktree, oid, prior, git };
+  return { id, document, gitProject, targetWorktree, oid, prior, deepOid, git };
 }
 
 export async function checkReviewNotebooks(page, { base, fixture: f }) {
-  const before = [f.git("rev-parse", "HEAD"), f.git("status", "--porcelain"), readFileSync(f.document, "utf8")];
+  const before = [f.git("rev-parse", "HEAD"), f.git("show-ref"), f.git("status", "--porcelain"), readFileSync(f.document, "utf8")];
   const requests = [], writes = [];
   const observe = request => {
     const url = new URL(request.url());
@@ -107,6 +115,22 @@ export async function checkReviewNotebooks(page, { base, fixture: f }) {
     await page.getByRole("region", { name: "Git commit details", exact: true }).getByText("second feature", { exact: true }).waitFor();
     await page.getByRole("button", { name: "Close Git Explorer", exact: true }).click();
 
+    await stop(chat, "deep-history").getByRole("button", { name: "Reveal in Git Explorer", exact: true }).click();
+    const deepExplorer = page.getByRole("region", { name: "Git Explorer", exact: true });
+    await deepExplorer.getByRole("region", { name: "Git commit details", exact: true }).getByText("Review history 14", { exact: true }).waitFor();
+    // Intentionally inspect DOM readiness while the mobile graph is hidden; a
+    // visible-role query would wait forever before Back can expose that graph.
+    await deepExplorer.locator('[aria-label="History branch"] option[value="review-history"]').waitFor({ state: "attached" });
+    if (page.viewportSize().width < 1100) await deepExplorer.getByRole("button", { name: "← Back to commits", exact: true }).click();
+    const deepRow = deepExplorer.locator('[aria-label="Commit graph"] button[aria-pressed="true"]');
+    await page.waitForFunction(row => {
+      const viewport = row.closest('[aria-label="Commit graph"]');
+      const bounds = row.getBoundingClientRect(), frame = viewport.getBoundingClientRect();
+      return viewport.clientHeight > 0 && viewport.scrollTop > 0 && bounds.top >= frame.top && bounds.bottom <= frame.bottom;
+    }, await deepRow.elementHandle());
+    assert.ok((await deepRow.getAttribute("title")).startsWith(f.deepOid));
+    await deepExplorer.getByRole("button", { name: "Close Git Explorer", exact: true }).click();
+
     if (page.viewportSize().width > 700) for (const close of [false, true]) {
       let release, entered;
       const gate = new Promise(resolve => { release = resolve; });
@@ -149,7 +173,7 @@ export async function checkReviewNotebooks(page, { base, fixture: f }) {
     await page.getByRole("link", { name: "Open working source", exact: true }).click();
     await page.locator("#file-panel").getByText("WORKING TREE ONLY", { exact: true }).waitFor();
     assert.deepEqual(writes, []);
-    assert.deepEqual([f.git("rev-parse", "HEAD"), f.git("status", "--porcelain"), readFileSync(f.document, "utf8")], before);
+    assert.deepEqual([f.git("rev-parse", "HEAD"), f.git("show-ref"), f.git("status", "--porcelain"), readFileSync(f.document, "utf8")], before);
     console.log(`PASS: ${page.viewportSize().width}px lazy revision-bound review stops, immutable diff/context, file previews, explicit Explorer reveal and read-only navigation`);
   } finally {
     page.off("request", observe);
