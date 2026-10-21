@@ -26,6 +26,16 @@ function renderMarkdown(markdown, props = {}) {
   );
 }
 
+test("local link actions are lazy out-of-flow popovers, not inline buttons or modal dialogs", () => {
+  const html = renderMarkdown("[one](one.ts), [two](two.ts).");
+  assert.doesNotMatch(html, /<button|<dialog|local-file-link-actions/);
+  const controls = [...html.matchAll(/aria-controls="([^"]+)"/g)].map(match => match[1]);
+  const panels = [...html.matchAll(/<span id="([^"]+)" popover="manual" role="toolbar"/g)].map(match => match[1]);
+  assert.equal(controls.length, 2);
+  assert.equal(new Set(controls).size, 2);
+  assert.deepEqual(controls, panels);
+});
+
 test("opted-in local media has explicit activation and no eager media or image source", () => {
   for (const href of ["out/take.wav", "/outside/take.mp4", "file:///outside/take.wav", "C:/work/take.wav", "file://host/share/take.wav"]) {
     const html = renderMarkdown(`![Recording](${href})`, { enableInlineMedia: true, sourceSessionId: "origin-session" });
@@ -51,7 +61,7 @@ test("media preserves link semantics and blocks traversal without eager fallback
   }
   const streaming = renderMarkdown("![Recording](take.wav)", { ...props, isStreaming: true });
   assert.doesNotMatch(streaming, /Load audio|<img|<audio|type=read/);
-  assert.match(renderMarkdown("[Recording](take.wav)", props), /<a href="take.wav">Recording<\/a>/);
+  assert.match(renderMarkdown("[Recording](take.wav)", props), /<a href="take.wav"[^>]*>Recording<\/a>/);
 });
 
 test("encoded and browser-normalized media URLs never fall through to eager images", () => {
@@ -103,9 +113,9 @@ test("keeps local file markdown links in the app", () => {
   const relativeHtml = renderMarkdown("[file](components/MarkdownBody.tsx)");
   const fileUrlHtml = renderMarkdown("[report](file:///home/me/project/report.html)");
 
-  assert.match(relativeHtml, /<a href="components\/MarkdownBody\.tsx">file<\/a>/);
+  assert.match(relativeHtml, /<a href="components\/MarkdownBody\.tsx"[^>]*>file<\/a>/);
   assert.doesNotMatch(relativeHtml, /target=|rel=|\snode=/);
-  assert.match(fileUrlHtml, /<a href="file:\/\/\/home\/me\/project\/report\.html">report<\/a>/);
+  assert.match(fileUrlHtml, /<a href="file:\/\/\/home\/me\/project\/report\.html"[^>]*>report<\/a>/);
   assert.doesNotMatch(fileUrlHtml, /target=|rel=|\snode=/);
 });
 
@@ -121,7 +131,7 @@ test("explains rejected relative file links instead of making them browser links
 
 test("keeps absolute sibling links local and web/app links navigable", () => {
   const html = renderMarkdown("[sibling](/home/me/sibling/file.yml#L14)");
-  assert.match(html, /<a href="\/home\/me\/sibling\/file.yml#L14">sibling<\/a>/);
+  assert.match(html, /<a href="\/home\/me\/sibling\/file.yml#L14"[^>]*>sibling<\/a>/);
   for (const href of ["https://example.com/file.ts", "//example.com/file.ts", "/api/files/a.ts", "#heading"]) {
     assert.match(renderMarkdown(`[web](${href})`), /<a /, href);
     assert.doesNotMatch(renderMarkdown(`[web](${href})`), /blocked-file-link/, href);
@@ -144,8 +154,8 @@ test("preserves basename-colon and Windows drive links through URL sanitization"
 
 test("autolinks inline source locations without nesting links or linking code blocks", () => {
   const html = renderMarkdown("`src/code.ts:36:5` and `src/code.ts#L36-L48` and `symbolName` and `https://example.com/a.ts#L36`");
-  assert.match(html, /<a href="src\/code\.ts:36:5"><code[^>]*>src\/code\.ts:36:5<\/code><\/a>/);
-  assert.match(html, /<a href="src\/code\.ts#L36-L48"><code/);
+  assert.match(html, /<a href="src\/code\.ts:36:5"[^>]*><code[^>]*>src\/code\.ts:36:5<\/code><\/a>/);
+  assert.match(html, /<a href="src\/code\.ts#L36-L48"[^>]*><code/);
   assert.doesNotMatch(html, /<a[^>]*>(?:<code[^>]*>)?(?:symbolName|https:)/);
   const nested = renderMarkdown("[`src/code.ts:36`](src/code.ts#L36)");
   assert.equal((nested.match(/<a /g) ?? []).length, 1);

@@ -26,8 +26,17 @@
 .file-workspace-notice { font-size: 12px; padding: 6px; color: var(--text-muted); }
 .file-workspace-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .local-file-link { position: relative; }
-.local-file-link-actions { font: inherit; font-size: 11px; padding: 0 3px; margin-left: 2px; color: var(--text-muted); background: none; border: none; cursor: pointer; opacity: 0; }
-.local-file-link:hover > .local-file-link-actions, .local-file-link:focus-within > .local-file-link-actions { opacity: 1; }
+/* A top-layer popover occupies no inline space and escapes reader clipping. */
+.file-link-hover { position: fixed; inset: auto; margin: 0; visibility: hidden; padding: 4px; width: max-content; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto; color: var(--text); background: var(--bg-panel); border: 1px solid var(--border); border-radius: 7px; box-shadow: 0 4px 16px #0004; font: 12px/1.4 var(--font-ui); font-weight: var(--font-ui-weight); white-space: normal; }
+.file-link-hover:not(:popover-open) { display: none; }
+.file-link-hover:popover-open { display: block; }
+.file-link-hover-bar { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
+.file-link-hover button { font: inherit; color: inherit; background: none; border: none; border-radius: 4px; padding: 6px 8px; min-height: 30px; cursor: pointer; white-space: nowrap; }
+.file-link-hover button:hover:not(:disabled) { background: var(--bg-hover); }
+.file-link-hover button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.file-link-hover button:disabled { opacity: .45; cursor: default; }
+.file-link-hover-more:not([hidden]) { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--border); padding-top: 4px; margin-top: 4px; }
+.file-link-hover-more button { text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .file-link-dialog { padding: 0; max-width: min(90vw, 480px); max-height: 80vh; margin: auto; color: var(--text); background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; }
 .file-link-dialog::backdrop { background: #0005; }
-@media (pointer: coarse) { .local-file-link-actions { opacity: 1; min-width: 24px; min-height: 24px; } }
+@media (pointer: coarse) { .file-link-hover button { min-height: 38px; } }
