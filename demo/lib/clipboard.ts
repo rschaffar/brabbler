@@ -9,10 +9,13 @@ export function copyText(text: string): Promise<void> {
     ta.style.opacity = "0";
     document.body.appendChild(ta);
     ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
+    try {
+      if (!document.execCommand("copy")) throw new Error("Copy command was rejected");
+    } finally {
+      document.body.removeChild(ta);
+    }
     return Promise.resolve();
   } catch {
-    return Promise.reject();
+    return Promise.reject(new Error("Could not copy text"));
   }
 }

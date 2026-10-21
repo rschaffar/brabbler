@@ -39,7 +39,7 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | Group | Coverage |
 | --- | --- |
 | `state` | Installed-launcher rejection of reserved revalidation headers, API pagination/errors, externally appended JSONL, account validation/redaction/defaults/concurrent writes, live AGENTS reload and dependent durable account selection/deletion |
-| `history` | Version reload, session/mobile identity, observer pagination/node identity, recovery acknowledgement, rendering/thinking/compaction, minimap and reading/branch cancellation chain; explicit desktop New/restored-draft/modal focus and mobile model filtering through simulated keyboard shrink/pan/late IME settling |
+| `history` | Version reload, session/mobile identity, observer pagination/node identity, recovery acknowledgement, rendering/thinking/compaction, flat/nested/write/edit argument views, full/raw clipboard access, escaped strings, keyboard/mobile geometry and synthetic partial-input completion/handoff, minimap and reading/branch cancellation chain; explicit desktop New/restored-draft/modal focus and mobile model filtering through simulated keyboard shrink/pan/late IME settling |
 | `extension-dialogs` | Complete inline extension select/input/editor dialogs, keyboard/focus/expiry and retained receipts |
 | `mobile-sidebar` | Compact action geometry/keyboard, archive/search scopes, reconciled inline restore and subsequent project move |
 | `worktrees` | Management inventory, paging, trust boundaries, stale/lost preparation recovery and bounded cleanup receipts |

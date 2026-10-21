@@ -35,6 +35,8 @@ Do not call a replacement/fork API on the source's own manager or runtime: `crea
 ### ToolCall field normalization
 Pi stores toolCall blocks as `{type:"toolCall", id, name, arguments}` but `ToolCallContent` uses `{toolCallId, toolName, input}`. `normalizeToolCalls()` in `lib/normalize.ts` handles this — called in both `session-reader.ts` (file load) and `handleAgentEvent` in `hooks/useAgentSession.ts` (streaming).
 
+Argument rows are display-only projections, never replacements for these records. `rawInput !== undefined` excludes rows/file-text views even for empty or apparently complete partial JSON; authoritative `toolcall_end` removes that buffer. `getToolCallInputText()` remains the canonical full-copy/raw-view source. See [tool argument presentation](feature-internals.md#tool-argument-presentation).
+
 ### New session tool preset
 Tool names are passed at session creation (`POST /api/agent/new` -> `toolNames[]`) and persisted in versioned `pi-web:tool-selection` custom entries. No entry means a legacy session and keeps Pi's default behavior; an empty array means Chat only. Chat only resolves before services are created, loads no extensions/skills/prompts/themes, and replaces Pi's base prompt with the ordered contents of Pi's discovered context files. Crossing the Chat-only boundary rebuilds the wrapper; changing between nonempty presets updates it in place.
 

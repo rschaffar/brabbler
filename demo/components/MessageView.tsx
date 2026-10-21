@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
 import { ThinkingIcon } from "./ThinkingIcon";
+import { ToolArguments } from "./ToolArguments";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
@@ -1052,7 +1053,6 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
     setToolCallExpanded(block.toolCallId, next);
     setExpanded(next);
   };
-  const inputStr = getToolCallInputText(block);
   const isStreamingInput = block.rawInput !== undefined;
   const isEditTool = isEditToolName(block.toolName);
   const resultDiff = result && !result.isError ? getResultDiff(result) : null;
@@ -1073,6 +1073,7 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
 
   return (
     <div
+      data-tool-call-id={block.toolCallId}
       style={{
         borderRadius: 7,
         overflow: "hidden",
@@ -1084,6 +1085,8 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
       {/* ── Tool call header ── */}
       <div style={{ display: "flex", alignItems: "stretch", minWidth: 0 }}>
         <button
+          type="button"
+          aria-expanded={expanded}
           onClick={toggleExpanded}
           style={{
             display: "flex",
@@ -1126,25 +1129,9 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
         )}
       </div>
 
-      {/* ── Expanded: input args (only when no richer view exists) ── */}
-      {expanded && (isStreamingInput || !isEditTool) && !patchFiles && (
-        <pre
-          style={{
-            margin: 0,
-            padding: "8px 10px",
-            color: "var(--text-muted)",
-            fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",
-            lineHeight: 1.5,
-            overflow: "auto",
-            background: "var(--bg-subtle)",
-            borderTop: isError ? "1px solid rgba(248,113,113,0.25)" : "1px solid rgba(34,197,94,0.2)",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
-          }}
-        >
-          {inputStr}
-        </pre>
-      )}
+      {/* Rich views retain full raw/copy access; edits without one keep their input. */}
+      {expanded && <ToolArguments block={block} inputText={getToolCallInputText(block)}
+        hasRichView={!isStreamingInput && Boolean(patchFiles || (isEditTool && resultDiff))} isError={isError} />}
 
       {/* ── Result images — always visible, independent of the collapsed details ── */}
       {resultImages.length > 0 && <ResultImages images={resultImages} isError={isError} />}
