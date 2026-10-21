@@ -17,6 +17,7 @@ import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { FileWorkspace, type FileWorkspaceHandle, type FileWorkspaceStatus } from "./FileWorkspace";
 import { FileLinkMenuContext } from "./LocalFileLink";
 import type { FileDisposition } from "@/lib/file-workspace";
+import type { FileRevealRequest } from "@/lib/explorer-reveal";
 import { GitExplorerPanel } from "./GitExplorerPanel";
 import { TabBar, type Tab } from "./TabBar";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
@@ -31,7 +32,7 @@ import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTa
 import { useTheme } from "@/hooks/useTheme";
 import { useFontPreferences } from "@/hooks/useFontPreferences";
 import { useI18n } from "@/hooks/useI18n";
-import { useIsMobile } from "@/hooks/useIsMobile";
+import { useIsMobile, useIsSplitLayout } from "@/hooks/useIsMobile";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useAudio } from "@/hooks/useAudio";
@@ -100,6 +101,7 @@ export function AppShell() {
   useFontPreferences();
   const { locale, t: translate } = useI18n();
   const isMobile = useIsMobile();
+  const isSplitLayout = useIsSplitLayout();
   useViewportHeight();
 
   // Once the user has granted notification permission, register a Web Push
@@ -231,6 +233,8 @@ export function AppShell() {
     setSearchTarget((current) => current === target ? null : current);
   }, []);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
+  const [fileRevealRequest, setFileRevealRequest] = useState<FileRevealRequest>();
+  const fileRevealId = useRef(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
   const [pluginSettingsSession, setPluginSettingsSession] = useState<{ id: string; cwd: string } | null>(null);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
@@ -250,6 +254,12 @@ export function AppShell() {
   }, []);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelExpanded, setRightPanelExpanded] = useState(false);
+  const [chatHidden, setChatHidden] = useState(false);
+  const chatCollapsed = chatHidden && rightPanelOpen && isSplitLayout;
+  const chatVisibilityRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!rightPanelOpen || !isSplitLayout) setChatHidden(false);
+  }, [rightPanelOpen, isSplitLayout]);
   const rightPanelFullWidth = rightPanelOpen && rightPanelExpanded && !isMobile;
   const gitExplorerFullWidth = activeOverview === "git" && gitExplorerExpanded && !isMobile && !rightPanelFullWidth;
   useEffect(() => {
@@ -305,7 +315,7 @@ export function AppShell() {
     getDefaultWidth: getResponsiveRightPanelWidth,
     getMaxWidth: getResponsiveRightPanelMaxWidth,
     growthDirection: "left",
-    maxWidth: RIGHT_PANEL_MAX_WIDTH,
+    maxWidth: Number.MAX_SAFE_INTEGER,
     minWidth: RIGHT_PANEL_MIN_WIDTH,
     storageKey: "pi-right-panel-width",
     widthRef: rightPanelWidthRef,
@@ -547,17 +557,20 @@ export function AppShell() {
   // Same @mention format as the chat input's @ autocomplete, so the agent's
   // read tool resolves it the same way (it strips the @ prefix).
   const handleAtMention = useCallback((relativePath: string, isDir: boolean) => {
+    setChatHidden(false);
     chatInputRef.current?.insertText(buildAtMentionText(relativePath, isDir));
     if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
   }, [isMobile]);
 
   const handleAtMentions = useCallback((relativePaths: string[]) => {
+    setChatHidden(false);
     const mentions = buildFileAtMentionsText(relativePaths);
     if (mentions) chatInputRef.current?.insertText(mentions);
     if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
   }, [isMobile]);
 
   const handleFileLineMention = useCallback((relativePath: string, startLine: number, endLine: number) => {
+    setChatHidden(false);
     chatInputRef.current?.insertText(buildFileLineMentionText(relativePath, startLine, endLine));
     if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
   }, [isMobile]);
@@ -772,6 +785,7 @@ export function AppShell() {
   }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, newSessionCwd, router, selectedSession, restoreWorkspaceContext]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false, entryId?: string, blockIndex?: number) => {
+    if (!isRestore) setChatHidden(false);
     setSearchTarget(entryId ? { sessionId: session.id, entryId, blockIndex } : null);
     // Ignore an older sidebar row for a just-moved session, even on re-click.
     invalidateWorkspaceRestore();
@@ -832,6 +846,7 @@ export function AppShell() {
   }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, router, isMobile, newSessionCwd, selectedSession]);
 
   const handleNewSession = useCallback((sessionId: string, cwd: string) => {
+    setChatHidden(false);
     invalidateWorkspaceRestore();
     const draftKey = `new:${sessionId}:${cwd}`;
     rekeyDraft(parkedNewSessionDraftKey(cwd), draftKey);
@@ -1271,6 +1286,7 @@ export function AppShell() {
         onOpenFile={handleOpenFile}
         onOpenTerminal={handleOpenTerminal}
         explorerRefreshKey={explorerRefreshKey}
+        fileRevealRequest={fileRevealRequest}
         onExplorerRefresh={handleExplorerRefresh}
         onAtMention={handleAtMention}
         onAtMentions={handleAtMentions}
@@ -2031,11 +2047,12 @@ export function AppShell() {
       )}
 
       {/* Center: chat */}
-      <div inert={rightPanelFullWidth} style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+      <div inert={rightPanelFullWidth} className={`app-center${chatCollapsed ? " chat-collapsed" : ""}`} style={{ flex: chatCollapsed ? "0 0 36px" : 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         {/* Top bar with sidebar toggle */}
-        <div ref={topBarRef} inert={gitExplorerFullWidth} style={{ flexShrink: 0, background: "var(--bg-panel)" }}>
-        <div style={{ display: "flex", alignItems: "center", position: "relative", borderBottom: "1px solid var(--border)", height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}>
+        <div ref={topBarRef} inert={gitExplorerFullWidth} className="app-topbar" style={{ flexShrink: 0, background: "var(--bg-panel)" }}>
+        <div className="app-toolbar-row" style={{ display: "flex", alignItems: "center", position: "relative", borderBottom: "1px solid var(--border)", height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}>
           <button
+            className="sidebar-toggle-button"
             onClick={handleSidebarToggle}
              title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
              aria-label={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
@@ -2058,6 +2075,25 @@ export function AppShell() {
               </svg>
             )}
           </button>
+          {isSplitLayout && rightPanelOpen && <button
+            ref={chatVisibilityRef}
+            type="button"
+            className="chat-visibility-button"
+            aria-controls="chat-content"
+            aria-expanded={!chatCollapsed}
+            aria-label={translate(chatCollapsed ? "layout.showChat" : "layout.hideChat")}
+            title={translate(chatCollapsed ? "layout.showChat" : "layout.hideChat")}
+            onClick={() => {
+              setActiveTopPanel(null);
+              setChatHidden(hidden => !hidden);
+              chatVisibilityRef.current?.focus({ preventScroll: true });
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z" />
+              <path d={chatCollapsed ? "M9 12h6m-3-3v6" : "M9 12h6"} />
+            </svg>
+          </button>}
           <div
             ref={topBarActionsRef}
             className={`top-bar-actions${topBarScrollEdges.left ? " has-more-left" : ""}${topBarScrollEdges.right ? " has-more-right" : ""}`}
@@ -2429,7 +2465,7 @@ export function AppShell() {
         </div>
 
         {/* Chat content */}
-        <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex" }}>
+        <div id="chat-content" inert={chatCollapsed} hidden={chatCollapsed} style={{ flex: 1, overflow: "hidden", position: "relative", display: chatCollapsed ? "none" : "flex" }}>
           {activeOverview === "activity" && (
             <ActivityOverview
               laterIds={laterSessionIds}
@@ -2470,11 +2506,11 @@ export function AppShell() {
           </div>}
           <div inert={gitExplorerFullWidth || Boolean(activeOverview && isMobile && overviewMobileList)} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
           {showChat ? (
-            <MarkdownMediaScope key={sessionKey} active={settingsSection === null && !projectTrustDialogOpen && !gitExplorerFullWidth && !rightPanelFullWidth && !(isMobile && (rightPanelOpen || sidebarOpen)) && !(activeOverview && isMobile && overviewMobileList)}>
+            <MarkdownMediaScope key={sessionKey} active={!chatCollapsed && settingsSection === null && !projectTrustDialogOpen && !gitExplorerFullWidth && !rightPanelFullWidth && !(isMobile && (rightPanelOpen || sidebarOpen)) && !(activeOverview && isMobile && overviewMobileList)}>
             <ChatWindow
               key={sessionKey}
               session={selectedSession}
-              covered={gitExplorerFullWidth || rightPanelFullWidth}
+              covered={chatCollapsed || gitExplorerFullWidth || rightPanelFullWidth}
               searchTarget={searchTarget?.sessionId === selectedSession?.id ? searchTarget : null}
               onSearchTargetHandled={handleSearchTargetHandled}
               initialScrollPosition={selectedSession ? sessionScrollPositionsRef.current.get(selectedSession.id) ?? null : null}
@@ -2563,7 +2599,7 @@ export function AppShell() {
         className={`right-panel-overlay-backdrop${rightPanelOpen ? " is-open" : ""}`}
         onClick={() => setRightPanelOpen(false)}
       />
-      {rightPanelOpen && (
+      {rightPanelOpen && !chatCollapsed && (
         <div
           {...rightPanelResizer.separatorProps}
           inert={rightPanelFullWidth || gitExplorerFullWidth}
@@ -2584,7 +2620,7 @@ export function AppShell() {
             event.preventDefault(); event.stopPropagation(); setRightPanelExpanded(false);
           }
         }}
-        className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelFullWidth ? " right-panel-full-width" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
+        className={`right-panel-container${chatCollapsed ? " chat-is-hidden" : ""}${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelFullWidth ? " right-panel-full-width" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
         style={{
           "--right-panel-width": `${rightPanelResizer.width}px`,
           display: "flex",
@@ -2658,6 +2694,13 @@ export function AppShell() {
             <div style={{ flex: 1, minHeight: 0 }}>
             <FileWorkspace ref={fileWorkspaceRef} workspaceKey={fileWorkspaceKey}
               active={rightPanelOpen && activeFileTabId === "files"} presented={activeFileTabId === "files"} gitRefreshKey={explorerRefreshKey}
+              onRevealFile={location => {
+                setRightPanelExpanded(false);
+                setGitExplorerExpanded(false);
+                setSidebarOpen(true);
+                if (!isSplitLayout) setRightPanelOpen(false);
+                setFileRevealRequest({ ...location, id: ++fileRevealId.current });
+              }}
               onStatus={setFileStatus} onShowFiles={() => { setActiveFileTabId("files"); setRightPanelOpen(true); }}
               onEmpty={() => {
                 if (terminalTabs.length) setActiveFileTabId(terminalTabs.at(-1)!.id);

@@ -27,6 +27,7 @@ import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { SessionMoveDestinationPicker } from "./SessionMoveDestinationPicker";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
+import type { FileRevealRequest } from "@/lib/explorer-reveal";
 import { isHistoryOnlySession } from "@/lib/session-directory";
 import { SessionSearch } from "./SessionSearch";
 import dynamic from "next/dynamic";
@@ -150,6 +151,7 @@ interface Props {
   onOpenFile?: (filePath: string, fileName: string, options?: { sourceSessionId?: string | null; modeHint?: "diff" }) => void;
   onOpenTerminal?: (cwd: string) => void;
   explorerRefreshKey?: number;
+  fileRevealRequest?: FileRevealRequest;
   onExplorerRefresh?: () => void;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
   onAtMentions?: (relativePaths: string[]) => void;
@@ -415,7 +417,7 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, selectedCwdState: selectedCwdStateProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onQueuedSessionIdsChange, onActivityChange, onReviewReadReady, onReviewLaterReady, onSessionsChange }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, selectedCwdState: selectedCwdStateProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, fileRevealRequest, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onQueuedSessionIdsChange, onActivityChange, onReviewReadReady, onReviewLaterReady, onSessionsChange }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const { starredIds, starredProjectKeys, toggleStarred, toggleStarredProject } = useStarredSessions();
@@ -492,6 +494,23 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [changesCount, setChangesCount] = useState(0);
   const [changesCollapsed, setChangesCollapsed] = useState(true);
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
+  const revealContext = JSON.stringify([selectedCwd ?? selectedCwdProp, selectedSessionId]);
+  const consumedReveal = useRef<number | undefined>(undefined);
+  const [pendingReveal, setPendingReveal] = useState<{ context: string; request: FileRevealRequest }>();
+  useEffect(() => {
+    if (!fileRevealRequest || consumedReveal.current === fileRevealRequest.id) return;
+    consumedReveal.current = fileRevealRequest.id;
+    setPendingReveal({ context: revealContext, request: fileRevealRequest });
+    setExplorerOpen(true);
+    setFileSearchOpen(false);
+    setChangesCollapsed(true);
+  }, [fileRevealRequest, revealContext]);
+  const handleRevealSettled = useCallback((id: number) => {
+    setPendingReveal(previous => previous?.request.id === id ? undefined : previous);
+  }, []);
+  useEffect(() => {
+    setPendingReveal(previous => previous && previous.context !== revealContext ? undefined : previous);
+  }, [revealContext]);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
   const [queuedSessionIds, setQueuedSessionIds] = useState<Set<string>>(() => new Set());
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(new Set());
@@ -2493,6 +2512,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       )}
 
       {/* File Explorer section */}
+      {directoryUnavailable && pendingReveal?.context === revealContext && <div role="status">{t("files.revealUnavailable")}</div>}
       {!directoryUnavailable && (selectedCwdProp || selectedCwd) && (
         <div
           ref={explorerSectionRef}
@@ -2507,11 +2527,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         >
           <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
             <button
-              onClick={() => setExplorerOpen((open) => {
-                const next = !open;
+              onClick={() => {
+                const next = !explorerOpen;
+                if (!next) setPendingReveal(undefined);
                 saveExplorerOpen(next);
-                return next;
-              })}
+                setExplorerOpen(next);
+              }}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -2620,10 +2641,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </ToolbarIconButton>
           </div>
           {explorerOpen && (
-            <div ref={explorerScrollRef} className="scrollbar-subtle" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}>
+            <div ref={explorerScrollRef} data-explorer-scroll className="scrollbar-subtle" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}>
               <FileExplorer
                 key={JSON.stringify([selectedCwd ?? selectedCwdProp, selectedSessionId])}
                 ref={fileExplorerRef}
+                revealRequest={pendingReveal?.context === revealContext ? pendingReveal.request : undefined}
+                onRevealSettled={handleRevealSettled}
                 cwd={selectedCwd ?? selectedCwdProp!}
                 onOpenFile={onOpenFile ?? (() => {})}
                 refreshKey={explorerKey}
