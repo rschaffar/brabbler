@@ -99,6 +99,19 @@ older pages to locate its row; history is never fetched without bound.
 Closing also drops the temporary reference. Expanding/restoring the panel keeps
 its mounted reader; repeated Reveal is a fresh navigation command.
 
+### Prose links and a linked reading pane
+
+In a notebook's Markdown-file Preview, **Follow links** on a prose file link opens
+that target and sends later links from this tab to the same existing or new pane.
+The notebook's **Links** selector shows the destination; select **Here** there to
+stop. **Right once / Below once** only open the selected link and do not establish
+following. Routes belong to individual document views: another chapter starts
+without one, even in the same pane. Use **Open here** for a chapter transition.
+
+These prose links read saved working files and highlight their requested source
+lines. They do not relocate or synchronize the historical source/diff readers
+inside `pi-review` cards, whose commit identity remains pinned.
+
 ## Pinning and authorization
 
 The authored **commit** pins the content. On activation Pi Web captures the named

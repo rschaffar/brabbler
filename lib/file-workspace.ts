@@ -40,7 +40,8 @@ export interface FileWorkspaceState {
   /** Result of an admitted open, never inferred from another pane's filename. */
   lastOpen?: { group: string; view: string };
 }
-export type FileDisposition = { kind: "normal" | "here" } | { kind: "group"; id: string } | { kind: "split"; axis: SplitAxis };
+export type FileDestination = { kind: "group"; id: string } | { kind: "split"; axis: SplitAxis };
+export type FileDisposition = { kind: "normal" | "here" } | FileDestination | { kind: "follow"; target: FileDestination };
 export const MIN_FILE_WIDTH = 320;
 export const MIN_FILE_HEIGHT = 276;
 export const FILE_SEPARATOR = 6;
@@ -104,6 +105,14 @@ export function openWorkspaceFile(state: FileWorkspaceState, location: FileLocat
   disposition: FileDisposition = { kind: "normal" }, recordHistory = true): FileWorkspaceState {
   const originView = origin ? state.views[origin] : undefined;
   const base = origin ? viewGroup(state, origin) : state.activeGroup;
+  if (disposition.kind === "follow") {
+    // Explicit opt-in belongs to an existing source view, never chat or a pane.
+    if (!originView || !base || (disposition.target.kind === "group" &&
+      (disposition.target.id === base || !state.groups[disposition.target.id]))) return state;
+    const next = openWorkspaceFile(state, location, origin, disposition.target, recordHistory);
+    if (next === state || !next.lastOpen || next.lastOpen.group === base || !next.views[originView.id]) return state;
+    return { ...patchFileView(next, originView.id, { route: next.lastOpen.group }), activeGroup: base };
+  }
   let destination = base ?? state.activeGroup;
   let preview = false;
   if (disposition.kind === "normal" && originView && !sameResource(originView, location) && originView.route) {

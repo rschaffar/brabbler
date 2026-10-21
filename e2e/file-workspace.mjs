@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { checkFileLinkHover, checkFileLinkHoverFocus } from "./file-link-hover.mjs";
+import { checkFileLinkHover, checkFileLinkHoverFocus, checkFileLinkFollowing, checkIndependentFollowRoutes, checkOneTimeFileSplits } from "./file-link-hover.mjs";
 
 /** Runs in the existing Markdown inventory chain, with synthetic user files. */
 export async function checkFileWorkspace(page, base, fixture, artifacts) {
@@ -58,14 +58,30 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   await page.getByRole("button", { name: "Return to workspace folder", exact: true }).click();
   await dismissSidebar();
   if (!mobile) await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
-  await page.locator("#chat-content").getByRole("link", { name: "Split guide", exact: true }).click();
+  const chatGuide = page.locator("#chat-content").getByRole("link", { name: "Split guide", exact: true });
+  if (!mobile) {
+    await chatGuide.hover();
+    const toolbar = page.getByRole("toolbar", { name: "File link actions", exact: true });
+    await toolbar.waitFor();
+    assert.equal(await toolbar.getByRole("button", { name: "Follow links", exact: true }).count(), 0, "chat is not a document routing origin");
+    await toolbar.getByRole("button", { name: "More link actions", exact: true }).click();
+    assert.equal(await toolbar.getByRole("button", { name: "Follow links", exact: true }).count(), 0);
+    await page.keyboard.press("Escape");
+    await toolbar.waitFor({ state: "hidden" });
+  }
+  await chatGuide.click();
   const guide = panel.getByRole("tabpanel", { name: "Pane 1 — split-guide.md", exact: true });
   await guide.getByRole("heading", { name: "Guided review", exact: true }).waitFor();
   assert.equal(await panel.locator("[data-file-pane]").count(), 1);
   const originalViewport = page.viewportSize();
   if (originalViewport.width <= 640) {
     await checkFileLinkHover(page, panel, guide, artifacts);
-    await panel.locator('[data-file-pane="pane-1"]').getByLabel("File link destination").selectOption("here");
+    await checkFileLinkFollowing(page, panel, guide, artifacts, true);
+    const first = panel.locator('[data-file-pane="pane-1"]');
+    await first.getByLabel("Pane actions").click();
+    await first.getByRole("button", { name: "Reset file layout", exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll("[data-file-pane]").length === 1);
+    await first.getByLabel("File link destination").selectOption("here");
     await guide.getByRole("link", { name: "Source 1", exact: true }).click();
     await panel.getByRole("tabpanel", { name: "Pane 1 — split-source-1.ts", exact: true }).locator('[data-line-number="40"][data-file-line-target]').waitFor();
     assert.equal(await panel.locator("[data-file-pane]").count(), 1, "mobile ordinary links never create panes");
@@ -77,7 +93,7 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   await page.waitForFunction(() => !document.querySelector('[data-file-pane="pane-1"] option[value="new-right"]')?.disabled);
   await checkFileLinkHover(page, panel, guide, artifacts);
   let guideNode = await guide.elementHandle();
-  await panel.locator('[data-file-pane="pane-1"]').getByLabel("File link destination").selectOption("new-right");
+  await checkFileLinkFollowing(page, panel, guide, artifacts);
   await page.waitForFunction(() => document.querySelectorAll('[data-file-pane]').length === 2);
   const guideContent = guide.locator(".file-viewer-content");
   for (let i = 1; i <= 5; i++) {
@@ -129,6 +145,7 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   await panel.getByRole("tabpanel", { name: "Pane 2 — split-source-1.ts", exact: true }).locator('[data-line-number="40"][data-file-line-target]').waitFor();
   assert.equal(await panel.getByRole("tabpanel", { name: "Pane 3 — split-tests.ts", exact: true }).isVisible(), true);
   if (artifacts) await page.screenshot({ path: join(artifacts, `file-workspace-three-panes-${originalViewport.width}x${originalViewport.height}.png`) });
+  await checkIndependentFollowRoutes(page, panel, guide);
   // An editor has one server-identified owner even across two file views.
   const code = panel.getByRole("tabpanel", { name: "Pane 2 — split-source-1.ts", exact: true });
   await code.getByRole("button", { name: "Edit", exact: true }).click();
@@ -257,6 +274,7 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   assert.equal(await page.evaluate(() => [...document.querySelectorAll('#file-panel [data-file-pane] [role="tab"]')]
     .every(tab => document.getElementById(tab.getAttribute("aria-controls"))?.getAttribute("role") === "tabpanel")), true,
   "inactive clean tabs retain valid panel references without mounting their readers");
+  await checkOneTimeFileSplits(page, panel, guide);
   await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
   console.log("PASS: explicit three-pane guide routing, preview reuse, edit ownership, responsive projection and stale destination recovery");
 }

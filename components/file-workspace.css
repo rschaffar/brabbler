@@ -37,6 +37,7 @@
 .file-link-hover button:disabled { opacity: .45; cursor: default; }
 .file-link-hover-more:not([hidden]) { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--border); padding-top: 4px; margin-top: 4px; }
 .file-link-hover-more button { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.file-link-hover-note { max-width: 280px; padding: 3px 8px; color: var(--text-muted); font-size: 11px; }
 .file-link-dialog { padding: 0; max-width: min(90vw, 480px); max-height: 80vh; margin: auto; color: var(--text); background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; }
 .file-link-dialog::backdrop { background: #0005; }
 @media (pointer: coarse) { .file-link-hover button { min-height: 38px; } }
