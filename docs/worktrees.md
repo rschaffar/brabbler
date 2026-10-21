@@ -16,7 +16,7 @@ If you are inside a repo subdirectory, open the repository root from the project
 
 ## Switching Worktrees
 
-Use the worktree switcher to choose which checkout Pi Web should use for new work in that project. A merge-branch icon beside a linked checkout (and its selected label) means its current branch tip is contained in local `rst-main`; it does not indicate whether the checkout has uncommitted changes. The selected-checkout checkmark is separate. The badge is omitted when `rst-main` is unavailable, and updates when the switcher reloads.
+Use the worktree switcher to choose which checkout Pi Web should use for new work in that project. A merge-branch icon beside a linked checkout (and its selected label) means its current branch tip is contained in local `main`; it does not indicate whether the checkout has uncommitted changes. The selected-checkout checkmark is separate. The badge is omitted when `main` is unavailable, and updates when the switcher reloads.
 
 Switching worktrees affects:
 

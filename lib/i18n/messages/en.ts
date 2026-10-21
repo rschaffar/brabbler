@@ -532,7 +532,7 @@ export const enLocale: LocalePlugin = {
     "sidebar.noMatchingWorktrees": "No matching worktrees",
     "sidebar.switchWorktree": "Switch worktree",
     "sidebar.switchWorktreeTitle": "Switch worktree: {path}",
-    "sidebar.mergedIntoMain": "Current tip contained in rst-main",
+    "sidebar.mergedIntoMain": "Current tip contained in main",
     "sidebar.main": "Main checkout",
     "sidebar.confirmRemoveCheckout": "Remove this checkout? The branch and chats are kept.",
     "sidebar.removeCheckout": "Remove",

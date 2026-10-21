@@ -278,11 +278,11 @@ export async function listWorktrees(cwd: string): Promise<WorktreeInfo[]> {
 }
 
 /** Branches whose current tips are reachable from the local integration branch.
- *  Missing rst-main (or an unavailable ancestry check) means no badges, not
+ *  Missing main (or an unavailable ancestry check) means no badges, not
  *  a failed worktree listing. Never consult remote-tracking refs. */
 export async function listMergedWorktreeBranches(cwd: string): Promise<Set<string>> {
   try {
-    const out = await git(cwd, ["for-each-ref", "--format=%(refname)", "--merged", "refs/heads/rst-main", "refs/heads"]);
+    const out = await git(cwd, ["for-each-ref", "--format=%(refname)", "--merged", "refs/heads/main", "refs/heads"]);
     return new Set(out.split("\n").filter(Boolean).map((ref) => ref.replace(/^refs\/heads\//, "")));
   } catch {
     return new Set();
