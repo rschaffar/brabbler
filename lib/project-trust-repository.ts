@@ -29,7 +29,14 @@ function readMarker(common: string): string | null {
 function ensureMarker(common: string): string {
   const existing = readMarker(common);
   if (existing) return existing;
-  const fd = openSync(join(common, MARKER), "wx", 0o600);
+  let fd: number;
+  try { fd = openSync(join(common, MARKER), "wx", 0o600); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const concurrent = readMarker(common);
+    if (!concurrent) throw new Error("Git project identity is unavailable");
+    return concurrent;
+  }
   try { const id = randomUUID(); writeSync(fd, `${id}\n`); return id; }
   finally { closeSync(fd); }
 }
@@ -62,6 +69,21 @@ export function trustedGitRepository(cwd: string): TrustedGitRepository | null {
   } catch {
     return null;
   }
+}
+
+/** Initialize only the shared repository identity, never a trust grant. Explicit
+ * user-settings saves may use it; metadata reads and session startup must not. */
+export function ensureGitRepositoryIdentity(cwd: string): TrustedGitRepository {
+  const before = trustedGitRepository(cwd);
+  if (!before) throw new Error("Select a registered Git checkout root");
+  const identity = statSync(before.common, { bigint: true });
+  const id = ensureMarker(before.common);
+  const after = trustedGitRepository(cwd), current = statSync(before.common, { bigint: true });
+  if (!after || after.key !== JSON.stringify([before.common, id])
+    || identity.dev !== current.dev || identity.ino !== current.ino || identity.birthtimeNs !== current.birthtimeNs) {
+    throw new Error("Git project changed while saving settings");
+  }
+  return after;
 }
 
 function storePath(agentDir: string): string { return join(agentDir, "pi-web", "trusted-git-repositories.json"); }

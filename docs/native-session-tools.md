@@ -12,11 +12,23 @@ Session intent is a version-1 `pi-web:native-resources` custom entry:
 {"version":1,"codeMode":true,"mcpServers":[{"scope":"global","name":"example"}]}
 ```
 
-Legacy intent defaults off. A malformed latest marker revokes rather than reviving an older selection. Scopes are exact: a missing/replaced global declaration does not silently become a project grant. Chat-only suppresses effective resources while retaining intent. Child profiles and agent-created launch defaults do not inherit resources in this release.
+Legacy intent defaults off. New ordinary sessions may snapshot an explicit user-owned project default as described below. A malformed latest marker revokes rather than reviving an older selection. Scopes are exact: a missing/replaced global declaration does not silently become a project grant. Chat-only suppresses effective resources while retaining intent. Child profiles and agent-created launch defaults do not inherit resources in this release.
 
 `POST /api/agent/new` accepts `nativeResources`; existing ordinary sessions use `set_native_resources`. Explicit Apply replaces only the selected idle wrapper. Setup-only intent is persisted without a fabricated message, retaining its SDK ID for acknowledgement recovery. Fork/clone copy intent; account/tool recreation and reopen retain it. Other running sessions are neither stopped nor waited on.
 
 Each wrapper captures its declarations, environment and native stdio path expansion. Editing files/environment does not mutate live connections, including reconnects. Explicit session Reload through the agent route reapplies native resources by replacing that idle wrapper. Native-enabled wrappers refuse SDK/extension in-place reload. The browser keeps text/history/navigation and reconciles an unconfirmed response rather than replaying Apply.
+
+## Project defaults
+
+In **Session tools**, select the desired servers/Code-mode and choose **Save selection as project default**. This saves intent for future ordinary sessions, not an Apply to the current session. **Clear project default** returns future creation to off. Both actions leave existing wrappers and saved sessions unchanged; ambiguous acknowledgements require **Refresh status**, never an automatic write retry.
+
+Defaults are private, versioned Pi Web settings in `agentDir/pi-web/project-native-resources.json`, not edits to native `mcp.json` or repository-controlled files. They cover registered Git checkout roots and their linked/future worktrees. Repository subdirectories and non-Git directories do not inherit a repository default. Fresh physical membership and the existing shared Git identity marker prevent a replacement repository at the same path from inheriting it. An explicit save may initialize that identity marker; it does **not** grant project trust. No identity is created by metadata reads or session startup.
+
+Only ordinary browser/API creation through `POST /api/agent/new` reads defaults. The chosen selection is snapshotted and persisted even for a setup-only session, without fabricating a message. Existing/legacy sessions, reopen, account/tool recreation, fork/clone and session moves keep their existing intent rather than consulting current defaults. Child and agent-launched sessions remain off by default. Changing or clearing defaults is not a revocation mechanism for sessions that already captured them; change those sessions explicitly.
+
+A supplied new-session selection, including explicit off, wins over defaults. The new-composer **Apply** sends this override into creation before any default transport can start and refuses adoption of an already-in-flight creation. Chat-only and project trust still suppress effective resources without erasing saved intent. Exact global/project declarations, supported configuration, native definition ownership and backend authorization still govern execution. A missing selected declaration can refuse creation; it never substitutes a same-named server from another scope.
+
+Default writes use the existing file-access/request-security boundary, revision checks, a private atomic store and a bounded lock/write lease. Malformed or unavailable settings cannot enable resources; an explicit per-session override can bypass a broken default lookup. Metadata/save/reset do not connect servers, initialize/reopen sessions, read MCP credentials or grant filesystem roots. There is no global default or bulk retrofit of existing sessions.
 
 ## Supported authentication and authority
 

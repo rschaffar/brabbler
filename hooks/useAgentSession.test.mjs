@@ -8,6 +8,15 @@ const chatWindowSource = await jitiSource(new URL("../components/ChatWindow.tsx"
 const chatInputSource = await jitiSource(new URL("../components/ChatInput.tsx", import.meta.url));
 const appShellSource = await jitiSource(new URL("../components/AppShell.tsx", import.meta.url));
 
+test("a new-composer native override is sent before startup and never adopts an in-flight ensure", () => {
+  const ensure = source.slice(source.indexOf("  const ensureNewSession = useCallback"), source.indexOf("  const loadSystemInfo = useCallback"));
+  const apply = source.slice(source.indexOf("  const handleNativeResourcesChange = useCallback"), source.indexOf("  const handleThinkingLevelChange", source.indexOf("  const handleNativeResourcesChange = useCallback")));
+  assert.match(ensure, /nativeResources !== undefined \? \{ nativeResources \} : \{\}/);
+  assert.match(apply, /!sessionIdRef\.current && ensuringNewSessionRef\.current/);
+  assert.match(apply, /existingSid \?\? await ensureNewSession\(nativeResources\)/);
+  assert.match(apply, /const result = existingSid/);
+});
+
 test("keeps the session event stream open through the idle grace window", () => {
   const finishSource = source.slice(
     source.indexOf("const finishPromptWithoutStream"),

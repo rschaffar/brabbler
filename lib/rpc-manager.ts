@@ -626,6 +626,14 @@ export class AgentSessionWrapper {
 
   hasNativeSessionTools(): boolean { return this.nativeSessionTools?.enabled ?? false; }
 
+  /** Flush an ordinary creation snapshot without fabricating an assistant or
+   * appending another selection. Generic startup/launch paths do not call this. */
+  persistInitialNativeResourceIntent(): void {
+    this.assertInitialPromptAccess("set_native_resources");
+    if (this.isRunning() || !this.inner.sessionManager.isPersisted() || !this.sessionFile) throw new Error("Native tools require an idle persistent session");
+    this.persistSessionWithoutAssistant();
+  }
+
   /** Persist setup-only intent without fabricating a message or changing SDK ID. */
   saveNativeResourceIntent(selection: NativeResourceSelection): void {
     this.assertInitialPromptAccess("set_native_resources");

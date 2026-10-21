@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { MODEL_SPEED_IDS } from "./model-speed.mjs";
@@ -8,6 +9,11 @@ const PROVIDER = "e2e-native-tools";
 const selection = { version: 1, codeMode: true, mcpServers: [{ scope: "global", name: "selected" }] };
 const off = { version: 1, codeMode: false, mcpServers: [] };
 export function seedNativeToolsFixtures({ root, agentDir, project, env, writeSession, message, timestamp }) {
+  const git = (...args) => execFileSync("git", ["-C", project, ...args], { encoding: "utf8", env });
+  git("init", "-qb", "main");
+  git("-c", "user.name=E2E", "-c", "user.email=e2e@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "Native defaults fixture");
+  const linked = join(agentDir, "native-defaults-linked");
+  git("worktree", "add", "-qb", "native-defaults", linked);
   const starts = join(agentDir, "native-starts.jsonl"), forbidden = join(agentDir, "native-unselected"), release = join(agentDir, "native-release");
   const program = join(agentDir, "native-stdio.mjs");
   writeFileSync(program, `import {createInterface} from "node:readline";
@@ -41,7 +47,7 @@ faux.setResponses([fauxAssistantMessage([fauxToolCall(busy?"ask_user":"codemode"
     message("native-user", "native-title", "user", [{ type: "text", text: `Native fixture ${index + 1}` }]),
     message("native-answer", "native-user", "assistant", [{ type: "text", text: "Native engines initially off." }]),
   ], project);
-  return { starts, forbidden, release, deniedWrite: join(project, "native-not-admitted.txt") };
+  return { project, linked, starts, forbidden, release, deniedWrite: join(project, "native-not-admitted.txt") };
 }
 const records = path => existsSync(path) ? readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line)) : [];
 async function idle(id) {
@@ -138,5 +144,76 @@ export async function checkNativeTools(page, { base, api, post, fixture, artifac
   } finally { await page.unroute(routePattern, ambiguous); await post(`/api/agent/${other}`, { type: "abort" }); }
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   assert.throws(() => process.kill(observed.pid, 0), { code: "ESRCH" });
+
+  // Saving project defaults is a settings operation, not an Apply or connection.
+  dialog = await show();
+  const defaultSelection = { ...off, mcpServers: [{ scope: "global", name: "selected" }] };
+  await row("selected").getByRole("checkbox").check();
+  const defaultStarts = records(fixture.starts).length;
+  await dialog.getByRole("button", { name: "Save selection as project default", exact: true }).click();
+  await dialog.getByText("Project default saved. Existing sessions are unchanged.", { exact: true }).waitFor();
+  assert.equal(records(fixture.starts).length, defaultStarts);
+  assert.deepEqual((await api(`/api/sessions/${id}`)).nativeResources, off);
+  assert.deepEqual((await api(`/api/native-tools?${new URLSearchParams({ cwd: fixture.project })}`)).projectDefault.selection, defaultSelection);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  // The same setting reaches fresh ordinary sessions in a registered worktree.
+  const inherited = await post("/api/agent/new", { cwd: fixture.linked, type: "ensure_session", toolNames: ["read"] });
+  assert.deepEqual((await api(`/api/sessions/${inherited.sessionId}`)).nativeResources, defaultSelection);
+  await page.goto(`${base}/?session=${inherited.sessionId}`, { waitUntil: "domcontentloaded" });
+  await page.locator("textarea").last().waitFor();
+  dialog = await show();
+  assert.equal(await row("selected").getByRole("checkbox").isChecked(), true);
+  assert.equal(await dialog.getByRole("checkbox", { name: "Code-mode", exact: true }).isChecked(), false);
+  await dialog.getByText(/including linked worktrees/).waitFor();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await waitForAsyncCondition(page, async id => (await (await fetch(`/api/agent/${id}`)).json()).state?.mcpServers?.[0]?.state === "connected", inherited.sessionId);
+
+  // A genuine new composer shows the default, but explicit off must reach the
+  // creation request before any default transport starts.
+  await page.goto(`${base}/?session=${id}`, { waitUntil: "domcontentloaded" });
+  await page.locator("textarea").last().waitFor();
+  const sidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
+  if (await sidebar.isVisible()) await sidebar.click();
+  await page.getByTitle(`New session in ${fixture.project}`, { exact: true }).click();
+  await page.waitForFunction(() => !new URL(location.href).searchParams.has("session"));
+  dialog = await show();
+  assert.equal(await row("selected").getByRole("checkbox").isChecked(), true);
+  await row("selected").getByRole("checkbox").uncheck();
+  const beforeOptOut = records(fixture.starts).length;
+  const createdResponse = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/new" && response.request().method() === "POST");
+  await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+  const creation = await createdResponse;
+  assert.equal(creation.status(), 200);
+  assert.deepEqual(creation.request().postDataJSON().nativeResources, off);
+  const optedOut = await creation.json();
+  await dialog.waitFor({ state: "hidden" });
+  assert.deepEqual((await api(`/api/sessions/${optedOut.sessionId}`)).nativeResources, off);
+  assert.equal(records(fixture.starts).length, beforeOptOut, "explicit off never briefly connects the default");
+
+  // Lose the acknowledgement after a real reset. Reconcile explicitly; never
+  // retry the mutation or alter either existing session's saved resources.
+  dialog = await show();
+  let resets = 0;
+  const loseDefaultAck = async route => {
+    if (route.request().method() !== "POST") return route.continue();
+    resets++; const response = await route.fetch(); assert.equal(response.status(), 200);
+    const actual = await response.json();
+    // Valid-shaped but contradictory data is not confirmation of the reset.
+    await route.fulfill({ status: 200, json: { ...actual, projectDefault: { ...actual.projectDefault, selection: defaultSelection }, error: "Synthetic default acknowledgement unavailable" } });
+  };
+  await page.route("**/api/native-tools", loseDefaultAck);
+  try {
+    await dialog.getByRole("button", { name: "Clear project default", exact: true }).click();
+    await dialog.getByText("Synthetic default acknowledgement unavailable", { exact: true }).waitFor();
+    assert.equal(resets, 1);
+    assert.equal(await dialog.getByRole("button", { name: "Save selection as project default", exact: true }).isDisabled(), true);
+    await dialog.getByRole("button", { name: "Refresh status", exact: true }).click();
+    await dialog.getByText("No project default. New sessions start with native tools off unless explicitly selected.", { exact: true }).waitFor();
+    await dialog.getByText(/The save could not be confirmed/).waitFor({ state: "hidden" });
+    assert.deepEqual((await api(`/api/sessions/${inherited.sessionId}`)).nativeResources, defaultSelection);
+    assert.deepEqual((await api(`/api/sessions/${id}`)).nativeResources, off);
+  } finally { await page.unroute("**/api/native-tools", loseDefaultAck); }
   await page.screenshot({ path: join(artifacts, `native-tools-${width}.png`) });
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
 }

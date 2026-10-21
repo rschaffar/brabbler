@@ -50,7 +50,7 @@ Ordinary coding sessions and extension-enabled subagents load the host acceptanc
 
 ### Native session tools
 
-[Native session tools](native-session-tools.md) owns explicit MCP/Code-mode intent, inert configured-server metadata and ordinary-session admission. Native-enabled wrappers use selected-session idle replacement on explicit HTTP Reload/Apply, not SDK in-place reload; other wrappers retain their native configuration. Setup-only selection is persisted without a message and retains its SDK ID. Native shutdown/disposal shares a completion barrier before same-ID reuse. Child/launch defaults remain off; OAuth and configuration editing are deferred.
+[Native session tools](native-session-tools.md) owns explicit MCP/Code-mode intent, inert configured-server metadata and ordinary-session admission. Native-enabled wrappers use selected-session idle replacement on explicit HTTP Reload/Apply, not SDK in-place reload; other wrappers retain their native configuration. Setup-only selection is persisted without a message and retains its SDK ID. Fresh ordinary creation alone may snapshot a user-owned repository/worktree native-tool default; explicit selection/off wins, and existing sessions never read current defaults. Native shutdown/disposal shares a completion barrier before same-ID reuse. Child/launch defaults remain off; OAuth and configuration editing are deferred.
 
 ### Fresh composer and quote focus
 
