@@ -133,7 +133,19 @@ full-acceptance recommendation. Never bypass admission or increase deadlines.
 This is invocation guidance, not a change to runner defaults: bare `all` uses two
 core workers when overlapping (four when serialized), while browser width is
 resource-admitted. Pass both flags explicitly for the measured four/four profile.
-Nix `--max-jobs` / `--cores` control realization, not these test-worker widths.
+Nix `--max-jobs` / `--cores` control realization; the original builder's
+`NIX_BUILD_CORES` also caps effective core file workers. Fresh core selections
+with an explicit `--jobs` above four now request up to eight Nix cores per build;
+without that selection the four-core allocation is unchanged.
+
+Explicit `all --workers 8 --jobs 8` is an opt-in scaling experiment, not a new
+recommended default or a measured speedup. Browser widths through eight are
+supported explicitly; automatic browser admission remains capped at four. The
+8/8 overlap estimate includes two eight-core core builders, eight browser
+sandboxes, and worker memory: **32 effective CPUs / 51 GiB available RAM**.
+Insufficient combined headroom serializes the levels normally. For an overlapping
+benchmark, wait for admission rather than accepting that serial execution as
+8/8-overlap evidence. Do not bypass resource estimates or change deadlines.
 
 Report the full command's end-to-end wall time, including any realization within
 that command, plus separately available prerequisite-preparation and test-execution
@@ -171,8 +183,9 @@ exclusively until reviewed.
   cwd is writable, not filesystem-isolated, and source-relative writes remain a
   blocker. Large-operations and model-speed-lifecycle stay unreviewed E pending
   stronger timeout-settlement/resource and asynchronous-teardown evidence.
-- Browser fresh full execution admits **1..4 concurrent group sandboxes**, estimating
-  2 CPUs/4 GiB per group plus 2 GiB host headroom. `--workers 1..4` refuses an
+- Browser fresh full execution admits explicit **1..8 concurrent group sandboxes**
+  (automatic selection remains capped at four), estimating
+  2 CPUs/4 GiB per group plus 2 GiB host headroom. `--workers 1..8` refuses an
   insufficient budget; focused groups default to one. Each weighted queue is serial,
   and each group acquires a new sandbox/process environment, not another lane in a
   shared network namespace.

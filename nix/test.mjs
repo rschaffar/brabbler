@@ -24,7 +24,7 @@ export function validateArgs(args) {
     if (flag === '--help') return { help: true };
     if ((kind === 'e2e' || kind === 'all') && flag === '--workers') {
       const value = tail[++i];
-      if (!/^[1-4]$/.test(value ?? '')) throw new Error('workers must be 1..4');
+      if (!/^[1-8]$/.test(value ?? '')) throw new Error('workers must be 1..8');
       (kind === 'all' ? vmOptions : options).push(flag, value); continue;
     }
     if (kind === 'service') throw new Error('service accepts only --offline');
@@ -76,9 +76,9 @@ export async function run(args, { cwd = process.cwd(), ambient = process.env, co
   const parsed = validateArgs(args);
   if (parsed.help) {
     console.log('nix run .#test -- core [--file <path>] [--jobs 1..32] [--inventory-only] [--offline]');
-    console.log('nix run .#test -- e2e [--group all|' + Object.keys(groups).join('|') + '] [--workers 1..4] [--offline]');
+    console.log('nix run .#test -- e2e [--group all|' + Object.keys(groups).join('|') + '] [--workers 1..8] [--offline]');
     console.log('nix run .#test -- service [--offline] (genuine Home Manager deployment VM)');
-    console.log('nix run .#test -- all [--workers 1..4] [--jobs 1..32] [--offline] (core + browser + deployment; one snapshot, resource-aware overlap)');
+    console.log('nix run .#test -- all [--workers 1..8] [--jobs 1..32] [--offline] (core + browser + deployment; one snapshot, resource-aware overlap)');
     console.log('Fresh execution, not a cached check. Selected groups/files are NOT full acceptance. Nix realizes prerequisites automatically.');
     return;
   }

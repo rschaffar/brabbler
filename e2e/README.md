@@ -77,9 +77,10 @@ The Markdown media helper seeds synthetic PCM WAV and a tiny VP8 WebM from revie
 
 ## One ordinary sandbox per whole browser group
 
-Fresh full execution admits **1..4 concurrent sandboxes**, estimating two CPUs and
-4 GiB per group plus 2 GiB host headroom. Explicit `--workers` refuses insufficient
-budget; focused selections default to one. Preparation has its own bounded estimate.
+Fresh full execution admits explicit **1..8 concurrent sandboxes**, estimating two CPUs and
+4 GiB per group plus 2 GiB host headroom. Automatic selection stays capped at four;
+widths above four are opt-in scaling experiments, not measured default guidance.
+Explicit `--workers` refuses insufficient budget; focused selections default to one. Preparation has its own bounded estimate.
 Cacheable group derivations use normal Nix scheduling: bound `--max-jobs` explicitly.
 All selections retain the same package/inventory/deadlines; budgets are not reservations.
 

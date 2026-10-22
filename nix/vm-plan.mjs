@@ -7,6 +7,7 @@ import { groups, scenarios } from '../e2e/scenarios.mjs';
 import { availableResources } from './resources.mjs';
 
 const GiB = 1024 ** 3;
+export const MAX_BROWSER_WORKERS = 8;
 export const weights = Object.freeze({
   state: 65, history: 190, 'extension-dialogs': 100, 'mobile-sidebar': 100,
   worktrees: 116, 'session-launch': 38, 'running-forks': 24, 'model-speed': 117,
@@ -19,23 +20,30 @@ export const weights = Object.freeze({
 export const coverageIds = group => group === 'terminal' ? ['terminal/full@production-pty'] : [...scenarios[group]];
 
 export function workerBudget({ requested, resources = availableResources() } = {}) {
-  if (requested !== undefined && (!Number.isInteger(requested) || requested < 1 || requested > 4)) throw new Error('workers must be 1..4');
-  const capacity = Math.min(4, Math.floor(resources.cpus / 2), Math.floor((resources.memory - 2 * GiB) / (4 * GiB)));
-  const workers = requested ?? capacity;
+  if (requested !== undefined && (!Number.isInteger(requested) || requested < 1 || requested > MAX_BROWSER_WORKERS)) throw new Error('workers must be 1..8');
+  const capacity = Math.min(MAX_BROWSER_WORKERS, Math.floor(resources.cpus / 2), Math.floor((resources.memory - 2 * GiB) / (4 * GiB)));
+  // Wider execution is opt-in until measured; retain the four-sandbox default.
+  const workers = requested ?? Math.min(4, capacity);
   if (workers < 1 || workers > capacity) throw new Error('Insufficient VM budget: require 2 effective CPUs and 4GiB per lane, plus 2GiB host headroom');
   return { workers, cpus: workers * 2, memoryMiB: workers * 4096, resources,
     scope: 'Admission estimate, not a CPU/RSS reservation or machine-exclusive claim' };
 }
 
+export function coreBuildBudget(coreJobs = 4) {
+  if (!Number.isInteger(coreJobs) || coreJobs < 1 || coreJobs > 32) throw new Error('jobs must be 1..32');
+  return { maxJobs: 2, coresPerBuild: Math.max(4, Math.min(coreJobs, 8)) };
+}
+
 export function combinedBudget(resources, vm, coreJobs) {
-  // Each internal realization admits two builds of up to four cores. VM
-  // realization precedes guest startup; core realization can overlap either.
-  // Budget those peaks, not just the later Node file-worker count.
-  const coreSlots = Math.min(coreJobs, 4);
-  const cpuRequired = Math.max(vm.cpus, 8) + 8;
-  const memoryRequired = (Math.max(vm.memoryMiB / 1024, 8) + Math.max(1 + coreSlots * 2, 8) + 2) * GiB;
+  // Core realization can overlap browser preparation/execution or deployment.
+  // Include both core builders at the SAME allocation used by run-core.mjs.
+  const core = coreBuildBudget(coreJobs);
+  const coreSlots = Math.min(coreJobs, core.coresPerBuild);
+  const corePeakCpus = core.maxJobs * core.coresPerBuild;
+  const cpuRequired = Math.max(vm.cpus, 8) + corePeakCpus;
+  const memoryRequired = (Math.max(vm.memoryMiB / 1024, 8) + Math.max(1 + coreSlots * 2, corePeakCpus) + 2) * GiB;
   return { overlap: resources.cpus >= cpuRequired && resources.memory >= memoryRequired,
-    cpuRequired, memoryRequired, realization: { maxJobsPerClient: 2, coresPerBuild: 4 },
+    cpuRequired, memoryRequired, realization: { maxJobsPerClient: core.maxJobs, coresPerBuild: core.coresPerBuild },
     scope: 'Conservative admission estimate including realization, not a reservation' };
 }
 
