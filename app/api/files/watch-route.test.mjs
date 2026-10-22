@@ -55,6 +55,7 @@ function watchFixture(t, { failWatch = false } = {}) {
     path,
     "@/lib/file-access": { getAllowedFileRoots: async () => new Set(["/fixture"]),
       isFilePathAllowed: () => true, isExistingFilePathAllowed: () => true },
+    "@/lib/file-language": {}, // Watch mode never asks for presentation metadata.
     "@/lib/file-types": {}, "@/lib/file-dirent": {},
     "@/lib/session-file-references": {}, "@/lib/request-security": {},
     "@/lib/file-edit": {}, "@/lib/file-upload": {}, "@/lib/bounded-form-data": {},

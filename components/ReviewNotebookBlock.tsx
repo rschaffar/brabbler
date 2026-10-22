@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { parseReviewBlock, reviewExplorerUrl, type ReviewBlock, type ReviewCommitReference, type ReviewSource } from "@/lib/review-notebook";
 import type { DiffContext } from "@/lib/diff-context";
 import { CodeBlock } from "./MermaidBlock";
+import { ReviewNotebookSource } from "./ReviewNotebookSource";
 import { useI18n } from "@/hooks/useI18n";
 
 /** Explicit navigation only. Documents never change session/workspace identity. */
@@ -90,9 +91,7 @@ function ActiveReviewBlock({ block }: { block: ReviewBlock }) {
     {error && <div role="alert">{error}{mode && <button type="button" className="ml-2 text-accent underline" onClick={() => setRetry(value => value + 1)}>{t("review.retry")}</button>}</div>}
     <div id={bodyId}>
       {mode && loading && <p role="status">{t("review.loading")}</p>}
-      {mode === "source" && material?.kind === "source" && <div className="review-notebook-source" tabIndex={0} role="region" aria-label={t("review.sourceLabel", { path: block.kind === "source" ? block.path : "" })}>
-        {material.source.contents.split("\n").map((line, index) => <div key={index} className="review-notebook-source-line"><span aria-hidden="true">{material.source.start + index}</span><span>{line || " "}</span></div>)}
-      </div>}
+      {mode === "source" && material?.kind === "source" && <ReviewNotebookSource source={material.source} />}
       {mode === "diff" && material?.kind === "diff" && block.kind === "source" && <CommittedPatchDiff
         patch={material.patch} hasBinaryChanges={material.hasBinaryChanges} before={material.before} after={block.oid.slice(0, 8)}
         loadContext={signal => read<DiffContext>(reviewExplorerUrl(block, "context", { head: material.head, path: block.path }), signal)} />}

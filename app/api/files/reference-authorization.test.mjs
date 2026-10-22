@@ -12,6 +12,7 @@ const { isPathWithinRoots, isExistingPathWithinRoots } = await jiti.import("../.
 const { filePathFromApiSegments } = await jiti.import("../../../lib/paths.ts");
 const { readTextPreviewChunk } = await jiti.import("../../../lib/text-preview.ts");
 const { getAudioMime, getVideoMime } = await jiti.import("../../../lib/file-types.ts");
+const fileLanguage = await jiti.import("../../../lib/file-language.ts");
 const sessionId = "550e8400-e29b-41d4-a716-446655440000";
 
 function fixture(t) {
@@ -27,6 +28,7 @@ function fixture(t) {
     fs: { ...fs, statSync(...args) { stats++; return fs.statSync(...args); } }, path,
     "@/lib/file-access": { getAllowedFileRoots: async () => roots, isFilePathAllowed: isPathWithinRoots, isExistingFilePathAllowed: isExistingPathWithinRoots },
     "@/lib/file-types": { getImageMime: () => null, getAudioMime, getVideoMime, getDocumentMime: () => null },
+    "@/lib/file-language": fileLanguage,
     "@/lib/file-dirent": {},
     "@/lib/session-file-references": { isFilePathReferencedBySession: async (file, id) => isValidSessionId(id) && id === sessionId && isFilePathReferencedByEntries(file, entries) },
     "@/lib/request-security": {}, "@/lib/file-edit": {}, "@/lib/file-upload": {}, "@/lib/bounded-form-data": {},

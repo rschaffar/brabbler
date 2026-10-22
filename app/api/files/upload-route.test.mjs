@@ -20,6 +20,7 @@ function fixture(t) {
   const mocks = {
     "next/server": { NextResponse: { json: Response.json } }, fs, path,
     "@/lib/file-access": { getAllowedFileRoots: async () => new Set([allowed]), isFilePathAllowed: security.isPathWithinRoots, isExistingFilePathAllowed: security.isExistingPathWithinRoots },
+    "@/lib/file-language": {}, // Upload mode never asks for presentation metadata.
     "@/lib/file-types": {}, "@/lib/file-dirent": {}, "@/lib/file-edit": {},
     "@/lib/session-file-references": { isFilePathReferencedBySession: async () => { references++; return true; } },
     "@/lib/request-security": { isApiRequestAllowed: () => trusted, hasJsonContentType: request => request.headers.get("content-type")?.startsWith("application/json") },
