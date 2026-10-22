@@ -413,6 +413,16 @@ private-fixture-bound, and first-command binding now awaits the existing settlem
 promise. Earlier acceptance/timing results retain their recorded source identities;
 this newer composition requires its own complete verification.
 
+Its initial full run failed an existing file-panel resize assertion before complete
+coverage. The trace showed a one-shot count immediately after viewport acknowledgment;
+this was not hidden by an unchanged retry. A separately user-authorized fixture-only
+correction now awaits disappearance of that same locator using the existing page
+timeout, then retains the original strict assertion. Deterministic delayed-settlement,
+error-propagation and strict-negative regressions fail without the wait and pass with
+it; the real focused file-edit scenario also passes. No production behavior, browser
+deadline, expected scenario or error filter changes. Failure evidence and final
+composition status are recorded in the completed audit plan.
+
 ## Diagnostics and retention
 
 Core retains inventory, summary, original bounded TAP/stderr and lifecycle evidence.

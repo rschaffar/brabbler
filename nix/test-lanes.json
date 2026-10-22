@@ -1869,6 +1869,12 @@
       "lane": "F",
       "reason": "Read-only discovery and JSON audit/manifest assertions; no fixtures, children, timers or source mutation.",
       "estimatedMs": 1000
+    },
+    {
+      "path": "lib/file-panel-layout.test.mjs",
+      "lane": "F",
+      "reason": "Synthetic locator and explicitly released Promise gates test the browser fixture wait; no browser, timers, native I/O or source writes.",
+      "estimatedMs": 1000
     }
   ]
 }

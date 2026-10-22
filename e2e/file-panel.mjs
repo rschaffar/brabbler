@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
+import { assertCompactChatRestored } from "./file-panel-layout.mjs";
 import { checkDiffContext, contextPatch, contextContents, changedContextContents } from "./git-diff-context.mjs";
 
 export const filePanelFixture = `<!doctype html><html><body style="margin:20px;min-height:2400px">
@@ -297,7 +298,7 @@ export async function checkFilePanel(page, filePath) {
       assert.deepEqual(await storedWidths(), savedWidths);
       await page.getByRole("button", { name: "Hide chat panel", exact: true }).click();
       await page.setViewportSize({ ...viewport, width: 900 });
-      assert.equal(await page.getByRole("button", { name: "Show chat panel", exact: true }).count(), 0, "compact layout restores chat and retains its existing Files overlay");
+      await assertCompactChatRestored(page);
       await page.setViewportSize(viewport);
       await separator.press("Enter");
       await page.getByRole("button", { name: "Hide chat panel", exact: true }).waitFor();
