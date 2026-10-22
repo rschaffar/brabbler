@@ -27,11 +27,41 @@ Finish the user-approved compact right-hand Activity actions, fix only evidence-
 - [x] Synchronize privacy Settings navigation with actual expanded-sidebar geometry/animation state; add deterministic readiness regressions without retries or longer deadlines.
 - [x] Diagnose the exact Acceptance trace and implement the smallest supported remedy with regression coverage.
 - [x] Run focused core/static and both affected browser groups, preserving failed and passing identities/artifacts.
-- [ ] Review settled source, rebase onto current local `main`, coordinate resources, and complete core/browser/terminal/deployment acceptance on that candidate.
-- [ ] Move durable fixture guidance to `e2e/README.md`, archive this completed plan, and use proportional documentation verification.
+- [x] Review settled source, rebase onto current local `main`, coordinate resources, and complete core/browser/terminal/deployment acceptance on that candidate.
+- [x] Move durable fixture guidance to `e2e/README.md`, archive this completed plan, and use proportional documentation verification.
 
 ## Completion Checklist
 
 - [x] Each blocker has concrete evidence, a bounded fix and passing focused verification.
-- [ ] Complete acceptance passes for the final relevant source inputs; no failing or interrupted run is relabelled as a pass.
-- [ ] Exact candidate is reviewed and ready for separate unsigned non-fast-forward merge approval. Final Git integration/cleanup receipts are reported in chat, not a further plan-writing loop; remote operations remain out of scope.
+- [x] Complete acceptance passes for the final relevant source inputs; no failing or interrupted run is relabelled as a pass.
+- [x] Exact candidate is reviewed and ready for separate unsigned non-fast-forward merge approval. Final Git integration/cleanup receipts are reported in chat, not a further plan-writing loop; remote operations remain out of scope.
+
+## Final complete acceptance
+
+`5bbf6e9f3e2033aa8b35ef0cca8910c261135295`, rebased on stable local `main`
+`27d66ac6e3012c84002d83c6973e921f59964cf3`, passed
+`nix run .#test -- all --workers 4 --jobs 4` in **523s (8m43s)**.
+Requested/effective browser/core widths were four/four. Admission estimated
+16 CPUs/27 GiB on a 32-logical-CPU host with about 50 GiB available; no peer
+acceptance was active at admission. These are estimates, not reservations.
+
+- Source digest: `4d58dd771397c6cab4ffafe562c2f17104e1908cf6ba75b6c0dadfd9914abaf1`.
+- Core/static/plugins: all **413 files / 3,104 tests / 12 suites**, none skipped/cancelled;
+  `/tmp/pi-web-test-core.Xans6E/run.json`.
+- All **26 browser/terminal groups** passed exact coverage and settlement;
+  `/tmp/pi-web-test-browser.o7cyXE/run.json`. Repaired Privacy, Activity and incoming
+  File Edit settlement checks all passed without retries or deadline changes.
+- Genuine Home Manager deployment passed with collected artifact hashes, stopped
+  service/absent cgroup/refused port; `/tmp/pwv-l4GDrY/run.json`.
+- End-to-end command evidence: `/tmp/pi-desk-compact-stable-acceptance.zr45HE`.
+  Core level interval was 311.408s and browser level interval 452.784s, each including
+  its in-run preparation; they overlapped and must not be added. VM test execution
+  was separately measured at 19.108s. Earlier focused runs warmed prerequisites;
+  no separate prewarming command preceded this run. Additional Nix realization is
+  included in 523s; the runner does not report one disjoint whole-command preparation
+  interval. Model work and coordination are excluded from these command times.
+
+The final follow-up only records evidence and archives this plan. Verify the archive
+and unchanged application/test inputs proportionally; do not relabel the full run as
+execution on the documentation-only tip or create another full-testing loop.
+
