@@ -649,6 +649,29 @@ only. Reconcile their isolation/explicit holds and obtain fresh affected and
 complete evidence. None of the pre-rebase acceptance or timing receipts is relabeled
 as a run of the combined candidate. Original targets remain binding.
 
+The incoming isolation audit retains existing F/N for the reviewed helper delta,
+adds explicit unresolved E reasons for all fourteen new files, and corrects the
+printf-only SDK N rationale and obsolete route/session-reader concern. No promotion
+or historical-audit change is made. Installed SSH desktop/mobile verification
+passed **195s** command, **75.377s** capsule, on source
+`8nwgzlyr0nv7pn25w0rm00djdzp490da`; dependency/package realization is included in the
+command, not a warm speed sample. The expanded chain's packing hint changes **15→76**
+(rounded observed whole-group duration), not its deadline, budget or coverage.
+
+Focused combined core/static checks passed **29 files / 304 tests / 55s**, source
+`50vwpjd1zhbv5nihwhpp8awl4dp2jav7`. An inherited failure path is repaired: held native
+authentication now releases before joining observed retirement/refusal chains and
+all owned shutdowns, with primary/cleanup aggregation and failed-root retention.
+Premature apply completion fails admission instead of hanging. A private controlled
+assertion while the real auth lease remained held exited with its intended runtime
+red (**7 pass / 1 fail**, zero cancellations/observed survivors/settlement uncertainty)
+in **37s**, not a timeout or static failure. Evidence: `rebased-focused-core-1-*`,
+`rebased-ssh-e2e-1-*`, `rebased-ssh-isolation-review.{md,json}` and
+`oracle-rebased-auth-gate-analysis.json`. A subsequent six-file current-source
+mechanism check passed **52 tests / 38s**, including refreshed packing, inventory,
+isolation, task ownership and native model configuration. Complete combined
+acceptance and the original numerical gate are still open.
+
 ## Unknowns and risks
 
 - Native attribution is bounded: observed Git/inventory counts and fixture cost,

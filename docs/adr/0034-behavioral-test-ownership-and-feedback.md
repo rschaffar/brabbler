@@ -144,8 +144,8 @@ not justify infrastructure against dominant capture/execution costs. No approved
 snapshots are reused. Private source-variant Git/inventory instrumentation is
 operation-count evidence, not final-candidate timing or additive wall time; the
 stronger held-HEAD server guard is retained. Browser packing hints live in
-`nix/browser-plan.mjs`, refreshed from candidate diagnostic `d44f40e5`, never as
-deadlines, resource admission or coverage authority.
+`nix/browser-plan.mjs`, with the measured source recorded beside each refreshed
+value, never as deadlines, resource admission or coverage authority.
 
 Current contributor recipes belong in `docs/testing.md` and `e2e/README.md`;
 source-bound measurements, retractions and implementation status belong in the

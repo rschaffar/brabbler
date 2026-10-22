@@ -456,8 +456,10 @@ new isolated-support composition. A diagnostic candidate browser run passed
 **26 groups / 59 receipts in 414s**, **including cold production realization**.
 That is not a measured speedup or complete candidate acceptance; complete static,
 core, browser and service acceptance and performance verification remain outstanding.
-Browser packing hints now live in `nix/browser-plan.mjs`, refreshed from candidate
-diagnostic `d44f40e5`; they are not deadlines, admission or coverage authority.
+Browser packing hints live in `nix/browser-plan.mjs`: baseline values come from
+candidate diagnostic `d44f40e5`; the expanded SSH whole-group hint is separately
+refreshed from its post-rebase installed run. Each source is recorded beside the
+values. Hints are not deadlines, admission or coverage authority.
 
 ### Historical timing
 
