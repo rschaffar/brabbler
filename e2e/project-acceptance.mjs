@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { waitForAsyncCondition } from './async-condition.mjs';
 import { createOwnedRoutes } from './owned-routes.mjs';
+import { sidebarReady } from './sidebar-readiness.mjs';
 
 export async function openAcceptanceConfiguration(dialog) {
   // Initial status inserts profile cards above the native summary. Do not click
@@ -29,7 +30,9 @@ export async function checkProjectAcceptance(page, { base, api, post, project, w
   };
   const setEnabled = async enabled => {
     if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Close acceptance', exact: true }).click();
-    if (width <= 600 && await page.getByRole('button', { name: 'Show sidebar', exact: true }).isVisible()) await page.getByRole('button', { name: 'Show sidebar', exact: true }).click();
+    const sidebar = page.getByRole('button', { name: 'Show sidebar', exact: true });
+    if (await sidebar.isVisible()) await sidebar.click();
+    await waitForAsyncCondition(page, sidebarReady);
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
     if (width <= 600) await settings.getByRole('combobox', { name: 'Settings', exact: true }).selectOption('plugins');
