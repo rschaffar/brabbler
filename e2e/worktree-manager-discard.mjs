@@ -9,6 +9,20 @@ const READY = "Ready for exact review — nothing has been deleted";
 const COMPLETED = "Resource removal completed";
 const CANCELLED = "Cancelled — check any already-dispatched effects";
 
+/** Positive verification uses actual browser transport and consumes the body so
+ * requests/responses are retained in its trace. No retry or error exemption. */
+export async function readManagerResponse(page, url) {
+  const response = await page.evaluate(async (target) => {
+    const result = await fetch(target, { cache: "no-store" });
+    return { status: result.status, text: await result.text() };
+  }, url);
+  assert.equal(response.status, 200, response.text);
+  return response.text;
+}
+export async function readManagerJson(page, url) {
+  return JSON.parse(await readManagerResponse(page, url));
+}
+
 /** Called only while seeding the acceptance child's private agentDir, before
  * startup. No host repositories, sessions or resources are selected. */
 export function seedManagerDiscardFixtures({ repo, git, env, commit }) {
@@ -58,17 +72,7 @@ export async function checkManagerDiscard(page, { base, fixture, manager, open, 
   const status = (text) => surface.getByRole("status").filter({ hasText: new RegExp(`^${text}$`) });
   const remove = () => surface.getByRole("button", { name: "Remove listed resources", exact: true });
   const loss = () => surface.getByRole("checkbox", { name: LOSS, exact: true });
-  const getOperation = async (id) => {
-    // Use actual browser transport so independent verification requests/responses
-    // appear in the retained trace, rather than an untraced Node HTTP pool.
-    // No retry, mocked status or error exemption: any transport/HTTP/body failure fails.
-    const response = await page.evaluate(async (url) => {
-      const result = await fetch(url, { cache: "no-store" });
-      return { status: result.status, text: await result.text() };
-    }, `${base}${ACTIONS}/${id}`);
-    assert.equal(response.status, 200, response.text);
-    return JSON.parse(response.text);
-  };
+  const getOperation = (id) => readManagerJson(page, `${base}${ACTIONS}/${id}`);
   const branchTip = (branch) => git("for-each-ref", "--format=%(objectname)", `refs/heads/${branch}`);
   const registrations = () => git("worktree", "list", "--porcelain");
   const snapshot = () => ({
@@ -183,9 +187,7 @@ export async function checkManagerDiscard(page, { base, fixture, manager, open, 
   await manager.getByRole("button", { name: "Close", exact: true }).click();
   await manager.waitFor({ state: "hidden" });
   await open();
-  const listResponse = await page.request.get(`${base}${ACTIONS}?${new URLSearchParams({ cwd: repo })}`);
-  assert.equal(listResponse.status(), 200, await listResponse.text());
-  const { operations } = await listResponse.json();
+  const { operations } = await readManagerJson(page, `${base}${ACTIONS}?${new URLSearchParams({ cwd: repo })}`);
   const index = operations.findIndex((op) => op.id === branchRemoval.id);
   assert.ok(index >= 0);
   await manager.getByText("Recorded project operations", { exact: true }).click();
@@ -210,9 +212,8 @@ export async function checkManagerDiscard(page, { base, fixture, manager, open, 
   assert.equal(historical.receipt.card.actions.length, 0, "durable receipt has no actionable controls");
   const downloadLink = surface.getByRole("link", { name: "Download complete exact review", exact: true });
   await downloadLink.waitFor();
-  const download = await page.request.get(new URL(await downloadLink.getAttribute("href"), base).href);
-  assert.equal(download.status(), 200, "unintegrated exact review survives local-ref deletion");
-  assert.ok((await download.text()).includes(f.unmergedTip));
+  const download = await readManagerResponse(page, new URL(await downloadLink.getAttribute("href"), base).href);
+  assert.ok(download.includes(f.unmergedTip), "unintegrated exact review survives local-ref deletion");
   await refreshActual();
 
   await select(f.worktreeOnlyBranch);

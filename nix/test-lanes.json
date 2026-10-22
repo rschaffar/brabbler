@@ -1,8 +1,13 @@
 {
   "version": 1,
   "policy": "Explicit live reviewed F/N/E entries and unresolved holds. Every discovered test needs one live entry or hold; unknown files still warn and run exclusively, never disappear. Holds remain reviewed:false/E warnings. F and N share the resource-limited pool; E drains it. No directory/name/hash inference of isolation; original assertions, deadlines and opt-in skips remain unchanged.",
-  "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. The requested eight-worker default still requires native execution acceptance with unchanged deadlines. Re-review when resource/fixture behavior changes. The 2026-10-22 audit JSON is immutable historical evidence, not live authority or a current source-byte/reason/estimate requirement. Live unresolved holds carry the concerns still requiring review; source digests alone do not prove isolation.",
+  "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. Automatic selection remains capped at four; widths through eight are explicit opt-in experiments whose isolation review is not proof of native timing margins or complete acceptance. Re-review when resource/fixture behavior changes. The 2026-10-22 audit JSON is immutable historical evidence, not live authority or a current source-byte/reason/estimate requirement. Live unresolved holds carry the concerns still requiring review; source digests alone do not prove isolation.",
   "files": [
+    {
+      "path": "lib/browser-manager-reads.test.mjs",
+      "lane": "F",
+      "reason": "Executes actual serialized browser-read callbacks with process-local restored fetch doubles and owned body gates. The imported fixture module only declares functions at top level; no real Git, SDK, sockets, browsers or shared filesystem effects."
+    },
     {
       "path": "lib/session-worktree-filter.test.mjs",
       "lane": "F",

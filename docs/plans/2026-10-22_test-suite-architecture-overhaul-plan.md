@@ -287,11 +287,48 @@ before executing tests; its unchanged serial reexecution is a valid assertion-re
 by the ordinary sandbox; counters used the existing C frontend and named inventory
 start instead, with no sandbox relaxation or Node shim per Git invocation.
 
+### First exact-candidate execution and bounded correction
+
+Implementation was committed as `2135f03`, rebased onto `da26f15` as `fd7c68d`;
+only the incoming SSH-agent plan changed content. Three warm focused samples
+passed **9/7/6s**, median **7s versus 41s**, an **82.93% reduction**, below the
+frozen 20.5s limit. `focused-comparison.json` records exact selection/source;
+valid reusable types/lint and fresh selected Node execution are distinct.
+
+The final-source package resolved to the same inspected immutable `dlf...` output
+in **1s**. Genuine deployment preparation/execution passed in **81s**, including
+new guest realization (`final-package-boundary-binding.json`). This is separate
+from the later whole-command stopwatch and earlier warm 24.935s service execution.
+
+`candidate-all-1` on `fd7c68d` failed after **281s**: mobile worktrees' independent
+Node API listing GET reset after successful removal. The same endpoint had just
+returned browser HTTP 200; requested backend shutdown followed the reset. Idle
+Node keep-alive reuse is a hypothesis, not an established cause. Retain capsule
+`hrvnxa0x2iawyp2x3rswbdr3yi1jggvq`, traces, receipts and
+`worktrees-reset-analysis.md`. Core was interrupted, not assertion-red; pending
+browser groups did not run. This is **not acceptance or a performance sample**.
+
+An independent frozen-source core-only diagnostic then passed **421 files / 3,127
+tests in 261s**. Its workload differs from the full concurrent control, so no causal
+speedup follows. The correction generalizes the existing strict browser read for
+all positive manager GETs, closing an actual trace/transport inconsistency while
+retaining URL/status/body/ref/identity assertions and deliberate Node-API 409
+negatives. It does not claim to repair the unexplained socket cause. Six callback
+cases cover owned response completion, exact queries, review text, bad status,
+malformed JSON and unswallowed transport/body failures. `focused-8` passed four
+files / 33 tests / 46s including changed static preparation; no retry, timeout,
+console exemption or production change was introduced. The focused installed
+worktrees group then passed both input chains in **107s command / 94.945s capsule**
+(`jv4c7846g17qwb0anczw6hq0pzf8242x`). This validates the corrected bridge, not the
+cause of the prior reset or complete same-width acceptance.
+
 ### Remaining gates
 
-Complete same-candidate acceptance, three warm focused samples, balanced four/four
-control/candidate comparisons and exact-state local integration remain open. No
-speedup or completion is claimed by the structural changes above.
+Focused feedback has passed at `fd7c68d`; reconfirm the final corrected warm input.
+Complete same-candidate acceptance, balanced four/four control/candidate timings
+and exact-state local integration remain open. The failed full attempt is an
+additional retained diagnostic, not one of the successful comparison samples.
+No complete-command speedup or completion is claimed.
 
 ## Plan
 

@@ -87,9 +87,9 @@ those. See the [core recipes and checklist](../docs/testing.md#contributor-owner
 `browser-fixture-recipes.mjs` describe the reviewed ordered prelude. Expected IDs
 are independently declared, not harvested from seed return values. **Only
 `timestamps` omits running-fork transcripts and worktree-manager repositories.**
-Every group still gets shared model-speed settings/auth/models and transcripts;
-those IDs also serve session-launch. All other groups keep all three prelude
-recipes. Other setup stays in `browser-suite.mjs`'s original order. Do not infer
+Every group still gets separate shared model-speed defaults and transcript
+fragments; those IDs also serve session-launch. All other groups retain both
+shared fragments plus the running-fork and manager recipes. Other setup stays in `browser-suite.mjs`'s original order. Do not infer
 owner-only seeding from a group name or drop shared inputs opportunistically.
 Group splitting and immutable-seed adoption remain deferred pending measured benefit.
 
@@ -113,8 +113,8 @@ GitExplorer/Move tests now present in
 `components/GitExplorer.stale-delivery.test.mjs` and
 `components/SessionMoveDestinationPicker.stale-delivery.test.mjs` address that
 separate obligation with ignored-abort JSON genuinely delivered and joined failure
-cleanup, without production changes. They postdate the focused pass below and still
-need candidate verification. Full useAgentSession/FileViewer mounting remains
+cleanup, without production changes. These are not native network/layout proofs.
+Full useAgentSession/FileViewer mounting remains
 deferred; existing actual callback/loader tests and Chromium retain their
 respective owners.
 
@@ -131,6 +131,13 @@ IDs or rewrite SDK-owned JSONL to make them look canonical. The real SDK/faux-pr
 turn in `running-session-forks.mjs` independently verifies canonical prompt/final
 IDs/content against persisted JSONL, one rendered row per ID and an actual document
 reload with unchanged history/no duplicate or restarted turn. Preserve both owners.
+
+Independent positive manager HTTP reads use `readManagerJson` / `readManagerResponse`
+from `worktree-manager-discard.mjs`: actual browser fetch, no cache, status 200 and
+fully consumed text/JSON, so requests and responses appear in retained traces.
+Deliberate HTTP-409 writes retain Node API transport without browser-console error
+exemptions. Neither transport swallows failures or retries. Callback unit tests
+prove body/error ownership, not browser networking or the cause of a socket reset.
 
 ## One ordinary sandbox per whole browser group
 
@@ -187,14 +194,11 @@ Live-file tests modify fixture projects/session data, not application source/HMR
 
 Budget production/dependency realization separately from fixture setup, scenarios,
 trace/export and service settlement; focus is not permission to skip static core
-checks or weaken complete inventory. The candidate diagnostic passed all **26 groups /
-59 receipts in 414s including cold production realization**. It is not measured
-speedup or complete candidate acceptance. The **413s replacement control** and
-focused **22-file / 494-test / 125s** pass (including fresh static preparation) are
-separate scopes; the focused pass predates the late guard, checkpoint and mounted
-additions and does not verify the new isolated-support composition. Complete
-static/core/browser/service candidate acceptance and performance verification are
-still outstanding; keep historical timings bound to their original inputs.
+checks or weaken complete inventory. Record candidate/source, selection, budgets,
+static reuse, preparation, fresh execution, whole-command time and artifact paths
+in the implementation plan. An isolated group, complete core-only run or diagnostic
+including cold package realization is not matched complete-command speed evidence.
+Keep historical comparisons bound to their original inputs.
 
 ## Small genuine deployment VM
 
