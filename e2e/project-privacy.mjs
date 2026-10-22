@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { waitForAsyncCondition } from "./async-condition.mjs";
+import { sidebarReady } from "./sidebar-readiness.mjs";
 
 export async function checkProjectPrivacy(page, width, { base, api, post, harness, selectedSessionId, otherSessionId }) {
   const mobile = width <= 640;
@@ -16,6 +18,7 @@ export async function checkProjectPrivacy(page, width, { base, api, post, harnes
   const openSettings = async () => {
     const sidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
     if (await sidebar.isVisible()) await sidebar.click();
+    await waitForAsyncCondition(page, sidebarReady);
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
     if (mobile) await dialog.getByRole("combobox", { name: "Settings", exact: true }).selectOption("general");
