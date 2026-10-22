@@ -3,6 +3,7 @@ import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } fro
 import { acceptanceProject, digest, readProfiles } from "./config";
 import { acceptanceCoordinator } from "./coordinator";
 import type { AcceptanceProject, AcceptanceView } from "./types";
+import { acceptanceEnabled } from "../../plugins/acceptance/policy";
 
 export async function allowedAcceptanceProject(cwd: unknown): Promise<AcceptanceProject> {
   if (typeof cwd !== "string") throw new Error("Select an existing project directory");
@@ -12,7 +13,7 @@ export async function allowedAcceptanceProject(cwd: unknown): Promise<Acceptance
 }
 export function acceptanceView(project: AcceptanceProject): AcceptanceView {
   const profiles = readProfiles(project);
-  return { project, profiles, profileDigests: Object.fromEntries(profiles.map((p) => [p.name, digest(p)])), ...acceptanceCoordinator().view(project) };
+  return { project, enabled: acceptanceEnabled(), profiles, profileDigests: Object.fromEntries(profiles.map((p) => [p.name, digest(p)])), ...acceptanceCoordinator().view(project) };
 }
 export function acceptanceLog(project: AcceptanceProject, id: string) {
   const run = acceptanceCoordinator().view(project).runs.find((item) => item.id === id);

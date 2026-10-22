@@ -3,6 +3,7 @@ import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security"
 import { acceptanceView, acceptanceLog, allowedAcceptanceProject } from "@/lib/acceptance/server";
 import { digest, saveProfiles } from "@/lib/acceptance/config";
 import { acceptanceCoordinator } from "@/lib/acceptance/coordinator";
+import { withAcceptanceAdmission } from "@/plugins/acceptance/policy";
 
 export const dynamic = "force-dynamic";
 const failure = (error: unknown) => NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
         || typeof body.profile !== "string" || typeof body.requestId !== "string" || typeof body.profileDigest !== "string") throw new Error("Invalid acceptance run request");
       const profile = acceptanceView(project).profiles.find((p) => p.name === body.profile);
       if (!profile || digest(profile) !== body.profileDigest) throw new Error("Acceptance recipe changed; refresh before running");
-      return NextResponse.json(await coordinator.submit(project, body.profile, "browser", body.requestId, body.profileDigest, req.signal));
+      return NextResponse.json(await withAcceptanceAdmission(req.signal, (signal) => coordinator.submit(project, body.profile, "browser", body.requestId, body.profileDigest, signal)));
     } else if (body.action === "cancel") {
       if (typeof body.runId !== "string") throw new Error("Acceptance run ID required");
       await coordinator.cancel(project, body.runId, "browser", true);

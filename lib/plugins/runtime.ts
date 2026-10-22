@@ -4,7 +4,8 @@ import type { PluginManifest } from "./types";
 
 /** Pi owns registration and prompt changes. No parallel extension ecosystem. */
 export function createPluginExtension(manifest: PluginManifest, cwd: string, tools: ToolDefinition[],
-  policyContext?: (ctx: ExtensionContext) => string | undefined): InlineExtension {
+  policyContext?: (ctx: ExtensionContext) => string | undefined,
+  options: { registerHidden?: boolean } = {}): InlineExtension {
   return {
     name: `pi-web-plugin-${manifest.id}`, hidden: true,
     factory(pi) {
@@ -20,13 +21,15 @@ export function createPluginExtension(manifest: PluginManifest, cwd: string, too
         const active = pi.getActiveTools().filter((name) => !names.has(name));
         pi.setActiveTools(enabled ? [...active, ...names] : active);
       };
-      // Disabled startup adds no tool declarations or guidance.
-      try {
-        if (readPluginSettings(manifest, cwd).enabled) {
-          for (const tool of tools) pi.registerTool({ ...tool, exposure: "model-only" });
-          registered = true;
-        }
-      } catch { /* Invalid plugin settings never block ordinary session startup. */ }
+      // Hidden definitions optionally preserve selector/SDK allowlist identity for extension-enabled children.
+      // They add no model declarations or callable capabilities while disabled.
+      let initiallyEnabled = false;
+      try { initiallyEnabled = readPluginSettings(manifest, cwd).enabled; }
+      catch { /* Invalid plugin settings never block ordinary session startup. */ }
+      if (initiallyEnabled || options.registerHidden) {
+        for (const tool of tools) pi.registerTool({ ...tool, exposure: initiallyEnabled ? "model-only" : "hidden" });
+        registered = true;
+      }
       pi.on("session_start", () => {
         unsubscribe?.();
         sync();

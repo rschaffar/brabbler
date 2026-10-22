@@ -7,6 +7,9 @@ import { captureSnapshot, verifySnapshot } from "./snapshot";
 import { executeAcceptance, processIdentity, type ExecutionResult, type ProcessIdentity } from "./process";
 import { acceptanceResources } from "./resources";
 import { recoverAcceptanceState } from "./recovery-lock";
+import { onPluginSettingsChange } from "../plugins/settings";
+import { acceptanceEnabled, assertAcceptanceEnabled } from "../../plugins/acceptance/policy";
+import { acceptanceManifest } from "../../plugins/acceptance/manifest";
 import { acceptanceTerminal, type AcceptanceProject, type AcceptanceRun, type AcceptanceView } from "./types";
 
 interface Ledger { version: 1; runs: AcceptanceRun[] }
@@ -30,9 +33,36 @@ export class AcceptanceCoordinator {
   private timer?: ReturnType<typeof setTimeout>;
   private persistenceError?: string;
   private pendingCompletion?: { id: string; result: ExecutionResult; durationMs: number };
+  private disableEpoch = 0;
+  private disabledAdmissions = new Set<string>();
+  private unsubscribeSettings: () => void;
   constructor(readonly root: string, private readonly dependencies: {
-    resources: typeof acceptanceResources; execute: typeof executeAcceptance; verifySnapshot?: typeof verifySnapshot; syncDirectory?: () => void;
-  } = { resources: acceptanceResources, execute: executeAcceptance }) {}
+    resources: typeof acceptanceResources; execute: typeof executeAcceptance; verifySnapshot?: typeof verifySnapshot; captureSnapshot?: typeof captureSnapshot; syncDirectory?: () => void;
+  } = { resources: acceptanceResources, execute: executeAcceptance }) {
+    this.unsubscribeSettings = onPluginSettingsChange((id) => {
+      if (id !== acceptanceManifest.id || this.enabled()) return;
+      // Latch the transition synchronously. A rapid re-enable cannot revive prior admissions.
+      this.disableEpoch++;
+      for (const id of this.live) if (id !== this.active?.id) this.disabledAdmissions.add(id);
+      void this.serial(() => this.cancelQueuedForDisable()).catch((error) => { this.persistenceError = String(error); });
+    });
+  }
+  private get agentDir() { return path.resolve(this.root, "../.."); }
+  private enabled() { return acceptanceEnabled(this.agentDir); }
+  /** Only disposable test owners use this; production ownership lives in the host singleton. */
+  disposeSettingsSubscription() { this.unsubscribeSettings(); clearTimeout(this.timer); this.timer = undefined; }
+  private cancelQueuedForDisable() {
+    if (!this.claimed) return; // Never adopt/certify another server's saved work.
+    this.assertClaim();
+    const ledger = this.read(), ids: string[] = [];
+    for (const run of ledger.runs) if (run.state === "queued" && this.live.has(run.id) && (this.disabledAdmissions.has(run.id) || !this.enabled())) {
+      this.disabledAdmissions.add(run.id);
+      run.state = "cancelled"; run.settled = true; run.finishedAt = new Date().toISOString();
+      run.error = "Acceptance plugin was disabled before dispatch; request a new run after enabling it."; ids.push(run.id);
+    }
+    if (ids.length) { this.write(ledger); for (const id of ids) { this.live.delete(id); this.disabledAdmissions.delete(id); } }
+    if (!this.enabled()) { clearTimeout(this.timer); this.timer = undefined; }
+  }
   private syncDirectory() {
     if (this.dependencies.syncDirectory) return this.dependencies.syncDirectory();
     const fd = openSync(this.root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
@@ -114,6 +144,8 @@ export class AcceptanceCoordinator {
   async submit(project: AcceptanceProject, profileName: string, caller: string, requestKey: string, expectedProfile: string, signal?: AbortSignal) {
     if (typeof caller !== "string" || !/^[a-zA-Z0-9_-]{1,256}$/.test(caller) || !safeKey(requestKey)) throw new Error("Invalid acceptance caller/request identity");
     return this.serial(async () => {
+      assertAcceptanceEnabled(this.agentDir);
+      const epoch = this.disableEpoch;
       const previous = this.request(this.read(), caller, requestKey, project, profileName, expectedProfile);
       if (previous) return { run: this.view(project).runs.find((run) => run.id === previous.id)!, joined: true };
       signal?.throwIfAborted();
@@ -126,8 +158,10 @@ export class AcceptanceCoordinator {
       if (ledger.runs.length >= 1000 || ledger.runs.filter((run) => !acceptanceTerminal(run.state)).length >= 32) throw new Error("Acceptance history/queue limit reached; retain existing evidence and resolve before submitting more work");
       const id = randomUUID(), directory = path.join(this.root, "runs", id), captureStart = Date.now();
       mkdirSync(directory, { recursive: true, mode: 0o700 });
-      const snapshot = await captureSnapshot(project.cwd, profile.inputs, path.join(directory, "source"), signal);
+      const snapshot = await (this.dependencies.captureSnapshot ?? captureSnapshot)(project.cwd, profile.inputs, path.join(directory, "source"), signal);
       signal?.throwIfAborted();
+      assertAcceptanceEnabled(this.agentDir);
+      if (epoch !== this.disableEpoch) throw new Error("Acceptance was disabled during capture; request a new run");
       if (acceptanceProject(project.cwd).identity !== project.identity || digest(readProfiles(project).find((p) => p.name === profileName)) !== expectedProfile) throw new Error("Project/profile changed during snapshot capture");
       const environment = { version: 1 as const, PATH: process.env.PATH ?? "", LANG: "C.UTF-8", NODE_ENV: "test" as const };
       const key = digest([project.identity, snapshot.digest, profile, process.platform, process.arch, environment]);
@@ -157,7 +191,10 @@ export class AcceptanceCoordinator {
   }
   private async pump() {
     const dispatch = await this.serial(async () => {
+      this.cancelQueuedForDisable(); // Also retries a latched cancellation before dispatch after a rapid re-enable.
+      if (!this.enabled()) return;
       if (this.active || this.persistenceError) return;
+      const epoch = this.disableEpoch;
       this.assertClaim();
       const ledger = this.read();
       if (ledger.runs.some((run) => run.state === "outcome-unknown" || (!acceptanceTerminal(run.state) && !this.live.has(run.id)))) return;
@@ -168,6 +205,10 @@ export class AcceptanceCoordinator {
         const current = acceptanceProject(run.cwd);
         if (current.identity !== run.project || digest(readProfiles(current).find((p) => p.name === run.profile.name)) !== run.profileDigest) throw new Error("Project/profile changed before dispatch; request a new run");
         await (this.dependencies.verifySnapshot ?? verifySnapshot)(run.snapshot);
+        if (!this.enabled() || epoch !== this.disableEpoch) {
+          Object.assign(run, { state: "cancelled", settled: true, finishedAt: new Date().toISOString(), error: "Acceptance disabled during pre-dispatch verification; no process started." });
+          this.write(ledger); this.live.delete(run.id); this.schedule(); return;
+        }
         // Browser configuration is independently serialized; an awaited verification must not leave revocation stale.
         const finalProject = acceptanceProject(run.cwd);
         if (finalProject.identity !== run.project || digest(readProfiles(finalProject).find((p) => p.name === run.profile.name)) !== run.profileDigest) throw new Error("Project/profile changed during verification; request a new run");
@@ -180,7 +221,7 @@ export class AcceptanceCoordinator {
       const controller = new AbortController();
       run.state = "running"; run.startedAt = new Date().toISOString(); run.queueMs = Date.now() - Date.parse(run.createdAt);
       this.write(ledger); this.active = { id: run.id, controller };
-      return { run, controller };
+      return { run, controller, epoch };
     });
     if (!dispatch) return;
     const { run, controller } = dispatch;
@@ -191,7 +232,11 @@ export class AcceptanceCoordinator {
       const env: NodeJS.ProcessEnv = { NODE_ENV: run.environment.NODE_ENV, PATH: run.environment.PATH, LANG: run.environment.LANG, HOME: home, TMPDIR: run.runtimeDirectory,
         XDG_CONFIG_HOME: path.join(home, "config"), XDG_CACHE_HOME: path.join(home, "cache"), XDG_DATA_HOME: path.join(home, "data"),
         XDG_STATE_HOME: path.join(home, "state"), PI_CODING_AGENT_DIR: path.join(home, "agent"), PI_WEB_ACCEPTANCE_RUNTIME: run.runtimeDirectory };
-      result = await this.dependencies.execute(run.profile.argv, { cwd: run.snapshot.directory, env, logPath: run.logPath, signal: controller.signal });
+      // The serial dispatch Promise is another async boundary; check before the supervisor's synchronous spawn.
+      if (!this.enabled() || dispatch.epoch !== this.disableEpoch) {
+        controller.abort();
+        result = { code: null, settled: true, interrupted: true, error: "Acceptance disabled before executor dispatch; no process started.", scope: "No process dispatched" };
+      } else result = await this.dependencies.execute(run.profile.argv, { cwd: run.snapshot.directory, env, logPath: run.logPath, signal: controller.signal });
       try { await verifySnapshot(run.snapshot); }
       catch (error) { result = { ...result, error: `Snapshot changed during execution: ${String(error).slice(0, 1800)}` }; }
     } catch (error) {
@@ -209,7 +254,9 @@ export class AcceptanceCoordinator {
     Object.assign(stored, { state: !result.settled ? "outcome-unknown" : this.active?.controller.signal.aborted ? "cancelled" : result.code === 0 && !result.error ? "passed" : "failed",
       settled: result.settled, exitCode: result.code, error: result.error?.slice(0, 2048), finishedAt: new Date().toISOString(), executionMs: durationMs });
     this.write(ledger); // Retain the actual completed result separately if its durable write fails.
-    this.pendingCompletion = undefined; this.live.delete(id); this.active = undefined;
+    this.pendingCompletion = undefined; this.active = undefined;
+    // This successful checkpoint also makes earlier terminal transitions durable.
+    for (const item of ledger.runs) if (acceptanceTerminal(item.state)) { this.live.delete(item.id); this.disabledAdmissions.delete(item.id); }
     this.persistenceError = undefined; this.schedule();
   }
   async cancel(project: AcceptanceProject, id: string, caller: string, browser = false) {
@@ -250,7 +297,7 @@ export class AcceptanceCoordinator {
       if (!identity) throw new Error("Cannot authenticate recovery requester");
       // The flock owner performs every critical filesystem mutation itself. Parent/helper loss cannot leave an unlocked critical callback.
       await recoverAcceptanceState(this.root, { token: this.token, process: identity, expectedLedgerDigest, ledger: JSON.stringify(ledger) });
-      this.claimed = true; this.assertClaim(); this.live.clear(); this.persistenceError = undefined;
+      this.claimed = true; this.assertClaim(); this.live.clear(); this.disabledAdmissions.clear(); this.persistenceError = undefined;
     });
   }
 }
