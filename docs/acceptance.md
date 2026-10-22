@@ -2,6 +2,16 @@
 
 The **Acceptance** toolbar button opens the selected checkout's project queue, even without an open conversation. Pi Web owns configured jobs independently of chats. Closing the panel, navigating, session Stop/Pause or cancelling a status wait does **not** cancel an already-admitted job. Use **Cancel acceptance run** explicitly.
 
+## Enable the optional plugin
+
+Acceptance is a **bundled plugin, disabled by default**. Choose **Settings → Plugins → Acceptance → Enabled** to enable it globally for this Pi Web agent directory. There is one master switch, not per-project/worktree/session enablement. It uses the existing bundled-plugin settings; no external package or new plugin framework is installed. The user-owned override lives in `pi-web/plugins/acceptance/settings.json` under the active agent directory. Tools must never change their own enablement or permissions.
+
+Disabling withdraws model tool declarations/callability, refuses model and browser run requests, cancels pending approvals and cancels locally owned jobs that have not started. The disable transition is latched across asynchronous capture/verification and rapid re-enable; cancelled jobs are never automatically resumed. Jobs whose supervisor has already started continue normally, with the existing ownership/settlement rules. Disabling is not a process Stop or settlement certificate. A failing session-exposure refresh is diagnosed separately and cannot prevent other subscribers from receiving the saved disable transition.
+
+The **Acceptance** toolbar dialog remains available while off to inspect history/logs, configure profiles, explicitly cancel running work or reconcile unknown ownership. Its Run controls stay disabled. Profiles, snapshots and history are retained. Enabling permits new requests; it does not launch or replay jobs. Missing or malformed global plugin state fails closed for execution without hiding browser job controls.
+
+Enabled ordinary coding sessions receive the tools live. Extension-enabled children retain their original selector/SDK allowlist: permitted definitions can remain internally registered as **hidden** while off, without becoming declared/callable; enabling never widens a restricted or saved legacy child loadout. Chat-only/extension-free children still do not load the plugin. Existing wrappers from builds predating the plugin integration need recreation/reload as usual.
+
 ## Configure a project
 
 Expand **Configure project profiles**, edit the JSON array and choose **Save profiles**. Configuration is private under the active agent directory's `pi-web/acceptance/settings.json`, not executable configuration discovered from a repository. Tools cannot configure profiles or their own permissions. Nothing is configured or launched automatically merely by opening a project.
@@ -31,11 +41,11 @@ Each profile has exactly these fields:
 
 **Use Pi Web Nix template** fills, but does not save or execute, this repository's complete fresh `nix run --no-write-lock-file .#test -- all --workers 4 --jobs 4` profile. Other repositories need their own declared inputs and runner. Production builds remain inside isolated Nix builders; no installed host service is used. The template does not widen the current runner's worker limits.
 
-Initial execution is Linux-only. The minimal environment is versioned and captured with the request: frozen PATH, `LANG=C.UTF-8`, `NODE_ENV=test`, and private HOME/XDG/TMP/agent directories. Host passwords, provider accounts, proxies, SSH agents, Node/QEMU options and arbitrary ambient environment variables are not forwarded. PATH/argv are frozen values, not a guarantee that arbitrary non-pinned executables or their transitive toolchains cannot change. A pinned runner must establish its toolchain evidence.
+The global plugin switch is separate from per-profile Ask/Allow/Deny. An Allow profile cannot override a disabled plugin. Initial execution is Linux-only. The minimal environment is versioned and captured with the request: frozen PATH, `LANG=C.UTF-8`, `NODE_ENV=test`, and private HOME/XDG/TMP/agent directories. Host passwords, provider accounts, proxies, SSH agents, Node/QEMU options and arbitrary ambient environment variables are not forwarded. PATH/argv are frozen values, not a guarantee that arbitrary non-pinned executables or their transitive toolchains cannot change. A pinned runner must establish its toolchain evidence.
 
 ## Session tools
 
-Ordinary coding sessions and extension-enabled subagents receive:
+When the plugin is enabled and the session's tool restrictions permit it, ordinary coding sessions and extension-enabled subagents receive:
 
 - `acceptance_run({profile, cwd?, requestId?})`: capture/verify source, join an identical eligible in-flight request or enqueue a new run, and return its ID. The optional checkout must belong to the session's own physically verified project. Reuse the exact request ID after an uncertain response; a retry returns its original run, even if source subsequently changed, and refuses a changed recipe/project. A new request is needed to test new source. A different tool-call ID without an explicit retry key is a new request.
 - `acceptance_status({cwd?, runId?, wait?})`: list profiles/recent runs, or inspect one run with a bounded log tail. `wait` lasts at most 30 seconds and does not start a model turn on completion. Collect the run again if it is still queued/running. Cancelling this wait leaves the job alone.
@@ -65,4 +75,4 @@ Snapshots, runtime files, original logs and failed/duplicate capture directories
 
 ## Verification
 
-`lib/acceptance/` owns profile/snapshot, scheduler, supervisor, tool and API regressions. The existing Activity packaged-browser chain exercises configuration, in-flight sharing, FIFO queueing, retained status after reload, logs, explicit cancellation, keyboard focus and narrow layout with synthetic jobs. It never recursively launches real acceptance. Follow [Testing](testing.md) for the unchanged complete core/browser/deployment requirements.
+`lib/acceptance/` owns profile/snapshot, scheduler, supervisor, tool and API regressions. `plugins/acceptance/` owns the thin default-off manifest, global enablement policy and native SDK exposure/child-allowlist tests. The existing Activity packaged-browser chain exercises the actual global Settings checkbox, disabled configuration/run refusal, live SDK tool availability, in-flight sharing, FIFO queueing and queued cancellation, active-job browser cancellation while off, retained status/logs after reload and re-enable, keyboard focus and desktop/tablet/mobile layout with synthetic jobs. It never recursively launches real acceptance. Follow [Testing](testing.md) for the unchanged complete core/browser/deployment requirements.

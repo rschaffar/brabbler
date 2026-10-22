@@ -92,6 +92,7 @@ export function AcceptancePanel({ cwd, onClose }: { cwd: string; onClose: () => 
       <label style={{ display: "flex", gap: 8 }}><input type="checkbox" checked={recovery} onChange={(e) => setRecovery(e.target.checked)} />{t("acceptance.recoveryAcknowledgment")}</label>
       <button type="button" style={buttonStyle} disabled={busy || !recovery} onClick={() => void act({ action: "recover", resourcesStopped: true })}>{t("acceptance.recover")}</button>
     </section>}
+    {view && !view.enabled && <p role="status">{t("acceptance.disabled")}</p>}
     <h3>{t("acceptance.profiles")}</h3>
     {!view && <p role="status">{t("acceptance.loading")}</p>}
     {view?.profiles.length === 0 && <p>{t("acceptance.empty")}</p>}
@@ -99,7 +100,7 @@ export function AcceptancePanel({ cwd, onClose }: { cwd: string; onClose: () => 
       <strong>{profile.label}</strong> <span>{t(`acceptance.coverage_${profile.coverage}`)}</span>
       <code style={{ display: "block", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 11 }}>{JSON.stringify(profile.argv)}</code>
       <small>{t("acceptance.budget", { cpus: profile.cpus, memory: profile.memoryMiB })}</small>
-      <button type="button" style={{ ...buttonStyle, display: "block", marginTop: 8 }} disabled={busy || !!view.blocked || profile.permission === "deny"} onClick={() => {
+      <button type="button" style={{ ...buttonStyle, display: "block", marginTop: 8 }} disabled={busy || !view.enabled || !!view.blocked || profile.permission === "deny"} onClick={() => {
         const profileDigest = view.profileDigests[profile.name], key = profile.name + ":" + profileDigest;
         let requestId = keys.current.get(key);
         if (!requestId) { requestId = crypto.randomUUID(); keys.current.set(key, requestId); }

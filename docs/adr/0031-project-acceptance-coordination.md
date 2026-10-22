@@ -10,6 +10,12 @@ Session Stop/Pause, browser disconnect and status-wait cancellation do not cance
 
 Persist admission and results before releasing ownership. Module reload preserves live ownership; process restart never restores authority or replays jobs from saved intent. Unknown settlement blocks further admission until explicit browser reconciliation of quiescent resources. Saved PID, timeout, stale heartbeat and a Stop acknowledgement are not settlement proof. Completed-but-unpersisted results may retry only their durable write. Recovery's controller/ledger mutations execute inside the kernel-flock-owning process, never in an unlocked surviving parent callback; interrupted helpers cannot continue mutations after losing exclusion. Reconciliation is not test success.
 
+## Optional exposure and admission (2026-10-22)
+
+Package the agent surface as a thin bundled Acceptance plugin using the existing static registry/settings/runtime, with a single global-only Enabled field defaulting to false. Per-project/session overrides cannot enable it; per-profile Ask/Allow/Deny remains independent. This does not move accepted job ownership into an extension or add a new framework.
+
+Disabling hides tool declarations/callability, aborts pending approval/admission and durably cancels not-started queued jobs across the coordinator. A latched transition prevents rapid enable from reviving old admissions; server-side capture/verification/executor gates do not rely on tool hiding alone. Started supervisors continue, and the browser retains status/log/cancel/recovery/profile access while disabled. No state/artifact migration, deletion or job replay follows enablement. Hidden startup definitions preserve only already-permitted child SDK loadout identity, never broaden a child's selector grants.
+
 ## Alternatives
 
 - Advisory session-held leases: smaller, but stale claim/Stop/restart semantics cannot establish command ownership or results.

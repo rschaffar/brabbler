@@ -10,6 +10,7 @@ export const enLocale: LocalePlugin = {
     "acceptance.close": "Close acceptance",
     "acceptance.description": "Shared project acceptance queue. One heavy run at a time across this Pi Web agent directory; identical in-flight snapshots can share one run.",
     "acceptance.boundary": "Accepted jobs continue independently after chat Stop, Pause or closing this panel. Shell-launched tests are not controlled. A successful configured command covers only its recorded inputs; its runner owns coverage and sandbox evidence.",
+    "acceptance.disabled": "Acceptance is disabled. Enable it globally in Settings → Plugins → Acceptance. New requests are refused and queued jobs are cancelled; running jobs, browser status and cancellation remain available.",
     "acceptance.profiles": "Profiles",
     "acceptance.empty": "No profiles configured. Configure an explicit recipe before requesting a run.",
     "acceptance.loading": "Reading acceptance status…",

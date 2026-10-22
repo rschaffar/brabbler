@@ -15,7 +15,7 @@ import { isModelSpeed, supportsModelSpeed, type ModelSpeed } from "./model-speed
 import { appendSessionModelSpeed, readSessionModelSpeed } from "./session-model-speed";
 import { appendNativeResourceSelection, readNativeResourceSelection, validateNativeResourceSelection, effectiveNativeResourceSelection, NO_NATIVE_RESOURCES, type NativeResourceSelection } from "./session-native-resources";
 import { createNativeSessionTools, type NativeSessionTools } from "./native-session-tools";
-import { createAcceptanceExtension } from "./acceptance/extension";
+import { acceptancePlugin } from "../plugins/acceptance";
 import { withSessionModelSpeed } from "./session-model-speed-runtime";
 import { samePath } from "./paths";
 import { readSessionHeader } from "./session-reader";
@@ -3154,7 +3154,7 @@ async function startRpcSessionInternal(
             extensionFactories: [
               ...nativeSessionTools.factories,
               ...(usesExactSystemPrompt ? [exactSystemPromptExtension] : [createLocalFileLinkGuidanceExtension()]),
-              ...(subagentResources.loadExtensions ? [createAskUserExtension(), createAcceptanceExtension()] : []),
+              ...(subagentResources.loadExtensions ? [createAskUserExtension(), acceptancePlugin.extension(sessionCwd)] : []),
             ],
             ...(subagentResources.loadExtensions ? { extensionsOverride: preferPiWebAskUserExtension } : {}),
           }
@@ -3176,7 +3176,6 @@ async function startRpcSessionInternal(
                 isBuiltInSubagentsEnabled,
               ),
               createAskUserExtension(),
-              createAcceptanceExtension(),
               ...bundledPluginExtensions(sessionCwd),
               ...promptObserver,
             ],

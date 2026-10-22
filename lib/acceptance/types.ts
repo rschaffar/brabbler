@@ -47,6 +47,7 @@ export interface AcceptanceRun {
 }
 export interface AcceptanceView {
   project: AcceptanceProject;
+  enabled: boolean;
   profiles: AcceptanceProfile[];
   profileDigests: Record<string, string>;
   runs: AcceptanceRun[];

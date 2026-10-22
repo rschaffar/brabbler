@@ -141,6 +141,11 @@ export function updatePluginSettings(manifest: PluginManifest, scope: "global" |
     writePrivateFileAtomicSync(path, JSON.stringify(stored, null, 2));
     result = resolvePluginSettings(manifest, stored, project, session ? { id: session.id, project: ownProject } : undefined);
   } finally { release(); }
-  for (const listener of listeners) listener(manifest.id);
+  // The write is already committed. A session refresh can reject while its model
+  // definitions are applying; it must not suppress other subscribers' revocation.
+  for (const listener of [...listeners]) {
+    try { listener(manifest.id); }
+    catch (error) { console.error("Bundled plugin settings subscriber failed", manifest.id, error); }
+  }
   return result;
 }
