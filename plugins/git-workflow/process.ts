@@ -32,7 +32,7 @@ export async function* processOutput(command: string, args: string[], cwd: strin
     termination = (async () => {
       if (!child.pid) return;
       if (options.shell && process.platform === "win32") {
-        const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+        const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", env: gitEnvironment() });
         const code = await new Promise<number | null>((resolve) => { killer.on("error", () => resolve(null)); killer.on("close", resolve); });
         return code === 0 ? undefined : "Check process-tree termination could not be confirmed";
       }

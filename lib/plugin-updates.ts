@@ -12,6 +12,7 @@ import type { PluginScope, PluginUpdateResult } from "@/lib/api-types";
 import { nodeCliInvocation } from "./node-cli";
 import { getProjectTrustStatus } from "./project-trust";
 import { parseNpmSource } from "./npm-source";
+import { commandEnvironment } from "../bin/command-env.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -87,7 +88,7 @@ async function runCommand(
   const invocation = command === "npm" ? nodeCliInvocation("npm", args) : { command, args };
   const { stdout } = await execFileAsync(invocation.command, invocation.args, {
     cwd: options.cwd,
-    env: options.env ? { ...process.env, ...options.env } : process.env,
+    env: commandEnvironment(options.env ? { ...process.env, ...options.env } : process.env),
     encoding: "utf8",
     timeout: 10_000,
   });
@@ -148,7 +149,7 @@ async function checkGitPackage(
   }
   const options = {
     cwd: pkg.installedPath,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    env: commandEnvironment({ ...process.env, GIT_TERMINAL_PROMPT: "0" }),
   };
   const local = (await runner("git", ["rev-parse", "HEAD"], options)).trim();
   const upstream = await runner("git", ["rev-parse", "--abbrev-ref", "@{upstream}"], options)

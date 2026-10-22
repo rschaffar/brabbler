@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { browserSshAgent } from "@/lib/browser-ssh-agent";
-import { webAuthnOrigin, type BrowserSshAssertion, type BrowserSshCredential } from "@/lib/browser-ssh-protocol";
+import { managedSshAgent } from "@/lib/managed-ssh-agent";
+import { webAuthnOrigin } from "@/lib/browser-ssh-protocol";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { isValidWebSessionToken, PI_WEB_SESSION_COOKIE } from "@/lib/web-auth";
-import { resolveSessionPath } from "@/lib/session-reader";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -37,35 +36,23 @@ export async function POST(request: NextRequest) {
   if (!rawOrigin || !isApiRequestAllowed(request) || request.headers.get("sec-fetch-site") === "cross-site") return NextResponse.json({ error: "Same-origin browser request required" }, { status: 403 });
   const json = (value: unknown) => NextResponse.json(value, { headers: { "Cache-Control": "no-store" } });
   try {
-    const { origin } = webAuthnOrigin(rawOrigin);
-    // Reverse proxies may change the scheme but must preserve the public Host.
-    if (new URL(origin).host !== request.headers.get("host")) throw new Error("Origin must match the public Host");
+    const parsed = new URL(rawOrigin);
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+    if (parsed.origin !== rawOrigin || parsed.username || parsed.password || (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback))) throw new Error("Secure browser management origin required");
+    const origin = parsed.origin;
+    // Native selection/status also works on a loopback IP. FIDO ceremonies still
+    // require the stricter DNS RP boundary; never fabricate an IP relying party.
+    if (parsed.host !== request.headers.get("host")) throw new Error("Origin must match the public Host");
     const owner = createHash("sha256").update(cookie!).digest("hex");
     const body = await boundedJson(request);
-    const agent = browserSshAgent();
-    const action = body.action;
-    if (action === "status" || action === "unbind" || action === "bind") {
-      const sessionId = body.sessionId;
-      if (sessionId !== undefined && sessionId !== null && (typeof sessionId !== "string" || !await resolveSessionPath(sessionId))) throw new Error("Session not found");
-      if (action === "status") return json({ supported: process.platform !== "win32", bound: typeof sessionId === "string" && agent.isBound(sessionId) });
-      if (typeof sessionId !== "string") throw new Error("Session required");
-      if (action === "unbind") { agent.unbind(sessionId, owner, typeof body.token === "string" ? body.token : undefined); return json({ success: true }); }
-      if (typeof body.token !== "string") throw new Error("Agent capability required");
-      agent.bind(body.token, owner, origin, sessionId);
-      return json({ success: true });
+    if (!["status", "discover", "probe", "use", "custom"].includes(String(body.action))) webAuthnOrigin(origin);
+    if (process.platform === "win32") {
+      if (body.action !== "status") throw new Error("Managed SSH sockets require Unix");
+      return json({ supported: false, runtime: { runtimeId: "unsupported", socketPath: "", inheritedSocket: null, revision: "unsupported", setupNeeded: true, selected: { type: "none" }, custom: [], settingsError: null, endpointPresent: false }, registry: { revision: null, keys: [] }, connections: [], activeId: null, pendingCount: 0 });
     }
-    if (action === "create") return json(agent.create(owner, body.credential as BrowserSshCredential, origin));
-    if (typeof body.token !== "string" || !/^[a-f0-9]{64}$/.test(body.token)) throw new Error("Agent capability required");
-    switch (action) {
-      case "activate": return json(await agent.activate(body.token, owner, origin, body.assertion as BrowserSshAssertion));
-      case "poll": return json(agent.poll(body.token, owner, origin));
-      case "respond":
-        if (typeof body.requestId !== "string") throw new Error("Signing request required");
-        agent.respond(body.token, owner, origin, body.requestId, body.assertion as BrowserSshAssertion | undefined);
-        return json({ success: true });
-      case "disconnect": agent.disconnect(body.token, owner, origin); return json({ success: true });
-      default: throw new Error("Unknown browser SSH action");
-    }
+    // No session/project binding, manual socket publication, or caller-provided
+    // verification/unlock authority. All policy derives from server-owned state.
+    return json(await managedSshAgent().dispatch(body, owner, origin));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Browser SSH request failed" }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }

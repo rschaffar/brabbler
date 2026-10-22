@@ -1226,6 +1226,12 @@ export function AppShell() {
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
         onSessionsChange={handleSessionsChange}
       />
+      {/* Demo navigation only: never mount the live SSH controller. */}
+      <button type="button" className="ssh-sidebar-status" onClick={() => setSettingsSection("ssh")}
+        aria-label={translate("sshAgent.demo.open")} title={translate("sshAgent.demo.sidebar")}
+        style={{ width: "100%", flexShrink: 0, padding: "5px 12px", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", textAlign: "left", fontSize: 12 }}>
+        {translate("sshAgent.demo.sidebar")}
+      </button>
       <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
         {([
           ["models", translate("common.models")],

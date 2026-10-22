@@ -16,12 +16,31 @@ function wireChildProcessLifecycle(
   parentProcess = process,
   timeoutMs = shutdownTimeoutMs,
   log = console.error,
+  owner = {},
 ) {
   const signalHandlers = new Map();
   let shutdownTimer;
   // Set once we forward a signal, so an exit we asked for stays quiet and one
   // we did not gets reported.
   let shuttingDown = false;
+  let finished = false;
+
+  function finish(code) {
+    if (finished) return;
+    finished = true;
+    unwire();
+    if (!owner.settle) { parentProcess.exit(code); return; }
+    let settled;
+    try { settled = owner.settle(); }
+    catch (error) { log(`[pi-web] owner cleanup failed: ${error.message}`); parentProcess.exit(code || 1); return; }
+    if (!settled || typeof settled.then !== "function") { parentProcess.exit(code); return; }
+    let timer, finalCode = code;
+    Promise.race([
+      settled,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("owner cleanup timed out")), owner.timeoutMs ?? 1000); }),
+    ]).catch(error => { finalCode = code || 1; log(`[pi-web] owner cleanup failed: ${error.message}`); })
+      .finally(() => { clearTimeout(timer); parentProcess.exit(finalCode); });
+  }
 
   const forceKill = () => child.kill("SIGKILL");
 
@@ -40,8 +59,7 @@ function wireChildProcessLifecycle(
     );
 
     if (failedToSpawn) {
-      unwire();
-      parentProcess.exit(1);
+      finish(1);
     }
   }
 
@@ -53,6 +71,7 @@ function wireChildProcessLifecycle(
       }
 
       shuttingDown = true;
+      try { owner.stopAdmission?.(); } catch (error) { log(`[pi-web] owner admission shutdown failed: ${error.message}`); }
       shutdownTimer = setTimeout(forceKill, timeoutMs);
       shutdownTimer.unref();
       child.kill(signal);
@@ -64,7 +83,7 @@ function wireChildProcessLifecycle(
   child.on("error", handleError);
 
   child.once("exit", (code, signal) => {
-    unwire();
+    if (finished) return;
 
     // A shutdown the user asked for needs no explanation; anything else left
     // the window closing with no stated reason.
@@ -74,7 +93,7 @@ function wireChildProcessLifecycle(
       );
     }
 
-    parentProcess.exit(code ?? getSignalExitCode(signal));
+    finish(code ?? getSignalExitCode(signal));
   });
 }
 

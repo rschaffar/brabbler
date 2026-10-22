@@ -2,6 +2,8 @@
 
 Date: 2026-10-21
 
+Superseded in part by [ADR 0033](0033-process-wide-ssh-agent.md): process-wide routing, central public registration and per-key verification policies replace the conflicting decisions below. This document preserves the historical rationale; implementation progress belongs in the active plan.
+
 ## Context
 
 A remote Pi Web browser should be able to supply SSH signatures using its local FIDO authenticator, without exporting a private key/PIN or requiring a native helper. Existing OpenSSH `ssh:`/Ed25519-SK credentials cannot be used through ordinary browser WebAuthn. OpenSSH defines a P-256 WebAuthn signature format; stock agent consumers need OpenSSH 10.3 or its compatibility backport.

@@ -52,6 +52,12 @@ The default-off bundled Acceptance plugin uses one global user-owned switch. Ord
 
 [Native session tools](native-session-tools.md) owns explicit MCP/Code-mode intent, inert configured-server metadata and ordinary-session admission. Native-enabled wrappers use selected-session idle replacement on explicit HTTP Reload/Apply, not SDK in-place reload; other wrappers retain their native configuration. Setup-only selection is persisted without a message and retains its SDK ID. Fresh ordinary creation alone may snapshot a user-owned repository/worktree native-tool default; explicit selection/off wins, and existing sessions never read current defaults. Native shutdown/disposal shares a completion barrier before same-ID reuse. Child/launch defaults remain off; OAuth and configuration editing are deferred.
 
+### Command environment ownership
+
+Normal host Bash is a hidden, inactive-by-default replacement that sanitizes command environments while retaining explicit tool selection and user-extension ownership priority. Fresh and cold-reopened non-chat-only subagents install the same host fallback even when profile extension loading is disabled; this does not activate Bash in read-only/chat-only profiles. The managed SSH socket is inherited unchanged, while server login/control fields and host-only command variables are removed. Explicit environment isolation/overrides remain explicit; native MCP keeps its own allowlist and `inheritEnv: false`.
+
+`bin/command-env.js` owns the narrow private-field filter for application Git/check/npm/skill/browser-opener/discovery helpers; trusted Next workers are not command consumers and keep their server environment. The active SSH plan separately tracks the approved version-pinned SDK subprocess patch. Trusted arbitrary in-process extensions still access server memory/environment; this hygiene is not an OS sandbox.
+
 ### Fresh composer and quote focus
 
 Explicit New actions request desktop composer focus once after the intended fresh draft mounts, with the caret after any restored draft. The request is bound to draft identity and navigation revision; mobile, visible modal/native dialogs, inline card/quote/picker ownership, subsequent pointer/key interaction and intervening control focus take priority. Covered/inert, hidden, disabled and composing textareas refuse the request. Ordinary mounting, session selection, polling and streaming never request this autofocus. The imperative focus handle changes only DOM focus/selection, not draft text or session configuration.

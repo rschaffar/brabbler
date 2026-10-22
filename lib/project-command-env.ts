@@ -33,7 +33,9 @@ function isHostRuntimeVariable(name: string, platform: NodeJS.Platform): boolean
     || comparableName.startsWith("NEXT_")
     // The browser login password guards this server; commands run on behalf of
     // a project (and the model reading their output) have no use for it.
-    || comparableName === "PI_WEB_PASSWORD";
+    || comparableName === "PI_WEB_PASSWORD"
+    // Server-only control locator, not the public SSH_AUTH_SOCK default.
+    || comparableName === "PI_DESK_SSH_RUNTIME";
 }
 
 export function sanitizeProjectCommandEnvironment(
@@ -81,7 +83,12 @@ export function createProjectCommandBashOperations(
         agentBinDir,
         platform,
       );
-      if (options.sessionId) Object.assign(environment, browserSshAgent().environment(options.sessionId));
+      // A launcher-owned runtime supersedes legacy bindings immediately, even
+      // before setup. Retain markers as migration evidence; never consult them
+      // or replace an explicit child environment with an old browser socket.
+      if (options.sessionId && !process.env.PI_DESK_SSH_RUNTIME) {
+        Object.assign(environment, browserSshAgent().environment(options.sessionId));
+      }
       return localOperations.exec(command, cwd, {
         ...executionOptions,
         env: environment,

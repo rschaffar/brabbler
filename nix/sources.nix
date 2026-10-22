@@ -2,7 +2,9 @@
 let
   inherit (lib) fileset;
   paths = names: fileset.unions (map (name: fileset.maybeMissing (root + "/${name}")) names);
-  manifests = paths [ "package.json" "package-lock.json" ];
+  # Install-time SDK policy is also a dependency realization input.
+  manifests = paths [ "package.json" "package-lock.json"
+    "bin/patch-sdk-command-env.js" "bin/sdk-command-env-payload.js" ];
   application = fileset.union
     (paths [
       "package.json" "package-lock.json" "LICENSE" "tsconfig.json" "next.config.ts"

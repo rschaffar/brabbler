@@ -18,9 +18,9 @@ const fs = require("fs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { getHelpText, parseLaunchOptions } = require("./pi-web-options");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { getNextNodeArgs } = require("./pi-web-node-args");
+const { launchManagedNext } = require("./ssh-agent-launch");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { wireChildProcessLifecycle } = require("./process-lifecycle");
+const { commandEnvironment } = require("./command-env");
 
 let launchOptions;
 try {
@@ -83,13 +83,9 @@ nextArgs.push("-H", hostname);
 
 // Always run next's JS entry with node directly — avoids .bin symlink issues
 // and path-with-spaces problems on Windows when shell: true is used.
-const child = spawn(process.execPath, getNextNodeArgs(nextBin, nextArgs), {
-  cwd: pkgDir,
+launchManagedNext({ nextBin, args: nextArgs, cwd: pkgDir, hostname, port,
   stdio: ["inherit", "pipe", "inherit"],
-  env: { ...process.env, PI_WEB_HOSTNAME: hostname },
-});
-wireChildProcessLifecycle(child);
-
+}).then((child) => {
 let browserOpened = false;
 const url = `http://${hostname}:${port}`;
 
@@ -110,17 +106,17 @@ child.stdout.on("data", (chunk) => {
       // `start` is a cmd.exe built-in, so invoke cmd directly. The empty
       // title argument is required by `start` before the target URL.
       opener = spawn(process.env.ComSpec || "cmd.exe", ["/c", "start", "", url], {
-        stdio: "ignore",
+        env: commandEnvironment(), stdio: "ignore",
         detached: true,
       });
     } else if (isMac) {
       opener = spawn("open", [url], {
-        stdio: "ignore",
+        env: commandEnvironment(), stdio: "ignore",
         detached: true,
       });
     } else {
       opener = spawn("xdg-open", [url], {
-        stdio: "ignore",
+        env: commandEnvironment(), stdio: "ignore",
         detached: true,
       });
     }
@@ -131,4 +127,8 @@ child.stdout.on("data", (chunk) => {
 
     opener.unref();
   }
+});
+}).catch((error) => {
+  console.error(`[pi-web] startup failed: ${error.message}`);
+  process.exit(error.exitCode || 1);
 });

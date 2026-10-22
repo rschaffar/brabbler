@@ -1,7 +1,9 @@
+import { commandEnvironment } from "../bin/command-env.js";
+
 // Git's environment can override -C, repository discovery, the index, and
 // configuration. Keep each subprocess independent of inherited Git state.
 export function gitExecEnv(indexFile?: string, inherited: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...inherited };
+  const env: NodeJS.ProcessEnv = commandEnvironment(inherited);
   for (const key of Object.keys(env)) if (key.startsWith("GIT_")) delete env[key];
   env.LC_ALL = "C";
   env.GIT_TERMINAL_PROMPT = "0";

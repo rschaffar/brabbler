@@ -44,6 +44,7 @@ import { installSubagentTurnLimit } from "./subagent-turn-limit";
 import { existsSync } from "node:fs";
 import { projectTrustReloadOptions } from "./project-trust";
 import { resolveShellTools } from "./powershell-settings";
+import { createProjectCommandBashExtension, preferUserBashExtension } from "./project-command-env";
 import { isBuiltInSubagentsEnabled, readSubagentSettings } from "./subagent-settings";
 import { SubagentQueue } from "./subagent-queue";
 import { addWorktree, currentLocalBranchTip, removeWorktree } from "./worktree";
@@ -373,12 +374,13 @@ export function createSubagentController(
             : {}),
           appendSystemPrompt,
           extensionFactories: [
+            ...(!chatOnly ? [createProjectCommandBashExtension({ cwd: childCwd, settings: settingsManager })] : []),
             ...(promptPlan.exactSystemPrompt !== undefined
               ? [createExactSystemPromptExtension(() => promptPlan.exactSystemPrompt)] : []),
             ...(!chatOnly && promptPlan.exactSystemPrompt === undefined ? [createLocalFileLinkGuidanceExtension()] : []),
             ...(profile.loadExtensions ? [createAskUserExtension(), acceptancePlugin.extension(childCwd)] : []),
           ],
-          ...(profile.loadExtensions ? { extensionsOverride: preferPiWebAskUserExtension } : {}),
+          extensionsOverride: (base) => preferUserBashExtension(profile.loadExtensions ? preferPiWebAskUserExtension(base) : base),
         },
         ...((profile.loadExtensions || profile.loadSkills)
           ? { resourceLoaderReloadOptions: projectTrustReloadOptions(childCwd, agentDir) }

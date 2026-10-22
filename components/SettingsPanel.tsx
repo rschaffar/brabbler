@@ -7,6 +7,8 @@ import { THEME_OPTIONS } from "@/lib/theme";
 import { TITLE_LANGUAGES, type TitleLanguage } from "@/lib/title-language-options";
 import type { TitleModelSelection } from "@/lib/title-language";
 import { FontSettings } from "./FontSettings";
+import { SshSettings } from "./SshSettings";
+import type { SshAgentController } from "@/hooks/useSshAgent";
 import {
   CHAT_CONTENT_WIDTH_DEFAULT,
   CHAT_CONTENT_WIDTH_MAX,
@@ -49,6 +51,7 @@ interface Props {
   onQuoteSelectionChange: (enabled: boolean) => void;
   sessions: readonly SessionInfo[];
   privacy: ProjectPrivacy;
+  sshController: SshAgentController;
 }
 
 export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: { section: SettingsSection; size?: number; strokeWidth?: number }) {
@@ -66,6 +69,7 @@ export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: {
   };
 
   if (section === "general") return <svg {...common}><path d="M20 7h-9M14 17H5" /><circle cx="7" cy="7" r="3" /><circle cx="17" cy="17" r="3" /></svg>;
+  if (section === "ssh") return <svg {...common}><circle cx="8" cy="9" r="5" /><path d="m12 13 9 9m-4-4 3-3m-6 0 3-3" /></svg>;
   if (section === "models") return <svg {...common}><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3" /></svg>;
   if (section === "skills") return <svg {...common}><path d="m12 2-10 5 10 5 10-5-10-5Z" /><path d="m2 12 10 5 10-5M2 17l10 5 10-5" /></svg>;
   if (section === "agents") return <svg {...common} className="settings-section-icon is-agent"><rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" /></svg>;
@@ -510,7 +514,7 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
   );
 }
 
-export function SettingsPanel({ cwd, sessionId, initialSection, initialPluginScope, onClose, onSessionReloaded, trustStatus, onManageTrust, quoteSelectionEnabled, onQuoteSelectionChange, sessions, privacy }: Props) {
+export function SettingsPanel({ cwd, sessionId, initialSection, initialPluginScope, onClose, onSessionReloaded, trustStatus, onManageTrust, quoteSelectionEnabled, onQuoteSelectionChange, sessions, privacy, sshController }: Props) {
   const { t } = useI18n();
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [mountedSections, setMountedSections] = useState<ReadonlySet<SettingsSection>>(
@@ -519,6 +523,7 @@ export function SettingsPanel({ cwd, sessionId, initialSection, initialPluginSco
   const sections: { id: SettingsSection; label: string; requiresProject: boolean }[] = [
     { id: "general", label: t("settings.general"), requiresProject: false },
     { id: "models", label: t("common.models"), requiresProject: false },
+    { id: "ssh", label: t("sshAgent.title"), requiresProject: false },
     { id: "skills", label: t("common.skills"), requiresProject: true },
     { id: "agents", label: t("common.agents"), requiresProject: true },
     { id: "plugins", label: t("common.plugins"), requiresProject: true },
@@ -608,6 +613,7 @@ export function SettingsPanel({ cwd, sessionId, initialSection, initialPluginSco
         <main className="settings-dialog-main">
           {sectionHost("general", <GeneralSettings cwd={cwd} sessionId={sessionId} onSessionReloaded={onSessionReloaded} trustStatus={trustStatus} onManageTrust={onManageTrust} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} sessions={sessions} privacy={privacy} />)}
           {sectionHost("models", <ModelsConfig embedded cwd={cwd} onClose={onClose} />)}
+          {sectionHost("ssh", <SshSettings controller={sshController} active={section === "ssh"} />)}
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("agents", <AgentsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}
           {cwd && sectionHost("plugins", <PluginsConfig embedded key={`${cwd}:${sessionId ?? ""}`} cwd={cwd} sessionId={sessionId} initialPluginScope={initialPluginScope} onClose={onClose} onReloaded={onSessionReloaded} />)}
