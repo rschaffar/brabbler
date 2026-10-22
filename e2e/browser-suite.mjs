@@ -344,7 +344,7 @@ let nativeToolsFixture;
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(60_000),
     });
-    assert.ok(response.ok, `POST ${path} -> ${response.status}`);
+    if (!response.ok) assert.fail(`POST ${path} (${body?.type ?? "request"}) -> ${response.status}: ${(await response.text()).slice(0, 4096)}`);
     return response.json();
   }
 

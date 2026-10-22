@@ -905,8 +905,10 @@ export class AgentSessionWrapper {
   }
 
   private ensureExtensionsBound(): Promise<void> {
-    if (this.extensionsBound) return Promise.resolve();
+    // Binding can publish readiness before its finally releases the runtime-use
+    // lease. First commands must await that same settlement, not race reselection.
     if (this.extensionBindingPromise) return this.extensionBindingPromise;
+    if (this.extensionsBound) return Promise.resolve();
 
     this.extensionBindingError = null;
     const releaseRuntime = this.inner.modelRuntime ? acquireModelRuntimeUse(this.inner.modelRuntime) : () => {};
