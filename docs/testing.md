@@ -133,7 +133,20 @@ full-acceptance recommendation. Never bypass admission or increase deadlines.
 This is invocation guidance, not a change to runner defaults: bare `all` uses two
 core workers when overlapping (four when serialized), while browser width is
 resource-admitted. Pass both flags explicitly for the measured four/four profile.
-Nix `--max-jobs` / `--cores` control realization, not these test-worker widths.
+Nix `--max-jobs` / `--cores` control realization; the original builder's
+`NIX_BUILD_CORES` also caps effective core file workers. Fresh core selections
+with an explicit `--jobs` above four now request up to eight Nix cores per build;
+without that selection the four-core allocation is unchanged.
+
+Explicit `all --workers 8 --jobs 8` is an opt-in scaling experiment, not a new
+recommended default or a measured speedup; [ADR 0032](adr/0032-opt-in-acceptance-widths-and-reviewed-test-batches.md)
+records this bounded extension of ADR 0025's scheduling ceiling. Browser widths through eight are
+supported explicitly; automatic browser admission remains capped at four. The
+8/8 overlap estimate includes two eight-core core builders, eight browser
+sandboxes, and worker memory: **32 effective CPUs / 51 GiB available RAM**.
+Insufficient combined headroom serializes the levels normally. For an overlapping
+benchmark, wait for admission rather than accepting that serial execution as
+8/8-overlap evidence. Do not bypass resource estimates or change deadlines.
 
 Report the full command's end-to-end wall time, including any realization within
 that command, plus separately available prerequisite-preparation and test-execution
@@ -171,8 +184,9 @@ exclusively until reviewed.
   cwd is writable, not filesystem-isolated, and source-relative writes remain a
   blocker. Large-operations and model-speed-lifecycle stay unreviewed E pending
   stronger timeout-settlement/resource and asynchronous-teardown evidence.
-- Browser fresh full execution admits **1..4 concurrent group sandboxes**, estimating
-  2 CPUs/4 GiB per group plus 2 GiB host headroom. `--workers 1..4` refuses an
+- Browser fresh full execution admits explicit **1..8 concurrent group sandboxes**
+  (automatic selection remains capped at four), estimating
+  2 CPUs/4 GiB per group plus 2 GiB host headroom. `--workers 1..8` refuses an
   insufficient budget; focused groups default to one. Each weighted queue is serial,
   and each group acquires a new sandbox/process environment, not another lane in a
   shared network namespace.
@@ -331,6 +345,90 @@ above-four-worker evidence; no per-worker RSS peak is claimed. Core is still the
 critical track, now about **16s** beyond browser plus deployment. Exact inputs,
 red/green checks, failures, artifacts and scope live in the
 [completed second-batch plan](plans/archived/2026-10-17_core-exclusive-batch2-plan.md).
+
+### Audited default-exclusive batches
+
+The 2026-10-22 audit covers 192 formerly default-exclusive files (189 from the
+measured core run plus three incoming scratchpad files). The hash-bound verdicts,
+file-specific reasons, helper evidence and explicit unresolved holds are retained
+in `nix/test-lanes-audit-2026-10-22.json`. Exactly **86 F / 42 N** files enter the
+existing pool; **64** remain default-E. Existing manifest entries, substantive test
+bodies, per-file serial cases, deadlines and resource admission are unchanged.
+`lib/test-lanes-audit.test.mjs` protects the reviewed selection and holds.
+
+These are scheduling reviews, not a blanket claim that all native effects are
+safe. Process-local mocks are isolated by existing file workers; native promotions
+use private fixture roots and joined operations. Deferred cases include SDK/native
+shutdown uncertainty, descriptor-backed stream closure, real short timing/resource
+holds and incomplete import-effect review. In particular, large-operations and
+model-speed-lifecycle stay exclusive. Changes to audited fixture/effect code need
+fresh review; stored hashes identify the audited revision, not future authority.
+
+A separate diagnostic snapshot ran all 128 promotions, the four heavy native Git
+files and the existing exclusive runner contracts: **134 files / 1,089 tests**
+passed at four workers. All 42 newly pooled native files overlapped peer work;
+original 133-file cases/outcomes matched control. Inotify observed zero mutations
+across 140 source-directory watches, without overflow/watch loss, and final source
+content/mode hashes matched. The observer exists only in the diagnostic snapshot;
+ordinary acceptance is unchanged. This is bounded inotify/final-state evidence,
+not certification of restored mmap/external-hardlink writes, arbitrary host effects
+or escaped descendants.
+
+The first ordinary four/four pair passed all coverage, but **did not demonstrate
+an end-to-end speedup**: complete command **433s → 520s**, core **427.828s →
+489.999s**, browser **382.850s → 485.108s**, deployment **24.346s → 26.727s**.
+The identical application package and all 408 original core outcomes were checked;
+new metadata adds three cases. Serial files fell **211 → 83**, while the observed
+E tail fell **225.324s → 185.206s**. Broad timing inflation affected unchanged
+browser groups too; this does not establish its cause or excuse the slower result.
+
+A separate sequential **core-only, 16-effective-worker** control/candidate pair
+using the same fresh core derivations passed **408/3,063 → 409/3,066** files/tests,
+with all original outcomes identical. Command wall time was **383.823s → 254.658s**
+(**33.65% less**); pre-test setup/realization/static intervals **53.634s → 39.339s**;
+file execution **329.799s → 214.929s**; serial tail **203.426s → 109.738s**. Both used
+one Nix builder allocated 16 cores (`fresh-core.nix`, selection `--jobs 16`), not a
+claim that the normal fresh CLI's eight-core allocation cap was removed. Sixteen
+was selected to leave headroom for another observed Nix build. These are single,
+non-machine-exclusive pairs with fresh executions and warm dependencies, not
+cold-cache promises or statistically repeated causal measurements. No separate
+prerequisite prewarming was performed. The four/four and core-only results are
+not interchangeable; full acceptance remains mandatory.
+
+These paired measurements cover the pre-rebase audit candidate `172ce4d` and its
+`27a5375b` control. Subsequent main composition is verified separately, not relabelled
+as a new timing pair. The final current-main composition passed full ordinary
+four/four acceptance in **416s (6m56s)**: core **332.438s** (54.337s pre-test,
+277.588s file window, 143.468s E tail), browser **383.718s**, deployment **24.941s**.
+All **409 files/3,084 tests/12 suites**, **26 groups/59 scenario receipts** and
+settlement gates passed. Its application/runtime inputs include newer main changes,
+so 416s is final acceptance evidence, not a matched comparison to the earlier control.
+Exact identities, retained reports, review corrections and remaining holds live in
+the [completed batch audit plan](plans/archived/2026-10-22_default-exclusive-audit-plan.md).
+
+For the subsequent stable-main integration at `18abd376`, independent helper-delta
+review retains all 128 promotions. Three changed held-file hashes are refreshed
+without promotion; the new Acceptance runtime test remains default-E outside the
+original 192-file audit. Its plugin registration/settings remain process-local or
+private-fixture-bound, and first-command binding now awaits the existing settlement
+promise. Earlier acceptance/timing results retain their recorded source identities;
+this newer composition requires its own complete verification.
+
+Its initial full run failed an existing file-panel resize assertion before complete
+coverage. The trace showed a one-shot count immediately after viewport acknowledgment;
+this was not hidden by an unchanged retry. A separately user-authorized fixture-only
+correction now awaits disappearance of that same locator using the existing page
+timeout, then retains the original strict assertion. Deterministic delayed-settlement,
+error-propagation and strict-negative regressions fail without the wait and pass with
+it; the real focused file-edit scenario also passes. No production behavior, browser
+deadline, expected scenario or error filter changes. The corrected latest-target composition then passed full four/four acceptance in
+**388s (6m28s)**: **411 files / 3,100 tests / 12 suites**, all **26 groups / 59 scenario
+receipts**, genuine deployment and settlement. Core took **300.041s** (51.565s
+pre-test setup/static/realization, 248.099s file execution), browser **359.008s** and
+deployment **21.418s**. These overlapping intervals are not additive. The production
+package matches the failed run; this is a fixture correction, not a production fix.
+Failure evidence and exact final composition identity are retained in the completed
+audit plan; it is not a new matched performance pair.
 
 ## Diagnostics and retention
 

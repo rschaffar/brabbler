@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { groups } from '../e2e/scenarios.mjs';
-import { coverageIds, weights } from './vm-plan.mjs';
+import { coverageIds, MAX_BROWSER_WORKERS, weights } from './vm-plan.mjs';
 import { assertEvidenceTree } from './vm-evidence.mjs';
 
 const store = /^\/nix\/store\/[a-z0-9]{32}-[^/]+$/;
@@ -38,7 +38,7 @@ export function validateNamespaces(namespaces, allowEmpty = false) {
 export function browserPlan(metadata, focus = 'all', workers = 1) {
   validateBrowserMetadata(metadata);
   assert.ok(focus === 'all' || Object.hasOwn(groups, focus), 'Unknown browser group');
-  assert.ok(Number.isInteger(workers) && workers >= 1 && workers <= 4);
+  assert.ok(Number.isInteger(workers) && workers >= 1 && workers <= MAX_BROWSER_WORKERS);
   const selected = focus === 'all' ? Object.keys(groups) : [focus];
   const lanes = Array.from({ length: workers }, (_, i) => ({ id: `b${i}`, groups: [], weightSeconds: 0 }));
   const jobs = selected.map((name, index) => ({ name, index, ...groups[name], scenarios: coverageIds(name), weightSeconds: weights[name] }));

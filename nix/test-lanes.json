@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "policy": "Explicit reviewed parallel allowlist; new/unreviewed files warn and run exclusively, never disappear. F and N share a resource-limited pool (default request eight, configurable 1\u201332); E drains that pool. No directory/name inference. Original deadlines, assertions and host opt-in skips remain unchanged.",
+  "policy": "Explicit reviewed parallel allowlist; new/unreviewed files warn and run exclusively, never disappear. F and N share a resource-limited pool (default request eight, configurable 1–32); E drains that pool. No directory/name inference. Original deadlines, assertions and host opt-in skips remain unchanged.",
   "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. The requested eight-worker default still requires native execution acceptance with unchanged deadlines. Re-review when resource/fixture behavior changes.",
   "files": [
     {
@@ -1095,6 +1095,786 @@
       "path": "lib/subagent-runtime.test.mjs",
       "lane": "E",
       "reason": "Real busy-parent notification waits; partial runtime/timing review, no parallel claim."
+    },
+    {
+      "path": "app/api/auth/login/route.test.mjs",
+      "lane": "F",
+      "reason": "VM-loaded OAuth/SSE routes use explicit runtime/credential mocks and fake heartbeat intervals; readers are completed or cancelled and real read-deadline timers are cleared.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "app/api/file-index/refresh.test.mjs",
+      "lane": "N",
+      "reason": "Real listing refresh reads/writes only an mkdtemp fixture; Git execution is mocked and synchronous registered teardown removes the fixture.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "app/api/files/language-route.test.mjs",
+      "lane": "N",
+      "reason": "Actual file-route language reads use synthetic files under one mkdtemp root, with private agent path and registered synchronous recursive removal; source is read only.",
+      "estimatedMs": 3000
+    },
+    {
+      "path": "app/api/files/upload-route.test.mjs",
+      "lane": "N",
+      "reason": "Real uploads and symlink/chmod cases stay within per-case mkdtemp roots with registered synchronous removal; multipart producers are fully serialized before dispatch to avoid early-rejection iterator holds.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "app/api/git/explorer/context.test.mjs",
+      "lane": "N",
+      "reason": "Real Git repository and route context reads target one unique temporary checkout; all operations are awaited/synchronous and registered synchronous teardown removes it.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "app/api/hidden-projects/route.test.mjs",
+      "lane": "N",
+      "reason": "Settings and concurrent lock-protected saves target a unique private agent directory; saves await lock release and after-hook awaits recursive removal.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "app/api/plugins/bundled/[id]/patch-context/route.test.mjs",
+      "lane": "N",
+      "reason": "Actual immutable Git context reads and a synchronous forwarding shim operate only on repositories/logs beneath one unique root; PATH is restored and after-hook synchronously removes all artifacts.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "app/api/plugins/bundled/route.test.mjs",
+      "lane": "N",
+      "reason": "Real plugin settings, saved session headers and Git repos are confined to one unique root/private agent; settings locks release synchronously and registered after-hook restores env/removes root.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "app/api/plugins/listing-invalidation.test.mjs",
+      "lane": "F",
+      "reason": "Real route source is VM-transpiled with package manager, settings flush, filesystem and authorization capabilities explicitly mocked; all effects are array entries.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "app/api/scratchpad/route.test.mjs",
+      "lane": "N",
+      "reason": "Actual scratchpad API stores hashed-scope notes only beneath unique private agent root; saves await stable-path lock release and after-hook removes root synchronously.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "app/api/sessions/stats-route.test.mjs",
+      "lane": "N",
+      "reason": "Real usage files/FIFO and append/read probes stay in per-case mkdtemp agent roots. Targeted ID lookup avoids catalogue writes; nonblocking regular-file checks close descriptors in finally and teardown awaits removal.",
+      "estimatedMs": 4000
+    },
+    {
+      "path": "app/manifest.test.mjs",
+      "lane": "F",
+      "reason": "Manifest function uses only process-local app-name env reads and static metadata; the test restores env and performs no external effects.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "components/BlockingCard.test.mjs",
+      "lane": "F",
+      "reason": "Server-rendered approval and receipt fixtures compile source in memory; expensive children are replaced and React effects do not execute.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "components/ComposerFocus.test.mjs",
+      "lane": "F",
+      "reason": "Reads composer sources and executes only the extracted focus method against VM textarea doubles; no browser or filesystem writes.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "components/FileExplorer.reveal.test.mjs",
+      "lane": "F",
+      "reason": "Source-extracted reveal/focus effects use finite in-memory listings and deferred promises; setImmediate drains work without a wall-clock deadline.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "components/FileExplorer.uploads.test.mjs",
+      "lane": "F",
+      "reason": "Upload owner receives an injected synthetic transport; File payloads stay in memory, context switches dispose owners, and no default HTTP/XHR transport is called.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "components/FileViewer.probes.test.mjs",
+      "lane": "F",
+      "reason": "Only extracted probe callbacks and watcher effect execute in VM scopes with mocked fetch/EventSource and explicitly resolved response gates.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "components/FontSettings.test.mjs",
+      "lane": "F",
+      "reason": "VM JSX and font-store doubles exercise input/reset callbacks; font parsing is pure and storage/browser imports are replaced.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "components/GitExplorerPanel.test.mjs",
+      "lane": "F",
+      "reason": "Static panel rendering replaces Git children and effects; keyboard tests use synthetic controls and restore the process-local document global.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "components/GitPatchStack.test.mjs",
+      "lane": "F",
+      "reason": "Static patch rendering uses a stub diff renderer; preferences use the SSR snapshot and patch reads are explicitly asserted absent.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "components/MarkdownMedia.test.mjs",
+      "lane": "F",
+      "reason": "Production media components run solely against synthetic hook/native-media/document objects; activation IDs are sequence-based and no real media or HTTP resource is opened.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "components/ModelSelector.viewport.test.mjs",
+      "lane": "F",
+      "reason": "Calls only the pure viewport-layout export on numeric fixtures; imported hook modules have no eager browser subscriptions.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "components/SessionWorktreeBadge.test.mjs",
+      "lane": "F",
+      "reason": "Server-renders a presentation-only badge over synthetic POSIX/Windows path strings; component has only a type import and no I/O.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "hooks/compaction.test.mjs",
+      "lane": "F",
+      "reason": "Extracted production compaction callbacks use synthetic fetch, interval records and EventTargets; recovery deadlines are numeric assertions, not elapsed-time bounds.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "hooks/highlighting.test.mjs",
+      "lane": "F",
+      "reason": "Hook modules execute in VM with injected queue/selection/language-loader doubles; finite promise rejections and unmount cleanup do not schedule browser timers or imports.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "hooks/interaction-receipts.test.mjs",
+      "lane": "F",
+      "reason": "Receipt helpers and extracted SSE/reconnect callbacks manipulate in-memory transcripts; fetch is a controlled promise harness and localhost strings only parse URLs.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "hooks/model-speed.test.mjs",
+      "lane": "F",
+      "reason": "Model-speed reconciliation uses injected command promises, manually aborted timeout controllers and fake interval records; no real 10-second/15-second deadline runs.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "hooks/useAgentSession.model-selection.test.mjs",
+      "lane": "F",
+      "reason": "Source-extracted model-selection and canonical-loader callbacks receive command/fetch/cache doubles; all held promises resolve explicitly and no disk/network command is sent.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "hooks/useAudio.test.mjs",
+      "lane": "F",
+      "reason": "VM hook uses blocked in-memory storage doubles; toggling cannot create native audio because AudioContext is absent and caught by the production guard.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "hooks/useFontPreferences.test.mjs",
+      "lane": "F",
+      "reason": "Fresh VM stores use Map-backed localStorage/CSS/listener doubles; subscribers are deterministically removed and no host persistence is accessed.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "hooks/useI18n.test.mjs",
+      "lane": "F",
+      "reason": "English provider static rendering uses a pure catalogue/formatter path; the throwing window getter is worker-local and restored in finally.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/acceptance/recovery-lock.test.mjs",
+      "lane": "N",
+      "reason": "Real flock recovery mutators write only unique fixture roots; production helper awaits close and injected paused lock owner is killed and its exact close promise awaited in finally.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/acceptance/snapshot.test.mjs",
+      "lane": "N",
+      "reason": "Snapshot, FIFO, Git/worktree and Python exporter effects use unique fixture outputs; shared cwd is read-only snapshot input. Python runs synchronously with -I -B and output/manifest paths under private root; cleanup restores modes before recursive removal.",
+      "estimatedMs": 5000
+    },
+    {
+      "path": "lib/account-model-runtime-boundary.test.mjs",
+      "lane": "F",
+      "reason": "Account/runtime and route boundaries execute in a VM with explicit SDK, filesystem and provider mocks; synthetic requests and awaited SSE completion do not open sockets.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/agent-event-backpressure.test.mjs",
+      "lane": "F",
+      "reason": "Synthetic ReadableStream/session events only; abort cleanup clears heartbeat and liveness timers, and read guards are cleared; env changes are per-process.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/agent-usage.test.mjs",
+      "lane": "F",
+      "reason": "Usage coordinator injects deferred reads and Map-backed scheduling; the fetch adapter is replaced and restored, with no HTTP requests.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/blocking-card-scroll.test.mjs",
+      "lane": "F",
+      "reason": "Synthetic EventTarget/card geometry and manually flushed RAF/ResizeObserver mocks only; followBlockingCard has no imports or native resources.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/composer-focus.test.mjs",
+      "lane": "F",
+      "reason": "Composer focus uses restored process-local document/window/RAF fakes and explicitly drains frames; panel-focus only traverses supplied DOM objects.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/delimited-table.test.mjs",
+      "lane": "F",
+      "reason": "Delimited-table cases parse supplied strings and calculate widths/visible row ranges; path literals are lexical inputs and subject has no imports.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/dependency-advisory-boundary.test.mjs",
+      "lane": "N",
+      "reason": "Two synchronous bounded Node child probes inherit private runner directories; fixture interception and DOCX buffers are process-local, with no generated files or real glob execution.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/diff-context.test.mjs",
+      "lane": "F",
+      "reason": "Only countDiffTextLines/decodeDiffText operate on strings and Buffers; imported Git exec helper declares functions but does not spawn at import.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/directory-browser.test.mjs",
+      "lane": "N",
+      "reason": "Directory listing/realpath and symlink fixtures live in unique tmpdir roots and all async work and recursive cleanup are awaited; missing-path probe is read-only under private TMP.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/directory-reservations.test.mjs",
+      "lane": "N",
+      "reason": "Real directories/symlink and physical-path checks use unique mkdtemp roots with synchronous cleanup; reload-shared reservation Map is process-local and leases have registered release hooks.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/e2e-fixture-transport.test.mjs",
+      "lane": "F",
+      "reason": "Reads and evaluates only the command/patch source slice against synthetic request/response objects; no browser or network fixture is started.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/e2e-owned-routes.test.mjs",
+      "lane": "F",
+      "reason": "Route ownership/disposal uses explicit promise gates and fake routes; all peers and disposal promises are joined, and imported compaction code has no top-level browser work.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/enabled-models-runtime.test.mjs",
+      "lane": "N",
+      "reason": "Model matching uses snapshot runtimes; real SettingsManager reads/writes target unique temporary agent/project directories, writes await flush and file cleanup is awaited.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/enabled-models.test.mjs",
+      "lane": "F",
+      "reason": "Enabled-model state, edits and renames operate entirely on arrays and a local resolver; imported implementation has no runtime imports or native effects.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/exact-system-prompt.test.mjs",
+      "lane": "F",
+      "reason": "Inline extension handlers are registered in a local Map and invoked with synthetic events; SDK dependency is type-only.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/explorer-reveal.test.mjs",
+      "lane": "F",
+      "reason": "Only lexical POSIX/Windows/UNC path containment and reveal-root selection; no filesystem operations.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/explorer-upload.test.mjs",
+      "lane": "F",
+      "reason": "Upload transport is supplied synthetic promises except fetch/XHR cases, which replace and restore process-local browser transports; no real upload or network is dispatched.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/file-drop.test.mjs",
+      "lane": "F",
+      "reason": "Drop tests use in-memory File objects and synthetic DataTransfer entries; destination helpers perform lexical path operations only.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/file-line-target.test.mjs",
+      "lane": "F",
+      "reason": "Parses line/range/column targets and resolves only lexical local href strings; helper has no runtime imports or native IO.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/file-link-popover.test.mjs",
+      "lane": "F",
+      "reason": "Popover tests calculate rectangles, visibility and viewport clamping from plain objects; subject is import-free.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/file-workspace.test.mjs",
+      "lane": "F",
+      "reason": "Workspace navigation, geometry, edit arbitration and subscriptions mutate only explicit in-memory models; all helper imports are type-only.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/font-preferences.test.mjs",
+      "lane": "F",
+      "reason": "Font cases validate supplied weights/names and escape CSS strings; no storage, font loading or browser effects are invoked.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/git-diff-preferences.test.mjs",
+      "lane": "F",
+      "reason": "Diff preference persistence is exercised exclusively through supplied getItem/setItem mocks, including blocked/quota cases.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/git-file-context.test.mjs",
+      "lane": "N",
+      "reason": "Each test initializes and commits in a unique mkdtemp repository, awaits immutable Git reads and refusal paths, and removes its owned root via t.after; symlink targets are never opened.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/highlight-queue.test.mjs",
+      "lane": "F",
+      "reason": "Highlight grants use an injected manual scheduler and synthetic selection listeners; timer/idle paths execute in a VM with fake window handles and source is read-only.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/http-dispatcher-options.test.mjs",
+      "lane": "F",
+      "reason": "Dispatcher source executes in a VM with synthetic undici and regular-file modules; configure calls instantiate only captured fake agents and install no real network dispatcher.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/i18n/format.test.mjs",
+      "lane": "F",
+      "reason": "String interpolation and Intl formatting use explicit dates and supplied dictionaries; only optional console warning, no resources.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/live-transcript.test.mjs",
+      "lane": "F",
+      "reason": "Transcript completion and prompt matching transform supplied message arrays/strings only; all remaining imports are erased types.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/markdown-list-continuation.test.mjs",
+      "lane": "F",
+      "reason": "List continuation tests compute edits from supplied strings/caret positions; implementation has no imports, IO or scheduled work.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/markdown-source-lines.test.mjs",
+      "lane": "F",
+      "reason": "Static React rendering normalizes strings and runs synchronous Markdown AST plugins; no DOM mounting, local media loading, network or native fixture.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/math-dependency.test.mjs",
+      "lane": "F",
+      "reason": "Reads package manifest/lock source without mutation and exercises synthetic KaTeX/semver rendering; no fetched media or browser execution.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/message-signatures.test.mjs",
+      "lane": "F",
+      "reason": "Signature removal tests use frozen synthetic provider messages and pure shallow-copy filtering; implementation is import-free.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/model-catalog-refresh.test.mjs",
+      "lane": "F",
+      "reason": "Signature cases are pure; the only refresh runs under PI_OFFLINE and returns before runtime construction; environment is restored in finally.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "lib/model-context.test.mjs",
+      "lane": "F",
+      "reason": "Context override validation clones synthetic objects and parses tokens; implementation has no imports, filesystem, network or timers.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/model-discovery.test.mjs",
+      "lane": "N",
+      "reason": "Discovery parsing is pure but auth resolution creates a unique temporary models file and awaits real ModelRuntime construction/auth before synchronous finally removal; default agent state is runner-private.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/native-call-display.test.mjs",
+      "lane": "F",
+      "reason": "Native display and wire tests project synthetic metadata only; native-looking paths and IDs remain data and no native engine is created.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/panel-focus.test.mjs",
+      "lane": "F",
+      "reason": "Tab traversal uses plain object DOM/shadow-root/slot fakes; helper performs only injected object queries.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/patch.test.mjs",
+      "lane": "F",
+      "reason": "Unified diff inputs are literal strings and the imported parser has no runtime imports or native operations.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/plugins/patch-context.test.mjs",
+      "lane": "F",
+      "reason": "Only opaque card validation and detached receipt snapshots are exercised; runtime imports are pure validators/receipt transforms.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/plugins/project-acknowledgment.test.mjs",
+      "lane": "F",
+      "reason": "Card digests, decision-envelope validation and receipt transforms use synthetic objects and process-local crypto only; no filesystem or host operation is invoked.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/plugins/runtime.test.mjs",
+      "lane": "F",
+      "reason": "VM-loaded runtime uses explicit in-memory settings/listener mocks and synthetic message histories; no real settings, SDK startup or observer services are imported.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/plugins/session-settings.test.mjs",
+      "lane": "N",
+      "reason": "Real settings and Git/worktree identity effects target per-case mkdtemp repositories and explicit fixture settings paths; native commands and lock release are synchronous and registered teardown removes the root.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "lib/plugins/settings.test.mjs",
+      "lane": "N",
+      "reason": "Real settings and Git/worktree identity effects target per-case mkdtemp repositories and explicit fixture settings paths; native commands and lock release are synchronous and registered teardown removes the root.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/plugins/ui.test.mjs",
+      "lane": "F",
+      "reason": "Pure bounded card/action validators operate on synthetic objects and strings, without SDK/resource/host effects.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/prism-languages.test.mjs",
+      "lane": "F",
+      "reason": "Grammar registration, lazy-import promises and React static rendering stay process-local; final consumer checks are source reads, not browser execution.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/project-command-env-sdk.test.mjs",
+      "lane": "N",
+      "reason": "Real offline SDK startup/reload uses a unique temporary cwd, in-memory credentials/settings/session and explicit model store; no Bash or codemode execute is called, sessions are disposed before awaited removal.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/project-native-resources.test.mjs",
+      "lane": "N",
+      "reason": "Real Git repositories/worktrees, identity markers, private atomic stores and symlinks stay below a unique root; Git calls are synchronous and root teardown is awaited; lease expiry is simulated, not wall-clock slept.",
+      "estimatedMs": 3000
+    },
+    {
+      "path": "lib/project-tree.summary.test.mjs",
+      "lane": "F",
+      "reason": "Summary-tree tests project synthetic trees, including a 3000-level chain, in memory; project-tree only imports pure signature filtering at runtime.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/project-tree.test.mjs",
+      "lane": "F",
+      "reason": "Tree previews/contraction/depth-limit cases use synthetic nodes only; imported project-tree/signature modules have no native effects.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/project-trust.test.mjs",
+      "lane": "N",
+      "reason": "Project trust tests create private projects/repos and extension marker files; SDK reload is awaited and every fixture root has an awaited after removal; source checks only read files.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "lib/provider-accounts.test.mjs",
+      "lane": "N",
+      "reason": "Accounts, credentials, catalog directories and Git worktrees use unique fixture roots and awaited finally cleanup; global fetch rejects unexpected HTTP and is restored.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "lib/provider-api-key-route.test.mjs",
+      "lane": "F",
+      "reason": "Reads API-key route source and checks patterns only; does not import or invoke the route or SDK.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/provider-credential-store.test.mjs",
+      "lane": "N",
+      "reason": "Credential modifications and proper-lockfile contention use unique synthetic auth files; update paths await release and fixture cleanup is awaited; SDK modelsPath:null uses memory catalogs.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/provider-listing.test.mjs",
+      "lane": "F",
+      "reason": "Provider listing operates solely on supplied synthetic provider records; implementation has no runtime imports or native operations.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/provider-usage.test.mjs",
+      "lane": "N",
+      "reason": "Usage routes store synthetic accounts/default credentials under an explicitly unique agent directory; requests are in-process and every exercised upstream fetch is replaced/restored; teardown removes the directory.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "lib/review-notebook.test.mjs",
+      "lane": "F",
+      "reason": "JSON review-block validation and URLSearchParams construction only; no Git, filesystem or HTTP calls despite repository-shaped strings.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/review-source.test.mjs",
+      "lane": "N",
+      "reason": "Each case owns a unique mkdtemp Git repository and synchronous commits, awaits all Explorer/blob reads and rejections, then removes its root with t.after.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/rpc-manager-operation-receipts.test.mjs",
+      "lane": "N",
+      "reason": "Receipt persistence and symlink/directory observations use mkdtemp-owned agent/session directories; SDK managers perform synchronous file persistence, wrapper disposal is a synchronous stub with no shutdown emitter, and hooks synchronously remove fixtures.",
+      "estimatedMs": 3000
+    },
+    {
+      "path": "lib/rpc-manager-widgets.test.mjs",
+      "lane": "F",
+      "reason": "All widgets, reloads, runtime methods and disposal are process-local doubles; source cwd is only observed for trust reads. Destroy may queue mock emission/disposal but owns no real SDK resources.",
+      "estimatedMs": 3000
+    },
+    {
+      "path": "lib/rpc-model-speed.test.mjs",
+      "lane": "F",
+      "reason": "Real SessionManager is explicitly inMemory; speed changes append only memory metadata and synchronous disposal stubs have no extension shutdown emitter. Literal /fixture is metadata, not a host write.",
+      "estimatedMs": 3000
+    },
+    {
+      "path": "lib/rpc-session-info.test.mjs",
+      "lane": "N",
+      "reason": "Registry entries are doubles; only persisted-row existence fixture writes a unique mkdtemp file and removes it synchronously. /tmp/runtime-cwd is projected metadata; missing paths derive from private tmpdir.",
+      "estimatedMs": 3000
+    },
+    {
+      "path": "lib/scratchpad-client.test.mjs",
+      "lane": "F",
+      "reason": "Scratchpad controller uses Map-backed storage and supplied deferred transport; pending promises are synthetic/process-local and cannot perform real saves.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/search-tree.test.mjs",
+      "lane": "F",
+      "reason": "Flat synthetic path arrays are folded, deduplicated and sorted in memory; search-tree has no imports or filesystem access.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/session-accounts.test.mjs",
+      "lane": "N",
+      "reason": "SDK persistent manager receives the unique fixture as both cwd and session directory; account snapshots append synchronously and finally awaits recursive removal.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/session-directory.test.mjs",
+      "lane": "N",
+      "reason": "Advisory directory resolution probes only unique present/missing/file fixtures; Git project-resolution children are awaited and the after hook returns its removal promise. /fixture.jsonl is unused row metadata.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "lib/session-file-reference-policy.test.mjs",
+      "lane": "F",
+      "reason": "Complete suite passes synthetic transcript records and literal sentinel paths through lexical authority parsing; no tool calls, shell commands or sentinel filesystem accesses execute.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/session-launch-admission.test.mjs",
+      "lane": "N",
+      "reason": "SDK prompts/binding/disposal are injected doubles; lifecycle timeout cases use mock timers and settle released gates. Temporary refusal agent directories are synchronously removed; successful mock prompts can write real completion metadata only into harness-private agent storage.",
+      "estimatedMs": 3000
+    },
+    {
+      "path": "lib/session-launch.test.mjs",
+      "lane": "N",
+      "reason": "Launch host and approval UI are injected; settings locks/atomic writes and the actual linked-worktree Git commands operate inside one mkdtemp root. Synchronous Git calls finish before synchronous root removal and policy listeners unsubscribe in finally.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "lib/session-model-refresh.test.mjs",
+      "lane": "F",
+      "reason": "Runtime families, binders, tool execution and stream settlement are synthetic doubles; deliberate refresh timeout is mock-clock driven. Runtime registration releases are process-local and final wrapper shutdown tests await completion.",
+      "estimatedMs": 3000
+    },
+    {
+      "path": "lib/session-model-speed-runtime.test.mjs",
+      "lane": "N",
+      "reason": "Runtime models/store paths are unique private fixtures; credentials are in-memory and every request supplies a finite synthetic SSE fetch with retries disabled. Stream iteration/result and async fixture deletion are awaited; SDK create defaults to no model-catalog network unless explicitly allowed.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/session-model-speed.test.mjs",
+      "lane": "N",
+      "reason": "Validation cases are pure; persistence case creates a unique explicit SDK session directory, writes/branches/reopens only that transcript and awaits root deletion.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/session-move-client.test.mjs",
+      "lane": "F",
+      "reason": "Every transport call is supplied as an async fake returning in-memory Response objects; reviewed /old,/new,/sessions paths are serialized data only. Batch and reconciliation loops are finite and awaited.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/session-native-resources.test.mjs",
+      "lane": "F",
+      "reason": "Selection schema/accessor/immutability tests use plain data and a recording appendCustomEntry stub; imports are type-only plus local validation, with no MCP acquisition, child or filesystem operation.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/session-run-recovery.test.mjs",
+      "lane": "N",
+      "reason": "Journal records are written exclusively below an explicitly supplied mkdtemp root and removed in awaited finally. Liveness checks signal only this process with signal zero; fake dead-owner callbacks never target external processes.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/session-spawn.test.mjs",
+      "lane": "N",
+      "reason": "Synthetic spawn metadata plus real unique agent JSONL/index fixture; scanner calls are awaited and teardown resets/cancels the scanner save timer before synchronous fixture removal.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/settings-listing-runtime.integration.test.mjs",
+      "lane": "N",
+      "reason": "Settings listing uses unique HOME/agent/project roots, synthetic extensions and blocked fetch; runtime wrapper serializes and drains registration refreshes before publication, then invalidation and awaited root cleanup run after tests.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "lib/settings-listing-runtime.test.mjs",
+      "lane": "F",
+      "reason": "Settings runtime concurrency/TTL cases use a strict VM SDK mock, synthetic Date and explicit promise gates; all queued work is resolved/observed, with no real storage or network runtime.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/show-hidden-projects-preference.test.mjs",
+      "lane": "F",
+      "reason": "Map-backed storage and a restored process-local window getter simulate browser preferences; no actual browser or disk storage.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/skill-updates.test.mjs",
+      "lane": "F",
+      "reason": "Every remote skill check injects its fetcher, including the rate-limit case with an injected Git resolver; real Git fallback and network paths are not entered.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/skills-service.integration.test.mjs",
+      "lane": "N",
+      "reason": "Skills listing/content and full-loader parity use private HOME/agent/package/project trees; dynamic fixture extensions register handlers only, fetch is blocked and root cleanup is awaited.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "lib/sse-stream.test.mjs",
+      "lane": "F",
+      "reason": "SSE uses VM-loaded source with strict mock dependency whitelist and fake intervals; readers/startup settle and watchdog timers are cleared; other routes are source-read only.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/streaming-message.test.mjs",
+      "lane": "F",
+      "reason": "Literal assistant snapshots and deltas exercise an immutable reducer and tool-call normalizer; all other imports are type-only.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/subagent-extension-selectors.test.mjs",
+      "lane": "F",
+      "reason": "Extension selectors consume synthetic package/path metadata and tool maps; selected subagents helper does no discovery or writes on the exercised filtering path.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/subagent-extension.test.mjs",
+      "lane": "F",
+      "reason": "Subagent tool definitions use injected runtime/profile providers only; fake session paths are data, resolved background completions notify mock callbacks, and pre-aborted wait clears its timer.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/subagent-lifecycle.test.mjs",
+      "lane": "N",
+      "reason": "Child persistence and directory admission use private session roots with awaited after removal; notification consumption uses mock parent methods and awaited calls, not a real child provider.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "lib/subagent-resume.test.mjs",
+      "lane": "F",
+      "reason": "Resume dispatch is injected and synthetic; queued-result wait uses one awaited 500ms polling timer, not a short wall-clock success threshold, then observes the terminal mock run.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "lib/terminal-extra-keys.test.mjs",
+      "lane": "F",
+      "reason": "Escape/control/cursor sequences are generated from literal keys and modifier objects; helper has no imports or native terminal calls.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/terminal-theme.test.mjs",
+      "lane": "F",
+      "reason": "Stored theme parsing and ANSI palette validation operate on constants only; xterm import is type-only.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/theme.test.mjs",
+      "lane": "F",
+      "reason": "Reads checked-in CSS and executes first-paint script in fresh VM contexts with fake storage/window/document; no real browser or source writes.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/thinking-pieces.test.mjs",
+      "lane": "F",
+      "reason": "Unicode/CRLF string splitting and append stability checks only; message-display imports types only.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/tool-fields.test.mjs",
+      "lane": "F",
+      "reason": "Input-field projection and write-tool recognition inspect scalar objects and names only; no tool is executed and no file is read or written.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/working-diff-context.test.mjs",
+      "lane": "N",
+      "reason": "Native filesystem/Git cases stay beneath one mkdtemp root with sequential per-case repos; all subtests/reads are awaited, deterministic fs/Date mocks are process-local, and after restores env/removes the root.",
+      "estimatedMs": 2000
+    },
+    {
+      "path": "plugins/git-workflow/cleanup-path.test.mjs",
+      "lane": "N",
+      "reason": "Real descriptor-relative removals and symlink substitutions stay beneath unique roots; every held descriptor is explicitly closed in finally and recursive fixture removal is registered.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "plugins/git-workflow/commit-gate.test.mjs",
+      "lane": "N",
+      "reason": "Gate/shim files and real Git commit effects stay in unique temporary directories. Shell exec and Node spawnSync forwarding are synchronous through native child settlement; registered synchronous teardown removes them.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "plugins/git-workflow/operation-paths.test.mjs",
+      "lane": "F",
+      "reason": "Marker resolutions inject synthetic async Git readers; production idle functions are extracted from source and executed with mocked filesystem/Git capabilities. Importing process helpers does not spawn anything.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/test-lanes-audit.test.mjs",
+      "lane": "F",
+      "reason": "Read-only discovery and JSON audit/manifest assertions; no fixtures, children, timers or source mutation.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/file-panel-layout.test.mjs",
+      "lane": "F",
+      "reason": "Synthetic locator and explicitly released Promise gates test the browser fixture wait; no browser, timers, native I/O or source writes.",
+      "estimatedMs": 1000
     }
   ]
 }

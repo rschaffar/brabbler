@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { privateEnvironment, validateArgs } from './test.mjs';
 import { runOwned } from './test-lifecycle.mjs';
+import { coreBuildBudget } from './vm-plan.mjs';
 
 export async function runCore(source, system, args) {
   const parsed = validateArgs(['core', ...args]);
@@ -12,6 +13,8 @@ export async function runCore(source, system, args) {
   if (!/^\/nix\/store\/[a-z0-9]{32}-[^/]+$/.test(source ?? '') || !['x86_64-linux', 'aarch64-linux'].includes(system)) {
     throw new Error('Pinned Nix source and native Linux system required');
   }
+  const jobsIndex = parsed.options.indexOf('--jobs');
+  const buildBudget = coreBuildBudget(jobsIndex < 0 ? undefined : Number(parsed.options[jobsIndex + 1]));
   const mask = process.umask(0o077);
   const root = fs.mkdtempSync('/tmp/pi-web-test-core.');
   const env = privateEnvironment(root, process.env);
@@ -21,14 +24,14 @@ export async function runCore(source, system, args) {
   const controller = new AbortController();
   const handlers = Object.fromEntries(['SIGINT', 'SIGTERM'].map(sig => [sig, () => controller.abort(sig)]));
   for (const [sig, handler] of Object.entries(handlers)) process.on(sig, handler);
-  const report = { version: 1, fresh: true, source, system, selection: parsed.options,
+  const report = { version: 1, fresh: true, source, system, selection: parsed.options, buildBudget,
     runId: randomUUID(), startedAt: new Date().toISOString(), settlementScope: 'Nix sandbox owns builder processes; host observations cover the Nix CLI only' };
   console.log(`Private core test root (sandbox execution; evidence retained): ${root}`);
   console.log(`Fresh core selection: ${JSON.stringify(parsed.options)}${parsed.options.includes('--file') || parsed.options.includes('--inventory-only') ? ' (NOT full acceptance)' : ''}`);
   try {
     report.execution = await runOwned('nix', ['build', '--extra-experimental-features', 'nix-command flakes',
       '--store', 'daemon', '--no-write-lock-file', '--option', 'accept-flake-config', 'false',
-      '--option', 'sandbox', 'true', '--max-jobs', '2', '--cores', '4', '--impure', '--keep-failed', '-L',
+      '--option', 'sandbox', 'true', '--max-jobs', String(buildBudget.maxJobs), '--cores', String(buildBudget.coresPerBuild), '--impure', '--keep-failed', '-L',
       ...(parsed.offline ? ['--offline'] : []), '--out-link', path.join(root, 'result'),
       '--file', path.join(source, 'nix/fresh-core.nix'), '--argstr', 'system', system,
       '--argstr', 'selection', JSON.stringify(parsed.options), '--argstr', 'runId', report.runId],
