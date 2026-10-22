@@ -64,4 +64,3 @@ acceptance was active at admission. These are estimates, not reservations.
 The final follow-up only records evidence and archives this plan. Verify the archive
 and unchanged application/test inputs proportionally; do not relabel the full run as
 execution on the documentation-only tip or create another full-testing loop.
-
