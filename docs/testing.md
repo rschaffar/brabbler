@@ -405,6 +405,14 @@ so 416s is final acceptance evidence, not a matched comparison to the earlier co
 Exact identities, retained reports, review corrections and remaining holds live in
 the [completed batch audit plan](plans/archived/2026-10-22_default-exclusive-audit-plan.md).
 
+For the subsequent stable-main integration at `18abd376`, independent helper-delta
+review retains all 128 promotions. Three changed held-file hashes are refreshed
+without promotion; the new Acceptance runtime test remains default-E outside the
+original 192-file audit. Its plugin registration/settings remain process-local or
+private-fixture-bound, and first-command binding now awaits the existing settlement
+promise. Earlier acceptance/timing results retain their recorded source identities;
+this newer composition requires its own complete verification.
+
 ## Diagnostics and retention
 
 Core retains inventory, summary, original bounded TAP/stderr and lifecycle evidence.

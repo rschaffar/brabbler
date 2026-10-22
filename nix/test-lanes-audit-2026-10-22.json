@@ -2,7 +2,11 @@
   "version": 1,
   "initialCandidate": "27a5375b71f01f8d3821fb42e8fad3bd3fe6c765",
   "initialSourceDigest": "3027f6ff3a35f53ca61e72f394254720345d066c96f848aa5a0b035244196d27",
-  "followUpTarget": "32cb74b966a129ddc0add56a8d62fdef21443a1b",
+  "followUpTargets": [
+    "32cb74b966a129ddc0add56a8d62fdef21443a1b",
+    "18abd376236e95777e58028d24ee2cec5c98b536"
+  ],
+  "followUpScope": "Latest plugin/default-off and binding-settlement helper deltas preserve all promoted F/N isolation assumptions. Three changed held test hashes are refreshed conservatively; the new Acceptance runtime file is not part of the original192-file audit and stays default-exclusive.",
   "scope": "Read-only per-file scheduling audit, with conservative holds for unresolved helper/teardown/timing/resource effects. Original test bodies and per-file serial cases are unchanged. SDK/default directories remain runner-private; shared source remains writable.",
   "counts": {
     "F": 86,
@@ -1222,9 +1226,11 @@
     },
     {
       "path": "lib/acceptance/coordinator.test.mjs",
-      "sha256": "a1f022414411f04713acfaffa47e553239c3633bd4488871a93a7341c8d303e1",
+      "sha256": "014e9bc084e6dbb71fcd68d1b6daef3927d08ef4d6b7e1a80ab1ab7052212c77",
+      "previousSha256": "a1f022414411f04713acfaffa47e553239c3633bd4488871a93a7341c8d303e1",
+      "followUpReview": "Incoming default-off plugin fixtures write settings only beneath the private agent root. Changed coordinator cancellation/timer paths remain held rather than being newly admitted by this composition review.",
       "lane": "E",
-      "reason": "Private snapshot/ledger fixtures and mocked execution avoid real acceptance runs, but coordinator scheduling survives cancellation/completion: unref timers have no dispose/await hook and may pump after fixture deletion.",
+      "reason": "Hold: private snapshot/ledger and plugin-enable fixtures remain isolated, but changed queued/active cancellation and coordinator-timer drain paths have not received a parallel teardown proof; retain E.",
       "evidence": [
         "lib/acceptance/coordinator.test.mjs:14",
         "lib/acceptance/test.fixture.mjs:10",
@@ -1252,9 +1258,11 @@
     },
     {
       "path": "lib/acceptance/interfaces.test.mjs",
-      "sha256": "59310520ec7483b4ee0aa42a0257f0939f1bab6f1da6c576995092c7349747a4",
+      "sha256": "d77450e8fc19670db4bc793df273607c13a90016658adb8089989065ce3faea4",
+      "previousSha256": "59310520ec7483b4ee0aa42a0257f0939f1bab6f1da6c576995092c7349747a4",
+      "followUpReview": "Incoming private plugin settings and enable/disable interface cases do not resolve the coordinator background-lifecycle hold. No new pool admission.",
       "lane": "E",
-      "reason": "Private snapshot/ledger fixtures and mocked execution avoid real acceptance runs, but coordinator scheduling survives cancellation/completion: unref timers have no dispose/await hook and may pump after fixture deletion.",
+      "reason": "Hold: interface requests use private fixtures and mocked execution, but the revised plugin-enable/revocation and coordinator background-timer teardown are not proven safe under pooled scheduling; retain E.",
       "evidence": [
         "lib/acceptance/interfaces.test.mjs:14",
         "lib/acceptance/test.fixture.mjs:10",
@@ -3243,7 +3251,9 @@
     },
     {
       "path": "lib/rpc-manager-model-config.integration.test.mjs",
-      "sha256": "a137394aba7dff6891cd1e19c7cc5e6a53e5aba649686343def352baa43bbca2",
+      "sha256": "684b463dcff078042bda9b4c88b9282d64bb27134d27eface936c29c4226f393",
+      "previousSha256": "a137394aba7dff6891cd1e19c7cc5e6a53e5aba649686343def352baa43bbca2",
+      "followUpReview": "Incoming ordinary first-model reselection explicitly awaits the binding promise and shutdown for that new session. It does not alter the previously held final auth-gate failure cleanup; retain E.",
       "lane": "E",
       "reason": "Hold: the final authGate is released only on the success path, not in finally before awaited shutdown; failed assertions can strand native SDK teardown. The initial missing-SDK-export concern was retracted after following the actual re-export chain.",
       "evidence": [
