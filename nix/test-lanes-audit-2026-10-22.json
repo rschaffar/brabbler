@@ -1,7 +1,8 @@
 {
   "version": 1,
-  "candidate": "27a5375b71f01f8d3821fb42e8fad3bd3fe6c765",
-  "sourceDigest": "3027f6ff3a35f53ca61e72f394254720345d066c96f848aa5a0b035244196d27",
+  "initialCandidate": "27a5375b71f01f8d3821fb42e8fad3bd3fe6c765",
+  "initialSourceDigest": "3027f6ff3a35f53ca61e72f394254720345d066c96f848aa5a0b035244196d27",
+  "followUpTarget": "32cb74b966a129ddc0add56a8d62fdef21443a1b",
   "scope": "Read-only per-file scheduling audit, with conservative holds for unresolved helper/teardown/timing/resource effects. Original test bodies and per-file serial cases are unchanged. SDK/default directories remain runner-private; shared source remains writable.",
   "counts": {
     "F": 86,
@@ -81,7 +82,9 @@
     },
     {
       "path": "app/api/files/language-route.test.mjs",
-      "sha256": "1d12c937afecf98eac7cde29722fb87298b598cc28a21631f32e6ec07aabe9bd",
+      "sha256": "e0cd83febc6552b79a4bb29e0e630c3abedecaf26e30aa5a20aeeec577062117",
+      "previousSha256": "1d12c937afecf98eac7cde29722fb87298b598cc28a21631f32e6ec07aabe9bd",
+      "followUpReview": "Incoming shared getFileLanguage is import-free/data-only. AST inspection now reads that helper; added path/string cases have no native effects. Private route fixtures and awaited reads are unchanged; retain N.",
       "lane": "N",
       "reason": "Actual file-route language reads use synthetic files under one mkdtemp root, with private agent path and registered synchronous recursive removal; source is read only.",
       "evidence": [
@@ -118,7 +121,9 @@
     },
     {
       "path": "app/api/files/reference-authorization.test.mjs",
-      "sha256": "a4db59ab93f593f340800d2d93238b65bf4120f90f10a848087d2b2551076adf",
+      "sha256": "6f1bc1d467d9b634bd8c822e3bc667782e802296bf004941f6ddf4a9fc47f582",
+      "previousSha256": "a4db59ab93f593f340800d2d93238b65bf4120f90f10a848087d2b2551076adf",
+      "followUpReview": "Incoming file-language mapper is import-free/data-only; it does not resolve the existing native media-stream closure hold. Retain E.",
       "lane": "E",
       "reason": "real media ReadStreams are not joined through native close. Assertions on status/headers precede arrayBuffer without finally cancellation; on failure t.after removes the root while a stream can still open/read. Even success closes the web controller on native end, not native close; cancel destroys without awaiting close.",
       "evidence": [
@@ -152,7 +157,9 @@
     },
     {
       "path": "app/api/files/upload-route.test.mjs",
-      "sha256": "4dcce5fdc88d3a206d6781eaa0e21d666719159d146753a0d9ccff9312f2fa65",
+      "sha256": "a3bb2df2f7f95574644b34f6c09ee84cdb0d9bd0cacc1ab6bd122d94deaa08b5",
+      "previousSha256": "4dcce5fdc88d3a206d6781eaa0e21d666719159d146753a0d9ccff9312f2fa65",
+      "followUpReview": "Incoming language-route dependency is replaced with an inert mock in upload mode. No fixture destinations, producers or teardown behavior change; retain N.",
       "lane": "N",
       "reason": "Real uploads and symlink/chmod cases stay within per-case mkdtemp roots with registered synchronous removal; multipart producers are fully serialized before dispatch to avoid early-rejection iterator holds.",
       "evidence": [
@@ -2807,7 +2814,9 @@
     },
     {
       "path": "lib/prism-languages.test.mjs",
-      "sha256": "5a9dcea1c7ba827b9c700d5aa005d74a6722861b5d41bacea7032844c994e373",
+      "sha256": "fe7e74b8cefc8281e526052880219e7631f847da71b455eb0b2d653e71fa0687",
+      "previousSha256": "5a9dcea1c7ba827b9c700d5aa005d74a6722861b5d41bacea7032844c994e373",
+      "followUpReview": "Incoming ReviewNotebookSource consumer is read as source text only; no component factory/effect executes. Retain F.",
       "lane": "F",
       "reason": "Grammar registration, lazy-import promises and React static rendering stay process-local; final consumer checks are source reads, not browser execution.",
       "evidence": [

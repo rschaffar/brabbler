@@ -371,8 +371,33 @@ across 140 source-directory watches, without overflow/watch loss, and final sour
 content/mode hashes matched. The observer exists only in the diagnostic snapshot;
 ordinary acceptance is unchanged. This is bounded inotify/final-state evidence,
 not certification of restored mmap/external-hardlink writes, arbitrary host effects
-or escaped descendants. Full ordinary measurements belong to the
-[batch audit plan](plans/2026-10-22_default-exclusive-audit-plan.md) until settled.
+or escaped descendants.
+
+The first ordinary four/four pair passed all coverage, but **did not demonstrate
+an end-to-end speedup**: complete command **433s → 520s**, core **427.828s →
+489.999s**, browser **382.850s → 485.108s**, deployment **24.346s → 26.727s**.
+The identical application package and all 408 original core outcomes were checked;
+new metadata adds three cases. Serial files fell **211 → 83**, while the observed
+E tail fell **225.324s → 185.206s**. Broad timing inflation affected unchanged
+browser groups too; this does not establish its cause or excuse the slower result.
+
+A separate sequential **core-only, 16-effective-worker** control/candidate pair
+using the same fresh core derivations passed **408/3,063 → 409/3,066** files/tests,
+with all original outcomes identical. Command wall time was **383.823s → 254.658s**
+(**33.65% less**); pre-test setup/realization/static intervals **53.634s → 39.339s**;
+file execution **329.799s → 214.929s**; serial tail **203.426s → 109.738s**. Both used
+one Nix builder allocated 16 cores (`fresh-core.nix`, selection `--jobs 16`), not a
+claim that the normal fresh CLI's eight-core allocation cap was removed. Sixteen
+was selected to leave headroom for another observed Nix build. These are single,
+non-machine-exclusive pairs with fresh executions and warm dependencies, not
+cold-cache promises or statistically repeated causal measurements. No separate
+prerequisite prewarming was performed. The four/four and core-only results are
+not interchangeable; full acceptance remains mandatory.
+
+These paired measurements cover the pre-rebase audit candidate `172ce4d` and its
+`27a5375b` control. Subsequent main composition is verified separately, not relabelled
+as a new timing pair. Exact identities, retained reports, review corrections and
+remaining holds live in the [batch audit plan](plans/2026-10-22_default-exclusive-audit-plan.md).
 
 ## Diagnostics and retention
 
