@@ -58,7 +58,7 @@
     "package.json"
   ],
   "scripts": {
-    "postinstall": "node bin/prepare-terminal.js",
+    "postinstall": "node bin/patch-sdk-command-env.js --apply && node bin/prepare-terminal.js",
     "dev": "node bin/next-cli.js dev -H 127.0.0.1 -p 30141",
     "dev:lan": "node bin/next-cli.js dev -H 0.0.0.0 -p 30141",
     "build": "next build --webpack",

@@ -6,8 +6,12 @@ const os = require("node:os");
 const { createSshAgentRouter } = require("./ssh-agent-router");
 const { wireChildProcessLifecycle } = require("./process-lifecycle");
 const { getNextNodeArgs } = require("./pi-web-node-args");
+const { checkSdkCommandEnvironment } = require("./patch-sdk-command-env");
 
 async function launchManagedNext(options, services = {}) {
+  // Read-only installed-root verification, before runtime allocation. Never
+  // repair dependencies here or sanitize the trusted Next worker environment.
+  (services.checkSdkEnvironment || checkSdkCommandEnvironment)();
   const parent = services.parentProcess || process;
   const environment = options.environment || process.env;
   const createRouter = services.createRouter || createSshAgentRouter;
