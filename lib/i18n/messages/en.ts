@@ -1,11 +1,13 @@
 import type { LocalePlugin } from "../types";
 import { worktreeManagerEnglish } from "../worktree-manager-messages";
+import { sshAgentEnglish } from "../ssh-agent-messages";
 
 /** Pi Web 内置英语语言包。 */
 export const enLocale: LocalePlugin = {
   id: "en",
   label: "English",
   messages: {
+    ...sshAgentEnglish,
     "acceptance.title": "Acceptance",
     "acceptance.close": "Close acceptance",
     "acceptance.description": "Shared project acceptance queue. One heavy run at a time across this Pi Web agent directory; identical in-flight snapshots can share one run.",

@@ -23,7 +23,9 @@ import { ReviewNavigationContext } from "./ReviewNotebookBlock";
 import type { ReviewCommitReference, ReviewNavigation } from "@/lib/review-notebook";
 import { TabBar, type Tab } from "./TabBar";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
-import { BrowserSshAgent } from "./BrowserSshAgent";
+import { useSshAgent } from "@/hooks/useSshAgent";
+import { SshSigningCards } from "./SshSigningCards";
+import { SshSidebarButton } from "./SshSidebarButton";
 import { AcceptancePanel } from "./AcceptancePanel";
 import { ScratchpadPanel } from "./ScratchpadPanel";
 import { ProjectTrustDialog, type TrustChoice } from "./ProjectTrustDialog";
@@ -243,7 +245,7 @@ export function AppShell() {
   const [fileRevealRequest, setFileRevealRequest] = useState<FileRevealRequest>();
   const fileRevealId = useRef(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
-  const [sshPanelOpen, setSshPanelOpen] = useState(false);
+  const sshController = useSshAgent();
   const [acceptanceOpen, setAcceptanceOpen] = useState(false);
   const [pluginSettingsSession, setPluginSettingsSession] = useState<{ id: string; cwd: string } | null>(null);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
@@ -1347,6 +1349,7 @@ export function AppShell() {
         onReviewLaterReady={handleReviewLaterReady}
         onSessionsChange={handleSessionsChange}
       />
+      <SshSidebarButton controller={sshController} onOpen={() => setSettingsSection("ssh")} />
       <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
         {([
           ["models", translate("common.models")],
@@ -1376,10 +1379,6 @@ export function AppShell() {
             </button>
           );
         })}
-        <button type="button" onClick={() => setSshPanelOpen(true)} aria-label={translate("browserSsh.title")} title={translate("browserSsh.title")}
-          style={{ flex: 1, height: 32, background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}>
-          SSH
-        </button>
         <button
           type="button"
           onClick={() => setSettingsSection(getLastSettingsSection(projectTrustCwd))}
@@ -2805,12 +2804,15 @@ export function AppShell() {
         cwd={pluginSettingsSession?.cwd ?? projectTrustCwd}
         sessionId={pluginSettingsSession?.id ?? selectedSession?.id ?? null}
         initialSection={settingsSection}
+        sshController={sshController}
         initialPluginScope={pluginSettingsSession ? "session" : undefined}
         sessions={sessionsWithSelection}
         privacy={projectPrivacy}
         quoteSelectionEnabled={quoteSelectionEnabled}
         onQuoteSelectionChange={handleQuoteSelectionChange}
         onClose={() => {
+          sshController.cancelDiscovery();
+          if (sshController.busy && !sshController.approvingId) sshController.cancel();
           setSettingsSection(null);
           setPluginSettingsSession(null);
           setModelsRefreshKey((key) => key + 1);
@@ -2834,7 +2836,7 @@ export function AppShell() {
       />
     )}
     {scratchpadMounted && <ScratchpadPanel open={scratchpadOpen} sessionId={selectedSession && !selectedSession.transient ? selectedSession.id : null} onClose={() => setScratchpadOpen(false)} />}
-    <BrowserSshAgent open={sshPanelOpen} onClose={() => setSshPanelOpen(false)} onRequest={() => setSshPanelOpen(true)} sessionId={selectedSession?.id ?? null} />
+    <SshSigningCards controller={sshController} />
     </FileLinkMenuContext.Provider>
     </ReviewNavigationContext.Provider>
   );
