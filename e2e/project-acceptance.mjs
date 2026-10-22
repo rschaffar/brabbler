@@ -3,6 +3,18 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { waitForAsyncCondition } from './async-condition.mjs';
+import { createOwnedRoutes } from './owned-routes.mjs';
+
+export async function openAcceptanceConfiguration(dialog) {
+  // Initial status inserts profile cards above the native summary. Do not click
+  // a coordinate captured before that layout change has completed.
+  await dialog.getByText('Reading acceptance status…', { exact: true }).waitFor({ state: 'hidden' });
+  await dialog.getByText('Configure project profiles', { exact: true }).click();
+  const editor = dialog.getByRole('textbox', { name: 'Profiles JSON', exact: true });
+  await editor.waitFor({ state: 'visible' });
+  assert.equal(await editor.isEnabled(), true, 'configuration is editable after initial status');
+  return editor;
+}
 
 export async function checkProjectAcceptance(page, { base, api, post, project, width, returnSessionId }) {
   const input = `acceptance-${width}.txt`;
@@ -49,16 +61,44 @@ export async function checkProjectAcceptance(page, { base, api, post, project, w
     const reply = await response; assert.equal(reply.status(), 200, await reply.text());
     return (await reply.json()).run;
   };
+  // Reproduce the failed initial-read ordering with real persisted profiles and
+  // one held response. Only delivery is gated; the body comes from the server.
+  const previousProfiles = [
+    make('previous-one', 'console.log("previous profile one")'),
+    make('previous-two', 'console.log("previous profile two")'),
+  ];
+  await post('/api/acceptance', { cwd: project, action: 'configure', profiles: previousProfiles });
+  const gate = Promise.withResolvers();
+  let initialRead = true;
+  const pattern = /\/api\/acceptance\?/;
+  const owned = createOwnedRoutes(async route => {
+    const url = new URL(route.request().url());
+    if (route.request().method() !== 'GET' || url.searchParams.get('cwd') !== project || url.searchParams.has('runId') || !initialRead) return route.continue();
+    initialRead = false;
+    const response = await route.fetch();
+    await gate.promise;
+    await route.fulfill({ response });
+  }, route => route.continue());
+  await page.route(pattern, owned.handler);
+  const failures = [];
   try {
     await page.goto(`${base}/?cwd=${encodeURIComponent(project)}`, { waitUntil: 'domcontentloaded' });
     assert.equal((await api(endpoint)).enabled, false, 'Acceptance defaults off and remains off between variants');
     assert.ok((await tools()).every(tool => !tool.active));
     await openAcceptance();
+    await dialog.getByText('Reading acceptance status…', { exact: true }).waitFor();
+    gate.resolve();
     await dialog.getByText(/^Acceptance is disabled\./).waitFor();
-    await dialog.getByText('Configure project profiles', { exact: true }).click();
-    const editor = dialog.getByRole('textbox', { name: 'Profiles JSON', exact: true });
+    const editor = await openAcceptanceConfiguration(dialog);
+    await dialog.getByRole('button', { name: 'Run previous-one', exact: true }).waitFor();
+    await dialog.getByRole('button', { name: 'Run previous-two', exact: true }).waitFor();
     await editor.fill(JSON.stringify(profiles));
-    assert.equal(await editor.inputValue(), JSON.stringify(profiles), 'initial status cannot overwrite an editable configuration draft');
+    const refreshedProfiles = previousProfiles.map(profile => ({ ...profile, label: `${profile.label} refreshed` }));
+    await post('/api/acceptance', { cwd: project, action: 'configure', profiles: refreshedProfiles });
+    // A newly rendered label proves a poll was applied, not just that response
+    // headers arrived. The editor draft must survive that same React update.
+    await dialog.getByText(refreshedProfiles[0].label, { exact: true }).waitFor();
+    assert.equal(await editor.inputValue(), JSON.stringify(profiles), 'status polling cannot overwrite an editable configuration draft');
     const save = page.waitForResponse(response => new URL(response.url()).pathname === '/api/acceptance' && response.request().method() === 'POST' && response.request().postDataJSON().action === 'configure');
     void save.catch(() => {});
     await dialog.getByRole('button', { name: 'Save profiles', exact: true }).click();
@@ -104,13 +144,25 @@ export async function checkProjectAcceptance(page, { base, api, post, project, w
     await dialog.getByRole('region', { name: 'Run logs', exact: true }).locator('pre').filter({ hasText: 'acceptance fixture passed' }).waitFor();
     await dialog.getByRole('button', { name: 'Close acceptance', exact: true }).click();
     console.log(`PASS: ${width}px optional global Acceptance switch, retained profiles/history, live tools, queue cancellation and active job control`);
-  } finally {
-    const state = await api(endpoint);
-    for (const run of state.runs) if (['queued', 'running'].includes(run.state)) {
-      await post('/api/acceptance', { cwd: project, action: 'cancel', runId: run.id }); await waitRun(run.id, 'cancelled');
-    }
-    const disabled = await page.request.patch(`${base}/api/plugins/bundled`, { data: { pluginId: 'acceptance', scope: 'global', set: { enabled: false }, reset: [] } });
-    assert.equal(disabled.status(), 200);
-    await page.goto(`${base}/?session=${returnSessionId}`, { waitUntil: 'domcontentloaded' });
+  } catch (error) { failures.push(error); }
+  finally {
+    gate.resolve();
+    owned.beginDisposal();
+    try { await owned.dispose(handler => page.unroute(pattern, handler)); }
+    catch (error) { failures.push(error); }
+    try {
+      const state = await api(endpoint);
+      for (const run of state.runs) if (['queued', 'running'].includes(run.state)) {
+        await post('/api/acceptance', { cwd: project, action: 'cancel', runId: run.id });
+        await waitRun(run.id, 'cancelled');
+      }
+    } catch (error) { failures.push(error); }
+    try {
+      const disabled = await page.request.patch(`${base}/api/plugins/bundled`, { data: { pluginId: 'acceptance', scope: 'global', set: { enabled: false }, reset: [] } });
+      assert.equal(disabled.status(), 200);
+    } catch (error) { failures.push(error); }
+    try { await page.goto(`${base}/?session=${returnSessionId}`, { waitUntil: 'domcontentloaded' }); }
+    catch (error) { failures.push(error); }
+    if (failures.length) throw new AggregateError(failures, 'Project acceptance fixture failed');
   }
 }

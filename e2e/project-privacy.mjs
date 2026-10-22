@@ -1,4 +1,15 @@
 import assert from "node:assert/strict";
+import { waitForAsyncCondition } from "./async-condition.mjs";
+
+/** A visible child can still be clipped/scrolled while the sidebar expands. */
+export function privacySidebarReady() {
+  const sidebar = document.querySelector(".sidebar-container.sidebar-open");
+  if (!sidebar || !sidebar.firstElementChild) return false;
+  if (sidebar.getAnimations().some((animation) => animation.pending || animation.playState === "running")) return false;
+  return sidebar.getBoundingClientRect().width > 0
+    && sidebar.getBoundingClientRect().width >= sidebar.firstElementChild.getBoundingClientRect().width - 1
+    && Math.abs(sidebar.scrollLeft) <= 1;
+}
 
 export async function checkProjectPrivacy(page, width, { base, api, post, harness, selectedSessionId, otherSessionId }) {
   const mobile = width <= 640;
@@ -16,6 +27,7 @@ export async function checkProjectPrivacy(page, width, { base, api, post, harnes
   const openSettings = async () => {
     const sidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
     if (await sidebar.isVisible()) await sidebar.click();
+    await waitForAsyncCondition(page, privacySidebarReady);
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
     if (mobile) await dialog.getByRole("combobox", { name: "Settings", exact: true }).selectOption("general");

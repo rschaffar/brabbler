@@ -114,6 +114,13 @@ falsy values poll again, and errors propagate. A timed-out read remains owned by
 context shutdown, not a claim of cancellation. Trust decisions instead await one
 non-prompt `get_state` startup/binding acknowledgement under the same bound.
 
+Fixture clicks must follow settled layout, not merely a visible descendant. Privacy
+Settings waits for the open sidebar's width transitions, unclipped content and
+horizontal scroll to settle. Acceptance configuration waits for the initial status
+read to remove its loading row before one native summary click; a gated real response
+with two saved profiles protects that ordering. These waits preserve the ordinary
+30-second budget, assertions and no-retry policy.
+
 No host HOME, credentials, user bus, installed service or live store mount is
 forwarded. Synthetic providers and applications share only their sandbox loopback.
 Live-file tests modify fixture projects/session data, not application source/HMR.
