@@ -294,6 +294,12 @@ Preview errors leave the operation card and action footer available. A page,
 excerpt or expanded file never narrows the captured operation's approval scope.
 No raw patch is reconstructed from context or silently dropped to fit a card.
 
+Merge approval binds only the selected feature and target branch refs and their
+worktree registrations, including paths, HEADs and registration metadata. Both
+selected checkouts must remain clean and eligible. Commits, rebases, branch
+switches, locks, additions or removals in unrelated worktrees do not stale a merge.
+Other operation types retain their existing registration guards.
+
 Current permissions, relevant settings, checkout/ref/index/file state are checked
 again after approval, between checks and immediately before the native effect.
 No Git lock is held while waiting for approval. External filesystem/ref writers

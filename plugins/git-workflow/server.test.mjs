@@ -272,6 +272,82 @@ test("worktree and merge selections refuse changed branch tips after approval", 
   }), /Stale operation/);
 });
 
+// Exercise the same guard after human approval, after checks and at final dispatch.
+function mergeMutationUi(stage, mutate) {
+  let changed = false;
+  const once = () => { if (!changed) { changed = true; mutate(); } };
+  return {
+    pluginCard: async () => { if (stage === "approval") once(); return "approve"; },
+    operationReceipt(id, receipt) {
+      snapshotOperationReceipt(id, receipt, 1);
+      if (stage === "checks" && receipt.phase === "checking" && receipt.checks.every((check) => check.status === "passed")) once();
+      if (stage === "dispatch" && receipt.phase === "executing") once();
+    },
+  };
+}
+for (const stage of ["approval", "checks", "dispatch"]) test(`merge ignores unrelated worktree changes at ${stage}`, async () => {
+  const repo = fixture(); const path = feature(repo);
+  change(path); git(path, "add", "a"); git(path, "commit", "-m", "Feature");
+  const other = feature(repo, "unrelated"); const removed = feature(repo, "removed");
+  const targetTip = git(repo, "rev-parse", "HEAD"); const featureTip = git(path, "rev-parse", "HEAD");
+  set(repo, { mergeChecks: [{ name: "Feature check", command: "test -f a" }] });
+  let unrelatedTip;
+  success(await call(repo, { action: "merge", checkout: repo, featureBranch: "feature" }, mergeMutationUi(stage, () => {
+    git(other, "commit", "--allow-empty", "-m", "Other session");
+    git(other, "rebase", "feature");
+    git(other, "switch", "-c", "other-branch");
+    git(repo, "worktree", "lock", other);
+    feature(repo, "new-worktree");
+    git(repo, "worktree", "remove", removed);
+    unrelatedTip = git(other, "rev-parse", "HEAD");
+  })));
+  assert.ok(unrelatedTip, "mutation checkpoint reached");
+  assert.equal(git(repo, "show", "-s", "--format=%P", "HEAD"), `${targetTip} ${featureTip}`);
+  assert.equal(git(path, "rev-parse", "HEAD"), featureTip);
+  assert.equal(git(other, "rev-parse", "HEAD"), unrelatedTip);
+  assert.equal(git(other, "branch", "--show-current"), "other-branch");
+});
+for (const stage of ["approval", "checks", "dispatch"]) for (const selected of ["feature", "target"]) {
+  test(`merge refuses changed ${selected} tip at ${stage}`, async () => {
+    const repo = fixture(); const path = feature(repo);
+    change(path); git(path, "add", "a"); git(path, "commit", "-m", "Feature");
+    set(repo, { mergeChecks: [{ name: "Feature check", command: "test -f a" }] });
+    let targetTip;
+    const result = await call(repo, { action: "merge", checkout: repo, featureBranch: "feature" }, mergeMutationUi(stage, () => {
+      git(selected === "feature" ? path : repo, "commit", "--allow-empty", "-m", "Selected branch moved");
+      targetTip = git(repo, "rev-parse", "HEAD");
+    }));
+    failed(result, /Stale operation/);
+    assert.ok(targetTip, "mutation checkpoint reached");
+    assert.equal(result.details.effectStarted, false);
+    assert.equal(git(repo, "rev-parse", "HEAD"), targetTip);
+  });
+}
+for (const selected of ["feature", "target"]) for (const mutation of ["dirty", "switch", "move", "lock"]) {
+  test(`merge still binds ${selected} checkout ${mutation}`, async () => {
+    const repo = fixture(); const path = feature(repo);
+    change(path); git(path, "add", "a"); git(path, "commit", "-m", "Feature");
+    const targetTip = git(repo, "rev-parse", "HEAD");
+    const source = selected === "feature" ? path : repo;
+    const result = await call(repo, { action: "merge", checkout: repo, featureBranch: "feature" }, mergeMutationUi("approval", () => {
+      if (mutation === "dirty") writeFileSync(join(source, "b"), "uncommitted edit\n");
+      if (mutation === "switch") git(source, "switch", "-c", "replacement");
+      if (mutation === "move") {
+        if (selected === "feature") git(repo, "worktree", "move", path, `${path}-moved`);
+        else { git(repo, "switch", "-c", "replacement"); git(path, "worktree", "add", join(`${repo}-worktrees`, "new-target"), "main"); }
+      }
+      // Git does not support locking the primary checkout.
+      if (mutation === "lock") {
+        if (selected === "feature") git(repo, "worktree", "lock", path);
+        else writeFileSync(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "MERGE_HEAD"), "");
+      }
+    }));
+    failed(result, /Stale operation|must be clean|checkout must be|Conflicting Git operation/);
+    assert.equal(result.details.effectStarted, false);
+    assert.equal(git(repo, "rev-parse", "refs/heads/main"), targetTip);
+  });
+}
+
 test("disabling or Stop after native commit starts lets its write settle honestly", async () => {
   const repo = fixture(); change(repo); set(repo, { commit: "allow" });
   const shim = join(root, "git-shim"); mkdirSync(shim);

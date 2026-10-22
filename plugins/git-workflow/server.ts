@@ -187,7 +187,13 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
   let args: string[] = [];
   let comparison: Snapshot["comparison"];
   let checks: RequiredCheck[] = [];
-  const state: unknown[] = [cwd, pluginProjectIdentity(cwd), current, await status(cwd), await worktrees(cwd)];
+  const registrations = await worktrees(cwd);
+  // Merge approval binds only its two branch registrations. Other sessions may
+  // commit, rebase or manage unrelated worktrees without changing this proposal.
+  const selectedRegistrations = op.action === "merge"
+    ? registrations.filter((entry) => samePath(entry.path, cwd) || entry.branch === op.featureBranch || entry.branch === policy.targetBranch)
+    : registrations;
+  const state: unknown[] = [cwd, pluginProjectIdentity(cwd), current, await status(cwd), selectedRegistrations];
   if (op.action === "commit") {
     if (!op.message.trim() || op.message.includes("\0")) throw new Error("An exact nonempty commit message is required");
     checks = policy.commitChecks;
