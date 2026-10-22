@@ -94,8 +94,8 @@ is deferred. Other source-shape families are not all migrated.
 ## Fixtures, classification and evidence
 
 Browser recipes declare ordered resources and expected IDs independently of
-observed seed output. Only timestamps and appearance currently omit the audited
-manager/fork prelude setup; no omission follows merely from a group name. Shared
+observed seed output. Only timestamps, appearance, Activity and Markdown omit the
+audited manager/fork prelude setup; no omission follows merely from a group name. Shared
 model defaults and feature transcripts are separate ordered fragments, both
 retained for every current browser-suite recipe. Retain whole-chain
 success-only receipts, input variants, prerequisite ordering and a fresh ordinary
@@ -125,6 +125,25 @@ effectful execution through its nonce. Reports distinguish reused static evidenc
 from execution; inventory-only is neither. Narrow inputs only with graph verification
 that relevant sources/configuration remain. No cached result is called a new
 execution or operation authority.
+
+### Fresh browser definitions, not cached execution
+
+After original support/metadata validation, each invocation owns one tiny selected
+Nix definition-manifest publication. It preserves constant references to unchanged
+capsule `.drv` files, original support and pinned source; output paths are identity
+data only. Keep the published payload's context: stripping it would lose definition
+retention, while retaining output context would run capsules before admission.
+Avoid an `outPath` data key, which can coerce an entire Nix set during JSON encoding.
+
+Validate the bounded immutable manifest's exact source/system/UUID/digest/namespaces,
+selection and group/path map before dispatch. Its out-link roots definitions for
+this run, not an approval or result cache. Manifest errors fail before native
+admission; owned publication and started peers must still settle on failure/abort.
+Unchanged weighted lanes individually realize exact `drvPath^out` at the original
+budget, then require physical output equality and every existing strict verdict.
+Each actual capsule retains a fresh nonce, private sandbox, installed launcher and
+native checkpoints. No persisted manifest/nonce replay, shared sandbox, execution
+reuse or new native/Git authority is introduced.
 
 ## Performance and rollout
 

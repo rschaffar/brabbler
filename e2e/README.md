@@ -26,6 +26,25 @@ acceptance when resources permit; explain smaller budgets and report preparation
 separately as specified there. Production builds occur only
 in isolated Nix builders, never in checkout `.next`.
 
+## Fresh definition publication and owned execution
+
+After unchanged support realization and strict metadata/source checks, the driver
+owns one selected definition-manifest build through `nix/fresh-browser.nix`.
+Only constant references to fresh capsule definitions are published/rooted; their
+outputs are not built before lane admission. The manifest binds source, system,
+run UUID, digest, observed host namespaces, original support and exact selection.
+It is bounded immutable dispatch data, never an execution verdict or saved authority.
+
+The original weighted queues then build each exact `.drv^out` individually with
+one job/two cores, without reevaluating the flake expression per group. Physical
+output equality supplements—not replaces—the evidence-tree and strict capsule
+verdict. Nonces, whole chains, budgets, isolated namespaces, installed launcher,
+errors and service/pipe/group/port settlement remain mandatory. Preflight failure
+admits no capsule; execution/persistence failures close admission and drain peers.
+Support, manifest, client and validation timings are separate mixed phase envelopes,
+not evaluator-only time. Per-run manifest/result out-links are retained evidence;
+no manifest cache, destructive GC or broader cleanup is implied.
+
 ## Disjoint coverage inventory
 
 `nix/e2e-groups.json` is the CLI/browser inventory: **25 browser groups and terminal**.

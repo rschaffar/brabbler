@@ -1,5 +1,14 @@
 # Test-suite architecture and feedback overhaul
 
+Implementation and performance verification are complete. Durable decisions and
+current contributor behavior live in ADR 0034, Testing and the browser guide.
+Final local integration/resource closeout is explicitly handed to this task's
+active guarded Git workflow under AGENTS.md/global `git-worktrees`: it must bind
+current main/feature IDs, verify the exact candidate and obtain unsigned non-FF
+approval, then separate cleanup approval. This plan's retirement is neither an
+integration receipt nor publication/cleanup authority. Feature resources remain
+until that owner completes the guarded operations; no remote action is authorized.
+
 ## Goal
 
 Make the test suite materially faster and better designed for future features:
@@ -48,7 +57,7 @@ additive. Tested implementation was `d9746ca9`; later documentation-only commits
 compose into the starting main. Source digest:
 `6ee8b2f46880d9ae63680e4677dfb349c5c40b192c81dad5f31c5b4d9e344f34`.
 Evidence: `/tmp/pi-web-lane-final.bCPUv7/analysis.json`; maintained account in
-[Testing](../testing.md). Available memory/admission and prerequisite state must
+[Testing](../../testing.md). Available memory/admission and prerequisite state must
 be captured from actual reports for new matched comparisons, not reconstructed
 from this summary.
 
@@ -70,23 +79,23 @@ revalidation. Attribute costs before selecting optimizations.
 ## Plan Relationship
 
 - Preserve the current three mandatory Nix checks and genuine deployment boundary
-  in [ADR 0025](../adr/0025-browser-and-deployment-acceptance.md), plus snapshot,
+  in [ADR 0025](../../adr/0025-browser-and-deployment-acceptance.md), plus snapshot,
   credential, containment, evidence and settlement safeguards from ADRs 0020,
   0023 and 0024. The older Nix-native/parallel/development-verification plans own
   their completed historical work; do not reopen or rewrite them here.
-- Preserve [ADR 0031](../adr/0031-project-acceptance-coordination.md): session
+- Preserve [ADR 0031](../../adr/0031-project-acceptance-coordination.md): session
   Stop/Pause and observer disposal do not cancel independently admitted Acceptance
   jobs. Test ownership helpers must not change that product contract.
-- [ADR 0032](../adr/0032-opt-in-acceptance-widths-and-reviewed-test-batches.md)
+- [ADR 0032](../../adr/0032-opt-in-acceptance-widths-and-reviewed-test-batches.md)
   owns current concurrency and reviewed classifications. This overhaul owns
   future behavioral ownership and leaner policy/evidence maintenance, not an
   automatic widening/promotion. The archived 192-file audit remains historical
   evidence rather than a competing live migration plan.
-- The still-open [eight-worker benchmark](2026-10-22_eight-worker-acceptance-plan.md)
+- The still-open [eight-worker benchmark](../2026-10-22_eight-worker-acceptance-plan.md)
   retains its unverified 8/8 obligation. Do not claim that benchmark here or make
   it a prerequisite for this overhaul. Use four/four for matched complete runs.
-- Current operations remain in [Testing](../testing.md) and the
-  [browser guide](../../e2e/README.md). A new ADR must explicitly record any
+- Current operations remain in [Testing](../../testing.md) and the
+  [browser guide](../../../e2e/README.md). A new ADR must explicitly record any
   changed settled testing contract; this plan alone does not supersede one.
 
 ## Architecture
@@ -409,7 +418,7 @@ No integration or complete-command speedup is claimed.
   and preserved native/evidence boundaries. Explicitly decide classification and
   cached-static evidence changes before implementing them; internal-API removal
   permission is not authority to weaken fail-closed coverage or freshness claims.
-  Decision: [ADR 0034](../adr/0034-behavioral-test-ownership-and-feedback.md).
+  Decision: [ADR 0034](../../adr/0034-behavioral-test-ownership-and-feedback.md).
 
 ### 2. Build minimal reusable ownership and mounting support
 
@@ -528,11 +537,11 @@ No integration or complete-command speedup is claimed.
 - [x] Obtain independent coverage/ownership/security review after migrations;
   recheck changed helper effects and lane classifications. Resolve or explicitly
   accept material native/DOM limitations before final acceptance.
-- [ ] Freeze writers for export and pass complete core/static/plugin, every
+- [x] Freeze writers for export and pass complete core/static/plugin, every
   reviewed browser/terminal input and genuine deployment/settlement on the stable
   candidate. Coordinate resources through configured managed acceptance where
   suitable, otherwise the existing Nix entry points. Do not change permissions.
-- [ ] Collect matched uninstrumented performance evidence: three warm focused
+- [x] Collect matched uninstrumented performance evidence: three warm focused
   samples for selected pilots and, normally, two full four/four pairs in balanced
   control/candidate order. Limit ordinary full benchmarking to those four runs;
   a final candidate pass may also satisfy complete acceptance. Additional runs
@@ -542,9 +551,11 @@ No integration or complete-command speedup is claimed.
   larger than observed control spread, report inconclusive timing rather than a
   causal win; use the predeclared variance rule for any bounded further work.
   Do not claim statistical/cold-cache/CI/ARM guarantees.
-- [ ] Integrate reviewable commits into current local `main` using the required
-  rebase, exact-state verification and unsigned non-FF approval. Publication and
-  bounded feature-resource cleanup remain separate guarded operations.
+- [x] Transfer final integration to this task's active guarded Git workflow under
+  AGENTS.md/global `git-worktrees`, with current local `main`, rebase/exact-state
+  verification and unsigned non-FF approval required. This is a named live handoff,
+  not a claim integration occurred. Publication and bounded resource cleanup have
+  separate permission gates; this plan does not grant either.
 
 ### Continued optimization checkpoint — transcript projection
 
@@ -706,11 +717,72 @@ one selected manifest, never realizing outputs before admission. Pinned context/
 nonce/path equivalence and failure/drain proof are required before implementation;
 no runtime cache, shared sandbox, scheduling or authority reuse is adopted.
 
+### Final selected-definition orchestration and gates
+
+After original support/metadata checks, one owned tiny Nix manifest publishes only
+selected constant capsule-definition references, support and pinned source. Existing
+weighted lanes separately realize exact `.drv^out`; no capsule outputs are requested
+before admission. The real factory, native checkpoints, nonces, ordinary sandboxes,
+installed launcher, budgets and every strict verdict remain. Exact physical output
+equality and bounded immutable source/UUID/digest/namespace/group-map validation add
+fail-closed dispatch identity, not authority. Manifest roots are retained per-run
+evidence, not a reusable plan/result cache. Failure/abort/persistence joins use the
+existing owner; no lifecycle API or worker widening was added.
+
+Pinned Nix semantic proofs preserve rejected drafts: invalid POSIX namespace syntax;
+magic `outPath` coercing a JSON set and losing drv context; fromJSON requiring a
+context-free *inspection copy*; an initially too-narrow expected-reference set
+omitting the published pinned source. All exact context/root assertions remain.
+Synthetic failing builders, selected-poison/duplicate refusals and singleton proof
+passed. Production all-26 graph/factory/nonce/root proofs passed with outputs absent,
+constant drv source inputs (not output requests), exact 28 direct references and
+unchanged application package. An executable-mode invariant caught a private-copy
+mistake **before any graph evaluation**; only copied `bin/pi-web.js` mode was restored.
+The first private factory helper CLI-selection failure was corrected without changing
+production code. Every failed artifact remains; no output-realization fallback.
+
+Corrected source `8mrm41dja657y412m71vpjzjmxyss3jc`, digest
+`d7d218e68823426a438d2b1e2657ea5d89dcac28b1b2728d295ddf65ed75b19c`, passed **6 files /
+137 tests / 38s** and installed timestamps **16s** (all four en/legacy desktop/mobile
+inputs). Independent review found no introduced P1/P2; finalizer seam/race/GC-stress
+coverage is bounded, not claimed exhaustive. Actual runtime mutants then proved
+schema refusal before any native admission (**12s**) and physical-output refusal
+after all four genuine inner inputs passed/settled (**18s**). An initial oracle
+reader wrongly expected two inputs; exact four-input retained evidence corrected it
+without rerunning the mutant. Zero observed survivors/settlement uncertainty is not
+escaped-descendant certification.
+
+Fresh complete `all --workers 4 --jobs 4` passed **347/345s**: each **436 files /
+3,369 tests / 12 suites**, **26 groups / 59 receipts**, genuine deployment. Same
+source/digest/package, distinct UUIDs and disjoint actual native outputs. Median
+**346s**, **16.2228%** below the frozen **413s** reference and below original
+**351.05s** target; no waiver. First-run phase intervals: core **261.861s**, browser
+**320.397s**, VM **22.766s**; support **2.639s**, manifest **4.766s** are mixed owned
+phase envelopes, not evaluator CPU. Warm focused Panel **5/5/4s**, median **5s** versus
+**41s**, **87.8%** reduction and below original **20.5s** target.
+
+Balanced last-mechanism **A1/B1/B2/A2 = 359/347/345/355s** yields medians **357/346s**,
+paired gains **12/10s**, median delta **11s > 4s** control spread. Controls execute
+identical canonical69/filtered-test source, package and queues; A1 writable-copy vs
+A2 read-only-store outer mode digests differ and remain independently bound. This
+reader expectation correction is retained, not disguised as equal raw exports.
+B adds60 Node proof cases; all native callbacks/inputs remain. No isolated evaluator,
+statistical/cold-cache/CI/ARM claim follows. Original413 reference is not replaced.
+
+Evidence owners: `definition-{runner-full,focused,balanced}-comparison.json`,
+`definition-production-results.yy3f5qw1`, corresponding complete/core/browser/VM
+reports, oracle analyses and prior retained failures under persistent `run.zYOwpy`.
+Operational mechanisms/empirical results are handed to Testing/browser guide;
+immutable historical audit, unresolved native E holds and broader hook/FileViewer
+mounting deferrals remain in their maintained owners. Only later guide/status/link
+changes may differ from tested executable inputs; perform a real proportional
+check and bind that delta before the Git workflow's exact-state integration.
+
 ## Unknowns and risks
 
 - Native attribution is bounded: observed Git/inventory counts and fixture cost,
-  not fully separated import/store/teardown spans. Do not infer a causal speedup
-  from unmatched file times; use the pending same-width complete comparisons.
+  not fully separated import/store/teardown spans. Same-width complete comparisons
+  below close the declared feedback gates, not isolated native/evaluator savings.
 - DOM emulation may not cover required behavior; keep unsupported browser-native
   obligations in real Chromium and avoid maintaining a home-grown browser.
 - Some pinned SDK termination paths do not expose actual native exit completion.
@@ -753,12 +825,13 @@ invalidate affected evidence and require reassessment, not relabelling.
   real-time/external polls are justified, and untouched holds/deferrals are clear.
 - [x] Real native, authorization, input-variant, installed-browser and genuine
   deployment guarantees survive; all replacements have reviewed equivalence.
-- [ ] Complete stable-candidate acceptance, focused-feedback improvement and full-
+- [x] Complete stable-candidate acceptance, focused-feedback improvement and full-
   command improvement each meet the separate targets fixed after the baseline
   spike, or the user explicitly accepts a named remaining gap. If not,
   report the blocker and revise/revert the costly design instead of declaring
   success from smaller test counts or increased worker widths.
-- [ ] Decisions and contributor rules live in maintained owners; remaining holds
-  have explicit reasons; integration, remote status and resource disposition are
-  reported honestly. Archive this plan only after all obligations are completed
-  or explicitly transferred to a named current owner.
+- [x] Decisions and contributor rules live in maintained owners; remaining holds
+  have explicit reasons. Integration/resource closeout is explicitly transferred
+  to the current task's guarded Git workflow (not represented as executed here).
+  Remote publication remains unauthorized. The plan can retire after this named
+  handoff; actual commit/merge/cleanup receipts remain that owner's obligation.

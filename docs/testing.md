@@ -449,15 +449,32 @@ assertions, not alternative acceptance environments.
 
 ### Current overhaul evidence boundary
 
-The frozen replacement reference took **413s**; the original **351.05s** complete
-feedback target remains binding. The latest rebased immutable pre-adoption source
-`69brsza8v1rm6g7pa9s99mscfa1nzf70` passed **436 files / 3,309 tests / 12 suites**,
-**26 browser groups / 59 receipts** and genuine deployment in **359s**, at four
-browser/four core workers. It includes the incoming SSH/SDK behavior and audited
-Activity/Markdown prelude omissions. This is source-scoped functional evidence,
-not the newer HEAD's run, a causal prelude speedup or a numerical gate pass.
-Detailed historical failures, input bindings and later proportional checks belong
-in the [active plan](plans/2026-10-22_test-suite-architecture-overhaul-plan.md).
+The frozen references remain **41s focused / 413s complete**, with original targets
+**20.5s / 351.05s**. Immutable candidate
+`8mrm41dja657y412m71vpjzjmxyss3jc` passed complete **347/345s** runs: median **346s**,
+**16.2%** below the frozen complete reference. Each used four browser/four core
+workers, **436 files / 3,369 tests / 12 suites**, **26 groups / 59 receipts** and
+genuine deployment. Distinct UUIDs and disjoint native outputs prove fresh execution;
+application package `m2yka2hgpbqr1r8pwbaqzjkhk3nw3gca` is unchanged. The same candidate's
+focused `core --jobs 4 --file lib/panel-layout.test.mjs` ran **5/5/4s**, median **5s**
+(**87.8%** below reference). Both original numerical gates pass without a waiver.
+
+A balanced last-orchestration comparison **A1/B1/B2/A2 = 359/347/345/355s** gives
+control/candidate medians **357/346s**, paired gains **12/10s** and an **11s** median
+delta greater than the control's **4s** spread. This is bounded end-to-end feedback,
+not isolated evaluator savings or a cold-cache/CI/ARM/statistical guarantee. Controls
+execute identical canonical source `69brsza8v1rm6g7pa9s99mscfa1nzf70`, filtered test
+source, package and queues; raw outer mode digests differ because A1 exports a
+writable copy and A2 a read-only store tree. Each digest remains independently bound.
+The candidate adds 60 Node proof cases; all native callback/input obligations remain.
+
+Fresh browser orchestration publishes one invocation-owned selected definition
+manifest, then unchanged lanes realize exact fresh `.drv^out` outputs separately.
+Definition roots are not cached test execution or native approval. See the
+[browser lifecycle](../e2e/README.md#fresh-definition-publication-and-owned-execution).
+Source-bound proofs, failures and later proportional checks are recorded in the
+[archived overhaul plan](plans/archived/2026-10-22_test-suite-architecture-overhaul-plan.md); these runs
+are not relabelled as a newer Git tip's execution.
 Browser packing hints live in `nix/browser-plan.mjs`: baseline values come from
 candidate diagnostic `d44f40e5`; the expanded SSH whole-group hint is separately
 refreshed from its post-rebase installed run. Each source is recorded beside the
