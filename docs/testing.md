@@ -345,6 +345,35 @@ critical track, now about **16s** beyond browser plus deployment. Exact inputs,
 red/green checks, failures, artifacts and scope live in the
 [completed second-batch plan](plans/archived/2026-10-17_core-exclusive-batch2-plan.md).
 
+### Audited default-exclusive batches
+
+The 2026-10-22 audit covers 192 formerly default-exclusive files (189 from the
+measured core run plus three incoming scratchpad files). The hash-bound verdicts,
+file-specific reasons, helper evidence and explicit unresolved holds are retained
+in `nix/test-lanes-audit-2026-10-22.json`. Exactly **86 F / 42 N** files enter the
+existing pool; **64** remain default-E. Existing manifest entries, substantive test
+bodies, per-file serial cases, deadlines and resource admission are unchanged.
+`lib/test-lanes-audit.test.mjs` protects the reviewed selection and holds.
+
+These are scheduling reviews, not a blanket claim that all native effects are
+safe. Process-local mocks are isolated by existing file workers; native promotions
+use private fixture roots and joined operations. Deferred cases include SDK/native
+shutdown uncertainty, descriptor-backed stream closure, real short timing/resource
+holds and incomplete import-effect review. In particular, large-operations and
+model-speed-lifecycle stay exclusive. Changes to audited fixture/effect code need
+fresh review; stored hashes identify the audited revision, not future authority.
+
+A separate diagnostic snapshot ran all 128 promotions, the four heavy native Git
+files and the existing exclusive runner contracts: **134 files / 1,089 tests**
+passed at four workers. All 42 newly pooled native files overlapped peer work;
+original 133-file cases/outcomes matched control. Inotify observed zero mutations
+across 140 source-directory watches, without overflow/watch loss, and final source
+content/mode hashes matched. The observer exists only in the diagnostic snapshot;
+ordinary acceptance is unchanged. This is bounded inotify/final-state evidence,
+not certification of restored mmap/external-hardlink writes, arbitrary host effects
+or escaped descendants. Full ordinary measurements belong to the
+[batch audit plan](plans/2026-10-22_default-exclusive-audit-plan.md) until settled.
+
 ## Diagnostics and retention
 
 Core retains inventory, summary, original bounded TAP/stderr and lifecycle evidence.
