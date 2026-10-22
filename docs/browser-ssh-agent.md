@@ -2,8 +2,8 @@
 
 **Settings → SSH** selects one agent for this Pi Web runtime. The sidebar shows
 the effective backend and pending count; signing cards are global and nonmodal.
-The [implementation plan](plans/2026-10-22_process-wide-ssh-agent-plan.md) records
-current verification, including any outstanding acceptance. [ADR 0033](adr/0033-process-wide-ssh-agent.md)
+The [completed implementation record](plans/archived/2026-10-22_process-wide-ssh-agent-plan.md) records
+verification and retained failures. [ADR 0033](adr/0033-process-wide-ssh-agent.md)
 supersedes the former manual-export/session-binding workflow.
 
 ## Select an agent
@@ -212,14 +212,32 @@ Core uses synthetic P-256 keys, real Unix/OpenSSH clients, replay/expiry/ownersh
 negatives, native-agent constraints and child environments. Browser acceptance
 uses real Chromium WebAuthn **virtual** USB authenticators and real SDK
 Bash/Shell/PTY consumers at desktop/mobile sizes, not a live token or actual
-remote SSH login. Exact receipts/failures belong in the active plan.
+remote SSH login. Exact receipts/failures belong in the [completed implementation record](plans/archived/2026-10-22_process-wide-ssh-agent-plan.md).
+
+On 2026-10-22, `nix run .#test -- all --workers 4 --jobs 4` passed on candidate
+`a500167eb6f0c28375bce286d3586d67471b06d5`, source digest
+`67c896d25cc964ff28f405132f0e2e784d2359c0456e6ef488cb8f4e730dba0b`:
+**427 core/static/plugin files, 3,258 tests, all 26 browser/terminal groups
+(59 scenarios), and the genuine Home Manager deployment VM**. End-to-end runtime
+was **637.732 s**, including preparation; package/dependency prerequisites were
+warm from focused checks, while executions were fresh. This is acceptance of the
+recorded inputs, not physical-device certification or host deployment approval.
 
 | Target | Status |
 | --- | --- |
-| Chromium virtual authenticator, desktop/mobile viewport | Automated assertion chain; see current plan receipts |
+| Chromium virtual authenticator, desktop/mobile viewport | Passed automated assertion chain; see completed implementation receipts |
 | Firefox/Chrome on Linux with physical token | Unmeasured; separately authorized supervised verification |
 | Firefox/Chrome on Android, USB/NFC and PIN/biometric UX | Unmeasured; separately authorized supervised verification |
 | Third-party destinations, forwarding/nonstandard signing | Not certified; browser forwarding constraints/raw signing unsupported |
+
+This guide owns the deferred supervised compatibility matrix. After fresh explicit
+authorization, record exact browser/OS/key/firmware, USB/NFC transport, reported
+protection/discoverability and observed UP/UV/PIN-or-biometric behavior. The user
+enters any PIN; do not automate retries or alter token settings. An unsupported
+combination remains unsupported, never silently downgraded. Browser maintainers
+also own optional real notification-delivery/background-suspension measurements;
+alerts promise neither wakeup nor continuous signing availability. Git signing-key
+automation and remote destination authorization remain outside this feature.
 
 Do not infer attestation, touch-only behavior, removal/OS-lock detection, native
 mobile keyboard compatibility or hardware provenance from virtual tests. No

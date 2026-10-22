@@ -52,8 +52,8 @@ PTYs retain the public socket but omit `PI_WEB_PASSWORD` and the private
 `PI_DESK_SSH_RUNTIME` control locator. Legacy session-binding markers are ignored
 by managed commands and retained as migration evidence, never routing authority.
 See [browser SSH](browser-ssh-agent.md) for security/compatibility boundaries and
-the [implementation plan](plans/2026-10-22_process-wide-ssh-agent-plan.md) for the
-current acceptance checkpoint.
+the [completed implementation record](plans/archived/2026-10-22_process-wide-ssh-agent-plan.md) for
+acceptance evidence.
 
 ## Appearance and touch keys
 

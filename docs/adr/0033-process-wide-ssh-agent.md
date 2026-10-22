@@ -1,11 +1,11 @@
 # 0033 — Stable runtime-wide SSH routing and per-key browser verification
 
 Date: 2026-10-22
-Status: Accepted. Routing, public registry, browser policies and authenticated interface are implemented; the active plan owns final acceptance and the approved SDK subprocess-environment hardening.
+Status: Accepted and implemented. Routing, public registry, browser policies, authenticated interface and the approved SDK subprocess-environment hardening passed complete core/browser/deployment-VM acceptance; the completed implementation record retains exact evidence.
 
 ## Context and supersession
 
-The user explicitly replaced project/session agent binding with a process-wide choice, then approved the [implementation plan](../plans/2026-10-22_process-wide-ssh-agent-plan.md). This supersedes ADR 0030's no-global-environment-replacement, temporary manual exports, per-session binding markers, browser-local registration registry and universally UV-required browser assertions. Its origin/key/challenge verification, private-key custody, explicit approvals, request bounds and no-transcript invariants remain.
+The user explicitly replaced project/session agent binding with a process-wide choice, then approved the [implementation plan](../plans/archived/2026-10-22_process-wide-ssh-agent-plan.md). This supersedes ADR 0030's no-global-environment-replacement, temporary manual exports, per-session binding markers, browser-local registration registry and universally UV-required browser assertions. Its origin/key/challenge verification, private-key custody, explicit approvals, request bounds and no-transcript invariants remain.
 
 ## Decision
 
@@ -33,4 +33,4 @@ The implementation audit found that SDK 1.3.0 has no shared child-environment ho
 
 ## Verification and limits
 
-Synthetic native-agent/child-process, real OpenSSH, virtual-authenticator/browser and complete sandboxed core/browser/deployment evidence must be recorded in the active plan. No hardware or deployment is authorized by this ADR. Firefox/Chrome on Linux/Android with physical USB/NFC tokens remain a separate supervised compatibility matrix; virtual tests do not establish those claims.
+Synthetic native-agent/child-process, real OpenSSH, virtual-authenticator/browser and complete sandboxed core/browser/deployment evidence is recorded in the completed implementation record. No hardware or deployment is authorized by this ADR. Firefox/Chrome on Linux/Android with physical USB/NFC tokens remain a separate supervised compatibility matrix; virtual tests do not establish those claims.
