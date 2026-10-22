@@ -85,9 +85,16 @@ app/api/
   tools/settings/route.ts         GET/PUT shell tool settings (PowerShell on Windows)
   ssh-agent/route.ts              POST browser-owned FIDO agent lifecycle/signing, outside chat
 
+bin/
+  ssh-agent-launch.js   shared installed/npm ownership and readiness-before-spawn boundary
+  ssh-agent-router.js   stable private front, selected backend, discovery, settings and fenced lifecycle
+  ssh-agent-lease.js    PID/nonce ownership, atomic unique-marker claims and conservative crash recovery
+  ssh-agent-client.js   server-only private Unix control connector (no import-time allocation)
+
 lib/
+  browser-ssh-enrollment.ts bounded creation/COSE/SPKI validation for the pending registry; not possession proof
   browser-ssh-protocol.ts WebAuthn assertion validation, web-safe payloads and OpenSSH wire encodings
-  browser-ssh-agent.ts private Unix socket/capability lifecycle and fail-closed per-session Bash binding
+  browser-ssh-agent.ts legacy private browser socket/capability core; registry/policy redesign in progress
   browser-ssh-client.ts browser ES256 enrollment/assertion and bounded management transport
   agent-client.ts      typed fetch helper for /api/agent commands
   draft-store.ts       local draft persistence helpers

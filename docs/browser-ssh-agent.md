@@ -1,5 +1,7 @@
 # Browser-backed SSH agent
 
+> **Redesign in progress:** The feature branch now installs a launcher-owned stable socket with No agent until explicit setup. The SSH Settings selector, central registry and unlock flow are still pending; this is not an integration/release candidate. Legacy browser-panel session bindings below do not configure or override the managed runtime. Explicit terminal exports remain deliberate overrides, not the new default workflow. See the [active implementation plan](plans/2026-10-22_process-wide-ssh-agent-plan.md) and [superseding ADR](adr/0033-process-wide-ssh-agent.md).
+
 The sidebar **SSH** button opens an optional SSH agent backed by a separate FIDO credential in your browser. The authenticator may be attached to a different machine from the Pi Web server. No native browser helper is required; the private key and authenticator PIN are not sent to Pi Web.
 
 ## Requirements and compatibility
@@ -12,7 +14,13 @@ The sidebar **SSH** button opens an optional SSH agent backed by a separate FIDO
 
 Existing `ssh:` application credentials and Ed25519-SK keys cannot be reused through standard browser WebAuthn. You may use the same physical authenticator, but must enroll a new credential. Its SSH application is exactly the browser hostname (RP ID), not `ssh:`, a URL or a port. Changing hostname requires another credential; this implementation also pins the exact browser origin, including scheme/port.
 
-## Use
+## Runtime ownership and recovery (implementation foundation)
+
+The launcher captures the original system socket, then creates private per-run front/control sockets before Next starts. Backend/custom-path settings live under `$PI_CODING_AGENT_DIR/ssh-routing/<listen-host-port-hash>.json`. Control capabilities never enter those settings or child environments. Passive socket presence is not proof that the selected agent responds.
+
+A companion `.json.lock` directory has a unique private PID/nonce marker, not signing authority. Normal shutdown releases it. A known-dead owner is recovered only with verified matching Linux boot/PID-namespace metadata. Live/reused PIDs, incomplete/unknown contents, different or unavailable execution context fail closed. Confirm the former owner has stopped before narrowly recovering that exact lease; preserve unfamiliar files and diagnostic evidence rather than recursively deleting state or choosing another agent. There is no automatic cleanup of historical runtime directories and no host-selector mutation.
+
+## Legacy workflow (unmanaged runtime)
 
 1. Open **SSH → Enroll security key**, completing your authenticator's verification. Only the credential ID and public SPKI key are saved in this browser's local storage. If persistence is blocked, the page reports that metadata is available only for the current page lifetime.
 2. Choose **Connect security key**. A fresh server challenge proves possession before publishing a private SSH-agent socket. Connection is never automatic after reload.

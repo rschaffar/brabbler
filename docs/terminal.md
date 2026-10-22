@@ -32,11 +32,17 @@ File splitting never duplicates or starts a terminal.
 
 ## Browser-backed SSH
 
-The sidebar **SSH** panel can provide a browser FIDO-backed agent. Copy its export
-command into a terminal explicitly; creating a terminal never replaces the global
-or forwarded agent automatically. Reconnection creates a different socket, so
-existing shells need the new command. See [browser SSH](browser-ssh-agent.md) for
-compatibility, approval, session Bash bindings and fail-closed recovery.
+The process-wide redesign is in progress. Supported launchers now install one
+stable private SSH_AUTH_SOCK before children start, initially No agent until
+explicit setup. Retained inheriting shells keep that pathname through backend
+switches; Pi Desk does not change the host's selector. Explicit shell exports or
+SSH IdentityAgent remain deliberate overrides.
+
+The SSH Settings selector/registry is not implemented yet, so this branch is not
+ready for normal SSH use or integration. Legacy sidebar session-binding controls
+do not configure the managed default. See [browser SSH](browser-ssh-agent.md) and
+the [implementation plan](plans/2026-10-22_process-wide-ssh-agent-plan.md) for the
+interim boundary and pending browser work.
 
 ## Appearance and touch keys
 

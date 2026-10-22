@@ -18,9 +18,7 @@ const fs = require("fs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { getHelpText, parseLaunchOptions } = require("./pi-web-options");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { getNextNodeArgs } = require("./pi-web-node-args");
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { wireChildProcessLifecycle } = require("./process-lifecycle");
+const { launchManagedNext } = require("./ssh-agent-launch");
 
 let launchOptions;
 try {
@@ -83,13 +81,9 @@ nextArgs.push("-H", hostname);
 
 // Always run next's JS entry with node directly — avoids .bin symlink issues
 // and path-with-spaces problems on Windows when shell: true is used.
-const child = spawn(process.execPath, getNextNodeArgs(nextBin, nextArgs), {
-  cwd: pkgDir,
+launchManagedNext({ nextBin, args: nextArgs, cwd: pkgDir, hostname, port,
   stdio: ["inherit", "pipe", "inherit"],
-  env: { ...process.env, PI_WEB_HOSTNAME: hostname },
-});
-wireChildProcessLifecycle(child);
-
+}).then((child) => {
 let browserOpened = false;
 const url = `http://${hostname}:${port}`;
 
@@ -131,4 +125,8 @@ child.stdout.on("data", (chunk) => {
 
     opener.unref();
   }
+});
+}).catch((error) => {
+  console.error(`[pi-web] startup failed: ${error.message}`);
+  process.exit(error.exitCode || 1);
 });
