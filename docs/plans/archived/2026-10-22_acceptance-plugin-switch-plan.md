@@ -21,8 +21,8 @@ Feature checkout `feat/acceptance-plugin-switch` starts from local main `41f1416
 - [x] Add manifest, thin extension/registry wiring and default-off global policy; verify native SDK startup/live tool changes and restricted subagent loadouts. Reopened after the complete-run model-speed failure, then closed after the startup-lease repair and focused native/browser verification below.
 - [x] Add independent admission/dispatch gates and latched queue cancellation; verify disabled, rapid-toggle, in-flight capture/verification, active-run drain and persistence paths with focused tests.
 - [x] Update browser disabled status and existing packaged Activity fixture to exercise the genuine plugin switch, pending cancellation, active-run observation/cancel and retained profiles/history at desktop/tablet/mobile sizes.
-- [ ] Obtain independent scoped safety review, update acceptance/session/feature guides and ADR 0031, then run full fresh core/browser/terminal/deployment acceptance after source settles and resources are available.
-- [ ] Commit reviewable changes and evidence, prepare exact candidate for separately approved local main non-FF integration; do not deploy/publish.
+- [x] Obtain independent scoped safety review, update acceptance/session/feature guides and ADR 0031, then run full fresh core/browser/terminal/deployment acceptance after source settles and resources are available.
+- [x] Commit reviewable changes and evidence, prepare exact candidate for separately approved local main non-FF integration; do not deploy/publish.
 
 ## Focused evidence and review
 
@@ -46,13 +46,25 @@ Post-repair focused checks: `nix run --no-write-lock-file .#test -- core --file 
 
 Local main advanced to `1fd0bc52154f9962157ca8afbbcc7cee4ceba133` with the independent notebook/language-metadata change during verification. Rebase onto its current tip before the final complete run; earlier focused results do not cover those newly integrated inputs.
 
+## Complete final acceptance
+
+After unrelated runs settled, rebased onto current local main `32cb74b966a129ddc0add56a8d62fdef21443a1b` (including the notebook/language-metadata and selected-worktree merge-guard changes). Tested clean candidate **`64ba67a9094025d9fca8e6116d4402275f195113`** with `nix run --no-write-lock-file .#test -- all --workers 4 --jobs 4`: **passed**, exit 0, **562s end-to-end command runtime**, including in-run realization/source preparation, excluding the preceding model work and resource-coordination wait. No production service was contacted or changed.
+
+- Source content/mode SHA256 **`59d0d1272e7fded205776445b486ab5a19fdd5d23fa48d16b0ca628c94f94540`**; source/selection `/tmp/pi-web-test-source-a6T7aJ/{source.json,selection.json}`. Requested/effective widths: four browser sandboxes and four core workers, overlapping. Admission estimated 16 CPUs / 28,991,029,248 bytes against 32 CPUs / 54,863,839,232 available bytes; estimates are not reservations. Other observed full/16-worker runs had settled before launch.
+- Core/static/plugin: **409 files, 3,090 tests, 12 suites**, no failures/skips/unknown settlement; `/tmp/pi-web-test-core.kmeFtZ/run.json`. Core level wall interval **430.2s**, including exporter/typegen/typecheck/lint preparation and tests; separate phase wall timings are not emitted. Existing unrelated `ReviewFileBrowser` hook warnings remain warnings (zero lint errors).
+- Browser/terminal: **26 groups / 59 scenario receipts**, all passed; `/tmp/pi-web-test-browser.bjPcFf/run.json`. Level wall interval **482.9s**: approximately **93.2s preparation before the first group**, then **389.6s parallel group-execution window**. Includes the genuine Settings toggle at desktop/tablet/mobile sizes, retained data/control while off, and fixed model-speed startup.
+- Genuine Home Manager deployment VM: all activation, environment permissions, HTTP write, restart persistence and production PTY checks passed; `/tmp/pwv-zmIJ8R/{run.json,artifacts/acceptance.json}`. **72.3s** level wall interval including realization/startup; VM test-script interval **19.5s**. This is isolated deployment acceptance, not host deployment.
+- Driver `/tmp/pi-acceptance-switch-final-all.FgbB5h/driver.log`. No coverage, worker budgets, deadlines or isolation were reduced. The earlier failed attempt remains retained above; the passing run contains the actual startup-lease repair and rebased inputs.
+
+Implementation and maintained-guide handoff are complete. The evidence/status-only archive follow-up does not change tested runtime/Nix/test inputs; verify that delta separately rather than relabel this run as a later-tip execution. Local integration still requires its exact-state unsigned non-FF approval; deployment/publication and feature-resource cleanup remain separate operations.
+
 ## Risks and recovery
 
 Hiding declarations alone cannot revoke stale invocations. A switch save racing asynchronous preparation/verification must block effects; rapid disable/enable must not resurrect already-queued jobs. Failure to durably cancel remains fail-closed without releasing unproven work. Existing running jobs remain independently owned with browser control even after tools disappear. Missing/malformed plugin settings mean disabled, never a new permission grant. No settings migration or artifact deletion is required; a rollback preserves private profiles/history and follows explicit user control rather than implicitly starting work.
 
 ## Completion Checklist
 
-- [ ] User-selected global-only/default-off behavior and native/browser/queue regressions pass.
-- [ ] Complete acceptance passes on recorded exact inputs with command, resource selection, timing and artifacts retained.
+- [x] User-selected global-only/default-off behavior and native/browser/queue regressions pass.
+- [x] Complete acceptance passes on recorded exact inputs with command, resource selection, timing and artifacts retained.
 - [x] Review findings resolved and maintained documentation reflects the switch and drain semantics.
-- [ ] Feature history is ready for exact-state integration approval; remote/deployment boundaries preserved.
+- [x] Feature history is ready for exact-state integration approval; remote/deployment boundaries preserved.
