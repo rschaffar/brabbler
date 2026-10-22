@@ -313,7 +313,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   // A short background run may begin and end between polls. Its completion
   // ledger must still put the result in Ready to review, without a sound from
   // a subagent or treating old idle sessions as completed.
-  await post(`/api/agent/${selectedSessionId}`, { type: "prompt", message: "/e2e-ask-user timeout" });
+  await post(`/api/agent/${selectedSessionId}`, { type: "prompt", message: "/e2e-complete" });
   const ready = overview.locator(".activity-item-ready").filter({ hasText: "Branch root" });
   await ready.waitFor({ timeout: 15000 });
   await ready.click();
@@ -322,10 +322,10 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await overview.getByRole("button", { name: "Mark Branch root as read" }).click();
   await ready.waitFor({ state: "hidden" });
 
-  await post(`/api/agent/${waitingSessionId}`, { type: "prompt", message: "/e2e-ask-user timeout" });
+  await post(`/api/agent/${waitingSessionId}`, { type: "prompt", message: "/e2e-complete" });
   const originalReady = overview.locator(".activity-item-ready").filter({ hasText: "Render **E2E markdown**" });
   await originalReady.waitFor({ timeout: 15000 });
-  await post(`/api/agent/${otherSessionId}`, { type: "prompt", message: "/e2e-ask-user timeout" });
+  await post(`/api/agent/${otherSessionId}`, { type: "prompt", message: "/e2e-complete" });
   const otherReady = overview.locator(".activity-item-ready").filter({ hasText: "Other workspace task" });
   await otherReady.waitFor({ timeout: 15000 });
   const setArchived = async (archived) => {
@@ -462,7 +462,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   assert.equal(await reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Other workspace task" }).count(), 0,
     "server-reviewed runs must not reappear after reloading this browser");
   assert.equal(await page.evaluate(() => localStorage.getItem("pi-web:reviewed-run-times")), null);
-  await post(`/api/agent/${otherSessionId}`, { type: "prompt", message: "/e2e-ask-user timeout" });
+  await post(`/api/agent/${otherSessionId}`, { type: "prompt", message: "/e2e-complete" });
   const newerReady = reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Other workspace task" });
   await newerReady.waitFor({ timeout: 15000 });
   assert.equal(await reloadedOverview.locator(".activity-item-later").filter({ hasText: "Other workspace task" }).count(), 0,

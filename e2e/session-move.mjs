@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { holdBrowserRead } from "./browser-read-barrier.mjs";
 
 export async function waitForMoveControl(page, selector) {
   // A newly opening picker can be absent on the first poll. Absence is not ready.
@@ -105,51 +106,42 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
   assert.equal(await projectSelect.getAttribute("data-value"), otherProject);
 
   // A superseded request must not replace a newer project's destinations.
-  let pending;
-  let release;
-  const received = new Promise((resolve) => { pending = resolve; });
-  const held = new Promise((resolve) => { release = resolve; });
-  const matcher = (url) => url.pathname === "/api/worktrees" && url.searchParams.get("cwd") === gitProject;
-  await page.route(matcher, async (route) => {
-    pending();
-    await held;
-    await route.fulfill({ json: { worktrees: [{ path: gitProject, branch: "stale-main", isMain: true }] } }).catch(() => {});
+  const listingSpec = { pathname: "/api/worktrees", query: { cwd: gitProject } };
+  const matcher = (url) => url.pathname === listingSpec.pathname && url.searchParams.get("cwd") === gitProject;
+  const superseded = await holdBrowserRead(page, listingSpec, {
+    json: { worktrees: [{ path: gitProject, branch: "stale-main", isMain: true }] },
   });
-  await choose("Destination project", gitProject);
-  await received;
-  assert.equal(await directorySelect.isDisabled(), true);
-  assert.equal(await move.isDisabled(), true);
-  await select(otherProject);
-  release();
-  await page.unroute(matcher);
-  await page.waitForTimeout(150);
-  assert.equal(await projectSelect.getAttribute("data-value"), otherProject);
-  assert.equal(await directorySelect.getAttribute("data-value"), otherProject);
-  await directorySelect.click();
-  assert.equal(await dialog.getByRole("option", { name: /stale-main/ }).count(), 0);
-  await directorySelect.press("Escape");
+  try {
+    await choose("Destination project", gitProject);
+    await superseded.arrived();
+    assert.equal(await directorySelect.isDisabled(), true);
+    assert.equal(await move.isDisabled(), true);
+    await select(otherProject);
+    await superseded.releaseAndObserve();
+    assert.equal(await projectSelect.getAttribute("data-value"), otherProject);
+    assert.equal(await directorySelect.getAttribute("data-value"), otherProject);
+    await directorySelect.click();
+    assert.equal(await dialog.getByRole("option", { name: /stale-main/ }).count(), 0);
+    await directorySelect.press("Escape");
+  } finally { await superseded.dispose(); }
   assert.equal((await session()).cwd, project, "Project selection is proposal-only");
   assert.equal(await page.locator('button[title^="Switch worktree:"]').count(), 0, "Picker selection must not switch the sidebar's plain checkout");
 
   // A listing completing while Browse is open must not navigate its form.
-  const browseReceived = new Promise((resolve) => { pending = resolve; });
-  const browseHeld = new Promise((resolve) => { release = resolve; });
-  await page.route(matcher, async (route) => {
-    pending();
-    await browseHeld;
-    await route.fulfill({ json: { worktrees: [{ path: gitProject, branch: "main", isMain: true }] } });
+  const duringBrowse = await holdBrowserRead(page, listingSpec, {
+    json: { worktrees: [{ path: gitProject, branch: "main", isMain: true }] },
   });
-  await choose("Destination project", gitProject);
-  await browseReceived;
-  await dialog.getByRole("button", { name: "Browse another folder…" }).click();
-  const pendingBrowser = page.getByRole("dialog", { name: "Select directory", exact: true });
-  await waitForMoveControl(page, '.directory-picker-panel button[type="submit"]');
-  release();
-  await waitForMoveControl(page, "#move-session-directory");
-  await page.waitForTimeout(150);
-  assert.equal(await pendingBrowser.getByLabel("Directory path").inputValue(), project);
-  await pendingBrowser.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.unroute(matcher);
+  try {
+    await choose("Destination project", gitProject);
+    await duringBrowse.arrived();
+    await dialog.getByRole("button", { name: "Browse another folder…" }).click();
+    const pendingBrowser = page.getByRole("dialog", { name: "Select directory", exact: true });
+    await waitForMoveControl(page, '.directory-picker-panel button[type="submit"]');
+    await duringBrowse.releaseAndObserve();
+    await waitForMoveControl(page, "#move-session-directory");
+    assert.equal(await pendingBrowser.getByLabel("Directory path").inputValue(), project);
+    await pendingBrowser.getByRole("button", { name: "Cancel", exact: true }).click();
+  } finally { await duringBrowse.dispose(); }
   await select(otherProject);
 
   // Listing failure leaves Move disabled, with an explicit retry and Browse.

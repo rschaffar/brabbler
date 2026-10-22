@@ -1,4 +1,4 @@
-{ pkgs, src, nodejs, modules }:
+{ pkgs, src, staticSrc ? src, typingSrc ? staticSrc, nodejs, modules, testSupport }:
 let
   inherit (pkgs) lib;
   # This is the original PUBLIC frontend selected for this pinned test PATH.
@@ -15,6 +15,10 @@ let
     forwarder nodejs pkgs.git pkgs.openssh pkgs.bash pkgs.coreutils pkgs.findutils
     pkgs.gnugrep pkgs.gnused pkgs.diffutils pkgs.which pkgs.python3 pkgs.util-linux
   ];
+  staticChecks = import ./static-checks.nix {
+    inherit pkgs nodejs modules typingSrc testSupport;
+    src = staticSrc;
+  };
   # The core runner owns bounded file jobs and the SDK/latency-only barrier.
   # Package/VM acceptance is a separate Nix check; these are not host reservations.
   program = mode:
@@ -49,6 +53,9 @@ let
         if [ "$inventory_only" != 1 ]; then
           phase_start link-modules
           ln -s ${modules}/node_modules "$root/source/node_modules"
+          mkdir -p "$root/source/lib/testing"
+          support="''${PI_WEB_TEST_SUPPORT_MODULES:?missing declared test support}"
+          ln -s "$support/node_modules" "$root/source/lib/testing/node_modules"
           phase_done
         fi
         export PATH="${forwarder}/bin:$root/source/node_modules/.bin:${toolPath}"
@@ -56,14 +63,12 @@ let
           phase_start exporter-contracts
           ${pkgs.python3}/bin/python3 -B nix/export-test-source.test.py
           phase_done
-          phase_start typegen
-          ${nodejs}/bin/node node_modules/next/dist/bin/next typegen
-          phase_done
-          phase_start typecheck
-          ${nodejs}/bin/node node_modules/typescript/bin/tsc --noEmit --incremental false
-          phase_done
-          phase_start lint
-          ${nodejs}/bin/node node_modules/eslint/bin/eslint.js .
+          phase_start static-evidence
+          # Bound by mkCore, not a public runner option or a claim of fresh static execution.
+          static_evidence="''${PI_WEB_TEST_STATIC_EVIDENCE:?missing declared static evidence}"
+          cp "$static_evidence/inputs.json" "$root/static-inputs.json"
+          cp "$static_evidence/checks.log" "$root/static.log"
+          printf 'Static checks: declared-input evidence from %s (may be cached)\n' "$static_evidence"
           phase_done
         fi
         # Scheduler args, NOT appended npm/Node flags. Every child Node
@@ -191,6 +196,8 @@ let
         LANG=C.UTF-8 LC_ALL=C.UTF-8 SHELL=${pkgs.bash}/bin/bash \
         PI_WEB_TEST_SHELL=${pkgs.bash}/bin/bash PI_WEB_TEST_MODULES=${modules}/node_modules \
         PI_OFFLINE=1 JITI_FS_CACHE=0 NEXT_TELEMETRY_DISABLED=1 \
+        PI_WEB_TEST_STATIC_EVIDENCE="''${PI_WEB_TEST_STATIC_EVIDENCE-}" \
+        PI_WEB_TEST_SUPPORT_MODULES="''${PI_WEB_TEST_SUPPORT_MODULES-}" \
         GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_GLOBAL=/dev/null \
         GIT_TERMINAL_PROMPT=0 "''${core_env[@]}" \
         ${nodejs}/bin/node ${src}/nix/test-lifecycle.mjs "$root" "$keep_workspace" \
@@ -208,7 +215,10 @@ let
     # Capture BOTH statuses immediately; a successful tee cannot repair a
     # failed body. This does not disable errexit in the separate body script.
     set +e
-    PI_WEB_NIX_CHECK_ROOT="$check_root" ${if args == [ ] then coreCheckProgram else coreProgram} ${lib.escapeShellArgs args} 2>&1 | tee "$check_root/driver.log"
+    PI_WEB_NIX_CHECK_ROOT="$check_root" \
+      PI_WEB_TEST_STATIC_EVIDENCE=${if builtins.elem "--inventory-only" args then "''" else lib.escapeShellArg (toString staticChecks)} \
+      PI_WEB_TEST_SUPPORT_MODULES=${if builtins.elem "--inventory-only" args then "''" else lib.escapeShellArg (toString testSupport)} \
+      ${if args == [ ] then coreCheckProgram else coreProgram} ${lib.escapeShellArgs args} 2>&1 | tee "$check_root/driver.log"
     pipeline_status=("''${PIPESTATUS[@]}")
     set -e
     body_status="''${pipeline_status[0]}"
@@ -228,6 +238,9 @@ let
     cp -a "$check_root/artifacts" "$out/artifacts"
     cp "$check_root/source-input.json" "$check_root/driver.log" \
       "$check_root/execution.log" "$check_root/lifecycle.json" "$out/"
+    ${lib.optionalString (!(builtins.elem "--inventory-only" args)) ''
+      cp "$check_root/static-inputs.json" "$check_root/static.log" "$out/"
+    ''}
     printf '%s\n' \
       'Core check passed. Cached artifacts are declared-input evidence, NOT fresh execution or operation authority.' \
       'driver.log includes exporter/static preparation stdout+stderr; original output is also in the Nix build log.' \

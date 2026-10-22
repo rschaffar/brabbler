@@ -4,9 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, s
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
-import { setTimeout as delay } from "node:timers/promises";
 import { createJiti } from "jiti";
-import { writeCommitGate } from "./commit-gate.fixture.mjs";
+import { createCommitGate } from "./commit-gate.fixture.mjs";
 const root = mkdtempSync(join(tmpdir(), "pi-git-plugin-tests-"));
 const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -350,29 +349,37 @@ for (const selected of ["feature", "target"]) for (const mutation of ["dirty", "
 
 test("disabling or Stop after native commit starts lets its write settle honestly", async () => {
   const repo = fixture(); change(repo); set(repo, { commit: "allow" });
+  const before = git(repo, "rev-parse", "HEAD");
   const shim = join(root, "git-shim"); mkdirSync(shim);
   const marker = join(shim, "started");
   const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
-  // Only commit needs the Node delay. Wrapping every preflight Git call in
-  // Node startup consumed this test's ten-second marker budget under load.
-  writeCommitGate(shim, { gitPath: realGit, nodePath: process.execPath,
+  // Only commit enters the IPC gate; no per-preflight Node launch or settling sleep.
+  const gate = await createCommitGate(shim, { gitPath: realGit, nodePath: process.execPath,
     shellPath: execFileSync("which", ["sh"], { encoding: "utf8" }).trim(), marker });
   const oldPath = process.env.PATH; process.env.PATH = `${shim}:${oldPath}`;
   const controller = new AbortController();
-  let pending;
+  let pending; const failures = [];
   try {
     pending = call(repo, commit(repo), {}, controller.signal);
-    const deadline = Date.now() + 10000;
-    while (!existsSync(marker)) { assert.ok(Date.now() < deadline); await delay(10); }
+    await Promise.race([gate.ready, pending.then(() => assert.fail("Operation settled without entering the native gate"))]);
+    assert.equal(readFileSync(marker, "utf8"), "started");
+    assert.equal(git(repo, "rev-parse", "HEAD"), before, "Real commit must remain held until release");
     updatePluginSettings(gitWorkflowManifest, "global", repo, { enabled: false }, []);
     controller.abort();
-    success(await pending);
+    gate.release();
+    assert.deepEqual(await gate.closed, { code: 0, signal: null }, "Real Git child must close after release");
+    success(await pending); // Joins the actual shim close AND executor reporting.
     assert.equal(git(repo, "log", "-1", "--format=%s"), "Exact message");
     failed(await call(repo, commit(repo)), /disabled/);
-  } finally {
-    controller.abort();
-    try { await pending; } finally { process.env.PATH = oldPath; }
+  } catch (error) { failures.push(error); }
+  finally {
+    controller.abort(); gate.release();
+    try { await pending; } catch (error) { if (!failures.includes(error)) failures.push(error); }
+    process.env.PATH = oldPath;
+    try { await gate.close(); } catch (error) { failures.push(error); }
   }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length) throw new AggregateError(failures, "Native commit gate assertion/settlement/cleanup failed");
 });
 
 test("cross-repository commits use selected permissions and checks, preserving the caller", async () => {

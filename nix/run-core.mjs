@@ -40,7 +40,8 @@ export async function runCore(source, system, args) {
     if (report.status === 'passed') {
       const output = fs.realpathSync(path.join(root, 'result'));
       if (!output.startsWith('/nix/store/')) throw new Error('Missing sandbox result');
-      for (const name of ['artifacts', 'source-input.json', 'execution.log', 'lifecycle.json']) {
+      for (const name of ['artifacts', 'source-input.json', 'execution.log', 'lifecycle.json',
+        ...(parsed.options.includes('--inventory-only') ? [] : ['static-inputs.json', 'static.log'])]) {
         fs.symlinkSync(path.join(output, name), path.join(root, name));
       }
       report.output = output;

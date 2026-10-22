@@ -83,11 +83,204 @@ documentation/test-only edits do not rebuild the application; application-only
 edits do not reinstall dependencies. Production builds receive a private physical
 dependency copy inside the builder; runtime/core use the immutable output.
 
+`nix/static-checks.nix` binds reusable **Next typegen + tsc** and **lint** evidence
+separately to their declared inputs, dependencies, toolchain and check recipe.
+`nix/sources.nix` retains the application tree/assets/configuration for typegen
+and TS/TSX fixtures for typing, but removes registered `*.test.mjs` and live Node
+scheduling metadata (`nix/test-lanes.json`) from the typing source. Architectural
+guards reject typed imports of either. Adding a JS test **and its required live
+classification** can therefore reuse an unchanged TS graph while invalidating
+lint; prose-only edits can reuse both. Neither implies skipping checks:
+every executing core selection requires both static outputs and runs its selected
+effectful tests afresh through the fresh entry point. `static-inputs.json` and
+`static.log` distinguish declared-input evidence (possibly cached) from execution.
+`--inventory-only` is neither static nor execution evidence.
+
+Application inputs exclude `*.test.*`, `*.fixture.*` and `lib/testing`; test/static
+inputs still admit their required support. Keep `package.json`'s packed-file
+exclusions in agreement and verify the realized package inventory and dependency
+input graph when support changes. The package's `node_modules` symlink exposes the
+full application module set, so a root devDependency would ship too. Do not add
+jsdom to the root manifest. **`jsdom@27.0.1`** instead has a private manifest/lock at
+`lib/testing/package.json` and `lib/testing/package-lock.json`. The separate
+`nix/test-support.nix` output built successfully without React or node-pty and is
+linked only at `lib/testing/node_modules` in private core/static workspaces. Root
+application dependency versions and devshell preparation contract remain unchanged;
+the application cache hash is bound to the changed packed-inventory manifest.
+Mounted Nix checks verify that React resolves from the root application module set.
+
+Source-set exclusions alone do not prove runtime absence. The packaging pilot
+checked the realized package: no jsdom, own helpers or test-support closure. Nix
+input-graph probes cover docs, classified JS additions, TSX fixtures, application
+and dependency edits. Changing only the private support dependency leaves the
+application/package/runtime-module identities unchanged. These are bounded graph
+and packaging proofs, not substitutes for complete candidate acceptance.
+
 **Never run `next build` or `npm run build` in a working checkout.** Production
 builds run only in isolated Nix builders. They neither activate a service nor
 publish an artifact. Manual `nix develop`/`npm run dev` is separate, not acceptance.
 
-### Source and credential boundary
+## Contributor ownership and recipes
+
+Choose the **lowest sufficient owner**, then add only the bridges it cannot prove:
+
+1. Policy/data decision? Import the production module with `node:test`/Jiti; vary
+   inputs without a repository, SDK or browser. Source-text matching is not a
+   behavioral substitute (retain genuine architecture/import guards).
+2. Async ordering/persistence/elapsed-time policy? Exercise the real instance-owned
+   controller through narrow capabilities, named operation gates and an injected
+   clock. Keep a native bridge for its default composition and real writes/closure.
+3. React effect, current closure or unmount? Mount the real component/hook using
+   `lib/testing/react.fixture.mjs`. Callback extraction alone cannot prove React
+   wiring, dependency arrays, Strict Effects or cleanup.
+4. Git/path/descriptor/SDK/process identity? Use private native fixtures and join
+   owned operations before deleting them. Do not replace revalidation/race stages
+   with a cached approval or one generic error case.
+5. Layout, real capture, scroll, media, browser networking or end-user connection?
+   Keep installed-package Chromium. Activation/restart/PTY/cgroup closure belongs
+   to `service`, not the browser's process backend.
+
+### Three small core patterns
+
+These use current APIs; paths below are relative to the shown existing test files.
+Each example uses the `assert` and `test` imports in the first block.
+For a pure production rule (`lib/session-worktree-filter.test.mjs`):
+
+```js
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createJiti } from 'jiti';
+const jiti = createJiti(import.meta.url, { fsCache: false });
+const { sameSessionDirectory } = await jiti.import('./session-worktree-filter.ts');
+test('display equality preserves POSIX case', () => {
+  assert.equal(sameSessionDirectory('/main/', '/main'), true);
+  assert.equal(sameSessionDirectory('/Main', '/main'), false);
+});
+```
+
+For owned async work, import from `./testing/async.fixture.mjs` in a `lib/` test
+(or `./async.fixture.mjs` within `lib/testing/`). Register teardown **before** work:
+
+```js
+import { createTaskOwner, deferred } from './testing/async.fixture.mjs';
+test('an admitted operation stays owned through completion', async t => {
+  const owner = createTaskOwner(), entered = deferred(), release = deferred();
+  t.after(async () => { release.resolve(); await owner.join(); });
+  const work = owner.track('operation including its handlers', (async () => {
+    entered.resolve();
+    await release.promise;
+    return 'complete';
+  })());
+  await entered.promise;
+  release.resolve();
+  assert.equal(await work, 'complete');
+  await owner.join();
+});
+```
+
+`track(label, work)` observes the supplied promise immediately and returns it;
+include failure/persistence handlers in that promise. `join()` closes admission,
+waits for all tracked work even after a peer fails, and retains failures in an
+`AggregateError`; repeated joins share completion. It neither cancels nor proves
+native closure. Close the operation's own admission before starting teardown;
+never start new work and then try to track it after `join()`.
+
+For real TSX/React (`lib/testing/react.test.mjs` uses this support probe):
+
+```js
+import { createElement } from 'react';
+import { createJiti } from 'jiti';
+import { mount } from './react.fixture.mjs';
+const jiti = createJiti(import.meta.url, { jsx: true, fsCache: false });
+const { MountProbe } = await jiti.import('./mount-probe.fixture.tsx');
+test('events and rerender preserve the mounted instance', async t => {
+  const props = { onMount() {}, onCleanup() {} };
+  const view = await mount(t, createElement(MountProbe, { ...props, label: 'first' }));
+  const button = view.container.querySelector('button');
+  await view.dispatch(button, new view.window.MouseEvent('click', { bubbles: true }));
+  await view.rerender(createElement(MountProbe, { ...props, label: 'next' }));
+  assert.equal(view.container.querySelector('button'), button);
+  assert.equal(button.textContent, 'next: 1');
+  await view.unmount();
+  assert.equal(view.container.childNodes.length, 0);
+});
+```
+
+New behavior tests mount the **production** component/hook, not a copy of its
+algorithm; see `hooks/useResizablePanel.test.mjs`. `mount(t, element,
+{ strict = true, setup })` registers failure-safe disposal, owns one DOM realm at
+a time and runs real React with StrictMode by default. `setup(window)` precedes
+render; storage/events come from `view.window`. Dispatch/rerender/unmount are
+awaited `act` boundaries, not universal background-work flushes. `unmount()` joins
+React cleanup; `dispose()` additionally closes the window/restores globals and is
+idempotent. Join externally owned async work separately before disposing its realm.
+`pointerCaptureDouble(element)` is only an unsupported-API double, never native
+capture/layout proof. Keep mounted cases serial within their file.
+
+### Completion, cost and new-feature checklist
+
+Result, complete owned-work settlement and durable publication are separate
+assertions. On success **or failure**, stop admission, release every gate, request
+only cancellation you own, join work/native closure, restore globals and only then
+remove private roots. Preserve both assertion and cleanup errors; one failing peer
+must not abandon another. Disposing an observer cannot cancel independently
+admitted Acceptance jobs (ADR 0031).
+
+Use named request/effect barriers and controlled clocks for project-owned elapsed
+policy, including just-before/at-boundary assertions. Use bounded observation for
+external/native conditions; retain selected genuine interval/deadline/close proofs.
+No sleep-as-settlement, universal idle/microtask flush, retries or deadline inflation.
+If a regression could publish a review instead of failing, observe `reviewReady`
+and assert the absence of controls/authority before joining `fullySettled`;
+otherwise an unanswered erroneous review can deadlock the test meant to reject it.
+
+Pure matrices should not pay Git/SDK/browser startup per row. Mount only when React
+is the obligation; native bridges and browser chains pay real setup, tracing and
+settlement costs. Measure those phases before adding splits/caches. Group splitting
+remains deferred. A seven-balanced-sample native seed pilot measured construction
+medians **42.204ms fresh / 36.547ms materialized** (11 / 8 explicit Git invocations),
+plus **42.638ms** one-time seed creation. Config/ref/registration/file/pack inode
+independence was checked, but ~5.66ms (~13.4%) per fixture does not justify new seed
+infrastructure against dominant capture/execution costs. Adoption stays deferred;
+no approved snapshots are reused.
+
+Private source-variant instrumentation measured fewer explicit Git dispatches and
+inventory starts, including zero of either in nine leaf cases. The server's two
+additional dispatches retain a stronger held-HEAD guard. These are source-versioned
+operation counts, not final-candidate timing or a complete-command speedup; do not
+sum overlapping wall intervals. Detailed counters belong with the plan's evidence.
+
+For a new feature or replacement:
+
+- Name the contract, primary owner and required native/browser/service bridges;
+  keep distinct authorization, identity, race and persistence-failure obligations.
+- Exercise real production behavior, a meaningful failing defect, success/failure
+  settlement, stale completion and unmount where applicable; document proof limits.
+- Keep helpers `.fixture.mjs` (TSX probes `.fixture.tsx`); verify discovery, source
+  graph and packed inventory. Never import registered tests from production.
+- Review live F/N/E isolation and record an explicit rationale or unresolved E hold
+  for every new test file. Re-review changed helper/native effects; do not edit the
+  historical audit into current scheduling authority.
+- Preserve browser IDs/input variants/order and whole-chain receipts when changing
+  owners; name the replacement before retiring an assertion.
+- Iterate with exact `core --file` / `e2e --group` selections, then obtain required
+  complete static, `core`, `e2e`, `service`/`all` evidence at the verified candidate.
+  Report static reuse, preparation, fresh execution, wall time and failures separately.
+
+The three source-shape checks in retired `hooks/model-switching.test.mjs` now have
+strengthened actual callback/loader owners in
+`hooks/useAgentSession.model-selection.test.mjs`, plus real Chromium. Those extracted
+production callbacks are **not mounted-hook proof**. Actual mounted GitExplorer/Move
+ignored-abort tests are now present in
+`components/GitExplorer.stale-delivery.test.mjs` and
+`components/SessionMoveDestinationPicker.stale-delivery.test.mjs`, with genuinely
+delivered JSON and joined failure cleanup, without production changes. Their focused
+Nix checks and private stale-acceptance mutations exercise those assertions; complete
+candidate acceptance remains separately required. Broader full
+`useAgentSession`/FileViewer mounting is deferred. Do not describe all source-shape
+families as migrated.
+
+## Source and credential boundary
 
 Fresh execution exports an explicit source/name allowlist, excluding Git,
 dependencies, `.next`, `.env*` and reviewed private/generated paths. Symlinks and
@@ -156,8 +349,14 @@ times are not cold-cache promises; keep model/review/coordination time separate.
 
 The core universe is recursive `*.test.mjs` under **app, components, hooks, lib,
 public and plugins**. Browser scripts and `.fixture.mjs` helpers are not silently
-added. Every discovered test participates; new/unreviewed files warn and run
-exclusively until reviewed.
+registered as tests. Every discovered test participates. Runtime unknown/unreviewed
+files still warn and fail closed to **E**, never disappear. The live review contract
+requires an explicit isolation rationale or justified E hold for each new file;
+`nix/test-design.mjs` enforces that requirement without weakening runtime fallback.
+Live F/N/E entries in `nix/test-lanes.json`, including `manifest.holds` for explicit
+unresolved E reasons, own current classification. The immutable
+`nix/test-lanes-audit-2026-10-22.json` records its historical revision, not current
+filenames, lanes, estimates or bodies.
 
 - Core desired workers: **8**; `--jobs` accepts canonical **1..32**. Effective workers
   respect CPU affinity/quota, Nix allocation and memory: 1 GiB reserve plus 2 GiB
@@ -182,8 +381,8 @@ exclusively until reviewed.
   journal/trust/settings/JSONL writes make the native cases N rather than F.
   Controlled clocks preserve the original 999/1000ms shutdown proof. The source
   cwd is writable, not filesystem-isolated, and source-relative writes remain a
-  blocker. Large-operations and model-speed-lifecycle stay unreviewed E pending
-  stronger timeout-settlement/resource and asynchronous-teardown evidence.
+  blocker. Large-operations and model-speed-lifecycle retain unresolved E holds
+  pending stronger timeout-settlement/resource and asynchronous-teardown evidence.
 - Browser fresh full execution admits explicit **1..8 concurrent group sandboxes**
   (automatic selection remains capped at four), estimating
   2 CPUs/4 GiB per group plus 2 GiB host headroom. `--workers 1..8` refuses an
@@ -202,7 +401,8 @@ exclusively until reviewed.
 Failure closes new admission; started work drains. Report-write failures also close
 admission and await peers. No automatic retries, longer browser deadlines,
 failure-to-skip conversions or suppression of console/HTTP errors. A selected core
-run still performs static preparation; `core --inventory-only` does not execute it.
+run still requires typegen/tsc and lint evidence (possibly reused for their exact
+inputs) and fresh selected effectful execution; `core --inventory-only` does neither.
 Do not append Node concurrency flags to `npm test`; aliases delegate to Nix.
 
 `test -- all` exports/verifies once. It runs browser then deployment, overlapping
@@ -227,7 +427,22 @@ Plugin, session-launch, Activity, trust, bulk and all other previously focused-o
 browser scenarios remain in the full browser inventory. Owning guides describe
 assertions, not alternative acceptance environments.
 
+### Current overhaul evidence boundary
+
+The replacement control took **413s**. Focused candidate evidence passed **22 files /
+494 tests in 125s**, including fresh static preparation, **before the late guard,
+checkpoint and mounted-test additions**. It does not verify those additions or the
+new isolated-support composition. A diagnostic candidate browser run passed
+**26 groups / 59 receipts in 414s**, **including cold production realization**.
+That is not a measured speedup or complete candidate acceptance; complete static,
+core, browser and service acceptance and performance verification remain outstanding.
+Browser packing hints now live in `nix/browser-plan.mjs`, refreshed from candidate
+diagnostic `d44f40e5`; they are not deadlines, admission or coverage authority.
+
 ### Historical timing
+
+The following retained measurements and release/source narratives describe their
+recorded candidates, not current live classification or overhaul acceptance.
 
 The previous all-browser-in-VM architecture passed fresh complete acceptance in
 **10m58s** on 2026-10-15 (32-logical-CPU native x86_64 host), down from 52m11s.

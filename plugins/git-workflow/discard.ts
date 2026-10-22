@@ -17,6 +17,15 @@ export interface DiscardLossEvidence {
   reason?: string;
   comparisonTarget?: { branch: string; tip: string };
 }
+/** Graph results are evidence only; structural/ref eligibility is checked separately. */
+export function discardLossEvidence(comparisonTarget: { branch: string; tip: string }, contained: "yes" | "no" | "unknown", retained: "yes" | "no" | "unknown"): DiscardLossEvidence {
+  return { comparisonTarget,
+    state: retained === "yes" && contained === "yes" ? "integrated" : retained === "yes" && contained === "no" ? "not-integrated" : "unknown",
+    ...(retained !== "yes" ? { reason: "comparison-proof-lost" } : contained === "unknown" ? { reason: "graph-unavailable-or-incomplete" } : {}) };
+}
+export function requiresDiscardLossAcknowledgment(op: Pick<BrowserDiscardOperation, "deleteBranch">, evidence: DiscardLossEvidence): boolean {
+  return op.deleteBranch && evidence.state !== "integrated";
+}
 const oid = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 function object(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);

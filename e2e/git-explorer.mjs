@@ -4,6 +4,7 @@ import { withExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
 import { checkDiffContext } from "./git-diff-context.mjs";
 import { checkGitExplorerFullscreen } from "./git-explorer-fullscreen.mjs";
 import { checkGitGraphAlignment } from "./git-graph-geometry.mjs";
+import { holdBrowserRead } from "./browser-read-barrier.mjs";
 
 /** Visual history tracks the selected checkout and branch, independently of the open chat. */
 export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorktree }) {
@@ -74,20 +75,15 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
     "Tag labels must not change the checkout HEAD");
   await branch.selectOption("feature");
   await graph.getByRole("button", { name: /second feature/ }).waitFor();
-  const delayOtherBranch = async (route) => {
-    if (new URL(route.request().url()).searchParams.get("branch") !== "target") return route.continue();
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    await route.continue().catch(() => {});
-  };
-  await page.route("**/api/git/explorer?*", delayOtherBranch);
-  const delayedBranch = page.waitForRequest((request) => new URL(request.url()).searchParams.get("branch") === "target");
-  await branch.selectOption("target");
-  await delayedBranch;
-  await branch.selectOption("feature");
-  await graph.getByRole("button", { name: /second feature/ }).waitFor();
-  await page.waitForTimeout(700);
-  assert.equal(await graph.locator("svg circle").count(), 3, "A late branch response must not replace the newer selection");
-  await page.unroute("**/api/git/explorer?*", delayOtherBranch);
+  const oldBranch = await holdBrowserRead(page, { pathname: "/api/git/explorer", query: { cwd, op: "log", branch: "target" } });
+  try {
+    await branch.selectOption("target");
+    await oldBranch.arrived();
+    await branch.selectOption("feature");
+    await graph.getByRole("button", { name: /second feature/ }).waitFor();
+    await oldBranch.releaseAndObserve();
+    assert.equal(await graph.locator("svg circle").count(), 3, "A late branch response must not replace the newer selection");
+  } finally { await oldBranch.dispose(); }
   const patchReads = [], contextReads = [];
   const recordPatch = (request) => {
     const query = new URL(request.url()).searchParams;
@@ -183,25 +179,16 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   page.off("request", recordPatch);
 
   const rootOid = execFileSync("git", ["-C", cwd, "rev-parse", "target"], { encoding: "utf8" }).trim();
-  const delayOldPatch = async (route) => {
-    const query = new URL(route.request().url()).searchParams;
-    if (query.get("op") !== "patch" || query.get("oid") !== rootOid) return route.continue();
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    await route.continue().catch(() => {});
-  };
-  await page.route("**/api/git/explorer?*", delayOldPatch);
-  const oldPatch = page.waitForRequest((request) => {
-    const query = new URL(request.url()).searchParams;
-    return query.get("op") === "patch" && query.get("oid") === rootOid;
-  });
-  await graph.getByRole("button", { name: /base fixture/ }).click();
-  await oldPatch;
-  await graph.getByRole("button", { name: /second feature/ }).click();
-  await firstFile.getByRole("region", { name: "Side-by-side diff" }).getByText("Revised base fixture", { exact: true }).waitFor();
-  await page.waitForTimeout(700);
-  await detail.getByText(oid, { exact: true }).waitFor();
-  assert.equal(await secondFile.getByRole("button", { name: "Toggle diff: second.txt", exact: true }).getAttribute("aria-expanded"), "false", "New commit view resets expansion and cannot inherit the old patch");
-  await page.unroute("**/api/git/explorer?*", delayOldPatch);
+  const oldPatch = await holdBrowserRead(page, { pathname: "/api/git/explorer", query: { cwd, op: "patch", oid: rootOid } });
+  try {
+    await graph.getByRole("button", { name: /base fixture/ }).click();
+    await oldPatch.arrived();
+    await graph.getByRole("button", { name: /second feature/ }).click();
+    await firstFile.getByRole("region", { name: "Side-by-side diff" }).getByText("Revised base fixture", { exact: true }).waitFor();
+    await oldPatch.releaseAndObserve();
+    await detail.getByText(oid, { exact: true }).waitFor();
+    assert.equal(await secondFile.getByRole("button", { name: "Toggle diff: second.txt", exact: true }).getAttribute("aria-expanded"), "false", "New commit view resets expansion and cannot inherit the old patch");
+  } finally { await oldPatch.dispose(); }
 
   const unavailableUrl = `${base}/api/git/explorer?${new URLSearchParams({ cwd, op: "patch", branch: "feature", head: oid, oid, path: "second.txt" })}`;
   const refusePatch = (route) => route.fulfill({ status: 409, json: { error: "E2E patch unavailable" } });
@@ -235,34 +222,26 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
     "Intermediate widths keep chat beside the single-column Git panel");
   await page.setViewportSize({ width: 1280, height: 800 });
 
-  const delayOldHistory = async (route) => {
-    const query = new URL(route.request().url()).searchParams;
-    if (query.get("op") !== "log" || query.get("cwd") !== cwd) return route.continue();
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    await route.continue().catch(() => {});
-  };
-  await page.route("**/api/git/explorer?*", delayOldHistory);
-  const staleRequest = page.waitForRequest((request) => {
-    const query = new URL(request.url()).searchParams;
-    return query.get("op") === "log" && query.get("cwd") === cwd;
-  });
-  await explorer.getByRole("button", { name: "Refresh" }).click();
-  await staleRequest;
-  await page.getByTitle(`Switch worktree: ${cwd}`).click();
-  const targetHistory = page.waitForResponse((response) => {
-    const address = new URL(response.url());
-    return address.pathname === "/api/git/explorer" && address.searchParams.get("op") === "log"
-      && address.searchParams.get("cwd") === targetWorktree;
-  });
-  await page.locator(".wt-row").filter({ hasText: "target" }).locator("button").first().click();
-  assert.equal((await targetHistory).status(), 200);
-  await page.waitForFunction(() => document.querySelector('[aria-label="History branch"]')?.value === "target");
-  await page.waitForTimeout(750);
-  assert.equal(await graph.locator("svg circle").count(), 1, "Target checkout shows its own history");
-  assert.equal(await detail.count(), 0, "Changing worktrees clears the old commit detail");
-  await graph.getByRole("button", { name: /base fixture/ }).click();
-  await detail.getByRole("region", { name: "Side-by-side diff" }).getByText("Base fixture", { exact: true }).waitFor();
-  await page.unroute("**/api/git/explorer?*", delayOldHistory);
+  const oldHistory = await holdBrowserRead(page, { pathname: "/api/git/explorer", query: { cwd, op: "log" } });
+  try {
+    await explorer.getByRole("button", { name: "Refresh" }).click();
+    await oldHistory.arrived();
+    await page.getByTitle(`Switch worktree: ${cwd}`).click();
+    const targetHistory = page.waitForResponse((response) => {
+      const address = new URL(response.url());
+      return address.pathname === "/api/git/explorer" && address.searchParams.get("op") === "log"
+        && address.searchParams.get("cwd") === targetWorktree;
+    });
+    await page.locator(".wt-row").filter({ hasText: "target" }).locator("button").first().click();
+    assert.equal((await targetHistory).status(), 200);
+    await page.waitForFunction(() => document.querySelector('[aria-label="History branch"]')?.value === "target");
+    await graph.getByRole("button", { name: /base fixture/ }).waitFor();
+    await oldHistory.releaseAndObserve();
+    assert.equal(await graph.locator("svg circle").count(), 1, "Target checkout shows its own history");
+    assert.equal(await detail.count(), 0, "Changing worktrees clears the old commit detail");
+    await graph.getByRole("button", { name: /base fixture/ }).click();
+    await detail.getByRole("region", { name: "Side-by-side diff" }).getByText("Base fixture", { exact: true }).waitFor();
+  } finally { await oldHistory.dispose(); }
   await page.getByRole("button", { name: "New", exact: true }).click();
   assert.equal(await page.getByText("Ready to browse Git history", { exact: true }).count(), 0,
     "Git Explorer works without an open session");

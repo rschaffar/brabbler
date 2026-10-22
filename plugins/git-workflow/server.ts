@@ -12,8 +12,10 @@ import { samePath, toNativePath } from "../../lib/paths";
 import { allowFileRoot } from "../../lib/file-access";
 import { onPluginSettingsChange, pluginProjectIdentity, readPluginSettings } from "../../lib/plugins/settings";
 import type { PluginCard, PluginCardField, PluginCardSection, PluginSession, PluginUiContext, PluginOperationReceipt, RequiredCheck } from "../../lib/plugins/types";
-import { actions, gitWorkflowManifest, type GitAction, type GitOperationAction, type GitSettings } from "./manifest";
+import { actions, gitWorkflowManifest, type GitAction, type GitSettings } from "./manifest";
 import { validateBrowserDiscardOperation, type BrowserDiscardOperation } from "./discard";
+import { invocationPolicy, operationAuthorization, relevantPolicy } from "./operation-rules";
+import { browserDiscardCard, cleanupCard } from "./resource-cards";
 
 import { captureCleanup, captureBrowserDiscard, createCleanupBudget, performCleanup, performBrowserDiscard, type CleanupBudget, type CleanupAccess, type CleanupOperation, type CleanupSnapshot, type CleanupGitTransaction, type WorktreeRecord } from "./cleanup";
 
@@ -88,21 +90,7 @@ async function checkout(selected: string, repositoryCwd?: string): Promise<strin
 function settings(cwd: string, session?: PluginSession, op?: ReviewedGitOperation, browserConfirmation = false): GitSettings {
   const snapshot = readPluginSettings(gitWorkflowManifest, cwd, undefined, session);
   if (!snapshot.enabled) throw new Error("Git Workflow plugin is disabled");
-  const policy = snapshot.effective as unknown as GitSettings;
-  if (op?.action === "rebase" || op?.action === "merge" || op?.action === "cleanupFeature") {
-    // An Ask answer is an invocation choice, never a settings write or permission override.
-    if (op.targetBranch !== undefined) {
-      if (browserConfirmation && policy.targetBranch && op.targetBranch !== policy.targetBranch) throw new Error("Cleanup target differs from designated project target");
-      if (policy.targetSelection !== "ask" && policy.targetBranch && op.targetBranch !== policy.targetBranch) throw new Error("Target differs from configured policy");
-      policy.targetBranch = op.targetBranch;
-    }
-    if ("mergeMethod" in op && op.mergeMethod !== undefined) {
-      if (op.action !== "merge" || !["ff-only", "non-ff"].includes(op.mergeMethod)) throw new Error("Invalid merge method");
-      if (policy.methodSelection !== "ask" && op.mergeMethod !== policy.mergeMethod) throw new Error("Method differs from configured policy");
-      policy.mergeMethod = op.mergeMethod;
-    }
-  }
-  return policy;
+  return invocationPolicy(snapshot.effective as unknown as GitSettings, op, browserConfirmation);
 }
 function digest(value: unknown): string { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 function physicalPath(path: string): string {
@@ -136,46 +124,14 @@ function cleanupAccess(ui: Partial<PluginUiContext>, rejectUnignoredUntracked = 
 async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitSettings, ui: Partial<PluginUiContext> = {}, budget?: CleanupBudget, rejectUnignoredUntracked = false): Promise<Snapshot> {
   if (op.action === "discardResources") {
     const cleanup = await captureBrowserDiscard(callerCwd, op, policy, cleanupAccess(ui, true), budget);
-    const subject = op.subject.kind === "branch" ? `${op.subject.branch} at ${op.subject.tip}` : `Detached HEAD at ${op.subject.head}`;
-    const evidence = cleanup.lossEvidence!;
-    const needsAcknowledgment = op.deleteBranch && evidence.state !== "integrated";
-    return { fingerprint: digest([cleanup.fingerprint, op, evidence, relevantPolicy(policy, op.action)]), cleanup,
-      cwd: cleanup.cwd, args: [], checks: [], card: {
-        title: "Remove selected Git resources", subtitle: "Manual browser confirmation required",
-        ...(needsAcknowledgment ? { requiredAcknowledgment: "I understand that deleting this local branch can discard work not proven integrated, and I accept this loss." } : {}),
-        fields: [{ label: "Repository checkout", value: cleanup.cwd, code: true },
-          { label: "Exact subject", value: subject, code: true },
-          { label: "Worktree", value: `${op.removeWorktree ? "Remove" : "Keep"}: ${cleanup.path ?? "none"}` },
-          { label: "Local branch", value: op.deleteBranch ? "Delete this exact local ref" : "Keep (no branch deletion)" },
-          { label: "Integration evidence", value: `${evidence.state}${evidence.reason ? `: ${evidence.reason}` : ""}` },
-          { label: "Captured comparison (not policy authority)", value: op.comparisonTarget ? `${op.comparisonTarget.branch} at ${op.comparisonTarget.tip}` : "None", code: true },
-          { label: "Protected designated target", value: policy.targetBranch ?? "None", code: true }],
-        sections: [{ title: "Generated files and directories to remove", fields: cleanup.artifacts.map((item) => ({ label: item.path,
-          value: `${cleanup.unapprovedArtifacts.includes(item.path) ? "Needs one-time approval" : "Permitted by settings"} · ${item.entries} entries · ${item.bytes} bytes · SHA256 ${item.digest}`, code: true })) },
-          ...(cleanup.unapprovedArtifacts.length ? [{ title: "One-time artifact permission", text: "Approving includes only the exact listed artifacts. Ignored status does not mean disposable; confirmation does not change your reusable allowlist.", notice: true }] : []),
-          ...(needsAcknowledgment ? [{ title: "Branch loss warning", text: "This branch tip is not proven integrated into the captured comparison target. Deleting its local ref may discard unique work. No backup, retry, rollback, or remote operation is performed.", notice: true }] : []),
-          ...(op.subject.kind === "detached" ? [{ title: "Detached commit warning", text: "Removing this detached worktree may remove the convenient reference to its captured HEAD commit. No branch is deleted. Reflogs and unreachable objects do not guarantee permanent commit retention; retain a reference manually if needed.", notice: true }] : []),
-          { title: "Boundaries", text: "Only listed resources. Idle chat history stays, but continuing a chat may require moving it after its working folder disappears. Main, selected/invocation, designated/comparison target, locked/prunable and active resources remain protected. Dirty source or unignored untracked files block removal. Exact HEAD/ref, registration, physical identity and contents are rechecked before each effect. Completed-feature Keep preferences do not govern this deliberate manual operation. External Git/filesystem writers are not locked out. Dispatched effects settle; partial outcomes are reported, never rolled back. Branch config, remote refs and backups remain untouched.", notice: true }],
-        scope: "Approves only these frozen branch/worktree/artifact resources together. It is not future disposal authority.",
-        actions: [{ id: "reject", label: "Keep resources" }, { id: "approve", label: "Remove listed resources", primary: true }],
-      } };
+    return { fingerprint: digest([cleanup.fingerprint, op, cleanup.lossEvidence!, relevantPolicy(policy, op.action)]), cleanup,
+      cwd: cleanup.cwd, args: [], checks: [], card: browserDiscardCard(op, policy, cleanup) };
   }
   if (op.action === "cleanupFeature") {
     if (!op.removeWorktree && !op.deleteBranch && !op.artifactRoots.length) throw new Error("Choose at least one cleanup resource");
     const cleanup = await captureCleanup(callerCwd, op, policy, cleanupAccess(ui, rejectUnignoredUntracked), budget);
-    const fields = [{ label: "Repository checkout", value: cleanup.cwd, code: true },
-      { label: "Integrated feature", value: `${op.featureBranch} at ${op.featureTip}`, code: true },
-      { label: "Verified integration", value: `${op.integrationCommit} remains reachable from ${cleanup.target}`, code: true },
-      { label: "Worktree", value: `${op.removeWorktree ? "Remove" : "Keep"}: ${cleanup.path ?? "none"}` },
-      { label: "Local branch", value: op.deleteBranch ? "Delete exact integrated ref" : "Keep" }];
     return { fingerprint: digest([cleanup.fingerprint, relevantPolicy(policy, op.action)]), cleanup,
-      cwd: cleanup.cwd, args: [], checks: [], card: { title: "Clean up integrated Git feature", subtitle: "Approval required", fields,
-        sections: [{ title: "Generated files and directories to remove", fields: cleanup.artifacts.map((item) => ({ label: item.path,
-          value: `${cleanup.unapprovedArtifacts.includes(item.path) ? "Needs one-time approval" : "Permitted by settings"} · ${item.entries} entries · ${item.bytes} bytes · SHA256 ${item.digest}`, code: true })) },
-        ...(cleanup.unapprovedArtifacts.length ? [{ title: "One-time artifact permission", text: "The listed unpermitted artifacts require your approval for this operation, even when cleanup is set to Allow. Ignored status does not mean disposable. Approving does not change your reusable allowlist.", notice: true }] : []),
-        { title: "Boundaries", text: "Only listed resources. Idle chat history stays, but continuing a chat may require moving it after its working folder disappears. Running/starting sessions and active terminals block cleanup. Content/identity rechecked before each effect. Unknown files, source changes, locked or active worktrees block cleanup. Target advancement is allowed only while integration remains reachable. External filesystem/Git writers are not locked out; partial effects are reported, never rolled back. Local branch config is retained; remote branches and backups are untouched.", notice: true }],
-        scope: "Approves all listed cleanup resources together, not an arbitrary ignored-file deletion.",
-        actions: [{ id: "reject", label: "Keep resources" }, { id: "approve", label: "Clean up listed resources", primary: true }] } };
+      cwd: cleanup.cwd, args: [], checks: [], card: cleanupCard(op, cleanup) };
   }
   const cwd = await checkout(op.checkout);
   const current = await head(cwd);
@@ -316,13 +272,6 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
       actions: [{ id: "reject", label: "Reject" }, { id: "approve", primary: true,
         label: { commit: "Approve commit", rebase: "Approve rebase", merge: "Approve merge", createWorktree: "Create worktree", attachWorktree: "Attach worktree", removeWorktree: "Remove worktree" }[op.action] }] } };
 }
-function relevantPolicy(policy: GitSettings, action: GitOperationAction) {
-  if (action === "discardResources") return [policy.discardResources, policy.targetBranch, policy.approvedArtifactRoots];
-  return [policy[action], action === "commit" ? policy.commitChecks : action === "merge" ? policy.mergeChecks : [],
-    action === "merge" || action === "rebase" || action === "cleanupFeature" ? [policy.targetSelection, policy.targetBranch] : null,
-    action === "merge" ? [policy.methodSelection, policy.mergeMethod] : null,
-    action === "cleanupFeature" ? [policy.cleanupWorktree, policy.cleanupBranch, policy.cleanupArtifacts, policy.approvedArtifactRoots] : null];
-}
 /** Agent entry point: browser-only actions cannot acquire authority here, even via untyped callers. */
 export async function executeGitOperation(callerCwd: string, operation: GitOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, session?: PluginSession, toolCallId?: string, onProgress?: (text: string) => void, options?: { browserConfirmation: true }) {
   if (!actions.includes(operation.action as GitAction)) throw new Error("Unsupported agent Git action; manual discard requires the browser project adapter");
@@ -412,13 +361,11 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     const review = await ui.prepareReview(gitWorkflowManifest.id, operationId, (writer) => buildGitReview(writer, op, snapshot, signal, onProgress));
     snapshot.card = { ...compactGitCard(snapshot.card), review };
     const artifactApproval = !!snapshot.cleanup?.unapprovedArtifacts.length;
-    const mode = options?.browserConfirmation || artifactApproval ? "ask" : policy[op.action] as "ask" | "allow";
-    if (options?.browserConfirmation) snapshot.card.subtitle = "Manual browser confirmation required";
-    else if (artifactApproval) snapshot.card.subtitle = "One-time artifact approval required";
-    else if (mode === "allow") snapshot.card.subtitle = "Policy-authorized operation";
+    const { subtitle, ...authorization } = operationAuthorization(policy[op.action], origin.sources[op.action], artifactApproval, !!options?.browserConfirmation);
+    const { mode } = authorization;
+    if (options?.browserConfirmation || artifactApproval || mode === "allow") snapshot.card.subtitle = subtitle;
     receipt = { version: 1, operationId, ...(toolCallId ? { toolCallId } : {}), card: snapshot.card, phase: "prepared", effectStarted: false,
-      authorization: { mode, source: options?.browserConfirmation ? `manual browser confirmation (${origin.sources[op.action]} ${policy[op.action]})` : artifactApproval ? `one-time artifacts (${origin.sources[op.action]} ${policy[op.action]})` : origin.sources[op.action], revision: digest(origin),
-        decision: mode === "allow" ? "policy-authorized" : "pending" },
+      authorization: { ...authorization, revision: digest(origin) },
       checks: snapshot.checks.map((check) => ({ name: check.name.slice(0, 240), status: "pending" })) };
     record("prepared");
     onProgress?.(`Exact review saved: ${review.entries} entries, ${review.bytes} bytes. Awaiting authorization/checks.`);

@@ -60,13 +60,27 @@ export function planFiles(inventory, manifest, selection = []) {
         new Set(entry.expectedCases).size !== entry.expectedCases.length)) throw new Error(`Invalid expectedCases: ${entry.path}`);
     reviewed.set(entry.path, entry);
   }
+  // Holds are live unresolved reviews, not reviewed E entries or historical authority.
+  // Optional for existing API callers; repository coverage is enforced by test-design.
+  const holdObject = manifest.holds === undefined ? {} : manifest.holds;
+  if (!holdObject || typeof holdObject !== 'object' || Array.isArray(holdObject) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(holdObject))) throw new Error('Invalid manifest holds');
+  const holds = new Map();
+  for (const [file, reason] of Object.entries(holdObject)) {
+    if (!discovered.has(file)) throw new Error(`Unknown hold path: ${file}`);
+    if (reviewed.has(file)) throw new Error(`Duplicate manifest/hold path: ${file}`);
+    if (typeof reason !== 'string' || !reason.trim()) throw new Error(`Invalid hold reason: ${file}`);
+    holds.set(file, reason);
+  }
   const selected = new Set(selection);
   if (selected.size !== selection.length) throw new Error('Duplicate selected file');
   for (const file of selected) if (!discovered.has(file)) throw new Error(`Unknown selected file: ${file}`);
   return inventory.filter((f) => !selected.size || selected.has(f.path)).map((file) => ({
     ...file,
     lane: reviewed.get(file.path)?.lane ?? 'E',
-    reason: reviewed.get(file.path)?.reason ?? 'UNREVIEWED: exclusive fallback; still included',
+    reason: reviewed.get(file.path)?.reason ?? (holds.has(file.path)
+      ? `UNREVIEWED HOLD: exclusive; still included; ${holds.get(file.path)}`
+      : 'UNREVIEWED: exclusive fallback; still included'),
     reviewed: reviewed.has(file.path),
     expectedCases: reviewed.get(file.path)?.expectedCases,
     estimatedMs: reviewed.get(file.path)?.estimatedMs ?? 0,

@@ -7,7 +7,8 @@ import { setImmediate } from "node:timers/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { samePath } from "../../lib/paths";
 import type { GitSettings } from "./manifest";
-import type { BrowserDiscardOperation, DiscardLossEvidence, DiscardSubject } from "./discard";
+import { discardLossEvidence, type BrowserDiscardOperation, type DiscardLossEvidence, type DiscardSubject } from "./discard";
+import { artifactParentsOf, pathKey, permittedArtifactRoots, rootKey, unapprovedArtifactRoots, validateArtifactRoots } from "./artifact-rules";
 
 export interface CleanupOperation {
   action: "cleanupFeature"; checkout: string; featureBranch: string; featureTip: string;
@@ -15,14 +16,20 @@ export interface CleanupOperation {
   removeWorktree: boolean; deleteBranch: boolean; artifactRoots: string[];
 }
 export interface WorktreeRecord { path: string; branch?: string; head?: string; detached?: boolean; locked?: string; prunable?: string }
+/** Trusted effect-stage context only; never operation JSON or captured authority. */
+type CleanupCaptureCheckpoint = "final-branch-registration-capture";
 export interface CleanupAccess {
   /** Trusted browser adapter restriction, never supplied through operation JSON. */
   rejectUnignoredUntracked?: boolean;
+  /** Internal native capabilities, never operation JSON. Defaults stay fresh at every scan/effect. */
+  readMountInfo?(): string;
+  removeArtifact?(path: string): Promise<void>;
   git(cwd: string, args: string[]): string | Promise<string>;
   records?(cwd: string, args: string[]): AsyncIterable<string>;
   checkout(path: string, repository?: string): string | Promise<string>;
   branchTip(cwd: string, branch: string): string | Promise<string>;
-  worktrees(cwd: string): WorktreeRecord[] | Promise<WorktreeRecord[]>;
+  /** Context names an existing fresh read; default adapters perform the same native operation. */
+  worktrees(cwd: string, checkpoint?: CleanupCaptureCheckpoint): WorktreeRecord[] | Promise<WorktreeRecord[]>;
   project(cwd: string): string | null;
   inUse(path: string): boolean;
 }
@@ -46,19 +53,6 @@ export interface CleanupGitTransaction {
 export type CleanupGitRunner = (args: string[], transaction?: CleanupGitTransaction) => Promise<string>;
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const oid = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
-const rootName = /^[a-zA-Z0-9_.-]+$/;
-// Conservative on every platform, including Windows case/trailing-dot aliases.
-const rootKey = (name: string) => name.replace(/[. ]+$/g, "").toLowerCase();
-const pathKey = (name: string) => name.split("/").map(rootKey).join("/");
-const validRoot = (name: string) => name.split("/").every((part) => rootName.test(part) && !["", ".git"].includes(rootKey(part)));
-function artifactParentsOf(roots: string[]): string[] {
-  const parents = new Set<string>();
-  for (const root of roots) {
-    const parts = root.split("/");
-    for (let i = 1; i < parts.length; i++) parents.add(parts.slice(0, i).join("/"));
-  }
-  return [...parents];
-}
 export interface CleanupBudget { entries: number; bytes: number; elapsed: number; guard?: () => void }
 export const createCleanupBudget = (guard?: () => void): CleanupBudget => ({ entries: 0, bytes: 0, elapsed: 0, guard });
 export function cleanupPathWithin(root: string, path: string): boolean {
@@ -71,21 +65,6 @@ async function directBranch(access: CleanupAccess, cwd: string, branch: string):
     .find((line) => line.split("\0")[0] === `refs/heads/${branch}`);
   if (!row || row.split("\0")[1]) throw new Error("Cleanup refuses symbolic branch refs");
   return tip;
-}
-function permittedRoots(policy: GitSettings): string[] {
-  const roots = (policy.approvedArtifactRoots ?? "").split(",").map((value) => value.trim()).filter(Boolean);
-  if (roots.some((value) => !validRoot(value))) throw new Error("Invalid configured generated artifact list");
-  return roots;
-}
-function validateRoots(roots: string[]) {
-  if (!Array.isArray(roots) || new Set(roots).size !== roots.length
-    || roots.some((name) => typeof name !== "string" || !validRoot(name))) throw new Error("Select distinct literal relative generated files or directories");
-  const keys = roots.map(pathKey).sort();
-  const selected = new Set<string>();
-  for (const key of keys) {
-    if (selected.has(key) || artifactParentsOf([key]).some((parent) => selected.has(parent))) throw new Error("Generated artifact roots cannot overlap or alias each other");
-    selected.add(key);
-  }
 }
 function directArtifactParents(roots: string[]): string[] {
   return [...new Set(roots.filter((root) => root.includes("/")).map((root) => root.slice(0, root.lastIndexOf("/"))))];
@@ -103,7 +82,7 @@ function repositoryIdentityOf(access: CleanupAccess, cwd: string): string {
   return digest([cwd, statIdentity(cwd), common, statIdentity(common)]);
 }
 /** Read-only bounded content inventory, never one JSON row per dependency in the approval. */
-async function inventory(path: string, roots: string[], tracked: Set<string>, budget: CleanupBudget, artifactParents: string[], metadataParents: string[], explicitRoots: string[]) {
+async function inventory(path: string, roots: string[], tracked: Set<string>, budget: CleanupBudget, artifactParents: string[], metadataParents: string[], explicitRoots: string[], access: CleanupAccess) {
   const started = Date.now();
   const rootBefore = lstatSync(path, { bigint: true });
   const trackedDirectories = new Set<string>();
@@ -125,7 +104,7 @@ async function inventory(path: string, roots: string[], tracked: Set<string>, bu
   const device = lstatSync(path).dev;
   // Reject Linux bind mounts as well as different-device mounts. Other platforms
   // still reject device changes and symlink/reparse directories.
-  const mounts = process.platform === "linux" ? readFileSync("/proc/self/mountinfo", "utf8").split("\n").filter(Boolean).map((line) =>
+  const mounts = process.platform === "linux" ? (access.readMountInfo?.() ?? readFileSync("/proc/self/mountinfo", "utf8")).split("\n").filter(Boolean).map((line) =>
     line.split(" ")[4].replace(/\\([0-7]{3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)))) : [];
   if (mounts.some((mount) => cleanupPathWithin(path, mount))) throw new Error("Mounted cleanup resources are unsupported");
   const visit = async (name: string, inheritedArtifact?: typeof artifacts[number]): Promise<void> => {
@@ -219,7 +198,7 @@ interface ResourceRules {
   target: string;
   binding: unknown;
   protectedBranches: string[];
-  verify(cwd: string): Promise<void>;
+  verify(cwd: string, checkpoint?: CleanupCaptureCheckpoint): Promise<void>;
   artifacts(roots: string[]): void;
 }
 function cleanupResources(op: CleanupOperation): ResourceOperation {
@@ -239,11 +218,12 @@ async function assertWorktreeSubject(access: CleanupAccess, path: string, entry:
 }
 /** Structural safety is shared; eligibility rules are trusted plugin code, never JSON switches. */
 async function captureResources(callerCwd: string, op: ResourceOperation, policy: GitSettings, access: CleanupAccess, rules: ResourceRules,
-  budget: CleanupBudget, discoverArtifacts: boolean, frozenStructure?: FrozenStructure): Promise<CleanupSnapshot> {
+  budget: CleanupBudget, discoverArtifacts: boolean, frozenStructure?: FrozenStructure,
+  captureCheckpoint?: CleanupCaptureCheckpoint): Promise<CleanupSnapshot> {
   if (!oid.test(op.subject.kind === "branch" ? op.subject.tip : op.subject.head)) throw new Error("Cleanup requires full exact subject commit IDs");
-  validateRoots(op.artifactRoots);
+  validateArtifactRoots(op.artifactRoots);
   let roots = [...op.artifactRoots];
-  const permitted = permittedRoots(policy);
+  const permitted = permittedArtifactRoots(policy.approvedArtifactRoots);
   if (typeof op.removeWorktree !== "boolean" || typeof op.deleteBranch !== "boolean") throw new Error("Cleanup resource choices must be explicit");
   if (op.subject.kind === "detached" && (!op.removeWorktree || op.deleteBranch || !op.worktreePath)) throw new Error("Detached discard removes only its exact worktree");
   rules.artifacts(roots);
@@ -253,9 +233,9 @@ async function captureResources(callerCwd: string, op: ResourceOperation, policy
   const cwd = await access.checkout(op.checkout);
   if (!samePath(cwd, resolve(op.checkout))) throw new Error("Cleanup checkout must be physical, without symlink aliases");
   const repositoryIdentity = repositoryIdentityOf(access, cwd);
-  const verifySubject = async () => {
+  const verifySubject = async (checkpoint?: CleanupCaptureCheckpoint) => {
     if (op.subject.kind === "branch" && await directBranch(access, cwd, op.subject.branch) !== op.subject.tip) throw new Error("Feature branch changed; cleanup refused");
-    await rules.verify(cwd);
+    await rules.verify(cwd, checkpoint);
   };
   await verifySubject();
   const registrations = await access.worktrees(cwd);
@@ -288,7 +268,7 @@ async function captureResources(callerCwd: string, op: ResourceOperation, policy
       // If Git reports an ignored parent of an explicit child, inventory it once
       // and show that actual parent in approval, never delete overlapping roots.
       roots = [...discovered].filter((root) => !artifactParentsOf([root]).some((parent) => discovered.has(parent)));
-      validateRoots(roots);
+      validateArtifactRoots(roots);
       artifactParents = artifactParentsOf(roots);
       metadataParents = directArtifactParents(roots);
     }
@@ -297,7 +277,7 @@ async function captureResources(callerCwd: string, op: ResourceOperation, policy
     await assertSourceClean(access, path, roots);
     const tracked = new Set<string>();
     for await (const name of gitRecords(access, path, ["ls-files", "--cached", "-z"])) if (name) tracked.add(name);
-    files = await inventory(path, roots, tracked, budget, artifactParents, metadataParents, op.artifactRoots);
+    files = await inventory(path, roots, tracked, budget, artifactParents, metadataParents, op.artifactRoots, access);
     if (access.inUse(path)) throw new Error("Cleanup worktree became active during inventory");
     const currentEntry = (await access.worktrees(cwd)).find((item) => samePath(item.path, path!));
     if (!currentEntry || digest(currentEntry) !== digest(entry) || !samePath(await access.checkout(path, cwd), path)) throw new Error("Worktree registration changed during inventory");
@@ -311,7 +291,7 @@ async function captureResources(callerCwd: string, op: ResourceOperation, policy
   // Target tip deliberately excluded: eligibility proves reachability, not an
   // unrelated advancement of a target that this operation never writes.
   if (!samePath(await access.checkout(op.checkout), cwd) || repositoryIdentity !== repositoryIdentityOf(access, cwd)) throw new Error("Repository changed during inventory");
-  await verifySubject();
+  await verifySubject(captureCheckpoint);
   if (path) {
     const finalEntry = (await access.worktrees(cwd)).find((entry) => samePath(entry.path, path!));
     if (!finalEntry || digest(finalEntry) !== digest(capturedEntry)) throw new Error("Worktree registration changed during capture");
@@ -321,7 +301,7 @@ async function captureResources(callerCwd: string, op: ResourceOperation, policy
   const bound = digest([repositoryIdentity, rules.binding, op.subject, identity]);
   return { cwd, target: rules.target, path, repositoryIdentity, identity: bound, artifacts: files?.artifacts ?? [],
     artifactParents, artifactParentMetadata: files?.artifactParentMetadata ?? [], artifactParentIdentities: files?.artifactParentIdentities ?? [],
-    unapprovedArtifacts: roots.filter((root) => !permitted.includes(root)), fingerprint: digest([bound, files?.artifacts ?? [], files?.artifactParentMetadata ?? []]) };
+    unapprovedArtifacts: unapprovedArtifactRoots(roots, permitted), fingerprint: digest([bound, files?.artifacts ?? [], files?.artifactParentMetadata ?? []]) };
 }
 export async function captureCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess,
   budget = createCleanupBudget(), discoverArtifacts = true, frozenStructure?: FrozenStructure): Promise<CleanupSnapshot> {
@@ -370,7 +350,8 @@ async function contains(access: CleanupAccess, cwd: string, feature: string, tar
   }
 }
 export async function captureBrowserDiscard(callerCwd: string, op: BrowserDiscardOperation, policy: GitSettings, access: CleanupAccess,
-  budget = createCleanupBudget(), discoverArtifacts = true, frozenStructure?: FrozenStructure): Promise<CleanupSnapshot> {
+  budget = createCleanupBudget(), discoverArtifacts = true, frozenStructure?: FrozenStructure,
+  captureCheckpoint?: CleanupCaptureCheckpoint): Promise<CleanupSnapshot> {
   const comparison = op.comparisonTarget;
   const requiresProof = op.deleteBranch && frozenStructure?.lossEvidence?.state === "integrated";
   const preparedComparison = frozenStructure?.lossEvidence?.comparisonTarget;
@@ -382,7 +363,7 @@ export async function captureBrowserDiscard(callerCwd: string, op: BrowserDiscar
   const protectedBranches = [policy.targetBranch, comparison?.branch].filter((branch): branch is string => !!branch);
   const snapshot = await captureResources(callerCwd, op, policy, access, {
     target: comparison?.branch ?? "", binding: ["browser-discard", comparison, protectedBranches], protectedBranches,
-    verify: async (cwd) => {
+    verify: async (cwd, checkpoint) => {
       budget.guard?.();
       await assertDirectDesignatedTarget(access, cwd, policy.targetBranch);
       if (comparison) {
@@ -391,14 +372,12 @@ export async function captureBrowserDiscard(callerCwd: string, op: BrowserDiscar
         const tip = op.subject.kind === "branch" ? op.subject.tip : op.subject.head;
         const contained = await contains(access, cwd, tip, comparison.tip);
         const retained = await contains(access, cwd, comparison.tip, targetTip);
-        lossEvidence = { comparisonTarget: comparison,
-          state: retained === "yes" && contained === "yes" ? "integrated" : retained === "yes" && contained === "no" ? "not-integrated" : "unknown",
-          ...(retained !== "yes" ? { reason: "comparison-proof-lost" } : contained === "unknown" ? { reason: "graph-unavailable-or-incomplete" } : {}) };
+        lossEvidence = discardLossEvidence(comparison, contained, retained);
         verifiedComparison = lossEvidence.state === "integrated" ? { branch: comparison.branch, tip: targetTip } : undefined;
       }
       budget.guard?.();
       if (requiresProof && lossEvidence.state !== "integrated") throw new Error("Originally proven branch integration is no longer reachable; remaining resources retained");
-      const registrations = await access.worktrees(cwd);
+      const registrations = await access.worktrees(cwd, checkpoint);
       const subject = op.subject;
       if (subject.kind === "branch" && registrations.some((entry, index) => entry.branch === subject.branch && (index === 0 || samePath(entry.path, cwd)
         || cleanupPathWithin(entry.path, existsSync(callerCwd) ? realpathSync(callerCwd) : resolve(callerCwd))))) throw new Error("Never discard main, selected or invocation resources");
@@ -409,7 +388,7 @@ export async function captureBrowserDiscard(callerCwd: string, op: BrowserDiscar
     },
     // Completed-feature Keep preferences are not manual discard permissions.
     artifacts: () => {},
-  }, budget, discoverArtifacts, frozenStructure);
+  }, budget, discoverArtifacts, frozenStructure, captureCheckpoint);
   if (op.deleteBranch && lossEvidence.state === "integrated" && (!frozenStructure || requiresProof)) {
     // prepare/commit exist since 2.27, but pre-2.34 versions can fail to flush
     // prepare acknowledgments. Refuse conservatively without a no-op write probe.
@@ -446,7 +425,9 @@ async function performResources(op: ResourceOperation, access: CleanupAccess,
     try {
       guardPolicy(); held?.validate();
       onDispatch(`Remove generated artifact: ${root}`);
-      await rm(held?.path ?? join(snapshot.path!, root), { recursive: true });
+      const path = held?.path ?? join(snapshot.path!, root);
+      if (access.removeArtifact) await access.removeArtifact(path);
+      else await rm(path, { recursive: true });
     } finally { held?.close(); }
     effects.push(`Removed generated artifact: ${root}`);
     onCompleted?.();
@@ -522,5 +503,6 @@ export async function performBrowserDiscard(callerCwd: string, op: BrowserDiscar
   onDispatch: (description: string) => void, budget: CleanupBudget, onCompleted?: () => void): Promise<string> {
   return performResources(op, access, snapshot, guardPolicy, runGit, effects, onDispatch, onCompleted,
     (remaining, branchOnly) => captureBrowserDiscard(callerCwd, { ...op, artifactRoots: remaining,
-      ...(branchOnly ? { worktreePath: undefined, removeWorktree: false } : {}) }, policy, access, budget, false, snapshot), policy.targetBranch);
+      ...(branchOnly ? { worktreePath: undefined, removeWorktree: false } : {}) }, policy, access, budget, false, snapshot,
+    branchOnly ? "final-branch-registration-capture" : undefined), policy.targetBranch);
 }

@@ -179,95 +179,209 @@ command target; do not complete a core-only optimization under a full-speed clai
 Reassess classification for changed effects and selected known closure blockers;
 unchanged default-E holds stay explicitly retained, not implicitly re-audited.
 
+## Execution evidence and frozen targets
+
+The user subsequently authorized implementing the entire bounded overhaul in this
+worktree, continuing through verification and asking when decisions are needed.
+A pause/restart cleared `/tmp`; the first baseline's outer report was lost, so its
+surviving Nix results are partial evidence only, not a completed timing run.
+Persistent private evidence/drafts now live at
+`/home/robert/.cache/pi-web-suite-overhaul/run.zYOwpy`.
+
+The replacement control at `566a6a7` passed fresh complete four/four acceptance in
+**413s**, with **413 files / 3,104 tests / 12 suites**, all 26 groups/59 receipts
+and genuine deployment. Core **314.900s**, pre-test **54.403s**, file window
+**260.064s**; browser **381.120s**; deployment **24.935s**. Exact source digest:
+`a8dd36ff898df22c8f456a45de7d2f6a2c58f53bd7ace272889814da82d7bf87`.
+`baseline-analysis.json`, original reports and the verified `control-source` are
+retained in that evidence directory. The run saw 32 effective CPUs and about
+66 GiB available memory at browser admission; four effective core workers and
+four group sandboxes ran. No dependency preparation overlapped this control.
+
+Three fresh unchanged focused controls (`core --jobs 4 --file
+lib/panel-layout.test.mjs`) passed in **42 / 41 / 39s**: median **41s**. Targets,
+fixed before applying broad migrations, are (1) at least **50% less** warm focused
+command time (median <=20.5s), and (2) at least **15% less** matched warm-prerequisite
+complete command time at the same four/four width (initial reference <=351.05s).
+Both require real fresh test execution; reused static dependencies are labelled.
+Report separate preparation and any cold realization rather than hiding them.
+Use the planned balanced pairs and control spread; inconsistent/noise-sized gains
+are inconclusive and do not satisfy a causal performance claim. Structural goals
+remain zero Git/SDK setup for pure policy matrices and joined owned completion.
+
+## Implementation outcomes (final acceptance/performance still open)
+
+Evidence remains under `/home/robert/.cache/pi-web-suite-overhaul/run.zYOwpy`.
+Measurements bind the recorded immutable exports, not an implied future Git tip.
+Main subsequently advanced to `da26f15` with only the process-wide SSH-agent plan;
+rebase that documentation-only input before freezing the integration candidate.
+
+| Migration | Primary owner and preserved bridge |
+| --- | --- |
+| Permission/card/root/graph matrices | Actual `artifact-rules.ts`, `operation-rules.ts`, `resource-cards.ts`, `discard.ts` leaves; `resource-rules.test.mjs` has nine zero-Git/inventory cases. Native Ask/Allow, physical aliases, ref/graph/CAS, mount/rm and distinct capture/dispatch windows remain. |
+| Host and durable decisions | Instance-owned project-operation host/store/scheduler; review-ready versus full settlement, delayed load, expiry and failed writes. Native project-management/default composition and HMR/history/replay bridges remain. |
+| Native settlement gate | Owned IPC readiness/release, real Git child close and executor join, not a fixed 250ms hold. The final registration race now names its existing read instead of counting checkout calls. |
+| Detail and listing connections | Actual detail GET with 1,000 cap/full statistics; actual local package mutation into a warmed provider listing. Pagination retains uncapped helper semantics. |
+| React and stale delivery | Real mounted resize hook, GitExplorer and Move picker (including A→B→A and post-unmount parent callback). Ignored-abort JSON genuinely returns; layout/capture/network remain Chromium owners. |
+| Selected lifecycle fixtures | Awaited wrapper shutdown/startup/replacement work, real response body/descriptor closure, coordinator full pump/tail drain without cancelling independent jobs. Opaque SDK/native holds remain E. |
+| Browser fixtures and turns | Separate ordered defaults/transcripts and independent expected IDs; only audited timestamps omits fork/manager setup. Owned stale-read barriers, natural polling observation, canonical real turn/persistence/reload. Ledger-only setup no longer manufactures question expirations; real question proofs remain. |
+| Infrastructure and governance | Retired obsolete combined planner/receipt APIs and seven synthetic instances; current browser/deployment contracts retained. Historical audit immutable; live reviews/explicit E holds and AST architecture guards have current owners. |
+| Focused inputs | Separate declared-input type/lint evidence; registered JS tests plus live classification do not invalidate unchanged types. Private DOM dependency closure is outside the application/runtime graph. |
+
+The default proc-fd missing-support integration intentionally retains its builtin
+probe/reimport: an injected false capability would not prove the real default
+probe. Native mount/removal faults use named capabilities, and the fourth-checkout
+read race has been replaced by its semantic final-capture checkpoint.
+
+Focused evidence: `focused-2` passed 22 files/494 tests in 125s including fresh
+static preparation. Late mounted/guard/checkpoint families passed in `focused-4`;
+its incidental old weight-10 assertion failed, was replaced by declared-weight
+wiring for every job, and the five remaining owners passed 85 tests/38s in
+`focused-5`. `focused-6` passed four files/54 tests/38s after separating real fixture
+fragments and asserting review-ready before joining an expected failure.
+`focused-7` passed three files/16 tests/36s for the final typing/policy boundary.
+These selections are not complete acceptance and their overlapping counts are
+not additive. Original failures, dependency hash realization and corrections are retained.
+
+The first complete browser diagnostic passed 26 groups/59 receipts in **414s**,
+including cold package preparation: **not** a comparison with the 413s full
+control. Activity was 208.270s and markdown 152.419s in that diagnostic. Measured
+whole-group packing exposed stale hints (315.60s maximum lane sum versus a
+270.99s counterfactual balanced sum); refreshed hints are not deadlines or a
+measured reordered-run speedup. Keep all variants/chains. Split groups only if
+matched complete-command evidence still requires it.
+
+`native-count-comparison.json` records instrumented source variants: four native
+owners used **43,367 → 37,613** explicit public Git dispatches and **325 → 281**
+inventory starts. The server retained two additional held-HEAD checks. The leaf
+matrix used **0/0**. Counts exclude internal Git children and runner validation;
+instrumented times and earlier unmatched per-file times are not speedup evidence.
+Fine import/store/teardown timing remains unpartitioned; coarse counts, setup and
+browser spans are sufficient for this bounded choice, not a full profiler claim.
+
+Adopt real mounted resize/Git/Move owners; defer full useAgentSession/FileViewer
+mounting, retaining actual model callback/loader and Chromium owners. The three
+model-switch source checks were retired only after strengthening their callback
+replacements. Defer mutable seed infrastructure: seven balanced Nix samples gave
+42.204ms fresh/11 explicit calls versus 36.547ms materialized/8 plus 42.638ms seed
+creation, with real config/ref/registration/file/pack-inode independence. A 5.66ms
+construction saving does not justify new infrastructure against capture/execution.
+
+The initial root DOM devDependency was found in runtime and removed. Separate
+private support now contains no React/node-pty; a realized package has no jsdom,
+helpers or support closure (`package-boundary-proof.json`, isolated build 72s).
+`graph2-proof.json` covers six input variants, including support-only dependency
+changes not invalidating the package; `graph3-proof.json` proves an added JS test
+**with its required classification** leaves types/application/runtime unchanged.
+No production build ran in a checkout.
+
+`oracle-analysis.json` retains nine independent assertion-red controls: wrong
+route cap, resize direction/cleanup, Git/Move stale acceptance, premature review
+publication, inherited parent artifact authority, ignored native mount records
+and missing coordinator pump drain.
+The original broad persistence-swallow mutation hung and was explicitly stopped;
+its replacement uses the named review-ready boundary and a targeted publication
+fault. One concurrent native diagnostic refused a source identity/mode change
+before executing tests; its unchanged serial reexecution is a valid assertion-red,
+**not** evidence that the unexplained exporter event was fixed. Ptrace was rejected
+by the ordinary sandbox; counters used the existing C frontend and named inventory
+start instead, with no sandbox relaxation or Node shim per Git invocation.
+
+### Remaining gates
+
+Complete same-candidate acceptance, three warm focused samples, balanced four/four
+control/candidate comparisons and exact-state local integration remain open. No
+speedup or completion is claimed by the structural changes above.
+
 ## Plan
 
 ### 1. Establish cost attribution, targets and architecture decisions
 
-- [ ] Capture an immutable control and a bounded profile of all critical tracks:
-  core static/export/setup; the four heavy Git files' imports, fixtures, Git calls,
-  capture/inventory, review/store writes, polling, effects and teardown; and
-  browser recipe setup, activity/markdown stages, tracing and evidence export.
-  Browser's recorded 359s already exceeds core's 300s, so do not postpone browser
-  attribution. Use counts/monotonic spans plus separate uninstrumented samples;
-  stop intrusive profiling and do not add a Node shim per Git spawn.
-- [ ] Inventory settling delays/poll loops and behavioral source checks in the
+- [x] Capture an immutable control and bounded critical-track attribution:
+  core preparation/file windows, four native owners' Git/inventory counts and
+  independent fixture-construction cost; browser setup/readiness/helper/trace/export
+  spans. Keep unpartitioned import/store/teardown subphases explicit rather than
+  manufacturing attribution. Use uninstrumented final comparisons; revisit finer
+  profiling only if targets require it. No Node shim per Git spawn.
+- [x] Inventory settling delays/poll loops and behavioral source checks in the
   named migration families: migrate, retain a justified real-time/native proof,
   or retire as redundant. Produce a contract-to-owner map, not another permanent
   catalogue of all 3,100 assertions. Reuse the prior hold review and inspect only
   affected effects/selected blockers; explicitly retained unresolved holds do not
   block completion or count as repaired.
-- [ ] Before broad migration, freeze separate numerical focused-feedback and
+- [x] Before broad migration, freeze separate numerical focused-feedback and
   same-width full-command targets, representative selections, preparation/cache
   state, benchmark budget and variance rule. Both targets must pass unless the
   user explicitly accepts a remaining performance gap. Structural targets: zero
   Git/SDK startup for pure policy matrices; no public-status Git polling to await
   owned host completion; no unexplained settling sleeps in migrated families.
   No speed percentage is yet established.
-- [ ] Record the architecture decision before changing settled contracts. State
+- [x] Record the architecture decision before changing settled contracts. State
   internal API/group retirement without adapters and stable core/e2e/service/all
   entry points, contract-to-replacement/bridge or obsolete-obligation disposition,
   and preserved native/evidence boundaries. Explicitly decide classification and
   cached-static evidence changes before implementing them; internal-API removal
   permission is not authority to weaken fail-closed coverage or freshness claims.
+  Decision: [ADR 0033](../adr/0033-behavioral-test-ownership-and-feedback.md).
 
 ### 2. Build minimal reusable ownership and mounting support
 
-- [ ] Add small deferred/task-ownership helpers with immediate rejection
+- [x] Add small deferred/task-ownership helpers with immediate rejection
   observation, joined success/failure cleanup and watchdog tests; prove held work
   prevents teardown and cleanup errors are not swallowed. Reuse native completion
   contracts rather than pretending a helper creates missing SDK exit evidence.
-- [ ] Run the bounded mounted-React DOM spike, choose/document the smallest viable
+- [x] Run the bounded mounted-React DOM spike, choose/document the smallest viable
   harness, and verify test-only dependencies/helpers do not enter the application
   graph. Keep geometry/native-browser tests in Chromium. Decide before replacing
   any source checks that lack an equivalent behavioral owner.
-- [ ] Add instance-owned completion/store/scheduler seams to project operations;
+- [x] Add instance-owned completion/store/scheduler seams to project operations;
   preserve real default composition, HMR ownership, request admission and durable
   decision ordering. Prove review-ready and fully-settled behavior across delayed
   load, abort/reject, early/late save failure and 15-minute expiry boundaries.
 
 ### 3. Reconcile the expensive Git suites by actual safety ownership
 
-- [ ] Extract/import deterministic root grammar, overlap/authority decisions,
+- [x] Extract/import deterministic root grammar, overlap/authority decisions,
   authorization/card rules and host transitions; migrate repeated native truth
   tables into zero-Git production-module tests. Keep explicit native Ask/Allow/
   forced-confirmation, discovery/file/directory and default-wiring bridges.
-- [ ] Replace builtin patch/reimport and nth-read race injection with narrowly
+- [x] Replace builtin patch/reimport and nth-read race injection with narrowly
   scoped store/mount/removal collaborators and named checkpoints. Prove injection
   occurred and native outside sentinels/refs survive. Retain real fresh capture,
   no-follow/lock/CAS, stage-specific races and pre-/post-effect failure proofs.
-- [ ] Replace project-management status polling and post-terminal delays with
+- [x] Replace project-management status polling and post-terminal delays with
   joined owner signals; replace the native commit gate's fixed 250ms hold with
   ready/release IPC. Await actual child close after release, including failure.
-- [ ] Measure an independently materialized Git seed against fresh setup; adopt
+- [x] Measure an independently materialized Git seed against fresh setup; adopt
   only if net faster and identity/config/registration independence is proven.
   Record before/after subprocess and native-scan counts for the pilot migrations,
   then move remaining redundant cases using the reviewed replacement map.
 
 ### 4. Replace weak or disconnected proof with concise behavioral owners
 
-- [ ] Replace `app/api/sessions/detail-route.test.mjs` parsing/cap source checks
+- [x] Replace `app/api/sessions/detail-route.test.mjs` parsing/cap source checks
   with actual GET requests for omitted/invalid/normal/oversized tail and full
   statistics; retain uncapped helper semantics only in the pagination owner.
   Demonstrate a broken route cap fails the replacement.
-- [ ] Migrate `useResizablePanel` source checks to the mounted hook: directions,
+- [x] Migrate `useResizablePanel` source checks to the mounted hook: directions,
   pointer/keyboard persistence, storage failure, rerender constraints, unmount and
   Strict Mode. Prove wrong direction, missing dependency or cleanup fails; retain
   pure geometry ownership and real browser geometry/capture coverage.
-- [ ] After the mounted pilot, decide the bounded model-selection/file-viewer
+- [x] After the mounted pilot, decide the bounded model-selection/file-viewer
   follow-up: migrate selected optimism/rollback/stale-request or retained-reader/
   watcher/restoration seams if the harness is suitable, otherwise name the
   deferred owner and unsupported capability. Do not imply all those families
   were replaced. Delete only mapped duplicates; retain architecture/security
   and rendered-output guards and cover any newly changed behavior.
-- [ ] Add thin missing connections in existing fixtures: real local package
+- [x] Add thin missing connections in existing fixtures: real local package
   mutation to fresh listing, and a real faux-provider turn through canonical
   completion/persistence/reload without duplicate messages. Keep controlled
   partial-stream simulations and avoid a new full browser matrix per connection.
-- [ ] Repair selected audited fixture closure: awaited wrapper shutdown, joined
+- [x] Repair selected audited fixture closure: awaited wrapper shutdown, joined
   startup/replacement failure paths and consumed/cancelled descriptor responses
   with close evidence. Retain explicit native/SDK holds where actual exit cannot
   yet be observed; do not relabel shutdown acknowledgment as worker settlement.
-- [ ] Resolve or explicitly disposition the AcceptanceCoordinator fixture's
+- [x] Resolve or explicitly disposition the AcceptanceCoordinator fixture's
   active pump/held-executor drain gap: stop fixture-owned admission/scheduling,
   release injected gates and join the full pump/tail/executor completion before
   restoration. Unsubscribe/timer clearing alone is insufficient. Preserve
@@ -276,20 +390,20 @@ unchanged default-E holds stay explicitly retained, not implicitly re-audited.
 
 ### 5. Rebuild browser preparation and synchronization around scenarios
 
-- [ ] Extract faithful ordered fixture recipes and independently expected IDs;
+- [x] Extract faithful ordered fixture recipes and independently expected IDs;
   separate shared model/settings/auth defaults from feature-specific histories.
   First remove only proven unused manager/fork preparation from timestamps;
   verify its four inputs and exact catalogue. Audit dependencies before gating
   other groups, including session-launch's model-speed IDs.
-- [ ] Replace stale-response sleeps with owned arrival/release/transport or
+- [x] Replace stale-response sleeps with owned arrival/release/transport or
   cancellation barriers plus application-level assertions. Put exhaustive late
   delivered-payload cases in mounted tests that can ignore abort deliberately;
   a cancelled browser request alone cannot prove stale-payload suppression.
-- [ ] Replace the file-viewer 16-second assumption with observation of natural
+- [x] Replace the file-viewer 16-second assumption with observation of natural
   polling and relevant application while retaining identity/zoom/scroll/source
   assertions. Move repeated timer/state permutations below the browser; retain
   an actual natural-interval proof rather than silently dropping it.
-- [ ] Extract named diagnostic stages from markdown/activity/history chains;
+- [x] Extract named diagnostic stages from markdown/activity/history chains;
   split only proven independent owners with explicit prerequisite recipes and
   updated inventory/receipt mappings. Profile fixture, tracing and export costs
   separately; any diagnostic-policy change must preserve useful original failure
@@ -297,21 +411,21 @@ unchanged default-E holds stay explicitly retained, not implicitly re-audited.
 
 ### 6. Make efficient additions the default path
 
-- [ ] Retire the obsolete combined browser/VM planner/receipt API, its CLI and
+- [x] Retire the obsolete combined browser/VM planner/receipt API, its CLI and
   re-export, seven synthetic instances and unused evidence fixture. Move reviewed
   weight completeness into current browser planning first; retain reachable
   budget, registry, evidence, settlement and genuine deployment tests. Remove the
   subsumed compact-helper case and four duplicated hold assertions with owners.
-- [ ] Factor reusable static preparation and audit narrow core/browser inputs;
+- [x] Factor reusable static preparation and audit narrow core/browser inputs;
   verify graph changes for docs, test-only, app, fixture and dependency edits.
   Keep every required static check in complete acceptance and report cached
   versus fresh sub-evidence accurately. Do not introduce dev/host fallbacks.
-- [ ] Separate the immutable historical audit from live classification policy.
+- [x] Separate the immutable historical audit from live classification policy.
   Keep audit-to-plan reconciliation where applicable and fail-closed unknown
   handling. Require future files to have a reviewed pool rationale or an explicit
   resource/lifecycle hold, so silent default-exclusive accumulation is not the
   contributor workflow. Never infer isolation from a test-file hash alone.
-- [ ] Update the prior architecture decision with pilot outcomes and explicitly
+- [x] Update the prior architecture decision with pilot outcomes and explicitly
   accepted deferrals; update `docs/testing.md` and `e2e/README.md` with the layer
   decision tree, canonical fixture/mount examples,
   completion/clock rules, cost expectations and a feature-addition checklist.
@@ -320,11 +434,11 @@ unchanged default-E holds stay explicitly retained, not implicitly re-audited.
 
 ### 7. Verify behavior and speed, then integrate the exact candidate
 
-- [ ] For each replaced family, retain a contract-to-owner map and meaningful
+- [x] For each replaced family, retain a contract-to-owner map and meaningful
   red/green evidence: wrong route cap, missed lifecycle cleanup, premature
   authority publication, stale payload acceptance or a bypassed native boundary
   must fail at its intended owner. Use narrow Nix selections while editing.
-- [ ] Obtain independent coverage/ownership/security review after migrations;
+- [x] Obtain independent coverage/ownership/security review after migrations;
   recheck changed helper effects and lane classifications. Resolve or explicitly
   accept material native/DOM limitations before final acceptance.
 - [ ] Freeze writers for export and pass complete core/static/plugin, every
@@ -347,8 +461,9 @@ unchanged default-E holds stay explicitly retained, not implicitly re-audited.
 
 ## Unknowns and risks
 
-- Dominant native-suite costs are not yet attributed. Pick policy/host extraction,
-  import fault seams or fixture seeding from measurements, not an assumed ranking.
+- Native attribution is bounded: observed Git/inventory counts and fixture cost,
+  not fully separated import/store/teardown spans. Do not infer a causal speedup
+  from unmatched file times; use the pending same-width complete comparisons.
 - DOM emulation may not cover required behavior; keep unsupported browser-native
   obligations in real Chromium and avoid maintaining a home-grown browser.
 - Some pinned SDK termination paths do not expose actual native exit completion.
@@ -382,14 +497,14 @@ invalidate affected evidence and require reassessment, not relabelling.
 
 ## Completion Checklist
 
-- [ ] Future contributors have one clear layer-selection recipe and working
+- [x] Future contributors have one clear layer-selection recipe and working
   examples; new policy cases do not require a Git history, SDK or browser by habit.
-- [ ] Expensive current families have been reconciled by contract, not just moved
+- [x] Expensive current families have been reconciled by contract, not just moved
   between files; removed native executions have identified cheaper owners/bridges.
-- [ ] Migrated asynchronous owners have meaningful, failure-safe completion;
+- [x] Migrated asynchronous owners have meaningful, failure-safe completion;
   unexplained settling sleeps in the named families are removed, retained
   real-time/external polls are justified, and untouched holds/deferrals are clear.
-- [ ] Real native, authorization, input-variant, installed-browser and genuine
+- [x] Real native, authorization, input-variant, installed-browser and genuine
   deployment guarantees survive; all replacements have reviewed equivalence.
 - [ ] Complete stable-candidate acceptance, focused-feedback improvement and full-
   command improvement each meet the separate targets fixed after the baseline

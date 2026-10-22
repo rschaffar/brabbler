@@ -3,6 +3,11 @@ import { join } from "node:path";
 import { checkBlockingCard, checkBlockingCardArrival } from "./blocking-card.mjs";
 
 export const extensionSource = `export default function (pi) {
+  // Ledger-only Activity setup uses a real completed command, not a question timer.
+  // Real interaction/expiry remains owned by the question and dialog scenarios.
+  pi.registerCommand("e2e-complete", {
+    handler: async (_args, ctx) => { ctx.ui.notify("E2E completion fixture"); },
+  });
   pi.registerCommand("e2e-dialog", {
     handler: async (mode, ctx) => {
       let result;

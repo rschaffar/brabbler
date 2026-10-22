@@ -6,8 +6,6 @@ import { privateEnvironment, validateArgs } from './test.mjs';
 import { directoryIdentity, runOwned } from './test-lifecycle.mjs';
 import { createServicePlan, serviceResources, validateServiceArtifacts, validateServiceEvidence } from './service-plan.mjs';
 export { validateServiceEvidence } from './service-plan.mjs';
-// Legacy contract-test API only; service execution never accepts browser receipts.
-export { validateEvidence } from './vm-plan.mjs';
 
 export async function runVM(source, system, args) {
   const parsed = validateArgs(['service', ...args]);

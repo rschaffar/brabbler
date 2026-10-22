@@ -35,7 +35,7 @@ export async function checkRunningSessionForks(page, { base, api, post, artifact
   await page.context().addInitScript(() => localStorage.setItem("pi-quote-selection-enabled", "true"));
   await page.goto(`${base}/?session=${sourceId}`, { waitUntil: "domcontentloaded" });
   await page.getByText(`Later answer ${width}`, { exact: true }).waitFor();
-  const origin = await page.evaluate(() => performance.timeOrigin);
+  let origin = await page.evaluate(() => performance.timeOrigin);
   const question = () => page.getByRole("group", { name: "E2E confirm", exact: true });
   const responseFor = (type) => waitForForkResponse(page, (response) =>
     new URL(response.url()).pathname === sourcePath && response.request().method() === "POST"
@@ -81,6 +81,56 @@ export async function checkRunningSessionForks(page, { base, api, post, artifact
       if (!response.ok) throw new Error(`Live fork state HTTP ${response.status}`);
       return (await response.json()).state?.isPromptRunning === false;
     }, sourceId);
+
+    // Complement the UI-only stream fixtures with this existing REAL SDK/faux
+    // turn: canonical persisted IDs/content must reconcile once, then reload
+    // without losing identity or duplicating either the prompt or final answer.
+    const completed = await api(`/api/sessions/${sourceId}`);
+    const contentText = message => typeof message.content === "string" ? message.content
+      : message.content.filter(block => block.type === "text").map(block => block.text).join("");
+    const finalText = "Independent child completed";
+    const promptIndexes = completed.context.messages.flatMap((message, index) =>
+      message.role === "user" && contentText(message) === liveText ? [index] : []);
+    const finalIndexes = completed.context.messages.flatMap((message, index) =>
+      message.role === "assistant" && contentText(message) === finalText ? [index] : []);
+    assert.equal(promptIndexes.length, 1, "Canonical transcript contains one real prompt");
+    assert.equal(finalIndexes.length, 1, "Canonical transcript contains one final answer");
+    const promptId = completed.context.entryIds[promptIndexes[0]];
+    const finalId = completed.context.entryIds[finalIndexes[0]];
+    assert.equal(promptId, saved.context.entryIds[liveIndex], "Completion keeps the live forkable prompt ID");
+    assert.ok(finalId && finalId !== promptId, "Final answer has a canonical saved ID");
+    assert.equal(new Set(completed.context.entryIds).size, completed.context.entryIds.length, "No duplicate canonical entries");
+    const completedBytes = readFileSync(completed.filePath, "utf8");
+    const diskEntries = completedBytes.trim().split("\n").map(line => JSON.parse(line));
+    for (const index of [promptIndexes[0], finalIndexes[0]]) {
+      const entries = diskEntries.filter(entry => entry.type === "message" && entry.id === completed.context.entryIds[index]);
+      assert.equal(entries.length, 1, "Canonical prompt/final ID is persisted exactly once in JSONL");
+      assert.equal(entries[0].message.role, completed.context.messages[index].role);
+      assert.deepEqual(entries[0].message.content, completed.context.messages[index].content, "Canonical content agrees with persisted JSONL");
+    }
+    const assertCommittedRows = async () => {
+      for (const [id, text] of [[promptId, liveText], [finalId, finalText]]) {
+        const row = page.locator(`[data-entry-id="${id}"]:not([data-message-role])`);
+        await row.getByText(text, { exact: true }).waitFor();
+        assert.equal(await row.count(), 1, "One rendered row per canonical ID");
+        assert.equal(await page.getByText(text, { exact: true }).count(), 1, "No optimistic/streaming duplicate text");
+      }
+    };
+    await assertCommittedRows();
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await assertCommittedRows();
+    const reloaded = await api(`/api/sessions/${sourceId}`);
+    assert.deepEqual(reloaded.context.entryIds, completed.context.entryIds, "Reload preserves canonical entry identity and order");
+    assert.deepEqual(reloaded.context.messages, completed.context.messages, "Reload preserves canonical final content");
+    const reloadedDiskMessages = readFileSync(reloaded.filePath, "utf8").trim().split("\n")
+      .map(line => JSON.parse(line)).filter(entry => entry.type === "message");
+    assert.deepEqual(reloadedDiskMessages, diskEntries.filter(entry => entry.type === "message"), "Reload cannot append or change saved messages");
+    assert.equal((await api(sourcePath)).state.isPromptRunning, false, "Reload cannot restart the completed turn");
+    const reloadedOrigin = await page.evaluate(() => performance.timeOrigin);
+    assert.notEqual(reloadedOrigin, origin, "Identity was checked across a real document reload");
+    // The following historical/root/quoted fork chain still proves NO reload
+    // during those operations, now relative to this explicitly reloaded document.
+    origin = reloadedOrigin;
   } finally {
     if ((await api(sourcePath)).state.isPromptRunning) await post(sourcePath, { type: "abort" });
   }

@@ -24,7 +24,7 @@ test("preflight forwarding never starts Node, preserves stdin/arguments/status, 
   assert.equal(existsSync(marker), false);
 });
 
-test("commit enters the original delayed Node gate, forwards the real write, and preserves its failure status", (t) => {
+test("ungated commit forwarding enters Node, preserves the real write and native failure status", (t) => {
   const root = mkdtempSync(join(tmpdir(), "pi-commit-gate-native-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const gitPath = executable("git"), shellPath = executable("sh"), marker = join(root, "started");

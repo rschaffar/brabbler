@@ -4,8 +4,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { groups } from '../e2e/scenarios.mjs';
-import { coverageIds, MAX_BROWSER_WORKERS, weights } from './vm-plan.mjs';
+import { coverageIds, MAX_BROWSER_WORKERS } from './vm-plan.mjs';
 import { assertEvidenceTree } from './vm-evidence.mjs';
+
+// Whole-group elapsed seconds rounded up, including diagnostic export/settlement.
+// Four-sandbox run d44f40e5 (2026-10-22), source digest 069bbf867047ce77bf495db9a009022fba6859dc08644c9f4425fab2dc06f204.
+// Hints for packing only: never deadlines, admission budgets or coverage authority.
+export const weights = Object.freeze({
+  state: 8, history: 45, 'extension-dialogs': 22, 'mobile-sidebar': 15,
+  worktrees: 97, 'session-launch': 16, 'running-forks': 14, 'model-speed': 32,
+  trust: 9, 'git-plugin': 95, appearance: 60, timestamps: 7,
+  'diff-context': 21, markdown: 153, 'file-edit': 47, archive: 4, privacy: 38,
+  activity: 209, accounts: 17, questions: 71, 'session-links': 6, bulk: 8,
+  move: 34, 'ssh-agent': 15, terminal: 33, 'native-tools': 16,
+});
 
 const store = /^\/nix\/store\/[a-z0-9]{32}-[^/]+$/;
 const packageSuffix = '/lib/node_modules/@agegr/pi-web';
@@ -35,8 +47,15 @@ export function validateNamespaces(namespaces, allowEmpty = false) {
   return namespaces;
 }
 
+export function validateSchedulingWeights(reviewed = weights) {
+  assert.deepEqual(Object.keys(reviewed).sort(), Object.keys(groups).sort(), 'Every group requires a reviewed scheduling weight');
+  for (const [name, seconds] of Object.entries(reviewed)) assert.ok(Number.isFinite(seconds) && seconds > 0, `${name}: positive scheduling weight required`);
+  return reviewed;
+}
+
 export function browserPlan(metadata, focus = 'all', workers = 1) {
   validateBrowserMetadata(metadata);
+  validateSchedulingWeights();
   assert.ok(focus === 'all' || Object.hasOwn(groups, focus), 'Unknown browser group');
   assert.ok(Number.isInteger(workers) && workers >= 1 && workers <= MAX_BROWSER_WORKERS);
   const selected = focus === 'all' ? Object.keys(groups) : [focus];
