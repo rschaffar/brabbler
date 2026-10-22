@@ -139,7 +139,8 @@ with an explicit `--jobs` above four now request up to eight Nix cores per build
 without that selection the four-core allocation is unchanged.
 
 Explicit `all --workers 8 --jobs 8` is an opt-in scaling experiment, not a new
-recommended default or a measured speedup. Browser widths through eight are
+recommended default or a measured speedup; [ADR 0032](adr/0032-opt-in-acceptance-widths-and-reviewed-test-batches.md)
+records this bounded extension of ADR 0025's scheduling ceiling. Browser widths through eight are
 supported explicitly; automatic browser admission remains capped at four. The
 8/8 overlap estimate includes two eight-core core builders, eight browser
 sandboxes, and worker memory: **32 effective CPUs / 51 GiB available RAM**.
@@ -420,8 +421,14 @@ correction now awaits disappearance of that same locator using the existing page
 timeout, then retains the original strict assertion. Deterministic delayed-settlement,
 error-propagation and strict-negative regressions fail without the wait and pass with
 it; the real focused file-edit scenario also passes. No production behavior, browser
-deadline, expected scenario or error filter changes. Failure evidence and final
-composition status are recorded in the completed audit plan.
+deadline, expected scenario or error filter changes. The corrected latest-target composition then passed full four/four acceptance in
+**388s (6m28s)**: **411 files / 3,100 tests / 12 suites**, all **26 groups / 59 scenario
+receipts**, genuine deployment and settlement. Core took **300.041s** (51.565s
+pre-test setup/static/realization, 248.099s file execution), browser **359.008s** and
+deployment **21.418s**. These overlapping intervals are not additive. The production
+package matches the failed run; this is a fixture correction, not a production fix.
+Failure evidence and exact final composition identity are retained in the completed
+audit plan; it is not a new matched performance pair.
 
 ## Diagnostics and retention
 
