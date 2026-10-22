@@ -396,8 +396,14 @@ not interchangeable; full acceptance remains mandatory.
 
 These paired measurements cover the pre-rebase audit candidate `172ce4d` and its
 `27a5375b` control. Subsequent main composition is verified separately, not relabelled
-as a new timing pair. Exact identities, retained reports, review corrections and
-remaining holds live in the [batch audit plan](plans/2026-10-22_default-exclusive-audit-plan.md).
+as a new timing pair. The final current-main composition passed full ordinary
+four/four acceptance in **416s (6m56s)**: core **332.438s** (54.337s pre-test,
+277.588s file window, 143.468s E tail), browser **383.718s**, deployment **24.941s**.
+All **409 files/3,084 tests/12 suites**, **26 groups/59 scenario receipts** and
+settlement gates passed. Its application/runtime inputs include newer main changes,
+so 416s is final acceptance evidence, not a matched comparison to the earlier control.
+Exact identities, retained reports, review corrections and remaining holds live in
+the [completed batch audit plan](plans/archived/2026-10-22_default-exclusive-audit-plan.md).
 
 ## Diagnostics and retention
 

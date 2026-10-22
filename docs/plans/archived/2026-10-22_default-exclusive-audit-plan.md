@@ -22,8 +22,8 @@ This plan owns scheduling review, manifest promotions and validation only. The a
 - [x] Add bounded manifest-selection regressions, then promote reviewed-safe batches with file-specific isolation reasons and coarse measured ordering estimates; prove all original test bodies and previously reviewed entries are unchanged.
 - [x] Run focused scheduling/native overlap validation, including writable-source mutation observation where native fixtures warrant it; retain failures without retries, deadline changes or suppression.
 - [x] Obtain independent safety review, freeze final candidate and execute all three complete acceptance checks at the same four/four budget; compare original per-file case/outcome sets and measured timings. The full pair passed but was slower; the separate 16-worker core-only pair improved. Both observations are retained below.
-- [ ] Verify current-target composition: re-review incoming audited-file deltas, update their hash history and run complete acceptance of the resulting current-main candidate without relabelling earlier timing evidence.
-- [ ] Update owning testing guide with measured results and remaining held files; commit reviewable history and perform guarded main integration only after exact verification and separate approval. Cleanup/publication remain separate.
+- [x] Verify current-target composition: re-review incoming audited-file deltas, update their hash history and run complete acceptance of the resulting current-main candidate without relabelling earlier timing evidence.
+- [x] Update owning testing guide with measured results and remaining held files; commit reviewable implementation history and hand exact-state verification/integration/cleanup to the global Git lifecycle. No integration, cleanup or publication authority is implied by this implementation checklist.
 
 ## Evidence checkpoint
 
@@ -51,7 +51,11 @@ Both passed **408/3,063 → 409/3,066** files/tests, no skips/cancellations/unce
 
 ## Current-main composition
 
-While tests ran, local main advanced to `32cb74b966a129ddc0add56a8d62fdef21443a1b` with shared language metadata, notebook excerpts and merge guard changes. Clean rebase yielded `0cc6d626d315d8a28780f2a171e0ebc8cba99bff`. Incoming source/test changes are not this feature rewriting test assertions. Independent targeted review confirms language-route/upload/reference-authorization/prism retain **N/N/E/F**; the new helper is import-free/data-only, upload adds an inert mock, and prism adds a read-only source consumer. Four current audit hashes are updated with previous hashes retained; the media-stream hold stays E. Existing heavy Git server tests gain accepted private-root synchronous Git cases but keep their prior N classification. Runtime/e2e inputs changed, so earlier passes are not relabelled as acceptance of this composition. Complete composed-candidate verification remains pending.
+While tests ran, local main advanced to `32cb74b966a129ddc0add56a8d62fdef21443a1b` with shared language metadata, notebook excerpts and merge guard changes. Clean rebase yielded `0cc6d626d315d8a28780f2a171e0ebc8cba99bff`. Incoming source/test changes are not this feature rewriting test assertions. Independent targeted review confirms language-route/upload/reference-authorization/prism retain **N/N/E/F**; the new helper is import-free/data-only, upload adds an inert mock, and prism adds a read-only source consumer. Four current audit hashes are updated with previous hashes retained; the media-stream hold stays E. Existing heavy Git server tests gain accepted private-root synchronous Git cases but keep their prior N classification. Runtime/e2e inputs changed, so earlier passes are not relabelled as acceptance of this composition.
+
+The clean composed implementation **`55b7eb65ccb01fe186d86c73fe55a4a47175e941`**, on main **`32cb74b966a129ddc0add56a8d62fdef21443a1b`**, passed complete ordinary `nix run --no-write-lock-file .#test -- all --workers 4 --jobs 4` in **416s (6m56s)**. Source `/tmp/pi-web-test-source-MDljR3/source`, content/mode digest **`961c883110efc30ee410ed88aafd188ec102c313b7ba0b4d3f5518150ee1fa52`**; wrapper/log/analysis `/tmp/pi-web-lane-composed.kXAMgy`. Core `/tmp/pi-web-test-core.MSk6VC`: **332.438s**, 54.337s pre-test realization/static/setup, 277.588s file execution, 134.120s pool and 143.468s E tail. Browser `/tmp/pi-web-test-browser.Jhsh2S`: **383.718s**, four actual overlapping capsules; service `/tmp/pwv-73LRJI`: **24.941s**, guest 18.852s. All **409 files / 3,084 tests / 12 suites**, all **26 groups / 59 scenario receipts**, deployment and reported settlement passed; none skipped/cancelled/unstarted. Effective core/browser widths four/four, 32-CPU native x86_64 host, about49.9GiB available at browser admission, estimated16CPUs/27GiB overlap budget. No deliberate prerequisite prewarming; command includes realization, and overlapping phase intervals are not additive. Package `/nix/store/xkp93i30k5a0iw5yh7287v7yrhg8aa6m-pi-web-0.9.3`. This composition has new main application inputs and is not a matched performance control for earlier numbers.
+
+Subsequent guide/status/archive changes are evidence-only. Verify links, unchanged executable inputs and graph proportionally rather than rerunning the entire application solely for another documentation commit ID. Final Git approval and any cleanup remain separate guarded operations. All64 remaining holds are explicitly owned by the maintained audit ledger/testing guide; this plan does not promise their promotion or completion of the separate superseded8/8 experiment.
 
 ## Risks
 
@@ -61,5 +65,5 @@ A per-file Node process isolates globals but not the shared writable source tree
 
 - [x] Every inventoried default has a documented hash-bound verdict or an explicit unresolved hold.
 - [x] Only reviewed-safe files enter F/N; substantive original tests, deadlines and inventory are preserved.
-- [ ] Focused isolation/manifest evidence, independent review and full four/four acceptance pass.
-- [ ] Same-width control/candidate observations and remaining gaps are accurately recorded.
+- [x] Focused isolation/manifest evidence, independent review and full four/four acceptance pass.
+- [x] Same-width control/candidate observations and remaining gaps are accurately recorded.
