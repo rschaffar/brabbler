@@ -80,7 +80,7 @@ function ecdsaMpints(der: Buffer): Buffer {
 }
 
 /** Verify original browser bytes; never reserialize clientDataJSON. */
-export function verifyBrowserAssertion(identity: SshIdentity, challenge: Buffer, assertion: BrowserSshAssertion): Buffer {
+export function verifyBrowserAssertion(identity: SshIdentity, challenge: Buffer, assertion: BrowserSshAssertion, options: { requireUV?: boolean } = {}): Buffer {
   if (assertion.id !== identity.credential.id) throw new Error("Wrong browser credential");
   const clientData = decodeBase64url(assertion.clientData, 4096);
   const authData = decodeBase64url(assertion.authenticatorData, 37);
@@ -90,10 +90,11 @@ export function verifyBrowserAssertion(identity: SshIdentity, challenge: Buffer,
   if (client?.type !== "webauthn.get" || client.challenge !== challenge.toString("base64url") || client.origin !== identity.origin
     || (client.crossOrigin !== undefined && client.crossOrigin !== false) || client.topOrigin !== undefined
     || !clientData.toString("utf8").startsWith(expectedPrefix)) throw new Error("WebAuthn ceremony does not match this request");
-  // No extensions are requested or supported. UP and UV are required, and AT/ED
-  // and reserved flags must be absent. Backup flags are not hardware attestation.
+  // Only the server policy layer may relax UV under an exact live grant. UP is
+  // unconditional; AT/ED/reserved flags remain forbidden. Default stays strict.
+  const required = options.requireUV === false ? 0x01 : 0x05;
   if (authData.length !== 37 || !authData.subarray(0, 32).equals(hash(identity.rpId))
-    || (authData[32] & 0x05) !== 0x05 || (authData[32] & 0xe2) !== 0
+    || (authData[32] & required) !== required || (authData[32] & 0xe2) !== 0
     || ((authData[32] & 0x10) && !(authData[32] & 0x08))) throw new Error("Invalid WebAuthn authenticator data or missing user verification");
   if (!verify("sha256", Buffer.concat([authData, hash(clientData)]), identity.key, signature)) throw new Error("Invalid WebAuthn signature");
   return Buffer.concat([

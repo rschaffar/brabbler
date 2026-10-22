@@ -4,10 +4,19 @@ import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { performance } from "node:perf_hooks";
 import { MAX_SSH_FRAME, SshReader, describeSshPayload, payloadFingerprint, sshIdentity, sshString, verifyBrowserAssertion, type BrowserSshAssertion, type BrowserSshCredential, type SshIdentity } from "./browser-ssh-protocol";
 
-export type BrowserSshRequest = { id: string; challenge: string; description: string; fingerprint: string; expiresAt: number };
-type Pending = { view: BrowserSshRequest; data: Buffer; settle: (signature: Buffer | null) => void };
+export type BrowserSignAdmission = { userVerification: "required" | "discouraged"; unlock: boolean; epoch: number; grantId: string | null };
+export type BrowserSshPolicy = {
+  admit(token: string): BrowserSignAdmission;
+  verify(token: string, identity: SshIdentity, data: Buffer, assertion: BrowserSshAssertion, admission: BrowserSignAdmission): Buffer;
+  available(token: string): boolean;
+  onClose(token: string): void;
+  onTick(): void;
+};
+export type BrowserSshRequest = { id: string; challenge: string; description: string; fingerprint: string; expiresAt: number; userVerification?: "required" | "discouraged"; unlock?: boolean };
+type Pending = { view: BrowserSshRequest; data: Buffer; deadline: number; admission: BrowserSignAdmission; settle: (signature: Buffer | null) => void };
 type Bridge = {
   token: string; owner: string; identity: SshIdentity; proof: Buffer | null; expiresAt: number;
   directory?: string; socketPath?: string; server?: Server; clients: Set<Socket>; pending: Map<string, Pending>;
@@ -27,8 +36,9 @@ export class BrowserSshAgent {
   private bridges = new Map<string, Bridge>();
   private bindings = new Map<string, { token: string; socketPath: string }>();
   private timer: ReturnType<typeof setInterval>;
-  constructor(private readonly options: { leaseMs?: number; signMs?: number; markerRoot?: string } = {}) {
-    this.timer = setInterval(() => this.expire(), Math.min(1000, options.leaseMs ?? 10_000));
+  private now() { return (this.options.now ?? (() => performance.now()))(); }
+  constructor(private readonly options: { leaseMs?: number; signMs?: number; markerRoot?: string; now?: () => number; policy?: BrowserSshPolicy } = {}) {
+    this.timer = setInterval(() => { this.expire(); options.policy?.onTick(); }, Math.min(1000, options.leaseMs ?? 10_000));
     this.timer.unref();
   }
   private marker(sessionId: string): string {
@@ -43,13 +53,13 @@ export class BrowserSshAgent {
     const identity = sshIdentity(credential, origin);
     const token = randomBytes(32).toString("hex");
     const proof = randomBytes(32);
-    this.bridges.set(token, { token, owner, identity, proof, expiresAt: Date.now() + 65_000, clients: new Set(), pending: new Map() });
+    this.bridges.set(token, { token, owner, identity, proof, expiresAt: this.now() + 65_000, clients: new Set(), pending: new Map() });
     return { token, challenge: proof.toString("base64url"), rpId: identity.rpId, publicKey: identity.publicKey };
   }
   private bridge(token: string, owner: string, origin: string): Bridge {
     const bridge = this.bridges.get(token);
-    if (!bridge || bridge.owner !== owner || bridge.identity.origin !== origin || bridge.expiresAt <= Date.now()) {
-      if (bridge?.expiresAt && bridge.expiresAt <= Date.now()) this.close(bridge);
+    if (!bridge || bridge.owner !== owner || bridge.identity.origin !== origin || bridge.expiresAt <= this.now()) {
+      if (bridge?.expiresAt && bridge.expiresAt <= this.now()) this.close(bridge);
       throw new Error("Browser SSH agent unavailable");
     }
     return bridge;
@@ -74,25 +84,48 @@ export class BrowserSshAgent {
       });
       if (this.bridges.get(token) !== bridge) throw new Error("Browser SSH agent closed during activation");
       chmodSync(bridge.socketPath, 0o600);
-      bridge.expiresAt = Date.now() + (this.options.leaseMs ?? 10_000);
+      bridge.expiresAt = this.now() + (this.options.leaseMs ?? 10_000);
       return this.snapshot(bridge);
     } catch (error) { this.close(bridge); throw error; }
   }
   poll(token: string, owner: string, origin: string) {
     const bridge = this.bridge(token, owner, origin);
     if (!bridge.socketPath || !bridge.server?.listening) throw new Error("Browser SSH agent is not active");
-    bridge.expiresAt = Date.now() + (this.options.leaseMs ?? 10_000);
+    bridge.expiresAt = this.now() + (this.options.leaseMs ?? 10_000);
     return this.snapshot(bridge);
   }
+  peek(token: string, owner: string, origin: string) { return this.snapshot(this.bridge(token, owner, origin)); }
+  request(token: string, owner: string, origin: string, id: string) {
+    const pending = this.bridge(token, owner, origin).pending.get(id);
+    if (!pending || pending.deadline <= this.now()) throw new Error("Signing request expired or already settled");
+    return { ...pending.view, remainingMs: Math.max(0, pending.deadline - this.now()) };
+  }
+  authorizePending(token: string, owner: string, origin: string, admission: BrowserSignAdmission) {
+    if (!this.options.policy || admission.userVerification !== "discouraged" || admission.unlock || !admission.grantId) throw new Error("Verified server grant required");
+    const bridge = this.bridge(token, owner, origin);
+    for (const pending of bridge.pending.values()) {
+      if (pending.deadline <= this.now()) { pending.settle(null); continue; }
+      if (pending.admission.unlock && pending.admission.epoch === admission.epoch) {
+        pending.admission = Object.freeze({ ...admission });
+        pending.view.userVerification = "discouraged"; pending.view.unlock = false;
+      }
+    }
+  }
+  cancelPending(token: string, owner: string, origin: string, predicate: (admission: BrowserSignAdmission) => boolean = () => true) {
+    const bridge = this.bridge(token, owner, origin);
+    for (const pending of bridge.pending.values()) if (predicate(pending.admission)) pending.settle(null);
+  }
   private snapshot(bridge: Bridge) {
-    return { socketPath: bridge.socketPath!, publicKey: bridge.identity.publicKey, requests: [...bridge.pending.values()].map((pending) => pending.view), sessions: [...this.bindings].filter(([, binding]) => binding.token === bridge.token).map(([id]) => id) };
+    return { socketPath: bridge.socketPath!, publicKey: bridge.identity.publicKey, requests: [...bridge.pending.values()].map((pending) => ({ ...pending.view, remainingMs: Math.max(0, pending.deadline - this.now()) })), sessions: [...this.bindings].filter(([, binding]) => binding.token === bridge.token).map(([id]) => id) };
   }
   respond(token: string, owner: string, origin: string, requestId: string, assertion?: BrowserSshAssertion) {
     const bridge = this.bridge(token, owner, origin);
     const pending = bridge.pending.get(requestId);
-    if (!pending || pending.view.expiresAt <= Date.now()) throw new Error("Signing request expired or already settled");
+    if (!pending || pending.deadline <= this.now()) throw new Error("Signing request expired or already settled");
     try {
-      const signature = assertion ? verifyBrowserAssertion(bridge.identity, pending.data, assertion) : null;
+      const signature = assertion ? this.options.policy
+        ? this.options.policy.verify(token, bridge.identity, pending.data, assertion, pending.admission)
+        : verifyBrowserAssertion(bridge.identity, pending.data, assertion) : null;
       pending.settle(signature);
     } catch (error) { pending.settle(null); throw error; }
   }
@@ -132,12 +165,13 @@ export class BrowserSshAgent {
     if (!this.bindings.has(sessionId) && !this.isBound(sessionId)) return {};
     const binding = this.bindings.get(sessionId);
     const bridge = binding && this.bridges.get(binding.token);
-    if (!bridge || bridge.expiresAt <= Date.now() || !bridge.server?.listening) throw new Error("Browser SSH agent disconnected. Reconnect and bind this session, or explicitly clear its browser SSH binding.");
+    if (!bridge || bridge.expiresAt <= this.now() || !bridge.server?.listening) throw new Error("Browser SSH agent disconnected. Reconnect and bind this session, or explicitly clear its browser SSH binding.");
     return { SSH_AUTH_SOCK: bridge.socketPath! };
   }
   disconnect(token: string, owner: string, origin: string) { this.close(this.bridge(token, owner, origin)); }
-  private expire() { for (const bridge of this.bridges.values()) if (bridge.expiresAt <= Date.now()) this.close(bridge); }
+  private expire() { for (const bridge of this.bridges.values()) if (bridge.expiresAt <= this.now()) this.close(bridge); }
   private close(bridge: Bridge) {
+    if (this.bridges.get(bridge.token) !== bridge) return;
     this.bridges.delete(bridge.token);
     for (const pending of bridge.pending.values()) pending.settle(null);
     for (const socket of bridge.clients) socket.destroy();
@@ -146,6 +180,7 @@ export class BrowserSshAgent {
     if (bridge.server?.listening) bridge.server.close(remove); else remove();
     // Retain durable binding markers so losing a browser never falls back to a host key.
     for (const [id, binding] of this.bindings) if (binding.token === bridge.token) this.bindings.delete(id);
+    this.options.policy?.onClose(bridge.token);
   }
   dispose() { this.stopped = true; clearInterval(this.timer); for (const bridge of this.bridges.values()) this.close(bridge); }
   private accept(bridge: Bridge, socket: Socket) {
@@ -181,6 +216,7 @@ export class BrowserSshAgent {
       const type = reader.byte();
       if (type === 11) {
         reader.end();
+        if (this.options.policy && !this.options.policy.available(bridge.token)) return Buffer.from([12, 0, 0, 0, 0]);
         return Buffer.concat([Buffer.from([12, 0, 0, 0, 1]), sshString(bridge.identity.blob), sshString("pi-web browser FIDO")]);
       }
       if (type !== 13) return FAILURE; // Never acknowledge session-bind/forwarding constraints.
@@ -190,6 +226,7 @@ export class BrowserSshAgent {
       reader.end();
       const description = describeSshPayload(data, bridge.identity);
       if (bridge.pending.size >= 4 || this.bridges.get(bridge.token) !== bridge) return FAILURE;
+      const admission = Object.freeze(this.options.policy?.admit(bridge.token) ?? { userVerification: "required" as const, unlock: false, epoch: 0, grantId: null });
       const signature = await new Promise<Buffer | null>((resolve) => {
         const id = randomUUID();
         const cancel = () => settle(null);
@@ -198,7 +235,7 @@ export class BrowserSshAgent {
         };
         const timer = setTimeout(cancel, this.options.signMs ?? 60_000); timer.unref();
         owned.add(cancel);
-        bridge.pending.set(id, { data, settle, view: { id, challenge: data.toString("base64url"), description, fingerprint: payloadFingerprint(data), expiresAt: Date.now() + (this.options.signMs ?? 60_000) } });
+        bridge.pending.set(id, { data, settle, admission, deadline: this.now() + (this.options.signMs ?? 60_000), view: { id, challenge: data.toString("base64url"), description, fingerprint: payloadFingerprint(data), expiresAt: Date.now() + (this.options.signMs ?? 60_000), userVerification: admission.userVerification, unlock: admission.unlock } });
       });
       return signature ? Buffer.concat([Buffer.from([14]), sshString(signature)]) : FAILURE;
     } catch { return FAILURE; }

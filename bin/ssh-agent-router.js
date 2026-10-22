@@ -121,7 +121,7 @@ async function createSshAgentRouter(options = {}) {
   if (Buffer.byteLength(controlPath) > 100) { fs.rmdirSync(root); throw new Error("SSH runtime socket path is too long"); }
   const token = randomBytes(32).toString("hex");
   const runtimeId = randomUUID();
-  let closed = false, accepting = true, generation = 0, browser = null, publisher = null;
+  let closed = false, accepting = true, generation = 0, browser = null, publisher = null, browserEpoch = null;
   let closing, lease, discovering = null;
   const clients = new Set(), controls = new Set(), probes = new Set(), lookups = new Set();
   const abort = new AbortController();
@@ -133,7 +133,7 @@ async function createSshAgentRouter(options = {}) {
   const status = () => {
     let endpointPresent = settings.selected.type === "none";
     if (!endpointPresent) { try { const value = target(); if (value) { ownedSocket(value, root); endpointPresent = true; } } catch { /* Passive endpoint observation, not a discovery probe. */ } }
-    return { runtimeId, socketPath: publicPath, inheritedSocket: inherited, revision: settings.revision, setupNeeded: !settings.setup, selected: settings.selected, custom: settings.custom, settingsError, browserSocket: browser, endpointPresent };
+    return { runtimeId, socketPath: publicPath, inheritedSocket: inherited, revision: settings.revision, setupNeeded: !settings.setup, selected: settings.selected, custom: settings.custom, settingsError, browserSocket: browser, browserEpoch, endpointPresent };
   };
   const persist = (next) => {
     fs.mkdirSync(settingsDir, { recursive: true, mode: 0o700 });
@@ -155,6 +155,13 @@ async function createSshAgentRouter(options = {}) {
     for (const record of clients) { record.retired = true; if (!record.pending) { record.socket.end(); record.socket.setTimeout(1000, () => record.socket.destroy()); } }
   };
   const stopAdmission = () => { if (accepting) { accepting = false; retire(); } };
+  const revokeBrowserRequests = () => {
+    for (const record of clients) if (record.backendType === "browser") {
+      record.retired = true;
+      if (record.writing || !record.pending) record.socket.destroy();
+      else record.upstream?.destroy();
+    }
+  };
   function target() {
     if (settings.selected.type === "inherited") return inherited;
     if (settings.selected.type === "socket") return settings.selected.path;
@@ -163,7 +170,7 @@ async function createSshAgentRouter(options = {}) {
   }
   const server = net.createServer((socket) => {
     if (closed || !accepting || clients.size >= 64) { socket.destroy(); return; }
-    const record = { socket, upstream: null, pending: false, retired: false, generation };
+    const record = { socket, upstream: null, pending: false, retired: false, generation, backendType: null, browserEpoch: null, writing: false };
     clients.add(record); let bytes = Buffer.alloc(0), busy = false;
     socket.on("error", () => socket.destroy());
     socket.on("close", () => { clients.delete(record); record.upstream?.destroy(); });
@@ -183,7 +190,7 @@ async function createSshAgentRouter(options = {}) {
           const request = bytes.subarray(4, length + 4); bytes = bytes.subarray(length + 4);
           checkLease();
           if (!accepting || record.retired || record.generation !== generation) { socket.end(); return; }
-          record.pending = true;
+          record.pending = true; record.backendType = settings.selected.type; record.browserEpoch = browserEpoch;
           let response;
           try {
             if (request.equals(markerRequest())) response = Buffer.concat([Buffer.from([6]), frame(Buffer.from(runtimeId))]);
@@ -199,9 +206,11 @@ async function createSshAgentRouter(options = {}) {
               response = await exchange(record.upstream, request, 60000);
             }
             checkLease();
+            if (record.backendType === "browser" && record.browserEpoch !== browserEpoch) throw new Error("Browser publisher revoked");
           } catch { response = failure; record.retired = true; }
+          record.writing = true;
           await write(response); // Admission remains pinned until bytes have flushed.
-          record.pending = false;
+          record.writing = false; record.pending = false;
           if (record.retired && !socket.destroyed) {
             socket.end(); socket.setTimeout(1000, () => socket.destroy()); record.upstream?.destroy(); return;
           }
@@ -217,9 +226,10 @@ async function createSshAgentRouter(options = {}) {
     if (body.action === "status") return status();
     if (!accepting && !(body.action === "publish-browser" && body.path === null)) throw new Error("SSH runtime is shutting down");
     if (body.action === "claim-browser") {
-      publisher = randomUUID(); browser = null;
+      publisher = randomUUID(); browserEpoch = randomUUID(); browser = null;
+      revokeBrowserRequests();
       if (settings.selected.type === "browser") retire();
-      return { publisher };
+      return { publisher, epoch: browserEpoch };
     }
     if (body.action === "publish-browser") {
       if (!publisher || body.publisher !== publisher) throw new Error("Stale browser publisher; reconnect explicitly");
