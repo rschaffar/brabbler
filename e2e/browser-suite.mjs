@@ -41,7 +41,7 @@ import { checkSessionWorktreeMoves } from "./session-worktree-moves.mjs";
 import { checkGitWorkflowPlugin, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
 import { checkSessionLaunch, sessionLaunchFixtureSource } from "./session-launch.mjs";
 import { checkWorktreeManager } from "./worktree-manager.mjs";
-import { prepareBrowserPrelude } from "./browser-fixture-recipes.mjs";
+import { assertStartupSessionCatalogue, prepareBrowserPrelude } from "./browser-fixture-recipes.mjs";
 import { createDiagnosticStages } from "./diagnostic-stage.mjs";
 import { browserInputs, createCoverage, selectGroup } from "./scenarios.mjs";
 import { historyPageResponse } from "./history-pagination.mjs";
@@ -358,11 +358,11 @@ let nativeToolsFixture;
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...preludeIds, ...ACTIVITY_SUBAGENTS, ...externalReferenceFixtures.map((fixture) => fixture.id), ...(mediaFixtures ? [mediaFixtures.id, mediaFixtures.otherId] : []),
+      assertStartupSessionCatalogue(sessions, [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...preludeIds, ...ACTIVITY_SUBAGENTS, ...externalReferenceFixtures.map((fixture) => fixture.id), ...(mediaFixtures ? [mediaFixtures.id, mediaFixtures.otherId] : []),
         ...(group === "markdown" ? [fileLineFixtures.peerSessionId] : []),
         ...(highlightingFixture ? [highlightingFixture.sessionId, highlightingFixture.fencesId] : []),
         ...(reviewNotebookFixture ? [reviewNotebookFixture.id] : []),
-        ...(group === "trust" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
+        ...(group === "trust" ? [TRUST_MAIN, TRUST_LINKED] : [])]);
       for (const id of ACTIVITY_SUBAGENTS) {
         assert.equal(sessions.find((session) => session.id === id)?.relation?.kind, "subagent", `${id} must have real subagent metadata`);
       }

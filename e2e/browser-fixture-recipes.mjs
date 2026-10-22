@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { seedModelSpeedDefaults, seedModelSpeedTranscripts } from "./model-speed.mjs";
 import { seedRunningForkFixtures } from "./running-session-forks.mjs";
 import { seedWorktreeManagerFixtures } from "./worktree-manager.mjs";
@@ -18,10 +19,16 @@ const recipes = [
   ], seed: seedWorktreeManagerFixtures },
 ];
 
+// Compare sorted arrays, not sets: duplicate or unexpected session IDs must fail.
+export function assertStartupSessionCatalogue(sessions, expectedIds) {
+  assert.deepEqual(sessions.map((session) => session.id).sort(), [...expectedIds].sort());
+}
+
 export function browserFixtureRecipe(group) {
-  // Only timestamps has been audited for omission. No blanket owner-only gating:
-  // shared settings/auth/models AND model-speed IDs serve session-launch too.
-  return recipes.filter(recipe => group !== "timestamps"
+  // Only timestamps and appearance omit the audited fork/manager resources.
+  // Shared defaults AND model-speed IDs stay everywhere; no other group is
+  // opted into omission based on its name or nominal owner.
+  return recipes.filter(recipe => (group !== "timestamps" && group !== "appearance")
     || recipe.name === "model-speed-defaults" || recipe.name === "model-speed-transcripts")
     .map(({ name, expectedIds }) => ({ name, expectedIds: [...expectedIds] }));
 }

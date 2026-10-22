@@ -86,11 +86,16 @@ those. See the [core recipes and checklist](../docs/testing.md#contributor-owner
 `browserFixtureRecipe(group)` and `prepareBrowserPrelude(group, options, stage)` in
 `browser-fixture-recipes.mjs` describe the reviewed ordered prelude. Expected IDs
 are independently declared, not harvested from seed return values. **Only
-`timestamps` omits running-fork transcripts and worktree-manager repositories.**
-Every group still gets separate shared model-speed defaults and transcript
-fragments; those IDs also serve session-launch. All other groups retain both
-shared fragments plus the running-fork and manager recipes. Other setup stays in `browser-suite.mjs`'s original order. Do not infer
-owner-only seeding from a group name or drop shared inputs opportunistically.
+`timestamps` and `appearance` omit running-fork transcripts and worktree-manager
+repositories.** Every recipe retains separate shared model-speed defaults and
+transcript fragments; those IDs also serve session-launch. Other groups retain
+both shared fragments plus the running-fork and manager recipes. Appearance keeps
+all four complete inputs, base/other-project Git resources and an independently
+declared exact 16-ID startup catalogue. `assertStartupSessionCatalogue` compares
+sorted arrays, preserving duplicate rejection; never filter actual responses or
+derive expectations from writers. Other setup stays in `browser-suite.mjs`'s
+original order. Do not infer owner-only seeding from a group name or drop shared
+inputs opportunistically.
 Group splitting and immutable-seed adoption remain deferred pending measured benefit.
 
 For superseded reads, use `holdBrowserRead(page, { pathname, query }, { json })`

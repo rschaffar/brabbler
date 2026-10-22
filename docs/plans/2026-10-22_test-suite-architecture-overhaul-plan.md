@@ -597,6 +597,32 @@ but remains unadopted: its compiler-global lifecycle assumptions and additional
 proof/maintenance burden are not needed for this simpler composition change.
 The original full-feedback gate remains open and has not been waived.
 
+### Continued optimization checkpoint — minimal appearance prelude
+
+Appearance omits only four audited, unused running-fork/manager IDs. Both model
+fragments, all base/other-project Git resources and all four complete input chains
+remain. Startup still checks exact sorted-array catalogue equality against
+independent expectations; direct helper tests reject missing, extra, duplicate,
+wrong and omitted-resource IDs. No response filtering, group split or other
+recipe omission is adopted.
+
+A private installed-package pair preserved every input and reduced observed
+**preparation** public-Git dispatches **196→24**. The installed launcher bypassed
+the counter for service requests: runtime/history Git counts are **unmeasured**.
+Balanced uninstrumented A1/B1/B2/A2 commands passed **143/96/78/70s**; medians
+106.5/87 differ by less than the 73s control spread, so causal wall improvement is
+**inconclusive**. A1 is retained; no isolated request or settlement stall explains
+its long assertion chains. This change is admitted for verified minimal resource
+ownership/count reduction, not a claimed full-suite or causal wall-time win.
+Evidence: `appearance-count-analysis.{md,json}` and
+`appearance-unprofiled-a1-attribution.{md,json}` under the persistent evidence root.
+Combined parent verification passed **4 files / 37 tests / 44s**, then every
+installed appearance input on the new leaf-composed package: **130s** command,
+**77.028s** driver-to-capsule preparation/realization envelope and **48.940s** capsule
+execution. Source `qzdw6h7vk9l774v55s245503cm062pg5`, package
+`4c94c3g925s1rx9gzaqkhqmjmmk9k3mj`; shutdown/resources/port settled. These scoped
+passes do not establish complete acceptance or the still-open full numerical gate.
+
 ## Unknowns and risks
 
 - Native attribution is bounded: observed Git/inventory counts and fixture cost,
