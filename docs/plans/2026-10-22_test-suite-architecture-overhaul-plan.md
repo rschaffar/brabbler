@@ -546,6 +546,31 @@ No integration or complete-command speedup is claimed.
   rebase, exact-state verification and unsigned non-FF approval. Publication and
   bounded feature-resource cleanup remain separate guarded operations.
 
+### Continued optimization checkpoint — transcript projection
+
+The original performance gates remain binding; functional passes do not authorize
+integration. The focused target passed on the earlier corrected candidate, but
+complete same-width feedback remains above the frozen target. No waiver was given.
+
+`lib/session-context.ts` now owns the byte-identical display projection formerly
+inside `session-reader.ts`; the reader retains SDK/storage/cache ownership and
+production reexports. Three synthetic receipt/signature files import that actual
+leaf and have complete data-only F reviews; historical audit evidence is unchanged.
+Existing pagination and full route-ancestry owners remain. A real SDK
+append/branch/reopen bridge exercises the default reader and projection-time replay
+nonmutation; it does not promise deeply detached objects after consumer mutation.
+
+Focused verification passed **10 files / 132 tests / 59s**, including new static
+preparation, on immutable source
+`/nix/store/yldh8z6y9j54g2q553a1nw2p7xsv2w93-source`. Three independent private
+mutations produced their intended runtime assertion reds: accepting a sibling
+anchor from all stored entries, omitting plugin identity from history pagination,
+and stripping signatures in-place from real SDK replay entries. Each reported
+zero observed survivors and no settlement uncertainty. Evidence is retained under
+`/home/robert/.cache/pi-web-suite-overhaul/run.zYOwpy/leaf-focused-2-*` and
+`leaf-oracle-{provenance,analysis}.json`; these are scoped proofs, not full acceptance
+or speed measurements. Independent source review found no introduced blocker.
+
 ## Unknowns and risks
 
 - Native attribution is bounded: observed Git/inventory counts and fixture cost,

@@ -33,7 +33,9 @@ Do not call a replacement/fork API on the source's own manager or runtime: `crea
 `parentSession` in the header is **display metadata only** — has zero effect on chat content. Safe to `writeFileSync` the entire file (pi does this itself during migrations). Used when cascade-reparenting children on delete.
 
 ### ToolCall field normalization
-Pi stores toolCall blocks as `{type:"toolCall", id, name, arguments}` but `ToolCallContent` uses `{toolCallId, toolName, input}`. `normalizeToolCalls()` in `lib/normalize.ts` handles this — called in both `session-reader.ts` (file load) and `handleAgentEvent` in `hooks/useAgentSession.ts` (streaming).
+Pi stores toolCall blocks as `{type:"toolCall", id, name, arguments}` but `ToolCallContent` uses `{toolCallId, toolName, input}`. `normalizeToolCalls()` in `lib/normalize.ts` handles this — called in both `session-context.ts` (history projection) and `handleAgentEvent` in `hooks/useAgentSession.ts` (streaming).
+
+`lib/session-context.ts` owns the display-only projection of supplied entries: active-branch slicing, visible/raw paging bounds, model/thinking metadata, signatures, receipts and deferred thinking/images. `session-reader.ts` re-exports that implementation for production callers and retains SDK/file/cache/catalogue ownership. Projection never opens a session or grants branch access; routes still validate full ancestry before building a bounded page.
 
 Argument rows are display-only projections, never replacements for these records. `rawInput !== undefined` excludes rows/file-text views even for empty or apparently complete partial JSON; authoritative `toolcall_end` removes that buffer. `getToolCallInputText()` remains the canonical full-copy/raw-view source. See [tool argument presentation](feature-internals.md#tool-argument-presentation).
 
