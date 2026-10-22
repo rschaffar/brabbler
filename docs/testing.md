@@ -449,13 +449,15 @@ assertions, not alternative acceptance environments.
 
 ### Current overhaul evidence boundary
 
-The replacement control took **413s**. Focused candidate evidence passed **22 files /
-494 tests in 125s**, including fresh static preparation, **before the late guard,
-checkpoint and mounted-test additions**. It does not verify those additions or the
-new isolated-support composition. A diagnostic candidate browser run passed
-**26 groups / 59 receipts in 414s**, **including cold production realization**.
-That is not a measured speedup or complete candidate acceptance; complete static,
-core, browser and service acceptance and performance verification remain outstanding.
+The frozen replacement reference took **413s**; the original **351.05s** complete
+feedback target remains binding. The latest rebased immutable pre-adoption source
+`69brsza8v1rm6g7pa9s99mscfa1nzf70` passed **436 files / 3,309 tests / 12 suites**,
+**26 browser groups / 59 receipts** and genuine deployment in **359s**, at four
+browser/four core workers. It includes the incoming SSH/SDK behavior and audited
+Activity/Markdown prelude omissions. This is source-scoped functional evidence,
+not the newer HEAD's run, a causal prelude speedup or a numerical gate pass.
+Detailed historical failures, input bindings and later proportional checks belong
+in the [active plan](plans/2026-10-22_test-suite-architecture-overhaul-plan.md).
 Browser packing hints live in `nix/browser-plan.mjs`: baseline values come from
 candidate diagnostic `d44f40e5`; the expanded SSH whole-group hint is separately
 refreshed from its post-rebase installed run. Each source is recorded beside the

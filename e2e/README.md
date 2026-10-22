@@ -86,14 +86,20 @@ those. See the [core recipes and checklist](../docs/testing.md#contributor-owner
 `browserFixtureRecipe(group)` and `prepareBrowserPrelude(group, options, stage)` in
 `browser-fixture-recipes.mjs` describe the reviewed ordered prelude. Expected IDs
 are independently declared, not harvested from seed return values. **Only
-`timestamps` and `appearance` omit running-fork transcripts and worktree-manager
-repositories.** Every recipe retains separate shared model-speed defaults and
-transcript fragments; those IDs also serve session-launch. Other groups retain
-both shared fragments plus the running-fork and manager recipes. Appearance keeps
-all four complete inputs, base/other-project Git resources and an independently
-declared exact 16-ID startup catalogue. `assertStartupSessionCatalogue` compares
-sorted arrays, preserving duplicate rejection; never filter actual responses or
-derive expectations from writers. Other setup stays in `browser-suite.mjs`'s
+`timestamps`, `appearance`, `activity` and `markdown` omit running-fork transcripts
+and worktree-manager repositories.** These omissions have source ownership review
+and installed whole-chain evidence, not a name-based owner assumption. Every recipe
+retains separate shared model-speed defaults and transcript fragments; those IDs
+also serve session-launch. Other groups retain both shared fragments plus the
+running-fork and manager recipes. Appearance keeps all four complete inputs;
+Activity keeps all three native chains and Markdown both preview/line-link chains.
+Base/other-project Git resources remain. Independent exact startup inventories have
+16 appearance, 20 Activity and 27 Markdown IDs. Their direct contracts exercise the
+real comparator; installed whole chains prove the runner's assembled expectations.
+Removing unrelated rows/roots intentionally changes catalogue/history/root exposure,
+not every observable behavior's equivalence. `assertStartupSessionCatalogue`
+compares sorted arrays, preserving duplicate rejection; never filter actual responses
+or derive expectations from writers. Other setup stays in `browser-suite.mjs`'s
 original order. Do not infer owner-only seeding from a group name or drop shared
 inputs opportunistically.
 Group splitting and immutable-seed adoption remain deferred pending measured benefit.

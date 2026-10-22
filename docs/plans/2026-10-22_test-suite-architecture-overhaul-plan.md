@@ -672,6 +672,40 @@ mechanism check passed **52 tests / 38s**, including refreshed packing, inventor
 isolation, task ownership and native model configuration. Complete combined
 acceptance and the original numerical gate are still open.
 
+### Rebased audited-prelude follow-up
+
+Only the reviewed recipe/contracts delta was transplanted onto rebased source
+`jwxdl7qfpkmwz03s8ya9f18dgzag05ba`: both old base files were first proven identical,
+so no incoming SDK/SSH change was overwritten. Private contracts passed **4 files /
+39 tests / 36s**. A full unchanged **4 browser / 4 core** run then passed **359s**,
+**436 files / 3,309 tests / 12 suites**, **26 groups / 59 receipts** and genuine VM,
+source `69brsza8v1rm6g7pa9s99mscfa1nzf70`. VM prerequisites were separately **37s**;
+full phase intervals were core **259.447s**, browser **329.369s**, VM **23.691s**.
+Activity's three whole chains (**214.202s**) and Markdown's two (**159.060s**) retain
+all callbacks, errors, native resources and settlement. Both model fragments and
+base/other-project resources remain; exact independent catalogues are **20/27**.
+The installed package matches the passed rebased SSH package `m2yka2hgpbqr1r8pwbaqzjkhk3nw3gca`.
+
+Independent review rechecked incoming SSH/global AppShell/SDK consumers, found no
+introduced blocker, and supports adopting only these two deltas for audited resource
+ownership. Production adoption changes comments/test titles and owning guides only
+beyond the tested pilot logic; proportional fresh contracts confirmed that delta
+(**4 files / 39 tests / 36s**, `audited-prelude-adoption-core-1`).
+Literal inventory tests own the comparator, not complete runner assembly; installed
+whole-chain receipts own wiring. Unrelated catalogue/history/root exposure genuinely
+changes, not exhaustive behavioral invisibility. No causal wall gain is established
+without a matched rebased base run. **359s still misses351.05s by7.95s**; neither the
+original gate nor integration is waived. Evidence:
+`audited-prelude-rebased-{provenance,analysis}.json`, corresponding core/all reports.
+
+A new read-only audit identifies repeated per-group Nix expression evaluation as a
+bounded candidate. Existing LPT execution is correct; **22 mixed intercapsule gaps
+2.860–3.965s** are not evaluator time or removable savings. A private unexecuted
+semantic proof explores rooting unchanged fresh capsule derivation definitions in
+one selected manifest, never realizing outputs before admission. Pinned context/GC,
+nonce/path equivalence and failure/drain proof are required before implementation;
+no runtime cache, shared sandbox, scheduling or authority reuse is adopted.
+
 ## Unknowns and risks
 
 - Native attribution is bounded: observed Git/inventory counts and fixture cost,

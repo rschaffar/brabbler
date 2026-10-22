@@ -25,10 +25,11 @@ export function assertStartupSessionCatalogue(sessions, expectedIds) {
 }
 
 export function browserFixtureRecipe(group) {
-  // Only timestamps and appearance omit the audited fork/manager resources.
+  // These four groups passed source ownership review and complete native chains.
   // Shared defaults AND model-speed IDs stay everywhere; no other group is
   // opted into omission based on its name or nominal owner.
-  return recipes.filter(recipe => (group !== "timestamps" && group !== "appearance")
+  return recipes.filter(recipe => (group !== "timestamps" && group !== "appearance"
+    && group !== "activity" && group !== "markdown")
     || recipe.name === "model-speed-defaults" || recipe.name === "model-speed-transcripts")
     .map(({ name, expectedIds }) => ({ name, expectedIds: [...expectedIds] }));
 }
