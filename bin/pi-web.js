@@ -19,6 +19,8 @@ const fs = require("fs");
 const { getHelpText, parseLaunchOptions } = require("./pi-web-options");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { launchManagedNext } = require("./ssh-agent-launch");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { commandEnvironment } = require("./command-env");
 
 let launchOptions;
 try {
@@ -104,17 +106,17 @@ child.stdout.on("data", (chunk) => {
       // `start` is a cmd.exe built-in, so invoke cmd directly. The empty
       // title argument is required by `start` before the target URL.
       opener = spawn(process.env.ComSpec || "cmd.exe", ["/c", "start", "", url], {
-        stdio: "ignore",
+        env: commandEnvironment(), stdio: "ignore",
         detached: true,
       });
     } else if (isMac) {
       opener = spawn("open", [url], {
-        stdio: "ignore",
+        env: commandEnvironment(), stdio: "ignore",
         detached: true,
       });
     } else {
       opener = spawn("xdg-open", [url], {
-        stdio: "ignore",
+        env: commandEnvironment(), stdio: "ignore",
         detached: true,
       });
     }

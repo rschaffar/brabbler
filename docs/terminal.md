@@ -30,19 +30,30 @@ File splitting never duplicates or starts a terminal.
 - Explicit termination and expiry signal the shell, escalating to SIGKILL after
   two seconds if it ignores SIGHUP. Server shutdown force-kills shells immediately.
 
-## Browser-backed SSH
+## Process-wide SSH agent
 
-The process-wide redesign is in progress. Supported launchers now install one
-stable private SSH_AUTH_SOCK before children start, initially No agent until
-explicit setup. Retained inheriting shells keep that pathname through backend
-switches; Pi Desk does not change the host's selector. Explicit shell exports or
-SSH IdentityAgent remain deliberate overrides.
+Supported launchers install one stable private `SSH_AUTH_SOCK` before children
+start, initially **No agent / SSH setup needed**. **Settings → SSH → Use agent**
+explicitly selects the Browser agent, startup system agent, discovered/named
+socket, or No agent. Existing inheriting PTYs retain the same pathname through
+switches; Pi Web does not change the host's selector. Explicit shell/profile
+exports and SSH `IdentityAgent` remain deliberate overrides. No agent is not a
+prohibition on private-key files or other authentication methods.
 
-The SSH Settings selector/registry is not implemented yet, so this branch is not
-ready for normal SSH use or integration. Legacy sidebar session-binding controls
-do not configure the managed default. See [browser SSH](browser-ssh-agent.md) and
+Browser credentials are centrally registered public metadata, not session
+bindings. Connect an explicitly selected key/device after fresh verification;
+signature requests appear in global nonmodal Review/Approve cards without opening
+Settings or taking terminal focus. Closing Settings does not disconnect the signer.
+Strict verification is default; optional application unlock is fixed at 30 minutes
+and every signature still requires presence. A locked Unlock and approve uses a
+fresh UV unlock challenge followed by the separate SSH signing ceremony.
+
+PTYs retain the public socket but omit `PI_WEB_PASSWORD` and the private
+`PI_DESK_SSH_RUNTIME` control locator. Legacy session-binding markers are ignored
+by managed commands and retained as migration evidence, never routing authority.
+See [browser SSH](browser-ssh-agent.md) for security/compatibility boundaries and
 the [implementation plan](plans/2026-10-22_process-wide-ssh-agent-plan.md) for the
-interim boundary and pending browser work.
+current acceptance checkpoint.
 
 ## Appearance and touch keys
 

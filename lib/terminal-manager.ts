@@ -47,9 +47,10 @@ function registry(): Map<string, TerminalRecord> {
 function shellEnvironment(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    // The browser login password guards this server, not the shells it starts.
+    // Server login/control metadata is not command authority. Keep only the
+    // public managed SSH_AUTH_SOCK in the inheriting shell environment.
     const comparableKey = process.platform === "win32" ? key.toUpperCase() : key;
-    if (value !== undefined && comparableKey !== "PI_WEB_PASSWORD") env[key] = value;
+    if (value !== undefined && comparableKey !== "PI_WEB_PASSWORD" && comparableKey !== "PI_DESK_SSH_RUNTIME") env[key] = value;
   }
   env.TERM = "xterm-256color";
   env.COLORTERM = "truecolor";

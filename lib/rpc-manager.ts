@@ -3155,10 +3155,11 @@ async function startRpcSessionInternal(
             appendSystemPrompt: subagentResources.appendSystemPrompt,
             extensionFactories: [
               ...nativeSessionTools.factories,
+              ...(!chatOnly ? [createProjectCommandBashExtension({ cwd: sessionCwd, settings: settingsManager })] : []),
               ...(usesExactSystemPrompt ? [exactSystemPromptExtension] : [createLocalFileLinkGuidanceExtension()]),
               ...(subagentResources.loadExtensions ? [createAskUserExtension(), acceptancePlugin.extension(sessionCwd)] : []),
             ],
-            ...(subagentResources.loadExtensions ? { extensionsOverride: preferPiWebAskUserExtension } : {}),
+            extensionsOverride: (base) => preferUserBashExtension(subagentResources.loadExtensions ? preferPiWebAskUserExtension(base) : base),
           }
         : chatOnly
           ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension, createSessionReferenceExtension(), ...promptObserver] }

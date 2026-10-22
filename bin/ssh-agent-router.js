@@ -11,6 +11,7 @@ const os = require("node:os");
 const { randomBytes, randomUUID, createHash, timingSafeEqual } = require("node:crypto");
 const { execFile } = require("node:child_process");
 const { claimSshSettingsLease } = require("./ssh-agent-lease");
+const { commandEnvironment } = require("./command-env");
 
 const MAX_FRAME = 256 * 1024;
 const MARKER = "pi-desk-runtime@pi-desk";
@@ -274,7 +275,7 @@ async function createSshAgentRouter(options = {}) {
       if (inherited) candidates.push({ label: "Startup system agent (follows its selector)", path: inherited, source: "inherited", dynamic: true });
       if (runtime) for (const [name, relative] of [["Askpass agent", "askpass-agent/agent.sock"], ["GCR", "gcr/ssh"], ["System selector (dynamic)", "ssh-agent/selected.sock"]]) candidates.push({ label: name, path: path.join(runtime, relative), source: "known", dynamic: relative === "ssh-agent/selected.sock" });
       const gpg = await new Promise(resolve => {
-        const child = execFile("gpgconf", ["--list-dirs", "agent-ssh-socket"], { env, timeout: 1500, maxBuffer: 4096 }, (error, output) => { lookups.delete(child); resolve(error ? null : output.trim()); });
+        const child = execFile("gpgconf", ["--list-dirs", "agent-ssh-socket"], { env: commandEnvironment(env), timeout: 1500, maxBuffer: 4096 }, (error, output) => { lookups.delete(child); resolve(error ? null : output.trim()); });
         lookups.add(child);
       });
       if (closed || !accepting) throw new Error("Agent discovery cancelled");
