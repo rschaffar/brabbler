@@ -25,6 +25,7 @@ import { TabBar, type Tab } from "./TabBar";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
 import { BrowserSshAgent } from "./BrowserSshAgent";
 import { AcceptancePanel } from "./AcceptancePanel";
+import { ScratchpadPanel } from "./ScratchpadPanel";
 import { ProjectTrustDialog, type TrustChoice } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { SystemPromptPanel } from "./SystemPromptPanel";
@@ -141,6 +142,8 @@ export function AppShell() {
     if (soundEnabledRef.current) playDoneSound();
   }, [playDoneSound, soundEnabledRef]);
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
+  const [scratchpadOpen, setScratchpadOpen] = useState(false);
+  const [scratchpadMounted, setScratchpadMounted] = useState(false);
   const [sessionCatalog, setSessionCatalog] = useState<SessionInfo[]>([]);
   const projectPrivacy = useHiddenProjects();
   const handleSessionsChange = useCallback((sessions: SessionInfo[]) => {
@@ -2203,6 +2206,14 @@ export function AppShell() {
           >
             {activeOverview === "starred" && isMobile && !overviewMobileList ? "←" : "★"}
           </button>
+          <button type="button" className="activity-top-button" aria-label={translate("scratchpad.title")} title={translate("scratchpad.title")}
+            aria-haspopup="dialog" aria-expanded={scratchpadOpen}
+            onClick={() => { setActiveTopPanel(null); setScratchpadMounted(true); setScratchpadOpen(true); }}
+            style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0, border: 0, borderRight: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer" }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M14 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9M16 3l5 5-9 9-5 1 1-5Z" />
+            </svg>
+          </button>
           <button ref={gitExplorerTriggerRef} type="button" className="activity-top-button" aria-label="Git Explorer" title="Git Explorer"
             aria-pressed={activeOverview === "git"} aria-controls="git-explorer-panel"
             onClick={() => {
@@ -2570,7 +2581,7 @@ export function AppShell() {
           </div>}
           <div inert={gitExplorerFullWidth || Boolean(activeOverview && isMobile && overviewMobileList)} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
           {showChat ? (
-            <MarkdownMediaScope key={sessionKey} active={!chatCollapsed && settingsSection === null && !projectTrustDialogOpen && !acceptanceOpen && !gitExplorerFullWidth && !rightPanelFullWidth && !(isMobile && (rightPanelOpen || sidebarOpen)) && !(activeOverview && isMobile && overviewMobileList)}>
+            <MarkdownMediaScope key={sessionKey} active={!scratchpadOpen && !chatCollapsed && settingsSection === null && !projectTrustDialogOpen && !acceptanceOpen && !gitExplorerFullWidth && !rightPanelFullWidth && !(isMobile && (rightPanelOpen || sidebarOpen)) && !(activeOverview && isMobile && overviewMobileList)}>
             <ChatWindow
               key={sessionKey}
               session={selectedSession}
@@ -2822,6 +2833,7 @@ export function AppShell() {
         onConfirm={(choice) => void handleTrustProject(choice)}
       />
     )}
+    {scratchpadMounted && <ScratchpadPanel open={scratchpadOpen} sessionId={selectedSession && !selectedSession.transient ? selectedSession.id : null} onClose={() => setScratchpadOpen(false)} />}
     <BrowserSshAgent open={sshPanelOpen} onClose={() => setSshPanelOpen(false)} onRequest={() => setSshPanelOpen(true)} sessionId={selectedSession?.id ?? null} />
     </FileLinkMenuContext.Provider>
     </ReviewNavigationContext.Provider>

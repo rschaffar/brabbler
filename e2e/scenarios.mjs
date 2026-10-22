@@ -32,7 +32,7 @@ export const scenarios = {
   "native-tools": ["native-tools/full@en-desktop", "native-tools/full@en-mobile-tall"],
   "trust": ["trust/full@en-desktop", "trust/full@en-mobile-tall"],
   "git-plugin": ["git-plugin/full@en-desktop", "git-plugin/full@en-mobile-tall"],
-  "appearance": ["appearance/full@numeric-wide", "appearance/full@legacy-desktop"],
+  "appearance": ["appearance/full@numeric-wide", "appearance/full@legacy-desktop", "appearance/scratchpad@en-desktop", "appearance/scratchpad@en-mobile-short"],
   "timestamps": ["timestamps/full@en-desktop", "timestamps/full@en-mobile-tall", "timestamps/full@legacy-desktop", "timestamps/full@legacy-mobile"],
   "diff-context": ["diff-context/explorer-then-merge@legacy-desktop"],
   "markdown": ["markdown/preview-then-line-links@legacy-desktop", "markdown/preview-then-line-links@legacy-mobile"],
