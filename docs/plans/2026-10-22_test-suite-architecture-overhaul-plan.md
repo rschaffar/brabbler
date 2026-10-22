@@ -322,13 +322,63 @@ worktrees group then passed both input chains in **107s command / 94.945s capsul
 (`jv4c7846g17qwb0anczw6hq0pzf8242x`). This validates the corrected bridge, not the
 cause of the prior reset or complete same-width acceptance.
 
+### Corrected complete runs and unmet full-feedback gate
+
+At `df8f418` / immutable `5q4...`, corrected warm samples passed **6/4/5s**,
+median **5s versus 41s (87.8% reduction)**. Two complete four/four runs passed in
+**409s and 411s**: **422 files / 3,133 tests**, all **26 groups / 59 receipts** and
+genuine deployment/closure. Their median **410s** is only **0.726%** below the
+initial 413s reference, not the required 15%, and exceeds **351.05s**. Functional
+acceptance is established for that source; the full-feedback completion gate is
+**unmet and not waived** (`full-comparison-incomplete.json`).
+
+The unchanged `a8dd...` control repeat failed after **257s**, so it is not a valid
+second timing sample. Its native Pause assertions succeeded; an untraced Node
+cleanup DELETE reset afterwards. The backend was stopped only after that failure;
+subsequent incomplete/refused browser requests are shutdown effects, not evidence
+of a native panic. Retain capsule `93pkd6c951gyfzvwrj65gg89w057qkfi` and
+`control-repeat-failure-analysis.md`. The reset cause remains unestablished.
+Both failed transport capsules have persistent, bounded Nix GC roots in ROOT.
+
+Generalize the strict positive browser body reader as `browser-http.mjs` for
+manager GETs and successful Pause cleanup DELETEs. Preserve exact-200 versus
+any-2xx semantics, body consumption, idle/gate/abort/privacy cleanup order and
+AggregateError retention; deliberate Node-API 409 negatives stay unchanged. Retire
+the manager-only helper without an adapter. `focused-http-1` passed four files /
+50 tests in **37s**. These callback cases do not prove Chromium networking, native
+shutdown or a cause/resolution for either observed reset.
+
+### Bounded next experiment, not adoption
+
+Measured complete-core scheduling is already near its invariant-duration lower
+bound: cleanup starts first, and simple queue reordering has at most ~1.2s model
+headroom. Preserve E-after/exclusivity and shared-source isolation assumptions;
+E-first is **not contract-neutral** and is not adopted. Activity's three whole
+input chains have a conditional boundary audit, but cold independent setup and
+complete benefit are unproved; no group/input/ownership change is adopted.
+
+A private recipe-bound mixed-pool experiment keeps maximum four total files,
+limits N-classified files to two **only while F remains queued**, selects the
+highest-priority eligible queue head and lifts the cap immediately on F queue
+drain. Default/other widths retain LPT; every file, ID, E barrier/order and full
+callback settlement remains. Invariant-duration replay predicts no intrinsic
+speedup (+0.15s isolated / +0.29s full); changed cross-level overlap is a hypothesis,
+not a contention diagnosis. Actual private mechanism checks passed three files /
+79 tests in **39s**, including named-gate default/cap/empty/failure/abort/drain
+contracts. No primary scheduler change or performance claim follows.
+
+Additional prepared full diagnostics compare the same shared-HTTP correction at
+LPT versus the private mixed policy, with unchanged four/four, complete inventory
+and real VM. Their rationale is the measured unmet full target and retained failed
+control, not retries to manufacture acceptance. Record any source/test differences
+and do not attribute gains merely from unmatched phase envelopes.
+
 ### Remaining gates
 
-Focused feedback has passed at `fd7c68d`; reconfirm the final corrected warm input.
-Complete same-candidate acceptance, balanced four/four control/candidate timings
-and exact-state local integration remain open. The failed full attempt is an
-additional retained diagnostic, not one of the successful comparison samples.
-No complete-command speedup or completion is claimed.
+The full-feedback target and final corrected same-source acceptance/integration
+remain open. The final candidate needs complete native/browser/service proof;
+failed or incomplete commands remain excluded from successful timing samples.
+No integration or complete-command speedup is claimed.
 
 ## Plan
 

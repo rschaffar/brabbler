@@ -132,12 +132,16 @@ turn in `running-session-forks.mjs` independently verifies canonical prompt/fina
 IDs/content against persisted JSONL, one rendered row per ID and an actual document
 reload with unchanged history/no duplicate or restarted turn. Preserve both owners.
 
-Independent positive manager HTTP reads use `readManagerJson` / `readManagerResponse`
-from `worktree-manager-discard.mjs`: actual browser fetch, no cache, status 200 and
-fully consumed text/JSON, so requests and responses appear in retained traces.
-Deliberate HTTP-409 writes retain Node API transport without browser-console error
-exemptions. Neither transport swallows failures or retries. Callback unit tests
-prove body/error ownership, not browser networking or the cause of a socket reset.
+Independent positive manager GETs and successful session-Pause cleanup DELETEs
+use `readBrowserJson` / `readBrowserResponse` from `browser-http.mjs`: actual browser
+fetch, no cache, unchanged URLs/methods/bodies and fully consumed text/JSON, so
+requests and responses appear in retained traces. Manager GETs require status 200;
+Pause cleanup preserves its existing any-2xx success check and text-only body read.
+Its gate release, abort, idle wait, privacy restoration and AggregateError retention
+remain unchanged. Deliberate HTTP-409 writes retain Node API transport without
+browser-console error exemptions. Neither transport swallows failures or retries.
+Callback unit tests prove body/error ownership, not Chromium networking, native SDK
+shutdown, or the cause or resolution of either observed socket reset.
 
 ## One ordinary sandbox per whole browser group
 

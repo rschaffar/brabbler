@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { seedManagerDiscardFixtures, checkManagerDiscard, checkManagerReadyReview, waitManagerButton } from "./worktree-manager-discard.mjs";
+import { readBrowserResponse } from "./browser-http.mjs";
 
 export const WORKTREE_MANAGER_IDS = ["e2e-worktree-manager-desktop", "e2e-worktree-manager-mobile"];
 export function seedWorktreeManagerFixtures({ agentDir, env, writeSession, message }) {
@@ -182,8 +183,7 @@ export async function checkWorktreeManager(page, { base, fixture, artifacts, wid
   assert.ok(await manager.getByRole("button", { name: /Resource removal completed/ }).count() >= 2);
   await manager.getByRole("button", { name: /Resource removal completed/ }).first().click();
   await reviewSurface.getByRole("link", { name: "Download complete exact review", exact: true }).waitFor();
-  const download = await page.request.get(new URL(await reviewSurface.getByRole("link", { name: "Download complete exact review", exact: true }).getAttribute("href"), base).href);
-  assert.equal(download.status(), 200, "saved review remains readable after checkout/ref deletion");
+  await readBrowserResponse(page, new URL(await reviewSurface.getByRole("link", { name: "Download complete exact review", exact: true }).getAttribute("href"), base).href);
   await reviewSurface.getByRole("button", { name: "Refresh actual state", exact: true }).click();
   await checkManagerDiscard(page, { base, fixture, manager, open, patchSettings });
   await manager.screenshot({ path: join(artifacts, `worktree-manager-${width}.png`) });
