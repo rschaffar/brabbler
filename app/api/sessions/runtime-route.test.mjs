@@ -15,21 +15,25 @@ const jiti = createJiti(import.meta.url, {
   interopDefault: true,
   moduleCache: false,
 });
-const { DELETE: deleteSession, GET: getSessionDetail, PATCH: renameSession } = await jiti.import("./[id]/route.ts");
-const { GET: getSessionList } = await jiti.import("./route.ts");
-const { GET: searchSessions } = await jiti.import("./search/route.ts");
-const { GET: getRunningSessions } = await jiti.import("../agent/running/route.ts");
-const { GET: getSessionState } = await jiti.import("./[id]/state/route.ts");
-const { POST: dismissRecovery } = await jiti.import("./[id]/recovery/route.ts");
-const { GET: listInterrupted } = await jiti.import("./interrupted/route.ts");
-const { recordRunStart, readPossibleInterruptedRun } = await jiti.import("../../../lib/session-run-recovery.ts");
-const { recordActivityCompletion, activityReviewPath } = await jiti.import("../../../lib/activity-review-server.ts");
 const {
+  deleteSession,
+  getSessionDetail,
+  renameSession,
+  getSessionList,
+  searchSessions,
+  getRunningSessions,
+  getSessionState,
+  dismissRecovery,
+  listInterrupted,
+  recordRunStart,
+  readPossibleInterruptedRun,
+  recordActivityCompletion,
+  activityReviewPath,
   cacheSessionPath,
   invalidateSessionPathCache,
   invalidateSessionListCache,
-} = await jiti.import("../../../lib/session-reader.ts");
-const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
+  SessionManager,
+} = await jiti.import("./runtime-route.fixture.ts");
 
 test("list versions expose idle session creation, rename and deletion to other windows", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-list-sync-"));

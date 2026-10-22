@@ -571,6 +571,32 @@ zero observed survivors and no settlement uncertainty. Evidence is retained unde
 `leaf-oracle-{provenance,analysis}.json`; these are scoped proofs, not full acceptance
 or speed measurements. Independent source review found no introduced blocker.
 
+### Continued optimization checkpoint — one default route graph
+
+The runtime-route owner now imports one physical typed re-export fixture instead
+of eleven contiguous pre-test roots. It exposes the same seventeen real bindings;
+the original Jiti options and all thirteen native case bodies are byte-identical.
+No module/require/result cache, approved snapshot, skipped current read, lane
+promotion or separate-lifetime consolidation was introduced. Independent review
+found no removed intentional freshness boundary; initialization/class sharing was
+explicitly reviewed and all original native cases executed.
+
+Focused static/behavioral verification passed **3 files / 27 tests / 40s** including
+new typing preparation. Three balanced warm pairs (A1/B1/B2/A2/A3/B3) passed every
+original case: control commands **13/13/11s**, candidate **8/7/7s**; medians **13→7s**
+(46.2%), larger than the 2s control spread. File durations were **6.349–6.495s** versus
+**2.307–2.456s**. This is scoped feedback evidence, not SDK-only attribution or the
+original complete-command target. Nix identity evaluation changes only
+`tests/typing/lint/static`; application, package, dependencies and support are
+unchanged. Source/provenance and exact phase records live in
+`/home/robert/.cache/pi-web-suite-overhaul/run.zYOwpy/runtime-graph-comparison.json`,
+`runtime-route-graph-provenance.json` and `runtime-graph-identities.json`.
+
+A separate private guarded transform-code memo passed fifteen diagnostic cases,
+but remains unadopted: its compiler-global lifecycle assumptions and additional
+proof/maintenance burden are not needed for this simpler composition change.
+The original full-feedback gate remains open and has not been waived.
+
 ## Unknowns and risks
 
 - Native attribution is bounded: observed Git/inventory counts and fixture cost,

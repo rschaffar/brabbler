@@ -217,6 +217,23 @@ idempotent. Join externally owned async work separately before disposing its rea
 `pointerCaptureDouble(element)` is only an unsupported-API double, never native
 capture/layout proof. Keep mounted cases serial within their file.
 
+### One default native composition
+
+When several real handlers/helpers belong to one default lifetime, a small local
+physical re-export fixture can load that dependency graph once. See
+`app/api/sessions/runtime-route.fixture.ts` and its single import in
+`runtime-route.test.mjs`: the same real routes, storage and SDK bindings replace
+contiguous pre-test imports. Keep the original loader options and runner's disabled
+filesystem cache; this is ordinary composition, not a new execution/result cache.
+Per-case temporary roots, current reads, mutations, invalidations and native
+settlement remain mandatory.
+
+Do not combine imports separated by environment/filesystem/ref changes, deliberate
+reloads, mocks, or independent singleton lifetimes. Review module/class identity
+and initialization order, run every original case, and measure before generalizing.
+Typed `.fixture.ts` files stay in type/lint inputs but outside application/package
+inputs; verify those identities rather than hiding dependencies from checking.
+
 ### Completion, cost and new-feature checklist
 
 Result, complete owned-work settlement and durable publication are separate
@@ -256,8 +273,9 @@ For a new feature or replacement:
   keep distinct authorization, identity, race and persistence-failure obligations.
 - Exercise real production behavior, a meaningful failing defect, success/failure
   settlement, stale completion and unmount where applicable; document proof limits.
-- Keep helpers `.fixture.mjs` (TSX probes `.fixture.tsx`); verify discovery, source
-  graph and packed inventory. Never import registered tests from production.
+- Keep helpers `.fixture.mjs`, typed compositions `.fixture.ts` and mounted probes
+  `.fixture.tsx`; verify discovery, source graph and packed inventory. Never import
+  registered tests from production.
 - Review live F/N/E isolation and record an explicit rationale or unresolved E hold
   for every new test file. Re-review changed helper/native effects; do not edit the
   historical audit into current scheduling authority.
