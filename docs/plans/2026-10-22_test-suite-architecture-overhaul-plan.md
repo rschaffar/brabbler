@@ -409,7 +409,7 @@ No integration or complete-command speedup is claimed.
   and preserved native/evidence boundaries. Explicitly decide classification and
   cached-static evidence changes before implementing them; internal-API removal
   permission is not authority to weaken fail-closed coverage or freshness claims.
-  Decision: [ADR 0033](../adr/0033-behavioral-test-ownership-and-feedback.md).
+  Decision: [ADR 0034](../adr/0034-behavioral-test-ownership-and-feedback.md).
 
 ### 2. Build minimal reusable ownership and mounting support
 
@@ -622,6 +622,32 @@ installed appearance input on the new leaf-composed package: **130s** command,
 execution. Source `qzdw6h7vk9l774v55s245503cm062pg5`, package
 `4c94c3g925s1rx9gzaqkhqmjmmk9k3mj`; shutdown/resources/port settled. These scoped
 passes do not establish complete acceptance or the still-open full numerical gate.
+
+### Pre-rebase complete diagnostic and current-main composition
+
+The clean pre-rebase candidate `50295b7fc69c3fedfd7a4330dd85d36062696186`
+passed fresh `all --workers 4 --jobs 4` in **355s**: **422 files / 3,153 tests /
+12 suites**, **26 groups / 59 receipts**, and genuine deployment. Overlapped
+core/browser driver intervals were **259.915/323.494s**, deployment **24.316s**;
+do not sum them. Matching VM prerequisites were realized separately in **39s**.
+Source `/nix/store/118h3x6x2x39j0p3n5ymfb2vwxx9qlg2-source`, content/mode digest
+`3bd750bcb3e585431c5159a0a977697861631276c2bc4d302beca6c026e9a8fa`;
+evidence `post-leaf-all-1-*` under the persistent root. Functional acceptance
+passed for that source, but **355s still exceeds 351.05s**: the original full
+performance gate remains unmet and has not been waived.
+
+At the user's request, rebase then continued onto local `main`
+`c8557e5afec41739801a756a1d8e0b496f0b316c`. The first conflict attempt was aborted,
+exact clean state restored and a named backup retained. Two pre-reviewed mechanical
+Nix conflicts preserve both incoming SDK install-policy manifest inputs and the
+overhaul's application/support/static/typing filesets; their npm hash was already
+identical. Seven unsigned commits replayed to `c0994457c7bf0c1277b772160b0892e1b5bd961d`.
+The incoming SSH ADR keeps 0033; this unintegrated decision is now 0034.
+
+Incoming SSH/runtime/environment code and tests are substantive, not documentation-
+only. Reconcile their isolation/explicit holds and obtain fresh affected and
+complete evidence. None of the pre-rebase acceptance or timing receipts is relabeled
+as a run of the combined candidate. Original targets remain binding.
 
 ## Unknowns and risks
 

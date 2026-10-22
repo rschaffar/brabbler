@@ -1,4 +1,4 @@
-# Behavioral test ownership and efficient feedback
+# 0034 — Behavioral test ownership and efficient feedback
 
 ## Decision
 
@@ -94,9 +94,10 @@ is deferred. Other source-shape families are not all migrated.
 ## Fixtures, classification and evidence
 
 Browser recipes declare ordered resources and expected IDs independently of
-observed seed output. Only timestamps currently omits manager/fork prelude setup;
-shared model defaults and feature transcripts are separate ordered fragments,
-both retained for every current group. Retain whole-chain
+observed seed output. Only timestamps and appearance currently omit the audited
+manager/fork prelude setup; no omission follows merely from a group name. Shared
+model defaults and feature transcripts are separate ordered fragments, both
+retained for every current browser-suite recipe. Retain whole-chain
 success-only receipts, input variants, prerequisite ordering and a fresh ordinary
 sandbox for each group. Reorganizing owners requires an independent old-to-new
 obligation/input mapping. Distinguish actual browser abort from delivered/consumed
@@ -146,13 +147,9 @@ stronger held-HEAD server guard is retained. Browser packing hints live in
 `nix/browser-plan.mjs`, refreshed from candidate diagnostic `d44f40e5`, never as
 deadlines, resource admission or coverage authority.
 
-Current contributor recipes and bounded measured results belong in
-`docs/testing.md` and `e2e/README.md`; implementation status belongs in the
-test-suite architecture overhaul plan. The 413s replacement control, focused
-22-file/494-test pass in 125s including fresh static preparation, and diagnostic
-26-group/59-receipt pass in 414s including cold production realization are separate
-scopes, **not a measured speedup**. Later focused checks cover isolated support,
-mounted stale delivery, named checkpoints and fixture ownership; their exact
-selections, mutations and artifacts are recorded in the plan. Complete
-static/core/browser/service candidate acceptance and matched performance evidence
-remain separate completion gates. This decision alone never certifies completion.
+Current contributor recipes belong in `docs/testing.md` and `e2e/README.md`;
+source-bound measurements, retractions and implementation status belong in the
+test-suite architecture overhaul plan. Keep scoped proofs and cold preparation
+separate from warm performance samples. Complete static/core/browser/service
+acceptance and matched performance evidence are distinct completion gates; this
+decision alone never certifies either.

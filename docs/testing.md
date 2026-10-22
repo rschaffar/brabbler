@@ -79,9 +79,11 @@ The deployment suite does not repeat the browser inventory. See
 
 Package and tests share a manifest/toolchain/platform-keyed dependency output,
 including native `node-pty`. Application, test and manifest filesets are separate:
-documentation/test-only edits do not rebuild the application; application-only
-edits do not reinstall dependencies. Production builds receive a private physical
-dependency copy inside the builder; runtime/core use the immutable output.
+documentation/test-only edits do not rebuild the application; ordinary application-
+only edits do not reinstall dependencies. The manifest set also includes both
+[SDK installation-policy](sdk-command-environment.md) bin helpers, so their changes
+must invalidate the patched dependency output. Production builds receive a private
+physical dependency copy inside the builder; runtime/core use the immutable output.
 
 `nix/static-checks.nix` binds reusable **Next typegen + tsc** and **lint** evidence
 separately to their declared inputs, dependencies, toolchain and check recipe.
