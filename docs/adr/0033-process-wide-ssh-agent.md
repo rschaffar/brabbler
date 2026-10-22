@@ -1,7 +1,7 @@
 # 0033 — Stable runtime-wide SSH routing and per-key browser verification
 
 Date: 2026-10-22
-Status: Accepted design; implementation incomplete. Synthetic launcher/router and registration-helper checks exist; the registry, browser policies, selector UI and complete application acceptance remain pending in the active plan.
+Status: Accepted. Routing, public registry, browser policies and authenticated interface are implemented; the active plan owns final acceptance and the approved SDK subprocess-environment hardening.
 
 ## Context and supersession
 
@@ -13,7 +13,7 @@ The supported launcher owns one private Unix front socket before spawning Next. 
 
 The router starts with No agent until explicit first setup, remembers an explicitly applied backend, never falls back on failure, and preserves the front pathname across switches. It forwards external agent protocol semantics without replacing destination constraints, while browser backends retain web-safe signing filters. Old exchanges are pinned and bounded; already-pending work drains on its original backend, then stale front connections retire. No replay of ambiguous requests. Deliberate sanitization/overrides, native MCP admission and isolated acceptance environments remain unchanged.
 
-The remaining browser implementation will provide server-side public registrations for multiple named ES256 credentials; signing authority stays in short-lived owned browser connections, with an explicitly active signer. Each key defaults to requiring UP+UV for every signature. An explicitly enrolled session-unlock policy may accept UP-only signatures only during a server-verified exact-connection grant with a fixed monotonic 30-minute limit. Standby activity does not extend it. Lock/revocation/disconnect/restart invalidate it. A connected locked request may explicitly Unlock and approve using fresh nonce-bound UV followed by a separate raw-payload signing ceremony. Payload assertions never create grants.
+The browser implementation stores server-side public registrations for multiple named ES256 credentials; signing authority stays in short-lived owned browser connections, with an explicitly active signer. Each key defaults to requiring UP+UV for every signature. An explicitly enrolled session-unlock policy may accept UP-only signatures only during a server-verified exact-connection grant with a fixed monotonic 30-minute limit. Standby activity does not extend it. Lock/revocation/disconnect/restart invalidate it. A connected locked request may explicitly Unlock and approve using fresh nonce-bound UV followed by a separate raw-payload signing ceremony. Payload assertions never create grants.
 
 Registration parsing alone proves neither possession nor attestation: keep the exact candidate pending until fresh assertion proof, with server-owned one-time challenge/owner/origin admission. Protection and discoverability reports remain unverified registration metadata even after that assertion; never label them authenticated hardware guarantees. The bounded helper intentionally accepts only five-label public ES256 COSE keys and rejects unsupported CBOR explicitly.
 
@@ -26,6 +26,10 @@ Management lives in dedicated SSH Settings with explicit Use agent, device-first
 Independent review identified that repeated SSHSIG payloads reuse the raw WebAuthn challenge: a payload assertion cannot prove fresh verification for a new unlock window. The user explicitly approved replacing the earlier single-ceremony inline-renewal expectation with **two sequential ceremonies** on Unlock and approve: fresh server-random UV proof, then the original SSH-payload presence/signature ceremony. Already-unlocked signing remains one ceremony; browsers/authenticators may still require verification there. Concurrent locked requests share the first fixed grant without extending its deadline. Original-payload assertion replay remains a protocol limitation, but it cannot create or renew a grant.
 
 Publisher replacement is explicit revocation, not ordinary device/backend handoff: old browser exchanges are cancelled/fenced at the launcher even without a final old-controller poll. Native-agent exchanges continue their ordinary bounded drain.
+
+## SDK subprocess hygiene amendment
+
+The implementation audit found that SDK 1.3.0 has no shared child-environment hook: native tools, provider/config helpers and extension execution can inherit server login/control fields. The user explicitly approved a version-scoped installation patch for Nix dependencies and maintained npm installation. A pure filter removes only `PI_WEB_PASSWORD` and `PI_DESK_SSH_RUNTIME` from final child environments, preserving public socket inheritance, explicit isolation, session metadata and account bindings. Recognized original/patched fingerprints fence installation; startup verification is read-only and never repairs dependencies. Trusted Next workers retain their server environment. This is hygiene at maintained modular SDK boundaries, not a sandbox for arbitrary trusted extension JavaScript or a claim about separate SDK CLI bundles.
 
 ## Verification and limits
 

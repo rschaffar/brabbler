@@ -1,10 +1,18 @@
 import type { LocalePlugin } from "../types";
+import { sshAgentEnglish } from "../ssh-agent-messages";
 
 /** Pi Web 内置英语语言包。 */
 export const enLocale: LocalePlugin = {
   id: "en",
   label: "English",
   messages: {
+    ...sshAgentEnglish,
+    "sshAgent.demo.open": "Open SSH settings (static demo)",
+    "sshAgent.demo.sidebar": "SSH · Unavailable in static demo",
+    "sshAgent.demo.unavailable": "SSH management is unavailable in this static demo.",
+    "sshAgent.demo.description": "This is an illustration, not a configured SSH runtime. No discovery, credential creation/import, connections, unlocks or signatures are possible. These controls do not access security keys or change SSH configuration.",
+    "sshAgent.demo.illustration": "Illustration only — all SSH actions are disabled",
+    "sshAgent.demo.agentChoice": "Agent selection (illustration only)",
     "common.ok": "OK",
     "common.language": "Language",
     "common.models": "Models",

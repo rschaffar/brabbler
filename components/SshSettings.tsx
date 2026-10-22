@@ -74,7 +74,7 @@ export function SshSettings({ controller: c, active = true }: { controller: SshA
         {status?.runtime.selected.type === "browser" && <p>{c.active ? t("sshAgent.activeSummary", { device: c.active.device, state: t(`sshAgent.state.${c.active.state}`) }) : t("sshAgent.browserDisconnected")}</p>}
         {status && ["socket", "inherited"].includes(status.runtime.selected.type) && <p style={muted}>{t("sshAgent.externalStatus")}</p>}
         <label style={field}>{t("sshAgent.chooseAgent")}
-          <select disabled={disabled} value={backendId(chosen)} onChange={event => {
+          <select aria-label={t("sshAgent.chooseAgent")} disabled={disabled} value={backendId(chosen)} onChange={event => {
             const option = uniqueOptions.find(item => backendId(item.backend) === event.target.value);
             if (option) setDraft(option.backend);
           }}>
@@ -103,7 +103,7 @@ export function SshSettings({ controller: c, active = true }: { controller: SshA
         {connections.length === 0 && <p>{t("sshAgent.browserDisconnected")}</p>}
         {connections.map(connection => <ConnectionRow key={connection.id} connection={connection} controller={c} disabled={disabled} />)}
         {!c.connection ? <>
-          <label style={field}>{t("sshAgent.key")}<select value={keyId} disabled={disabled || !c.supported} onChange={event => { setKeyId(event.target.value); setUnlockOnConnect(false); }}>
+          <label style={field}>{t("sshAgent.key")}<select aria-label={t("sshAgent.key")} value={keyId} disabled={disabled || !c.supported} onChange={event => { setKeyId(event.target.value); setUnlockOnConnect(false); }}>
             <option value="">{t("sshAgent.chooseKey")}</option>
             {ownKeys.map(key => <option key={key.id} value={key.id}>{key.name}</option>)}
           </select></label>
@@ -131,7 +131,7 @@ export function SshSettings({ controller: c, active = true }: { controller: SshA
         <details><summary>{t("sshAgent.enroll")}</summary>
           <div style={{ display: "grid", gap: 10, marginTop: 8 }}>
             <label style={field}>{t("sshAgent.keyName")}<input value={name} maxLength={80} disabled={disabled} onChange={event => setName(event.target.value)} /></label>
-            <label style={field}>{t("sshAgent.policy")}<select value={policy} disabled={disabled} onChange={event => setPolicy(event.target.value as SshKeyPolicy)}>
+            <label style={field}>{t("sshAgent.policy")}<select aria-label={t("sshAgent.policy")} value={policy} disabled={disabled} onChange={event => setPolicy(event.target.value as SshKeyPolicy)}>
               <option value="strict">{t("sshAgent.policy.strict")}</option><option value="session">{t("sshAgent.policy.session")}</option>
             </select></label>
             {policy === "session" && <p>{t("sshAgent.sessionWarning")}</p>}
@@ -233,7 +233,7 @@ function KeyRow({ item, controller: c, disabled, copied, onCopy }: { item: SshKe
         <span>{t("sshAgent.discoverability", { value: t(`sshAgent.discoverability.${item.discoverability}`) })}</span>
         {item.applicationOnly && <span>{t("sshAgent.applicationOnlyRecord")}</span>}
         <code>{item.fingerprint}</code>
-        <label style={field}>{t("sshAgent.publicKey")}<textarea readOnly value={item.publicKey} rows={3} style={{ width: "100%", fontFamily: "monospace" }} /></label>
+        <label style={field}>{t("sshAgent.publicKey")}<textarea aria-label={t("sshAgent.publicKey")} readOnly value={item.publicKey} rows={3} style={{ width: "100%", fontFamily: "monospace" }} /></label>
         <p style={muted}>{t("sshAgent.protectionHelp")}</p>
       </div>
     </details>

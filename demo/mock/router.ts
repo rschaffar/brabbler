@@ -265,8 +265,10 @@ export async function handleApiRequest(
   signal: AbortSignal | null | undefined,
   realFetch: typeof fetch,
 ): Promise<Response> {
-  setRealFetch(realFetch);
   const request = new MockRequest(url, method, body, signal);
+  // No fabricated SSH status, challenge, credential, capability or mutation.
+  if (request.segments[1] === "ssh-agent") return error(demoOnlyMessage(), 501);
+  setRealFetch(realFetch);
   try {
     await ensureSessions();
     await delay(25, signal);

@@ -90,12 +90,18 @@ bin/
   ssh-agent-router.js   stable private front, selected backend, discovery, settings and fenced lifecycle
   ssh-agent-lease.js    PID/nonce ownership, atomic unique-marker claims and conservative crash recovery
   ssh-agent-client.js   server-only private Unix control connector (no import-time allocation)
+  command-env.js        child hygiene for server login/control fields, preserving public socket and account env
+  patch-sdk-command-env.js install-only exact-version SDK patcher and read-only startup verifier
+  sdk-command-env-payload.js twelve modular SDK recipes/original-patched fingerprints and self-contained filter
 
 lib/
-  browser-ssh-enrollment.ts bounded creation/COSE/SPKI validation for the pending registry; not possession proof
+  ssh-key-registry.ts  versioned public-only registrations, immutable policies, durable revision CAS
+  managed-ssh-agent.ts exact owned browser connections, active/standby, monotonic grants and enrollment proofs
+  ssh-agent-types.ts   public management/signing wire types (no live control capabilities)
+  browser-ssh-enrollment.ts bounded creation/COSE/SPKI validation; separate fresh possession proof required
   browser-ssh-protocol.ts WebAuthn assertion validation, web-safe payloads and OpenSSH wire encodings
-  browser-ssh-agent.ts legacy private browser socket/capability core; registry/policy redesign in progress
-  browser-ssh-client.ts browser ES256 enrollment/assertion and bounded management transport
+  browser-ssh-agent.ts bounded private browser sockets, pending admission, cancellation and leases
+  browser-ssh-client.ts browser ceremonies, bounded transport and inert per-credential public recovery
   agent-client.ts      typed fetch helper for /api/agent commands
   draft-store.ts       local draft persistence helpers
   scratchpad.ts        bounded personal-note wire contract
