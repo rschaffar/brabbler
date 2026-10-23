@@ -3,6 +3,7 @@ import { waitForAsyncCondition } from "./async-condition.mjs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createOwnedRoutes } from "./owned-routes.mjs";
+import { readBrowserJson } from "./browser-http.mjs";
 
 /** Deliberately open Activity before catalogue-driven URL session adoption.
  * Join the exact held GETs before leaving; no provider or timeout manipulation. */
@@ -121,8 +122,8 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
       const input = page.locator(".chat-input-textarea");
       await input.fill(`mobile draft from ${panel}`);
       assert.equal(await input.evaluate(node => Boolean(node.closest("[inert]"))), false);
-      assert.equal((await api("/api/sessions?force=1")).sessions.find(session => session.id === sessionId)?.cwd, destination);
-      assert.deepEqual((await api(`/api/sessions/${sessionId}`)).context.messages, []);
+      assert.equal((await readBrowserJson(page, "/api/sessions?force=1")).sessions.find(session => session.id === sessionId)?.cwd, destination);
+      assert.deepEqual((await readBrowserJson(page, `/api/sessions/${sessionId}`)).context.messages, []);
     }
     await page.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
     console.log("PASS: mobile cross-project New leaves Activity/Starred and saves an editable empty session");

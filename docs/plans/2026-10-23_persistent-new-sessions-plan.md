@@ -11,7 +11,7 @@ New currently creates only a temporary composer; SDK startup itself can defer it
 - [x] Initialize explicit New composers (not passive project browsing), retain draft identity through asynchronous creation/navigation, and close covering overviews; focused hook/AppShell/tab regressions pass, including restrictive startup preferences and account selection waiting.
 - [x] Add best-effort browser-local text draft storage, preserving memory-only images and rejected-submission/rekey behavior; focused tests pass for reload, corruption, unavailable storage and failed clears.
 - [x] Extend installed-browser coverage for empty-session listing/reload, literal draft restoration and mobile cross-project New; history and Activity groups pass, and the desktop-sidecar correction/no-session Explorer chain now passes focused browser acceptance.
-- [x] Review the settled diff independently and run complete `nix run .#test -- all --workers 4 --jobs 4`; corrected runtime passes all levels, with exact inputs/timings/artifacts below.
+- [ ] Reverify the rebased composition with complete `nix run .#test -- all --workers 4 --jobs 4`; prior corrected-runtime acceptance remains recorded below, but incoming runtime/harness changes require fresh evidence.
 
 ## Non-Goals
 Server/cross-device draft synchronization, persistent image attachments, automatic model turns, or session creation merely from browsing a project's files.
@@ -38,7 +38,7 @@ No transcript migration or new model-context entry. Reverting leaves valid SDK s
 
 - Desktop correction passed `nix run .#test -- core --jobs 4 --file components/AppShell.workspace-memory.test.mjs` (**11 tests**, static checks included; `/tmp/pi-web-test-core.WQhxyt/run.json`) and `nix run .#test -- e2e --group diff-context` (**20.579s browser execution**; `/tmp/pi-web-test-browser.CRw5xH/run.json`). Full acceptance must now run on the corrected runtime, rather than reusing the earlier complete attempt.
 
-## Final complete acceptance
+## Complete acceptance before the integration-time main advance
 
 `nix run .#test -- all --workers 4 --jobs 4` passed on implementation candidate **`cf17a88c898105e9bb115e2781f206e83d4a86cd`**, clean source digest **`d954276c7ff125c2e5dd3e0c54ad186193af3916f7650126d37bca9552258dcf`**. End-to-end command (including in-run realization) took **459s / 7m39s**, from 2026-10-23 12:06:43 to 12:14:22 +02:00. This excludes model/review/coordination time and earlier focused prerequisite preparation; it is not a cold-cache or performance comparison.
 
@@ -54,9 +54,17 @@ These intervals overlap and must not be added. Core and browser requested/effect
 
 Local main advanced only by `docs/plans/2026-10-23_guided-review-notebooks-plan.md`, to **`b2730a7edec8f3f81453fab8e837ffa916b51544`**. The integrated rebase produced implementation tip **`987ec18d56493a43544babb3c5e2be353471b69a`** (commits `57659b9`, `987ec18`). Comparing the tested candidate to that tip shows exactly the one upstream documentation addition and **zero application/test/Nix input changes**. The full evidence remains bound to the original tested candidate, not relabelled as a new-tip run. The final follow-up only records/archives this evidence and is checked as a documentation-only delta.
 
-## Completion Checklist
-- [x] Focused tests and browser regressions pass after the desktop-sidecar correction.
-- [x] Independent review and complete acceptance pass with retained evidence.
-- [x] Implementation commits and acceptance evidence are ready for exact-state local integration; durable behavior/limitations live in `docs/session-internals.md`, and browser coverage in `e2e/README.md`.
+## Integration-time main advance and resumed verification
 
-The original integration/cleanup checkbox is transferred to this active session's global `git-worktrees` lifecycle and durable operation receipts, not silently treated as executed by this plan. Local main/non-FF integration still needs the tool's exact-state approval; feature cleanup has its separate gate. The implementation plan closes on verified source/evidence, while that Git owner records the actual outcome in receipts and the completion report. Remote publication and installed-service deployment remain unrequested.
+The first merge proposal refused as stale before any Git effect. Main advanced from `b2730a7` to **`76e5fe4d06cb18f0eb800210dc1aaa4ced36bb92`**, including the behavioral-test/harness overhaul, session-context extraction and native operation composition, not merely documentation. The next rebase completed without conflicts at **`8d039509e7746c1c9b017f13f6fee9534c40de73`**; this feature's production implementation files are unchanged. The old merge approval/evidence is not authority for this new composition. This plan is reopened until fresh complete acceptance passes.
+
+Scope remains this feature, not the incoming overhaul or Activity-client pilot. To follow the new contributor contract, its hook tests now mount actual `useAgentSession` under StrictMode for single-flight startup, restrictive preset hydration and real unmount; narrowly retained extracted matrices explicitly disclaim React proof and join complete operation chains. Draft-store tests import fresh actual Jiti modules with real attachment validation, rather than substituted constants. Live scheduling records a reviewed F rationale for the pure storage file and a justified E hold for the broad mounted-hook graph; historical audit data is untouched. New browser positive session reads use the incoming traced-browser HTTP helper.
+
+The delegated focused command `nix run .#test -- core --jobs 4 --file hooks/new-session-persistence.test.mjs --file lib/draft-store.test.mjs --file lib/test-design.test.mjs` passed **3 files / 25 tests**, effective workers 4, **37s** wall time. Type evidence reused; lint passed with the existing two warnings. Evidence: `/tmp/pi-web-test-core.Fdpx6o/artifacts/run-ZMzBgj`, `/tmp/persistent-new-sessions-harness-adaptation.log`; its initial failed iteration remains in `/tmp/persistent-new-sessions-harness-adaptation.failed-1.log`. Parent review confirmed the changes are test-only, with production unchanged.
+
+## Completion Checklist
+- [x] Focused tests and browser regressions pass for the feature before rebase; incoming-harness focused tests pass.
+- [ ] Complete acceptance passes on the new runtime/harness composition with retained evidence.
+- [ ] Updated implementation/evidence is ready for a fresh exact-state local merge proposal. Durable behavior/limitations remain owned by `docs/session-internals.md`, browser coverage by `e2e/README.md`.
+
+The original integration/cleanup checkbox is transferred to this active session's global `git-worktrees` lifecycle and durable operation receipts, not silently treated as executed by this plan. Local main/non-FF integration still needs the tool's exact-state approval; feature cleanup has its separate gate. The implementation plan closes again only on the newly verified composition; that Git owner records the actual integration outcome in receipts and the completion report. Remote publication and installed-service deployment remain unrequested.

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createOwnedRoutes } from "./owned-routes.mjs";
+import { readBrowserJson } from "./browser-http.mjs";
 
 const frames = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
@@ -82,7 +83,7 @@ export async function checkFreshComposerFocus(page, alternateSessionId, width) {
   }, previousPreference);
   const { sessionId } = await created.json();
   await page.waitForFunction(id => new URL(location.href).searchParams.get("session") === id, sessionId);
-  const detail = await (await page.request.get(new URL(`/api/sessions/${sessionId}`, page.url()).href)).json();
+  const detail = await readBrowserJson(page, `/api/sessions/${sessionId}`);
   assert.deepEqual(detail.context.messages, [], "New is persisted without a model turn");
   assert.deepEqual(detail.toolNames, expectedTools);
   const draft = "  saved fresh draft\n@\"my file\"  ";
