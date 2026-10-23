@@ -18,6 +18,30 @@ export const MIGRATED_OWNERS = Object.freeze([
   'lib/testing/async.fixture.mjs',
   'lib/testing/react.fixture.mjs',
   'lib/testing/ignored-abort-fetch.fixture.mjs',
+  'lib/testing/dom.fixture.mjs',
+  'lib/activity-client-controller.test.mjs',
+  'components/ActivityViews.behavior.test.mjs',
+  'components/GitExplorer.stale-delivery.test.mjs',
+  'components/SessionMoveDestinationPicker.stale-delivery.test.mjs',
+  'hooks/useResizablePanel.test.mjs',
+  'lib/file-line-navigation.test.mjs',
+  'components/MarkdownBody.behavior.test.mjs',
+  'components/MarkdownMedia.behavior.test.mjs',
+  'components/markdown-dom.fixture.mjs',
+]);
+
+// Audited behavioral owners, separate from scheduling and legitimate source/SSR
+// guards. This catches literal source reads/extraction, not arbitrary dataflow or
+// semantic coverage. Review their helpers too; moving a copy does not improve proof.
+export const BEHAVIORAL_OWNERS = Object.freeze([
+  'lib/activity-client-controller.test.mjs',
+  'components/ActivityViews.behavior.test.mjs',
+  'components/GitExplorer.stale-delivery.test.mjs',
+  'components/SessionMoveDestinationPicker.stale-delivery.test.mjs',
+  'hooks/useResizablePanel.test.mjs',
+  'lib/file-line-navigation.test.mjs',
+  'components/MarkdownBody.behavior.test.mjs',
+  'components/MarkdownMedia.behavior.test.mjs',
 ]);
 const code = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 const typed = /\.(?:[cm]?ts|tsx)$/;
@@ -99,7 +123,8 @@ function moduleSpecifier(node) {
       ['require', 'import'].includes(memberName(node.expression)))) return literal(node.arguments[0]);
 }
 
-export function inspectSource(name, source, { registeredTests = [], migratedOwners = MIGRATED_OWNERS } = {}) {
+export function inspectSource(name, source, { registeredTests = [], migratedOwners = MIGRATED_OWNERS,
+  behavioralOwners = BEHAVIORAL_OWNERS } = {}) {
   const kind = name.endsWith('.tsx') ? ts.ScriptKind.TSX : name.endsWith('.jsx') ? ts.ScriptKind.JSX
     : typed.test(name) ? ts.ScriptKind.TS : ts.ScriptKind.JS;
   const tree = ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true, kind);
@@ -115,6 +140,7 @@ export function inspectSource(name, source, { registeredTests = [], migratedOwne
   const promisedTimers = new Set();
   const timerNamespaces = new Set();
   const browserSleeps = new Set(['waitForTimeout']);
+  const fileReads = new Set(['readFile', 'readFileSync']);
   visit(tree, node => {
     const specifier = moduleSpecifier(node);
     if (specifier !== undefined) {
@@ -125,6 +151,12 @@ export function inspectSource(name, source, { registeredTests = [], migratedOwne
       if (typed.test(name) && isRegisteredTest(target, tests)) report(node, 'typing-test-entrypoint', `Typing input imports registered test entrypoint: ${specifier}`);
       if (typed.test(name) && ['nix/test-lanes', 'nix/test-lanes.json'].includes(target)) {
         report(node, 'typing-scheduling-policy', 'Live scheduling metadata belongs to the Node runner, not the TypeScript input graph');
+      }
+    }
+    if (ts.isImportDeclaration(node) && /^(?:node:)?fs(?:\/promises)?$/.test(literal(node.moduleSpecifier) ?? '')) {
+      const bindings = node.importClause?.namedBindings;
+      if (bindings && ts.isNamedImports(bindings)) for (const item of bindings.elements) {
+        if (['readFile', 'readFileSync'].includes((item.propertyName ?? item.name).text)) fileReads.add(item.name.text);
       }
     }
     if (ts.isImportDeclaration(node) && /^(?:node:)?timers\/promises$/.test(literal(node.moduleSpecifier) ?? '')) {
@@ -169,14 +201,32 @@ export function inspectSource(name, source, { registeredTests = [], migratedOwne
   };
   const browser = name.startsWith('e2e/');
   const migrated = migratedOwners.includes(name);
+  const behavioral = behavioralOwners.includes(name);
+  const codeRead = node => {
+    const value = literal(node);
+    if (value !== undefined) return /\.(?:[cm]?[jt]sx?|css)(?:[?#].*)?$/.test(value) && !support(moduleTarget(name, value));
+    if ((ts.isNewExpression(node) && memberName(node.expression) === 'URL') ||
+        (ts.isCallExpression(node) && ['join', 'resolve', 'fileURLToPath'].includes(memberName(node.expression)))) {
+      return Array.from(node.arguments ?? []).some(codeRead);
+    }
+    return false;
+  };
   const calls = [];
   visit(tree, node => {
     if (ts.isCallExpression(node)) {
       const callee = memberName(node.expression) ?? '';
+      if (behavioral && fileReads.has(callee) && node.arguments[0] && codeRead(node.arguments[0])) {
+        report(node, 'behavior-source-read', 'Import production behavior; keep implementation-source assertions in an explicitly reviewed architecture/presentation owner');
+      }
+      if (behavioral && ['Function', 'eval', 'runInNewContext', 'runInContext', 'runInThisContext', 'compileFunction'].includes(callee)) {
+        report(node, 'behavior-extracted-runtime', 'Behavioral owners must not replace production/React execution with an extracted runtime; whole-module capability fixtures have a separate reviewed scope');
+      }
       if (browser && browserSleeps.has(callee)) calls.push({ node, rule: 'browser-sleep' });
       else if (migrated && awaited(node) && (promisedTimer(node) || /^(?:sleep|delay)(?:Ms)?$/i.test(callee))) {
         calls.push({ node, rule: 'settling-sleep' });
       }
+    } else if (behavioral && ts.isNewExpression(node) && memberName(node.expression) === 'Function') {
+      report(node, 'behavior-extracted-runtime', 'Import the production rule or mount its actual React owner instead of evaluating a copied/extracted function');
     } else if (migrated && awaited(node) && inlineDelay(node)) calls.push({ node, rule: 'settling-sleep' });
   });
   // Exemptions are one call per annotated line, not a file allowlist. Put a real
