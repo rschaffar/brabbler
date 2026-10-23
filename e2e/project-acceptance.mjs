@@ -21,13 +21,21 @@ export async function openAcceptanceWithHeldStatus(page, dialog, project) {
   // Hold the browser's original GET, not an APIRequestContext fetch/fulfill copy
   // that can reuse an idle Node socket closed by the server while awaiting UI.
   const read = await holdBrowserRead(page, { pathname: '/api/acceptance', query: { cwd: project } });
+  const failures = [];
   try {
     await page.getByRole('button', { name: 'Acceptance', exact: true }).click();
     await dialog.waitFor();
     await read.arrived();
     await dialog.getByText('Reading acceptance status…', { exact: true }).waitFor();
-    await read.releaseAndObserve();
-  } finally { await read.dispose(); }
+    const reads = await read.releaseAndObserve();
+    assert.ok(reads.length > 0 && reads.every(read => read.outcome === 'consumed'), 'initial status requires genuine browser JSON consumption, never cancellation');
+  } catch (error) { failures.push(error); }
+  finally {
+    try { await read.dispose(); }
+    catch (error) { failures.push(error); }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, 'Acceptance initial status fixture failed');
+  }
 }
 
 export async function checkProjectAcceptance(page, { base, api, post, project, width, returnSessionId }) {
