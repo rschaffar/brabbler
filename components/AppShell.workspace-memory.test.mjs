@@ -96,8 +96,25 @@ test("Activity and Starred toggles preserve desktop Files and only hide Files on
 test("all active-session transitions share one persistence effect", () => {
   assert.match(
     source,
-    /useEffect\(\(\) => \{\s+if \(selectedSession\) \{[\s\S]*?setLastOpenSession\(projectKey, selectedSession\.id\);\s+setTabOpenSession\(selectedSession\.id\);\s+return;\s+\}\s+if \(newSessionCwd\) setTabOpenNewSession\(newSessionCwd\);\s+\}, \[newSessionCwd, selectedSession\]\);/,
+    /useEffect\(\(\) => \{\s+if \(selectedSession\) \{[\s\S]*?setLastOpenSession\(projectKey, selectedSession\.id\);\s+setTabOpenSession\(selectedSession\.id\);\s+return;\s+\}\s+if \(newSessionCwd\) setTabOpenNewSession\(newSessionCwd, undefined, newSessionDraftId\);\s+\}, \[newSessionCwd, newSessionDraftId, selectedSession\]\);/,
   );
+});
+
+test("reload before creation acknowledgement recovers the provisional text identity without replaying startup", () => {
+  const start = source.indexOf("        const tabOpen = getTabOpen();");
+  const end = source.indexOf("        setInitialCwdStatus", start);
+  assert.ok(start !== -1 && end !== -1);
+  for (const remembered of [null, { kind: "new", cwd: "/other", draftId: "foreign" }, { kind: "new", cwd: "/pending", draftId: "pending-id" }]) {
+    let draftId, cwd;
+    const context = vm.createContext({ getTabOpen: () => remembered, requestedCwd: "/pending", data: { cwd: "/pending" },
+      activeNewSessionDraftKeyRef: { current: null },
+      setNewSessionDraftId: value => { draftId = value; }, setNewSessionCwd: value => { cwd = value; } });
+    vm.runInContext(source.slice(start, end), context);
+    assert.equal(draftId, remembered?.cwd === "/pending" ? "pending-id" : "initial:/pending");
+    assert.equal(context.activeNewSessionDraftKeyRef.current, `new:${draftId}:/pending`);
+    assert.equal(cwd, "/pending");
+    assert.doesNotMatch(source.slice(start, end), /setPersistentNewSessionDraftId/);
+  }
 });
 
 test("keeps chat scroll positions in page memory by session id", () => {
@@ -108,20 +125,22 @@ test("keeps chat scroll positions in page memory by session id", () => {
   assert.doesNotMatch(source, /localStorage[^\n]*sessionScroll/i);
 });
 
-test("New focus requests are bound to the intended fresh draft and navigation revision", () => {
+test("New focus requests are bound to the intended fresh draft and navigation revision, and reveal mobile chat from every overview", () => {
   const callback = callbackBody("handleNewSession", "hydrateSelectedSession");
   const requests = [];
+  let overview = "activity";
   const context = vm.createContext({
-    useCallback: (fn) => fn, useGlobalKeyboardShortcuts() {},
+    useCallback: (fn) => fn, useGlobalKeyboardShortcuts() {}, setTabOpenNewSession() {},
     parkedNewSessionDraftKey: (cwd) => `parked-new:${cwd}`, rekeyDraft() {},
     activeNewSessionDraftKeyRef: { current: null }, workspaceRestoreTokenRef: { current: 0 },
     router: { replace() {} }, isMobile: false, activeCwd: "/p", chatInputRef: { current: null },
-    requestFreshComposerFocus: (...args) => requests.push(args),
+    requestFreshComposerFocus: (...args) => requests.push(args), closeOverview() { overview = null; },
   });
   context.invalidateWorkspaceRestore = () => context.workspaceRestoreTokenRef.current++;
   for (const [setter] of callback.matchAll(/\bset[A-Z]\w*(?=\()/g)) context[setter] = () => {};
   vm.runInContext(stripTypeScriptTypes(`${callback}\nglobalThis.start = handleNewSession;`), context);
   context.start("first", "/p");
+  assert.equal(overview, "activity", "desktop New preserves independent sidecars");
   assert.equal(requests.length, 1);
   assert.equal(requests[0][2](), true);
   context.start("second", "/p");
@@ -132,6 +151,18 @@ test("New focus requests are bound to the intended fresh draft and navigation re
   context.start("third", "/p");
   context.invalidateWorkspaceRestore();
   assert.equal(requests[2][2](), false);
+  for (const panel of ["activity", "starred", "git"]) {
+    overview = panel;
+    context.start(`desktop-${panel}`, "/p");
+    assert.equal(overview, panel, "desktop New must retain the overview's mounted state");
+  }
+  context.isMobile = true;
+  for (const panel of ["activity", "starred", "git"]) {
+    overview = panel;
+    context.start(`mobile-${panel}`, "/another-project-with-no-sessions");
+    assert.equal(overview, null);
+    assert.equal(context.activeNewSessionDraftKeyRef.current, `new:mobile-${panel}:/another-project-with-no-sessions`);
+  }
 });
 
 test("workspace restoration remains inside the cross-project branch", () => {
@@ -141,7 +172,7 @@ test("workspace restoration remains inside the cross-project branch", () => {
   );
 });
 
-test("New restores the draft after session navigation and workspace auto-restore", async (t) => {
+test("passive project drafts park, but explicit in-flight New drafts retain their own identity", async (t) => {
   const callbacks = [
     callbackBody("restoreWorkspaceContext", "handleCwdChange"),
     callbackBody("handleCwdChange", "handleSelectSession"),
@@ -170,9 +201,9 @@ test("New restores the draft after session navigation and workspace auto-restore
         clearLastOpen() {},
         workspaceKeyOf: (value) => value.projectKey ?? value.cwd,
         useCallback: (callback) => callback,
-        useGlobalKeyboardShortcuts() {},
+        useGlobalKeyboardShortcuts() {}, setTabOpenNewSession() {},
         chatInputRef: { current: null },
-        requestFreshComposerFocus() {},
+        requestFreshComposerFocus() {}, closeOverview() {},
         activeNewSessionDraftKeyRef: { current: `new:initial:${cwd}` },
         pendingMovedCheckoutRef: { current: null },
         activeProjectKeyRef: { current: cwd },
@@ -186,8 +217,9 @@ test("New restores the draft after session navigation and workspace auto-restore
         isMobile: false,
         activeCwd: cwd,
         activeFileTabId: null,
-        newSessionCwd: cwd,
+        newSessionCwd: null,
         newSessionDraftId: "initial",
+        persistentNewSessionDraftId: null, persistNewSession: false,
         selectedSession: null,
         sessionCatalog: [],
         sessionKey: 0,
@@ -203,7 +235,8 @@ test("New restores the draft after session navigation and workspace auto-restore
         globalThis.navigate = { handleCwdChange, handleSelectSession, handleNewSession };
       `), context);
       // Run the actual hook cleanup with the outgoing mount's captured draft key.
-      const makeCleanup = vm.runInContext(stripTypeScriptTypes(`((isNew, newSessionDraftKey) => {
+      const makeCleanup = vm.runInContext(stripTypeScriptTypes(`((isNew, newSessionDraftKey, persistNewSession) => {
+        const opts = { persistNewSession };
         const sessionHookMountedRef = { current: true };
         const compactionPhase = { active: false, generation: 0 };
         const newSessionPromotedRef = { current: false };
@@ -228,7 +261,8 @@ test("New restores the draft after session navigation and workspace auto-restore
           const activeCwd = context.newSessionCwd ?? context.activeCwd;
           const key = context.selectedSession ? null : `new:${context.newSessionDraftId}:${activeCwd}`;
           context.activeNewSessionDraftKeyRef.current = key;
-          cleanup = makeCleanup(!context.selectedSession, key);
+          context.persistNewSession = context.newSessionCwd !== null && context.persistentNewSessionDraftId === context.newSessionDraftId;
+          cleanup = makeCleanup(!context.selectedSession, key, context.persistNewSession);
         }
         await new Promise((resolve) => setImmediate(resolve));
       }
@@ -240,21 +274,23 @@ test("New restores the draft after session navigation and workspace auto-restore
       context.navigate.handleNewSession("direct-return", cwd);
       await commit();
       assert.deepEqual(draftStore.getDraft(context.activeNewSessionDraftKeyRef.current), draft);
+      const pendingKey = context.activeNewSessionDraftKeyRef.current;
       context.navigate.handleSelectSession({ ...session, cwd });
       await commit();
+      assert.deepEqual(draftStore.getDraft(pendingKey), draft, "a late creation response can still find its draft");
       context.navigate.handleCwdChange("/other-project", "/other-project", "/other-project");
       await commit();
       context.navigate.handleCwdChange(cwd, cwd, cwd);
       await commit();
-      assert.deepEqual(draftStore.getDraft(context.activeNewSessionDraftKeyRef.current), draft);
+      assert.equal(draftStore.getDraft(context.activeNewSessionDraftKeyRef.current), null, "project placeholders do not borrow an explicit session draft");
       response.resolve({ ok: true, json: async () => ({ sessions: [session] }) });
       await new Promise((resolve) => setImmediate(resolve));
       await commit();
       assert.equal(context.selectedSession.id, session.id);
       context.navigate.handleNewSession("after-auto-restore", cwd);
       await commit();
-      assert.deepEqual(draftStore.getDraft(context.activeNewSessionDraftKeyRef.current), draft);
-      draftStore.clearDraft(context.activeNewSessionDraftKeyRef.current);
+      assert.equal(draftStore.getDraft(context.activeNewSessionDraftKeyRef.current), null, "another New starts independently");
+      draftStore.clearDraft(pendingKey);
     });
   }
 });

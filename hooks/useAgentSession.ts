@@ -181,6 +181,8 @@ export interface UseAgentSessionOptions {
   sessionRunning?: boolean;
   newSessionCwd: string | null;
   newSessionDraftKey: string | null;
+  /** Explicit New, not a passive project welcome composer. */
+  persistNewSession?: boolean;
   onAgentEnd?: () => void;
   onRecoveryDismissed?: () => void;
   onAttentionNeeded?: (request: BlockingExtensionUiRequest) => void;
@@ -370,6 +372,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [newSessionModel, setNewSessionModel] = useState<SelectedModel | null>(null);
   const [newSessionDefaultModel, setNewSessionDefaultModel] = useState<SelectedModel | null>(null);
   const [toolPreset, setToolPreset] = useState<ToolPreset>(CONFIGURED_TOOL_PRESET);
+  const toolPresetRef = useRef(toolPreset);
+  toolPresetRef.current = toolPreset;
   const [newSessionThinkingLevel, setNewSessionThinkingLevel] = useState<ConcreteThinkingLevel | null>(null);
   const [newSessionDefaultThinkingLevel, setNewSessionDefaultThinkingLevel] = useState<ConcreteThinkingLevel | null>(null);
   const [currentThinkingOverride, setCurrentThinkingOverride] = useState<ConcreteThinkingLevel | null>(null);
@@ -503,7 +507,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   useLayoutEffect(() => {
     if (!existingSessionId && (!isNew || sessionIdRef.current)) return;
-    setToolPresetState(getPreferredToolPreset());
+    // Layout hydration must reach startup even if React flushes the initial
+    // passive effects before committing this state update.
+    toolPresetRef.current = getPreferredToolPreset();
+    setToolPresetState(toolPresetRef.current);
   }, [existingSessionId, isNew, setToolPresetState]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
@@ -577,15 +584,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (
       !sessionHookMountedRef.current
       && !newSessionPromotedRef.current
+      && !opts.persistNewSession
       && targetDraftKey === newSessionDraftKey
     ) return;
-    const input = opts.chatInputRef?.current;
+    const input = sessionHookMountedRef.current ? opts.chatInputRef?.current : null;
     if (input) {
       input.restoreSubmission(text, draftImages, destinationDraftKey);
     } else if (destinationDraftKey) {
       restoreDraftSubmission(destinationDraftKey, text, draftImages);
     }
-  }, [newSessionDraftKey, opts.chatInputRef, resolveComposerDraftKey]);
+  }, [newSessionDraftKey, opts.chatInputRef, opts.persistNewSession, resolveComposerDraftKey]);
 
   const sessionStats = useMemo(() => {
     if (sessionStatsOverride) {
@@ -895,7 +903,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!provisionalDraftKey) return;
     if (provisionalDraftKey !== sid) {
       draftKeyAliasesRef.current.set(provisionalDraftKey, sid);
-      const input = opts.chatInputRef?.current;
+      const input = sessionHookMountedRef.current ? opts.chatInputRef?.current : null;
       if (input) input.rekeyDraft(provisionalDraftKey, sid);
       else rekeyDraft(provisionalDraftKey, sid);
     }
@@ -927,7 +935,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (selectedModel) setPendingModel(selectedModel);
       // Undefined means the user never overrode the loadout: omit the field entirely
       // so pi resolves settings.json defaultTools instead of being pinned to ours (#700).
-      const toolNames = getToolNamesForPreset(toolPreset);
+      const toolNames = getToolNamesForPreset(toolPresetRef.current);
       sessionToolsPinnedRef.current = toolNames !== undefined;
       const res = await fetch("/api/agent/new", {
         method: "POST",
@@ -983,7 +991,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       ensuringNewSessionRef.current = null;
     }
-  }, [isNew, newSessionCwd, toolPreset]);
+  }, [isNew, newSessionCwd]);
+
+  // Explicit New is durable without a prompt. Share the same single-flight
+  // initialization as Send/System, including Strict Mode effect replay. A late
+  // response still rekeys the outgoing draft; AppShell guards visible adoption.
+  useEffect(() => {
+    if (!opts.persistNewSession || !isNew) return;
+    void ensureNewSession().then(() => promoteNewSession()).catch((error: unknown) => {
+      if (sessionHookMountedRef.current) setError(String(error));
+    });
+  }, [opts.persistNewSession, isNew, ensureNewSession, promoteNewSession]);
 
   // Opening the System or Tools panel may initialize an otherwise dormant
   // session. This is deliberately a non-prompt command: it creates no message
@@ -1988,7 +2006,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [loadContext]);
 
   const handleSessionAccountChange = useCallback(async (provider: string, accountId: string | null, selection: Record<string, string>) => {
-    const sid = sessionIdRef.current;
+    // The eager request already captured its account snapshot. Apply this
+    // explicit change to the resulting session, never just a now-unused ref.
+    const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
+    if (!sessionHookMountedRef.current) throw new Error("Session selection changed");
     if (!sid) {
       newSessionAccountsRef.current = { ...selection };
       return;
@@ -2640,6 +2661,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleToolPresetChange = useCallback(async (preset: ToolPreset) => {
     const toolNames = getToolNamesForPreset(preset);
     setPreferredToolPreset(preset);
+    toolPresetRef.current = preset;
     setToolPresetState(preset);
     const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
     if (!sid) {
@@ -2833,7 +2855,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const compactionPhase = compactionPhaseRef.current;
     return () => {
       sessionHookMountedRef.current = false;
-      const abandonedDraftKey = isNew ? newSessionDraftKey : null;
+      const abandonedDraftKey = isNew && !opts.persistNewSession ? newSessionDraftKey : null;
       if (abandonedDraftKey) {
         queueMicrotask(() => {
           if (!sessionHookMountedRef.current && !newSessionPromotedRef.current) {

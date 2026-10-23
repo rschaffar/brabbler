@@ -244,9 +244,12 @@ async function checkNoSpeedDefaults(page, agentDir) {
 }
 
 async function newComposer(page, project) {
-  await showSidebar(page);
-  await page.getByTitle(`New session in ${project}`, { exact: true }).click();
-  await page.waitForFunction(() => !new URL(location.href).searchParams.has("session"));
+  // A setup/welcome composer still permits pre-startup choices. Explicit New
+  // now saves immediately and has separate empty-session browser coverage.
+  const url = new URL(page.url());
+  url.search = new URLSearchParams({ cwd: project }).toString();
+  await page.goto(url.href, { waitUntil: "domcontentloaded" });
+  await page.locator(".chat-input-textarea").waitFor();
   await chooseModel(page, CODEX);
   await checkSelector(page, "standard");
 }

@@ -3,6 +3,7 @@ import { waitForAsyncCondition } from "./async-condition.mjs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createOwnedRoutes } from "./owned-routes.mjs";
+import { readBrowserJson } from "./browser-http.mjs";
 
 /** Deliberately open Activity before catalogue-driven URL session adoption.
  * Join the exact held GETs before leaving; no provider or timeout manipulation. */
@@ -90,6 +91,43 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
       "small text actions stack inside one narrow box beside the session, with separate usable targets");
   };
   await checkOverviewDuringInitialRestore(page, base, selectedSessionId);
+  if (mobile) {
+    const other = sessions.find(session => session.id === otherSessionId);
+    assert.ok(other);
+    const sourceRoot = selected.projectRoot ?? selected.cwd;
+    const destination = other.projectRoot ?? other.cwd;
+    assert.notEqual(sourceRoot, destination);
+    for (const panel of ["Activity", "Starred"]) {
+      await page.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
+      await page.getByText("Active branch answer", { exact: true }).waitFor();
+      await page.getByRole("button", { name: panel, exact: true }).click();
+      const overview = page.getByRole("region", { name: panel, exact: true });
+      await overview.waitFor();
+      await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+      await page.getByTitle(sourceRoot, { exact: true }).click();
+      await page.getByTitle(destination, { exact: true }).click();
+      const creation = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/new"
+        && response.request().method() === "POST");
+      await page.getByRole("button", { name: "New", exact: true }).click();
+      const response = await creation;
+      assert.equal(response.status(), 200);
+      assert.equal(response.request().postDataJSON().cwd, destination);
+      const { sessionId } = await response.json();
+      await page.waitForFunction(id => new URL(location.href).searchParams.get("session") === id, sessionId);
+      await overview.waitFor({ state: "hidden" });
+      // The backdrop stays mounted at opacity zero; visibility does not mean
+      // that the drawer is open. Verify its actual interaction/state boundary.
+      await page.waitForFunction(() => !document.querySelector(".sidebar-container.sidebar-open")
+        && getComputedStyle(document.querySelector(".sidebar-overlay-backdrop")).pointerEvents === "none");
+      const input = page.locator(".chat-input-textarea");
+      await input.fill(`mobile draft from ${panel}`);
+      assert.equal(await input.evaluate(node => Boolean(node.closest("[inert]"))), false);
+      assert.equal((await readBrowserJson(page, "/api/sessions?force=1")).sessions.find(session => session.id === sessionId)?.cwd, destination);
+      assert.deepEqual((await readBrowserJson(page, `/api/sessions/${sessionId}`)).context.messages, []);
+    }
+    await page.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
+    console.log("PASS: mobile cross-project New leaves Activity/Starred and saves an editable empty session");
+  }
   await page.getByText("Active branch answer", { exact: true }).waitFor();
   assert.equal(await page.getByText("A previous run may have been interrupted", { exact: false }).count(), 0);
   seedInterruptedRun();

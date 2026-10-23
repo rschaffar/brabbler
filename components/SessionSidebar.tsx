@@ -1319,8 +1319,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   const handleNewSession = useCallback(() => {
     if (!selectedCwd || directoryUnavailable) return;
-    // Generate a temporary UUID client-side — no backend call needed.
-    // Pi will be spawned lazily when the user sends the first message.
+    // Give the fresh composer a stable draft identity while AppShell's explicit
+    // New lifecycle saves its empty session without sending a model prompt.
     const tempId = typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;

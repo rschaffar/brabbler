@@ -243,6 +243,17 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
     await detail.getByRole("region", { name: "Side-by-side diff" }).getByText("Base fixture", { exact: true }).waitFor();
   } finally { await oldHistory.dispose(); }
   await page.getByRole("button", { name: "New", exact: true }).click();
+  assert.equal(await page.getByText("Ready to browse Git history", { exact: true }).count(), 0);
+  await detail.getByRole("region", { name: "Side-by-side diff" }).getByText("Base fixture", { exact: true }).waitFor();
+  await page.waitForFunction(() => new URL(location.href).searchParams.has("session"));
+  assert.equal(await explorer.isVisible(), true, "desktop New preserves its independent Git sidecar");
+  // New now saves an actual empty session. Exercise genuine no-session Explorer
+  // through the passive setup view instead, without creating a second session.
+  await page.goto(`${base}/?cwd=${encodeURIComponent(targetWorktree)}`, { waitUntil: "domcontentloaded" });
+  await page.locator(".chat-input-textarea").waitFor();
+  assert.equal(new URL(page.url()).searchParams.has("session"), false, "setup has no selected session");
+  await gitButton.click();
+  await graph.getByRole("button", { name: /base fixture/ }).waitFor();
   assert.equal(await page.getByText("Ready to browse Git history", { exact: true }).count(), 0,
     "Git Explorer works without an open session");
   await explorer.getByRole("button", { name: "Expand Git Explorer", exact: true }).click();

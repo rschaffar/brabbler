@@ -14,6 +14,25 @@ export interface ChatDraft {
 }
 
 const drafts = new Map<string, ChatDraft>();
+const STORAGE_PREFIX = "pi-web:composer-draft:v1:";
+// Failed writes/removes must not resurrect stale storage during this page's life.
+const localOverrides = new Set<string>();
+
+function browserStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  try { return window.localStorage; } catch { return null; }
+}
+
+function persistText(key: string, value: string): void {
+  localOverrides.add(key);
+  try {
+    const storage = browserStorage();
+    if (value) storage?.setItem(STORAGE_PREFIX + key, JSON.stringify({ value }));
+    else storage?.removeItem(STORAGE_PREFIX + key);
+  } catch {
+    // Quota/private-browser failures preserve the in-page draft.
+  }
+}
 
 function cloneDraft(draft: ChatDraft): ChatDraft {
   return {
@@ -28,10 +47,24 @@ function isEmptyDraft(draft: ChatDraft): boolean {
 
 export function getDraft(key: string): ChatDraft | null {
   const draft = drafts.get(key);
-  return draft ? cloneDraft(draft) : null;
+  if (draft) return cloneDraft(draft);
+  if (localOverrides.has(key)) return null;
+  try {
+    const raw = browserStorage()?.getItem(STORAGE_PREFIX + key);
+    if (!raw) return null;
+    const stored: unknown = JSON.parse(raw);
+    if (stored && typeof stored === "object" && "value" in stored
+      && typeof stored.value === "string" && stored.value) {
+      return { value: stored.value, images: [] };
+    }
+  } catch {
+    // Corrupt/unavailable storage is not a reason to break the composer.
+  }
+  return null;
 }
 
 export function setDraft(key: string, draft: ChatDraft): void {
+  persistText(key, draft.value);
   if (isEmptyDraft(draft)) {
     drafts.delete(key);
     return;
@@ -40,6 +73,7 @@ export function setDraft(key: string, draft: ChatDraft): void {
 }
 
 export function clearDraft(key: string): void {
+  persistText(key, "");
   drafts.delete(key);
 }
 
