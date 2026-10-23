@@ -80,11 +80,11 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
     await choose("Destination project", root);
     await waitForMoveControl(page, "#move-session-directory");
   };
-  // No source-directory request is made until a destination is explicitly chosen.
-  // This also permits missing-source history to open without an implicit 403.
-  assert.equal(await projectSelect.getAttribute("data-value"), "");
-  assert.equal(await directorySelect.isDisabled(), true);
-  await select(project);
+  // Opening retains the source project/directory without proposing a no-op move.
+  assert.equal(await projectSelect.getAttribute("data-value"), project);
+  assert.equal(await directorySelect.getAttribute("data-value"), project);
+  assert.equal(await move.isDisabled(), true);
+  await waitForMoveControl(page, "#move-session-directory");
   await directorySelect.click();
   assert.equal(await dialog.locator(`button[role="option"][data-value="${project}"]`).isDisabled(), true);
   assert.equal(await move.isDisabled(), true);
@@ -169,8 +169,9 @@ export async function checkSessionMovePicker(page, { base, api, sessionId, proje
 
   // Same-project linked -> primary move, with only the exact source disabled.
   dialog = await open();
-  assert.equal(await dialog.getByLabel("Destination project").getAttribute("data-value"), "");
-  await select(gitProject);
+  assert.equal(await dialog.getByLabel("Destination project").getAttribute("data-value"), gitProject);
+  assert.equal(await dialog.getByLabel("Worktree/directory").getAttribute("data-value"), targetWorktree);
+  await waitForMoveControl(page, "#move-session-directory");
   assert.equal(await dialog.getByRole("button", { name: "Move", exact: true }).isDisabled(), true);
   const linkedDirectory = dialog.getByLabel("Worktree/directory");
   await linkedDirectory.click();

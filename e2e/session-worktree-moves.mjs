@@ -91,7 +91,14 @@ export async function checkSessionWorktreeMoves(page, { base, api, post, agentDi
   }
   await page.getByRole("button", { name: "Move…", exact: true }).click();
   dialog = page.getByRole("dialog", { name: "Move selected sessions", exact: true });
-  assert.equal(await dialog.getByLabel("Worktree/directory").isDisabled(), true, "a destination project must be explicitly chosen");
+  assert.equal(await dialog.getByLabel("Destination project").getAttribute("data-value"), main);
+  assert.equal(await dialog.getByLabel("Worktree/directory").getAttribute("data-value"), main);
+  assert.equal(await dialog.getByRole("button", { name: "Move", exact: true }).isDisabled(), true, "preselection is not a move proposal");
+  await waitForMoveControl(page, "#move-session-directory");
+  await dialog.getByLabel("Worktree/directory").click();
+  await dialog.locator(`button[role="option"][data-value="${main}"]`).click();
+  await dialog.getByText("Move 1 sessions in 1 selected roots/subtrees (0 archived).", { exact: true }).waitFor();
+  assert.equal((await api("/api/sessions?force=1")).sessions.find(row => row.id === bulkB).cwd, live, "bulk consolidation preview is proposal-only");
   // Browse must remain interactive inside the native modal's top-layer boundary.
   await dialog.getByRole("button", { name: "Browse another folder…", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Select directory", exact: true });
@@ -196,8 +203,9 @@ export async function checkSessionWorktreeMoves(page, { base, api, post, agentDi
   try {
     await renamedRow.getByRole("button", { name: "Move to project…", exact: true }).click();
     const single = page.getByRole("dialog", { name: "Move to project…", exact: true });
-    assert.equal(await single.getByLabel("Destination project").getAttribute("data-value"), "");
-    assert.equal(await single.getByLabel("Worktree/directory").isDisabled(), true);
+    assert.equal(await single.getByLabel("Destination project").getAttribute("data-value"), vanished);
+    assert.equal(await single.getByLabel("Worktree/directory").getAttribute("data-value"), vanished);
+    assert.equal(await single.getByRole("button", { name: "Move", exact: true }).isDisabled(), true);
     assert.equal(await single.getByRole("alert").count(), 0);
     await single.getByLabel("Destination project").click();
     await single.locator(`button[role="option"][data-value="${main}"]`).click();

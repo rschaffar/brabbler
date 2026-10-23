@@ -1526,6 +1526,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           onReturnFocus={() => wtDropdownRef.current?.querySelector("button")?.focus({ preventScroll: true })} />
       )}
       {bulkMoveRequest && <SessionBulkMoveDialog request={bulkMoveRequest} projects={recentProjects}
+        currentCwd={sessionFilter?.cwd ?? selectedCwd ?? bulkMoveRequest.project}
+        sourceUnavailable={isHistoryOnlySession({ cwdState: sessionWorktrees.inventory?.worktrees.find(entry => entry.path === (sessionFilter?.cwd ?? selectedCwd))?.state
+          ?? allSessions.find(session => session.cwd === (sessionFilter?.cwd ?? selectedCwd))?.cwdState })}
         onClose={() => setBulkMoveRequest(null)} onSettled={async (movedIds, failedIds, invalidatedIds, destinationCwd) => {
           // Unknown effects must invalidate a possibly stale chat, separately
           // from acknowledged/observed moved-result accounting.
@@ -1550,7 +1553,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           <div role="dialog" aria-modal="true" aria-label={t("sidebar.moveSession")} onClick={(event) => event.stopPropagation()} style={{ width: 440, maxWidth: "calc(100vw - 24px)", background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10, padding: 20, display: "grid", gap: 12 }}>
             <strong>{t("sidebar.moveSession")}</strong>
             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("sidebar.moveSessionHint")}</div>
-            <SessionMoveDestinationPicker projects={recentProjects} currentProject={movingSession.projectRoot ?? movingSession.cwd} currentCwd={movingSession.cwd} destination={moveDestination} onChange={proposeMoveDestination} disabled={moveBusy} />
+            <SessionMoveDestinationPicker projects={recentProjects} currentProject={movingSession.projectRoot ?? movingSession.cwd} currentCwd={movingSession.cwd} sourceUnavailable={isHistoryOnlySession(movingSession)} destination={moveDestination} onChange={proposeMoveDestination} disabled={moveBusy} />
             {moveDestination && <div style={{ fontSize: 11, overflowWrap: "anywhere" }}>{moveDestination}</div>}
             {moveBusy && <SessionMoveStatus>{t("sidebar.moving")}</SessionMoveStatus>}
             {moveError && <div role="alert" style={{ color: "#ef4444", fontSize: 12 }}>{moveError}</div>}

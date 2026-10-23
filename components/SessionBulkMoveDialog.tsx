@@ -10,9 +10,11 @@ import { SessionMoveStatus } from "./SessionMoveStatus";
 import { DirectoryPickerPortalContext } from "./DirectoryPicker";
 
 export interface BulkMoveRequest { project: string; ids?: string[]; missingOnly: boolean }
-export function SessionBulkMoveDialog({ request, projects, onClose, onSettled }: {
+export function SessionBulkMoveDialog({ request, projects, currentCwd, sourceUnavailable, onClose, onSettled }: {
   request: BulkMoveRequest;
   projects: readonly { root: string; key: string }[];
+  currentCwd: string;
+  sourceUnavailable: boolean;
   onClose: () => void;
   onSettled: (movedIds: string[], failedIds: string[] | null, invalidatedIds: string[], destinationCwd: string) => Promise<void>;
 }) {
@@ -91,7 +93,7 @@ export function SessionBulkMoveDialog({ request, projects, onClose, onSettled }:
       <h2 id="bulk-move-title" className="text-base font-semibold">{t(request.missingOnly ? "sessionWorktrees.recoverTitle" : "sessionWorktrees.moveTitle")}</h2>
       <p className="text-xs break-all text-text-muted">{request.project}</p>
       {!request.missingOnly && !result && <SessionMoveDestinationPicker projects={projects} currentProject={request.project}
-        currentCwd="" destination={destination} onChange={proposeDestination} disabled={busy} />}
+        currentCwd={currentCwd} sourceUnavailable={sourceUnavailable} allowCurrentDirectory destination={destination} onChange={proposeDestination} disabled={busy} />}
       {request.missingOnly && <p className="text-sm text-text-muted">{t("sessionWorktrees.recoverExplanation")}</p>}
       {plan && <div className="space-y-2 rounded-md border border-border p-3 text-sm" role="status">
         <div>{t("sessionWorktrees.confirmCounts", { count: plan.sessionCount, roots: plan.roots.length, archived: plan.archivedCount })}</div>

@@ -126,23 +126,26 @@ interface Props {
   projects: readonly { root: string; key: string }[];
   currentProject: string;
   currentCwd: string;
+  sourceUnavailable?: boolean;
+  allowCurrentDirectory?: boolean;
   destination: string;
   onChange: (path: string) => void;
   disabled: boolean;
 }
 
-export function SessionMoveDestinationPicker({ projects, currentProject, currentCwd, destination, onChange, disabled }: Props) {
+export function SessionMoveDestinationPicker({ projects, currentProject, currentCwd, sourceUnavailable = false, allowCurrentDirectory = false, destination, onChange, disabled }: Props) {
   const { t } = useI18n();
-  // Source history can outlive its directory. Do not probe it implicitly as a
-  // destination (or turn a valid missing-source move into an opening 403).
-  const [project, setProject] = useState("");
+  const [project, setProject] = useState(currentProject);
+  const [sourceExplicitlySelected, setSourceExplicitlySelected] = useState(false);
   const [browsePath, setBrowsePath] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [listing, setListing] = useState<{ project: string; options: DirectoryOption[]; error?: string } | null>(null);
-  const loading = Boolean(project && listing?.project !== project);
+  // Historical source paths remain visible without probing a vanished checkout.
+  const unavailableSource = sourceUnavailable && sameMoveDirectory(project, currentProject) && !sourceExplicitlySelected;
+  const loading = Boolean(project && !unavailableSource && listing?.project !== project);
 
   useEffect(() => {
-    if (!project) return;
+    if (!project || unavailableSource) return;
     const controller = new AbortController();
     let cancelled = false;
     void (async () => {
@@ -158,9 +161,13 @@ export function SessionMoveDestinationPicker({ projects, currentProject, current
       }
     })();
     return () => { cancelled = true; controller.abort(); };
-  }, [project, currentProject, currentCwd, onChange, attempt, t]);
+  }, [project, currentProject, currentCwd, unavailableSource, onChange, attempt, t]);
 
-  const options = listing?.project === project ? listing.options : [];
+  const options = listing?.project === project ? [...listing.options] : [];
+  const showingSource = sameMoveDirectory(project, currentProject);
+  if (showingSource && currentCwd && !options.some(item => sameMoveDirectory(item.path, currentCwd))) {
+    options.unshift({ path: currentCwd, branch: null });
+  }
   const projectOptions = projects.map((item) => ({ value: item.root, label: item.root }));
   if (!projectOptions.some((item) => sameMoveDirectory(item.value, currentProject))) {
     projectOptions.unshift({ value: currentProject, label: currentProject });
@@ -168,21 +175,25 @@ export function SessionMoveDestinationPicker({ projects, currentProject, current
   const directoryOptions = options.map((item) => ({
     value: item.path,
     label: `${item.branch ?? (item.isMain ? t("sidebar.main") : t("sidebar.directory"))} · ${item.path}${sameMoveDirectory(item.path, currentCwd) ? ` (${t("sidebar.currentDirectory")})` : ""}`,
-    disabled: sameMoveDirectory(item.path, currentCwd),
+    disabled: sameMoveDirectory(item.path, currentCwd) && (!allowCurrentDirectory || sourceUnavailable),
   }));
-  if (!project && destination) directoryOptions.push({ value: destination, label: destination, disabled: sameMoveDirectory(destination, currentCwd) });
+  if (!project && destination) directoryOptions.push({ value: destination, label: destination, disabled: !allowCurrentDirectory && sameMoveDirectory(destination, currentCwd) });
   return <>
     <label style={{ fontSize: 12 }} htmlFor="move-session-project">{t("sidebar.moveDestination")}</label>
     <MoveDestinationSelect id="move-session-project" value={project} options={projectOptions} disabled={disabled}
       placeholder={t("sidebar.chooseProject")} filterLabel={t("sidebar.filterProjects")} emptyLabel={t("sidebar.noMatchingProjects")}
       onChange={(value) => {
-        if (value === project) return;
+        if (value === project) {
+          if (unavailableSource) setSourceExplicitlySelected(true);
+          return;
+        }
+        setSourceExplicitlySelected(true);
         setProject(value);
         setListing(null);
         onChange("");
       }} />
     <label style={{ fontSize: 12 }} htmlFor="move-session-directory">{t("sidebar.moveDirectory")}</label>
-    <MoveDestinationSelect key={project} id="move-session-directory" value={destination} options={directoryOptions}
+    <MoveDestinationSelect key={project} id="move-session-directory" value={destination || (showingSource ? currentCwd : "")} options={directoryOptions}
       disabled={disabled || (!project && !destination) || loading || Boolean(listing?.error)} onChange={onChange}
       placeholder={loading ? t("sidebar.loading") : t("sidebar.chooseDirectory")}
       filterLabel={t("sidebar.filterWorktrees")} emptyLabel={t("sidebar.noMatchingWorktrees")} />
@@ -193,7 +204,7 @@ export function SessionMoveDestinationPicker({ projects, currentProject, current
     {browsePath !== null && <DirectoryPicker initialPath={browsePath} onCancel={() => setBrowsePath(null)} onSelect={(path) => {
       setProject("");
       setListing(null);
-      onChange(sameMoveDirectory(path, currentCwd) ? "" : path);
+      onChange(!allowCurrentDirectory && sameMoveDirectory(path, currentCwd) ? "" : path);
       setBrowsePath(null);
     }} />}
   </>;
