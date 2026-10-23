@@ -17,13 +17,21 @@
         nodejs = pkgs.nodejs_24;
         src = (sources pkgs).manifests;
       };
+      testSupport = pkgs: import ./nix/test-support.nix {
+        inherit pkgs;
+        nodejs = pkgs.nodejs_24;
+        src = (sources pkgs).testManifests;
+      };
       tests = pkgs:
         let
           core = import ./nix/tests.nix {
             inherit pkgs;
             nodejs = pkgs.nodejs_24;
             modules = modules pkgs;
+            testSupport = testSupport pkgs;
             src = (sources pkgs).tests;
+            staticSrc = (sources pkgs).static;
+            typingSrc = (sources pkgs).typing;
           };
           mkE2E = { workers ? 1 }: import ./nix/vm-test.nix {
             inherit pkgs home-manager workers;

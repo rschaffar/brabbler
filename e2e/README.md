@@ -26,6 +26,25 @@ acceptance when resources permit; explain smaller budgets and report preparation
 separately as specified there. Production builds occur only
 in isolated Nix builders, never in checkout `.next`.
 
+## Fresh definition publication and owned execution
+
+After unchanged support realization and strict metadata/source checks, the driver
+owns one selected definition-manifest build through `nix/fresh-browser.nix`.
+Only constant references to fresh capsule definitions are published/rooted; their
+outputs are not built before lane admission. The manifest binds source, system,
+run UUID, digest, observed host namespaces, original support and exact selection.
+It is bounded immutable dispatch data, never an execution verdict or saved authority.
+
+The original weighted queues then build each exact `.drv^out` individually with
+one job/two cores, without reevaluating the flake expression per group. Physical
+output equality supplements—not replaces—the evidence-tree and strict capsule
+verdict. Nonces, whole chains, budgets, isolated namespaces, installed launcher,
+errors and service/pipe/group/port settlement remain mandatory. Preflight failure
+admits no capsule; execution/persistence failures close admission and drain peers.
+Support, manifest, client and validation timings are separate mixed phase envelopes,
+not evaluator-only time. Per-run manifest/result out-links are retained evidence;
+no manifest cache, destructive GC or broader cleanup is implied.
+
 ## Disjoint coverage inventory
 
 `nix/e2e-groups.json` is the CLI/browser inventory: **25 browser groups and terminal**.
@@ -75,6 +94,85 @@ deadlines. Embedded assertions in different integration chains are not duplicate
 
 The Markdown media helper seeds synthetic PCM WAV and a tiny VP8 WebM from reviewed inline bytes (with provenance/hash), not downloaded fixtures or runtime ffmpeg. Desktop/mobile checks observe zero eager media/remote requests, native playback and seeking, session-scoped external-reference range reads/denials, corrupt-file feedback and explicit repair reload, narrow layout, covered-pane/session teardown and no automatic resumption. Direct authorization negatives use Node HTTP, preserving unfiltered browser console/5xx reporting. These are native Chromium proofs, not every browser/codec combination; the static demo and Markdown-file previews are outside this feature's scope.
 
+## Contributor recipes and proof boundaries
+
+Keep browser ownership thin: production-module/controller tests own decision
+matrices, mounted React owns effects/closures/cleanup, and private native fixtures
+own Git/path/SDK resources. Chromium retains layout, native capture/scroll/media,
+networking and real user connections; callback or emulated-DOM tests cannot replace
+those. See the [core recipes and checklist](../docs/testing.md#contributor-ownership-and-recipes).
+
+`browserFixtureRecipe(group)` and `prepareBrowserPrelude(group, options, stage)` in
+`browser-fixture-recipes.mjs` describe the reviewed ordered prelude. Expected IDs
+are independently declared, not harvested from seed return values. **Only
+`timestamps`, `appearance`, `activity` and `markdown` omit running-fork transcripts
+and worktree-manager repositories.** These omissions have source ownership review
+and installed whole-chain evidence, not a name-based owner assumption. Every recipe
+retains separate shared model-speed defaults and transcript fragments; those IDs
+also serve session-launch. Other groups retain both shared fragments plus the
+running-fork and manager recipes. Appearance keeps all four complete inputs;
+Activity keeps all three native chains and Markdown both preview/line-link chains.
+Base/other-project Git resources remain. Independent exact startup inventories have
+16 appearance, 20 Activity and 27 Markdown IDs. Their direct contracts exercise the
+real comparator; installed whole chains prove the runner's assembled expectations.
+Removing unrelated rows/roots intentionally changes catalogue/history/root exposure,
+not every observable behavior's equivalence. `assertStartupSessionCatalogue`
+compares sorted arrays, preserving duplicate rejection; never filter actual responses
+or derive expectations from writers. Other setup stays in `browser-suite.mjs`'s
+original order. Do not infer owner-only seeding from a group name or drop shared
+inputs opportunistically.
+Group splitting and immutable-seed adoption remain deferred pending measured benefit.
+
+For superseded reads, use `holdBrowserRead(page, { pathname, query }, { json })`
+from `browser-read-barrier.mjs` (omit `json` to continue the genuine response):
+
+1. Install the barrier before triggering the read, then await `arrived()`.
+2. Commit/observe the newer selection before `releaseAndObserve()`.
+3. Inspect returned read outcomes and assert the actual newer UI; always await
+   `dispose()` in `finally`, including assertion failure. Teardown releases gates
+   and joins registered routes before restoring the read observer.
+
+A `consumed` outcome means the application consumed JSON; `cancelled` means its
+fetch/body rejected with an actual signal-backed `AbortError`. Route fulfillment,
+`response.finished()` or an abort request alone does not establish either. The
+narrow route-error exception requires the exact request's `net::ERR_ABORTED`;
+unrelated failures propagate. Rendering opportunities allow a continuation/commit,
+not proof of arbitrary settlement. **A real browser abort does not prove that a
+late response would be suppressed if cancellation were ignored.** The actual mounted
+GitExplorer/Move tests now present in
+`components/GitExplorer.stale-delivery.test.mjs` and
+`components/SessionMoveDestinationPicker.stale-delivery.test.mjs` address that
+separate obligation with ignored-abort JSON genuinely delivered and joined failure
+cleanup, without production changes. These are not native network/layout proofs.
+Full useAgentSession/FileViewer mounting remains
+deferred; existing actual callback/loader tests and Chromium retain their
+respective owners.
+
+For natural polling use `observeBrowserReads(page, specs, { natural: true })`,
+await `wait()`, assert UI/scroll, and await `dispose()` in `finally` (see
+`file-panel.mjs`). Observe the application's new reads and JSON consumption with
+a visible document; do not dispatch synthetic focus/online/visibility/activity
+events, issue substitute reads or advance application timers. Interruptions,
+cancellation and read errors fail natural-poll evidence.
+
+Partial-stream simulations in `tool-arguments.mjs` / `source-highlighting.mjs`
+exercise intermediate rendering, not saved provider turns. Never invent durable
+IDs or rewrite SDK-owned JSONL to make them look canonical. The real SDK/faux-provider
+turn in `running-session-forks.mjs` independently verifies canonical prompt/final
+IDs/content against persisted JSONL, one rendered row per ID and an actual document
+reload with unchanged history/no duplicate or restarted turn. Preserve both owners.
+
+Independent positive manager GETs and successful session-Pause cleanup DELETEs
+use `readBrowserJson` / `readBrowserResponse` from `browser-http.mjs`: actual browser
+fetch, no cache, unchanged URLs/methods/bodies and fully consumed text/JSON, so
+requests and responses appear in retained traces. Manager GETs require status 200;
+Pause cleanup preserves its existing any-2xx success check and text-only body read.
+Its gate release, abort, idle wait, privacy restoration and AggregateError retention
+remain unchanged. Deliberate HTTP-409 writes retain Node API transport without
+browser-console error exemptions. Neither transport swallows failures or retries.
+Callback unit tests prove body/error ownership, not Chromium networking, native SDK
+shutdown, or the cause or resolution of either observed socket reset.
+
 ## One ordinary sandbox per whole browser group
 
 Fresh full execution admits explicit **1..8 concurrent sandboxes**, estimating two CPUs and
@@ -85,8 +183,11 @@ Cacheable group derivations use normal Nix scheduling: bound `--max-jobs` explic
 All selections retain the same package/inventory/deadlines; budgets are not reservations.
 
 1. Realize immutable production package, test dependencies, complete tools, Chromium
-   and fontconfig/fonts. Freeze a deterministic weighted queue plan. Each queue is
-   serial, but **every group is a new build sandbox**, not a reused service user.
+   and fontconfig/fonts. Freeze a deterministic weighted queue plan. Packing weights
+   live in `nix/browser-plan.mjs`, refreshed from candidate diagnostic `d44f40e5`;
+   they include whole-group settlement/export cost, not deadlines, admission budgets
+   or coverage authority. Each queue is serial, but **every group is a new build
+   sandbox**, not a reused service user.
 2. Before fixture allocation, require a non-root builder and loopback-only interfaces.
    Fresh runs additionally compare all network/PID/mount namespace identities with
    the outer invocation. Each sandbox can use 30141 without touching another sandbox
@@ -124,6 +225,14 @@ with two saved profiles protects that ordering. These waits preserve the ordinar
 No host HOME, credentials, user bus, installed service or live store mount is
 forwarded. Synthetic providers and applications share only their sandbox loopback.
 Live-file tests modify fixture projects/session data, not application source/HMR.
+
+Budget production/dependency realization separately from fixture setup, scenarios,
+trace/export and service settlement; focus is not permission to skip static core
+checks or weaken complete inventory. Record candidate/source, selection, budgets,
+static reuse, preparation, fresh execution, whole-command time and artifact paths
+in the implementation plan. An isolated group, complete core-only run or diagnostic
+including cold package realization is not matched complete-command speed evidence.
+Keep historical comparisons bound to their original inputs.
 
 ## Small genuine deployment VM
 

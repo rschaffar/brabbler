@@ -15,8 +15,8 @@ function assertPrivatePath(agentDir, path) {
   assert.ok(isAbsolute(path) && child && !child.startsWith("..") && !isAbsolute(child), `Not an owned fixture path: ${path}`);
 }
 
-/** Three transcripts only; creation/fork/clone tests use the real application APIs. */
-export function seedModelSpeedFixtures({ agentDir, writeSession, message, timestamp }) {
+/** Shared synthetic settings/auth/catalog only; no transcripts. Run before transcript seeds. */
+export function seedModelSpeedDefaults({ agentDir }) {
   assert.equal(process.env.PI_CODING_AGENT_DIR, agentDir);
   assert.equal(process.env.PI_OFFLINE, "1", "The runner must disable SDK catalog networking before startup");
   assertPrivatePath(agentDir, process.env.HOME);
@@ -44,6 +44,10 @@ export function seedModelSpeedFixtures({ agentDir, writeSession, message, timest
     assert.equal(existsSync(path), false, `Do not overwrite another fixture's ${name}`);
     writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, flag: "wx" });
   }
+}
+
+/** Three transcripts only; creation/fork/clone tests use the real application APIs. */
+export function seedModelSpeedTranscripts({ writeSession, message, timestamp }) {
   for (const [index, id] of MODEL_SPEED_IDS.entries()) {
     const prefix = String(index + 1);
     const ids = [1, 2, 3, 4, 5].map((n) => `${prefix}000000${n}`);

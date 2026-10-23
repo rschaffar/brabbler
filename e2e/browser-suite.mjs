@@ -29,10 +29,10 @@ import { checkUpstreamComposer, checkOverflowTabs } from "./upstream-easy-wins.m
 import { checkRequestHeaderBoundary, seedExternalReferenceFixtures, checkExternalReferenceBoundary } from "./security-boundaries.mjs";
 import { seedFollowupSettings, checkSkillInstructions, checkModelOverrides, checkBlockedPreferences } from "./upstream-followups.mjs";
 import { checkManagedModelContext } from "./managed-model-context.mjs";
-import { MODEL_SPEED_IDS, seedModelSpeedFixtures, checkModelSpeed, checkModelSpeedPersistence } from "./model-speed.mjs";
+import { checkModelSpeed, checkModelSpeedPersistence } from "./model-speed.mjs";
 import { seedNativeToolsFixtures, checkNativeTools } from "./native-tools.mjs";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
-import { RUNNING_FORK_IDS, seedRunningForkFixtures, checkRunningSessionForks } from "./running-session-forks.mjs";
+import { checkRunningSessionForks } from "./running-session-forks.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { contextContents, changedContextContents } from "./git-diff-context.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
@@ -40,7 +40,9 @@ import { checkSessionMovePicker } from "./session-move.mjs";
 import { checkSessionWorktreeMoves } from "./session-worktree-moves.mjs";
 import { checkGitWorkflowPlugin, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
 import { checkSessionLaunch, sessionLaunchFixtureSource } from "./session-launch.mjs";
-import { WORKTREE_MANAGER_IDS, seedWorktreeManagerFixtures, checkWorktreeManager } from "./worktree-manager.mjs";
+import { checkWorktreeManager } from "./worktree-manager.mjs";
+import { assertStartupSessionCatalogue, prepareBrowserPrelude } from "./browser-fixture-recipes.mjs";
+import { createDiagnosticStages } from "./diagnostic-stage.mjs";
 import { browserInputs, createCoverage, selectGroup } from "./scenarios.mjs";
 import { historyPageResponse } from "./history-pagination.mjs";
 import { checkCompactionVisibility } from "./compaction.mjs";
@@ -51,6 +53,7 @@ import { seedToolArguments, checkToolArguments, checkStreamedToolArguments } fro
 
 // Validate one-hot ownership before the harness or any fixture side effects.
 const group = selectGroup(process.env);
+const stage = createDiagnosticStages(group);
 
 if (group === "ssh-agent") {
   const { runBrowserSshSuite } = await import("./browser-ssh-suite.mjs");
@@ -68,6 +71,7 @@ let coverage;
 try {
 coverage = createCoverage(group, artifacts);
 applyFixtureEnvironment(fixtureEnv); // In-process helpers and children share isolation.
+const finishPreparation = stage.start("prepare/browser-fixtures");
 const project = join(agentDir, "project");
 const otherProject = join(agentDir, "other-project");
 const sessionDir = join(agentDir, "sessions", "e2e");
@@ -130,9 +134,8 @@ let nativeToolsFixture;
   const activityReview = ACTIVITY_SUBAGENTS.length
     ? await createJiti(import.meta.url).import(join(root, "lib/activity-review-server.ts")) : null;
   // Seed before startup so the first catalogue scan sees every fixture.
-  seedModelSpeedFixtures({ agentDir, writeSession, message, timestamp });
-  seedRunningForkFixtures({ agentDir, writeSession, message });
-  const managerFixtures = seedWorktreeManagerFixtures({ agentDir, env: fixtureEnv, writeSession, message });
+  const { managerFixtures, expectedIds: preludeIds } = await prepareBrowserPrelude(group,
+    { agentDir, env: fixtureEnv, writeSession, message, timestamp }, stage);
   mkdirSync(join(agentDir, "extensions"));
   writeFileSync(join(agentDir, "extensions", "e2e-dialog.js"), extensionSource);
   writeFileSync(join(agentDir, "extensions", "e2e-session-launch.js"), sessionLaunchFixtureSource(root));
@@ -323,6 +326,7 @@ let nativeToolsFixture;
     if (group === "markdown") reviewNotebookFixture = seedReviewNotebooks({ gitProject, targetWorktree, env: fixtureEnv, writeSession, message });
   }
 
+  finishPreparation();
   const base = process.env.E2E_BASE_URL;
   assert.equal(base, harness.baseURL, "Use only the harness-selected guest service URL");
   const laneURL = new URL(base);
@@ -354,11 +358,11 @@ let nativeToolsFixture;
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...MODEL_SPEED_IDS, ...RUNNING_FORK_IDS, ...WORKTREE_MANAGER_IDS, ...ACTIVITY_SUBAGENTS, ...externalReferenceFixtures.map((fixture) => fixture.id), ...(mediaFixtures ? [mediaFixtures.id, mediaFixtures.otherId] : []),
+      assertStartupSessionCatalogue(sessions, [LONG, BRANCH, RICH, COMPACTED, APPEND, ARCHIVE, OTHER, GIT, fileLineFixtures.sessionId, ...BULK, ...preludeIds, ...ACTIVITY_SUBAGENTS, ...externalReferenceFixtures.map((fixture) => fixture.id), ...(mediaFixtures ? [mediaFixtures.id, mediaFixtures.otherId] : []),
         ...(group === "markdown" ? [fileLineFixtures.peerSessionId] : []),
         ...(highlightingFixture ? [highlightingFixture.sessionId, highlightingFixture.fencesId] : []),
         ...(reviewNotebookFixture ? [reviewNotebookFixture.id] : []),
-        ...(group === "trust" ? [TRUST_MAIN, TRUST_LINKED] : [])].sort());
+        ...(group === "trust" ? [TRUST_MAIN, TRUST_LINKED] : [])]);
       for (const id of ACTIVITY_SUBAGENTS) {
         assert.equal(sessions.find((session) => session.id === id)?.relation?.kind, "subagent", `${id} must have real subagent metadata`);
       }
@@ -695,6 +699,7 @@ let nativeToolsFixture;
     }
     if (group === "markdown") {
       await coverage.run(`markdown/preview-then-line-links@${inputId}`, async () => {
+      const finishMarkdownStage = stage.start(`markdown/${inputId}/chain`);
       // This added chunk-interception fixture needs no service worker. Existing
       // Markdown scenarios below retain their original, independent context.
       const highlightContext = await newInputContext(inputId, { serviceWorkers: "block" });
@@ -702,7 +707,7 @@ let nativeToolsFixture;
       try {
         const highlightPage = await highlightContext.newPage();
         highlightPage.setDefaultTimeout(30_000);
-        await checkSourceHighlighting(highlightPage, base, highlightingFixture);
+        await stage(`markdown/${inputId}/source-highlighting`, async () => { await checkSourceHighlighting(highlightPage, base, highlightingFixture); });
         assert.deepEqual(highlightErrors, [], "Browser errors during source highlighting");
       } finally { await harness.closeContext(highlightContext); }
       const failureContext = await newInputContext(inputId, { serviceWorkers: "block" });
@@ -710,7 +715,7 @@ let nativeToolsFixture;
       try {
         const failurePage = await failureContext.newPage();
         failurePage.setDefaultTimeout(30_000);
-        await checkHighlightFailure(failurePage, base, highlightingFixture);
+        await stage(`markdown/${inputId}/highlight-failure`, async () => { await checkHighlightFailure(failurePage, base, highlightingFixture); });
         assert.deepEqual(failureErrors, [], "Browser errors during grammar failure/retry");
       } finally { await harness.closeContext(failureContext); }
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
@@ -721,18 +726,19 @@ let nativeToolsFixture;
       assert.equal(marker.digits, "4");
       assert.equal(marker.start, 999);
       assert.ok(marker.padding >= marker.font * 3, JSON.stringify(marker));
-      await checkMarkdownPreview(page, markdownFile);
-      await checkFileLineLinks(page, base, fileLineFixtures);
-      await checkFileWorkspace(page, base, fileLineFixtures, artifacts);
-      await checkMarkdownMedia(page, { base, fixtures: mediaFixtures });
-      await checkReviewNotebooks(page, { base, fixture: reviewNotebookFixture });
-      await checkSkillInstructions(page, base, followupSettings);
-      await checkModelOverrides(page, base, RICH, project);
-      await checkManagedModelContext(page);
-      await checkExternalReferenceBoundary(page, base, externalReferenceFixtures);
-      await checkBlockedPreferences(page, base, RICH);
+      await stage(`markdown/${inputId}/preview-natural-polls`, async () => { await checkMarkdownPreview(page, markdownFile); });
+      await stage(`markdown/${inputId}/line-links`, async () => { await checkFileLineLinks(page, base, fileLineFixtures); });
+      await stage(`markdown/${inputId}/workspace`, async () => { await checkFileWorkspace(page, base, fileLineFixtures, artifacts); });
+      await stage(`markdown/${inputId}/media`, async () => { await checkMarkdownMedia(page, { base, fixtures: mediaFixtures }); });
+      await stage(`markdown/${inputId}/review-notebooks`, async () => { await checkReviewNotebooks(page, { base, fixture: reviewNotebookFixture }); });
+      await stage(`markdown/${inputId}/skill-instructions`, async () => { await checkSkillInstructions(page, base, followupSettings); });
+      await stage(`markdown/${inputId}/model-overrides`, async () => { await checkModelOverrides(page, base, RICH, project); });
+      await stage(`markdown/${inputId}/managed-model-context`, async () => { await checkManagedModelContext(page); });
+      await stage(`markdown/${inputId}/external-references`, async () => { await checkExternalReferenceBoundary(page, base, externalReferenceFixtures); });
+      await stage(`markdown/${inputId}/blocked-preferences`, async () => { await checkBlockedPreferences(page, base, RICH); });
       assert.deepEqual(errors, [], "Browser errors during Markdown preview and line links");
       await harness.closeContext(context); context = undefined; page = undefined;
+      finishMarkdownStage();
       });
       continue;
     }
@@ -783,9 +789,10 @@ let nativeToolsFixture;
     }
     if (group === "activity") {
       await coverage.run(`activity/worktree-interruption-subagents@${inputId}`, async () => {
+      const finishActivityStage = stage.start(`activity/${inputId}/chain`);
       // Seed only after the selected chat has loaded, so clicking its newly
       // discovered Activity row must refresh the warning in that same chat.
-      await checkActivityOverview(page, viewport.width, {
+      await stage(`activity/${inputId}/overview`, async () => { await checkActivityOverview(page, viewport.width, {
         base, api, post, artifacts, harness, waitingSessionId: RICH, selectedSessionId: BRANCH, otherSessionId: OTHER,
         seedInterruptedRun: () => seedRecoveryRun(`${viewport.width}-activity-recovery`),
         subagentIds: ACTIVITY_SUBAGENTS,
@@ -796,14 +803,15 @@ let nativeToolsFixture;
             return [sessionId, at];
           }));
         },
-      });
-      await checkSubagentLifecycle(page, { base, api, post, root, agentDir, width: viewport.width, returnSessionId: BRANCH });
-      await checkSessionPause(page, { base, api, post, root, agentDir, artifacts, width: viewport.width, returnSessionId: BRANCH });
-      await checkProjectAcceptance(page, { base, api, post, project, width: viewport.width, returnSessionId: BRANCH });
+      }); });
+      await stage(`activity/${inputId}/subagent-lifecycle`, async () => { await checkSubagentLifecycle(page, { base, api, post, root, agentDir, width: viewport.width, returnSessionId: BRANCH }); });
+      await stage(`activity/${inputId}/session-pause`, async () => { await checkSessionPause(page, { base, api, post, root, agentDir, artifacts, width: viewport.width, returnSessionId: BRANCH }); });
+      await stage(`activity/${inputId}/project-acceptance`, async () => { await checkProjectAcceptance(page, { base, api, post, project, width: viewport.width, returnSessionId: BRANCH }); });
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
       await harness.closeContext(context);
       context = undefined;
       page = undefined;
+      finishActivityStage();
       });
       continue;
     }
@@ -943,8 +951,10 @@ let nativeToolsFixture;
     }
     if (group === "history") {
     await coverage.run(`history/reading-chain@${inputId}`, async () => {
+    const finishHistoryStage = stage.start(`history/${inputId}/chain`);
     // Interception needs its own SW-blocked context. The original history/PWA
     // context below stays unchanged, and reload cannot alter its reading state.
+    const finishVersionStage = stage.start(`history/${inputId}/version-reload`);
     const versionContext = await newInputContext(inputId, { serviceWorkers: "block" });
     const versionErrors = harness.errorsFor(versionContext);
     const versionPage = await versionContext.newPage();
@@ -981,7 +991,9 @@ let nativeToolsFixture;
       try { await versionRoute.dispose(handler => versionPage.unroute(versionPattern, handler)); }
       finally { await harness.closeContext(versionContext); }
     }
-    await checkUpstreamComposer(context, base, RICH, LONG, viewport.width);
+    finishVersionStage();
+    await stage(`history/${inputId}/composer`, async () => { await checkUpstreamComposer(context, base, RICH, LONG, viewport.width); });
+    const finishPaginationStage = stage.start(`history/${inputId}/identity-pagination`);
     const stateReady = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/sessions/${LONG}/state`);
     await page.goto(`${base}/?session=${LONG}`, { waitUntil: "domcontentloaded" });
     assert.equal((await stateReady).status(), 200);
@@ -1058,6 +1070,8 @@ let nativeToolsFixture;
     assert.deepEqual(rendered.filter((value) => value !== text(0)),
       Array.from({ length: 5000 - oldest }, (_, i) => text(oldest + i)), "Missing, reordered, or duplicate chat messages");
     await page.screenshot({ path: join(artifacts, `history-${viewport.width}.png`) });
+    finishPaginationStage();
+    const finishRecoveryStage = stage.start(`history/${inputId}/recovery`);
 
     await page.goto(`${base}/?session=${BRANCH}`, { waitUntil: "domcontentloaded" });
     await page.getByText("Active branch answer", { exact: true }).waitFor();
@@ -1086,6 +1100,8 @@ let nativeToolsFixture;
       assert.equal(await interruption.count(), 0, "acknowledgement persists across tabs");
     }
     console.log("PASS: interrupted run notice survives reload until dismissed and never replaces saved history");
+    finishRecoveryStage();
+    const finishReadingStage = stage.start(`history/${inputId}/rendering-reading-branch`);
     const thinkingRequests = [];
     page.on("request", (request) => {
       if (new URL(request.url()).pathname.endsWith("/thinking")) thinkingRequests.push(request.url());
@@ -1121,7 +1137,7 @@ let nativeToolsFixture;
     await page.getByText("echo E2E tool output", { exact: true }).waitFor();
     await page.getByRole("button", { name: /bash.*echo E2E tool output/ }).click();
     await page.getByText("E2E tool output", { exact: true }).waitFor();
-    await checkToolArguments(page, toolArgumentFixtures, { artifacts, width: viewport.width });
+    await stage(`history/${inputId}/tool-arguments`, async () => { await checkToolArguments(page, toolArgumentFixtures, { artifacts, width: viewport.width }); });
     await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
     const heading = page.getByRole("heading", { name: "E2E compacted heading", exact: true });
     await heading.waitFor({ state: "attached" });
@@ -1216,14 +1232,16 @@ let nativeToolsFixture;
       await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
       await heading.waitFor({ state: "visible" });
     }
-    await checkChatBottomFollow(page, { base, id: RICH, timestamp });
-    await checkStreamedToolArguments(page, { base, id: RICH, timestamp });
-    await checkCompactionVisibility(page, { base, id: COMPACTED, artifacts, width: viewport.width });
+    finishReadingStage();
+    await stage(`history/${inputId}/bottom-follow`, async () => { await checkChatBottomFollow(page, { base, id: RICH, timestamp }); });
+    await stage(`history/${inputId}/streamed-tool-arguments`, async () => { await checkStreamedToolArguments(page, { base, id: RICH, timestamp }); });
+    await stage(`history/${inputId}/compaction`, async () => { await checkCompactionVisibility(page, { base, id: COMPACTED, artifacts, width: viewport.width }); });
     assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
     console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`);
     await harness.closeContext(context);
     context = undefined;
     page = undefined;
+    finishHistoryStage();
     });
     continue;
     }
@@ -1427,11 +1445,13 @@ let nativeToolsFixture;
   }
   coverage.finish();
 } catch (error) {
+  stage.finishOpen();
   console.error(error);
   process.exitCode = 1;
   coverage?.fail(error);
   await harness.fail(error);
 } finally {
+  stage.finishOpen();
   await harness.finish();
 }
 }

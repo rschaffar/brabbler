@@ -31,6 +31,9 @@ export class AcceptanceCoordinator {
   private active?: { id: string; controller: AbortController };
   private tail: Promise<unknown> = Promise.resolve();
   private timer?: ReturnType<typeof setTimeout>;
+  private stopping = false;
+  private disposal?: Promise<void>;
+  private pumps = new Set<Promise<void>>();
   private persistenceError?: string;
   private pendingCompletion?: { id: string; result: ExecutionResult; durationMs: number };
   private disableEpoch = 0;
@@ -40,7 +43,7 @@ export class AcceptanceCoordinator {
     resources: typeof acceptanceResources; execute: typeof executeAcceptance; verifySnapshot?: typeof verifySnapshot; captureSnapshot?: typeof captureSnapshot; syncDirectory?: () => void;
   } = { resources: acceptanceResources, execute: executeAcceptance }) {
     this.unsubscribeSettings = onPluginSettingsChange((id) => {
-      if (id !== acceptanceManifest.id || this.enabled()) return;
+      if (this.stopping || id !== acceptanceManifest.id || this.enabled()) return;
       // Latch the transition synchronously. A rapid re-enable cannot revive prior admissions.
       this.disableEpoch++;
       for (const id of this.live) if (id !== this.active?.id) this.disabledAdmissions.add(id);
@@ -49,8 +52,55 @@ export class AcceptanceCoordinator {
   }
   private get agentDir() { return path.resolve(this.root, "../.."); }
   private enabled() { return acceptanceEnabled(this.agentDir); }
-  /** Only disposable test owners use this; production ownership lives in the host singleton. */
-  disposeSettingsSubscription() { this.unsubscribeSettings(); clearTimeout(this.timer); this.timer = undefined; }
+  /** Observer detachment is not job cancellation or coordinator disposal. */
+  disposeSettingsSubscription() { this.unsubscribeSettings(); }
+  private assertOpen() {
+    if (this.stopping) throw new Error("Acceptance coordinator is disposed; new work is refused");
+  }
+  /** Explicit disposable-instance ownership only; never called by session Stop,
+   * Pause, observer unsubscribe, or singleton/HMR replacement. Close admission
+   * and scheduling synchronously, join capture/verification/executor/completion,
+   * then durably cancel locally owned never-dispatched work. Running executors
+   * are NOT aborted. Their original settlement/result authority is unchanged.
+   * Joining JS operations is not proof that an uncertain supervisor settled. */
+  dispose(): Promise<void> {
+    if (this.disposal) return this.disposal;
+    this.stopping = true;
+    this.disposeSettingsSubscription();
+    clearTimeout(this.timer); this.timer = undefined;
+    this.disposal = (async () => {
+      const failures = new Set<unknown>();
+      let observed: Promise<unknown>;
+      do {
+        observed = this.tail;
+        // pump() extends beyond the serial dispatch tail through execution and
+        // durable completion. A held executor must keep this barrier pending.
+        const results = await Promise.allSettled([observed, ...this.pumps]);
+        for (const result of results) if (result.status === "rejected") failures.add(result.reason);
+      } while (observed !== this.tail || this.pumps.size > 0);
+      try {
+        await this.serial(() => {
+          if (!this.claimed) return;
+          this.assertClaim();
+          const ledger = this.read(), ids: string[] = [];
+          for (const run of ledger.runs) if (run.state === "queued" && this.live.has(run.id)) {
+            Object.assign(run, { state: "cancelled", settled: true, finishedAt: new Date().toISOString(),
+              error: "Disposable coordinator stopped before dispatch; no process started. Request a new run from a live owner." });
+            ids.push(run.id);
+          }
+          if (ids.length) {
+            this.write(ledger);
+            for (const id of ids) { this.live.delete(id); this.disabledAdmissions.delete(id); }
+          }
+        });
+      } catch (error) { failures.add(error); }
+      // A completed-but-unpersisted result remains retained, never retried or
+      // reported as success merely because the disposable owner was drained.
+      if (this.persistenceError) failures.add(new Error(this.persistenceError));
+      if (failures.size) throw new AggregateError([...failures], "Acceptance coordinator disposal failed after draining owned work");
+    })();
+    return this.disposal;
+  }
   private cancelQueuedForDisable() {
     if (!this.claimed) return; // Never adopt/certify another server's saved work.
     this.assertClaim();
@@ -142,8 +192,10 @@ export class AcceptanceCoordinator {
     }
   }
   async submit(project: AcceptanceProject, profileName: string, caller: string, requestKey: string, expectedProfile: string, signal?: AbortSignal) {
+    this.assertOpen();
     if (typeof caller !== "string" || !/^[a-zA-Z0-9_-]{1,256}$/.test(caller) || !safeKey(requestKey)) throw new Error("Invalid acceptance caller/request identity");
     return this.serial(async () => {
+      this.assertOpen();
       assertAcceptanceEnabled(this.agentDir);
       const epoch = this.disableEpoch;
       const previous = this.request(this.read(), caller, requestKey, project, profileName, expectedProfile);
@@ -160,6 +212,7 @@ export class AcceptanceCoordinator {
       mkdirSync(directory, { recursive: true, mode: 0o700 });
       const snapshot = await (this.dependencies.captureSnapshot ?? captureSnapshot)(project.cwd, profile.inputs, path.join(directory, "source"), signal);
       signal?.throwIfAborted();
+      this.assertOpen();
       assertAcceptanceEnabled(this.agentDir);
       if (epoch !== this.disableEpoch) throw new Error("Acceptance was disabled during capture; request a new run");
       if (acceptanceProject(project.cwd).identity !== project.identity || digest(readProfiles(project).find((p) => p.name === profileName)) !== expectedProfile) throw new Error("Project/profile changed during snapshot capture");
@@ -185,12 +238,19 @@ export class AcceptanceCoordinator {
     });
   }
   private schedule(delay = 0) {
-    if (this.timer) return;
-    this.timer = setTimeout(() => { this.timer = undefined; void this.pump().catch((error) => { this.persistenceError = String(error); }); }, delay);
+    if (this.stopping || this.timer) return;
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      const pump = this.pump(); this.pumps.add(pump);
+      void pump.then(() => { this.pumps.delete(pump); }, (error) => {
+        this.persistenceError = String(error); this.pumps.delete(pump);
+      });
+    }, delay);
     this.timer.unref();
   }
   private async pump() {
     const dispatch = await this.serial(async () => {
+      if (this.stopping) return;
       this.cancelQueuedForDisable(); // Also retries a latched cancellation before dispatch after a rapid re-enable.
       if (!this.enabled()) return;
       if (this.active || this.persistenceError) return;
@@ -205,6 +265,7 @@ export class AcceptanceCoordinator {
         const current = acceptanceProject(run.cwd);
         if (current.identity !== run.project || digest(readProfiles(current).find((p) => p.name === run.profile.name)) !== run.profileDigest) throw new Error("Project/profile changed before dispatch; request a new run");
         await (this.dependencies.verifySnapshot ?? verifySnapshot)(run.snapshot);
+        if (this.stopping) return; // dispose() owns the durable never-dispatched transition.
         if (!this.enabled() || epoch !== this.disableEpoch) {
           Object.assign(run, { state: "cancelled", settled: true, finishedAt: new Date().toISOString(), error: "Acceptance disabled during pre-dispatch verification; no process started." });
           this.write(ledger); this.live.delete(run.id); this.schedule(); return;
@@ -233,9 +294,9 @@ export class AcceptanceCoordinator {
         XDG_CONFIG_HOME: path.join(home, "config"), XDG_CACHE_HOME: path.join(home, "cache"), XDG_DATA_HOME: path.join(home, "data"),
         XDG_STATE_HOME: path.join(home, "state"), PI_CODING_AGENT_DIR: path.join(home, "agent"), PI_WEB_ACCEPTANCE_RUNTIME: run.runtimeDirectory };
       // The serial dispatch Promise is another async boundary; check before the supervisor's synchronous spawn.
-      if (!this.enabled() || dispatch.epoch !== this.disableEpoch) {
+      if (this.stopping || !this.enabled() || dispatch.epoch !== this.disableEpoch) {
         controller.abort();
-        result = { code: null, settled: true, interrupted: true, error: "Acceptance disabled before executor dispatch; no process started.", scope: "No process dispatched" };
+        result = { code: null, settled: true, interrupted: true, error: "Acceptance stopped or disabled before executor dispatch; no process started.", scope: "No process dispatched" };
       } else result = await this.dependencies.execute(run.profile.argv, { cwd: run.snapshot.directory, env, logPath: run.logPath, signal: controller.signal });
       try { await verifySnapshot(run.snapshot); }
       catch (error) { result = { ...result, error: `Snapshot changed during execution: ${String(error).slice(0, 1800)}` }; }
@@ -260,7 +321,9 @@ export class AcceptanceCoordinator {
     this.persistenceError = undefined; this.schedule();
   }
   async cancel(project: AcceptanceProject, id: string, caller: string, browser = false) {
+    this.assertOpen();
     return this.serial(() => {
+      this.assertOpen();
       this.claim();
       const ledger = this.read(), run = this.projectRun(ledger, project, id);
       if (!browser && run.owner !== caller) throw new Error("Only the initiating session or explicit browser control may cancel this shared run");
@@ -276,7 +339,9 @@ export class AcceptanceCoordinator {
   }
   /** User assertion of resource quiescence is recorded as reconciliation, never a successful test. */
   async recover(acknowledged: boolean) {
+    this.assertOpen();
     return this.serial(async () => {
+      this.assertOpen();
       if (!acknowledged) throw new Error("Confirm that previous acceptance processes and sandboxes have stopped");
       if (this.pendingCompletion) {
         const settled = this.pendingCompletion.result.settled;

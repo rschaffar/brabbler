@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { assertCompactChatRestored } from "./file-panel-layout.mjs";
+import { observeBrowserReads } from "./browser-read-barrier.mjs";
 import { checkDiffContext, contextPatch, contextContents, changedContextContents } from "./git-diff-context.mjs";
 
 export const filePanelFixture = `<!doctype html><html><body style="margin:20px;min-height:2400px">
@@ -32,6 +33,7 @@ C["$$\frac{x}{y}$$"] --> D[Math finish]
 `.replaceAll("\\`", "`");
 
 export async function checkMarkdownPreview(page, filePath) {
+  await page.bringToFront();
   writeFileSync(filePath, markdownPanelFixture);
   const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
   if (await showSidebar.isVisible()) await showSidebar.click();
@@ -92,10 +94,20 @@ export async function checkMarkdownPreview(page, filePath) {
   const zoomScroll = await viewport.evaluate(el => { el.scrollTop = 120; return el.scrollTop; });
   assert.ok(zoomScroll > 0);
   const dialogHandle = await dialog.elementHandle();
-  await page.waitForTimeout(16_000); // covers the real sidebar and privacy polls
-  assert.equal(await dialogHandle.evaluate(el => el.isConnected && el.open), true, "background polls retain the open viewer");
-  assert.equal(await dialog.locator(".mermaid-zoom-value").textContent(), "125%");
-  assert.equal(await viewport.evaluate(el => el.scrollTop), zoomScroll);
+  const pollingFileScroll = await fileContent.evaluate(el => el.scrollTop);
+  const naturalPolls = await observeBrowserReads(page, [
+    { pathname: "/api/hidden-projects" },
+    { pathname: "/api/agent/running" },
+  ], { natural: true });
+  try {
+    // Observe newly started natural reads, body consumption and a rendering
+    // opportunity; no synthetic visibility/focus/activity event triggers a poll.
+    await naturalPolls.wait();
+    assert.equal(await dialogHandle.evaluate(el => el.isConnected && el.open), true, "background polls retain the open viewer");
+    assert.equal(await dialog.locator(".mermaid-zoom-value").textContent(), "125%");
+    assert.equal(await viewport.evaluate(el => el.scrollTop), zoomScroll);
+    assert.equal(await fileContent.evaluate(el => el.scrollTop), pollingFileScroll, "natural polls retain file scroll");
+  } finally { await naturalPolls.dispose(); }
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await blocks.nth(1).getByRole("button", { name: "Preview", exact: true }).waitFor();
   assert.equal(await blocks.nth(1).locator("svg").count(), 0, "source choice survives polling");

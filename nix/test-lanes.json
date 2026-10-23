@@ -1,8 +1,28 @@
 {
   "version": 1,
-  "policy": "Explicit reviewed parallel allowlist; new/unreviewed files warn and run exclusively, never disappear. F and N share a resource-limited pool (default request eight, configurable 1–32); E drains that pool. No directory/name inference. Original deadlines, assertions and host opt-in skips remain unchanged.",
-  "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. The requested eight-worker default still requires native execution acceptance with unchanged deadlines. Re-review when resource/fixture behavior changes.",
+  "policy": "Explicit live reviewed F/N/E entries and unresolved holds. Every discovered test needs one live entry or hold; unknown files still warn and run exclusively, never disappear. Holds remain reviewed:false/E warnings. F and N share the resource-limited pool; E drains it. No directory/name/hash inference of isolation; original assertions, deadlines and opt-in skips remain unchanged.",
+  "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. Automatic selection remains capped at four; widths through eight are explicit opt-in experiments whose isolation review is not proof of native timing margins or complete acceptance. Re-review when resource/fixture behavior changes. The 2026-10-22 audit JSON is immutable historical evidence, not live authority or a current source-byte/reason/estimate requirement. Live unresolved holds carry the concerns still requiring review; source digests alone do not prove isolation.",
   "files": [
+    {
+      "path": "lib/client-signature-boundaries.test.mjs",
+      "lane": "F",
+      "reason": "Re-reviewed after production session-context extraction: frozen synthetic entries exercise the actual history, tree and event projections without mutating replay data. Complete local runtime closure is session-context, normalize, message-signatures, message-display, tool-result-images, interaction/operation-receipts, ask-user, question-set, plugins/ui, agent-event-wire and project-tree; SDK references are type-only. No session-reader, SDK runtime, filesystem fixtures, timers, sockets, processes or shared writes; existing Jiti loader uses the runner's private environment and disabled filesystem cache. Storage/default-facade and route ancestry bridges remain native-owned."
+    },
+    {
+      "path": "lib/interaction-receipts.test.mjs",
+      "lane": "F",
+      "reason": "Re-reviewed after production session-context extraction: all original receipt validation, immutable snapshots, sibling rejection, active-branch pagination and aligned merge assertions use supplied in-memory data. Complete local runtime closure is session-context, normalize, message-signatures, message-display, tool-result-images, interaction/operation-receipts, ask-user, question-set and plugins/ui, with only type imports beyond these leaves. No session-reader, SDK runtime, filesystem fixtures, timers, sockets, processes or shared writes; existing Jiti loading remains worker-private. Native persistence/default-facade and route ancestry owners are retained."
+    },
+    {
+      "path": "lib/operation-receipts.test.mjs",
+      "lane": "F",
+      "reason": "Re-reviewed after production session-context extraction: all original operation validation, immutable card, plugin identity, branch-local sequence, pagination and SSE merge assertions execute production data functions. Complete local runtime closure is session-context, normalize, message-signatures, message-display, tool-result-images, interaction/operation-receipts, ask-user, question-set and plugins/ui; remaining imports are types or the existing worker-private Jiti loader. No session-reader, SDK runtime, filesystem fixtures, timers, sockets, processes or shared writes. Genuine receipt persistence/default-composition bridges stay native-owned."
+    },
+    {
+      "path": "lib/browser-http.test.mjs",
+      "lane": "F",
+      "reason": "Executes the shared browser HTTP callback with process-local restored fetch doubles and owned body gates; serial cases join bodies before mock restoration. Imports only Node builtins, the inert shared HTTP helper and test ownership helpers; no real Git, SDK, sockets, browsers or shared filesystem effects. Callback contracts do not prove Chromium transport or native shutdown."
+    },
     {
       "path": "lib/session-worktree-filter.test.mjs",
       "lane": "F",
@@ -39,13 +59,13 @@
       "path": "plugins/git-workflow/server.test.mjs",
       "lane": "N",
       "estimatedMs": 35000,
-      "reason": "Reviewed real Git operations use one private per-file agent/root and unique repositories. PATH shims, registries and lazy observer imports are process-local; settings/reviews/records and scratch stay private, with no listener, source write or machine-wide idle assumption. Preserve serial cases and native-effect settlement; historical duration is advisory."
+      "reason": "Real Git operations, settings/reviews and registries stay in private roots within this Node process. The commit fixture owns a unique Unix-domain listener, releases its gate, joins real Git/shim/executor closure and closes the listener before restoring PATH/removing files. No fixed TCP port, shared-source write or machine-wide idle assumption; serial cases retain native settlement. Duration is advisory."
     },
     {
       "path": "plugins/git-workflow/project-management.test.mjs",
       "lane": "N",
       "estimatedMs": 30000,
-      "reason": "Reviewed per-case private Git roots and agent storage; session/terminal maps, reservations, FS fault injection and env changes are local to this file's Node process. No shared-source writes/fixed ports or unscoped peer signals found. Keep cases serial, original ten-second waits and awaited native effects/reservation release; historical duration is advisory."
+      "reason": "Per-case private Git roots/agent storage contain real effects; session/terminal maps, reservations and env changes are file-process local. Named host completions join execution, persistence handlers and reservation release before restoring env/removing roots; no public-status settling polls or fixed hold. No shared-source writes, fixed ports or unscoped peer signals. Serial cases remain required; duration is advisory."
     },
     {
       "path": "plugins/git-workflow/runtime.test.mjs",
@@ -337,11 +357,6 @@
       "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
     },
     {
-      "path": "hooks/model-switching.test.mjs",
-      "lane": "F",
-      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
-    },
-    {
       "path": "hooks/useAgentSession.test.mjs",
       "lane": "F",
       "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
@@ -349,7 +364,7 @@
     {
       "path": "hooks/useResizablePanel.test.mjs",
       "lane": "F",
-      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+      "reason": "Mounted actual hook imports only React and pure panel-layout geometry; real React effects/events run in one owned JSDOM realm, with in-memory storage and an explicit pointer-capture double. Serial file-process globals are restored after joined unmount/window close. No native layout/capture, network, SDK or persistent storage proof; those remain browser obligations."
     },
     {
       "path": "app/api/agent/new/route.test.mjs",
@@ -363,8 +378,8 @@
     },
     {
       "path": "app/api/sessions/detail-route.test.mjs",
-      "lane": "F",
-      "reason": "Reviewed pure/SSR/controlled VM and synthetic-request behavior; globals, deferred responses and mocked effects are confined to one file process; no real browser/server/native operation."
+      "lane": "N",
+      "reason": "Actual production GET and SessionManager reads over one unique mkdtemp JSONL/agent fixture; random session ID is explicitly cached, each request/body is awaited, and path/manager caches are invalidated before synchronous root removal and env restoration. No live wrapper, model startup, HTTP listener or shared-source write; native filesystem reads make this N, not the former synthetic F."
     },
     {
       "path": "components/ActivityOverview.test.mjs",
@@ -1567,7 +1582,7 @@
     {
       "path": "lib/project-command-env-sdk.test.mjs",
       "lane": "N",
-      "reason": "Real offline SDK startup/reload uses a unique temporary cwd, in-memory credentials/settings/session and explicit model store; no Bash or codemode execute is called, sessions are disposed before awaited removal.",
+      "reason": "Re-reviewed after incoming SDK command hygiene: unique temporary cwd/model-store and private agent environment, in-memory credentials/settings/session, faux provider and disabled resource discovery. Original startup/default matrix remains; new actual native Bash turns use only shell-builtin printf, are awaited across reload, then prompt/abort and synchronous SDK disposal precede awaited removal. No background/long-lived child, router, authenticator, codemode or extension-native execution is admitted by this narrow N review; SDK exit-plus-pipe/grace settlement is not a blanket native-close certificate.",
       "estimatedMs": 1000
     },
     {
@@ -1855,7 +1870,7 @@
     {
       "path": "plugins/git-workflow/commit-gate.test.mjs",
       "lane": "N",
-      "reason": "Gate/shim files and real Git commit effects stay in unique temporary directories. Shell exec and Node spawnSync forwarding are synchronous through native child settlement; registered synchronous teardown removes them.",
+      "reason": "Gate/shim files and real Git effects stay in unique temporary directories. Synchronous callers join the Node shim, which waits for its real Git child's close event before forwarding status. Ungated forwarding has no fixed hold; teardown follows actual CLI settlement.",
       "estimatedMs": 1000
     },
     {
@@ -1867,7 +1882,7 @@
     {
       "path": "lib/test-lanes-audit.test.mjs",
       "lane": "F",
-      "reason": "Read-only discovery and JSON audit/manifest assertions; no fixtures, children, timers or source mutation.",
+      "reason": "Read-only historical JSON consistency and separate live unresolved-hold/five exclusive-hold assertions using discover/planFiles; no child execution, fixtures, source mutation or timers. Historical hashes identify old evidence only.",
       "estimatedMs": 1000
     },
     {
@@ -1875,6 +1890,125 @@
       "lane": "F",
       "reason": "Synthetic locator and explicitly released Promise gates test the browser fixture wait; no browser, timers, native I/O or source writes.",
       "estimatedMs": 1000
+    },
+    {
+      "path": "lib/testing/async.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed async.fixture: in-memory deferred promises, immediately observed failures and joined owner admission/settlement. A real setImmediate reporting-turn test proves immediate rejection observation across Node's realm-local unhandled-rejection boundary, not task settlement. Tests release gates; no native external resources, persistent writes, SDK or network.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/testing/react.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed real TSX probe and React fixture: serial owned JSDOM realm, real React identity/effects and act-driven events, in-memory storage, joined unmount/window close and restored global descriptors. No external resource loading, native layout/capture, SDK or network; not browser evidence.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "plugins/git-workflow/resource-rules.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed test plus artifact-rules, operation-rules, discard, resource-cards and manifest runtime imports: synthetic arrays/objects/strings and pure card/policy validation. Other imports are types; no Git history, settings store, filesystem fixture, SDK, child or timer execution.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "lib/test-design.test.mjs",
+      "lane": "F",
+      "reason": "Architectural guards parse supplied strings and read actual source/JSON/discovery only, using TypeScript AST and inert runner planning APIs; no test subject execution, native fixtures, children, timers, network or source writes. Not behavior/isolation proof.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "components/GitExplorer.stale-delivery.test.mjs",
+      "lane": "F",
+      "reason": "Real production GitExplorer and I18n run in one owned JSDOM root. Strictly intercepted instance-owned fetch deliberately ignores abort; actual JSON tasks and React act own completion, with joined unmount/body/error cleanup and restored globals. No real network, native geometry, SDK or Git execution; installed Chromium witnesses remain required and retained.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "components/SessionMoveDestinationPicker.stale-delivery.test.mjs",
+      "lane": "F",
+      "reason": "Real production Move destination picker and I18n run in one owned JSDOM root with a controlled-prop owner. Strictly intercepted instance-owned fetch deliberately ignores abort; actual JSON tasks and React act own completion, with joined unmount/body/error cleanup and restored globals. No real network, native geometry, SDK or Git execution; installed Chromium witnesses remain required and retained.",
+      "estimatedMs": 1000
     }
-  ]
+  ],
+  "holds": {
+    "lib/browser-ssh-client.test.mjs": "New file; retain explicit E pending first live pool review of browser client import/default-storage and callback reachability. Current bounded recovery/ack matrices use only FakeStorage and do not invoke fetch, hardware or connection APIs; those synthetic inputs are not a full import/callback certificate. No native leak is alleged and no promotion is proposed.",
+    "lib/browser-ssh-enrollment.test.mjs": "New file; retain explicit E pending first full enrollment/protocol runtime-closure and resource review. Tests use real crypto over synthetic bounded CBOR/WebAuthn bytes, with no authenticator, network or server. Parser validity alone is neither possession/attestation proof nor a completed pool review; no promotion is proposed.",
+    "lib/command-env.test.mjs": "New file; retain explicit E pending native dispatch and failure-settlement review. Besides pure copy/filter cases it runs real Node helpers, including plugin run() in shared process.cwd(), and temporarily changes process.env. Helpers appear read-only and env is restored, but private HOME/TMP does not privatize source cwd; no promotion is proposed.",
+    "lib/managed-ssh-agent.test.mjs": "New file; retain explicit E for real front/browser Unix sockets, engine timers, settings/registry writes, ssh-keygen and short request observation loops. Fixture destroys clients and awaits pool.dispose()/router.close(), but BrowserSshAgent close is callback-only and queued management/publication/native-close work is not comprehensively joined. Date.now/clock substitution remains file-local, not native closure proof.",
+    "lib/sdk-command-env-launch.test.mjs": "New file; retain explicit E pending first bootstrap-import and lifecycle review. Launcher/router/child/parent are injected fakes and lifecycle completion uses real microtasks; no real process or router is launched. Fake cleanup/order assertions do not establish native owner closure or certify all default imports; no promotion is proposed.",
+    "lib/sdk-command-env-runtime.test.mjs": "New file; retain explicit E for actual modular SDK execution in a private worker with detached shell/opener paths, clipboard/RPC recorders and short watchdogs. Success observes opener PID disappearance and explicitly joins fake RPC close, but outer failure cleanup kills/joins only the worker, not an independently authenticated detached opener/descendant. Installed dependencies are checked/read, never patched by this test.",
+    "lib/sdk-command-env.test.mjs": "New file; retain explicit E pending first pool audit of installer fixtures, symlink/known-mixture/fsync failure boundaries, bounded synchronous CLI children and partial fixture-setup cleanup. Apply writes target only privately copied manifest/twelve modules/helper; installed SDK resolution and checks are read-only. This hold never authorizes application to shared node_modules.",
+    "lib/ssh-agent-launch.test.mjs": "New file; retain explicit E for real private routers/settings leases and a retained native child mixed with fake signal/exit owners. Root-removal cleanup is registered before later child/router cleanup hooks; some fake lifecycle settlement is success-path-only. Failure-safe stop/join-before-root-removal ordering remains to review; readiness is not settlement.",
+    "lib/ssh-agent-lease.test.mjs": "New file; retain explicit E pending first native identity/stale-recovery and failure-cleanup review. Tests create, kill and join real child lease owners, inspect Linux boot/PID-namespace context, and substitute fs methods for ownership races. Private lock paths and process-local mocks alone do not establish every signaling/ownership and teardown path; no promotion is proposed.",
+    "lib/ssh-agent-migration.test.mjs": "New file; retain explicit E for global legacy Symbol/env replacement, real router and legacy interval, native Bash and Unix client. Setup and an assertion precede the try/finally restoration boundary; client destroy is not an explicit native close join. Preserve orphan-marker evidence, managed No-agent bypass, explicit empty env and no-fallback semantics.",
+    "lib/ssh-agent-notifications.test.mjs": "New file; retain explicit E pending first complete callback/source-extraction boundary review. Actual hook snippets are AST-extracted/transpiled in VM with fake notifications, storage, time and connection references; no React mount or browser API runs. These cases do not certify effect dependencies, notification delivery or restored signing authority; no promotion is proposed.",
+    "lib/ssh-agent-openssh.test.mjs": "New file; retain explicit E for real private ssh-agent/key generation/ssh-add mutation/signing/destination constraints and short command/test deadlines. Main agent close is joined; verifier and router acquisition/failure paths still require full timeout and native-ownership review. Never replace the real constrained agent with a host agent or fake constraints to resolve this hold.",
+    "lib/ssh-agent-router.test.mjs": "New file; retain explicit E for real Unix/control servers, settings/leases, probes/native child, bounded backpressure/deadline cases and fs fault injection. Some gated replies are released only on success; fake handler promises, control mutation work and upstream native close are not all joined by router.close(). Private fixtures alone do not certify full failure settlement.",
+    "lib/ssh-key-registry.test.mjs": "New file; retain explicit E for real permission/link/lease/fsync/CAS fault fixtures and concurrent IPC writer children. Root-removal hook is registered before child stop/close hooks; complete failure/timeout teardown ordering and multi-writer/native ownership review are outstanding. Process-local fs patches and private roots are necessary, not a completed pool-safety proof.",
+    "app/api/files/reference-authorization.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: real media ReadStreams are not joined through native close. Assertions on status/headers precede arrayBuffer without finally cancellation; on failure t.after removes the root while a stream can still open/read. Even success closes the web controller on native end, not native close; cancel destroys without awaiting close.",
+    "app/api/native-tools/route.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Real SDK session creation/replacement and native codemode startup are exercised. Tracked wrappers are shut down, but the full SDK resource-loader/codemode import and teardown effects could not be established read-only; retain E rather than certify fixture confinement.",
+    "app/api/plugins/bundled/[id]/project-actions/route.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Real background project operation is polled to cancellation, but download GET checks status only and neither drains nor cancels the descriptor-backed response before fixture removal.",
+    "app/api/plugins/listing-invalidation.integration.test.mjs": "Real local package mutation/provider listing uses private project/agent roots and awaited calls with blocked HTTP. Retain E because SDK package/resource loader import effects and retained listing-runtime closure were not fully established; a drained response alone is not a native lifecycle proof.",
+    "app/api/skills/content/route.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Fixture files, FIFOs and symlinks are private and removal is awaited, but requests load the SDK resource loader against shared process.cwd(); package-resolution/import side effects of reload were not established, so source-write/resource confinement remains unresolved.",
+    "components/MarkdownCompatibility.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Bodies only render finite Markdown fixtures, but the transitive local renderer import-effect audit was not completed; retain conservatively pending that review.",
+    "components/MobilePatch.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Patch assertions and static rendering are synthetic, but MessageView imports a broad local renderer tree whose import-effect review was not completed.",
+    "components/ModelContextWindow.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Static input rendering is synthetic; retain conservatively because the imported model-context parsing helper was not read before audit termination.",
+    "components/ProjectPrivacySettings.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Only static rendering and in-memory privacy callbacks are exercised, but project grouping and SettingsUi import effects remain unreviewed.",
+    "components/ReviewNotebookBlock.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Finite fenced-review fixtures render collapsed/inert; retain conservatively until the Markdown transitive helper/dynamic-loader import effects are fully reviewed.",
+    "components/SessionMoveDestinationPicker.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Bodies call only pure directory equality/filter/option helpers; imported DirectoryPicker and response-helper effects remain unreviewed.",
+    "components/TabBar.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Static rendering of finite synthetic tabs performs no tested interactions, but imported FileIcons module was not read before termination.",
+    "components/ThinkingPieces.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: The 100000-character fixture is bounded and its window mock is process-local/restored, but MessageView support-module import effects remain incompletely reviewed.",
+    "components/ToolArguments.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Static tool-card fixtures and expansion state are process-local and reset in finally; broad MessageView and tool-field helper review remains incomplete.",
+    "components/model-overrides.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Real models.json writes and atomic temporary files are confined to a unique mkdtemp fixture with synchronous after-hook removal, but the imported SDK barrel effects could not be verified.",
+    "hooks/useStreamingSelector.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Finite synchronous store/VM-selector tests unsubscribe deterministically, but imported normalize helper was not read before termination.",
+    "lib/acceptance/coordinator.test.mjs": "Changed fixture owns coordinator disposal, released executors and pump drain. Retain E pending full queued/active/failure-path and transitive-import scheduling review; observer disposal must not acquire cancellation authority over independently admitted Acceptance jobs.",
+    "lib/acceptance/interfaces.test.mjs": "Changed shared coordinator fixture includes owned drain and private agent settings. Full interface/plugin-revocation/global-registration teardown and import closure have not been re-reviewed for pool safety; retain E without undoing the drain improvement.",
+    "lib/acceptance/process.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Real process supervision includes a deliberately detached descendant; the test substitutes a fixed 1900ms sleep for an owned descendant close/exit join, so teardown is not certified under scheduling pressure.",
+    "lib/activity-fixture.test.mjs": "Unresolved isolation review for lib/activity-fixture.test.mjs: transitive import effects and fixture-owned completion/teardown have not been established for pooled scheduling; retain exclusive inclusion without a safety claim.",
+    "lib/adaptive-thinking-sdk.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Hold: payload construction is intentionally stopped before HTTP and stream.result is awaited, but the real Anthropic adapter import/client lifecycle was not fully traced; SDK teardown remains uncertain.",
+    "lib/browser-ssh-route.test.mjs": "Re-reviewed incoming process-wide route: actual POSTs use a private router/registry and injected managed Symbol; route no longer imports session-reader. Retain E because BrowserSshAgent activation still creates a real Unix server with no exposed awaitable close, and managed disposal joins publication rather than every native listener/queued mutation. Controller disposal alone is not complete native settlement.",
+    "lib/browser-ssh.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Unique mkdtemp SSH/OpenSSH/child fixtures are present, but agent cleanup is fire-and-forget and assertions depend on 20/120ms sleeps; SDK Bash execution/import effects remain unresolved.",
+    "lib/browser-suite-fixtures.test.mjs": "Synthetic browser-recipe/read-barrier tests are process-local, but recipe imports traverse model-speed, running-fork and worktree-manager fixture modules whose complete import-time effects were not audited for this change. Retain E; static recipe assertions do not establish browser behavior or isolation.",
+    "lib/context-file-changes.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Context edits are scoped to mkdtemp with synchronous cleanup, but the pinned SDK context discovery and package import effects were not resolved; ancestor discovery cannot be assumed fixture-only.",
+    "lib/file-access.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Native symlink fixtures use mkdtemp and synchronous cleanup, and spies are process-local; hold because session-reader/SDK transitive import-time closure is not fully verified.",
+    "lib/git-diff-review.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Synthetic patches and snapshots only, but @pierre/diffs barrel initialization and its transitive effects were not verified against the candidate dependency artifact.",
+    "lib/git-patch-display.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Queue tests inject and settle fake loaders, but @pierre/diffs barrel import effects remain unverified; do not promote solely from synthetic test inputs.",
+    "lib/http-settings.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Settings/FIFO/symlink fixtures are unique and cleaned synchronously, but SDK import/getAgentDir behavior used by the final case was not fully inspected.",
+    "lib/i18n/registry.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Registry calls appear data-only, but the imported English catalog and its runtime imports were not inspected completely; hold rather than assume import purity.",
+    "lib/interaction-receipts-context.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Context route is source-transpiled with synthetic RPC/disk bindings, but importing session-reader executes a broad unresolved helper/SDK closure.",
+    "lib/local-file-link-guidance.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Real resource-loader reloads use unique cwd/agent directories and awaited finally removal; SDK package resolution/import closure and nested resource effects remain incompletely verified.",
+    "lib/markdown-anchors.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: SSR markdown and synthetic click cases have no direct external effects, but markdown-compat and media/file-link transitive imports were not fully inspected.",
+    "lib/markdown-media.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Media cases use path strings and a synthetic release object, but file-links/file-types runtime imports were not inspected; local recognition must not be assumed import-pure.",
+    "lib/markdown.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Math normalization itself is string-only, but importing markdown also imports uninspected markdown-compat and file-link/type helpers.",
+    "lib/native-mcp-configuration.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Hold: fixture files and symlink targets are private and removed by awaited after hooks, but the dynamically imported SDK validator module and its import effects were not fully inspected.",
+    "lib/native-resource-runtime.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Hold: real RPC, QuickJS workers and MCP subprocesses are exercised; wrapper shutdown is awaited, but native nested settlement and 2-second MCP deadlines need dedicated admission review.",
+    "lib/pi-web-source-extension.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Unique native source-tree fixtures are cleaned synchronously, but npm pack --dry-run runs in shared writable source cwd and the npm/SDK import effect boundary was not fully verified; hold packaging subprocess.",
+    "lib/plugin-card-details.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Plugin feedback/receipt checks use synthetic objects, but interaction-receipts imports operation-receipts/ask-user/question-set whose runtime effects were not fully inspected.",
+    "lib/plugins/project-operations.test.mjs": "Changed host/store tests now release gates and join fullySettled before private-root removal with a controlled scheduler. Retain E pending complete runtime-import/default-composition isolation review; the old 20ms teardown finding is historical, not a demand to retain that implementation.",
+    "lib/plugins/review-store.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Review storage is private and most streams are fully consumed, but patch-download response is checked for status only and left neither drained nor cancelled; its generator can continue opening descriptor-backed entry streams across teardown.",
+    "lib/project-acceptance-fixture.test.mjs": "Unresolved isolation review for lib/project-acceptance-fixture.test.mjs: transitive import effects and fixture-owned completion/teardown have not been established for pooled scheduling; retain exclusive inclusion without a safety claim.",
+    "lib/project-command-env.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Hold: real Bash/local operations execute with shared process.cwd and loader agentDir points at source-relative .test-agent; private HOME/TMP does not privatize the source cwd.",
+    "lib/project-privacy-fixture.test.mjs": "Unresolved isolation review for lib/project-privacy-fixture.test.mjs: transitive import effects and fixture-owned completion/teardown have not been established for pooled scheduling; retain exclusive inclusion without a safety claim.",
+    "lib/question-set.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Draft storage and UI/events are injected memory fakes, but ask-user-extension imports the pi-ai runtime barrel whose complete transitive import effects remain unverified.",
+    "lib/request-header-guard.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: HTTP guard fixtures use ephemeral loopback listeners with awaited close and synchronous bounded children; however Next option-utils transitive import effects were not inspected completely.",
+    "lib/rpc-manager-model-config.integration.test.mjs": "Re-reviewed after incoming native Bash/cold-start coverage: retained actual account/model/speed/thinking and saved child policy effects. Authentication admission now races terminal apply outcomes; finally releases the held gate, joins refusal/retirement and attempts every owned wrapper shutdown before restoring globals, retaining failed roots and aggregating errors. The old success-only gate-release and missing-export concerns are resolved; retain E pending complete SDK/extension/resource import and pool-settlement review, not a blanket native teardown certificate.",
+    "lib/rpc-manager.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Private fork/clone fixtures and source-text assertions are otherwise contained, but clone gated refresh/shutdown and held prompt are released only on the success path; finally calls nonawaitable destroy, which defers behind pending refresh. Failure-path settlement is not established.",
+    "lib/running-session-forks-e2e.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: waitForForkResponse is exercised with synthetic promises and rejection observation only, but imported composer-keyboard-focus/async-condition helper closure was not read.",
+    "lib/scratchpad-server.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Scratchpad writes/atomic temp paths are under unique fixture roots and saves await lock release, but proper-lockfile and pinned SDK import-side effects were not resolved.",
+    "lib/session-list-scanner-tail.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Real private scanner fixtures restore fs hooks and cancel index-save timers, but every case has a real 10-second deadline. Overlap cleanup releases a gate without awaiting the outstanding listings before reset/removal, so timeout/failure teardown is not certified.",
+    "lib/session-model-speed-lifecycle.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Required prior-audit hold: real SDK wrappers/child sessions are destroyed without awaiting shutdown before env/fetch restoration and fixture removal. Child execution completion is awaited, but that does not settle extension shutdown/disposal.",
+    "lib/session-model-speed-sdk.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Real SDK chat/cache warmer uses mocked fetch and awaits main prompt settlement, but finally calls wrapper.destroy without awaiting extension shutdown/disposal before restoring fetch/env and deleting files. Main-stream completion is not lifecycle cleanup.",
+    "lib/session-move.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Actual relocation and in-process route stay inside the unique agent fixture, but real catalogue scans schedule a captured-path index-save timer. Teardown restores env/removes root without flushing or resetting that pending writer.",
+    "lib/session-pause.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Native faux-provider sessions persist real private transcripts and pause stores; every case has a real 10s deadline and cleanup races real abort against 5s then calls nonawaitable destroy. Scanner saves and SDK extension teardown are not drained before suite root removal.",
+    "lib/skill-instructions.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Hold: link resolution and frontmatter cases are synthetic, but the imported frontmatter helper and its dependency effects were not fully traced.",
+    "lib/startup-preferences.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Settings writes/flushes are scoped to unique temporary cwd/agent roots with awaited removal; direct SDK barrel import remains held for incomplete transitive import-time audit.",
+    "lib/subagent-budget.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Hold: input files are unique and after cleanup is awaited, but containment/path and input helper implementations were not fully traced.",
+    "lib/subagent-isolation.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Hold: real Git isolation uses private repositories, but the first test never removes the sibling <repo>-worktrees parent created by addWorktree; deleting repo does not cover that sibling.",
+    "lib/subagent-model.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Hold: model parsing tests are synthetic, but the imported strict parser/reference helper implementations were not fully traced.",
+    "lib/subagent-queue.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Hold: FIFO/cancellation tests resolve their local promises, but the imported queue implementation was not fully inspected for hidden scheduling or global effects.",
+    "lib/subagent-runtime.integration.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Hold: faux provider prevents model HTTP but real child sessions, Git isolation, extension registration and saved state still execute; teardown aborts/disposes sessions without draining every SDK registration refresh.",
+    "lib/terminal-disconnect-fixture.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Ephemeral upstream/proxy listeners are normally awaited closed, but nested resource acquisition precedes cleanup registration/try blocks; proxy acquisition/route failure can strand the already-started upstream.",
+    "lib/worktree-management-view.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Management functions and tests are synthetic, but the imported English catalog/message helper closure was not inspected completely.",
+    "plugins/acceptance/runtime.test.mjs": "Unresolved isolation review for plugins/acceptance/runtime.test.mjs: transitive import effects and fixture-owned completion/teardown have not been established for pooled scheduling; retain exclusive inclusion without a safety claim.",
+    "plugins/git-workflow/context.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Unique-root Git fixtures and cleanup are present, but negative missing-object cases call parallel native tree reads through Promise.all, which rejects before the sibling subprocess is joined; root removal can race that remaining reader.",
+    "plugins/git-workflow/large-operations.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Retain documented timeout/descendant/resource hold. Real large Git operations and noisy shell checks include a 50ms timeout path; fixture-only filesystem locations do not resolve descendant settlement or concurrent resource pressure."
+  }
 }

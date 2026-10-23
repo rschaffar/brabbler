@@ -5,6 +5,7 @@ import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
 import { createJiti } from "jiti";
 import { waitForAsyncCondition } from "./async-condition.mjs";
+import { readBrowserResponse } from "./browser-http.mjs";
 
 const PROVIDER = "e2e-session-pause";
 const text = message => typeof message?.content === "string" ? message.content
@@ -308,8 +309,7 @@ export async function checkSessionPause(page, { base, api, post, root, agentDir,
         await page.goto(`${base}/?session=${returnSessionId}`, { waitUntil: "domcontentloaded" });
         await page.getByText("Active branch answer", { exact: true }).waitFor();
         for (const id of roots) {
-          const response = await page.request.delete(`${base}/api/sessions/${id}`);
-          assert.ok(response.ok(), await response.text());
+          await readBrowserResponse(page, `${base}/api/sessions/${id}`, { method: "DELETE", expectedStatus: "2xx" });
         }
       }
     } catch (error) { failures.push(error); }

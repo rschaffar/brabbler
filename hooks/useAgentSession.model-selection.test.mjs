@@ -45,6 +45,27 @@ test("pending composer creation serializes before optimistic selection so the se
   assert.equal(f.values.newModel.modelId, "A"); assert.equal(f.values.defaultThinking, "off"); assert.equal(f.values.switching, false);
 });
 
+test("existing-session selection is optimistic and serializes requests before canonical reconciliation", async () => {
+  const held = gate();
+  const f = fixture({ send: async () => { await held.promise; return { provider: "fixture", id: "chosen" }; } });
+  const changing = f.change("fixture", "chosen");
+  try {
+    assert.equal(f.values.override.modelId, "chosen");
+    assert.equal(f.values.switching, true);
+    assert.equal(f.context.modelSwitchPendingRef.current, true);
+    await f.change("fixture", "not-sent");
+    assert.equal(f.values.override.modelId, "chosen");
+    assert.deepEqual(f.calls.filter(call => call[0] === "command").map(call => call[3]), ["chosen"]);
+    assert.equal(f.calls.some(call => call[0] === "loadSession"), false);
+  } finally {
+    held.resolve();
+    await changing;
+  }
+  assert.equal(f.values.liveModel.modelId, "chosen");
+  assert.equal(f.values.switching, false);
+  assert.equal(f.context.modelSwitchPendingRef.current, false);
+});
+
 test("warmed new composers reconcile canonical model/thinking after a lost selection acknowledgement", async () => {
   const f = fixture({ isNew: true, sid: "warmed", send: async (_sid, command) => {
     if (command.type === "set_model") throw new Error("synthetic lost acknowledgement");
@@ -69,10 +90,14 @@ test("successful existing-session reselection requests canonical disk and live s
 
 test("existing-session lost acknowledgement also reconciles canonical disk and live state", async () => {
   const f = fixture({ send: async () => { throw new Error("synthetic lost acknowledgement"); } });
+  const previous = { provider: "fixture", modelId: "previous" };
+  f.context.currentModelOverride = previous;
   await f.change("fixture", "new");
+  assert.equal(f.values.override, previous, "failure restores the actual prior optimistic identity");
   const read = f.calls.find(c => c[0] === "loadSession");
   assert.deepEqual(read.slice(0, 4), ["loadSession", "one", false, true]); assert.equal(read[4].fresh, true);
-  assert.ok(f.calls.some(c => c[0] === "notice")); assert.ok(f.calls.some(c => c[0] === "loadModels"));
+  assert.ok(f.calls.some(c => c[0] === "notice" && /Failed to switch model:.*lost acknowledgement/.test(c[1])));
+  assert.ok(f.calls.some(c => c[0] === "loadModels"));
   assert.equal(f.values.switching, false);
 });
 
@@ -114,6 +139,13 @@ test("actual canonical loader bypasses old coalesced reads without extra disk pr
   assert.equal(diskReads, 2); assert.equal(requests.some(url => url.includes("force=1")), false);
   assert.ok(writes.some(([name, value]) => name === "live" && value.thinkingLevel === "off"));
   assert.ok(writes.some(([name, value]) => name === "ContextUsage" && value.contextWindow === 256000));
+  const optimisticUpdater = writes.findLast(([name]) => name === "CurrentModelOverride")[1];
+  assert.equal(typeof optimisticUpdater, "function");
+  const optimistic = { provider: "fixture", modelId: "pending" };
+  context.modelSwitchPendingRef.current = true;
+  assert.equal(optimisticUpdater(optimistic), optimistic, "canonical reload retains an in-flight optimistic selection");
+  context.modelSwitchPendingRef.current = false;
+  assert.equal(optimisticUpdater(optimistic), null, "settled canonical state may clear the optimistic override");
   const before = writes.length; held.resolve(); assert.equal(await stale, "superseded");
   assert.equal(writes.length, before); assert.equal(context.dataRef.current.context.model.modelId, "fresh");
   assert.equal(context.pendingHistoryReadsRef.current, 0);

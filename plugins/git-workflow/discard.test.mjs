@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import fs, { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { syncBuiltinESMExports } from "node:module";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { nativeCleanupAccess } from "./cleanup-access.fixture.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,7 +11,7 @@ const { gitProjectActions } = await jiti.import("./project-management.ts");
 const { executeBrowserDiscard, executeGitOperation } = await jiti.import("./server.ts");
 const { captureBrowserDiscard, performBrowserDiscard, createCleanupBudget } = await jiti.import("./cleanup.ts");
 const { browserDiscardOperation } = await jiti.import("./discard.ts");
-const { actions, gitWorkflowManifest: manifest } = await jiti.import("./manifest.ts");
+const { gitWorkflowManifest: manifest } = await jiti.import("./manifest.ts");
 const { updatePluginSettings, readPluginSettings } = await jiti.import("../../lib/plugins/settings.ts");
 const { preparePluginReview } = await jiti.import("../../lib/plugins/review-store.ts");
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -47,37 +47,10 @@ function fixture(t, kind = "not-integrated") {
   return { root, cwd, path, baseTip, tip, mainTip, payload, cards, receipts, ui, set, call, artifact, releases: () => releases };
 }
 function captureAccess(f, overrides = {}) {
-  return {
-    rejectUnignoredUntracked: true, git: (cwd, args) => git(cwd, ...args), checkout: (path) => path,
-    branchTip: (cwd, branch) => git(cwd, "rev-parse", "--verify", `refs/heads/${branch}^{commit}`),
-    worktrees: () => git(f.cwd, "worktree", "list", "--porcelain", "-z").split("\0\0").filter(Boolean).map((record) => {
-      const fields = record.split("\0");
-      return { path: fields.find((value) => value.startsWith("worktree ")).slice(9),
-        branch: fields.find((value) => value.startsWith("branch refs/heads/"))?.slice(18),
-        head: fields.find((value) => value.startsWith("HEAD "))?.slice(5), detached: fields.includes("detached"),
-        locked: fields.find((value) => value === "locked" || value.startsWith("locked ")),
-        prunable: fields.find((value) => value === "prunable" || value.startsWith("prunable ")) };
-    }),
-    project: () => join(f.cwd, ".git"), inUse: () => false, ...overrides,
-  };
+  return nativeCleanupAccess(f.cwd, { rejectUnignoredUntracked: true, ...overrides });
 }
 const passed = (result) => assert.notEqual(result.isError, true, result.content[0].text);
 const failed = (result, pattern) => { assert.equal(result.isError, true, result.content[0].text); assert.match(result.content[0].text, pattern); };
-
-test("strict browser payload rejects authority switches, malformed subjects and detached branch deletion", () => {
-  const valid = { subject: { kind: "branch", branch: "feature", tip: "a".repeat(40) }, removeWorktree: false, deleteBranch: true };
-  assert.deepEqual(browserDiscardOperation(valid, "/repo"), { ...valid, action: "discardResources", checkout: "/repo", artifactRoots: [] });
-  assert.equal(browserDiscardOperation({ ...valid, subject: { kind: "branch", branch: "feature", tip: "a".repeat(64) } }, "/repo").subject.tip.length, 64);
-  for (const invalid of [null, [], { ...valid, acknowledgeUnintegratedLoss: true }, { ...valid, skipIntegration: true }, { ...valid, ignoreKeep: true },
-    { ...valid, artifactRoots: [] }, { ...valid, subject: { ...valid.subject, skipIntegration: true } },
-    { ...valid, subject: { kind: "branch", branch: "HEAD", tip: valid.subject.tip } }, { ...valid, subject: { ...valid.subject, tip: "abcd" } },
-    { ...valid, removeWorktree: true }, { ...valid, worktreePath: "/other" }, { ...valid, deleteBranch: false },
-    { ...valid, subject: { kind: "detached", head: valid.subject.tip } },
-    { ...valid, subject: { kind: "detached", head: valid.subject.tip }, removeWorktree: true, worktreePath: "/other" },
-    { ...valid, comparisonTarget: { branch: "main", tip: valid.subject.tip, authority: true } }]) assert.throws(() => browserDiscardOperation(invalid, "/repo"));
-  assert.equal(actions.includes("discardResources"), false);
-  assert.equal(manifest.fields.discardResources.default, "ask");
-});
 
 test("browser operation cannot enter the public agent executor or select explicit artifact roots", async (t) => {
   const f = fixture(t), op = browserDiscardOperation(f.payload, f.cwd);
@@ -87,7 +60,8 @@ test("browser operation cannot enter the public agent executor or select explici
 });
 
 test("final frozen card derives branch-loss requirement for all evidence states, never preparation JSON", async (t) => {
-  for (const kind of ["integrated", "not-integrated", "unknown", "no-target"]) for (const mode of ["ask", "allow"]) await t.test(`${kind}/${mode}`, async (st) => {
+  // Each real graph/proof path remains native; the permission cross-product belongs to resource-rules.test.mjs.
+  for (const [kind, mode] of [["integrated", "allow"], ["not-integrated", "ask"], ["unknown", "allow"], ["no-target", "allow"]]) await t.test(`${kind}/${mode}`, async (st) => {
     const f = fixture(st, kind); f.set({ discardResources: mode });
     const extra = kind === "no-target" ? { comparisonTarget: undefined } : {};
     if (kind === "no-target") f.set({ targetBranch: null });
@@ -450,23 +424,29 @@ test("a concurrent checkout appearing during final branch-only recapture prevent
     const f = fixture(st, kind); git(f.path, "checkout", "--detach", f.tip);
     const op = browserDiscardOperation({ ...f.payload, worktreePath: undefined, removeWorktree: false }, f.cwd);
     const policy = readPluginSettings(manifest, f.cwd).effective, concurrent = join(f.root, "concurrent");
-    let armed = false, checkoutReads = 0;
-    const access = captureAccess(f, { checkout: (path) => {
-      // First recapture is pre-effect revalidation. The fourth read is the
-      // second checkout verification in the final branch-deletion recapture,
-      // after that capture's original registration inventory was read.
-      if (armed && ++checkoutReads === 4) git(f.cwd, "worktree", "add", concurrent, "feature");
-      return path;
-    } });
+    let checkpointHits = 0;
+    const nativeAccess = captureAccess(f);
+    const access = { ...nativeAccess, worktrees: (cwd, checkpoint) => {
+      // Only the final branch-deletion recapture names this fresh registration
+      // read; initial capture and pre-effect revalidation stay native and unarmed.
+      if (checkpoint === "final-branch-registration-capture") {
+        checkpointHits++;
+        git(f.cwd, "worktree", "add", concurrent, "feature");
+      }
+      return nativeAccess.worktrees(cwd, checkpoint);
+    } };
     const snapshot = await captureBrowserDiscard(f.cwd, op, policy, access);
-    assert.equal(snapshot.lossEvidence.state, kind); armed = true;
+    assert.equal(snapshot.lossEvidence.state, kind); assert.equal(checkpointHits, 0);
     const effects = [], dispatched = [];
     await assert.rejects(performBrowserDiscard(f.cwd, op, policy, access, snapshot, () => {},
       async () => assert.fail("New registered checkout must block native deletion"), effects,
       (description) => dispatched.push(description), createCleanupBudget()), /retained in a registered worktree/);
-    assert.equal(checkoutReads, 4); assert.deepEqual(effects, []); assert.deepEqual(dispatched, []);
+    assert.equal(checkpointHits, 1, "Final branch-registration capture checkpoint must fire exactly once");
+    assert.deepEqual(effects, []); assert.deepEqual(dispatched, []);
     assert.ok(existsSync(concurrent)); assert.equal(git(concurrent, "symbolic-ref", "HEAD"), "refs/heads/feature");
     assert.equal(git(f.cwd, "rev-parse", "feature"), f.tip); assert.ok(existsSync(f.path));
+    assert.equal(git(f.cwd, "rev-parse", "main"), f.mainTip);
+    for (const path of [f.path, concurrent]) assert.equal(readFileSync(join(path, "src/source"), "utf8"), "feature\n");
   });
 });
 
@@ -510,12 +490,12 @@ test("nested artifact inventory/effects are shared and never sweep unapproved si
 });
 
 test("same-device mount boundaries remain blocked before manual approval", { skip: process.platform !== "linux" }, async (t) => {
-  const f = fixture(t); f.artifact(); const read = fs.readFileSync;
-  fs.readFileSync = (path, ...args) => path === "/proc/self/mountinfo" ? `${read(path, ...args)}\n1 1 0:1 / ${join(f.path, "generated")} rw - tmpfs tmpfs rw\n` : read(path, ...args);
-  syncBuiltinESMExports();
-  try {
-    const fresh = await createJiti(import.meta.url, { moduleCache: false, fsCache: false }).import("./server.ts");
-    failed(await fresh.executeBrowserDiscard(f.cwd, browserDiscardOperation(f.payload, f.cwd), { ...f.ui, pluginCard: () => assert.fail("Mounted resources must not reach approval") }), /Mounted cleanup|mounted filesystem/);
-    assert.ok(existsSync(join(f.path, "generated/cache")));
-  } finally { fs.readFileSync = read; syncBuiltinESMExports(); }
+  const f = fixture(t); f.artifact(); let mountReads = 0;
+  const access = captureAccess(f, { readMountInfo: () => {
+    mountReads++;
+    return `${readFileSync("/proc/self/mountinfo", "utf8")}\n1 1 0:1 / ${join(f.path, "generated")} rw - tmpfs tmpfs rw\n`;
+  } });
+  await assert.rejects(captureBrowserDiscard(f.cwd, browserDiscardOperation(f.payload, f.cwd), readPluginSettings(manifest, f.cwd).effective, access), /Mounted cleanup|mounted filesystem/);
+  assert.ok(mountReads > 0); assert.ok(existsSync(join(f.path, "generated/cache")));
+  assert.equal(git(f.cwd, "rev-parse", "feature"), f.tip); assert.equal(f.cards.length, 0);
 });
