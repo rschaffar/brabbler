@@ -97,6 +97,34 @@ diagnostics and native settlement guards; no retries/deadline inflation/error
 suppression follows from this mapping. See the execution plan for exact evidence
 and remaining rollout status, not an inferred suite-wide migration.
 
+## Measured pilot boundary
+
+The post-rebase warm `all --workers 4 --jobs 4` command passed in **347s**:
+**440 files/3425 tests/12 suites**, **26 groups/59 receipts**, genuine deployment,
+effective four/four and32availableCPUs/about48.5GiB. Panel samples **4/5/5s**,
+median**5s**. Original **351.05s full /20.5s focused** gates passed without a new
+Activity cutoff. Full Activity capsule **125.140s** is not a full-suite speedup.
+
+The executed candidate was `6d927289341b22bca383315e0b09ad605b0e7562` on main
+`b2e66c9da6ee95ddf8994abb2a59af077c3e3ef1`, export
+`/nix/store/1xbn7jy4ybi4rp7qfajqhcsrc6qzid7j-source`, digest
+`c87860ac909a09651791ca6ac7fd942787c584172efdd4b8fab9a711a2aeac2c`.
+Core **265.357s** and browser **320.729s** envelopes overlap; browser support/
+manifest **2.613/4.960s** are mixed preparation intervals. Service **23.730s**
+contains actual VM evidence execution **18.661s**. Never add overlapping intervals
+or describe them as evaluator-only costs.
+
+Before this single explicitly authorized warm measurement, exact-source focused
+core/Activity/Move/mobile-sidebar/service commands passed in **40/195/41/24/61s**;
+some preparation overlapped, so these are not summed. They realized the changed
+application and actual guest/driver closure. The earlier **388s** full correctness
+pass/performance miss is retained, not relabelled fixed by retry or subtraction.
+Earlier348s/215.361s control and347s/125.140s pilot results have incoming-main and
+workload differences; no isolated causal full-suite gain, CI/ARM/cold-cache or
+escaped-descendant guarantee follows. Exact commands, inputs, failed witnesses
+and preparation/measurement metadata are retained in
+`/home/robert/.cache/pi-web-activity-pilot/run.civBQj`.
+
 Separate Activity client/API follow-up: large mutation batches versus the existing
 1000-entry API bound and retention/reconciliation edges remain a flagged risk,
 not a redesigned policy or a fixed bug. This guide owns that follow-up; changing

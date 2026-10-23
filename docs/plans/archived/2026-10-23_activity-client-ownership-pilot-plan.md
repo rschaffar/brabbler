@@ -2,6 +2,11 @@
 
 ## Goal
 
+**Implementation and verification complete.** Maintained mechanisms, assertion
+handoff, measured boundaries and separate follow-ups live in the Activity guide.
+Local integration/cleanup still require their exact harness actions and receipts;
+archiving this plan is not execution or publication authority.
+
 Separate Activity's client-side orchestration, mounted React behavior and native
 browser proof so that each contract has a small, meaningful owner. Prioritize
 confidence, explicit lifecycle ownership and precise failures over a particular
@@ -59,18 +64,18 @@ The prior verified executable source `8mrm41dja657y412m71vpjzjmxyss3jc` passed f
 Home Manager deployment. Focused Panel samples were 5/5/4s (median5s). Those are
 historical input-bound evidence, not acceptance of this pilot.
 
-- [Feature contracts](../feature-internals.md) own current Activity/Starred,
+- [Feature contracts](../../feature-internals.md) own current Activity/Starred,
   privacy, explicit Read/Later, restoration and native Pause behavior.
-- [Testing](../testing.md), [browser acceptance](../../e2e/README.md) and
-  [ADR0034](../adr/0034-behavioral-test-ownership-and-feedback.md) own the existing
+- [Testing](../../testing.md), [browser acceptance](../../../e2e/README.md) and
+  [ADR0034](../../adr/0034-behavioral-test-ownership-and-feedback.md) own the existing
   layering, mounted support and proof limits.
-- [ADR0031](../adr/0031-project-acceptance-coordination.md) owns Acceptance jobs
+- [ADR0031](../../adr/0031-project-acceptance-coordination.md) owns Acceptance jobs
   independently of sessions/observers. This pilot must preserve that contract.
-- The [server-side activity review plan](2026-09-25_server-activity-review-plan.md)
+- The [server-side activity review plan](../2026-09-25_server-activity-review-plan.md)
   owns its ledger/API feature and legacy outstanding checklist. This pilot does
   not declare those obligations complete, rewrite its history, or change the
   server receipt format/authorization/retention policy.
-- The [archived overhaul](archived/2026-10-22_test-suite-architecture-overhaul-plan.md)
+- The [archived overhaul](2026-10-22_test-suite-architecture-overhaul-plan.md)
   owns prior migrations and evidence. Its guarded Git closeout completed before
   this implementation; this is a new, bounded pilot, not a reopened general overhaul.
 
@@ -149,7 +154,7 @@ or disposing this controller confers no native cancellation or Acceptance author
 ## Initial contract-to-owner map
 
 This was the migration starting point, **not permission to delete assertions**.
-The maintained [Activity assertion ledger](../activity-testing.md) now records the
+The maintained [Activity assertion ledger](../../activity-testing.md) now records the
 reviewed disposition, exact original coordinates and proof limits; the exhaustive
 pre-edit inventory and independent reviews remain in the evidence root.
 
@@ -285,7 +290,26 @@ logs, exported sources, reports and private rejected variants retained).
   removed; native and responsive Settings assertions remain. New production TS
   inputs require preparing the exact package/static/guest prerequisites before
   the authorized warm run, not another undocumented full warm-up. Latest composed
-  focused/native/browser/full acceptance and original full timing gate are pending.
+  focused/native/browser/full acceptance and original full timing gate were then
+  pending; the exact subsequent result follows.
+- The **one user-authorized warm full**, after rebase and exact prerequisite
+  preparation, passed **347s** on `6d927289341b22bca383315e0b09ad605b0e7562`:
+  **440 files/3425 tests/12 suites**, all **26 groups/59 receipts** and genuine VM.
+  Source `/nix/store/1xbn7jy4ybi4rp7qfajqhcsrc6qzid7j-source`, digest
+  `c87860ac909a09651791ca6ac7fd942787c584172efdd4b8fab9a711a2aeac2c`.
+  Effective4browser/4core,32CPUs/about48.5GiB available; actual overlap admission
+  retained. Core/browser envelopes **265.357/320.729s** overlap; browser support/
+  manifest **2.613/4.960s**. Service **23.730s**, actual VM **18.661s**. Panel latest
+  samples **4/5/5s**, median**5s**. Original351.05s/20.5s gates pass unchanged.
+  Full Activity **125.140s**, not a causal full-suite gain claim. Prior warm-up/
+  focused commands were core/Activity/Move/mobile-sidebar/genuine service
+  **40/195/41/24/61s**, with coordinated overlaps and exact source/package/driver
+  identity assertions. No undocumented full warm-up or unchanged failing retry.
+  New200/503 gate regressions, Move defaults/missing-source proof and both owner
+  families passed. Independent resolved-source review found no newP1/P2 blocker.
+  Exact analysis/readiness/selection/raw source live in the evidence root. Current
+  mechanisms and empirical limits were handed to the maintained Activity guide;
+  Git integration/cleanup receipts remain separately gated, not inferred here.
 - Scope limits remain explicit: mounted ActivityViews/notification adapters are not
   full Sidebar/AppShell/router/metrics mounting. Native/default/browser owners stay
   real. The shared `owned-routes` event-rejection escape and socket cause remain
@@ -320,16 +344,16 @@ logs, exported sources, reports and private rejected variants retained).
   reload/cross-tab, native control and Acceptance-independence connections. Update
   scenario IDs/independent inventories honestly; do not rename omitted proof as
   covered or split groups merely to increase effective concurrency.
-- [ ] Obtain independent ownership/security/lifecycle review, then run focused Nix
+- [x] Obtain independent ownership/security/lifecycle review, then run focused Nix
   core/mounted/native selections and the complete focused Activity group. Freeze
   writers during export; retain failures/traces and distinguish owner defects from
   runner/environment failures using evidence.
-- [ ] Complete stable-candidate Nix acceptance and before/after measurements at the
+- [x] Complete stable-candidate Nix acceptance and before/after measurements at the
   unchanged four-browser/four-core budget. Record exact source/commands, coverage,
   available resources, phase timings and artifacts; preserve the original focused
   ≤20.5s/full≤351.05s gates unless the user explicitly revises them. No additional
   Activity cutoff, speed promise, cold/CI/ARM claim, retries or deadline inflation.
-- [ ] Update maintained contributor recipes and Activity contracts; record durable
+- [x] Update maintained contributor recipes and Activity contracts; record durable
   architectural decisions in ADR0034 or a new ADR if a settled contract changes.
   Revalidate current main/exact candidate for any separately approved integration;
   report remote/resource status honestly and archive only after completion/handoff.
@@ -351,9 +375,9 @@ logs, exported sources, reports and private rejected variants retained).
   another browser queue previously determined the critical path. Do not infer saved
   wall time from summed overlapping cases or automatically widen/reclassify lanes.
 - Map/lifetime/native-bridge unknowns are resolved by the reviewed ledger and
-  actual owner/mounted/native/installed proof. The remaining execution gate is the
-  latest-main composition and its one authorized warm full measurement. Existing
-  large-batch/retention risk is a separate follow-up owned by the maintained
+  actual owner/mounted/native/installed proof. Latest-main composition and its one
+  authorized warm full measurement passed unchanged gates. Existing large-batch/
+  retention risk is a separate follow-up owned by the maintained
   Activity assertion guide, not an implicit redesign or an unowned pilot task.
 
 ## Rollback / Recovery
@@ -370,14 +394,14 @@ red and original proof instead of weakening assertions or changing timeouts.
   removed source/static/browser assertions have meaningful replacement evidence.
 - [x] All five selected behavioral priorities pass on real production controller
   and mounted composition, including failure/teardown paths and controlled reds.
-- [ ] Native/security/persistence/SDK guarantees and Acceptance independence remain
+- [x] Native/security/persistence/SDK guarantees and Acceptance independence remain
   real; deliberate races and current exclusivity holds have explicit disposition.
-- [ ] Golden journey and focused viewport/keyboard/touch checks prove real wiring
+- [x] Golden journey and focused viewport/keyboard/touch checks prove real wiring
   and browser-specific behavior without triplicating the functional matrix.
-- [ ] Stable-source core/static/plugin, complete browser/terminal inventory and
+- [x] Stable-source core/static/plugin, complete browser/terminal inventory and
   genuine deployment pass; input-bound evidence and fresh execution are distinct.
-- [ ] Focused/Activity/full timings and coverage are reported at unchanged widths;
+- [x] Focused/Activity/full timings and coverage are reported at unchanged widths;
   existing gates pass or a blocker is reported without a silent waiver.
-- [ ] Maintained guides/ADR own the final mechanism and proof limits; any residual
+- [x] Maintained guides/ADR own the final mechanism and proof limits; any residual
   obligation has one named current owner; integration/publication/cleanup authority
   and actual execution are not inferred from plan status.
