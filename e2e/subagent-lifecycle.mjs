@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, isAbsolute } from "node:path";
 import { createJiti } from "jiti";
 import { waitForAsyncCondition } from "./async-condition.mjs";
+import { checkSubagentModelSettings } from "./subagent-settings-ui.mjs";
 
 /** Script actual model-issued Agent calls. No host runtime/controller is fabricated. */
 export function subagentLifecycleFixtureSource(root) {
@@ -130,18 +131,7 @@ export async function checkSubagentLifecycle(page, { base, api, post, root, agen
     assert.equal((await saved(isolated.id)).run.runId, first.run.runId, "refusal creates no new run");
     assert.equal(existsSync(first.run.worktreePath), false);
 
-    // Real controls display the suffixed model as available and retain it when saved.
-    if (width <= 640) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
-    if (width <= 640) await dialog.getByRole("combobox", { name: "Settings", exact: true }).selectOption("agents");
-    else await dialog.getByRole("button", { name: "Sub-agents", exact: true }).click();
-    await dialog.getByRole("button", { name: /e2e-lifecycle/ }).click();
-    await dialog.getByRole("button", { name: "Model override", exact: true }).getByText("e2e-subagents/child:high", { exact: true }).waitFor();
-    assert.equal(await dialog.getByText(/Unavailable.*e2e-subagents/).count(), 0);
-    await dialog.getByRole("button", { name: "Save", exact: true }).click();
-    await dialog.getByRole("button", { name: "Close", exact: true }).click();
-    if (width <= 640) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
+    await checkSubagentModelSettings(page, { width });
 
     await send("queue-children");
     await waitForAsyncCondition(page, async id => {

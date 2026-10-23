@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createOwnedRoutes } from "./owned-routes.mjs";
 import { readBrowserJson } from "./browser-http.mjs";
+import { activityLayoutChecks, activityReceiptResponse } from "./activity-layout.mjs";
+import { checkActivityFamilyUsage } from "./activity-family-usage.mjs";
+import { checkActivityResponsiveTail } from "./activity-responsive.mjs";
 
 /** Deliberately open Activity before catalogue-driven URL session adoption.
  * Join the exact held GETs before leaving; no provider or timeout manipulation. */
@@ -46,50 +49,11 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   const { sessions } = await api("/api/sessions?force=1");
   const selected = sessions.find((session) => session.id === selectedSessionId);
   assert.ok(selected);
-  const checkWorktreeBadge = async (row) => {
-    const badge = row.locator('span[title^="Worktree: "]');
-    if (selected.isWorktree && selected.branch) {
-      await badge.waitFor({ state: "visible" });
-      assert.equal(await badge.textContent(), selected.branch);
-      assert.equal(await badge.getAttribute("title"), `Worktree: ${selected.cwd}`);
-      const button = row.locator("button.activity-item");
-      if (await button.count()) assert.ok((await button.getAttribute("aria-label")).includes(selected.branch), "accessible row name includes the worktree branch");
-      const bounds = await badge.boundingBox();
-      assert.ok(bounds.width > 0 && bounds.x + bounds.width <= width, "worktree badge fits the viewport");
-    } else {
-      assert.equal(await badge.count(), 0, "main-checkout sessions have no worktree badge");
-    }
-  };
+  const { checkWorktreeBadge, dotColor, checkActionBox } = activityLayoutChecks(page, width, selected);
   if (process.env.E2E_ACTIVITY_ONLY === "1") {
     assert.equal(selected.isWorktree, true, "focused Activity uses a real linked checkout");
     assert.equal(selected.branch, "feature/activity-worktree");
   }
-  const dotColor = (row) => row.locator(".activity-item-top .activity-dot")
-    .evaluate((dot) => getComputedStyle(dot).backgroundColor);
-  const checkActionBox = async (row) => {
-    assert.equal(await row.locator(".activity-item-action").count(), 0, "navigation needs no visible Open/Review label");
-    const layout = await row.evaluate((button) => {
-      const card = button.parentElement.getBoundingClientRect();
-      const box = button.parentElement.querySelector(".activity-item-actions");
-      const bounds = box.getBoundingClientRect();
-      const rect = button.getBoundingClientRect();
-      const title = button.querySelector(".activity-item-title").getBoundingClientRect();
-      const controls = [...box.querySelectorAll("button")];
-      return {
-        compactRightBox: bounds.left >= rect.right && bounds.right <= card.right && bounds.width <= 60 && bounds.width >= 24,
-        titleUsesRightEdge: Math.abs(title.right - (rect.right - parseFloat(getComputedStyle(button).paddingRight))) < 1,
-        verticallyCentered: Math.abs((bounds.top + bounds.bottom) - (card.top + card.bottom)) < 1,
-        stackedTargets: controls.length > 0 && controls.every((control, index) => {
-          const target = control.getBoundingClientRect();
-          const previous = controls[index - 1]?.getBoundingClientRect();
-          return target.left >= bounds.left && target.right <= bounds.right && target.width >= 24 && target.height >= 24
-            && (!previous || target.top >= previous.bottom) && getComputedStyle(control).fontSize === "11px";
-        }),
-      };
-    });
-    assert.deepEqual(layout, { compactRightBox: true, titleUsesRightEdge: true, verticallyCentered: true, stackedTargets: true },
-      "small text actions stack inside one narrow box beside the session, with separate usable targets");
-  };
   await checkOverviewDuringInitialRestore(page, base, selectedSessionId);
   if (mobile) {
     const other = sessions.find(session => session.id === otherSessionId);
@@ -246,6 +210,13 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   if (await page.getByRole("button", { name: "Show sidebar" }).count()) await page.getByRole("button", { name: "Show sidebar" }).click();
   await page.locator(`[data-session-id="${selectedSessionId}"]`).locator(".activity-star").waitFor({ state: "hidden" });
   if (mobile) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
+  if (width !== 1280) {
+    await checkActivityResponsiveTail(page, width, {
+      base, api, post, artifacts, selected, selectedSessionId, waitingSessionId, otherSessionId,
+      subagentIds, seedSubagentCompletions,
+    });
+    return;
+  }
   // Keep the waiting session starred while its real background dialog runs.
   // The Starred list must surface Needs you without moving it into Activity.
   await post("/api/starred-sessions", { op: "set", id: waitingSessionId, starred: true });
@@ -337,7 +308,12 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   await checkActionBox(waitingReady);
   await page.screenshot({ path: join(artifacts, `activity-ready-${width}.png`) });
   assert.equal(readyColor, await dotColor(waitingReady), "Starred and Activity use the same ready-to-review dot");
+  const goldenCompletion = (await api("/api/agent/running")).completedRuns.find((entry) => entry.sessionId === waitingSessionId);
+  assert.ok(goldenCompletion, "the genuine answered question recorded a completion");
+  const goldenAcknowledged = activityReceiptResponse(page, "ack", waitingSessionId, goldenCompletion.at);
+  void goldenAcknowledged.catch(() => {});
   await overview.getByRole("button", { name: "Mark Render **E2E markdown** as read", exact: true }).click();
+  await goldenAcknowledged;
   await waitingReady.waitFor({ state: "hidden" });
   await page.getByRole("button", { name: "Starred", exact: true }).click();
   await starredNeeds.getByText("Ready to review", { exact: true }).waitFor({ state: "hidden" });
@@ -525,99 +501,10 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
     const parentReady = reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Branch root" });
     await parentReady.waitFor();
 
-    // Extend this owned Activity chain: deterministic recorded usage, but real
-    // catalogue/navigation/review storage and the existing running-poll handler.
-    const statsURL = `${base}/api/sessions/stats`;
-    const amounts = new Map([[selectedSessionId, 100], [childA, 20], [childB, 30], [workingChild, 40]]);
-    const serveStats = async (route) => {
-      assert.equal(route.request().method(), "POST");
-      const body = route.request().postDataJSON();
-      assert.deepEqual(Object.keys(body), ["ids"]);
-      assert.ok(body.ids.length > 0 && body.ids.length <= 200);
-      const stats = Object.fromEntries(body.ids.filter((id) => amounts.has(id)).map((id) => {
-        const total = amounts.get(id);
-        return [id, { tokens: { input: total, output: 0, cacheRead: 0, cacheWrite: 0, total },
-          cost: total / 10000, toolCalls: 1, totalActiveMs: id === selectedSessionId ? 60000 : 30000 }];
-      }));
-      await route.fulfill({ headers: { "Cache-Control": "no-store" }, json: { stats } });
-    };
-    const statsRoutes = createOwnedRoutes(serveStats, serveStats);
-    const reviewBeforeMetrics = await api("/api/agent/running");
-    const metricReviewPosts = [];
-    const observeReview = (request) => {
-      if (request.method() === "POST" && new URL(request.url()).pathname === "/api/activity/review") {
-        const body = request.postDataJSON();
-        if (body.op === "ack" && body.entries.some(({ sessionId }) => amounts.has(sessionId))) metricReviewPosts.push(body);
-      }
-    };
-    page.on("request", observeReview);
-    await page.route(statsURL, statsRoutes.handler);
-    try {
-      await parentReady.click();
-      await page.waitForURL((url) => url.searchParams.get("session") === selectedSessionId);
-      await page.getByText("Active branch answer", { exact: true }).waitFor();
-      const agentsButton = page.getByRole("button", { name: "Agents · 1 running", exact: true });
-      await agentsButton.waitFor({ timeout: 15000 });
-      assert.equal(await agentsButton.locator("span[aria-hidden=true]").innerText(), "1");
-      await page.emulateMedia({ reducedMotion: "reduce" });
-      assert.equal(await agentsButton.locator("svg.animate-spin").evaluate((node) => getComputedStyle(node).animationName), "none");
-      const toolbarStats = page.getByRole("button", { name: "Session info", exact: true });
-      const rootToolbarTitle = await toolbarStats.getAttribute("title");
-      await agentsButton.click();
-      const agents = page.getByRole("region", { name: "Agents", exact: true });
-      const familyUsage = agents.getByTestId("agent-family-usage");
-      await familyUsage.getByText("Summed estimated active time: 2m 30s · 190 tokens · $0.02 recorded", { exact: true }).waitFor();
-      assert.ok((await familyUsage.innerText()).includes("4/4 available"));
-      assert.equal(await toolbarStats.getAttribute("title"), rootToolbarTitle, "family usage never replaces selected-session toolbar counters");
-      const list = agents.getByRole("listbox", { name: "Agents" });
-      assert.equal(await list.getByRole("option").count(), 4);
-      assert.ok((await list.locator(`[data-agent-usage-id="${selectedSessionId}"]`).innerText()).includes("100 tokens"));
-      assert.ok((await list.locator(`[data-agent-usage-id="${childA}"]`).innerText()).includes("20 tokens"));
-      assert.equal(await list.locator("summary, details, button button").count(), 0, "breakdown controls are outside options and the listbox");
-      const familyDetails = familyUsage.locator("summary");
-      if (mobile) await familyDetails.tap();
-      else await familyDetails.click();
-      await familyUsage.locator("details p").waitFor();
-      assert.ok((await familyUsage.innerText()).includes("not an invoice"));
-      const selectedDetails = agents.locator("summary").filter({ hasText: "Selected agent usage breakdown" });
-      await selectedDetails.focus();
-      await page.keyboard.press("Enter");
-      const selectedUsage = agents.getByRole("region", { name: "Selected agent usage", exact: true });
-      await selectedUsage.getByText("$0.0100", { exact: true }).waitFor();
-      await list.locator(`[data-agent-usage-id="${childA}"]`).click();
-      await page.waitForURL((url) => url.searchParams.get("session") === childA);
-      await selectedUsage.getByText("$0.0020", { exact: true }).waitFor();
-      assert.ok((await familyUsage.innerText()).includes("190 tokens"), "selecting a child does not narrow the family sum");
-      await list.locator(`[data-agent-usage-id="${selectedSessionId}"]`).click();
-      await page.waitForURL((url) => url.searchParams.get("session") === selectedSessionId);
-      await agentsButton.click();
-      metricsChildRunning = false;
-      await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-      const idleAgents = page.getByRole("button", { name: /^Agents · \d+ subagents$/ });
-      await idleAgents.waitFor({ timeout: 15000 });
-      assert.equal(await idleAgents.locator("span[aria-hidden=true]").innerText(), "3", "idle badge returns to the family child count");
-      metricsChildRunning = true;
-      await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-      await agentsButton.waitFor({ timeout: 15000 });
-      const afterMetrics = await api("/api/agent/running");
-      for (const id of amounts.keys()) {
-        assert.equal(afterMetrics.reviewedRuns.find((entry) => entry.sessionId === id)?.at,
-          reviewBeforeMetrics.reviewedRuns.find((entry) => entry.sessionId === id)?.at, "viewing usage does not acknowledge Activity");
-      }
-      // Restore the original chain's selected OTHER chat before its later
-      // reload/assertion; metrics navigation must not change those prerequisites.
-      await page.goto(`${base}/?session=${otherSessionId}`, { waitUntil: "domcontentloaded" });
-      await page.getByText("Other workspace task", { exact: true }).last().waitFor();
-      await page.getByRole("button", { name: /^Activity/ }).click();
-      await reloadedOverview.getByRole("combobox", { name: "Project" }).selectOption({ label: "project" });
-      await row(workingChild, "working").waitFor();
-      assert.deepEqual(metricReviewPosts, []);
-    } finally {
-      metricsChildRunning = true;
-      page.off("request", observeReview);
-      await statsRoutes.dispose((handler) => page.unroute(statsURL, handler));
-      await page.emulateMedia({ reducedMotion: null });
-    }
+    await checkActivityFamilyUsage(page, width, {
+      base, api, selectedSessionId, otherSessionId, subagentIds, overview: reloadedOverview, parentReady,
+      setMetricsChildRunning: (value) => { metricsChildRunning = value; },
+    });
 
     const before = await api("/api/agent/running");
     const reviewedBefore = new Map(before.reviewedRuns.map(({ sessionId, at }) => [sessionId, at]));
