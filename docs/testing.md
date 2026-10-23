@@ -345,8 +345,9 @@ ignored-abort tests are now present in
 delivered JSON and joined failure cleanup, without production changes. Their focused
 Nix checks and private stale-acceptance mutations exercise those assertions; complete
 candidate acceptance remains separately required. Subsequent Markdown/media,
-FileViewer/workspace, model/session and small-control adoption is scoped by the
-[batched rollout plan](plans/2026-10-23_batched-behavioral-test-ownership-plan.md)
+FileViewer/workspace and small-control adoption, plus the explicitly deferred
+model/session investigation, are scoped by the
+[completed batched rollout](plans/archived/2026-10-23_batched-behavioral-test-ownership-plan.md)
 and [authoring guide](test-writing.md), not retrospectively certified by these
 older passes. Do not describe full hooks, all viewer modes or every source-shape
 family as migrated.

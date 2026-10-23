@@ -27,10 +27,10 @@ Evidence root: `/home/robert/.cache/pi-web-ownership-rollout/run.eHEVKh`.
 
 ## Plan relationship
 
-[Testing](../testing.md), [browser acceptance](../../e2e/README.md),
-[ADR0034](../adr/0034-behavioral-test-ownership-and-feedback.md) and focused
+[Testing](../../testing.md), [browser acceptance](../../../e2e/README.md),
+[ADR0034](../../adr/0034-behavioral-test-ownership-and-feedback.md) and focused
 feature/session/model guides own the existing architecture and baseline. The
-[completed Activity pilot](archived/2026-10-23_activity-client-ownership-pilot-plan.md)
+[completed Activity pilot](2026-10-23_activity-client-ownership-pilot-plan.md)
 is precedent/evidence, not authority to remove another feature's proof. Existing
 product-feature plans keep their semantics and outstanding obligations. This plan
 owns only the cross-family testability/test-ownership rollout and contributor
@@ -211,6 +211,46 @@ inputs, wider workers, E-first scheduling or cached native authority. Full
 acceptance remains sandboxed core/static/plugins, all installed browser/terminal
 groups and real Home Manager VM. No checkout production build or host-service use.
 
+## Verified acceptance and handoff
+
+Complete acceptance executed on `333bb2d9f23e8dc28e1d589859508a8f48a4d2c7`,
+already rebased on current local main `90b9dce1affaae161057e0b9292795ba35246a9e`:
+`nix run .#test -- all --workers 4 --jobs 4` passed in **342s**, within351.05s.
+**449 files / 3470 tests / 12 suites**, all26 browser/terminal groups and59 exact
+receipts, and the genuine Home Manager/systemd deployment VM passed. Panel7/6/5s,
+median **6s**, within20.5s. Requested/effective browser/core widths remained4/4;
+32CPU/about57GiBavailable admitted overlap. No skips/cancellations/not-started/
+bounded uncertainty/observed survivors; unobserved escaped descendants uncertified.
+
+Exact source `/nix/store/bw69bflp7l51l1wjvkydrqnhhfvj3pcn-source`, digest
+`062fd966d37e9a919a189dd4212517015cd23528f07cd7938241bb3b208a2f09`, persistently
+copied with manifest to evidence `full-tested-source/`. The production package
+`/nix/store/xfm4ipkmzkqrvnpd9d3z696c0pqayn77-pi-web-0.9.3` and genuine driver
+`/nix/store/hf2xxc4xbhf6zclv5rq5j6g9pnrbd4yp-pi-web-service-driver` are identical
+to the preceding accepted application, not cached execution authority. Every
+required effectful level ran fresh; static definitions/evidence retain their
+ordinary input-bound reuse. Three existing lint warnings remain; no errors.
+
+End-to-end342s includes preparation: core envelope260.379s, browser311.797s
+(overlap, not additive), browser support4.654s/manifest5.014s, browser first-to-last
+capsule301.650s. Service envelope24.960s includes actual guest18.406s. Prior347s
+versus342s is one local warm observation, **not** isolated causal/statistical,
+cold-cache, CI/ARM or machine-exclusive speedup evidence. No browser matrix was
+reduced. Detailed driver/summary/static/lifecycle/source/effect evidence remains
+in `full-acceptance-analysis.json` and `full-all-1-*` under the retained root.
+
+Independent final review found no P1/P2 source blocker and verified the exact
+retirements/unchanged production/native/browser boundaries. Subsequent closeout
+is evidence/wording/plan-archive Markdown only. Bind unchanged admitted non-doc
+bytes, package/static identities and a real proportional exact-tip check; do not
+claim a second full execution. Current authoring/remaining directions belong in
+[Writing tests](../../test-writing.md), execution in [Testing](../../testing.md).
+
+Actual exact-state local nonFF merge and separately approved cleanup are handed
+off to the global git-worktrees lifecycle and integrated tools, with durable
+receipts and final status in the private evidence root. **Archival is neither
+approval nor a claim these operations already executed.** No remote publication.
+
 ## Plan
 
 - [x] Complete a finite candidate/intentional-retain census; choose named coherent
@@ -224,11 +264,12 @@ groups and real Home Manager VM. No checkout production build or host-service us
   preserve all browser matrices and unique native/security/default obligations.
 - [x] Integrate owner/migration/review guidelines and bounded compatible guards;
   record intentional retains and live F/E rationale/holds, unchanged native proof.
-- [ ] Run batched focused Nix selections, independent safety/coverage review and
+- [x] Run batched focused Nix selections, independent safety/coverage review and
   settled-source full acceptance/performance checks with source-bound evidence.
-- [ ] Rebase onto current local main, reassess/reverify relevant exact inputs,
-  commit reviewable handoff, archive only after finite completion, then use separate
-  exact-action integration and cleanup gates. Preserve evidence/backups; no push.
+- [x] Rebase onto current local main and verify the candidate; prepare the reviewed
+  implementation handoff/archive. Transfer actual exact-action integration and
+  cleanup to the global lifecycle/tools, not a self-authorizing plan checkbox.
+  Preserve all evidence/unrelated resources; no push.
 
 ## Risks and recovery
 
@@ -246,13 +287,14 @@ user data, durable ledgers, native resources, unrelated code or external evidenc
 
 ## Completion checklist
 
-- [ ] Named batches have exact dispositions and meaningful replacement/red evidence;
+- [x] Named adopted batches have exact dispositions and meaningful replacement/red evidence;
   retained native/browser/architecture cases are deliberate, not blanket leftovers.
-- [ ] Actual production module/controller/mounted owners prove their claimed scope;
+- [x] Actual production module/DOM/mounted owners prove their claimed scope;
   no copied algorithm, source spelling or emulated DOM is presented as native proof.
-- [ ] Maintained guidance makes new tests follow the structure with ordinary current
+- [x] Maintained guidance makes new tests follow the structure with ordinary current
   entrypoints and existing private support, without a new mandatory backend/runner.
-- [ ] Full current-source acceptance, original timing gates and exact-input/rebase
+- [x] Full current-source acceptance, original timing gates and exact-input/rebase
   safeguards pass, with preparation/execution/uncertainty reported separately.
-- [ ] Current mechanisms/findings/follow-ups have maintained owners; actual Git and
-  cleanup execution are separately approved/verified, and remote status is honest.
+- [x] Current mechanisms/findings/follow-ups have maintained owners; actual Git and
+  cleanup execution remain separately gated by the global lifecycle/tools and
+  private final receipts, not asserted by archival. No remote action authorized.

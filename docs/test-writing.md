@@ -159,7 +159,7 @@ Synthetic statuses prove geometry only, never authorize native operations.
 
 The [Activity recipe](testing.md#activity-client-pilot-recipe) and
 [Activity ledger](activity-testing.md) remain Activity-only. The
-[batched rollout plan](plans/2026-10-23_batched-behavioral-test-ownership-plan.md)
+[completed batched rollout](plans/archived/2026-10-23_batched-behavioral-test-ownership-plan.md)
 owns this subsequent finite adoption/disposition. A candidate census is not a claim
 that every file has migrated. Additive mounts or focused greens do not themselves
 retire old tests or constitute full candidate acceptance.
@@ -189,6 +189,14 @@ Do not infer a product defect, suppress diagnostics or treat that proposed named
 maintenance join as shipped machinery. This batch adds no production seam and
 leaves all browser matrices unchanged. The plan records exact original-coordinate
 retirements and deliberately retained behavioral gaps, not an all-family rewrite.
+
+Follow-up owners remain explicit here: model/session work must first establish
+honest actual-work/React boundaries and rerun guarded startup/selection/event
+proof before retirement; preserve the failed prototype rather than treating its
+assertions as accepted machinery. Files mode/supported-Diff/grammar, parked/queued
+workspace and menu connections retain the existing mixed/browser owners until
+exact runtime replacements exist. Four broad-import E holds need actual dependency/
+effect/settlement review, not promotion from a focused green or a faster schedule.
 
 ## Guards, classification and acceptance
 
