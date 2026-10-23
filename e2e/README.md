@@ -148,6 +148,13 @@ Full useAgentSession/FileViewer mounting remains
 deferred; existing actual callback/loader tests and Chromium retain their
 respective owners.
 
+Acceptance's held initial status uses this barrier to continue Chromium's original
+GET after observing its loading UI, then joins actual body consumption and restores
+the observer before later navigation. Do not reintroduce a `route.fetch()`/fulfill
+copy: that extra APIRequestContext hop can select an idle Node pooled socket while
+the server closes it. No retry, fabricated status body or HTTP-error exemption is
+needed to test the initial-read ordering.
+
 For natural polling use `observeBrowserReads(page, specs, { natural: true })`,
 await `wait()`, assert UI/scroll, and await `dispose()` in `finally` (see
 `file-panel.mjs`). Observe the application's new reads and JSON consumption with
