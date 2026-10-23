@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="930" viewBox="0 0 1440 930" role="img" aria-labelledby="title desc">
+<title id="title">Guided review desktop reader — increment 1 design sketch</title>
+<desc id="desc">A chapter outline, short review explanation and two pinned evidence targets. Back and Next change steps. No review-recording controls appear in this reader-only increment. Static illustration, not implemented UI.</desc>
+<defs><style>
+text{font-family:DejaVu Sans,sans-serif;fill:#e4e9f2;font-size:15px}.muted{fill:#a9b4c8}.small{font-size:12px}.tiny{font-size:11px}.label{font-size:13px;font-weight:bold;letter-spacing:.7px}.heading{font-size:23px;font-weight:bold}.code{font-family:DejaVu Sans Mono,monospace;font-size:11px}.accent{fill:#9dbeff}.button{fill:#273650;stroke:#516886}.rule{stroke:#354257;stroke-width:1}
+</style></defs>
+<rect width="1440" height="930" fill="#101722"/>
+<rect width="1440" height="62" fill="#1d293c"/>
+<text x="24" y="38" class="label accent">DESIGN DRAFT · INCREMENT 1 · READER ONLY</text>
+<text x="1040" y="38" class="small muted">Static sketch — controls do not work</text>
+<text x="24" y="99" class="heading">Pinned evidence review</text>
+<rect x="1056" y="76" width="150" height="34" rx="7" class="button"/><text x="1080" y="98" class="small">Return to document</text>
+<rect x="1220" y="76" width="196" height="34" rx="7" class="button"/><text x="1241" y="98" class="small">Focus evidence</text>
+<line x1="20" y1="124" x2="1420" y2="124" class="rule"/>
+<rect x="20" y="140" width="222" height="686" rx="10" fill="#182232"/>
+<text x="38" y="171" class="label muted">CHAPTERS / STEPS</text>
+<text x="38" y="212" font-weight="bold">1. Evidence identity</text>
+<text x="48" y="250" class="small muted">1.1 Material identity</text>
+<rect x="32" y="268" width="198" height="62" rx="6" fill="#293f62"/>
+<text x="48" y="292" class="small accent">1.2 Obsolete reads</text>
+<text x="48" y="312" class="tiny muted">Current step · freely selected</text>
+<text x="48" y="363" class="small muted">1.3 Comparison scope</text>
+<text x="38" y="420" font-weight="bold">2. Evidence limits</text>
+<text x="48" y="455" class="small muted">2.1 What can we conclude?</text>
+<line x1="38" y1="493" x2="222" y2="493" class="rule"/>
+<text x="38" y="524" class="small muted">Jump anywhere.</text>
+<text x="38" y="545" class="small muted">Position is not completion.</text>
+<text x="38" y="774" class="tiny muted">Outline can collapse for space.</text>
+<text x="38" y="794" class="tiny muted">No answers or marks saved here.</text>
+<rect x="258" y="140" width="430" height="686" rx="10" fill="#1b2637"/>
+<text x="282" y="173" class="label accent">CHAPTER 1 · STEP 1.2</text>
+<text x="282" y="216" class="heading">Can an obsolete read</text>
+<text x="282" y="246" class="heading">still change the display?</text>
+<text x="282" y="285" class="small muted">One question. Two connected evidence targets.</text>
+<text x="282" y="337" class="label accent">LOOK AT</text>
+<text x="282" y="367">Abort cleanup and signal guards.</text>
+<text x="282" y="391">Compare implementation with the</text>
+<text x="282" y="415">immutable-source test.</text>
+<text x="282" y="466" class="label accent">CHECK FOR</text>
+<text x="282" y="496">Which state updates can settle late?</text>
+<text x="282" y="520">Does this test cover that behavior,</text>
+<text x="282" y="544">or a different guarantee?</text>
+<text x="282" y="595" class="label accent">WHY IT MATTERS</text>
+<text x="282" y="625">Correct immutable bytes can still be</text>
+<text x="282" y="649">the wrong result for the current step.</text>
+<rect x="282" y="686" width="378" height="44" rx="7" class="button"/>
+<text x="301" y="714" class="small">Show more context</text>
+<text x="282" y="774" class="small muted">Guide text stays readable while you inspect.</text>
+<rect x="704" y="140" width="716" height="686" rx="10" fill="#182232"/>
+<text x="726" y="173" class="label">EVIDENCE · SAME STEP</text>
+<rect x="1198" y="151" width="201" height="32" rx="6" fill="#293f62"/>
+<text x="1215" y="172" class="small accent">Compare: two targets</text>
+<text x="726" y="207" class="small muted">Pi Web · pinned 76e5fe4d… · not working files</text>
+<rect x="726" y="231" width="328" height="438" rx="7" fill="#111b2b" stroke="#40516b"/>
+<rect x="1070" y="231" width="328" height="438" rx="7" fill="#111b2b" stroke="#40516b"/>
+<text x="742" y="259" font-weight="bold">A · Implementation</text>
+<text x="1086" y="259" font-weight="bold">B · Immutable-source test</text>
+<text x="742" y="287" class="tiny muted">components/ReviewNotebookBlock.tsx</text>
+<text x="1086" y="287" class="tiny muted">lib/review-source.test.mjs</text>
+<text x="742" y="309" class="tiny muted">Source · lines 42–64 · same pinned revision</text>
+<text x="1086" y="309" class="tiny muted">Source · lines 20–40 · same pinned revision</text>
+<line x1="742" y1="325" x2="1038" y2="325" class="rule"/>
+<line x1="1086" y1="325" x2="1382" y2="325" class="rule"/>
+<text x="742" y="352" class="small accent">Source     Diff</text>
+<text x="1086" y="352" class="small accent">Source     Diff</text>
+<rect x="734" y="375" width="312" height="125" fill="#213653"/>
+<text x="742" y="402" class="code">44 const controller =</text>
+<text x="762" y="422" class="code">new AbortController();</text>
+<text x="742" y="455" class="code">45 const signal = controller.signal;</text>
+<text x="742" y="488" class="code">… guard asynchronous updates …</text>
+<text x="742" y="529" class="code">63 return () =&gt; controller.abort();</text>
+<text x="1086" y="402" class="code">… write MUTABLE WORKING FILE …</text>
+<text x="1086" y="438" class="code">… read pinned immutable source …</text>
+<text x="1086" y="474" class="code">… assert original contents …</text>
+<text x="1086" y="529" class="small muted">Server identity checks, not</text>
+<text x="1086" y="551" class="small muted">mounted navigation-order proof.</text>
+<text x="742" y="621" class="small accent">Show full context</text>
+<text x="1086" y="621" class="small accent">Show full context</text>
+<text x="726" y="700" class="tiny muted">Schematic excerpts — exact source is in the sample notebook cards.</text>
+<rect x="726" y="726" width="672" height="64" rx="7" fill="#262e3d"/>
+<text x="742" y="752" class="small">Test source is not a pass receipt.</text>
+<text x="742" y="774" class="small muted">No test execution or review completion is implied.</text>
+<line x1="20" y1="846" x2="1420" y2="846" class="rule"/>
+<rect x="258" y="862" width="132" height="42" rx="7" class="button"/><text x="283" y="889">← Back</text>
+<text x="548" y="889" class="small muted">Step 2 of 4 · Back/Next changes steps, not targets</text>
+<rect x="1282" y="862" width="138" height="42" rx="7" fill="#365d9c"/><text x="1311" y="889">Next →</text>
+</svg>

@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1190" viewBox="0 0 1440 1190" role="img" aria-labelledby="title desc">
+<title id="title">Interactive review loop — increment 2 design storyboard</title>
+<desc id="desc">After explicit recording activation, an unanswered required question blocks only Reviewed, never Next. A selected feedback item leads to a previewed investigation request. A later agent reply appears beside the item, leaving resolution to the reviewer. All records are fictional examples.</desc>
+<defs><style>
+text{font-family:DejaVu Sans,sans-serif;fill:#e4e9f2;font-size:15px}.muted{fill:#a9b4c8}.small{font-size:12px}.label{font-size:13px;font-weight:bold;letter-spacing:.5px}.heading{font-size:22px;font-weight:bold}.accent{fill:#9dbeff}.amber{fill:#f0cf87}.button{fill:#273650;stroke:#516886}.rule{stroke:#354257;stroke-width:1}
+</style></defs>
+<rect width="1440" height="1190" fill="#101722"/>
+<rect width="1440" height="62" fill="#1d293c"/>
+<text x="24" y="38" class="label accent">DESIGN DRAFT · INCREMENT 2 · INTERACTIVE REVIEW LOOP</text>
+<text x="1040" y="38" class="small muted">Fictional records · static controls</text>
+<text x="24" y="99" class="heading">Step 1.2 · Can an obsolete read still change the display?</text>
+<rect x="24" y="119" width="1392" height="62" rx="7" fill="#253347"/>
+<text x="42" y="143" class="small">Scenario: user explicitly enabled review recording → &lt;notebook&gt;/review-data/</text>
+<text x="42" y="165" class="small muted">Local working-tree files. Not automatically committed or shared. Reading alone does not enable writes.</text>
+<text x="1260" y="154" class="small accent">Saved · example</text>
+<rect x="24" y="201" width="676" height="401" rx="9" fill="#1b2637"/>
+<text x="46" y="233" class="label">YOUR REVIEW JUDGMENT</text>
+<text x="466" y="233" class="small amber">Required for Reviewed</text>
+<text x="46" y="269">Does the shown evidence establish that an obsolete</text>
+<text x="46" y="293">response cannot replace the current step's material?</text>
+<circle cx="54" cy="325" r="7" fill="none" stroke="#a9b4c8"/><text x="74" y="330" class="small">Supported by the evidence I inspected</text>
+<circle cx="54" cy="357" r="7" fill="none" stroke="#a9b4c8"/><text x="74" y="362" class="small">I found a potential gap</text>
+<circle cx="54" cy="389" r="7" fill="none" stroke="#a9b4c8"/><text x="74" y="394" class="small">The supplied evidence is insufficient</text>
+<text x="46" y="429" class="small muted">Alternative outcomes — explicitly record one:</text>
+<rect x="46" y="442" width="102" height="31" rx="6" class="button"/><text x="67" y="462" class="small">Unsure</text>
+<rect x="159" y="442" width="145" height="31" rx="6" class="button"/><text x="179" y="462" class="small">Not applicable</text>
+<rect x="315" y="442" width="87" height="31" rx="6" class="button"/><text x="342" y="462" class="small">Skip</text>
+<rect x="46" y="487" width="630" height="43" rx="5" fill="#111b2b" stroke="#40516b"/><text x="60" y="513" class="small muted">Optional explanation…</text>
+<text x="46" y="568" class="small amber">Unanswered: choose an outcome, then Record response.</text>
+<rect x="470" y="546" width="206" height="35" rx="6" fill="#303b4d"/><text x="495" y="568" class="small muted">Record response</text>
+<rect x="720" y="201" width="696" height="401" rx="9" fill="#182232"/>
+<text x="742" y="233" class="label">REVIEW TRAY · ALL CHAPTERS</text>
+<text x="742" y="269" class="small muted">Question / Finding / Guide issue · step, target or selection</text>
+<rect x="742" y="287" width="652" height="162" rx="7" fill="#23334c" stroke="#5875a3"/>
+<rect x="759" y="306" width="17" height="17" rx="3" fill="#8db4f6"/><text x="761" y="320" font-size="14" fill="#101722">✓</text>
+<text x="790" y="320" font-weight="bold">F-01 · Finding · Open</text>
+<text x="759" y="350" class="small">Request explicit lifecycle evidence for late responses.</text>
+<text x="759" y="378" class="small muted">Step 1.2 · Implementation · source lines 61–63</text>
+<text x="759" y="403" class="small muted">ReviewNotebookBlock.tsx · pinned 76e5fe4d…</text>
+<text x="759" y="429" class="small accent">View anchor · Edit finding</text>
+<rect x="742" y="461" width="652" height="53" rx="7" fill="#111b2b"/>
+<rect x="759" y="480" width="17" height="17" rx="3" fill="none" stroke="#8b9bb5"/>
+<text x="790" y="495" class="small">G-01 · Guide issue · Keep test source distinct from a pass</text>
+<text x="742" y="560" class="small muted">1 selected · selection sends nothing</text>
+<rect x="1181" y="535" width="213" height="43" rx="7" class="button"/><text x="1208" y="562" class="small">Prepare batch →</text>
+<rect x="24" y="620" width="1392" height="69" rx="7" fill="#202c3e"/>
+<text x="42" y="647" class="small">State: In progress ▾</text>
+<rect x="226" y="635" width="164" height="34" rx="6" fill="#343c49"/><text x="247" y="657" class="small muted">Mark Reviewed</text>
+<text x="407" y="657" class="small amber">Unavailable: required response missing. Other states remain selectable.</text>
+<rect x="1120" y="635" width="124" height="34" rx="6" class="button"/><text x="1144" y="657" class="small">← Back</text>
+<rect x="1258" y="635" width="136" height="34" rx="6" fill="#365d9c"/><text x="1290" y="657" class="small">Next →</text>
+<text x="24" y="720" class="label accent">HANDOFF STORYBOARD · SEPARATE MOMENTS BELOW</text>
+<rect x="24" y="741" width="676" height="339" rx="9" fill="#1b2637"/>
+<text x="46" y="775" class="label">A · BATCH PREVIEW · NOT SENT</text>
+<text x="46" y="811">Destination: selected existing authoring session</text>
+<text x="46" y="843" class="small">Included: F-01/version, step/version, pinned evidence references</text>
+<text x="46" y="869" class="small muted">No unselected feedback or unrelated session history.</text>
+<rect x="46" y="889" width="630" height="72" rx="7" fill="#28354a"/>
+<text x="62" y="917" font-weight="bold">Investigate and propose — do not implement.</text>
+<text x="62" y="943" class="small muted">Respond by item ID. No automatic test or Git operation.</text>
+<rect x="298" y="993" width="123" height="42" rx="7" class="button"/><text x="331" y="1019" class="small">Cancel</text>
+<rect x="435" y="993" width="241" height="42" rx="7" fill="#365d9c"/><text x="467" y="1019" class="small">Send selected batch</text>
+<rect x="720" y="741" width="696" height="339" rx="9" fill="#182232"/>
+<text x="742" y="775" class="label">B · LATER, BESIDE THE ORIGINAL FINDING</text>
+<text x="742" y="811">F-01 · Still open · Original anchor retained</text>
+<rect x="742" y="831" width="652" height="147" rx="7" fill="#23334c"/>
+<text x="758" y="860" class="small accent">Agent reply R-01 · original investigated version</text>
+<text x="758" y="890" class="small">The test excerpt covers server identity, not mounted ordering.</text>
+<text x="758" y="916" class="small">Propose a controlled delayed-response regression.</text>
+<text x="758" y="950" class="small muted">Illustrative reply. No patch or test execution claimed.</text>
+<text x="742" y="1020" class="small muted">Reviewer decides:</text>
+<rect x="941" y="993" width="161" height="42" rx="7" class="button"/><text x="978" y="1019" class="small">Keep open</text>
+<rect x="1117" y="993" width="158" height="42" rx="7" class="button"/><text x="1161" y="1019" class="small">Resolve</text>
+<text x="24" y="1119" class="small muted">Reviewed ≠ approved, correct or tested. Open findings can remain open on a Reviewed step.</text>
+<text x="24" y="1150" class="small muted">Changed question/evidence: preserve prior answers and show Re-review needed. Never silently rebase anchors.</text>
+</svg>

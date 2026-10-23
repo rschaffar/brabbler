@@ -8,10 +8,13 @@ reviewers navigate freely, record judgments and feed selected concerns back to a
 agent. Deliver two usable increments: the guided reader, then the interactive
 review loop.
 
-**Authority:** This session authorizes planning and this document only. No feature
-implementation, migration of another repository's review material, agent launch,
-remote publication or installed-service change is authorized. Implementation tasks
-below remain pending a separate request.
+**Authority:** The initial session authorized planning; the next request authorized
+the sample chapter and static desktop/narrow-screen sketches. After reviewing
+them, the user approved the rough interaction direction and authorized implementation,
+including architectural refactoring and adaptation of existing components where
+needed. The drawings are not a pixel-perfect contract. Migration of another
+repository's review material, external authoring-session launch, remote publication
+and installed-service changes remain unauthorized.
 
 ## Context
 
@@ -54,6 +57,19 @@ Current evidence at local main `c8557e5afec41739801a756a1d8e0b496f0b316c`:
 | Replies | Agent responses appear beside the original feedback in the notebook. Reviewer resolution remains explicit. |
 | Revision | Preserve history and flag affected state for re-review when guidance/evidence changes. Branch advancement alone does not invalidate unchanged pinned evidence. |
 | Delivery | Increment 1: reader. Increment 2: interactive review loop. |
+
+### Interaction draft
+
+The [design specimen](assets/guided-review-notebooks/design.md) contains a real
+commit-bound sample notebook, static desktop reader/interactive-review sketches
+and a mobile Guide/Evidence/Compare storyboard. The sample's source references
+use `76e5fe4d06cb18f0eb800210dc1aaa4ced36bb92`; fictional feedback/replies and future
+forms are labeled, with no live state files or new authoring syntax. The reader
+and interactive increments are depicted separately. The user accepted the
+three-region desktop layout, stacked mobile comparison and interaction boundaries,
+then approved the specimen as a flexible design baseline after clarifying component
+reuse. See the specimen's reuse/adaptation section. This is design acceptance,
+not completed implementation or verification.
 
 ### Inspiration, not imported behavior
 
@@ -256,10 +272,15 @@ answers to a new question version.
 - [ ] Specify sidecar write authorization, schemas, conflict/recovery behavior,
   reviewer/agent ownership, invalidation rules and handoff transport; review these
   boundaries before implementing persistence or session integration.
-- [ ] Produce a desktop/narrow-screen interaction sketch and a realistic sample
+- [x] Produce a desktop/narrow-screen interaction sketch and a realistic sample
   chapter containing explanation, two evidence targets, a required question and a
-  finding/reply example; obtain user acceptance of the interaction, not authority
-  to execute fixes.
+  finding/reply example; see the linked design specimen and rendered previews.
+- [x] Obtain user acceptance of the interaction specimen; the user approved the
+  rough design after clarifying existing-component reuse and separately authorized
+  implementation and architectural refactoring. No remote/service authority given.
+- [ ] Map shared reader/form primitives and refactor cohesive production owners as
+  needed, preserving existing defaults and regression coverage; avoid duplicating
+  diff controls, reading state, immutable loaders or blocking-question lifecycles.
 
 ### 1. Usable guided reader
 
