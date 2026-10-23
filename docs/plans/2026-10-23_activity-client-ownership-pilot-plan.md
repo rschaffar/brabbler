@@ -57,7 +57,7 @@ observations, not proof that all waiting is redundant or removable.
 The prior verified executable source `8mrm41dja657y412m71vpjzjmxyss3jc` passed full
 347/345s runs (median346s), 436 files/3369 tests, 26 groups/59 receipts and genuine
 Home Manager deployment. Focused Panel samples were 5/5/4s (median5s). Those are
-historical input-bound evidence, not acceptance of this unimplemented pilot.
+historical input-bound evidence, not acceptance of this pilot.
 
 - [Feature contracts](../feature-internals.md) own current Activity/Starred,
   privacy, explicit Read/Later, restoration and native Pause behavior.
@@ -148,8 +148,10 @@ or disposing this controller confers no native cancellation or Acceptance author
 
 ## Initial contract-to-owner map
 
-This is a migration starting point, **not permission to delete assertions**. First
-inventory each current assertion/variant and record its exact replacement/bridge.
+This was the migration starting point, **not permission to delete assertions**.
+The maintained [Activity assertion ledger](../activity-testing.md) now records the
+reviewed disposition, exact original coordinates and proof limits; the exhaustive
+pre-edit inventory and independent reviews remain in the evidence root.
 
 | Current obligation | Primary lower owner | Retained browser/native bridge |
 | --- | --- | --- |
@@ -229,8 +231,36 @@ logs, exported sources, reports and private rejected variants retained).
   `browser-assertion-map.md`, `browser-reduction-contract.md`,
   `browser-reduction-addendum.md` and `browser-disposition-review.md`. Review caught
   missing compact/mobile Acceptance bounds, Escape/focus and Plugins switch proof;
-  those are explicitly retained before any browser deletion. Actual private browser
-  extraction still needs source review, adoption and installed acceptance.
+  those were explicitly retained before browser deletion. Independent actual
+  extraction review found no P1/P2 blocker; adopted bytes were bound to the reviewed
+  draft with the sole exact-title locator correction described below.
+- Pre-rebase installed Activity candidate1 failed **178s** after its desktop native
+  chain passed: the new responsive zero-parent-row oracle matched three children's
+  `in Branch root` metadata. Screenshot and actual confirmed ack body show the
+  parent absent. Changed only that locator to its exact title, not the receipt/
+  reload assertions or deadline. Candidate2 passed **119s command /107.334s capsule**,
+  all three honest receipts; desktop/tablet/mobile chains **65.726/18.799/20.231s**.
+  Source `/nix/store/b1j3zkwyw0b163gl6z8cv8dyknq5a32q-source`, digest
+  `6943b8c1a6196010bf0cd97809a25f60864eaec344e64c012753983fda40a400`.
+  First attempt included **82.440s** changed-package/support preparation. These are
+  focused/pre-rebase results, not full or matched-concurrency/cold-cache gains.
+- Rebased onto incoming `96802b0ac071080e96262ce1103cf367e31fb80c`, preserving
+  persistent-New/drafts/defaults/desktop sidecars and the complete incoming mobile
+  Activity/Starred New assertions **before** the responsive return. The first
+  conflicted attempt was aborted, exact old clean tip restored and backed up;
+  retry used only three mechanical unions (lane entries, imports, browser guide).
+  Independent composition review found no P1/P2 blocker and confirmed byte-identical
+  incoming callbacks/mobile block and retained feature owner/native proof files.
+  Historical pre-rebase feature tip `5f74de4f178d782cf3d32fb59cf8eaf05daeed37` is
+  retained by `backup/activity-client-before-main-rebase-20261023T1229`.
+- Composed focused selection passed **14 files/240 tests/46s**, including both
+  mounted families, incoming storage/New/native SDK owners, actual Pause ledger
+  negatives and Acceptance-child independence. First36s attempt exposed one
+  obsolete warm-session source assertion for the removed mirrored callback;
+  preserved all lease assertions and made only the structural shared-owner binding
+  follow the actual root. No product behavior change or broad hook-test migration.
+  That reviewed repair is `6e3bc85d1f06ac9545f97e4f7503a94563f19e1d`.
+  Full composed browser/terminal/deployment and original timing gates remain pending.
 - Scope limits remain explicit: mounted ActivityViews/notification adapters are not
   full Sidebar/AppShell/router/metrics mounting. Native/default/browser owners stay
   real. The shared `owned-routes` event-rejection escape and socket cause remain
@@ -260,7 +290,7 @@ logs, exported sources, reports and private rejected variants retained).
 - [x] Reconcile native/composition gaps without weakening existing real SDK/store/
   process/race tests. In particular, do not mistake pause/transcript assertions for
   explicit proof that a pause creates no Activity completion/acknowledgement.
-- [ ] Replace repeated browser matrices with the agreed golden journey and focused
+- [x] Replace repeated browser matrices with the agreed golden journey and focused
   viewport/input checks, using the reviewed map. Preserve necessary real polling,
   reload/cross-tab, native control and Acceptance-independence connections. Update
   scenario IDs/independent inventories honestly; do not rename omitted proof as
@@ -309,9 +339,9 @@ red and original proof instead of weakening assertions or changing timeouts.
 
 ## Completion Checklist
 
-- [ ] Every former Activity obligation has a reviewed lower owner/necessary bridge;
+- [x] Every former Activity obligation has a reviewed lower owner/necessary bridge;
   removed source/static/browser assertions have meaningful replacement evidence.
-- [ ] All five selected behavioral priorities pass on real production controller
+- [x] All five selected behavioral priorities pass on real production controller
   and mounted composition, including failure/teardown paths and controlled reds.
 - [ ] Native/security/persistence/SDK guarantees and Acceptance independence remain
   real; deliberate races and current exclusivity holds have explicit disposition.

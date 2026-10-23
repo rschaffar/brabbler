@@ -257,7 +257,10 @@ admitted coordinator job/native child across actual Activity-observer disposal,
 then releases its own named file gate and checks durable success/kernel closure.
 That bridge does not resolve the file's separate historical detached-child E hold.
 SSR privacy-withholding tests remain complementary. This pilot
-does not migrate Markdown, Git, SSH or all source-shape families.
+does not migrate Markdown, Git, SSH or all source-shape families. The maintained
+[Activity assertion ledger](activity-testing.md) records the exact retired-matrix
+families, retained browser/native bridges, incoming mobile New obligations and
+proof limits; it does not define another acceptance level.
 
 ### One default native composition
 
