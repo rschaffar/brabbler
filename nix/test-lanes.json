@@ -4,6 +4,41 @@
   "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. Automatic selection remains capped at four; widths through eight are explicit opt-in experiments whose isolation review is not proof of native timing margins or complete acceptance. Re-review when resource/fixture behavior changes. The 2026-10-22 audit JSON is immutable historical evidence, not live authority or a current source-byte/reason/estimate requirement. Live unresolved holds carry the concerns still requiring review; source digests alone do not prove isolation.",
   "files": [
     {
+      "path": "components/ArchivedSessionNotice.behavior.test.mjs",
+      "lane": "F",
+      "reason": "Actual isolated React/StrictMode notice with process-private exact PATCH/header gates and real I18n. No native service, filesystem, SDK, process, socket or source writes. Live errors survive production catches; serial fixture closes admission, unmounts, releases/joins admitted port/reply/React work, closes realm and restores fetch. Admitted restore completion is observed, not cancelled by unmount; shell/browser catalogue wiring remains separate. Jiti fsCache disabled."
+    },
+    {
+      "path": "components/ToolDefinitionsPanel.behavior.test.mjs",
+      "lane": "F",
+      "reason": "Direct actual schema projection and real tool-control mounts with supplied tool data and real I18n/application React. Local runtime closure is client-only React/UI/pure schema formatting; no fetch/native/SDK/filesystem/process or source writes. Each serial mount uses private jsdom and actual cleanup/global restoration. CSS/narrow geometry and toolbar composition remain separate guards/browser proof; Jiti fsCache disabled."
+    },
+    {
+      "path": "components/AgentSessionPanel.behavior.test.mjs",
+      "lane": "F",
+      "reason": "Actual exported Content leaf with external session/running/usage snapshots and real DOM search/selection events, not usage-network controller or AppShell metrics. Imports client-only React/i18n/usage-format leaves; any HTTP is rejected by a live collector. Process-private serial jsdom/global setup and full fixture cleanup; no source/native/SDK/process/port effects. Original SSR usage/all-width browser metrics remain; Jiti fsCache disabled."
+    },
+    {
+      "path": "hooks/useStreamingSelector.behavior.test.mjs",
+      "lane": "F",
+      "reason": "Actual streaming store/selectors and real React layout subscription over synchronous in-memory event publications. Transparent subscription bookkeeping delegates every operation to production; no timers/native/filesystem/network/SDK/source effects. Serial isolated jsdom roots unmount and verify exact subscription release before restoring globals. No claim that1000 publications require1000 React commits; native streaming/browser bridge remains. Jiti fsCache disabled."
+    },
+    {
+      "path": "components/MarkdownBody.behavior.test.mjs",
+      "lane": "F",
+      "reason": "Actual production MarkdownBody/local/blocked link components under real private StrictMode/jsdom with current callbacks and DOM events. Controlled inputs do not activate code fences, images, Mermaid or immutable review children; transitive client imports remain process-local. No successful network, SDK, native process/filesystem/source write or fixed port. Fetch/transport fail closed with live caught-error collection; cleanup unmounts, joins fixture promises, closes realm and restores globals. Native rendering/network/path-authority bridges remain unchanged; Jiti filesystem cache disabled."
+    },
+    {
+      "path": "components/MarkdownMedia.behavior.test.mjs",
+      "lane": "F",
+      "reason": "Actual production media/scope components in isolated real React/StrictMode/jsdom. Runtime imports are React/i18n and client-safe media/file-link leaves; no SDK/server/native process/socket/source write. Only unsupported pause/load methods and document visibility are controlled; no playback/codec/resource closure claim. Serial cases retain live failures through actual listener cleanup, unmount, fixture joins, realm closure and global restoration. Native media/range/security/browser owners remain separate; Jiti filesystem cache disabled."
+    },
+    {
+      "path": "lib/file-line-navigation.test.mjs",
+      "lane": "F",
+      "reason": "Direct actual file-line-navigation module over isolated real jsdom trees from private test support. Runtime production closure has only a type-only file-links import; no SDK, native processes, filesystem writes, sockets, shared globals or resource loading. Each synchronous serial case closes its own realm in registered teardown. Numeric rectangles prove selection/highlight/pane assignment only, not native layout or scrolling; installed browser jumps remain unchanged. Jiti filesystem cache is disabled."
+    },
+    {
       "path": "lib/draft-store.test.mjs",
       "lane": "F",
       "reason": "Fresh actual Jiti imports (moduleCache:false/fsCache:false) exercise draft-store and its pure image-attachments dependency over shared per-case narrow in-memory storage. Serial cases restore the process-local window descriptor; blocked/quota/corrupt inputs perform no real browser, filesystem, SDK, timer or network work. No source writes or cross-file state; durable browser persistence remains a separate installed-browser obligation."
@@ -254,7 +289,7 @@
     {
       "path": "app/api/files/watch-route.test.mjs",
       "lane": "F",
-      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+      "reason": "Actual full GET and real SSE helper via reviewed whole-module capability loader; process-private dynamic stat/watch/authority/path doubles, controlled interval/wall clock, actual in-memory readers and synchronous connected-forwarding gate. Failure-safe owned abort/cancel/callback/timer cleanup with live caught-error collector. Source-loader read/transpile/VM only; no native fs.watch, path authorization or browser proof; independent native/browser owners retained."
     },
     {
       "path": "components/AgentSessionPanel.test.mjs",
@@ -1247,12 +1282,6 @@
       "estimatedMs": 2000
     },
     {
-      "path": "components/MarkdownMedia.test.mjs",
-      "lane": "F",
-      "reason": "Production media components run solely against synthetic hook/native-media/document objects; activation IDs are sequence-based and no real media or HTTP resource is opened.",
-      "estimatedMs": 1000
-    },
-    {
       "path": "components/ModelSelector.viewport.test.mjs",
       "lane": "F",
       "reason": "Calls only the pure viewport-layout export on numeric fixtures; imported hook modules have no eager browser subscriptions.",
@@ -1944,6 +1973,10 @@
     }
   ],
   "holds": {
+    "components/FileViewer.media-behavior.test.mjs": "Actual image/audio/video/PDF branch mounts over exact metadata/watch capability gates, including ignored body success/error and cleanup/currentness. Same broad Prism/Markdown/Pierre/dynamic import graph as text owner; unresolved eager dependency/effect review remains E. Not native media/src/PDF transport closure or retained media callback entry suppression; both browser inputs/native proof unchanged.",
+    "components/SkillsConfig.behavior.test.mjs": "Actual full Skills/settings/instructions mount with synthetic catalogue/content/PATCH responses and no child substitution. Broad Markdown/dynamic client imports and finite async-handler cleanup need executed import/effect review before pool isolation; preserve exclusive pending that review, not automatic F from leaf naming.",
+    "components/FileViewer.behavior.test.mjs": "Actual full viewer/edit-store/StrictMode composition with exact synthetic transport/watch/body gates; broad real Pierre/Markdown/Prism/theme imports and detached read/watch continuations require parent import/effect/settlement review. No SDK/native IO intentionally admitted, but fixture-owned joins are not a production disposal API; retain exclusive pending executed review rather than inheriting F from extracted probes.",
+    "components/FileWorkspace.behavior.test.mjs": "Initial actual workspace/store/Strict Effects import probe with style-only alias and controlled ResizeObserver; broad FileViewer/Markdown/diff/theme transitive effects still need full mounted fixture/admission/cleanup review. No isolation promotion from a successful mount; retain exclusive until that review settles.",
     "hooks/new-session-persistence.test.mjs": "Explicit E hold: newly mounts the full production useAgentSession/I18n graph with real StrictMode, restricted synthetic fetch endpoints, per-realm storage and joined public initialization/account-operation promises before DOM/global disposal. Extracted callback matrices are labeled separately and join their complete effect chains. No SDK/session/server is intentionally constructed, but the full hook's broad transitive import/default-timer/event-connection closure has not received a complete pool-isolation review. Keep exclusive pending that review; DOM proof is not native network, layout or AppShell-adoption proof.",
     "lib/browser-ssh-client.test.mjs": "New file; retain explicit E pending first live pool review of browser client import/default-storage and callback reachability. Current bounded recovery/ack matrices use only FakeStorage and do not invoke fetch, hardware or connection APIs; those synthetic inputs are not a full import/callback certificate. No native leak is alleged and no promotion is proposed.",
     "lib/browser-ssh-enrollment.test.mjs": "New file; retain explicit E pending first full enrollment/protocol runtime-closure and resource review. Tests use real crypto over synthetic bounded CBOR/WebAuthn bytes, with no authenticator, network or server. Parser validity alone is neither possession/attestation proof nor a completed pool review; no promotion is proposed.",
@@ -1974,7 +2007,6 @@
     "components/ThinkingPieces.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: The 100000-character fixture is bounded and its window mock is process-local/restored, but MessageView support-module import effects remain incompletely reviewed.",
     "components/ToolArguments.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Static tool-card fixtures and expansion state are process-local and reset in finally; broad MessageView and tool-field helper review remains incomplete.",
     "components/model-overrides.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Real models.json writes and atomic temporary files are confined to a unique mkdtemp fixture with synchronous after-hook removal, but the imported SDK barrel effects could not be verified.",
-    "hooks/useStreamingSelector.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Finite synchronous store/VM-selector tests unsubscribe deterministically, but imported normalize helper was not read before termination.",
     "lib/acceptance/coordinator.test.mjs": "Changed fixture owns coordinator disposal, released executors and pump drain. Retain E pending full queued/active/failure-path and transitive-import scheduling review; observer disposal must not acquire cancellation authority over independently admitted Acceptance jobs.",
     "lib/acceptance/interfaces.test.mjs": "Changed shared coordinator fixture includes owned drain and private agent settings. Full interface/plugin-revocation/global-registration teardown and import closure have not been re-reviewed for pool safety; retain E without undoing the drain improvement.",
     "lib/acceptance/process.test.mjs": "Retain E after Activity observer-independence bridge: new case uses real coordinator capture/ledger/admission and native watched-file ready/release gates, joins the original process supervisor and coordinator, and leaves native job cancellation independent of Activity disposal. This does not resolve the existing deliberately detached descendant case, which substitutes a fixed 1900ms sleep for an owned descendant close/exit join; complete file teardown remains uncertified under scheduling pressure.",

@@ -100,18 +100,7 @@ test("grammar demand belongs only to an active bounded typed Source view", () =>
   assert.equal(eligible(small, "diff", false), true, "unavailable Diff falls back to Source");
 });
 
-test("markdown preview links use a stable element type for rejection feedback", () => {
-  const file = ts.createSourceFile("FileViewer.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  assert.ok(file.statements.some(node => ts.isFunctionDeclaration(node) && node.name?.text === "MarkdownPreviewLink"));
-  assert.match(source, /a: MarkdownPreviewLink/);
-  assert.match(source, /<MarkdownPreviewLinkContext\.Provider value=\{\{ baseDir: markdownDirectory, relativeRoot: cwd \?\? markdownDirectory, onOpenFile \}\}>/);
-  assert.match(source, /<BlockedFileLink key=\{href\} reason=\{resolution\.reason\}>/);
-});
-
-test("markdown preview links carry PDF page fragments", async () => {
-  assert.match(source, /parsePdfPageFragment/);
-  assert.match(source, /<LocalFileLink href=\{href\}[^\n]*filePath=\{linkedFile\} page=\{parsePdfPageFragment\(href\) \?\? undefined\}/);
-  assert.match(source, /lineTarget=\{parseFileLineTarget\(href\)\} onOpenFile=\{onOpenFile\}/);
+test("local file link menu actions forward file disposition", async () => {
   const localLink = await readFile(new URL("./LocalFileLink.tsx", import.meta.url), "utf8");
   assert.match(localLink, /onOpenFile\(filePath, page, lineTarget, disposition\)/);
 });

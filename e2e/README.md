@@ -100,7 +100,12 @@ Keep browser ownership thin: production-module/controller tests own decision
 matrices, mounted React owns effects/closures/cleanup, and private native fixtures
 own Git/path/SDK resources. Chromium retains layout, native capture/scroll/media,
 networking and real user connections; callback or emulated-DOM tests cannot replace
-those. See the [core recipes and checklist](../docs/testing.md#contributor-ownership-and-recipes).
+those. See [Writing tests](../docs/test-writing.md) and the existing
+[core recipes](../docs/testing.md#contributor-ownership-and-recipes).
+Before retiring a repeated matrix, map every exact old assertion/input tuple to
+its new owner, retained native/browser/default bridge and proof limit (or explicit
+obsolete reason). Additive green alone does not authorize removal; preserve IDs,
+variants, order and whole-chain receipts.
 
 `browserFixtureRecipe(group)` and `prepareBrowserPrelude(group, options, stage)` in
 `browser-fixture-recipes.mjs` describe the reviewed ordered prelude. Expected IDs

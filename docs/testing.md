@@ -124,6 +124,11 @@ publish an artifact. Manual `nix develop`/`npm run dev` is separate, not accepta
 
 ## Contributor ownership and recipes
 
+[Writing tests](test-writing.md) owns authoring and migration guidelines: real
+production owners, exact assertion/input dispositions, meaningful runtime reds,
+bounded diagnostics and live failure/cleanup obligations. The executable recipes
+below remain here alongside the single Nix/resource/package/acceptance authority.
+
 Choose the **lowest sufficient owner**, then add only the bridges it cannot prove:
 
 1. Policy/data decision? Import the production module with `node:test`/Jiti; vary
@@ -201,7 +206,7 @@ test('events and rerender preserve the mounted instance', async t => {
   const button = view.container.querySelector('button');
   await view.dispatch(button, new view.window.MouseEvent('click', { bubbles: true }));
   await view.rerender(createElement(MountProbe, { ...props, label: 'next' }));
-  assert.equal(view.container.querySelector('button'), button);
+  assert.equal(view.container.querySelector('button') === button, true, 'same button');
   assert.equal(button.textContent, 'next: 1');
   await view.unmount();
   assert.equal(view.container.childNodes.length, 0);
@@ -339,9 +344,13 @@ ignored-abort tests are now present in
 `components/SessionMoveDestinationPicker.stale-delivery.test.mjs`, with genuinely
 delivered JSON and joined failure cleanup, without production changes. Their focused
 Nix checks and private stale-acceptance mutations exercise those assertions; complete
-candidate acceptance remains separately required. Broader full
-`useAgentSession`/FileViewer mounting is deferred. Do not describe all source-shape
-families as migrated.
+candidate acceptance remains separately required. Subsequent Markdown/media,
+FileViewer/workspace and small-control adoption, plus the explicitly deferred
+model/session investigation, are scoped by the
+[completed batched rollout](plans/archived/2026-10-23_batched-behavioral-test-ownership-plan.md)
+and [authoring guide](test-writing.md), not retrospectively certified by these
+older passes. Do not describe full hooks, all viewer modes or every source-shape
+family as migrated.
 
 ## Source and credential boundary
 

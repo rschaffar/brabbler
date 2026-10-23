@@ -116,8 +116,9 @@ matrices. They do not claim full Sidebar/AppShell/router/metrics mounting, CSS,
 real touch/networking, server durability or SDK/process closure. Keep the actual
 browser/default/native bridges for those boundaries and an exact assertion/input
 migration map before reducing repeated viewport work. Contributor recipes and the
-current mechanism live in Testing and Feature contracts; this is an Activity-only
-pilot, not automatic authorization to migrate every feature family.
+current mechanism live in [Writing tests](../test-writing.md), Testing and Feature
+contracts; this is an Activity-only pilot, not automatic authorization to migrate
+every feature family.
 
 ## Fixtures, classification and evidence
 
@@ -194,7 +195,8 @@ stronger held-HEAD server guard is retained. Browser packing hints live in
 `nix/browser-plan.mjs`, with the measured source recorded beside each refreshed
 value, never as deadlines, resource admission or coverage authority.
 
-Current contributor recipes belong in `docs/testing.md` and `e2e/README.md`;
+Current authoring guidelines belong in [Writing tests](../test-writing.md);
+executable recipes remain in `docs/testing.md` and `e2e/README.md`;
 source-bound measurements, retractions and implementation status belong in the
 test-suite architecture overhaul plan. Keep scoped proofs and cold preparation
 separate from warm performance samples. Complete static/core/browser/service
