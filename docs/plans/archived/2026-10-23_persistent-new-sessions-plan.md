@@ -11,7 +11,7 @@ New currently creates only a temporary composer; SDK startup itself can defer it
 - [x] Initialize explicit New composers (not passive project browsing), retain draft identity through asynchronous creation/navigation, and close covering overviews; focused hook/AppShell/tab regressions pass, including restrictive startup preferences and account selection waiting.
 - [x] Add best-effort browser-local text draft storage, preserving memory-only images and rejected-submission/rekey behavior; focused tests pass for reload, corruption, unavailable storage and failed clears.
 - [x] Extend installed-browser coverage for empty-session listing/reload, literal draft restoration and mobile cross-project New; history and Activity groups pass, and the desktop-sidecar correction/no-session Explorer chain now passes focused browser acceptance.
-- [ ] Review the settled diff independently and run complete `nix run .#test -- all --workers 4 --jobs 4` when resource admission permits. Record exact inputs, results, timings and artifact paths.
+- [x] Review the settled diff independently and run complete `nix run .#test -- all --workers 4 --jobs 4`; corrected runtime passes all levels, with exact inputs/timings/artifacts below.
 
 ## Non-Goals
 Server/cross-device draft synchronization, persistent image attachments, automatic model turns, or session creation merely from browsing a project's files.
@@ -38,7 +38,25 @@ No transcript migration or new model-context entry. Reverting leaves valid SDK s
 
 - Desktop correction passed `nix run .#test -- core --jobs 4 --file components/AppShell.workspace-memory.test.mjs` (**11 tests**, static checks included; `/tmp/pi-web-test-core.WQhxyt/run.json`) and `nix run .#test -- e2e --group diff-context` (**20.579s browser execution**; `/tmp/pi-web-test-browser.CRw5xH/run.json`). Full acceptance must now run on the corrected runtime, rather than reusing the earlier complete attempt.
 
+## Final complete acceptance
+
+`nix run .#test -- all --workers 4 --jobs 4` passed on implementation candidate **`cf17a88c898105e9bb115e2781f206e83d4a86cd`**, clean source digest **`d954276c7ff125c2e5dd3e0c54ad186193af3916f7650126d37bca9552258dcf`**. End-to-end command (including in-run realization) took **459s / 7m39s**, from 2026-10-23 12:06:43 to 12:14:22 +02:00. This excludes model/review/coordination time and earlier focused prerequisite preparation; it is not a cold-cache or performance comparison.
+
+| Level | Result | Intervals and retained evidence |
+| --- | --- | --- |
+| Core/static/plugins | **429 files / 3,273 tests / 12 suites**, zero failed/skipped/cancelled | Driver 319.046s; before first file 57.356s (realization/export/static setup), file-execution window 261.319s. `/tmp/pi-web-test-core.agYeMD/run.json`; immutable summary `/nix/store/0vxbm5rla613rv636zplrsa1yk8asphg-pi-web-core-checks/artifacts/run-z0p5xV/summary.json`. |
+| Browser/terminal | **26 groups / 59 exact scenario receipts**, all execution/coverage/settlement gates passed | Driver 377.641s; preparation until first capsule 6.596s, parallel execution window 370.928s. `/tmp/pi-web-test-browser.4VkVfx/run.json`. |
+| Genuine Home Manager deployment | Activation, environment/permissions, durable HTTP write/restart and production PTY passed; clients settled, unit inactive/MainPID 0, cgroup absent and TCP refused | Total including realization 74.584s; reported driver execution 19.560s (remaining realization/setup/collection not separately timed). `/tmp/pwv-I8KJHI/run.json`, `artifacts/acceptance.json`, `artifacts/junit.xml`. |
+
+These intervals overlap and must not be added. Core and browser requested/effective widths were **4/4**, with overlap admitted at **32 CPUs / ~36.7 GiB available RAM**, estimating **16 CPUs / 27 GiB**, not reserving them. The deployment guest retained its fixed one-vCPU/1536-MiB profile. Source export/selection: `/tmp/pi-web-test-source-gAmixf/source.json` and `selection.json`; complete command log: `/tmp/persistent-new-sessions-all-2.log`. Runtime package/dependency prerequisites were warm from the focused runs; deployment realization remained inside this command. No installed host service or real credentials were used.
+
+### Rebase and proportional final verification
+
+Local main advanced only by `docs/plans/2026-10-23_guided-review-notebooks-plan.md`, to **`b2730a7edec8f3f81453fab8e837ffa916b51544`**. The integrated rebase produced implementation tip **`987ec18d56493a43544babb3c5e2be353471b69a`** (commits `57659b9`, `987ec18`). Comparing the tested candidate to that tip shows exactly the one upstream documentation addition and **zero application/test/Nix input changes**. The full evidence remains bound to the original tested candidate, not relabelled as a new-tip run. The final follow-up only records/archives this evidence and is checked as a documentation-only delta.
+
 ## Completion Checklist
 - [x] Focused tests and browser regressions pass after the desktop-sidecar correction.
-- [ ] Independent review and complete acceptance pass with retained evidence.
-- [ ] Changes are committed and integrated into local main by approved unsigned non-FF merge; remote operations remain unrequested.
+- [x] Independent review and complete acceptance pass with retained evidence.
+- [x] Implementation commits and acceptance evidence are ready for exact-state local integration; durable behavior/limitations live in `docs/session-internals.md`, and browser coverage in `e2e/README.md`.
+
+The original integration/cleanup checkbox is transferred to this active session's global `git-worktrees` lifecycle and durable operation receipts, not silently treated as executed by this plan. Local main/non-FF integration still needs the tool's exact-state approval; feature cleanup has its separate gate. The implementation plan closes on verified source/evidence, while that Git owner records the actual outcome in receipts and the completion report. Remote publication and installed-service deployment remain unrequested.
