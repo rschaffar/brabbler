@@ -169,14 +169,11 @@ export async function checkNativeTools(page, { base, api, post, fixture, artifac
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await waitForAsyncCondition(page, async id => (await (await fetch(`/api/agent/${id}`)).json()).state?.mcpServers?.[0]?.state === "connected", inherited.sessionId);
 
-  // A genuine new composer shows the default, but explicit off must reach the
-  // creation request before any default transport starts.
-  await page.goto(`${base}/?session=${id}`, { waitUntil: "domcontentloaded" });
+  // A passive setup composer shows the default without starting resources.
+  // Explicit New now saves immediately; setup still lets off reach creation
+  // before any default transport starts.
+  await page.goto(`${base}/?cwd=${encodeURIComponent(fixture.project)}`, { waitUntil: "domcontentloaded" });
   await page.locator("textarea").last().waitFor();
-  const sidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
-  if (await sidebar.isVisible()) await sidebar.click();
-  await page.getByTitle(`New session in ${fixture.project}`, { exact: true }).click();
-  await page.waitForFunction(() => !new URL(location.href).searchParams.has("session"));
   dialog = await show();
   assert.equal(await row("selected").getByRole("checkbox").isChecked(), true);
   await row("selected").getByRole("checkbox").uncheck();

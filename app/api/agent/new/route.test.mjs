@@ -14,7 +14,7 @@ const compiled = ts.transpileModule(source, { compilerOptions: {
   target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true,
 } }).outputText;
 
-function fixture(defaultSelection, defaultFailure) {
+function fixture(defaultSelection, defaultFailure, persistFailure) {
   const calls = [];
   const mocks = {
     "next/server": { NextResponse: { json: (data, options) => Response.json(data, options) } },
@@ -32,14 +32,14 @@ function fixture(defaultSelection, defaultFailure) {
     } },
     "@/lib/rpc-manager": { startRpcSession: async (...args) => {
       calls.push(["start", ...args]);
-      return { realSessionId: "fixture-session", session: { persistInitialNativeResourceIntent: () => calls.push(["persist-native"]), send: async (command) => {
+      return { realSessionId: "fixture-session", session: { persistInitialSession: () => { calls.push(["persist"]); if (persistFailure) throw persistFailure; }, send: async (command) => {
         calls.push(["send", structuredClone(command)]);
         return command.type === "get_state" ? { thinkingLevel: "off", modelSpeed: args[3].modelSpeed ?? "standard" } : null;
       } } };
     } },
   };
   const compiledModule = { exports: {} };
-  vm.runInNewContext(compiled, { module: compiledModule, exports: compiledModule.exports, require: (name) => {
+  vm.runInNewContext(compiled, { Error, module: compiledModule, exports: compiledModule.exports, require: (name) => {
     assert.ok(Object.hasOwn(mocks, name), `Unexpected runtime dependency: ${name}`);
     return mocks[name];
   } });
@@ -62,6 +62,19 @@ test("ordinary creation forwards startup choices before sending the prompt", asy
   assert.deepEqual(calls.filter(([name]) => name === "send"), [
     ["send", { type: "get_state" }], ["send", { type: "prompt", message: "fixture" }],
   ]);
+});
+
+test("empty ordinary creation persists before acknowledgement and refuses a failed write without sending", async () => {
+  const f = fixture();
+  assert.equal((await f.post({ cwd: "/fixture", type: "ensure_session" })).status, 200);
+  assert.equal(f.calls.filter(([name]) => name === "persist").length, 1);
+  assert.ok(f.calls.findIndex(([name]) => name === "persist") < f.calls.findIndex(([name]) => name === "invalidate"));
+  assert.deepEqual(f.calls.filter(([name]) => name === "send"), [["send", { type: "get_state" }]]);
+  const failed = fixture(undefined, undefined, new Error("synthetic disk failure"));
+  const response = await failed.post({ cwd: "/fixture", type: "ensure_session" });
+  assert.equal(response.status, 500);
+  assert.equal((await response.json()).error, "synthetic disk failure");
+  assert.equal(failed.calls.some(([name]) => name === "send"), false);
 });
 
 test("native intent is validated before startup and is never a prompt field", async () => {
@@ -109,7 +122,7 @@ test("fresh ordinary ensure/prompt creation snapshots project defaults before st
     assert.equal(response.status, 200);
     assert.deepEqual(f.calls.filter(([name]) => name === "default"), [["default", "/fixture", "/agent-fixture"]]);
     assert.deepEqual(JSON.parse(JSON.stringify(f.calls.find(([name]) => name === "start")[4])), { nativeResources });
-    assert.equal(f.calls.filter(([name]) => name === "persist-native").length, 1);
+    assert.equal(f.calls.filter(([name]) => name === "persist").length, 1);
     if (type === "prompt") assert.deepEqual(f.calls.filter(([name]) => name === "send").at(-1), ["send", { type, message: "synthetic" }]);
   }
 });

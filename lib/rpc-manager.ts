@@ -628,9 +628,9 @@ export class AgentSessionWrapper {
 
   /** Flush an ordinary creation snapshot without fabricating an assistant or
    * appending another selection. Generic startup/launch paths do not call this. */
-  persistInitialNativeResourceIntent(): void {
-    this.assertInitialPromptAccess("set_native_resources");
-    if (this.isRunning() || !this.inner.sessionManager.isPersisted() || !this.sessionFile) throw new Error("Native tools require an idle persistent session");
+  persistInitialSession(): void {
+    this.assertInitialPromptAccess("persist_session");
+    if (this.isRunning() || !this.inner.sessionManager.isPersisted() || !this.sessionFile) throw new Error("Creation requires an idle persistent session");
     this.persistSessionWithoutAssistant();
   }
 

@@ -142,7 +142,7 @@ test("fresh sessions use the preference while persisted and live sessions restor
 
   assert.match(
     preferenceSource,
-    /const existingSessionId = session\?\.id;[\s\S]*?useLayoutEffect\(\(\) => \{\s*if \(!existingSessionId && \(!isNew \|\| sessionIdRef\.current\)\) return;\s*setToolPresetState\(getPreferredToolPreset\(\)\)/,
+    /const existingSessionId = session\?\.id;[\s\S]*?useLayoutEffect\(\(\) => \{\s*if \(!existingSessionId && \(!isNew \|\| sessionIdRef\.current\)\) return;[\s\S]*?toolPresetRef\.current = getPreferredToolPreset\(\);\s*setToolPresetState\(toolPresetRef\.current\)/,
   );
   assert.match(source, /if \(agentState\?\.running && !historyOnly\) \{\s*loadTools\(session\.id\)/);
   assert.match(source, /d\.toolNames !== undefined \? getPresetFromToolNames\(d\.toolNames\) : CONFIGURED_TOOL_PRESET/);
@@ -300,7 +300,7 @@ test("stale fresh-session completion cannot replace the active composer", () => 
   );
 });
 
-test("abandoned fresh-session drafts are cleared and cannot be recreated by late rejection", () => {
+test("abandoned passive drafts are cleared while explicit New retains its pending draft", () => {
   const restoreSource = source.slice(
     source.indexOf("  const restoreSubmission = useCallback"),
     source.indexOf("  const sessionStats = useMemo"),
@@ -311,7 +311,7 @@ test("abandoned fresh-session drafts are cleared and cannot be recreated by late
   );
 
   assert.match(restoreSource, /!sessionHookMountedRef\.current[\s\S]*?!newSessionPromotedRef\.current/);
-  assert.match(mountSource, /const abandonedDraftKey = isNew \? newSessionDraftKey : null/);
+  assert.match(mountSource, /const abandonedDraftKey = isNew && !opts\.persistNewSession \? newSessionDraftKey : null/);
   assert.match(mountSource, /clearDraft\(abandonedDraftKey\)/);
 });
 

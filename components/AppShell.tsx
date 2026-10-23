@@ -226,6 +226,8 @@ export function AppShell() {
   // The temporary id distinguishes consecutive fresh composers in one cwd.
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
   const [newSessionDraftId, setNewSessionDraftId] = useState("initial");
+  const [persistentNewSessionDraftId, setPersistentNewSessionDraftId] = useState<string | null>(null);
+  const persistNewSession = newSessionCwd !== null && persistentNewSessionDraftId === newSessionDraftId;
   const activeNewSessionDraftKeyRef = useRef<string | null>(null);
   const [initialCwdStatus, setInitialCwdStatus] = useState<"idle" | "validating" | "ready" | "error">(
     () => initialNavigation.requestedCwd ? "validating" : "idle",
@@ -652,8 +654,8 @@ export function AppShell() {
       setTabOpenSession(selectedSession.id);
       return;
     }
-    if (newSessionCwd) setTabOpenNewSession(newSessionCwd);
-  }, [newSessionCwd, selectedSession]);
+    if (newSessionCwd) setTabOpenNewSession(newSessionCwd, undefined, newSessionDraftId);
+  }, [newSessionCwd, newSessionDraftId, selectedSession]);
 
   useEffect(() => {
     const requestedCwd = initialNavigation.requestedCwd;
@@ -678,7 +680,11 @@ export function AppShell() {
         // The sidebar will notify us when it adopts this cwd. Avoid remounting
         // the just-created empty chat during that initial synchronization.
         suppressCwdBumpRef.current = true;
-        const draftId = `initial:${requestedCwd}`;
+        // A reload can interrupt creation before its real ID reaches this tab.
+        // Recover the same text key, but do not automatically replay creation.
+        const tabOpen = getTabOpen();
+        const draftId = tabOpen?.kind === "new" && tabOpen.cwd === data.cwd && tabOpen.draftId
+          ? tabOpen.draftId : `initial:${requestedCwd}`;
         setNewSessionDraftId(draftId);
         activeNewSessionDraftKeyRef.current = `new:${draftId}:${data.cwd}`;
         setNewSessionCwd(data.cwd);
@@ -786,7 +792,9 @@ export function AppShell() {
     // Close any session that belongs to a different project — it no longer
     // matches the selected project directory.
     const previousDraftKey = activeNewSessionDraftKeyRef.current;
-    if (previousDraftKey && currentFreshCwd) {
+    // Explicit New owns a saved (or in-flight) session: keep its draft identity
+    // for the creation response rather than moving it to a project placeholder.
+    if (previousDraftKey && currentFreshCwd && !persistNewSession) {
       rekeyDraft(previousDraftKey, parkedNewSessionDraftKey(currentFreshCwd));
     }
     const draftId = typeof crypto.randomUUID === "function"
@@ -819,7 +827,7 @@ export function AppShell() {
       restoreWorkspaceContext(newProject, cwd);
     }
     router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
-  }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, newSessionCwd, router, selectedSession, restoreWorkspaceContext]);
+  }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, newSessionCwd, persistNewSession, router, selectedSession, restoreWorkspaceContext]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false, entryId?: string, blockIndex?: number) => {
     if (!isRestore) setChatHidden(false);
@@ -828,7 +836,7 @@ export function AppShell() {
     invalidateWorkspaceRestore();
     const activeDraftKey = activeNewSessionDraftKeyRef.current;
     const activeDraftCwd = newSessionCwd ?? (selectedSession === null ? activeCwd : null);
-    if (activeDraftKey && activeDraftCwd) {
+    if (activeDraftKey && activeDraftCwd && !persistNewSession) {
       rekeyDraft(activeDraftKey, parkedNewSessionDraftKey(activeDraftCwd));
     }
     activeNewSessionDraftKeyRef.current = null;
@@ -880,15 +888,18 @@ export function AppShell() {
     if (!isRestore || new URLSearchParams(window.location.search).get("session") !== session.id) {
       router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
     }
-  }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, router, isMobile, newSessionCwd, selectedSession]);
+  }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, router, isMobile, newSessionCwd, persistNewSession, selectedSession]);
 
   const handleNewSession = useCallback((sessionId: string, cwd: string) => {
+    closeOverview();
     setChatHidden(false);
     invalidateWorkspaceRestore();
     const draftKey = `new:${sessionId}:${cwd}`;
+    setTabOpenNewSession(cwd, undefined, sessionId);
     rekeyDraft(parkedNewSessionDraftKey(cwd), draftKey);
     activeNewSessionDraftKeyRef.current = draftKey;
     setNewSessionDraftId(sessionId);
+    setPersistentNewSessionDraftId(sessionId);
     setSelectedSession(null);
     setNewSessionCwd(cwd);
     setSessionKey((k) => k + 1);
@@ -905,7 +916,7 @@ export function AppShell() {
       workspaceRestoreTokenRef.current === focusRevision
       && activeNewSessionDraftKeyRef.current === draftKey
     ));
-  }, [invalidateWorkspaceRestore, router, isMobile]);
+  }, [closeOverview, invalidateWorkspaceRestore, router, isMobile]);
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
   useGlobalKeyboardShortcuts({
@@ -2596,6 +2607,7 @@ export function AppShell() {
               onSessionRestored={handleSessionRestored}
               newSessionCwd={effectiveNewSessionCwd}
               newSessionDraftKey={newSessionDraftKey}
+              persistNewSession={persistNewSession}
               onAgentEnd={handleAgentEnd}
               onRecoveryDismissed={handleRecoveryDismissed}
               onAttentionNeeded={handleAttentionNeeded}

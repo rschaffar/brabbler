@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createOwnedRoutes } from "./owned-routes.mjs";
 
 const frames = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
@@ -58,21 +59,53 @@ export async function checkFreshComposerFocus(page, alternateSessionId, width) {
     await frames(page);
     assert.equal(await input.evaluate((node) => document.activeElement === node), width > 640);
   };
+  const preferred = width > 640 ? "none" : "read-only";
+  const previousPreference = await page.evaluate(preferred => {
+    const previous = localStorage.getItem("pi-tool-preset");
+    localStorage.setItem("pi-tool-preset", preferred);
+    return previous;
+  }, preferred);
   await showSidebar();
+  const creation = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/new"
+    && response.request().method() === "POST");
   await page.getByRole("button", { name: "New", exact: true }).click();
-  await page.waitForFunction(() => !new URL(location.href).searchParams.has("session"));
   await assertFocus();
-  const draft = "  parked fresh draft\n@\"my file\"  ";
+  const created = await creation;
+  assert.equal(created.status(), 200);
+  assert.equal(created.request().postDataJSON().type, "ensure_session");
+  assert.equal(Object.hasOwn(created.request().postDataJSON(), "message"), false);
+  const expectedTools = preferred === "none" ? [] : ["read", "grep", "find", "ls"];
+  assert.deepEqual(created.request().postDataJSON().toolNames, expectedTools, "saved restrictions apply before eager startup");
+  await page.evaluate(previous => {
+    if (previous === null) localStorage.removeItem("pi-tool-preset");
+    else localStorage.setItem("pi-tool-preset", previous);
+  }, previousPreference);
+  const { sessionId } = await created.json();
+  await page.waitForFunction(id => new URL(location.href).searchParams.get("session") === id, sessionId);
+  const detail = await (await page.request.get(new URL(`/api/sessions/${sessionId}`, page.url()).href)).json();
+  assert.deepEqual(detail.context.messages, [], "New is persisted without a model turn");
+  assert.deepEqual(detail.toolNames, expectedTools);
+  const draft = "  saved fresh draft\n@\"my file\"  ";
   await input.fill(draft);
+  await page.waitForFunction(({ id, draft }) => JSON.parse(localStorage.getItem(`pi-web:composer-draft:v1:${id}`))?.value === draft,
+    { id: sessionId, draft });
+  await showSidebar();
+  await page.locator(`.session-row[data-session-id="${sessionId}"]`).waitFor();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(draft => document.querySelector(".chat-input-textarea")?.value === draft, draft);
   await showSidebar();
   await page.locator(`.session-row[data-session-id="${alternateSessionId}"]`).click({ position: { x: 12, y: 12 } });
   await page.waitForFunction((id) => new URL(location.href).searchParams.get("session") === id, alternateSessionId);
+  await showSidebar();
+  await page.locator(`.session-row[data-session-id="${sessionId}"]`).click({ position: { x: 12, y: 12 } });
+  await page.waitForFunction(draft => document.querySelector(".chat-input-textarea")?.value === draft, draft);
+  // A distinct New must not borrow the previous saved session's unsent text.
   await page.keyboard.press("Control+Alt+n");
-  await page.waitForFunction((draft) => document.querySelector(".chat-input-textarea")?.value === draft, draft);
+  await page.waitForFunction(() => document.querySelector(".chat-input-textarea")?.value === "");
   await assertFocus();
   if (width > 640) {
     await page.keyboard.insertText("continued");
-    assert.equal(await input.inputValue(), `${draft}continued`);
+    assert.equal(await input.inputValue(), "continued");
   }
   await showSidebar();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -96,7 +129,41 @@ export async function checkFreshComposerFocus(page, alternateSessionId, width) {
   } finally {
     await page.evaluate(() => { const dialog = document.getElementById("composer-native-focus-fixture"); dialog.close(); dialog.remove(); });
   }
-  console.log(`PASS: ${width}px explicit New focus, parked literal draft and modal/native focus ownership`);
+  // Reload while the server has saved New but its acknowledgement is withheld.
+  // The browser must recover literal text without replaying uncertain creation.
+  await page.waitForFunction(() => new URL(location.href).searchParams.has("session"));
+  const saved = Promise.withResolvers(), release = Promise.withResolvers();
+  let creations = 0;
+  const pattern = "**/api/agent/new";
+  const held = createOwnedRoutes(async route => {
+    creations++;
+    const response = await route.fetch();
+    assert.equal(response.status(), 200);
+    saved.resolve(await response.json());
+    await release.promise;
+    await route.fulfill({ response });
+  }, route => route.continue());
+  await page.route(pattern, held.handler);
+  try {
+    await showSidebar();
+    await page.getByRole("button", { name: "New", exact: true }).click();
+    await saved.promise;
+    const pendingText = `  ${width}px reload before creation acknowledgement\nkeep this text  `;
+    await input.fill(pendingText);
+    await page.waitForFunction(text => {
+      const open = JSON.parse(sessionStorage.getItem("pi-web:tab-open-session"));
+      return open?.kind === "new" && open.draftId
+        && JSON.parse(localStorage.getItem(`pi-web:composer-draft:v1:new:${open.draftId}:${open.cwd}`))?.value === text;
+    }, pendingText);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(text => document.querySelector(".chat-input-textarea")?.value === text, pendingText);
+    assert.equal(new URL(page.url()).searchParams.has("session"), false);
+    assert.equal(creations, 1, "reload must not replay an uncertain creation");
+  } finally {
+    release.resolve();
+    await held.dispose(handler => page.unroute(pattern, handler));
+  }
+  console.log(`PASS: ${width}px durable empty New, restrictive defaults, literal draft/pending reload, explicit focus and modal/native focus ownership`);
 }
 
 export async function checkRunningComposer(page, width, answer) {

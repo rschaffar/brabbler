@@ -21,7 +21,7 @@ function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
 }
 // POST /api/agent/new  body: { cwd: string; type: string; message?: string; ... }
 // Spawns a brand-new pi session. Most calls immediately send the first command;
-// type:"ensure_session" only creates the runtime so clients can query commands.
+// type:"ensure_session" saves an empty session without a model turn.
 // Returns pi's real session id plus the model/thinking state selected at startup.
 export async function POST(req: Request) {
   let commandType: string | undefined;
@@ -87,7 +87,9 @@ export async function POST(req: Request) {
       ...(modelSpeed !== undefined ? { modelSpeed } : {}),
     });
 
-    if (nativeSelection !== undefined) session.persistInitialNativeResourceIntent();
+    // SDK setup entries otherwise remain memory-only until the first assistant.
+    // Save before publishing the ID, including an entirely empty ensure_session.
+    session.persistInitialSession();
 
     // Keep the files-route allowed-roots cache (see app/api/files/[...path]/route.ts)
     // in sync so the new cwd is immediately readable via /api/files. Without this,
