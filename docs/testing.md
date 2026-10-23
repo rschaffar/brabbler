@@ -219,6 +219,46 @@ idempotent. Join externally owned async work separately before disposing its rea
 `pointerCaptureDouble(element)` is only an unsupported-API double, never native
 capture/layout proof. Keep mounted cases serial within their file.
 
+### Activity client pilot recipe
+
+Use `lib/activity-client-controller.test.mjs` for the **real** Activity observer/
+receipt coordinator with controlled transport, response-body gates, visible time
+and storage ports. Cover late ignored-abort success/error/finally, exact rendered
+completion/question identities, B queued during A, durable-confirmation-before-
+retry, shared leases and terminal full-promise joins. Construction must be inert;
+observation release is replayable and is not terminal command closure.
+
+Use `components/ActivityViews.behavior.test.mjs` for real `ActivityViews`,
+Activity/Starred components, `useActivityOwner`/`useActivityController` and Sidebar's
+actual `useActivityNotifications` adapter. The fixture supplies external catalogue,
+navigation and HTTP/time capabilities only; it does not implement the state machine.
+Dispatch actual DOM controls and rerender current privacy/selection/callbacks under
+StrictMode. Retain a live failure collector through teardown: a request admitted
+while releasing a gate must fail the test even when production catches its error.
+Explicitly unmount, release/reject gates, await owner disposal and body handlers,
+then restore the DOM/globals. `root.unmount()` alone is not an I/O join.
+
+```sh
+nix run .#test -- core --file lib/activity-client-controller.test.mjs
+nix run .#test -- core --file components/ActivityViews.behavior.test.mjs
+nix run .#test -- core --file lib/session-pause.test.mjs
+nix run .#test -- core --file lib/acceptance/process.test.mjs
+nix run .#test -- e2e --group activity
+```
+
+The mounted slice is **not** full Sidebar/AppShell/router/ChatWindow/metrics
+mounting. Keep real initial restoration, native question/answer, durable receipts/
+reload/independent contexts, SDK/Pause/Acceptance default connections and browser
+layout/keyboard/touch with their named installed-browser/native owners. The genuine
+Pause tests additionally compare the entire durable Activity ledger around actual
+tool drain and waiting-card cancellation; transcript counts alone prove no such
+ledger guarantee. The existing Acceptance process file also holds a genuinely
+admitted coordinator job/native child across actual Activity-observer disposal,
+then releases its own named file gate and checks durable success/kernel closure.
+That bridge does not resolve the file's separate historical detached-child E hold.
+SSR privacy-withholding tests remain complementary. This pilot
+does not migrate Markdown, Git, SSH or all source-shape families.
+
 ### One default native composition
 
 When several real handlers/helpers belong to one default lifetime, a small local

@@ -9,10 +9,18 @@ Activity runtime. Reduce duplicated browser work only after replacement proof.
 
 ## Authority and agreed decisions
 
-**Planning only.** The user requested this reviewable plan after a design discussion;
-implementation, integration, publication and resource cleanup are not authorized by
-this document. The previous overhaul remains unmerged; do not treat its earlier
-merge proposal or this plan as approval.
+**Implementation authorized.** After reviewing this plan, the user requested the
+complete Activity work and refactor in one continuous effort, with questions only
+for important issues. This authorizes the bounded pilot below, not a suite-wide
+migration or product redesign. Exact-state local integration and resource cleanup
+retain their separate harness approval gates; no remote publication is authorized.
+
+The previous overhaul and this original planning-only document were integrated at
+`76e5fe4d06cb18f0eb800210dc1aaa4ced36bb92`. Implementation starts from that local
+main in `refactor/activity-client-ownership`, linked checkout
+`/home/robert/projects/3rdparty/pi-desk-worktrees/activity-client-ownership`.
+Evidence is retained under
+`/home/robert/.cache/pi-web-activity-pilot/run.civBQj`.
 
 The user selected:
 
@@ -30,7 +38,7 @@ The user selected:
 - No new Activity-specific runtime cutoff. Measure the result and retain the
   existing focused/full performance gates and verification safeguards.
 
-Planning checkout: `test/suite-architecture-overhaul`, initially
+Historical planning checkout: `test/suite-architecture-overhaul`, initially
 `89592d32447942314685b69adbd5fc5e48be1e46`. Local main was observed at
 `b2730a7edec8f3f81453fab8e837ffa916b51544`; its incoming difference was an unrelated
 planning document, not an Activity implementation. Revalidate current sources and
@@ -63,8 +71,8 @@ historical input-bound evidence, not acceptance of this unimplemented pilot.
   not declare those obligations complete, rewrite its history, or change the
   server receipt format/authorization/retention policy.
 - The [archived overhaul](archived/2026-10-22_test-suite-architecture-overhaul-plan.md)
-  owns prior migrations and evidence. Its guarded Git closeout remains separate;
-  this is a new, bounded client-ownership plan, not a reopened general overhaul.
+  owns prior migrations and evidence. Its guarded Git closeout completed before
+  this implementation; this is a new, bounded pilot, not a reopened general overhaul.
 
 ## Architecture
 
@@ -175,27 +183,81 @@ wrong publication before joining if joining it could otherwise deadlock the orac
 Fixture failure paths release all gates, join owned work and retain primary plus
 cleanup errors. A helper promise is not proof of native closure.
 
+## Execution evidence and current limits
+
+Evidence root: `/home/robert/.cache/pi-web-activity-pilot/run.civBQj` (exact commands,
+logs, exported sources, reports and private rejected variants retained).
+
+- Original `76e5fe4d…` control failed **209s** at the tablet Acceptance fixture's
+  Node `route.fetch` GET with `ECONNRESET`, followed by an unhandled Playwright route
+  continuation. Failed builder retained; inner logs were inaccessible and no gate
+  was bypassed. This is not a timing sample or an established socket-cause diagnosis.
+- A planned control changed **only** that initial status bridge to the existing
+  browser-read barrier, requiring consumed native JSON after navigation. Full fresh
+  `all --workers 4 --jobs 4` passed **348s**, **436 files/3369 tests/12 suites**, all
+  **26 groups/59 receipts** and genuine deployment. Activity **215.361s**. Source
+  `/nix/store/mwckg60mj0jshb0p4djyah4al5wvnrya-source`, export digest
+  `35939a9c447f9106f3ee12f109bf66dfee322b3ce91847468bebae368766c4d9`.
+  Core/browser/VM reported intervals **298.082/317.631/23.647s**; core/browser overlap.
+  Browser support/manifest **3.713/4.686s**, unchanged application package. Admission
+  recorded 32 CPUs/about54GiB available, effective four browser/four core. These
+  mixed intervals are not evaluator-only costs or a cold-build promise.
+  The exact bridge is committed as `3db6eea9682ea981f4fe3c0131fa7f97867f0604`.
+- Production ownership/mounted/native selections: **6 files/95 tests/40s**, then
+  **8 files/129 tests/44s**. Earlier39s failure exposed a wrong test-text oracle and
+  accidental microtask batching; corrected actual UI text and immediate original
+  A-before-B admission. Passing selections include static input-bound evidence;
+  these are not complete-candidate acceptance or the Panel timing gate.
+- Five private runtime defects failed at their intended assertions (**37/36/35/36/
+  38s**): stale post-JSON publication; using current rather than rendered token;
+  fail-fast catalogue join; swallowed teardown-time request; native Pause wrongly
+  recording completion. Zero cancellations/uncertain files/observed survivors in
+  their bounded runner summaries. The old copied failure collector with the same
+  late-request defect incorrectly passed14tests/40s, proving the live collector's
+  counterexample. No private mutant was adopted; no escaped-descendant certificate.
+- A further actual Acceptance coordinator/native-process bridge passed **5 tests/
+  43s**: dispose the actual Activity observer while an admitted watched-file-gated
+  child retains its kernel identity/unaborted signal/running ledger, then release
+  that job's own gate and require durable success and real process closure. Its
+  first52s failure was an under-budget logical fixture admission (512MiB versus
+  128+1024 required); corrected to2048MiB within sandbox budget and valid ESM.
+  A second42s failure compared volatile process state R/S as identity; now compare
+  PID/start/parent/group/session and require a live nonsuspended state. No deadline
+  increase. The existing detached-child E hold remains unresolved and unchanged.
+- Independent source ownership review found no P1/P2 production blocker. Exact old
+  assertion inventory and amended disposition are retained as
+  `browser-assertion-map.md`, `browser-reduction-contract.md`,
+  `browser-reduction-addendum.md` and `browser-disposition-review.md`. Review caught
+  missing compact/mobile Acceptance bounds, Escape/focus and Plugins switch proof;
+  those are explicitly retained before any browser deletion. Actual private browser
+  extraction still needs source review, adoption and installed acceptance.
+- Scope limits remain explicit: mounted ActivityViews/notification adapters are not
+  full Sidebar/AppShell/router/metrics mounting. Native/default/browser owners stay
+  real. The shared `owned-routes` event-rejection escape and socket cause remain
+  unresolved, not silently declared fixed by removing one Node proxy read. Existing
+  unbounded-batch/retention edge risk was flagged separately, not redesigned.
+
 ## Plan
 
-- [ ] Pin the then-current composed source and its relevant timing baseline before
+- [x] Pin the then-current composed source and its relevant timing baseline before
   implementation edits; do not relabel the historical214.4s run as a new control.
   Inventory `e2e/activity.mjs`, its browser-suite chain, native subagent, Pause and
   Acceptance helpers, and current core/component coverage. Map every
   assertion and viewport/input obligation to an owner, bridge or explicitly obsolete
   contract; identify source-regex-only and static-render-only gaps. Review that map
   before deleting/reducing any browser case.
-- [ ] Specify the client snapshot/action identities, narrow ports and replay-safe
+- [x] Specify the client snapshot/action identities, narrow ports and replay-safe
   lifetime contract. Trace catalogue/privacy/star/navigation ownership and all
   existing consumers/events. Call out architectural improvements and suspected bugs
   separately; obtain a decision before changing visible semantics or settled ADRs.
-- [ ] Add the real instance-owned controller and small core cases for stale delivery,
+- [x] Add the real instance-owned controller and small core cases for stale delivery,
   queue/reconciliation and shared lifecycle. Preserve default transport/cadence/API
   behavior; prove intended red/green failures and complete teardown.
-- [ ] Connect thin production React adapters and mount the real Activity/Starred
+- [x] Connect thin production React adapters and mount the real Activity/Starred
   feature slice. Prove clicks target exact identities, current props/closures,
   privacy/restoration, pending/errors and StrictMode/multiple-consumer disposal.
   Retire only source checks whose actual behavioral replacement is established.
-- [ ] Reconcile native/composition gaps without weakening existing real SDK/store/
+- [x] Reconcile native/composition gaps without weakening existing real SDK/store/
   process/race tests. In particular, do not mistake pause/transcript assertions for
   explicit proof that a pause creates no Activity completion/acknowledgement.
 - [ ] Replace repeated browser matrices with the agreed golden journey and focused
@@ -219,8 +281,9 @@ cleanup errors. A helper promise is not proof of native closure.
 
 ## Non-Goals and risk disposition
 
-- No implementation authorization from this plan; no automatic merge of either
-  this plan or the previous overhaul, no publication, deployment or cleanup.
+- No authority is inferred from this plan itself. The subsequent implementation
+  request is recorded above; integration/cleanup still require their exact-action
+  approvals. No remote publication or modification of the installed deployment.
 - No suite-wide/Markdown migration, new mandatory test layer/backend/CLI, universal
   state/testing framework, polling acceleration, shared mutable native fixtures or
   cached approval/results. Broader Sidebar extraction is allowed only where needed

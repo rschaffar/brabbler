@@ -4,7 +4,7 @@ import test from "node:test";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { jsx: { runtime: "automatic" }, tsconfigPaths: true });
-const { getSessionListIndices, updateSessionArchiveState } = await jiti.import("./SessionSidebar.tsx");
+const { getSessionListIndices, updateSessionArchiveState, sessionListUrl } = await jiti.import("./SessionSidebar.tsx");
 
 const source = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
 const globalStyles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -94,42 +94,13 @@ test("does not register row-level session deletion shortcuts", () => {
   assert.doesNotMatch(sessionItemSource, /tabIndex=\{0\}/);
 });
 
-test("polls running sessions only while the tab is visible", () => {
-  assert.doesNotMatch(source, /new EventSource\("\/api\/agent\/running\/events"\)/);
-  assert.match(source, /fetch\("\/api\/agent\/running"/);
-  assert.match(source, /document\.visibilityState !== "visible"/);
-  assert.match(source, /document\.addEventListener\("visibilitychange", onVisibilityChange\)/);
-});
-
-test("exposes the polled running-session set to the shell", () => {
-  assert.match(source, /onRunningSessionIdsChange\?: \(ids: Set<string>\) => void/);
-  assert.match(source, /onRunningSessionIdsChange\?\.\(runningSessionIds\)/);
-});
+// Shared observation, visibility, exact receipt actions and notification wiring
+// are behaviorally owned by activity-client-controller.test and the mounted
+// ActivityViews.behavior.test, not assertions about Sidebar source spelling.
 
 test("exposes the loaded session catalog to the shell", () => {
   assert.match(source, /onSessionsChange\?: \(sessions: SessionInfo\[\]\) => void/);
   assert.match(source, /onSessionsChange\?\.\(allSessions\)/);
-});
-
-test("server review snapshot includes subagents in Activity without adding subagent sounds", () => {
-  assert.match(source, /completionNotificationSuppressedSessionIds\?: string\[\]/);
-  assert.match(source, /reviewedRuns\?: SessionCompletion\[\]/);
-  assert.match(source, /setSubagentReviewIds\(\(prev\) => sameIdSet\(prev, reviewed\.subagentReady\) \? prev : reviewed\.subagentReady\)/);
-  assert.match(source, /setUnreadSessionIds\(\(prev\) => sameIdSet\(prev, reviewed\.rootReady\) \? prev : reviewed\.rootReady\)/);
-  assert.match(source, /completedWithNotifications = completedInBackground\.filter\([\s\S]*?!previousSuppressedCompletionSessionIdsRef\.current\.has\(id\)[\s\S]*?!knownSubagentIds\.has\(id\)/);
-  assert.match(source, /if \(completedWithNotifications\.length > 0\) \{\s*onBackgroundTaskDone\?\.\(\)/);
-  assert.match(source, /onActivityChange\?\.\(attention, new Set\(\[\.\.\.unreadSessionIds, \.\.\.subagentReviewIds\]\), activityAvailable, laterSessionIds, laterAttentionSessionIds, pauses\)/);
-});
-
-test("pause cannot turn an older unread completion into a new completion sound", () => {
-  assert.match(source, /pausedSessionIds = new Set\(pauses\.map\(\(row\) => row\.sessionId\)\)/);
-  assert.match(source, /completedWithNotifications = completedInBackground\.filter\([\s\S]*?!pausedSessionIds\.has\(id\)[\s\S]*?unreviewedCompletion\(id\)/);
-  assert.match(source, /\[runningSessionIds, selectedSessionId, allSessions, loadSessions, onBackgroundTaskDone, pauses\]/);
-});
-
-test("Later validates the displayed request token instead of substituting a replacement question", () => {
-  assert.match(source, /markReviewLater = useCallback\(\(id: string, requestId\?: string\)/);
-  assert.match(source, /const receipt = \{ sessionId: id, requestId \};\s*if \(!isCurrentActivityRequest\(attention, receipt\)\) return;/);
 });
 
 test("includes project activity counts in accessible labels", () => {
@@ -164,17 +135,11 @@ test("offers the downstream context-menu hook only on a normal session row", () 
   );
 });
 
-test("lifecycle refreshes bypass the cache while cross-window polling reuses it", () => {
-  assert.match(source, /function sessionListUrl\(summary: boolean, force: boolean\)/);
-  assert.match(source, /if \(summary\) return "\/api\/sessions\?summary=1"/);
-  assert.match(source, /if \(force\) return "\/api\/sessions\?force=1"/);
-  assert.match(source, /cache: "no-store"/);
-  // First paint uses the cheap summary listing, then hydrates after a delay.
-  assert.match(source, /loadSessions\(true, false, true\)/);
-  assert.match(source, /setTimeout\(\(\) => \{[\s\S]*?void loadSessions\(false, true\)/);
-  assert.match(source, /data\.sessionListVersion !== sessionListVersionRef\.current[\s\S]*?await loadSessions\(\)/);
-  assert.doesNotMatch(source, /sessionRefreshDone|sessionRefreshTimerRef|title=\{t\("sidebar\.refresh"\)\}/);
-  assert.match(source, /loadSessions\(false, true\);[\s\S]*?onBackgroundTaskDone/);
+test("catalogue URLs preserve summary precedence, explicit rescans and invalidated-cache reuse", () => {
+  assert.equal(sessionListUrl(true, false), "/api/sessions?summary=1");
+  assert.equal(sessionListUrl(true, true), "/api/sessions?summary=1");
+  assert.equal(sessionListUrl(false, true), "/api/sessions?force=1");
+  assert.equal(sessionListUrl(false, false), "/api/sessions");
 });
 
 test("does not expose disk-backed actions for transient sessions", () => {

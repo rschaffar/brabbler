@@ -8,10 +8,9 @@ import { ChatWindow } from "./ChatWindow";
 import { isHistoryOnlySession } from "@/lib/session-directory";
 import { MarkdownMediaScope } from "./MarkdownMedia";
 import { WebVersionNotice } from "./WebVersionNotice";
-import { ActivityOverview } from "./ActivityOverview";
-import type { SessionPauseSnapshot } from "@/lib/session-pause";
+import { ActivityViews } from "./ActivityViews";
+import { useActivityController, useActivityOwner } from "@/hooks/useActivityController";
 import { useHiddenProjects } from "@/hooks/useHiddenProjects";
-import { StarredOverview } from "./StarredOverview";
 import { getActivitySections, type ActivityStatus } from "@/lib/activity";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { FileWorkspace, type FileWorkspaceHandle, type FileWorkspaceStatus } from "./FileWorkspace";
@@ -75,7 +74,7 @@ import {
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
 } from "@/lib/panel-layout";
-import type { BlockingExtensionUiRequest, SessionAttention, SessionInfo, SessionTreeNode } from "@/lib/types";
+import type { BlockingExtensionUiRequest, SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import { requestFreshComposerFocus } from "@/lib/composer-focus";
@@ -172,57 +171,19 @@ export function AppShell() {
     [selectedSession?.id, sessionsWithSelection],
   );
   const hasSubagentSessions = Boolean(activeSessionFamily?.subagents.length);
-  const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
+  const activityController = useActivityOwner();
+  const { snapshot: activity } = useActivityController(activityController);
+  const { runningIds: runningSessionIds, queuedIds: queuedSessionIds,
+    attention: activityAttention, reviewIds: reviewSessionIds } = activity;
   const agentsBadge = getAgentsBadge(activeSessionFamily?.subagents ?? [], runningSessionIds);
   const agentsButtonLabel = agentsBadge.running
     ? translate("agentSwitcher.titleRunning", { count: agentsBadge.count })
     : translate("agentSwitcher.titleIdle", { count: agentsBadge.count });
-  const [queuedSessionIds, setQueuedSessionIds] = useState<Set<string>>(() => new Set());
-  const handleQueuedSessionIdsChange = useCallback((ids: Set<string>) => {
-    setQueuedSessionIds((previous) => previous.size === ids.size && [...ids].every((id) => previous.has(id)) ? previous : ids);
-  }, []);
-  const [activityAttention, setActivityAttention] = useState<SessionAttention[]>([]);
-  const [activityPauses, setActivityPauses] = useState<SessionPauseSnapshot[]>([]);
-  const [reviewSessionIds, setReviewSessionIds] = useState<Set<string>>(() => new Set());
-  const [laterSessionIds, setLaterSessionIds] = useState<Set<string>>(() => new Set());
-  const [laterAttentionSessionIds, setLaterAttentionSessionIds] = useState<Set<string>>(() => new Set());
-  const markReviewLaterRef = useRef<((id: string, requestId?: string) => void) | null>(null);
-  const handleReviewLaterReady = useCallback((markLater: ((id: string, requestId?: string) => void) | null) => {
-    markReviewLaterRef.current = markLater;
-  }, []);
-  const handleMarkReviewLater = useCallback((id: string, requestId?: string) => markReviewLaterRef.current?.(id, requestId), []);
-  const markReviewReadRef = useRef<((id: string) => void) | null>(null);
-  const handleReviewReadReady = useCallback((markRead: ((id: string) => void) | null) => {
-    markReviewReadRef.current = markRead;
-  }, []);
-  const handleMarkReviewRead = useCallback((id: string) => markReviewReadRef.current?.(id), []);
-  const [activityAvailable, setActivityAvailable] = useState(true);
   const [recoveryRefreshKey, setRecoveryRefreshKey] = useState(0);
   const handleRecoveryDismissed = useCallback(() => setRecoveryRefreshKey((key) => key + 1), []);
-  const handleActivityChange = useCallback((attention: SessionAttention[], reviewIds: Set<string>, available: boolean, laterIds: Set<string>, laterAttentionIds: Set<string>, pauses: SessionPauseSnapshot[]) => {
-    setActivityPauses((previous) => JSON.stringify(previous) === JSON.stringify(pauses) ? previous : pauses);
-    setActivityAttention((previous) => previous.length === attention.length && previous.every((item, index) => {
-      const next = attention[index];
-      return item.sessionId === next.sessionId && item.method === next.method
-        && item.summary === next.summary && item.since === next.since && item.requestId === next.requestId;
-    }) ? previous : attention);
-    setReviewSessionIds((previous) => previous.size === reviewIds.size
-      && [...reviewIds].every((id) => previous.has(id)) ? previous : reviewIds);
-    setLaterSessionIds((previous) => previous.size === laterIds.size
-      && [...laterIds].every((id) => previous.has(id)) ? previous : laterIds);
-    setLaterAttentionSessionIds((previous) => previous.size === laterAttentionIds.size
-      && [...laterAttentionIds].every((id) => previous.has(id)) ? previous : laterAttentionIds);
-    setActivityAvailable(available);
-  }, []);
   const activityNeedsCount = useMemo(() => getActivitySections(
     sessionsWithSelection, runningSessionIds, activityAttention, reviewSessionIds, null, queuedSessionIds,
   )["needs-you"].length, [sessionsWithSelection, runningSessionIds, queuedSessionIds, activityAttention, reviewSessionIds]);
-  const handleRunningSessionIdsChange = useCallback((ids: Set<string>) => {
-    setRunningSessionIds((previous) => {
-      if (previous.size === ids.size && [...ids].every((id) => previous.has(id))) return previous;
-      return ids;
-    });
-  }, []);
   // The temporary id distinguishes consecutive fresh composers in one cwd.
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
   const [newSessionDraftId, setNewSessionDraftId] = useState("initial");
@@ -1353,11 +1314,7 @@ export function AppShell() {
         onAtMention={handleAtMention}
         onAtMentions={handleAtMentions}
         onBackgroundTaskDone={handleBackgroundTaskDone}
-        onRunningSessionIdsChange={handleRunningSessionIdsChange}
-        onQueuedSessionIdsChange={handleQueuedSessionIdsChange}
-        onActivityChange={handleActivityChange}
-        onReviewReadReady={handleReviewReadReady}
-        onReviewLaterReady={handleReviewLaterReady}
+        activityController={activityController}
         onSessionsChange={handleSessionsChange}
       />
       <SshSidebarButton controller={sshController} onOpen={() => setSettingsSection("ssh")} />
@@ -2549,38 +2506,17 @@ export function AppShell() {
 
         {/* Chat content */}
         <div id="chat-content" inert={chatCollapsed} hidden={chatCollapsed} style={{ flex: 1, overflow: "hidden", position: "relative", display: chatCollapsed ? "none" : "flex" }}>
-          {activeOverview === "activity" && (
-            <ActivityOverview
-              laterIds={laterSessionIds}
-              laterAttentionIds={laterAttentionSessionIds}
-              onMarkLater={handleMarkReviewLater}
-              pauses={activityPauses}
+          {(activeOverview === "activity" || activeOverview === "starred") && (
+            <ActivityViews
+              controller={activityController}
+              view={activeOverview}
               sessions={sessionsWithSelection}
-              runningIds={runningSessionIds}
-              queuedIds={queuedSessionIds}
-              attention={activityAttention}
-              reviewIds={reviewSessionIds}
-              available={activityAvailable}
+              selectedId={selectedSession?.id ?? null}
+              onSelect={handleActivitySelectSession}
+              onClose={closeOverview}
+              hidden={isMobile && !overviewMobileList}
               recoveryRefreshKey={recoveryRefreshKey}
               privacy={projectPrivacy}
-              selectedId={selectedSession?.id ?? null}
-              onSelect={handleActivitySelectSession}
-              onMarkRead={handleMarkReviewRead}
-              onClose={closeOverview}
-              hidden={isMobile && !overviewMobileList}
-            />
-          )}
-          {activeOverview === "starred" && (
-            <StarredOverview
-              sessions={sessionsWithSelection}
-              runningIds={runningSessionIds}
-              queuedIds={queuedSessionIds}
-              attention={activityAttention}
-              reviewIds={reviewSessionIds}
-              selectedId={selectedSession?.id ?? null}
-              onSelect={handleActivitySelectSession}
-              onClose={closeOverview}
-              hidden={isMobile && !overviewMobileList}
             />
           )}
           {activeOverview === "git" && <div id="git-explorer-panel" className={`git-explorer-host${gitExplorerFullWidth ? " git-explorer-full-width" : ""}`}>

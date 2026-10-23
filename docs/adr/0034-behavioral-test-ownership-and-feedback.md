@@ -91,6 +91,34 @@ and join failure cleanup. Focused Nix checks and independent stale-acceptance
 mutations exercise these owners. Broader full useAgentSession/FileViewer mounting
 is deferred. Other source-shape families are not all migrated.
 
+### Activity's app-instance client owner
+
+The first client-ownership pilot uses one inertly constructed Activity controller
+per AppShell instance, shared through thin React adapters by Sidebar, Activity and
+Starred. It coordinates global running/review observation and exact receipt queues;
+it does not absorb catalogue/navigation, privacy/star persistence, selected-chat
+SSE/question submission, native SDK execution or Acceptance authority. Existing
+production projections and the server's receipt identities remain authoritative.
+
+Observation leases are reversible and share one visible 2500ms loop. Terminal
+admission closure/disposal is separate, with an awaitable join of body parsing,
+mutation drains and accepted catalogue callbacks. A root-owned microtask retainer
+check tolerates synchronous Strict Effects setup/cleanup/setup without terminally
+disposing the reused owner; actual root teardown still stops observation immediately.
+React cleanup initiates but cannot itself await asynchronous disposal. Failed or
+unconfirmed writes require accepted-poll reconciliation before retry, not another
+click or a successful-but-unconfirmed tight loop. Stale rendered actions cannot
+substitute newer completion/request tokens. Operational failures retain existing
+unavailable feedback; unexpected observer/subscriber defects remain visible errors.
+
+Real controller and mounted ActivityViews/notification-adapter tests own the client
+matrices. They do not claim full Sidebar/AppShell/router/metrics mounting, CSS,
+real touch/networking, server durability or SDK/process closure. Keep the actual
+browser/default/native bridges for those boundaries and an exact assertion/input
+migration map before reducing repeated viewport work. Contributor recipes and the
+current mechanism live in Testing and Feature contracts; this is an Activity-only
+pilot, not automatic authorization to migrate every feature family.
+
 ## Fixtures, classification and evidence
 
 Browser recipes declare ordered resources and expected IDs independently of
