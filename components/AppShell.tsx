@@ -891,7 +891,7 @@ export function AppShell() {
   }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, router, isMobile, newSessionCwd, persistNewSession, selectedSession]);
 
   const handleNewSession = useCallback((sessionId: string, cwd: string) => {
-    closeOverview();
+    if (isMobile) closeOverview();
     setChatHidden(false);
     invalidateWorkspaceRestore();
     const draftKey = `new:${sessionId}:${cwd}`;

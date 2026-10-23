@@ -140,6 +140,7 @@ test("New focus requests are bound to the intended fresh draft and navigation re
   for (const [setter] of callback.matchAll(/\bset[A-Z]\w*(?=\()/g)) context[setter] = () => {};
   vm.runInContext(stripTypeScriptTypes(`${callback}\nglobalThis.start = handleNewSession;`), context);
   context.start("first", "/p");
+  assert.equal(overview, "activity", "desktop New preserves independent sidecars");
   assert.equal(requests.length, 1);
   assert.equal(requests[0][2](), true);
   context.start("second", "/p");
@@ -150,6 +151,11 @@ test("New focus requests are bound to the intended fresh draft and navigation re
   context.start("third", "/p");
   context.invalidateWorkspaceRestore();
   assert.equal(requests[2][2](), false);
+  for (const panel of ["activity", "starred", "git"]) {
+    overview = panel;
+    context.start(`desktop-${panel}`, "/p");
+    assert.equal(overview, panel, "desktop New must retain the overview's mounted state");
+  }
   context.isMobile = true;
   for (const panel of ["activity", "starred", "git"]) {
     overview = panel;
