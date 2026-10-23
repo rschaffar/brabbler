@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { waitForAsyncCondition } from './async-condition.mjs';
 import { holdBrowserRead } from './browser-read-barrier.mjs';
-import { sidebarReady } from './sidebar-readiness.mjs';
+import { setAcceptanceEnabled } from './project-acceptance-ui.mjs';
 
 export async function openAcceptanceConfiguration(dialog) {
   // Initial status inserts profile cards above the native summary. Do not click
@@ -21,13 +21,21 @@ export async function openAcceptanceWithHeldStatus(page, dialog, project) {
   // Hold the browser's original GET, not an APIRequestContext fetch/fulfill copy
   // that can reuse an idle Node socket closed by the server while awaiting UI.
   const read = await holdBrowserRead(page, { pathname: '/api/acceptance', query: { cwd: project } });
+  const failures = [];
   try {
     await page.getByRole('button', { name: 'Acceptance', exact: true }).click();
     await dialog.waitFor();
     await read.arrived();
     await dialog.getByText('Reading acceptance status…', { exact: true }).waitFor();
-    await read.releaseAndObserve();
-  } finally { await read.dispose(); }
+    const reads = await read.releaseAndObserve();
+    assert.ok(reads.length > 0 && reads.every(read => read.outcome === 'consumed'), 'initial status requires genuine browser JSON consumption, never cancellation');
+  } catch (error) { failures.push(error); }
+  finally {
+    try { await read.dispose(); }
+    catch (error) { failures.push(error); }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, 'Acceptance initial status fixture failed');
+  }
 }
 
 export async function checkProjectAcceptance(page, { base, api, post, project, width, returnSessionId }) {
@@ -41,28 +49,7 @@ export async function checkProjectAcceptance(page, { base, api, post, project, w
   const openAcceptance = async () => {
     await page.getByRole('button', { name: 'Acceptance', exact: true }).click(); await dialog.waitFor();
   };
-  const setEnabled = async enabled => {
-    if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Close acceptance', exact: true }).click();
-    const sidebar = page.getByRole('button', { name: 'Show sidebar', exact: true });
-    if (await sidebar.isVisible()) await sidebar.click();
-    await waitForAsyncCondition(page, sidebarReady);
-    await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
-    if (width <= 600) await settings.getByRole('combobox', { name: 'Settings', exact: true }).selectOption('plugins');
-    else await settings.getByRole('button', { name: 'Plugins', exact: true }).click();
-    await settings.getByRole('button', { name: 'Acceptance', exact: true }).click();
-    const panel = settings.getByRole('region', { name: 'Acceptance settings', exact: true });
-    const checkbox = panel.getByLabel('Enabled', { exact: true });
-    assert.equal(await checkbox.isChecked(), !enabled, 'each switch action starts in the opposite state');
-    const saved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/plugins/bundled' && response.request().method() === 'PATCH' && response.request().postDataJSON().pluginId === 'acceptance');
-    void saved.catch(() => {});
-    await checkbox.setChecked(enabled);
-    const response = await saved; assert.equal(response.status(), 200, await response.text());
-    const body = response.request().postDataJSON(); assert.equal(body.scope, 'global');
-    assert.equal((await response.json()).settings.enabled, enabled);
-    await settings.getByRole('button', { name: 'Close', exact: true }).click();
-    if (width <= 600 && await page.locator('.sidebar-overlay-backdrop').isVisible()) await page.locator('.sidebar-overlay-backdrop').click({ position: { x: width - 10, y: 200 } });
-  };
+  const setEnabled = enabled => setAcceptanceEnabled(page, { width }, enabled);
   const tools = async () => (await post(`/api/agent/${returnSessionId}`, { type: 'get_tools' })).data.filter(tool => tool.name.startsWith('acceptance_'));
   const waitRun = (id, state) => waitForAsyncCondition(page, async ({ endpoint, id, state }) => {
     const response = await fetch(endpoint, { cache: 'no-store' });

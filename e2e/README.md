@@ -75,7 +75,7 @@ unselected `general` aggregate or account/API footer in unrelated focused groups
 | `file-edit` | Panel setup, all modified/added/deleted/context diff variants, editor/read-only/draft retention; Explorer root/nested/file/Changes-row drops, closed-folder refresh, keyboard/touch pickers, conflicts, filtered-search refresh and upload-driven clean/dirty viewer sync |
 | `archive` | Focused archive/restore flow, distinct from the mobile search/restore/move chain |
 | `privacy` | Concealment/loading/failure behavior, independent contexts and tablet coverage |
-| `activity` | Full overview, real worktree/subagent/recovery fixtures, running/fallback Agents badge with reduced motion, deterministic recorded per-agent/family usage and keyboard/touch breakdowns without review acknowledgement, selected-session-only toolbar, and tablet coverage; native model-issued child runs, saved IDs/history, removed-worktree resume refusal, suffix settings and never-prompted queued Stop; gated initial-session adoption preserves a user-opened overview, with post-adoption reload readiness for Later persistence; mobile cross-project New leaves covering Activity/Starred views and saves an editable empty session; native waiting-card Pause, cooperative tool drain, main-only literal continuation and concealed-project global controls |
+| `activity` | One complete desktop golden Question→Later→reload→answer→Ready→Read and real completion/archive/new-generation/peer/bulk persistence chain, plus complete native subagent, row/global Pause and Acceptance job chains once; three legacy inputs retain initial restoration, worktree/interruption/Starred navigation and complete Agents/usage/disclosure/reduced-motion proof. Mobile cross-project New leaves covering Activity/Starred views and saves an editable empty session before the responsive tail. Honest tablet/mobile responsive receipts retain working/question/Ready/control geometry, natural genuine polling before real Enter/tap completion receipts/reload, actual Acceptance status/Settings-switch/bounds/Escape/focus, and real mobile model-suffix Settings. Synthetic layout state never claims native execution or supplies mutation identities. |
 | `accounts` | Separate created/deleted and shared-device OAuth variants, retaining locale and mobile-height differences |
 | `questions` | Native tool ownership plus mixed question sets, draft/reload/cancel/receipts |
 | `session-links` | Desktop/mobile copying and following the copied link |
@@ -111,7 +111,9 @@ and installed whole-chain evidence, not a name-based owner assumption. Every rec
 retains separate shared model-speed defaults and transcript fragments; those IDs
 also serve session-launch. Other groups retain both shared fragments plus the
 running-fork and manager recipes. Appearance keeps all four complete inputs;
-Activity keeps all three native chains and Markdown both preview/line-link chains.
+Activity keeps the complete native subagent/Pause/Acceptance chains once at desktop,
+plus both named responsive inputs and their genuine layout/input/default bridges;
+Markdown keeps both preview/line-link chains.
 Base/other-project Git resources remain. Independent exact startup inventories have
 16 appearance, 20 Activity and 27 Markdown IDs. Their direct contracts exercise the
 real comparator; installed whole chains prove the runner's assembled expectations.
@@ -122,6 +124,45 @@ or derive expectations from writers. Other setup stays in `browser-suite.mjs`'s
 original order. Do not infer owner-only seeding from a group name or drop shared
 inputs opportunistically.
 Group splitting and immutable-seed adoption remain deferred pending measured benefit.
+
+### Activity ownership and responsive receipts
+
+`activity/golden-native@legacy-desktop` retains the genuine question/answer,
+completion/receipt/peer/reload and bulk-store bridges, then all original SDK
+subagent/Pause/Acceptance assertions. `activity/responsive@legacy-tablet` and
+`activity/responsive@legacy-mobile` retain the700×800 and390×844 legacy locale/
+preference/touch inputs, not falsely passed old complete native-chain IDs. There
+is no extra group or concurrency. Initial restoration and early Starred/interruption
+checks remain at all three inputs. Mobile additionally keeps both incoming
+cross-project New/persisted-empty-session/editable-composer assertions before its
+responsive return. The same complete `activity-family-usage.mjs` fragment runs at every width: this pilot does **not** mount the wider AppShell
+metrics/Agents composition, so its browser proof is not deleted.
+
+Controller and mounted client matrices live in the [Activity core recipe](../docs/testing.md#activity-client-pilot-recipe).
+Native Pause ledger negatives and the actual Acceptance-job/Activity-observer
+independence bridge remain native-owned. Responsive geometry can augment read-only
+status, but must never POST a synthetic question/pause identity. Geometry and the
+child-only metrics augmentation have separate joined route lifetimes. After both
+are removed, passively observe an actual natural application GET/body, verify the
+real completion identity and rendered transition, then use genuine Enter/tap Later/
+Read with exact native response/body barriers and reload. Unroute, a substitute API
+read, headers or optimistic disappearance alone is not that default-composition
+proof. Parent titles are matched exactly; unread children may display that title
+in metadata after their reviewed parent leaves the section.
+
+Both responsive inputs keep actual Acceptance status/profiles, global Settings
+Plugins switch/PATCH, dialog bounds and native Escape/trigger focus without
+repeating its five-job process matrix. Mobile also retains actual Sub-agents
+Settings suffix availability/Save using the real desktop fixture's retained model
+and project, never fake `/api/models`. Generic mobile More/Stop remains with the
+unchanged real running-forks/composer input owners; the never-prompted queued-child
+identity matrix remains native desktop, not falsely claimed at mobile.
+
+The initial Acceptance loading/layout bridge gates its own browser request after
+navigation and requires consumed real JSON. It no longer adds a Node `route.fetch`
+proxy there; this does not establish the historical reset's cause or fix arbitrary
+shared route-callback error ownership. Errors, original deadlines, native admission,
+whole-input trace/context settlement and failed diagnostics remain mandatory.
 
 For superseded reads, use `holdBrowserRead(page, { pathname, query }, { json })`
 from `browser-read-barrier.mjs` (omit `json` to continue the genuine response):

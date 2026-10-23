@@ -17,8 +17,10 @@ import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkAskUserDialog } from "./ask-user.mjs";
 import { checkActivityOverview } from "./activity.mjs";
 import { checkSubagentLifecycle, subagentLifecycleFixtureSource } from "./subagent-lifecycle.mjs";
+import { checkSubagentModelSettings } from "./subagent-settings-ui.mjs";
 import { checkSessionPause, sessionPauseFixtureSource } from "./session-pause.mjs";
 import { checkProjectAcceptance } from "./project-acceptance.mjs";
+import { checkAcceptanceResponsive } from "./project-acceptance-ui.mjs";
 import { checkProjectPrivacy } from "./project-privacy.mjs";
 import { checkProjectTrustScopes } from "./project-trust-scopes.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
@@ -788,7 +790,8 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "activity") {
-      await coverage.run(`activity/worktree-interruption-subagents@${inputId}`, async () => {
+      const activityScenario = inputId === "legacy-desktop" ? "activity/golden-native" : "activity/responsive";
+      await coverage.run(`${activityScenario}@${inputId}`, async () => {
       const finishActivityStage = stage.start(`activity/${inputId}/chain`);
       // Seed only after the selected chat has loaded, so clicking its newly
       // discovered Activity row must refresh the warning in that same chat.
@@ -804,9 +807,29 @@ let nativeToolsFixture;
           }));
         },
       }); });
-      await stage(`activity/${inputId}/subagent-lifecycle`, async () => { await checkSubagentLifecycle(page, { base, api, post, root, agentDir, width: viewport.width, returnSessionId: BRANCH }); });
-      await stage(`activity/${inputId}/session-pause`, async () => { await checkSessionPause(page, { base, api, post, root, agentDir, artifacts, width: viewport.width, returnSessionId: BRANCH }); });
-      await stage(`activity/${inputId}/project-acceptance`, async () => { await checkProjectAcceptance(page, { base, api, post, project, width: viewport.width, returnSessionId: BRANCH }); });
+      if (inputId === "legacy-desktop") {
+        // One complete coherent native S/P/X chain. Responsive receipts below
+        // name their smaller ownership honestly, without native-status fakes.
+        await stage(`activity/${inputId}/subagent-lifecycle`, async () => { await checkSubagentLifecycle(page, { base, api, post, root, agentDir, width: viewport.width, returnSessionId: BRANCH }); });
+        await stage(`activity/${inputId}/session-pause`, async () => { await checkSessionPause(page, { base, api, post, root, agentDir, artifacts, width: viewport.width, returnSessionId: BRANCH }); });
+        await stage(`activity/${inputId}/project-acceptance`, async () => { await checkProjectAcceptance(page, { base, api, post, project, width: viewport.width, returnSessionId: BRANCH }); });
+      } else {
+        await stage(`activity/${inputId}/acceptance-responsive-ui`, async () => {
+          await checkAcceptanceResponsive(page, { base, api, project, width: viewport.width, returnSessionId: BRANCH });
+        });
+        if (inputId === "legacy-mobile") {
+          // S keeps its real global definition, enabled-model settings, provider
+          // extension and project directory after deleting the native family.
+          // Reuse that actual project's model availability; do not repeat the SDK
+          // lifecycle or fabricate /api/models to reach the mobile selector.
+          await stage(`activity/${inputId}/subagent-settings-ui`, async () => {
+            await page.goto(`${base}/?cwd=${encodeURIComponent(join(agentDir, "subagent-project-1280"))}`, { waitUntil: "domcontentloaded" });
+            await checkSubagentModelSettings(page, { width: viewport.width });
+            await page.goto(`${base}/?session=${BRANCH}`, { waitUntil: "domcontentloaded" });
+            await page.getByText("Active branch answer", { exact: true }).waitFor();
+          });
+        }
+      }
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
       await harness.closeContext(context);
       context = undefined;

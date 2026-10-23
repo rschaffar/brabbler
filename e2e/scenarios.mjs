@@ -39,7 +39,7 @@ export const scenarios = {
   "file-edit": ["file-edit/panel-diff-edit@legacy-desktop", "file-edit/panel-diff-edit@legacy-mobile"],
   "archive": ["archive/inline-restore@legacy-mobile"],
   "privacy": ["privacy/full@legacy-desktop", "privacy/full@legacy-tablet", "privacy/full@legacy-mobile"],
-  "activity": ["activity/worktree-interruption-subagents@legacy-desktop", "activity/worktree-interruption-subagents@legacy-tablet", "activity/worktree-interruption-subagents@legacy-mobile"],
+  "activity": ["activity/golden-native@legacy-desktop", "activity/responsive@legacy-tablet", "activity/responsive@legacy-mobile"],
   "accounts": ["accounts/created-deleted@legacy-desktop", "accounts/created-deleted@legacy-mobile", "accounts/shared-device@en-desktop", "accounts/shared-device@en-mobile-short"],
   "questions": ["questions/registration-and-dialog@legacy-desktop", "questions/registration-and-dialog@legacy-mobile"],
   "session-links": ["session-links/copy-follow@legacy-desktop", "session-links/copy-follow@legacy-mobile"],
