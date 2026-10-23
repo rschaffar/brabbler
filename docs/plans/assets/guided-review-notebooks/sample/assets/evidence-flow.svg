@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="180" viewBox="0 0 900 180" role="img" aria-labelledby="title desc">
+<title id="title">Conceptual evidence flow</title>
+<desc id="desc">An explicit reading action captures current authorization, requests the authored immutable revision, and displays it only while the request still belongs to the active reader. Mutable design illustration, not an execution trace.</desc>
+<defs><style>text{font-family:DejaVu Sans,sans-serif;fill:#e4e9f2;font-size:13px}.small{font-size:11px;fill:#a9b4c8}</style></defs>
+<rect width="900" height="180" rx="8" fill="#172233"/>
+<text x="20" y="27" class="small">CONCEPTUAL FLOW · MUTABLE DESIGN ASSET · NOT AN EXECUTION TRACE</text>
+<g fill="#273c5a" stroke="#718bb5"><rect x="20" y="49" width="185" height="70" rx="8"/><rect x="245" y="49" width="185" height="70" rx="8"/><rect x="470" y="49" width="185" height="70" rx="8"/><rect x="695" y="49" width="185" height="70" rx="8"/></g>
+<text x="36" y="77">Explicit read action</text><text x="36" y="99" class="small">Never on ordinary scroll</text>
+<text x="261" y="77">Capture read authority</text><text x="261" y="99" class="small">No new file or Git rights</text>
+<text x="486" y="77">Read authored revision</text><text x="486" y="99" class="small">Never working-file fallback</text>
+<text x="711" y="77">Display if still current</text><text x="711" y="99" class="small">Otherwise discard late result</text>
+<text x="216" y="91">→</text><text x="441" y="91">→</text><text x="666" y="91">→</text>
+<text x="20" y="153" class="small">Identity says which bytes; navigation ownership says whether they belong on screen now.</text>
+</svg>
