@@ -260,7 +260,32 @@ logs, exported sources, reports and private rejected variants retained).
   preserved all lease assertions and made only the structural shared-owner binding
   follow the actual root. No product behavior change or broad hook-test migration.
   That reviewed repair is `6e3bc85d1f06ac9545f97e4f7503a94563f19e1d`.
-  Full composed browser/terminal/deployment and original timing gates remain pending.
+- On `cecdf427c8f0749921e43ff413d8f661452fcbc9` (base96802b0), full fresh
+  `all --workers 4 --jobs 4` **passed correctness**: **440 files/3419 tests/12 suites**,
+  **26 groups/59 receipts** and genuine deployment. Command **388s** **failed** the
+  unchanged351.05s performance gate. Source
+  `/nix/store/9w8fhlwc6qzxl7cdmpc7a4bmyb7fiq45-source`, digest
+  `96cd1e9fdf6495cdfb134af3579ea8da3d4621260c5548932ac801f580d35bfd`.
+  Core/browser envelopes **269.133/326.430s** overlapped; browser preparation
+  **2.784/4.785s**. Service **57.442s** included a newly realized guest/driver closure;
+  actual VM evidence execution **19.843s**. Do not subtract that difference to
+  manufacture a passing command. Effective four/four,32CPUs/about49.5GiB available.
+  Full Activity capsule **122.306s**; separate focused installed run **191s**, with
+  **72.558s support +4.416s manifest** preparation and **109.093s capsule**. Panel
+  **7/4/5s**, median**5s**, passes20.5s. No causal full-suite gain is inferred across
+  incoming main changes; failed and passing exact-source evidence is retained.
+- The user explicitly authorized **one** warm-prerequisite full measurement, then
+  instructed **rebase first**. Latest main is
+  `b2e66c9da6ee95ddf8994abb2a59af077c3e3ef1`: incoming Move source preselection/
+  explicit-proposal/missing-source proof and named original Acceptance-GET gate.
+  After abort/clean restoration/timestamped backup, the controlled mechanical
+  rebase retained the canonical `openAcceptanceWithHeldStatus` export and its actual
+  incoming HTTP200/503 regressions, adding the pilot's consumed-only check and
+  primary/cleanup error retention. All inline/dangling initialStatus machinery is
+  removed; native and responsive Settings assertions remain. New production TS
+  inputs require preparing the exact package/static/guest prerequisites before
+  the authorized warm run, not another undocumented full warm-up. Latest composed
+  focused/native/browser/full acceptance and original full timing gate are pending.
 - Scope limits remain explicit: mounted ActivityViews/notification adapters are not
   full Sidebar/AppShell/router/metrics mounting. Native/default/browser owners stay
   real. The shared `owned-routes` event-rejection escape and socket cause remain
@@ -325,9 +350,11 @@ logs, exported sources, reports and private rejected variants retained).
 - Measured Activity improvement is desirable, not evidence of complete-suite gain:
   another browser queue previously determined the critical path. Do not infer saved
   wall time from summed overlapping cases or automatically widen/reclassify lanes.
-- Remaining unknowns are the exact per-assertion migration map, StrictMode-safe
-  app-owner/consumer lifecycle, necessary native UI bridges and measured new cost.
-  Resolve them as early tasks, not assumptions hidden in the final browser deletion.
+- Map/lifetime/native-bridge unknowns are resolved by the reviewed ledger and
+  actual owner/mounted/native/installed proof. The remaining execution gate is the
+  latest-main composition and its one authorized warm full measurement. Existing
+  large-batch/retention risk is a separate follow-up owned by the maintained
+  Activity assertion guide, not an implicit redesign or an unowned pilot task.
 
 ## Rollback / Recovery
 

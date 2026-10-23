@@ -82,8 +82,22 @@ The incoming persistent-New/session/sidecar work remains independent: preserve i
 actual mobile Activity/Starred New behavior and desktop sidecar/browser/mounted
 owners when composing this pilot, not by declaring them covered by the controller.
 
+`openAcceptanceWithHeldStatus` in `e2e/project-acceptance.mjs` is the canonical
+initial-loading gate: hold the original application GET, observe Reading before
+release, require consumed (not cancelled) JSON, then join/unregister and restore
+the observer. Incoming `lib/browser-suite-fixtures.test.mjs` exercises that actual
+export with HTTP200/503, forbids Node fetch/fulfill copies and checks exactly one
+continuation/body plus restoration. Primary and cleanup errors are both retained;
+a sole failure remains the original error. Responsive status observation remains
+a separate real passive read, not another native-job matrix.
+
 The initial Acceptance browser-read correction does not diagnose the old socket
 reset or solve arbitrary shared route-callback rejection ownership. Preserve failed
 diagnostics and native settlement guards; no retries/deadline inflation/error
 suppression follows from this mapping. See the execution plan for exact evidence
 and remaining rollout status, not an inferred suite-wide migration.
+
+Separate Activity client/API follow-up: large mutation batches versus the existing
+1000-entry API bound and retention/reconciliation edges remain a flagged risk,
+not a redesigned policy or a fixed bug. This guide owns that follow-up; changing
+batch/retry behavior requires a separate decision and real API/store proof.
