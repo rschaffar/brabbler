@@ -12,12 +12,12 @@ const projects = ['/older', '/newer'].map(root => ({ root, key: root }));
 
 // Only the existing controlled-prop owner is supplied here. The mounted picker,
 // its internal selects, useEffect and response parser are all production code.
-function PickerOwner({ changes }) {
+function PickerOwner({ changes, currentProject = '/missing-source', currentCwd = '/missing-source/checkout', sourceUnavailable = true, allowCurrentDirectory = false }) {
   const [destination, setDestination] = useState('');
   const onChange = useCallback(value => { changes.push(value); setDestination(value); }, [changes]);
   return createElement(I18nProvider, null,
     createElement(SessionMoveDestinationPicker, {
-      projects, currentProject: '/missing-source', currentCwd: '/missing-source/checkout',
+      projects, currentProject, currentCwd, sourceUnavailable, allowCurrentDirectory,
       destination, onChange, disabled: false,
     }),
     createElement('output', { 'aria-label': 'Controlled destination' }, destination));
@@ -43,6 +43,71 @@ const listing = (project, suffix) => ({ worktrees: [
   { path: `${project}/${suffix}`, branch: suffix },
 ] });
 
+for (const currentCwd of ['/older', '/older/checkout']) {
+  test(`mounted Move preselects source project and directory without proposing a no-op: ${currentCwd}`, async t => {
+    const transport = ignoredAbortFetch(t, '/api/worktrees');
+    let view;
+    t.after(() => transport.dispose(() => view?.unmount()));
+    const changes = [];
+    view = await mount(t, createElement(PickerOwner, {
+      changes, currentProject: '/older', currentCwd, sourceUnavailable: false,
+    }));
+    const project = view.container.querySelector('#move-session-project');
+    const directory = view.container.querySelector('#move-session-directory');
+    assert.equal(project.dataset.value, '/older');
+    assert.equal(directory.dataset.value, currentCwd, 'source remains selected during loading');
+    assert.equal(view.container.querySelector('output').textContent, '');
+    assert.ok(transport.requests.length > 0);
+    assert.ok(transport.requests.every(request => request.url.searchParams.get('cwd') === '/older'));
+    await transport.requests.at(-1).deliver(listing('/older', 'checkout'));
+    assert.equal(directory.dataset.value, currentCwd, 'listing must not replace the selected worktree with main');
+    assert.equal(directory.disabled, false);
+    const source = (await openOptions(view, 'move-session-directory')).find(option => option.dataset.value === currentCwd);
+    assert.equal(source.getAttribute('aria-selected'), 'true');
+    assert.equal(source.disabled, true, 'current directory cannot be a move target');
+    assert.equal(view.container.querySelector('output').textContent, '');
+    await choose(view, 'move-session-directory', currentCwd === '/older' ? '/older/checkout' : '/older');
+    assert.equal(view.container.querySelector('output').textContent, currentCwd === '/older' ? '/older/checkout' : '/older');
+    await choose(view, 'move-session-project', '/newer');
+    assert.equal(view.container.querySelector('output').textContent, '', 'project changes clear the old proposal');
+    await transport.requests.at(-1).deliver(listing('/newer', 'target'));
+    assert.equal(view.container.querySelector('output').textContent, '/newer');
+  });
+}
+
+test('a missing source can explicitly reselect its project to reach surviving checkouts', async t => {
+  const transport = ignoredAbortFetch(t, '/api/worktrees');
+  let view;
+  t.after(() => transport.dispose(() => view?.unmount()));
+  const changes = [];
+  view = await mount(t, createElement(PickerOwner, {
+    changes, currentProject: '/older', currentCwd: '/older/deleted', sourceUnavailable: true,
+  }));
+  assert.equal(transport.requests.length, 0, 'preselection alone must not probe missing history');
+  await choose(view, 'move-session-project', '/older');
+  assert.equal(transport.requests.length, 1, 'explicit reselection can load the surviving project');
+  await transport.requests.at(-1).deliver(listing('/older', 'survivor'));
+  const options = await openOptions(view, 'move-session-directory');
+  assert.equal(options.find(option => option.dataset.value === '/older/deleted').disabled, true);
+  await choose(view, 'move-session-directory', '/older');
+  assert.equal(view.container.querySelector('output').textContent, '/older');
+});
+
+test('bulk Move can explicitly consolidate other worktrees into the preselected current directory', async t => {
+  const transport = ignoredAbortFetch(t, '/api/worktrees');
+  let view;
+  t.after(() => transport.dispose(() => view?.unmount()));
+  const changes = [];
+  view = await mount(t, createElement(PickerOwner, {
+    changes, currentProject: '/older', currentCwd: '/older', sourceUnavailable: false, allowCurrentDirectory: true,
+  }));
+  await transport.requests.at(-1).deliver(listing('/older', 'checkout'));
+  assert.equal(view.container.querySelector('#move-session-directory').dataset.value, '/older');
+  assert.equal(view.container.querySelector('output').textContent, '', 'opening alone is not a proposal');
+  await choose(view, 'move-session-directory', '/older');
+  assert.equal(view.container.querySelector('output').textContent, '/older', 'bulk preview owns already-at-destination filtering');
+});
+
 for (const selection of [['/older', '/newer'], ['/newer', '/older', '/newer']]) {
   test(`mounted Move listing retains explicit newer directory after ignored-abort JSON: ${selection.join(' -> ')}`, async t => {
     const transport = ignoredAbortFetch(t, '/api/worktrees');
@@ -52,6 +117,9 @@ for (const selection of [['/older', '/newer'], ['/newer', '/older', '/newer']]) 
     const changes = [];
     view = await mount(t, createElement(PickerOwner, { changes }));
     assert.equal(requests.length, 0, 'opening must not probe a historical missing source');
+    assert.equal(view.container.querySelector('#move-session-project').dataset.value, '/missing-source');
+    assert.equal(view.container.querySelector('#move-session-directory').dataset.value, '/missing-source/checkout');
+    assert.equal(view.container.querySelector('output').textContent, '');
     for (const project of selection) {
       await choose(view, 'move-session-project', project);
       assert.equal(requests.length, changes.length);

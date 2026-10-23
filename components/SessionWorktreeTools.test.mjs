@@ -51,7 +51,8 @@ test("bulk dialog separates review from effects, owns dispatch through refresh, 
   assert.doesNotMatch(uncertain, /setSelectedSession\(null\)|setNewSessionCwd|setNewSessionDraftId/);
   assert.match(dialog, /if \(!operation.current\) onClose\(\)/);
   assert.match(dialog, /unknownOutcome/);
-  assert.match(dialog, /currentCwd=""/);
+  // Default selection and bulk consolidation are exercised by the mounted
+  // SessionMoveDestinationPicker tests and the installed move browser chain.
   assert.match(dialog, /DirectoryPickerPortalContext.Provider value=\{dialog\}/);
   const picker = await source("./DirectoryPicker.tsx");
   assert.match(picker, /setPortalTarget\(portalRoot\?\.current \?\? document.body\)/);

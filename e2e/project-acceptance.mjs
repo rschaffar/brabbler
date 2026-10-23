@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { waitForAsyncCondition } from './async-condition.mjs';
-import { createOwnedRoutes } from './owned-routes.mjs';
+import { holdBrowserRead } from './browser-read-barrier.mjs';
 import { sidebarReady } from './sidebar-readiness.mjs';
 
 export async function openAcceptanceConfiguration(dialog) {
@@ -15,6 +15,19 @@ export async function openAcceptanceConfiguration(dialog) {
   await editor.waitFor({ state: 'visible' });
   assert.equal(await editor.isEnabled(), true, 'configuration is editable after initial status');
   return editor;
+}
+
+export async function openAcceptanceWithHeldStatus(page, dialog, project) {
+  // Hold the browser's original GET, not an APIRequestContext fetch/fulfill copy
+  // that can reuse an idle Node socket closed by the server while awaiting UI.
+  const read = await holdBrowserRead(page, { pathname: '/api/acceptance', query: { cwd: project } });
+  try {
+    await page.getByRole('button', { name: 'Acceptance', exact: true }).click();
+    await dialog.waitFor();
+    await read.arrived();
+    await dialog.getByText('Reading acceptance status…', { exact: true }).waitFor();
+    await read.releaseAndObserve();
+  } finally { await read.dispose(); }
 }
 
 export async function checkProjectAcceptance(page, { base, api, post, project, width, returnSessionId }) {
@@ -65,32 +78,18 @@ export async function checkProjectAcceptance(page, { base, api, post, project, w
     return (await reply.json()).run;
   };
   // Reproduce the failed initial-read ordering with real persisted profiles and
-  // one held response. Only delivery is gated; the body comes from the server.
+  // one held browser request. Its unmodified response comes from the server.
   const previousProfiles = [
     make('previous-one', 'console.log("previous profile one")'),
     make('previous-two', 'console.log("previous profile two")'),
   ];
   await post('/api/acceptance', { cwd: project, action: 'configure', profiles: previousProfiles });
-  const gate = Promise.withResolvers();
-  let initialRead = true;
-  const pattern = /\/api\/acceptance\?/;
-  const owned = createOwnedRoutes(async route => {
-    const url = new URL(route.request().url());
-    if (route.request().method() !== 'GET' || url.searchParams.get('cwd') !== project || url.searchParams.has('runId') || !initialRead) return route.continue();
-    initialRead = false;
-    const response = await route.fetch();
-    await gate.promise;
-    await route.fulfill({ response });
-  }, route => route.continue());
-  await page.route(pattern, owned.handler);
   const failures = [];
   try {
     await page.goto(`${base}/?cwd=${encodeURIComponent(project)}`, { waitUntil: 'domcontentloaded' });
     assert.equal((await api(endpoint)).enabled, false, 'Acceptance defaults off and remains off between variants');
     assert.ok((await tools()).every(tool => !tool.active));
-    await openAcceptance();
-    await dialog.getByText('Reading acceptance status…', { exact: true }).waitFor();
-    gate.resolve();
+    await openAcceptanceWithHeldStatus(page, dialog, project);
     await dialog.getByText(/^Acceptance is disabled\./).waitFor();
     const editor = await openAcceptanceConfiguration(dialog);
     await dialog.getByRole('button', { name: 'Run previous-one', exact: true }).waitFor();
@@ -149,10 +148,6 @@ export async function checkProjectAcceptance(page, { base, api, post, project, w
     console.log(`PASS: ${width}px optional global Acceptance switch, retained profiles/history, live tools, queue cancellation and active job control`);
   } catch (error) { failures.push(error); }
   finally {
-    gate.resolve();
-    owned.beginDisposal();
-    try { await owned.dispose(handler => page.unroute(pattern, handler)); }
-    catch (error) { failures.push(error); }
     try {
       const state = await api(endpoint);
       for (const run of state.runs) if (['queued', 'running'].includes(run.state)) {
