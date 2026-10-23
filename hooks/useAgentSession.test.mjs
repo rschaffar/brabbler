@@ -404,7 +404,11 @@ test("keeps the selected session warm while idle and renews its lease", () => {
   assert.match(chatWindowSource, /sessionRunning\?: boolean/);
   assert.match(chatWindowSource, /session, sessionRunning, newSessionCwd/);
   assert.match(appShellSource, /runningSessionIds\.has\(selectedSession\.id\)/);
-  assert.match(appShellSource, /onRunningSessionIdsChange=\{handleRunningSessionIdsChange\}/);
+  // Structural bridge only: running publication/leases are exercised by the
+  // actual controller/mounted and native session owners, not this source guard.
+  assert.match(appShellSource, /const activityController = useActivityOwner\(\)/);
+  assert.match(appShellSource, /const \{ snapshot: activity \} = useActivityController\(activityController\)/);
+  assert.match(appShellSource, /const \{ runningIds: runningSessionIds,/);
 });
 
 test("opens the selected session's event stream even when Strict Mode re-runs effects", () => {
