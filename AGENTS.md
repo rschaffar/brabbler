@@ -103,6 +103,7 @@ Code paths in the guides are relative to the repository root.
 | Optional Git tools, policy, approvals, operation receipts and cleanup | [Git plugin](docs/git-workflow-plugin.md); [feature contracts](docs/feature-internals.md#git-operations) |
 | Browser questions, blocking cards and interaction receipts | [Questions](docs/questions.md); [feature contracts](docs/feature-internals.md#browser-native-ask_user) |
 | Terminal behavior | [Terminal](docs/terminal.md) |
+| Adding or moving tests, owner recipes and assertion dispositions | [Writing tests](docs/test-writing.md) |
 | Verification and browser fixtures | [Testing](docs/testing.md); [browser/terminal acceptance](e2e/README.md) |
 | Interface messages, demo and release | [English messages](docs/i18n.md); [demo](demo/README.md); [release](docs/release.md) |
 
