@@ -3,21 +3,26 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { createJiti } from 'jiti';
 import { mount } from '../lib/testing/react.fixture.mjs';
-import { buttonWithText, click } from '../lib/testing/leaf-controls.fixture.mjs';
+import { controlledLeafFetch, buttonWithText, click } from '../lib/testing/leaf-controls.fixture.mjs';
 
 const jiti = createJiti(import.meta.url, { jsx: { runtime: 'automatic' }, tsconfigPaths: true, fsCache: false });
-const { ToolDefinitionsPanel, getToolParameterFields } = await jiti.import('./ToolDefinitionsPanel.tsx');
-const { I18nProvider, useI18n } = await jiti.import('../hooks/useI18n.tsx');
-function Tools(props) {
-  const { t } = useI18n();
-  return createElement(ToolDefinitionsPanel, { ...props, translate: t });
+async function production() {
+  const { ToolDefinitionsPanel, getToolParameterFields } = await jiti.import('./ToolDefinitionsPanel.tsx');
+  const { I18nProvider, useI18n } = await jiti.import('../hooks/useI18n.tsx');
+  function Tools(props) {
+    const { t } = useI18n();
+    return createElement(ToolDefinitionsPanel, { ...props, translate: t });
+  }
+  return { getToolParameterFields,
+    render: props => createElement(I18nProvider, null, createElement(Tools, props)) };
 }
-const render = props => createElement(I18nProvider, null, createElement(Tools, props));
 const tool = (name, extra = {}) => ({ name, active: true, description: `${name} description`, ...extra });
 const selected = view => [...view.container.querySelectorAll('nav button[aria-pressed="true"]')].map(button => button.textContent);
 const detail = view => view.container.querySelector('.tool-definition-detail');
 
-test('production schema projection preserves required/type/enum/default/description data', () => {
+test('production schema projection preserves required/type/enum/default/description data', async t => {
+  controlledLeafFetch(t); // Guard production import as well as runtime HTTP.
+  const { getToolParameterFields } = await production();
   for (const empty of [undefined, {}, { properties: null }, { properties: false }]) {
     assert.deepEqual(getToolParameterFields(empty), []);
   }
@@ -40,11 +45,13 @@ test('production schema projection preserves required/type/enum/default/descript
 });
 
 test('actual active-tool buttons select detail; rerender retains or replaces selection by current names', async t => {
+  const http = controlledLeafFetch(t);
+  const { render } = await production();
   const alpha = tool('alpha'), beta = tool('beta', {
     parameters: { properties: { limit: { type: 'number', default: 2, enum: [1, 2], description: 'result bound' } }, required: ['limit'] },
     promptGuidelines: ['Keep exact scope'],
   });
-  const view = await mount(t, render({ loading: false, tools: [alpha, tool('disabled', { active: false }), beta] }));
+  const view = http.bind(await mount(t, render({ loading: false, tools: [alpha, tool('disabled', { active: false }), beta] }), { setup: http.setup }));
   assert.deepEqual(selected(view), ['alpha']);
   assert.equal(view.container.querySelectorAll('nav button').length, 2);
   await click(view, buttonWithText(view.container, 'beta'));
@@ -69,13 +76,15 @@ test('actual active-tool buttons select detail; rerender retains or replaces sel
   assert.deepEqual(selected(view), ['alpha'], 'reappearing obsolete name must not revive the old selection');
   await view.rerender(render({ loading: false, tools: [] }));
   assert.deepEqual(selected(view), []);
-  assert.equal(detail(view).querySelector('.tool-definition-scroll'), null);
+  assert.equal(detail(view).querySelector('.tool-definition-scroll') === null, true, 'no detail scroll for empty tools');
   await view.unmount();
   assert.equal(view.container.childNodes.length, 0);
 });
 
 test('a stable selected name receives fresh metadata and never displays inactive definitions', async t => {
-  const view = await mount(t, render({ loading: true, tools: null }));
+  const http = controlledLeafFetch(t);
+  const { render } = await production();
+  const view = http.bind(await mount(t, render({ loading: true, tools: null }), { setup: http.setup }));
   assert.equal(view.container.querySelectorAll('nav button').length, 0);
   await view.rerender(render({ loading: false, tools: [tool('one')] }));
   assert.deepEqual(selected(view), ['one']);

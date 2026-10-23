@@ -28,6 +28,17 @@ export const MIGRATED_OWNERS = Object.freeze([
   'components/MarkdownBody.behavior.test.mjs',
   'components/MarkdownMedia.behavior.test.mjs',
   'components/markdown-dom.fixture.mjs',
+  'components/FileViewer.behavior.test.mjs',
+  'components/FileViewer.media-behavior.test.mjs',
+  'components/FileWorkspace.behavior.test.mjs',
+  'components/files-runtime.fixture.mjs',
+  'components/ArchivedSessionNotice.behavior.test.mjs',
+  'components/ToolDefinitionsPanel.behavior.test.mjs',
+  'components/AgentSessionPanel.behavior.test.mjs',
+  'components/SkillsConfig.behavior.test.mjs',
+  'hooks/useStreamingSelector.behavior.test.mjs',
+  'lib/testing/leaf-controls.fixture.mjs',
+  'app/api/files/watch-route.test.mjs',
 ]);
 
 // Audited behavioral owners, separate from scheduling and legitimate source/SSR
@@ -42,6 +53,15 @@ export const BEHAVIORAL_OWNERS = Object.freeze([
   'lib/file-line-navigation.test.mjs',
   'components/MarkdownBody.behavior.test.mjs',
   'components/MarkdownMedia.behavior.test.mjs',
+  'components/FileViewer.behavior.test.mjs',
+  'components/FileViewer.media-behavior.test.mjs',
+  'components/FileWorkspace.behavior.test.mjs',
+  'components/ArchivedSessionNotice.behavior.test.mjs',
+  'components/ToolDefinitionsPanel.behavior.test.mjs',
+  'components/AgentSessionPanel.behavior.test.mjs',
+  'components/SkillsConfig.behavior.test.mjs',
+  'hooks/useStreamingSelector.behavior.test.mjs',
+  'app/api/files/watch-route.test.mjs',
 ]);
 const code = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 const typed = /\.(?:[cm]?ts|tsx)$/;

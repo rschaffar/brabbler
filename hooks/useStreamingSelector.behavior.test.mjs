@@ -3,14 +3,25 @@ import test from 'node:test';
 import { act, createElement, Fragment, useLayoutEffect } from 'react';
 import { createJiti } from 'jiti';
 import { mount } from '../lib/testing/react.fixture.mjs';
+import { controlledLeafFetch } from '../lib/testing/leaf-controls.fixture.mjs';
 
 const jiti = createJiti(import.meta.url, { fsCache: false, tsconfigPaths: true });
-const { useStreamingSelector, selectIsStreaming, selectHasStreamingContent, selectStreamingMessage } = await jiti.import('./useStreamingSelector.ts');
-const { createStreamingStore } = await jiti.import('../lib/streaming-message.ts');
+async function production() {
+  const { useStreamingSelector, selectIsStreaming, selectHasStreamingContent, selectStreamingMessage } = await jiti.import('./useStreamingSelector.ts');
+  const { createStreamingStore } = await jiti.import('../lib/streaming-message.ts');
+  function Probe({ store, select, name = 'value', onCommit }) {
+    const value = useStreamingSelector(store, select);
+    // No dependency array: observe EVERY committed render, including same-value
+    // commits. Test observers below are stable and baselines follow Strict mount.
+    useLayoutEffect(() => { onCommit(value); });
+    return createElement('output', { 'data-probe': name }, value === null ? 'none' : typeof value === 'object' ? JSON.stringify(value) : String(value));
+  }
+  return { Probe, createStreamingStore, selectIsStreaming, selectHasStreamingContent, selectStreamingMessage };
+}
 
 // Real hook and real store. Only observe subscription identities/disposal; no
 // selector/state/effect algorithm is reimplemented by this transparent adapter.
-function observedStore() {
+function observedStore(createStreamingStore) {
   const real = createStreamingStore(), active = new Set();
   const store = { ...real, subscribe(listener) {
     active.add(listener);
@@ -18,11 +29,6 @@ function observedStore() {
     return () => { active.delete(listener); stop(); };
   } };
   return { store, active };
-}
-function Probe({ store, select, name = 'value', onCommit }) {
-  const value = useStreamingSelector(store, select);
-  useLayoutEffect(() => { onCommit(value); }, [value, onCommit]);
-  return createElement('output', { 'data-probe': name }, value === null ? 'none' : typeof value === 'object' ? JSON.stringify(value) : String(value));
 }
 function GapWriter({ write }) {
   // A preceding sibling layout effect runs after render but before the probe's
@@ -34,11 +40,13 @@ const output = (view, name = 'value') => view.container.querySelector(`[data-pro
 const delta = (store, type, extra = {}) => store.dispatch({ type: 'delta', event: { type, contentIndex: 0, ...extra } });
 
 test('real layout subscription repairs a render/commit gap and is released on unmount', async t => {
-  const { store, active } = observedStore(), commits = [];
+  const http = controlledLeafFetch(t);
+  const { Probe, createStreamingStore, selectIsStreaming } = await production();
+  const { store, active } = observedStore(createStreamingStore), commits = [];
   const write = () => { store.dispatch({ type: 'start' }); };
   const onCommit = value => commits.push(value);
-  const view = await mount(t, createElement(Fragment, null,
-    createElement(GapWriter, { write }), createElement(Probe, { store, select: selectIsStreaming, onCommit })));
+  const view = http.bind(await mount(t, createElement(Fragment, null,
+    createElement(GapWriter, { write }), createElement(Probe, { store, select: selectIsStreaming, onCommit })), { setup: http.setup }));
   assert.equal(output(view), 'true', 'start happened before subscription; mount must repair the gap');
   assert.equal(commits.at(-1), true);
   assert.equal(active.size, 1, 'Strict Effects retain exactly one live subscription');
@@ -51,11 +59,13 @@ test('real layout subscription repairs a render/commit gap and is released on un
 });
 
 test('rerender adopts the current stable selector/store and unsubscribes the obsolete store', async t => {
-  const a = observedStore(), b = observedStore(), commits = [];
+  const http = controlledLeafFetch(t);
+  const { Probe, createStreamingStore, selectIsStreaming, selectHasStreamingContent } = await production();
+  const a = observedStore(createStreamingStore), b = observedStore(createStreamingStore), commits = [];
   a.store.dispatch({ type: 'start' });
   const onCommit = value => commits.push(value);
   const render = (store, select) => createElement(Probe, { store, select, onCommit });
-  const view = await mount(t, render(a.store, selectIsStreaming));
+  const view = http.bind(await mount(t, render(a.store, selectIsStreaming), { setup: http.setup }));
   assert.equal(output(view), 'true');
   await view.rerender(render(a.store, selectHasStreamingContent));
   assert.equal(output(view), 'false', 'selector changed without a new store publication');
@@ -79,7 +89,9 @@ test('rerender adopts the current stable selector/store and unsubscribes the obs
 });
 
 test('1000 actual store chunks preserve every reply publication while mounted boolean consumers stay stable', async t => {
-  const { store, active } = observedStore();
+  const http = controlledLeafFetch(t);
+  const { Probe, createStreamingStore, selectIsStreaming, selectHasStreamingContent, selectStreamingMessage } = await production();
+  const { store, active } = observedStore(createStreamingStore);
   store.dispatch({ type: 'start' });
   store.dispatch({ type: 'snapshot', message: { role: 'assistant', content: [] } });
   delta(store, 'text_start');
@@ -89,10 +101,10 @@ test('1000 actual store chunks preserve every reply publication while mounted bo
   const streaming = value => commits.streaming.push(value);
   const content = value => commits.content.push(value);
   const reply = value => commits.reply.push(value);
-  const view = await mount(t, createElement(Fragment, null,
+  const view = http.bind(await mount(t, createElement(Fragment, null,
     createElement(Probe, { store, select: selectIsStreaming, name: 'streaming', onCommit: streaming }),
     createElement(Probe, { store, select: selectHasStreamingContent, name: 'content', onCommit: content }),
-    createElement(Probe, { store, select: selectStreamingMessage, name: 'reply', onCommit: reply })));
+    createElement(Probe, { store, select: selectStreamingMessage, name: 'reply', onCommit: reply })), { setup: http.setup }));
   const before = [commits.streaming.length, commits.content.length];
   await act(() => {
     for (let index = 0; index < 1000; index++) delta(store, 'text_delta', { delta: '界' });
@@ -102,6 +114,16 @@ test('1000 actual store chunks preserve every reply publication while mounted bo
   assert.ok(publications.every(state => selectIsStreaming(state) && selectHasStreamingContent(state)));
   assert.deepEqual([commits.streaming.length, commits.content.length], before);
   assert.equal(commits.reply.at(-1).content[0].text, '界'.repeat(1000));
+  // An independent awaited delivery cannot hide behind the synchronous burst's
+  // React batching. Require a real reply commit but no boolean consumer commit.
+  const replyBefore = commits.reply.length;
+  await act(() => { delta(store, 'text_delta', { delta: '界' }); });
+  assert.equal(publications.length, 1001);
+  assert.equal(selectStreamingMessage(publications.at(-1)) === selectStreamingMessage(publications.at(-2)), false,
+    'separate delivery has a distinct actual reply snapshot');
+  assert.deepEqual([commits.streaming.length, commits.content.length], before, 'same booleans never commit on independent chunk');
+  assert.equal(commits.reply.length > replyBefore, true, 'independent reply delivery committed');
+  assert.equal(commits.reply.at(-1).content[0].text, '界'.repeat(1001));
   assert.equal(output(view, 'streaming'), 'true');
   assert.equal(output(view, 'content'), 'true');
   await act(() => { store.dispatch({ type: 'end' }); });

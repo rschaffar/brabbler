@@ -24,8 +24,8 @@ for (const type of ['audio', 'video']) {
     const view = await f.mount(element());
     const button = text => byText(view.container, 'button', text);
     const player = () => view.container.querySelector(type);
-    assert.equal(player(), null);
-    assert.equal(view.container.querySelector('[src]'), null);
+    assert.equal(player() === null, true, 'no player before activation');
+    assert.equal(view.container.querySelector('[src]') === null, true, 'no source before activation');
     assert.deepEqual(f.mediaCalls, []);
     const download = view.container.querySelector('a[download]');
     assert.ok(download);
@@ -53,7 +53,7 @@ for (const type of ['audio', 'video']) {
     assert.equal(node.getAttribute('src'), src, 'Strict replay restored source on the existing node');
     const afterReplay = f.mediaCalls.length;
     await view.rerender(element());
-    assert.equal(player(), node);
+    assert.equal(player() === node, true, 'same player after rerender');
     assert.equal(node.getAttribute('src'), src);
     assert.equal(f.mediaCalls.length, afterReplay);
     await f.click(button('Open in Files'));
@@ -63,15 +63,15 @@ for (const type of ['audio', 'video']) {
     await f.click(button('Open in Files'));
     assert.deepEqual(opens, [[props.filePath]]);
     assert.deepEqual(oldOpens, [[props.filePath]]);
-    assert.equal(player(), node, 'callback-only rerender retains activation');
+    assert.equal(player() === node, true, 'callback-only rerender retains activation');
 
     await view.dispatch(node, new view.window.Event('error'));
     assert.match(view.container.querySelector('[role="status"]').textContent, /Unable to play/);
-    assert.equal(player(), node);
+    assert.equal(player() === node, true, 'error feedback retains player');
     assert.equal(node.getAttribute('src'), src);
     assert.equal(f.mediaCalls.length, afterReplay, 'error feedback does not reload or retry');
     await view.rerender(element());
-    assert.equal(player(), node);
+    assert.equal(player() === node, true, 'feedback rerender retains player');
     assert.equal(node.getAttribute('src'), src);
     assert.equal(f.mediaCalls.length, afterReplay);
     assert.match(view.container.querySelector('[role="status"]').textContent, /Unable to play/, 'same-props rerender retains error feedback');
@@ -79,16 +79,16 @@ for (const type of ['audio', 'video']) {
 
     const unloadStart = f.mediaCalls.length;
     await f.click(button('Unload player'));
-    assert.equal(player(), null);
+    assert.equal(player() === null, true, 'unload removes player');
     assert.equal(node.isConnected, false);
     assertMediaRelease(f.mediaCalls.slice(unloadStart), node, src);
-    assert.equal(view.container.querySelector('[role="status"]'), null);
+    assert.equal(view.container.querySelector('[role="status"]') === null, true, 'unload clears error');
     await f.click(button(`Load ${type}: Recording`));
     const reloaded = player(), nextSrc = reloaded.getAttribute('src');
-    assert.notEqual(reloaded, node);
+    assert.equal(reloaded !== node, true, 'reload creates a fresh player');
     assert.notEqual(nextSrc, src, 'each explicit activation gets a fresh token without relying on elapsed time');
     assert.equal(url(nextSrc).searchParams.get('sessionId'), 'origin');
-    assert.equal(view.container.querySelector('[role="status"]'), null);
+    assert.equal(view.container.querySelector('[role="status"]') === null, true, 'reload starts without old error');
     const unmountStart = f.mediaCalls.length;
     await view.unmount();
     assertMediaRelease(f.mediaCalls.slice(unmountStart), reloaded, nextSrc);
@@ -114,7 +114,7 @@ test('source and session changes independently reset the mounted activation owne
   const changePath = f.mediaCalls.length;
   props = { ...props, filePath: '/outside/second.wav' };
   await view.rerender(element());
-  assert.equal(view.container.querySelector('audio'), null);
+  assert.equal(view.container.querySelector('audio') === null, true, 'file identity resets activation');
   assertMediaRelease(f.mediaCalls.slice(changePath), first, firstSrc);
   const second = await activate(), secondSrc = second.getAttribute('src');
   assert.equal(url(secondSrc).pathname, '/api/files/outside/second.wav');
@@ -122,13 +122,13 @@ test('source and session changes independently reset the mounted activation owne
   const changeSession = f.mediaCalls.length;
   props = { ...props, sessionId: 'other-session' };
   await view.rerender(element());
-  assert.equal(view.container.querySelector('audio'), null);
+  assert.equal(view.container.querySelector('audio') === null, true, 'session identity resets activation');
   assertMediaRelease(f.mediaCalls.slice(changeSession), second, secondSrc);
   assert.equal(url(view.container.querySelector('a[download]').href).searchParams.get('sessionId'), 'other-session');
   const third = await activate(), thirdSrc = third.getAttribute('src');
   assert.equal(url(thirdSrc).pathname, '/api/files/outside/second.wav');
   assert.equal(url(thirdSrc).searchParams.get('sessionId'), 'other-session');
-  assert.notEqual(third, second);
+  assert.equal(third !== second, true, 'session activation has a fresh player');
   const unmountStart = f.mediaCalls.length;
   await view.unmount();
   assertMediaRelease(f.mediaCalls.slice(unmountStart), third, thirdSrc);

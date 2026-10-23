@@ -20,20 +20,7 @@ function renderUsage(usage, selectedSessionId = "main") {
 
 const source = await readFile(new URL("./AgentSessionPanel.tsx", import.meta.url), "utf8");
 
-test("keeps the main session first and makes every agent session selectable", () => {
-  const mainRow = source.indexOf("session={rootSession}");
-  const subagentRows = source.indexOf("visibleSubagents.map");
-  assert.ok(mainRow > 0);
-  assert.ok(subagentRows > mainRow);
-  assert.match(source, /onSelect=\{\(\) => onSelectSession\(rootSession\)\}/);
-  assert.match(source, /onSelect=\{\(\) => onSelectSession\(session\)\}/);
-  assert.match(source, /aria-selected=\{selected\}/);
-});
-
-test("sorts running subagents first and enables search only for larger families", () => {
-  assert.match(source, /if \(aRunning !== bRunning\) return aRunning \? -1 : 1/);
-  assert.match(source, /subagents\.length > 8/);
-  assert.match(source, /relation\?\.description, relation\?\.profile, session\.name, session\.firstMessage/);
+test("bounds the agent list height", () => {
   assert.match(source, /maxHeight: "min\(58dvh, 480px\)"/);
 });
 
@@ -82,9 +69,7 @@ test("renders partial, stale, unavailable and loading as distinct states instead
   assert.ok(!unavailable.includes("Summed estimated active time: 0s"));
 });
 
-test("shows persisted completion states while live running state takes precedence", () => {
-  assert.match(source, /const status: SubagentSessionStatus = running \? "running" : relation\?\.status \?\? "completed"/);
-  assert.match(source, /t\(`agentSwitcher\.status\.\$\{status\}`\)/);
+test("keeps distinct failed and aborted/interrupted icon branches", () => {
   assert.match(source, /status === "failed"/);
   assert.match(source, /status === "aborted" \|\| status === "interrupted"/);
 });

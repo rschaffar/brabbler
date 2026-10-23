@@ -17,31 +17,6 @@ function functionBlock(name, nextName) {
   return source.slice(start, end);
 }
 
-for (const [name, nextName] of [
-  ["ImageViewer", "formatDuration"],
-  ["AudioViewer", "VideoViewer"],
-  ["VideoViewer", "DocumentViewer"],
-  ["DocumentViewer", "FileViewer"],
-  ["TextFileViewer", null],
-]) {
-  test(`${name} pauses its watcher and synchronizes after connecting`, () => {
-    const block = functionBlock(name, nextName);
-    const guard = block.indexOf("if (!watchEnabled) return;");
-    const eventSource = block.indexOf("new EventSource", guard);
-    const synchronize = block.indexOf("synchronize();", eventSource);
-
-    assert.ok(guard >= 0, "watchEnabled guard missing");
-    assert.ok(eventSource > guard, "EventSource created before watchEnabled guard");
-    assert.ok(synchronize > eventSource, "connected synchronization missing");
-    assert.match(block, /\}, \[[^\]]*watchEnabled[^\]]*\]\);/);
-  });
-}
-
-test("FileViewer forwards watcher state to every viewer implementation", () => {
-  const block = functionBlock("FileViewer", "TextFileViewer");
-  assert.equal(block.match(/watchEnabled=\{watchEnabled\}/g)?.length, 5);
-});
-
 test("TextFileViewer snapshots and restores lightweight tab state", () => {
   const block = functionBlock("TextFileViewer", null);
   assert.match(block, /onStateChangeRef\.current\?\.\(\{ \.\.\.viewerStateRef\.current \}, lineTargetHandledRef\.current\)/);

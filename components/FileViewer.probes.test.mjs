@@ -43,10 +43,6 @@ for (const nextCwd of ["/new-checkout", "/old-checkout"]) test(`disposed watcher
   old.cleanup();
   const current = mount(nextCwd, async () => {});
   refs.probeEligibilityRef.current = { path: "/file.txt", cwd: nextCwd, sessionId: "session", edit: true, gitDiff: true };
-  refs.savingRef.current = true;
-  await current.fetchEditable("/file.txt");
-  assert.equal(refs.editRequestRef.current, 0, "do not start draft-clearing probes during a save");
-  refs.savingRef.current = false;
   const pending = [current.fetchEditable("/file.txt"), current.fetchGitDiff("/file.txt")];
   oldRead.resolve();
   await setImmediate();
@@ -65,25 +61,4 @@ for (const nextCwd of ["/new-checkout", "/old-checkout"]) test(`disposed watcher
   assert.equal(state.loading, false);
   assert.equal(state.resolved, true);
   current.cleanup();
-});
-
-test("an edit response arriving during save cannot clear typing that returned to the old baseline", async () => {
-  const pending = deferred();
-  const scope = {
-    exports: {}, cwd: "/project", sourceSessionId: "session", filePath: "/file.txt",
-    savingRef: { current: false }, editRequestRef: { current: 0 },
-    probeEligibilityRef: { current: { path: "/file.txt", cwd: "/project", sessionId: "session", edit: true } },
-    draftRef: { current: { content: "A", baseline: "A", revision: "r" } },
-    useCallback: fn => fn, getFileApiUrl: () => "/file", fetch: () => pending.promise,
-    bindEditIdentity: () => true, setFileDraft() { throw new Error("must retain latest typing during save"); },
-    setEditSnapshot() { throw new Error("must not overwrite the transaction snapshot"); }, setExternalChange() {}, setEditing() {},
-  };
-  new Script(ts.transpileModule(`${definitions.map(node => node.getText(file)).join("\n")} exports.fetchEditable = fetchEditable;`, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText).runInNewContext(scope);
-  const read = scope.exports.fetchEditable("/file.txt");
-  scope.savingRef.current = true;
-  pending.resolve(Response.json({ content: "A", revision: "r", writable: true, editIdentity: "a".repeat(64) }));
-  await read;
-  assert.equal(scope.draftRef.current.content, "A");
 });

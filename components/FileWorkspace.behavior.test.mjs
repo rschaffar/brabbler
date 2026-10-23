@@ -15,10 +15,7 @@ const jiti = createJiti(import.meta.url, { jsx: { runtime: 'automatic' }, tsconf
 async function workspace(t) {
   const runtime = filesRuntime();
   let view;
-  t.after(async () => {
-    try { await runtime.dispose(() => view?.unmount()); }
-    finally { await view?.dispose(); }
-  });
+  t.after(() => runtime.dispose(() => view?.unmount(), () => view?.dispose()));
   const { FileWorkspace } = await jiti.import('./FileWorkspace.tsx');
   const { I18nProvider } = await jiti.import('../hooks/useI18n.tsx');
   const ref = createRef(), statuses = [];
@@ -72,14 +69,14 @@ test('actual workspace mounts with its real stores and releases Strict Effects o
   })));
   assert.equal(typeof ref.current.open, 'function');
   const canvas = view.container.querySelector('.file-workspace-canvas');
-  assert.ok(canvas);
+  assert.equal(Boolean(canvas), true);
   assert.equal(statuses.at(-1).count, 0);
   assert.equal(f.requests.length, 0);
   const owned = observers.filter(observer => observer.target === canvas);
   assert.equal(owned.length, 2, 'real Strict Effects setup/cleanup/setup');
   assert.equal(owned.filter(observer => !observer.closed).length, 1);
   await view.unmount();
-  assert.equal(ref.current, null);
+  assert.equal(ref.current === null, true);
   assert.ok(observers.every(observer => observer.closed));
   assert.equal(view.container.childNodes.length, 0);
 });
@@ -92,7 +89,7 @@ test('selected reader identity survives repeat commands and panel hiding while w
   await current.deliver(readReply('first\nsecond\nthird')); await replay.deliver(readReply('obsolete'));
   const host = view.container.querySelector('.file-workspace-view');
   const reader = host.querySelector('.file-viewer-content');
-  assert.ok(host && reader);
+  assert.equal(Boolean(host && reader), true);
   assert.equal(host.hidden, false);
   assert.equal(runtime.liveSources.length, 1);
   const first = runtime.liveSources[0], admitted = runtime.requests.length;

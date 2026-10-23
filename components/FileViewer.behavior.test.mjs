@@ -27,15 +27,15 @@ function expectGit(runtime, props) {
 }
 function button(root, text) {
   const result = [...root.querySelectorAll('button')].find(node => node.textContent === text);
-  assert.ok(result, `missing button ${text}`);
+  assert.equal(Boolean(result), true, `missing button ${text}`);
   return result;
 }
 function reader(view, id = 'reader') {
   const result = view.container.querySelector(`[data-test-view="${id}"]`);
-  assert.ok(result); return result;
+  assert.equal(Boolean(result), true, `missing reader ${id}`); return result;
 }
 async function click(view, node, options = {}) {
-  assert.ok(node, 'click target must be mounted');
+  assert.equal(Boolean(node), true, 'click target must be mounted');
   await view.dispatch(node, new view.window.MouseEvent('click', { bubbles: true, cancelable: true, ...options }));
 }
 async function type(view, field, value) {
@@ -48,10 +48,7 @@ async function open(t, overrides = {}) {
   const props = { ...defaults, ...overrides }, runtime = filesRuntime(t);
   let view;
   // Register BEFORE mount; keep collector alive through gate rejection and joins.
-  t.after(async () => {
-    try { await runtime.dispose(() => view?.unmount()); }
-    finally { await view?.dispose(); }
-  });
+  t.after(() => runtime.dispose(() => view?.unmount(), () => view?.dispose()));
   // Install capability denial before the first actual production graph import,
   // not only before effects mount. Ordinary module identity is shared thereafter.
   const { FileViewerComposition, FileEditSessions } = await (composition ??= jiti.import('./file-viewer-composition.fixture.tsx'));
@@ -138,7 +135,7 @@ for (const [label, hint] of [
       await source.connected(); await connected.deliver(payload);
       const changed = expectRead(runtime, props);
       await source.change(); await changed.deliver(payload);
-      assert.equal(reader(view).querySelector('textarea'), null);
+      assert.equal(reader(view).querySelector('textarea') === null, true);
       assert.ok(![...reader(view).querySelectorAll('button')].some(node => ['Edit', 'Save', 'Diff'].includes(node.textContent)));
       await h.render(props);
       assert.equal(source.closeCalls, 1);
@@ -164,7 +161,7 @@ for (const nextCwd of ['/new-checkout', '/old-checkout']) {
     assert.equal(oldSource.url.pathname, '/api/files/file.txt');
     assert.deepEqual([...oldSource.url.searchParams].sort(), [['sessionId', props.sourceSessionId], ['type', 'watch']]);
     await oldSource.connected(); await oldRead.headers();
-    assert.ok(reader(view).querySelector('[aria-label="Live sync active"]'));
+    assert.equal(Boolean(reader(view).querySelector('[aria-label="Live sync active"]')), true);
     const paused = { ...props, cwd: nextCwd, watchEnabled: false };
     // Different cwd resets content; same textual cwd is a *watch-only* new
     // lifetime and must still invalidate the old awaited continuation.
@@ -175,7 +172,7 @@ for (const nextCwd of ['/new-checkout', '/old-checkout']) {
     if (reset) await reset.deliver(read('reset checkout'));
     await h.render({ ...paused, watchEnabled: true });
     const source = runtime.liveSources[0];
-    assert.notEqual(source, oldSource);
+    assert.equal(source !== oldSource, true);
     assert.equal(source.url.href, oldSource.url.href, 'watch endpoint captures path/session, not viewerCwd');
     const currentRead = expectRead(runtime, paused);
     await source.connected();
@@ -190,7 +187,7 @@ for (const nextCwd of ['/new-checkout', '/old-checkout']) {
     await git.deliver({ supported: false });
     assert.equal(button(reader(view), 'Edit').disabled, false, 'current edit generation remains admissible');
     await source.error();
-    assert.ok(reader(view).querySelector('[aria-label="Not watching"]'));
+    assert.equal(Boolean(reader(view).querySelector('[aria-label="Not watching"]')), true);
     const closingRead = expectRead(runtime, paused);
     await source.change(); await closingRead.headers();
     await view.unmount();
@@ -278,7 +275,7 @@ test('actual held PUT preserves typing back to old baseline, edit ownership and 
   await initial.deliver(read('A', editable)); await replay.deliver(read('obsolete'));
   await edit.deliver({ content: 'A', revision: 'r1', writable: true, editIdentity: 'server-file-identity' });
   await click(view, button(reader(view), 'Edit'));
-  const field = reader(view).querySelector('textarea'); assert.ok(field); assert.equal(field.value, 'A');
+  const field = reader(view).querySelector('textarea'); assert.equal(Boolean(field), true); assert.equal(field.value, 'A');
   const source = runtime.liveSources[0], connected = expectRead(runtime, props);
   await source.connected();
   const oldEdit = expectEdit(runtime, props);
@@ -293,9 +290,19 @@ test('actual held PUT preserves typing back to old baseline, edit ownership and 
   await type(view, field, 'A');
   const beforeOld = { content: 'A', baseline: 'A', revision: 'r1' };
   assert.deepEqual(store.snapshot('reader').draft, beforeOld);
+  // This challenges fetchEditable's ENTRY savingRef guard, independently of
+  // its redundant response-generation/saving guards. A/A looks clean, so the
+  // actual watcher is allowed to read while PUT is held, but never to admit an
+  // edit probe. No edit plan exists: even a swallowed fetch is a live failure.
+  const duringSaveRead = expectRead(runtime, props), beforeWatch = runtime.requests.length;
+  await source.change(); await duringSaveRead.deliver(read('A', editable));
+  assert.equal(duringSaveRead.jsonReturned, true);
+  assert.equal(runtime.requests.length, beforeWatch + 1, 'held Save watcher permits read only, not edit admission');
+  assert.equal(store.snapshot('reader').saving, true);
+  assert.deepEqual(store.snapshot('reader').draft, beforeOld);
   const reportsBefore = drafts.length;
   await oldEdit.deliver({ content: 'A', revision: 'obsolete-r', writable: true, editIdentity: 'server-file-identity' });
-  assert.equal(reader(view).querySelector('textarea'), field);
+  assert.equal(reader(view).querySelector('textarea') === field, true, 'original textarea retained during Save');
   assert.equal(field.value, 'A');
   assert.deepEqual(store.snapshot('reader').draft, beforeOld, 'late edit cannot clear a clean-looking in-flight draft');
   assert.equal(drafts.length, reportsBefore);
@@ -308,15 +315,15 @@ test('actual held PUT preserves typing back to old baseline, edit ownership and 
   const duplicateEdit = expectEdit(runtime, duplicateProps);
   await duplicateReads[1].deliver(read('A', editable)); await duplicateReads[0].deliver(read('obsolete'));
   await duplicateEdit.deliver({ content: 'A', revision: 'r1', writable: true, editIdentity: 'server-file-identity' });
-  assert.ok(button(reader(view, 'duplicate'), 'Go to editor'));
-  assert.equal(reader(view, 'duplicate').querySelector('textarea'), null);
+  assert.equal(Boolean(button(reader(view, 'duplicate'), 'Go to editor')), true);
+  assert.equal(reader(view, 'duplicate').querySelector('textarea') === null, true);
   assert.equal(store.snapshot('reader').owner, 'reader');
   const afterSaveRead = expectRead(runtime, props);
   await save.deliver({ revision: 'r2' });
   assert.equal(save.jsonReturned, true);
   assert.equal(store.snapshot('reader').saving, false);
   assert.deepEqual(store.snapshot('reader').draft, { content: 'A', baseline: 'B', revision: 'r2' });
-  assert.equal(reader(view).querySelector('textarea'), field); assert.equal(field.value, 'A');
+  assert.equal(reader(view).querySelector('textarea') === field, true, 'original textarea retained after Save'); assert.equal(field.value, 'A');
   assert.equal(button(reader(view), 'Save').disabled, false);
   assert.deepEqual(saving, [['initial', true], ['current', false]], 'settlement calls current callback');
   await afterSaveRead.deliver(read('B', editable));
@@ -332,7 +339,7 @@ test('real Markdown default preview, current link callback and stable focused bl
   assert.equal(reader(view).textContent, 'Loading...');
   await initial.deliver(read(markdown, denied, 'markdown')); await replay.deliver(read('obsolete'));
   assert.equal(button(reader(view), 'Preview').getAttribute('aria-pressed'), 'true');
-  const blocked = reader(view).querySelector('.blocked-file-link-trigger'); assert.ok(blocked);
+  const blocked = reader(view).querySelector('.blocked-file-link-trigger'); assert.equal(Boolean(blocked), true);
   assert.equal(blocked.hasAttribute('href'), false);
   await act(() => blocked.focus()); await click(view, blocked);
   assert.equal(blocked.getAttribute('aria-expanded'), 'true');
@@ -340,9 +347,9 @@ test('real Markdown default preview, current link callback and stable focused bl
   assert.match(explanation.textContent, /absolute filesystem path/);
   const source = runtime.liveSources[0], unchanged = expectRead(runtime, props);
   await source.connected(); await unchanged.deliver(read(markdown, denied, 'markdown'));
-  assert.equal(reader(view).querySelector('.blocked-file-link-trigger'), blocked);
-  assert.equal(reader(view).querySelector('.blocked-file-link-explanation'), explanation);
-  assert.equal(view.window.document.activeElement, blocked);
+  assert.equal(reader(view).querySelector('.blocked-file-link-trigger') === blocked, true, 'unchanged trigger retained');
+  assert.equal(reader(view).querySelector('.blocked-file-link-explanation') === explanation, true, 'unchanged explanation retained');
+  assert.equal(view.window.document.activeElement === blocked, true, 'trigger retains focus');
   assert.equal(blocked.getAttribute('aria-expanded'), 'true');
   const next = { ...props, onOpenFile: (...args) => opened.push(args) };
   await h.render(next);
@@ -362,17 +369,17 @@ test('real Markdown default preview, current link callback and stable focused bl
   // PDF link is now blocked even though the document path did not change.
   const relocated = { ...next, cwd: '/root/docs' }, relocatedRead = expectRead(runtime, relocated);
   await h.render(relocated); await relocatedRead.deliver(read(markdown, denied, 'markdown'));
-  assert.equal(link('pdf'), undefined);
+  assert.equal(link('pdf') === undefined, true);
   assert.ok([...reader(view).querySelectorAll('.blocked-file-link-trigger')].some(node => node.textContent === 'pdf'));
   await click(view, link('chapter'));
   assert.deepEqual(opened.at(-1), ['/root/docs/chapter.md', undefined, { line: 4, endLine: 7 }]);
-  const currentSource = runtime.liveSources[0]; assert.notEqual(currentSource, source);
+  const currentSource = runtime.liveSources[0]; assert.equal(currentSource !== source, true);
   assert.equal(source.closeCalls, 1);
   await click(view, button(reader(view), 'Source'));
   const refresh = expectRead(runtime, relocated);
   await currentSource.change(); await refresh.deliver(read(markdown, denied, 'markdown'));
   assert.equal(button(reader(view), 'Source').getAttribute('aria-pressed'), 'true', 'manual mode is not overwritten by watcher data');
-  assert.equal(reader(view).querySelector('.markdown-file-preview'), null);
+  assert.equal(reader(view).querySelector('.markdown-file-preview') === null, true);
   await click(view, button(reader(view), 'Preview'));
   const beforeChange = reader(view).querySelector('.blocked-file-link-trigger');
   await click(view, beforeChange);
@@ -380,9 +387,9 @@ test('real Markdown default preview, current link callback and stable focused bl
   const changed = expectRead(runtime, relocated);
   await currentSource.change(); await changed.deliver(read(markdown.replace('../../escape.md', '../../../different.md'), denied, 'markdown'));
   const newBlocked = reader(view).querySelector('.blocked-file-link-trigger');
-  assert.notEqual(newBlocked, beforeChange);
+  assert.equal(newBlocked !== beforeChange, true, 'changed href replaces trigger');
   assert.equal(newBlocked.getAttribute('aria-expanded'), 'false', 'changed href resets rejection feedback');
-  assert.equal(reader(view).querySelector('.blocked-file-link-explanation'), null);
+  assert.equal(reader(view).querySelector('.blocked-file-link-explanation') === null, true);
   runtime.assertHealthy();
 });
 
@@ -397,7 +404,7 @@ for (const rowCount of [1000, 1001]) {
     assert.equal(rows.length, rowCount);
     assert.equal(rows[0].dataset.lineNumber, '1'); assert.equal(rows[rowCount - 1].dataset.lineNumber, String(rowCount));
     assert.equal(rows[0].querySelector('.file-source-line-content').textContent.replace(/\n$/, ''), '<img src=x onerror=bad()>');
-    assert.equal(root.querySelector('.file-source-view img'), null);
+    assert.equal(root.querySelector('.file-source-view img') === null, true);
     assert.equal(Boolean(root.querySelector('.is-lightweight')), rowCount > 1000);
     const reportsAtRerender = first.length;
     await h.render({ ...props, onStateChange: (...args) => currentReports.push(args) });
@@ -421,7 +428,7 @@ test('explicit Source/restored mode beats automatic Markdown Preview; unavailabl
   const { view, runtime, props, initial: [replay, initial] } = h;
   await initial.deliver(read('# heading', denied, 'markdown')); await replay.deliver(read('obsolete'));
   assert.equal(button(reader(view), 'Source').getAttribute('aria-pressed'), 'true');
-  assert.equal(reader(view).querySelector('.markdown-file-preview'), null);
+  assert.equal(reader(view).querySelector('.markdown-file-preview') === null, true);
   // A new navigation command requests Diff. Hint explicitly denies it, so the
   // real fallback effect chooses Source; no dummy Diff/body renderer is mounted.
   await h.render({ ...props, navigationId: 1, initialDisplayMode: 'diff',
@@ -439,12 +446,12 @@ for (const [filePath, language, content, selector] of [
     const { view, runtime, initial: [replay, initial] } = h;
     await initial.deliver(read(content, denied, language)); await replay.deliver(read('obsolete'));
     assert.equal(button(reader(view), 'Preview').getAttribute('aria-pressed'), 'true');
-    const preview = reader(view).querySelector(selector); assert.ok(preview);
-    assert.equal(reader(view).querySelector('.is-lightweight'), null);
+    const preview = reader(view).querySelector(selector); assert.equal(Boolean(preview), true);
+    assert.equal(reader(view).querySelector('.is-lightweight') === null, true);
     if (language === 'html') assert.equal(preview.getAttribute('srcdoc'), content);
     else assert.match(preview.textContent, /actual/);
     await click(view, button(reader(view), 'Source'));
-    assert.ok(reader(view).querySelector('.is-lightweight'));
+    assert.equal(Boolean(reader(view).querySelector('.is-lightweight')), true);
     assert.equal(reader(view).querySelectorAll('.file-source-line').length, content.split('\n').length);
     runtime.assertHealthy();
   });

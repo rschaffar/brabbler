@@ -76,8 +76,8 @@ test('mounted blocked links explain traversal without navigation and preserve/re
   const view = await f.mount(element());
   const blocked = name => byText(view.container, 'button', name);
   const trigger = blocked('Blocked');
-  assert.equal(trigger.closest('a'), null);
-  assert.equal(view.container.querySelector('[href]'), null);
+  assert.equal(trigger.closest('a') === null, true, 'blocked trigger is not an anchor');
+  assert.equal(view.container.querySelector('[href]') === null, true, 'blocked links supply no href');
   assert.equal(trigger.getAttribute('aria-expanded'), 'false');
   const explanation = trigger.title;
   assert.match(explanation, /outside.*absolute filesystem path/i);
@@ -90,30 +90,30 @@ test('mounted blocked links explain traversal without navigation and preserve/re
   await act(() => { trigger.focus(); });
   props = { ...props, className: 'unrelated-parent-update' };
   await view.rerender(element());
-  assert.equal(blocked('Blocked'), trigger, 'unrelated rerender keeps the actual feedback owner');
-  assert.equal(view.window.document.activeElement, trigger);
-  assert.equal(view.container.querySelector('[role="status"]'), status);
+  assert.equal(blocked('Blocked') === trigger, true, 'unrelated rerender keeps the actual feedback owner');
+  assert.equal(view.window.document.activeElement === trigger, true, 'focus remains on trigger');
+  assert.equal(view.container.querySelector('[role="status"]') === status, true, 'same feedback node');
   await f.click(trigger);
   assert.equal(trigger.getAttribute('aria-expanded'), 'false');
-  assert.equal(view.container.querySelector('[role="status"]'), null);
+  assert.equal(view.container.querySelector('[role="status"]') === null, true, 'toggle clears feedback');
   await f.click(blocked('Encoded'), { metaKey: true });
   assert.equal(blocked('Encoded').getAttribute('aria-expanded'), 'true');
-  assert.equal(blocked('Encoded').closest('a'), null);
+  assert.equal(blocked('Encoded').closest('a') === null, true, 'encoded traversal is not an anchor');
   assert.deepEqual(opened, []);
 
   // A new rejected destination must not reuse an expanded explanation owner.
   await f.click(trigger);
   text = '[Blocked](../different/file.ts#L14)';
   await view.rerender(element());
-  assert.notEqual(blocked('Blocked'), trigger);
+  assert.equal(blocked('Blocked') !== trigger, true, 'new destination resets feedback owner');
   assert.equal(blocked('Blocked').getAttribute('aria-expanded'), 'false');
-  assert.equal(view.container.querySelector('[role="status"]'), null);
+  assert.equal(view.container.querySelector('[role="status"]') === null, true, 'new destination has no stale feedback');
   props = { ...props, cwd: undefined };
   text = '[Missing base](src/file.ts)';
   await view.rerender(element());
   const missing = blocked('Missing base');
   assert.match(missing.title, /no working directory/i);
-  assert.equal(missing.closest('a'), null);
+  assert.equal(missing.closest('a') === null, true, 'missing cwd has no navigable ancestor');
   await f.click(missing);
   assert.match(view.container.querySelector('[role="status"]').textContent, /no working directory/i);
   assert.deepEqual(opened, []);
@@ -170,11 +170,12 @@ test('fragment clicks find raw anchors and heading fallbacks inside their own mo
   assert.equal(await f.click(byText(roots[1], 'a', 'Raw')), true);
   assert.equal(await f.click(byText(roots[1], 'a', 'Heading')), true);
   assert.equal(await f.click(byText(roots[0], 'a', 'Raw')), true);
-  assert.deepEqual(f.scrolls, [
-    { element: raw(roots[1]), options: { block: 'start' } },
-    { element: heading(roots[1]), options: { block: 'start' } },
-    { element: raw(roots[0]), options: { block: 'start' } },
-  ]);
+  const targets = [raw(roots[1]), heading(roots[1]), raw(roots[0])];
+  assert.equal(f.scrolls.length, targets.length);
+  f.scrolls.forEach((call, index) => {
+    assert.equal(call.element === targets[index], true, `exact scoped scroll target ${index}`);
+    assert.deepEqual(call.options, { block: 'start' });
+  });
   assert.deepEqual({ url: view.window.location.href, history: view.window.history.length }, before);
   assert.deepEqual(opened, []);
   assert.deepEqual(f.requests, []);

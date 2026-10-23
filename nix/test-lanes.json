@@ -289,7 +289,7 @@
     {
       "path": "app/api/files/watch-route.test.mjs",
       "lane": "F",
-      "reason": "Reviewed source/CSS assertions only; no execution of the referenced browser/native operations."
+      "reason": "Actual full GET and real SSE helper via reviewed whole-module capability loader; process-private dynamic stat/watch/authority/path doubles, controlled interval/wall clock, actual in-memory readers and synchronous connected-forwarding gate. Failure-safe owned abort/cancel/callback/timer cleanup with live caught-error collector. Source-loader read/transpile/VM only; no native fs.watch, path authorization or browser proof; independent native/browser owners retained."
     },
     {
       "path": "components/AgentSessionPanel.test.mjs",
@@ -1282,12 +1282,6 @@
       "estimatedMs": 2000
     },
     {
-      "path": "components/MarkdownMedia.test.mjs",
-      "lane": "F",
-      "reason": "Production media components run solely against synthetic hook/native-media/document objects; activation IDs are sequence-based and no real media or HTTP resource is opened.",
-      "estimatedMs": 1000
-    },
-    {
       "path": "components/ModelSelector.viewport.test.mjs",
       "lane": "F",
       "reason": "Calls only the pure viewport-layout export on numeric fixtures; imported hook modules have no eager browser subscriptions.",
@@ -1979,6 +1973,7 @@
     }
   ],
   "holds": {
+    "components/FileViewer.media-behavior.test.mjs": "Actual image/audio/video/PDF branch mounts over exact metadata/watch capability gates, including ignored body success/error and cleanup/currentness. Same broad Prism/Markdown/Pierre/dynamic import graph as text owner; unresolved eager dependency/effect review remains E. Not native media/src/PDF transport closure or retained media callback entry suppression; both browser inputs/native proof unchanged.",
     "components/SkillsConfig.behavior.test.mjs": "Actual full Skills/settings/instructions mount with synthetic catalogue/content/PATCH responses and no child substitution. Broad Markdown/dynamic client imports and finite async-handler cleanup need executed import/effect review before pool isolation; preserve exclusive pending that review, not automatic F from leaf naming.",
     "components/FileViewer.behavior.test.mjs": "Actual full viewer/edit-store/StrictMode composition with exact synthetic transport/watch/body gates; broad real Pierre/Markdown/Prism/theme imports and detached read/watch continuations require parent import/effect/settlement review. No SDK/native IO intentionally admitted, but fixture-owned joins are not a production disposal API; retain exclusive pending executed review rather than inheriting F from extracted probes.",
     "components/FileWorkspace.behavior.test.mjs": "Initial actual workspace/store/Strict Effects import probe with style-only alias and controlled ResizeObserver; broad FileViewer/Markdown/diff/theme transitive effects still need full mounted fixture/admission/cleanup review. No isolation promotion from a successful mount; retain exclusive until that review settles.",
@@ -2012,7 +2007,6 @@
     "components/ThinkingPieces.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: The 100000-character fixture is bounded and its window mock is process-local/restored, but MessageView support-module import effects remain incompletely reviewed.",
     "components/ToolArguments.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Static tool-card fixtures and expansion state are process-local and reset in finally; broad MessageView and tool-field helper review remains incomplete.",
     "components/model-overrides.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Real models.json writes and atomic temporary files are confined to a unique mkdtemp fixture with synchronous after-hook removal, but the imported SDK barrel effects could not be verified.",
-    "hooks/useStreamingSelector.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Finite synchronous store/VM-selector tests unsubscribe deterministically, but imported normalize helper was not read before termination.",
     "lib/acceptance/coordinator.test.mjs": "Changed fixture owns coordinator disposal, released executors and pump drain. Retain E pending full queued/active/failure-path and transitive-import scheduling review; observer disposal must not acquire cancellation authority over independently admitted Acceptance jobs.",
     "lib/acceptance/interfaces.test.mjs": "Changed shared coordinator fixture includes owned drain and private agent settings. Full interface/plugin-revocation/global-registration teardown and import closure have not been re-reviewed for pool safety; retain E without undoing the drain improvement.",
     "lib/acceptance/process.test.mjs": "Retain E after Activity observer-independence bridge: new case uses real coordinator capture/ledger/admission and native watched-file ready/release gates, joins the original process supervisor and coordinator, and leaves native job cancellation independent of Activity disposal. This does not resolve the existing deliberately detached descendant case, which substitutes a fixed 1900ms sleep for an owned descendant close/exit join; complete file teardown remains uncertified under scheduling pressure.",

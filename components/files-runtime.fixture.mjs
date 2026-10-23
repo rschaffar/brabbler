@@ -6,13 +6,35 @@ import { encodeFilePathForApi } from '../lib/file-paths.ts';
 // Files requests intentionally have no AbortSignal. Do not relax the separate
 // ignored-abort fixture's signal requirement for GitExplorer/Move owners.
 export function filesRuntime() {
-  const requests = [], sources = [], plans = [], tasks = [], failures = [];
-  const previous = new Map(), mqlListeners = new Set(), observers = new Set();
+  const requests = [], sources = [], plans = [], tickets = [], tasks = [], failures = [];
+  const restores = [], mqlListeners = new Set(), observers = new Set();
   const closingError = new Error('Files fixture closed before delivery');
   let closed = false, disposal;
-  const own = (key, value) => {
-    if (!previous.has(key)) previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
-    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+  const replace = (object, key, value) => {
+    const previous = Object.getOwnPropertyDescriptor(object, key);
+    Object.defineProperty(object, key, { configurable: true, writable: true, value });
+    restores.push(() => {
+      if (previous) Object.defineProperty(object, key, previous);
+      else delete object[key];
+    });
+  };
+  const own = (key, value) => replace(globalThis, key, value);
+  const restoreAll = () => {
+    for (const restore of restores.splice(0).reverse()) {
+      try { restore(); } catch (error) { failures.push(error); }
+    }
+  };
+  // Never inspect arbitrary runtime arguments: they may carry DOM/React fibers.
+  const hint = value => {
+    if (typeof value === 'string') return value.slice(0, 240);
+    if (value === null || ['undefined', 'boolean', 'number', 'bigint'].includes(typeof value)) return String(value);
+    if (value instanceof Error) return `${value.name}: ${value.message}`.slice(0, 240);
+    return `[${typeof value}]`;
+  };
+  const runtimeError = (label, values) => failures.push(new Error(`${label}: ${values.slice(0, 5).map(hint).join(' | ')}`));
+  const deny = name => function () {
+    const error = new Error(`Unexpected ${name}${closed ? ' after admission closed' : ''}`);
+    failures.push(error); throw error;
   };
   const check = fn => {
     try { return fn(); } catch (error) { failures.push(error); throw error; }
@@ -27,14 +49,20 @@ export function filesRuntime() {
   const boundary = work => observe(act(work));
   const delivery = work => observe((async () => work())());
   const assertHealthy = () => {
-    if (failures.length) throw new AggregateError([...failures], 'Files runtime capability failures');
+    if (failures.length) throw new AggregateError([...failures],
+      `Files runtime capability failures: ${failures.slice(0, 5).map(hint).join(' | ')}`);
   };
   function matchRequest(url, init, match) {
     const git = match.type === 'git';
     assert.equal(url.origin, 'https://fixture.invalid', 'no external network');
     assert.equal(url.pathname, git ? '/api/git/diff' : `/api/files/${encodeFilePathForApi(match.path)}`);
     assert.equal(init.method ?? 'GET', match.method ?? (match.type === 'save' ? 'PUT' : 'GET'));
-    assert.equal(init.signal, undefined, 'ordinary FileViewer fetch must not invent an abort signal');
+    assert.equal(init.signal === undefined, true, 'ordinary FileViewer fetch must not invent an abort signal');
+    if (match.type === 'save') {
+      // Headers accepts record, tuple-list and Headers inputs; names are
+      // case-insensitive. Check the ACTUAL outgoing PUT, not the planned body.
+      assert.equal(new Headers(init.headers).get('content-type')?.trim().toLowerCase(), 'application/json', 'save JSON Content-Type');
+    }
     const query = git ? { cwd: match.cwd, path: match.path } : { type: match.type };
     for (const key of ['sessionId', 'viewerCwd', 'offset']) {
       if (match[key] !== undefined && match[key] !== null) query[key] = String(match[key]);
@@ -42,7 +70,7 @@ export function filesRuntime() {
     assert.deepEqual([...url.searchParams].sort(), Object.entries(query).sort(), 'exact request context/query');
     if (Object.hasOwn(match, 'body')) assert.deepEqual(JSON.parse(init.body), match.body);
   }
-  own('fetch', (input, init = {}) => {
+  const fetchCapability = (input, init = {}) => {
     try {
       return check(() => {
         assert.equal(closed, false, 'fetch admitted after fixture closure');
@@ -55,7 +83,7 @@ export function filesRuntime() {
         return observe(ticket.headerGate.promise, true);
       });
     } catch (error) { return observe(Promise.reject(error), true); }
-  });
+  };
   class WatchSource {
     constructor(input) {
       check(() => {
@@ -96,7 +124,16 @@ export function filesRuntime() {
     error() { return this.emit('error'); }
     invokeRetained(type, data = {}) { return this.emit(type, data, true); }
   }
-  own('EventSource', WatchSource);
+  // Install before any production graph import, including unsupported HOST
+  // constructors. Roll back partial installation if the runtime cannot own one.
+  try {
+    replace(console, 'error', (...args) => runtimeError('Unexpected console.error', args));
+    own('fetch', fetchCapability);
+    own('EventSource', WatchSource);
+    for (const name of ['WebSocket', 'XMLHttpRequest']) own(name, deny(name));
+  } catch (error) {
+    restoreAll(); throw new AggregateError([error, ...failures], 'Files runtime installation failed');
+  }
 
   return {
     requests, sources,
@@ -171,10 +208,30 @@ export function filesRuntime() {
           if (!bodyReleased) { bodyReleased = true; bodyGate.reject(closingError); }
         },
       };
-      plans.push(ticket);
+      tickets.push(ticket); plans.push(ticket);
       return ticket;
     },
     setup(window) {
+      replace(window.console, 'error', (...args) => runtimeError('Unexpected window.console.error', args));
+      const reportError = event => runtimeError(`Unexpected window ${event.type}`, [event.error ?? event.reason ?? event.message]);
+      window.addEventListener('error', reportError);
+      window.addEventListener('unhandledrejection', reportError);
+      restores.push(() => {
+        window.removeEventListener('error', reportError);
+        window.removeEventListener('unhandledrejection', reportError);
+      });
+      replace(window, 'fetch', fetchCapability);
+      replace(window, 'EventSource', WatchSource);
+      for (const name of ['WebSocket', 'XMLHttpRequest']) replace(window, name, deny(`window.${name}`));
+      // LocalFileLink always checks this selector even for an ordinary click.
+      // Accommodate ONLY its unsupported selector; no popover/menu/layout fake.
+      const matches = window.Element.prototype.matches;
+      try { window.document.createElement('span').matches(':popover-open'); }
+      catch {
+        replace(window.Element.prototype, 'matches', function (selector) {
+          return selector === ':popover-open' ? false : matches.call(this, selector);
+        });
+      }
       const mql = {
         matches: false, media: '(prefers-color-scheme: dark)', onchange: null,
         addEventListener(_type, listener) { mqlListeners.add(listener); },
@@ -184,48 +241,63 @@ export function filesRuntime() {
         dispatchEvent() { return true; },
       };
       // Deterministic unsupported capability, not a theme-store replacement.
-      window.matchMedia = () => mql;
+      replace(window, 'matchMedia', () => mql);
       class ResizeObserverDouble {
         constructor(callback) { this.callback = callback; this.targets = new Set(); observers.add(this); }
         observe(target) { this.targets.add(target); }
         unobserve(target) { this.targets.delete(target); }
         disconnect() { this.targets.clear(); observers.delete(this); }
       }
-      window.ResizeObserver = ResizeObserverDouble;
+      replace(window, 'ResizeObserver', ResizeObserverDouble);
       own('ResizeObserver', ResizeObserverDouble);
       own('localStorage', window.localStorage);
       own('sessionStorage', window.sessionStorage);
       own('requestAnimationFrame', window.requestAnimationFrame.bind(window));
       own('cancelAnimationFrame', window.cancelAnimationFrame.bind(window));
     },
-    // Full fixture-owned join only. FileViewer has no production disposal promise.
-    dispose(unmount = async () => {}) {
+    // Bounded FIXTURE-owned join only. Detached initial/connected/Save/grammar
+    // continuations expose no production terminal-disposal promise. Callers pass
+    // realm disposal so diagnostics/denials stay live through window.close too.
+    dispose(unmount = async () => {}, disposeRealm = async () => {}) {
       if (!disposal) {
         closed = true;
         disposal = (async () => {
-          try { await unmount(); } catch (error) { failures.push(error); }
+          const releaseAll = () => {
+            for (const ticket of tickets) {
+              try { ticket.releaseForCleanup(); } catch (error) { failures.push(error); }
+            }
+          };
+          let joined = 0;
+          const join = async () => {
+            // Include tasks added while an earlier observed batch settles.
+            while (joined < tasks.length) {
+              const batch = tasks.slice(joined); joined = tasks.length;
+              await Promise.allSettled(batch);
+            }
+          };
           try {
-            await act(async () => {
-              for (const ticket of requests) ticket.releaseForCleanup();
-              // Include handlers/deliveries added while earlier tasks settle.
-              let joined = 0;
-              while (joined < tasks.length) {
-                const batch = tasks.slice(joined); joined = tasks.length;
-                await Promise.all(batch);
-              }
-            });
-          } catch (error) { failures.push(error); }
-          try {
-            assert.equal(plans.length, 0, 'unadmitted expected request(s)');
-            assert.equal(sources.filter(source => !source.closed).length, 0, 'production must close its streams');
-            assert.equal(observers.size, 0, 'production must disconnect ResizeObservers');
-          } catch (error) { failures.push(error); }
-          mqlListeners.clear();
-          for (const [key, descriptor] of [...previous].reverse()) {
-            try {
-              if (descriptor) Object.defineProperty(globalThis, key, descriptor);
-              else delete globalThis[key];
-            } catch (error) { failures.push(error); }
+            try { await unmount(); } catch (error) { failures.push(error); }
+            try { await act(async () => { releaseAll(); await join(); }); }
+            catch (error) { failures.push(error); }
+            finally {
+              // Even an act/unmount/peer failure must not strand admitted gates.
+              releaseAll();
+              try { await join(); } catch (error) { failures.push(error); }
+            }
+            for (const assertion of [
+              () => assert.equal(plans.length, 0, 'unadmitted expected request(s)'),
+              () => assert.equal(sources.filter(source => !source.closed).length, 0, 'production must close its streams'),
+              () => assert.equal(observers.size, 0, 'production must disconnect ResizeObservers'),
+            ]) {
+              try { assertion(); } catch (error) { failures.push(error); }
+            }
+          } finally {
+            try { await disposeRealm(); } catch (error) { failures.push(error); }
+            // Realm disposal may itself expose more forbidden/tracked work.
+            releaseAll();
+            try { await join(); } catch (error) { failures.push(error); }
+            mqlListeners.clear();
+            restoreAll();
           }
           assertHealthy();
         })();
