@@ -11,7 +11,7 @@ New currently creates only a temporary composer; SDK startup itself can defer it
 - [x] Initialize explicit New composers (not passive project browsing), retain draft identity through asynchronous creation/navigation, and close covering overviews; focused hook/AppShell/tab regressions pass, including restrictive startup preferences and account selection waiting.
 - [x] Add best-effort browser-local text draft storage, preserving memory-only images and rejected-submission/rekey behavior; focused tests pass for reload, corruption, unavailable storage and failed clears.
 - [x] Extend installed-browser coverage for empty-session listing/reload, literal draft restoration and mobile cross-project New; history and Activity groups pass, and the desktop-sidecar correction/no-session Explorer chain now passes focused browser acceptance.
-- [ ] Reverify the rebased composition with complete `nix run .#test -- all --workers 4 --jobs 4`; prior corrected-runtime acceptance remains recorded below, but incoming runtime/harness changes require fresh evidence.
+- [x] Reverify the rebased composition with complete `nix run .#test -- all --workers 4 --jobs 4`; the new runtime/harness composition passes independently, with prior evidence preserved below.
 
 ## Non-Goals
 Server/cross-device draft synchronization, persistent image attachments, automatic model turns, or session creation merely from browsing a project's files.
@@ -62,9 +62,19 @@ Scope remains this feature, not the incoming overhaul or Activity-client pilot. 
 
 The delegated focused command `nix run .#test -- core --jobs 4 --file hooks/new-session-persistence.test.mjs --file lib/draft-store.test.mjs --file lib/test-design.test.mjs` passed **3 files / 25 tests**, effective workers 4, **37s** wall time. Type evidence reused; lint passed with the existing two warnings. Evidence: `/tmp/pi-web-test-core.Fdpx6o/artifacts/run-ZMzBgj`, `/tmp/persistent-new-sessions-harness-adaptation.log`; its initial failed iteration remains in `/tmp/persistent-new-sessions-harness-adaptation.failed-1.log`. Parent review confirmed the changes are test-only, with production unchanged.
 
+## Final acceptance on the updated main composition
+
+A new complete `nix run .#test -- all --workers 4 --jobs 4` passed on **`83f72f0f1ed602ab87aa02c570cb7bfdebb5c9ae`**, based on local main **`76e5fe4d06cb18f0eb800210dc1aaa4ced36bb92`**. Clean source digest: **`d84e1431d32cbf4da736dd50ae8da8339325d21c2b7bc0c9690f121adfa82405`**. The full command took **483s / 8m03s**, including in-run realization, from 2026-10-23 12:46:56 to 12:54:59 +02:00. This includes a newly realized production package for the changed main composition, not a warm-application timing comparison. Prior focused support preparation is outside that command; model/review/coordination time is separate.
+
+- **Core/static/plugins:** **438 files / 3,387 tests / 12 suites**, all passed, none skipped/cancelled. Driver 301.251s; before first file 36.851s, file window 263.929s. Typegen/typecheck and lint were realized successfully for their exact inputs. Evidence `/tmp/pi-web-test-core.JCkHCT/run.json`; summary `/nix/store/03cgx2w7frqrjws2g6666nvf4kj0ha1a-pi-web-core-checks/artifacts/run-Y7W1vm/summary.json`.
+- **Browser/terminal:** all **26 groups / 59 exact receipts**, including desktop sidecar, mobile cross-project New and pending-ack draft reload. Driver 410.541s; pre-capsule preparation 92.865s (including production realization), parallel execution window 317.616s. Evidence `/tmp/pi-web-test-browser.kEueam/run.json`.
+- **Genuine deployment:** all five ordered checks, restart persistence and PTY passed; clients settled, final unit/cgroup/port closure verified, no evidence errors. Total including realization 62.469s; reported driver execution 20.682s; remaining realization/setup/collection not separately timed. Evidence `/tmp/pwv-fnQuyu/run.json` and `artifacts/acceptance.json`.
+
+Requested/effective widths remained **four browser / four core**, overlapping with admission at **32 CPUs / ~35.4 GiB available**, estimating 16 CPUs/27 GiB rather than reserving them. Intervals overlap and are not additive. Export/selection evidence: `/tmp/pi-web-test-source-bTUIg9/source.json` and `selection.json`; complete log `/tmp/persistent-new-sessions-all-3.log`. No installed service or remote operation occurred. The final archive follow-up is documentation-only; tested runtime/test/Nix inputs remain bound to `83f72f0` and are checked unchanged before the new proposal.
+
 ## Completion Checklist
 - [x] Focused tests and browser regressions pass for the feature before rebase; incoming-harness focused tests pass.
-- [ ] Complete acceptance passes on the new runtime/harness composition with retained evidence.
-- [ ] Updated implementation/evidence is ready for a fresh exact-state local merge proposal. Durable behavior/limitations remain owned by `docs/session-internals.md`, browser coverage by `e2e/README.md`.
+- [x] Complete acceptance passes on the new runtime/harness composition with retained evidence.
+- [x] Updated implementation/evidence is ready for a fresh exact-state local merge proposal. Durable behavior/limitations remain owned by `docs/session-internals.md`, browser coverage by `e2e/README.md`.
 
 The original integration/cleanup checkbox is transferred to this active session's global `git-worktrees` lifecycle and durable operation receipts, not silently treated as executed by this plan. Local main/non-FF integration still needs the tool's exact-state approval; feature cleanup has its separate gate. The implementation plan closes again only on the newly verified composition; that Git owner records the actual integration outcome in receipts and the completion report. Remote publication and installed-service deployment remain unrequested.
