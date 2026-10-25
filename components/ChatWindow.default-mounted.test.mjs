@@ -728,3 +728,168 @@ test('default H-TOOL: actual SSE partial/current Copy work and canonical input c
     }
   }
 });
+
+// Reading remedy: existing real hook/input and existing real default graph only.
+// No replacement loadContext, hook, draft store, renderer or global observer.
+test('H-COMPOSER actual hook and ChatInput retain the exact saved draft through a distinct new draft and return to the same saved namespace', async t => {
+  // Supply the literal public ChatInput key through the sparse composition's
+  // explicit external prop port. This owns store/input behavior, not the real
+  // AppShell/ChatWindow caller's key calculation or the unrelated welcome view.
+  const f = await sessionFixture(t, { composer: true });
+  const sid = f.savedId, newKey = f.draftKey;
+  const literal = 'upstream-list-draft\n2. retained';
+  const newLiteral = 'independent unsent new draft';
+  assert.equal(typeof sid, 'string');
+  assert.equal(typeof newKey, 'string');
+  assert.equal(sid === newKey, false, 'saved and provisional namespaces differ');
+  f.setDraft(sid, { value: '', images: [] });
+  f.setDraft(newKey, { value: newLiteral, images: [] });
+  const savedOptions = { ...f.existingOptions(sid), composerDraftKey: sid };
+  await f.mountReady(savedOptions);
+  const input = () => f.view.container.querySelector('.chat-input-textarea');
+  assert.equal(input() !== null, true, 'the existing fixture mounts actual ChatInput');
+  const setValue = Object.getOwnPropertyDescriptor(f.view.window.HTMLTextAreaElement.prototype, 'value').set;
+  await f.run('type the exact original saved browser draft', () => {
+    setValue.call(input(), literal);
+    input().dispatchEvent(new f.view.window.Event('input', { bubbles: true }));
+  });
+  const firstInputHandle = f.composerRef.current;
+  assert.equal(typeof firstInputHandle?.whenSettled, 'function');
+  await f.run('join the actual saved input work', () => firstInputHandle.whenSettled());
+  await f.settleMaintenance();
+  assert.equal(input().value, literal);
+  assert.equal(f.getDraft(sid)?.value, literal, 'the real store has the exact saved bytes before departure');
+  assert.equal(f.getDraft(sid)?.images.length, 0);
+  assert.equal(f.getDraft(newKey)?.value, newLiteral, 'typing saved RICH must not write the new namespace');
+
+  // Ordinary keyed SPA departure, not document reload or a new session factory.
+  await f.mountReady(f.newOptions({ persistNewSession: false, composerDraftKey: newKey }));
+  assert.equal(f.mountedOptions.session, null);
+  assert.equal(f.mountedOptions.newSessionDraftKey, newKey);
+  assert.equal(input() !== null, true);
+  assert.equal(input().value, newLiteral, 'new draft reads its independent actual store namespace');
+  assert.equal(f.getDraft(sid)?.value, literal, 'saved draft survives the actual hook/input departure');
+  const newInputHandle = f.composerRef.current;
+  await f.run('join the actual new input work', () => newInputHandle.whenSettled());
+  await f.settleMaintenance();
+
+  await f.mountReady({ ...f.existingOptions(sid), composerDraftKey: sid });
+  assert.equal(f.mountedOptions.session.id, sid, 'return to the SAME saved SID, not a similar new record');
+  assert.equal(f.mountedOptions.newSessionDraftKey, null);
+  assert.equal(input() !== null, true);
+  assert.equal(input().value, literal, 'same saved namespace restores upstream-list-draft exactly');
+  assert.equal(f.getDraft(sid)?.value, literal);
+  assert.equal(f.getDraft(newKey), null, 'the abandoned persistNewSession:false namespace clears under the unchanged hook policy, without clearing saved RICH');
+  assert.equal(f.getDraft(sid)?.images.length, 0);
+  const returnedInputHandle = f.composerRef.current;
+  await f.run('join the actual returned saved input work', () => returnedInputHandle.whenSettled());
+  await f.settleMaintenance();
+  assert.equal(f.requests.some(request => request.path === '/api/agent/new'), false, 'no ensure/SDK creation for the decision row');
+  assert.equal(f.requests.some(request => request.body?.type === 'prompt'), false, 'no draft is submitted');
+  await f.unmount();
+  await f.settleMaintenance();
+  // This is not the actual AppShell navigation/key adopter. The original native
+  // saved RICH -> LONG -> RICH roundtrip stays until that caller is qualified.
+});
+
+test('H-BRANCH actual default branch callback cancels the old saved locate generation before its original body arrives and owns current branch work', async t => {
+  const f = await sessionFixture(t, { defaultChat: true });
+  const sid = f.savedId, row = f.record(sid);
+  row.leaf = 'e4999';
+  row.messages = Array.from({ length: 50 }, (_, i) => user(`E2E message ${String(4950 + i).padStart(4, '0')}`));
+  row.entryIds = Array.from({ length: 50 }, (_, i) => `e${4950 + i}`);
+  let chooseBranch;
+  const branchLeaves = [], positions = [];
+  const history = f.hold(detail, { stage: 'headers', repeat: true });
+  const oldPage = f.hold(request => request.path === `/api/sessions/${sid}/context`
+    && request.query.get('leafId') === 'e4999' && request.query.get('before') === 'e4950');
+  const currentPage = f.hold(request => request.path === `/api/sessions/${sid}/context`
+    && request.query.get('leafId') === 'alternate' && !request.query.has('before'));
+  const persistBranch = f.hold(request => request.path === `/api/agent/${sid}`
+    && request.body?.type === 'navigate_tree' && request.body.targetId === 'alternate');
+  await f.mount(props(f, {
+    initialScrollPosition: { atBottom: false, anchorEntryId: 'e4920', anchorOffset: 37, oldestEntryId: 'e4900' },
+    onBranchDataChange(_tree, leaf, change) { branchLeaves.push(leaf); chooseBranch = change; },
+    onScrollPositionChange(selectedSid, position) { positions.push([selectedSid, position]); },
+  }));
+  await history.entered.promise;
+  await f.connect(source(f));
+  await f.deliver(history, page(f, { hasMore: true, cursor: 'e4950' }));
+  await oldPage.entered.promise;
+  const viewport = f.defaultViewport;
+  assert.equal(viewport !== null, true);
+  assert.equal(viewport.style.visibility, 'hidden');
+  assert.equal(typeof chooseBranch, 'function', 'the actual hook publishes the public branch-selection callback');
+  assert.equal(oldPage.request.signal.aborted, false);
+  assert.deepEqual([...oldPage.request.query].sort(), Object.entries({
+    deferThinking: '1', deferMedia: '1', leafId: 'e4999', before: 'e4950',
+  }).sort());
+  const oldLocate = f.viewWorks.find(entry => entry.name === 'saved-locate');
+  assert.equal(oldLocate !== undefined, true, 'the existing observer owns the original work.run(locate) promise');
+
+  let originalBranchWork;
+  const branch = await f.start('actual default public alternate-branch callback', () => {
+    originalBranchWork = chooseBranch('alternate');
+    return originalBranchWork;
+  });
+  assert.equal(typeof originalBranchWork?.then, 'function', 'do not substitute a void dispatch/gate for original callback work');
+  await currentPage.entered.promise;
+  assert.equal(oldPage.request.signal.aborted, true, 'actual leaf change cleans up the old restoration generation');
+  assert.equal(branchLeaves.includes('alternate'), true);
+  assert.equal(f.defaultViewport === viewport, true, 'same actual default viewport, not a replacement view');
+  assert.equal(viewport.style.visibility, '', 'branch change reveals the current context without an old anchor');
+  assert.equal(currentPage.request.signal, undefined, 'public branch load is distinct from saved-locate cancellation');
+  assert.deepEqual([...currentPage.request.query].sort(), Object.entries({
+    deferThinking: '1', deferMedia: '1', leafId: 'alternate',
+  }).sort());
+  await f.deliver(currentPage, { context: { messages: [user('E2E alternate history branch')],
+    entryIds: ['alternate'], oldestEntryId: 'alternate', hasMore: false } });
+  await persistBranch.entered.promise;
+  assert.equal(viewport.querySelector('[data-entry-id="alternate"]') !== null, true);
+  assert.equal(viewport.querySelector('[data-entry-id="e4920"]') === null, true);
+  assert.equal(persistBranch.done, false, 'current callback still owns its original navigate-tree body');
+  await f.run('detach the current branch at its actual reading position', () => {
+    viewport.scrollTop = 20;
+    viewport.dispatchEvent(new f.view.window.Event('scroll'));
+  });
+  const beforeLateScroll = f.scrollCalls.length;
+  const oldPayload = { context: {
+    messages: Array.from({ length: 50 }, (_, i) => user(`E2E message ${String(4900 + i).padStart(4, '0')}`)),
+    entryIds: Array.from({ length: 50 }, (_, i) => `e${4900 + i}`), oldestEntryId: 'e4900', hasMore: true,
+  } };
+  // Release EVERY accepted peer before any original callback/default/input/
+  // maintenance join. Each release is attempted even if another throws.
+  await f.run('release obsolete original body and current branch acknowledgement independently', async () => {
+    const releases = await Promise.allSettled([
+      Promise.resolve().then(() => oldPage.resolve(oldPayload)),
+      Promise.resolve().then(() => persistBranch.cleanup()),
+    ]);
+    const failures = releases.filter(result => result.status === 'rejected').map(result => result.reason);
+    if (failures.length === 1) throw failures[0];
+    if (failures.length) throw new AggregateError(failures, 'Branch peer release failed');
+  });
+  const joinFailures = [];
+  try { await f.finish(branch); } catch (error) { joinFailures.push(error); }
+  try { await f.settleDefault(); } catch (error) { joinFailures.push(error); }
+  if (joinFailures.length === 1) throw joinFailures[0];
+  if (joinFailures.length) throw new AggregateError(joinFailures, 'Independent original branch/default joins failed');
+  assert.equal(oldPage.done, true);
+  assert.equal(currentPage.done, true);
+  assert.equal(persistBranch.done, true);
+  assert.equal(f.viewWorks.includes(oldLocate), true, 'same observed original saved-locate lifetime was joined');
+  assert.equal(branchLeaves.at(-1), 'alternate', 'old body cannot publish the retired leaf');
+  assert.equal(viewport.querySelector('[data-entry-id="alternate"]') !== null, true);
+  assert.equal(viewport.querySelector('[data-entry-id="e4920"]') === null, true, 'obsolete original page cannot adopt old items');
+  assert.equal(viewport.querySelector('[data-entry-id="e4900"]') === null, true);
+  assert.equal(viewport.scrollTop, 20, 'obsolete locate cannot restore its anchor or force current branch tail');
+  assert.equal(f.scrollCalls.length, beforeLateScroll, 'no late old-generation scroll assignment');
+  assert.equal(viewport.style.visibility, '');
+  assert.equal(f.requests.filter(request => request.path.endsWith('/context') && request.query.has('before')).length, 1);
+  assert.equal(f.requests.filter(request => request.body?.type === 'navigate_tree').length, 1);
+  await f.unmount();
+  await f.settleDefault();
+  assert.equal(positions.length > 0, true, 'current branch has a real cleanup scroll-position publication');
+  assert.equal(positions.at(-1)[0], sid);
+  assert.equal(positions.at(-1)[1].atBottom, false);
+  assert.equal(positions.at(-1)[1].anchorEntryId, 'alternate');
+});

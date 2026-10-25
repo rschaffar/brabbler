@@ -52,6 +52,7 @@ import { seedSourceHighlighting, checkSourceHighlighting } from "./source-highli
 import { checkHighlightFailure } from "./highlight-failure.mjs";
 import { createOwnedRoutes } from "./owned-routes.mjs";
 import { seedToolArguments, checkToolArguments } from "./tool-arguments.mjs";
+import { checkHistoryBranch } from "./history-branch.mjs";
 
 // Validate one-hot ownership before the harness or any fixture side effects.
 const group = selectGroup(process.env);
@@ -974,7 +975,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "history") {
-    await coverage.run(`history/${inputId === "legacy-desktop" ? "reading-version-bridge-v7" : "reading-version-lower-v7"}@${inputId}`, async () => {
+    await coverage.run(`history/${inputId === "legacy-desktop" ? "reading-branch-native-v8" : "reading-version-lower-v7"}@${inputId}`, async () => {
     const finishHistoryStage = stage.start(`history/${inputId}/chain`);
     // Interception needs its own SW-blocked context. The original history/PWA
     // context below stays unchanged, and reload cannot alter its reading state.
@@ -1457,31 +1458,10 @@ let nativeToolsFixture;
       assert.equal(await process.getAttribute("aria-expanded"), "false");
       assert.ok(Math.abs(await readingOffset(answerHeading) - answerOffset) < 5, "Collapsing process details on remount must not displace the answer");
 
-      // Hold pagination until a different branch has loaded, exercising effect cancellation.
-      let releaseHistory;
-      const historyGate = new Promise((resolve) => { releaseHistory = resolve; });
-      const contextRoute = `**/api/sessions/${LONG}/context?*`;
-      await page.route(contextRoute, async (route) => {
-        if (new URL(route.request().url()).searchParams.has("before")) await historyGate;
-        await route.continue().catch(() => {});
-      });
-      // Context loading is real; avoid starting an agent just to persist the test branch.
-      const agentRoute = `**/api/agent/${LONG}`;
-      await page.route(agentRoute, (route) => route.fulfill({ json: {} }));
-      try {
-        const pendingHistory = page.waitForRequest((request) => request.url().includes(`/api/sessions/${LONG}/context?`) && new URL(request.url()).searchParams.has("before"));
-        await page.locator(`[title="${text(0)}"]`).click();
-        await pendingHistory;
-        await page.getByRole("button", { name: "Branches", exact: true }).click();
-        await page.getByText("E2E alternate history branch", { exact: true }).click();
-        await page.locator("[data-entry-id='alternate']:not([data-message-role])").waitFor({ state: "visible" });
-        await page.screenshot({ path: join(artifacts, "scroll-restore-branch.png") });
-      } finally {
-        releaseHistory();
-        await page.unroute(contextRoute);
-        await page.unroute(agentRoute);
-      }
-      console.log("PASS: session reading offsets, collapsed process details, and cancelled branch restoration");
+      // The actual default hook/view owns obsolete body/locate generations.
+      // Keep the installed branch control/SDK-context bridge, not another race replay.
+      await checkHistoryBranch(page, { harness, sessionId: LONG, title: text(0), artifacts, errors });
+      console.log("PASS: session reading offsets, collapsed process details, and native branch controls");
       await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
       await heading.waitFor({ state: "visible" });
     }

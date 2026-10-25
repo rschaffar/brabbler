@@ -249,6 +249,14 @@ retire old tests or constitute full candidate acceptance.
   callbacks before exact last-interceptor removal: Playwright can otherwise resume
   the pending request ahead of its original fulfill. ACK is not raw/body success;
   native/API disposal, removal, close and original error identities stay distinct.
+- The two Navigation cases in `ChatWindow.default-mounted.test.mjs` own actual
+  hook/input/store saved return and actual default obsolete-body/locate generation.
+  The sparse fixture's optional `composerDraftKey` is explicit external input,
+  never a copied caller-key algorithm. Keep the installed AppShell saved-key bridge.
+  `e2e/history-branch.mjs` retains actual branch controls/SDK context plus exact
+  native body/finished/raw/e32/ACK/removal ownership; the inert agent reply remains
+  controlled, not native SDK-write authority. Node body/ACK settlement is not the
+  browser hook's hidden promise or a universal idle signal.
 - `lib/file-line-navigation.test.mjs` uses real isolated DOM trees; the actual
   FileViewer text/media mounts own request/body identities, watcher lifetimes,
   current links and Save races. Workspace mounts add stable hosts and independent

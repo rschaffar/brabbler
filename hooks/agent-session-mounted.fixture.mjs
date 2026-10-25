@@ -57,7 +57,7 @@ export const command = type => request => request.method === "POST" && request.b
 export const detail = request => request.method === "GET" && /^\/api\/sessions\/[^/]+$/.test(request.path);
 export const models = request => request.path === "/api/models";
 
-function Probe({ subject, options, capture, composer, ownComposer, composerRef, viewport, questionSet, observeSubmission, NativeControl, ownControl, nativePeer, modelControls }) {
+function Probe({ subject, options, capture, composer, composerDraftKey, ownComposer, composerRef, viewport, questionSet, observeSubmission, NativeControl, ownControl, nativePeer, modelControls }) {
   const { useAgentSession } = subject;
   const value = useAgentSession(options);
   capture(value);
@@ -85,6 +85,9 @@ function Probe({ subject, options, capture, composer, ownComposer, composerRef, 
     : output;
   return createElement("div", null, output, createElement(composer, {
     ref: composerRef, cwd: null, compact: false, isStreaming: value.agentRunning,
+    // Explicit external input prop only: do not derive or copy ChatWindow's key
+    // policy here. Absent preserves every existing sparse Probe composition.
+    ...(composerDraftKey === undefined ? {} : { draftKey: composerDraftKey }),
     // Sparse actual hook -> actual ChatInput composition. This is deliberately
     // not AppShell/ChatWindow navigation and supplies no native authority.
     ...(modelControls ? {
@@ -973,7 +976,7 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
             } } : {}),
           } })
         : createElement(receiveCreatedSession ? CreatedSessionReceiver : Probe, {
-        subject, key, options: hookOptions, composer: Composer, composerRef, viewport,
+        subject, key, options: hookOptions, composer: Composer, composerDraftKey: options.composerDraftKey, composerRef, viewport,
         questionSet: QuestionSet, observeSubmission, NativeControl, modelControls,
         nativePeer: nativePeerSessionId ? {
           options: api.existingOptions(nativePeerSessionId),
