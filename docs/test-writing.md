@@ -242,6 +242,13 @@ retire old tests or constitute full candidate acceptance.
   Clipboard/raw-keyboard/scroll/fonts at both original profiles and one installed
   dynamic write/edit path/Copy/result bridge, not another synthetic streaming page.
   Retained font overrides independently preserve primary and restoration errors.
+- `e2e/upstream-easy-wins.mjs` keeps native undo/redo, selection replacement,
+  profile-specific newline, filter/keyboard geometry and the unchanged Fresh/P1
+  bridge; original list/false-exec/synthetic-composition policy stays in the two
+  real ChatInput tuples and pure planner. Release peers and join captured original
+  callbacks before exact last-interceptor removal: Playwright can otherwise resume
+  the pending request ahead of its original fulfill. ACK is not raw/body success;
+  native/API disposal, removal, close and original error identities stay distinct.
 - `lib/file-line-navigation.test.mjs` uses real isolated DOM trees; the actual
   FileViewer text/media mounts own request/body identities, watcher lifetimes,
   current links and Save races. Workspace mounts add stable hosts and independent
