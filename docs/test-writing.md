@@ -258,7 +258,7 @@ retire old tests or constitute full candidate acceptance.
   controlled, not native SDK-write authority. Node body/ACK settlement is not the
   browser hook's hidden promise or a universal idle signal.
 - `PluginCard.preview-cleanup.test.mjs` drives the actual default card/attachment/
-  stack/Pierre chain for the exact desktop reader tuple: retained per-file model,
+  stack/Pierre chain for both original reader data tuples: retained per-file model,
   real renderer destruction/recreation, version/query/position, collapse and lazy
   serialized-parent remount/409/current response. Deliver the application's two
   navigation frames and Pierre's admitted render frame; jsdom's scroll shim also
@@ -267,6 +267,10 @@ retire old tests or constitute full candidate acceptance.
   action ACKs can settle before that loader; observe an actual future JSON error
   before its catch only if consumption really occurs. Both cold installed readers,
   opaque/native subjects, mobile/history and physical Download remain distinct.
+  Mobile's controlled before-image is desktop's Allow1280 payload, not baseline
+  text; keep its actual shared native HEAD/tree and both original inline drawer
+  selection/close ceremonies. Shared Pierre is warm; content/state rows are not
+  viewport geometry or a new mobile exceptional-work execution.
 - Selected Git policy belongs to the existing native server owner: caller/session
   policy is not the selected checkout's policy. The existing RPC UI case separately
   drives an external signal through actual `pluginCard`, original settlement,

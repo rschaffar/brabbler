@@ -215,6 +215,11 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   if (width === 1280) {
     assert.equal(beforeDraft, Array.from({ length: 5000 }, (_, index) => `Plugin context ${index + 1}\n`).join(""),
       "the exact original desktop before tuple, not another viewport incarnation");
+  } else if (!retainNativeMatrices && width === 390) {
+    const expectedBefore = Array.from({ length: 5000 }, (_, index) => `Plugin context ${index + 1}\n`);
+    expectedBefore[49] = "Plugin whole-file candidate allow-1280\n";
+    expectedBefore[4499] = "Plugin distant candidate allow-1280\n";
+    assert.equal(beforeDraft, expectedBefore.join(""), "the original mobile before is desktop Allow, without replacing its native HEAD/tree");
   }
   const candidate = `Plugin whole-file candidate reconnect-${width}`;
   const distantCandidate = `Plugin distant candidate reconnect-${width}`;
@@ -267,9 +272,10 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     assert.ok(await first.getByRole("region", { name: "Side-by-side diff", exact: true }).locator("[data-line]").count() < 1000,
       "Full-file reading remains virtualized");
     assert.equal(contextReads.length, 1);
-    // Only the exact original desktop parent tuple moves to the real Card owner.
-    // Both cold native readers and every following physical/history check stay.
-    if (retainNativeMatrices || width !== 1280) {
+    // Both original content/state tuples move to the real Card owner. Keep
+    // each cold native reader, original inline-mobile drawer subject and every
+    // following physical/history check; the full export retains its matrix.
+    if (retainNativeMatrices) {
       await first.getByRole("button", { name: "Diff context", exact: true }).click();
       await card.getByRole("button", { name: "Unified", exact: true }).click();
       await first.getByRole("button", { name: "Show full file", exact: true }).click();
@@ -303,6 +309,15 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
       await page.getByRole("button", { name: /Awaiting response.*Git commit/ }).click();
       await first.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
       assert.equal(contextReads.length, 1, "View/version switches, file selection and card collapse reuse only the requested snapshot");
+    } else if (width <= 600) {
+      // Preserve both original inline drawer filter/selection/close ceremonies
+      // on THIS native session/review, not Large's similar-text file selector.
+      await openFile(card, "second-draft.txt");
+      assert.equal(await first.locator(".git-diff-code-view").count(), 0, "Unselected file renderers unmount");
+      await card.getByRole("button", { name: "Previous file", exact: true }).click();
+      await card.getByRole("button", { name: "Next file", exact: true }).click();
+      await openFile(card, "draft.txt");
+      assert.equal(contextReads.length, 1, "Inline drawer selection retains the original requested snapshot");
     }
 
     await card.getByRole("button", { name: "Side by side", exact: true }).click();

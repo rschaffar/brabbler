@@ -285,8 +285,9 @@ test('seven generic card tuples join original valid descendant work and preserve
     phase('context-abort:end');
   }
 
-  // Exact original desktop live-reader conjunction. Same physical realm and
-  // existing review/opaque-context HTTP capability; no second Pierre/cache fake.
+  // Both exact original live-reader data tuples. Mobile's before is desktop's
+  // committed Allow payload, not another baseline/width analogy. Same physical
+  // realm and existing opaque-context capability; no second Pierre/cache fake.
   {
     phase('reader-parent:begin');
     release();
@@ -298,22 +299,30 @@ test('seven generic card tuples join original valid descendant work and preserve
       setups.push({ instance: this, container: this.getContainerElement() });
       return value;
     });
-    const width = 1280, requestStart = h.requests.length;
+    for (const width of [1280, 390]) {
+    phase(`reader-input:${width}:begin`);
+    const requestStart = h.requests.length;
     const oldLines = Array.from({ length: 5000 }, (_, index) => `Plugin context ${index + 1}\n`);
+    if (width === 390) {
+      oldLines[49] = 'Plugin whole-file candidate allow-1280\n';
+      oldLines[4499] = 'Plugin distant candidate allow-1280\n';
+    }
     const newLines = [...oldLines];
     newLines[49] = `Plugin whole-file candidate reconnect-${width}\n`;
     newLines[4499] = `Plugin distant candidate reconnect-${width}\n`;
-    const firstPatch = `diff --git a/draft.txt b/draft.txt\nindex 4824a54..d914290 100644\n--- a/draft.txt\n+++ b/draft.txt\n@@ -47,7 +47,7 @@\n Plugin context 47\n Plugin context 48\n Plugin context 49\n-Plugin context 50\n+Plugin whole-file candidate reconnect-${width}\n Plugin context 51\n Plugin context 52\n Plugin context 53\n@@ -4497,7 +4497,7 @@\n Plugin context 4497\n Plugin context 4498\n Plugin context 4499\n-Plugin context 4500\n+Plugin distant candidate reconnect-${width}\n Plugin context 4501\n Plugin context 4502\n Plugin context 4503\n`;
+    const firstPatch = `diff --git a/draft.txt b/draft.txt\nindex 4824a54..d914290 100644\n--- a/draft.txt\n+++ b/draft.txt\n@@ -47,7 +47,7 @@\n Plugin context 47\n Plugin context 48\n Plugin context 49\n-${oldLines[49].trimEnd()}\n+Plugin whole-file candidate reconnect-${width}\n Plugin context 51\n Plugin context 52\n Plugin context 53\n@@ -4497,7 +4497,7 @@\n Plugin context 4497\n Plugin context 4498\n Plugin context 4499\n-${oldLines[4499].trimEnd()}\n+Plugin distant candidate reconnect-${width}\n Plugin context 4501\n Plugin context 4502\n Plugin context 4503\n`;
     // Only this second file's selected/unselected renderer and default context
     // state are transferred. Its native old bytes/hash remain installed proof.
-    const secondPatch = `diff --git a/second-draft.txt b/second-draft.txt\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/second-draft.txt\n@@ -0,0 +1 @@\n+Second plugin candidate reconnect-${width}\n`;
+    const secondPatch = width === 1280
+      ? `diff --git a/second-draft.txt b/second-draft.txt\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/second-draft.txt\n@@ -0,0 +1 @@\n+Second plugin candidate reconnect-${width}\n`
+      : `diff --git a/second-draft.txt b/second-draft.txt\nindex 1111111..2222222 100644\n--- a/second-draft.txt\n+++ b/second-draft.txt\n@@ -1 +1 @@\n-Second plugin candidate allow-1280\n+Second plugin candidate reconnect-${width}\n`;
     const supplied = firstPatch + secondPatch;
     // Controlled immutable body for this block, NOT native handle authority.
     const snapshot = {
-      oldFile: { name: 'draft.txt', contents: oldLines.join(''), cacheKey: 'reader-immutable-before' },
-      newFile: { name: 'draft.txt', contents: newLines.join(''), cacheKey: 'reader-immutable-proposed' },
+      oldFile: { name: 'draft.txt', contents: oldLines.join(''), cacheKey: width === 1280 ? 'reader-immutable-before' : 'reader-immutable-before-mobile' },
+      newFile: { name: 'draft.txt', contents: newLines.join(''), cacheKey: width === 1280 ? 'reader-immutable-proposed' : 'reader-immutable-proposed-mobile' },
     };
-    const originalRequest = { ...requestFor('reconnect-parent', 'Git commit'), operationId,
+    const originalRequest = { ...requestFor(width === 1280 ? 'reconnect-parent' : 'reconnect-parent-mobile', 'Git commit'), operationId,
       patchBefore: 'HEAD', patchAfter: 'Candidate',
       review: { ...review, entries: 3, bytes: Buffer.byteLength(supplied) + metadata.bytes },
       actions: [{ id: 'reject', label: 'Reject' }, { id: 'approve', label: 'Approve commit', primary: true }] };
@@ -398,10 +407,10 @@ test('seven generic card tuples join original valid descendant work and preserve
     await showFull(false); // real parent cache, no second transport read
     await jump(2500, 'Plugin context 2500');
     await click(h.view, textButton(first(), 'Before')); release(); await join(start); await bindFrames();
-    await jump(50, 'Plugin context 50'); await jump(4500, 'Plugin context 4500');
+    await jump(50, oldLines[49].trimEnd()); await jump(4500, oldLines[4499].trimEnd());
     await click(h.view, textButton(first(), 'After')); release(); await join(start); await bindFrames();
-    await jump(50, 'Plugin whole-file candidate reconnect-1280');
-    await jump(4500, 'Plugin distant candidate reconnect-1280');
+    await jump(50, newLines[49].trimEnd());
+    await jump(4500, newLines[4499].trimEnd());
     await input(h.view, control('Search full file'), 'plugin context 2500');
     await click(h.view, control('Next match')); release(); await join(start); await bindFrames();
     expectLine(2500, 'Plugin context 2500');
@@ -438,7 +447,7 @@ test('seven generic card tuples join original valid descendant work and preserve
     assert.equal(Boolean(first().querySelector('[aria-label="Unified diff"]')), true);
     assert.equal(contextReads().length, 1, 'card collapse cannot admit another snapshot read');
     await click(h.view, textButton(first(), 'Before')); release(); await join(start); await bindFrames();
-    await jump(50, 'Plugin context 50');
+    await jump(50, oldLines[49].trimEnd());
     await click(h.view, textButton(first(), 'After')); release(); await join(start); await bindFrames();
     assert.equal(control('Search full file').value, 'plugin context 2500');
     assert.equal(contextReads().length, 1, 'real collapse/reopen retains full context, not only a partial patch');
@@ -454,9 +463,9 @@ test('seven generic card tuples join original valid descendant work and preserve
     await click(h.view, textButton(h.view.container, 'Side by side'));
     await showFull();
     await click(h.view, textButton(first(), 'Before')); release(); await join(start); await bindFrames();
-    await jump(50, 'Plugin context 50');
+    await jump(50, oldLines[49].trimEnd());
     await click(h.view, textButton(first(), 'After')); release(); await join(start); await bindFrames();
-    await jump(50, 'Plugin whole-file candidate reconnect-1280');
+    await jump(50, newLines[49].trimEnd());
     assert.equal(contextReads().length, 2);
     assert.equal(contextReads()[1].url.href, contextReads()[0].url.href, 'opaque source survives serialized remount');
 
@@ -496,6 +505,8 @@ test('seven generic card tuples join original valid descendant work and preserve
     assert.equal(currentResponses[0][0] === current, true, 'actual response uses current original request, never serialized stale object');
     assert.deepEqual(currentResponses[0][1], { action: 'approve' });
     await unmount(); release(); await join(start);
+    phase(`reader-input:${width}:end`);
+    }
     phase('reader-parent:end');
   }
   phase('cleanup:begin');
