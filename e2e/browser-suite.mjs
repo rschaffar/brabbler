@@ -802,13 +802,13 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "activity") {
-      const activityScenario = inputId === "legacy-desktop" ? "activity/native-toolbar-owned-v5" : "activity/compact-state-recipe-owned-v4";
+      const activityScenario = inputId === "legacy-desktop" ? "activity/native-toolbar-owned-v5" : inputId === "legacy-mobile" ? "activity/compact-navigation-owned-v6" : "activity/compact-state-recipe-owned-v4";
       await coverage.run(`${activityScenario}@${inputId}`, async () => {
       const finishActivityStage = stage.start(`activity/${inputId}/chain`);
       // Seed only after the selected chat has loaded, so clicking its newly
       // discovered Activity row must refresh the warning in that same chat.
       await stage(`activity/${inputId}/overview`, async () => { await checkActivityOverview(page, viewport.width, {
-        base, api, post, artifacts, harness, waitingSessionId: RICH, selectedSessionId: BRANCH, otherSessionId: OTHER,
+        base, api, post, artifacts, harness, retainNavigationMatrices: false, waitingSessionId: RICH, selectedSessionId: BRANCH, otherSessionId: OTHER,
         seedInterruptedRun: () => seedRecoveryRun(`${viewport.width}-activity-recovery`),
         subagentIds: ACTIVITY_SUBAGENTS,
         seedSubagentCompletions: () => {

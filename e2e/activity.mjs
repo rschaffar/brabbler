@@ -188,7 +188,7 @@ async function checkOverviewDuringInitialRestore(page, base, sessionId) {
   }
 }
 
-export async function checkActivityOverview(page, width, { base, api, post, waitingSessionId, selectedSessionId, otherSessionId, artifacts, harness, seedInterruptedRun, subagentIds, seedSubagentCompletions }) {
+export async function checkActivityOverview(page, width, { base, api, post, waitingSessionId, selectedSessionId, otherSessionId, artifacts, harness, seedInterruptedRun, subagentIds, seedSubagentCompletions, retainNavigationMatrices = true }) {
   const mobile = width <= 640;
   const failures = [], projections = [], peers = [];
   const receipts = activityReceipts(page);
@@ -209,7 +209,11 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
     const sourceRoot = selected.projectRoot ?? selected.cwd;
     const destination = other.projectRoot ?? other.cwd;
     assert.notEqual(sourceRoot, destination);
-    for (const panel of ["Activity", "Starred"]) {
+    // Real four-way navigation and public persistent-New owners cover the
+    // second overview's policy. Keep one ORIGINAL mobile native creation/input
+    // ceremony; full export preserves both original sessions and overlays.
+    const newPanels = retainNavigationMatrices ? ["Activity", "Starred"] : ["Activity"];
+    for (const panel of newPanels) {
       await page.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
       await page.getByText("Active branch answer", { exact: true }).waitFor();
       await page.getByRole("button", { name: panel, exact: true }).click();
@@ -238,7 +242,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
       assert.deepEqual((await readBrowserJson(page, `/api/sessions/${sessionId}`)).context.messages, []);
     }
     await page.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
-    console.log("PASS: mobile cross-project New leaves Activity/Starred and saves an editable empty session");
+    console.log(`PASS: mobile cross-project New leaves ${newPanels.join("/")} and saves an editable empty session`);
   }
   await page.getByText("Active branch answer", { exact: true }).waitFor();
   assert.equal(await page.getByText("A previous run may have been interrupted", { exact: false }).count(), 0);

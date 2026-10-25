@@ -29,6 +29,7 @@ close and HOST afterward. None of this cancels independent Acceptance work.
 | Owner | Contract and proof boundary |
 | --- | --- |
 | `lib/activity.test.mjs`, `lib/activity-review.test.mjs` | Existing real projections/precedence/nesting/project identity/exact receipt helpers; no browser/native execution claim. |
+| `components/SessionNavigation.cross-bridges.test.mjs` | Four-way Activity/Starred × desktop/mobile actual navigation/Sidebar/chat-binding policy, held original source JSON and obsolete/current creation keys. A separate single-realm default ChatWindow case owns actual eager persistence→ensure→hook-created row→real navigation receiver→public ChatInput without a prompt; source chat/overlay/native emptiness remain installed. |
 | `components/SessionNavigation.composition.test.mjs` | Actual family/badge helper: selected root/descendants, nested/foreign/fork scope, current running registry, deduplicated idle count and empty input. The separate installed native S stage proves default Toolbar forwarding; helper rows are not native IDs. |
 | `lib/activity-client-controller.test.mjs` | Real controller, controlled transport/body/time/events: ignored-abort A/B/A, current error/finally, exact tokens, failed/ambiguous confirmation-before-retry, B during A, shared leases and full callback/body joins. |
 | `components/ActivityViews.behavior.test.mjs` | Real views/root/consumer/notification hooks under StrictMode; actual controls/current callbacks, target eligibility, privacy/restoration inputs, errors, stars and teardown admission. Not full Sidebar/AppShell/router/metrics mounting or CSS/native touch/networking. |
@@ -52,7 +53,7 @@ legacy inputs and whole-input trace/context closure before success:
 | --- | --- |
 | `activity/native-toolbar-owned-v5@legacy-desktop` | 1280×800 legacy preferences: complete native question→Later→reload→answer→Ready→Read; actual short completions/archive/new generation/independent peers/bulk receipts; complete subagent, row/global Pause and five-job Acceptance/default-tools/independence chains once. |
 | `activity/compact-state-recipe-owned-v4@legacy-tablet` | 700×800: retained early restoration/Starred/worktree/interruption plus working/question/Ready/control geometry, full shared metrics, natural genuine default observation and actual Enter completion receipts/reload, real Acceptance Settings/status/bounds/Escape/focus. |
-| `activity/compact-state-recipe-owned-v4@legacy-mobile` | 390×844 touch/legacy preferences: corresponding actual navigation/back/touch fragments, full metrics tap/Enter, real completion tap receipts/reload, real Acceptance Plugins switch/focus/layout and actual Sub-agents model-suffix Settings. Incoming persistent-New assertions stay in the early mobile segment. |
+| `activity/compact-navigation-owned-v6@legacy-mobile` | 390×844 touch/legacy preferences: corresponding actual navigation/back/touch fragments, full metrics tap/Enter, real completion tap receipts/reload, real Acceptance Plugins switch/focus/layout and actual Sub-agents model-suffix Settings. Incoming persistent-New assertions stay in the early mobile segment. |
 
 `activity-layout.mjs` preserves all original action-box predicates and worktree
 metadata/bounds checks. `activity-family-usage.mjs` retains real four-ID native
@@ -89,7 +90,7 @@ implementation plan's evidence root.
 | --- | --- |
 | A9–40,92–118: initial adoption, late interruption, actionless row, same-chat dismissal | Existing restoration/journal owners plus actual browser early segment at every input; mounted inputs do not replace router/journal/default wiring. |
 | A48–91 and calls111/137/157/174/175/197/235/299: badge/name/bounds, four action-box predicates, 24px/11px targets | Shared browser layout helper at original/retained responsive states. Dormant main-checkout negative is not claimed previously exercised. |
-| A120–211: legacy/server stars, visible sidebar actions, idle/working dots, filter/reload/navigation/back/empty state | Existing star persistence + mounted real Starred events, with the entire early browser fragment retained at all three inputs. |
+| A120–211: legacy/server stars, visible sidebar actions, idle/working dots, filter/reload/navigation/back/empty state | Existing star persistence + mounted real Starred events; early native physical fragments remain at all three inputs except the explicitly lower/public-caller-owned duplicate mobile Starred→New ceremony. |
 | A212–311: exact native question/Later/reload/answer/Ready/Read, labels/colors, pending-question no Read and peer observation | One complete desktop native golden bridge, exact real receipt-body barrier; controller/mounted own client token/queue/state variants; responsive geometry/input stays real Chromium, not another native question claim. |
 | A315–369: short native completions, navigation-not-Read, archive/project precedence and independent no-local-marker peer | Existing ledger/projections plus controller/mounted action matrix; real desktop completion/archive/peer/default bridge retained. |
 | A370–410: durable Later success with unusable reply, held confirmation poll/unavailable recovery, peer convergence | Controlled controller/mounted ambiguity cases plus unchanged genuine desktop store/API/lost-response/peer bridge. |
@@ -101,9 +102,19 @@ implementation plan's evidence root.
 | P88–319: row and global native Pause, accepted tool-batch drain/card receipts/main-only continuation/concealed peer/no completion | Entire native two-cycle desktop chain unchanged; complementary real core ledger negatives. Responsive synthetic controls only prove geometry. |
 | X20–end: actual configure/profiles/tools/five jobs/join/queue/reload/disable-not-abort/explicit cancellation/re-enable/history | Entire native desktop chain unchanged. Both responsive inputs retain real status/Plugins switch/PATCH/bounds/Escape/trigger-focus without repeating the jobs. |
 
-The incoming persistent-New/session/sidecar work remains independent: preserve its
-actual mobile Activity/Starred New behavior and desktop sidecar/browser/mounted
-owners when composing this pilot, not by declaring them covered by the controller.
+Persistent New is not merely controller coverage. The actual public caller is
+mounted through the same guarded Jiti/DOM/transport graph as real navigation;
+its original binding and numeric navigation key pass directly, without a fake
+ensure, supplied created row or copied creation/key algorithm. The source-chat
+hook is not mounted in this receiver: its `/repo` navigation row and `/other` New
+hook domain remain separate. Keep the original mobile Activity→New native
+source/destination/returned ID/empty SDK context/editable non-inert input/backdrop
+and source-restoration ceremony. Only the duplicate Starred→New creation ceremony
+retires; other Starred physical controls, all three held initial-URL/native
+receivers, P1 and desktop sidecar/browser/mounted owners remain. Full helper export
+retains both New ceremonies. New creation is the eager persistence effect, not an
+input-initiated Send. Readonly update transport is not a universal continuation
+or idle proof.
 
 `openAcceptanceWithHeldStatus` in `e2e/project-acceptance.mjs` is the canonical
 initial-loading gate: hold the original application GET, observe Reading before

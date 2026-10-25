@@ -15,7 +15,8 @@ function loadProductionGraph() {
   if (!productionGraph) productionGraph = (async () => {
     const jiti = createJiti(import.meta.url, {
       jsx: { runtime: "automatic" }, tsconfigPaths: true, fsCache: false,
-      alias: { './ChatMinimap.module.css': fileURLToPath(new URL('../components/chat-minimap-style.fixture.mjs', import.meta.url)),
+      alias: { 'next/image': fileURLToPath(new URL('../components/next-image-interop.fixture.mjs', import.meta.url)),
+        './ChatMinimap.module.css': fileURLToPath(new URL('../components/chat-minimap-style.fixture.mjs', import.meta.url)),
         [fileURLToPath(new URL('../components/ChatMinimap.module.css', import.meta.url))]: fileURLToPath(new URL('../components/chat-minimap-style.fixture.mjs', import.meta.url)) },
     });
     const { useAgentSession } = await jiti.import("./useAgentSession.ts");
@@ -29,7 +30,9 @@ function loadProductionGraph() {
       loadComposer: () => jiti.import("../components/ChatInput.tsx"),
       loadQuestionSet: () => jiti.import("../components/QuestionSetDialog.tsx"),
       loadNativeControl: () => jiti.import("../components/session-tools-session.fixture.tsx"),
-      loadDefault: () => jiti.import("../components/ChatWindow.tsx") };
+      loadDefault: () => jiti.import("../components/ChatWindow.tsx"),
+      loadNavigation: async () => ({ ...await jiti.import("../components/navigation-composition.fixture.tsx"),
+        ...await jiti.import("../lib/navigation-work.ts") }) };
   })();
   return productionGraph;
 }
@@ -128,6 +131,7 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
   questionSets = false, nativeControl = false, nativeMetadata, nativeDefault, nativePeerSessionId = null, modelControls = false,
   fixtureProvider = provider, modelIds = ["A", "B", "canonical", "old"], modelRefs = null, savedSessionId = null, fixtureCwd = null,
   observeProduction = null, ownGraceTimers = false, defaultChat = false, receiveCreatedSession = false, clipboard = null,
+  defaultComposition = null, navigationRoute = null, compositionOwners = [],
   numeric = { height: 2000, client: 600 },
 } = {}) {
   // Transport vocabulary only: preserve legacy literal identities without copying hook policy.
@@ -186,7 +190,7 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
     });
     viewPending.add(entry.settled);
   }
-  let DefaultChat, realmWindow;
+  let DefaultChat, NavigationGraph, realmWindow, composedOptions, compositionReleased = false;
   let Composer, QuestionSet, NativeControl, composerOperation, mountedOptions, leafChange;
   const controlWorks = [];
   const submissionWorks = [], submissionWaiters = [];
@@ -372,6 +376,15 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
     assert.deepEqual(headers, json ? [["content-type", "application/json"]] : [], "request header identity");
     if (json) assert.equal(typeof init.body, "string", "JSON body must be literal serialized input");
     else assert.equal(init.body, undefined, "body on read/lease");
+    // Opt-in composition admits only the existing navigation transport vocabulary;
+    // it cannot bypass models, ensure, agent/session-detail or account validation.
+    if (navigationRoute && (["/api/activity/review", "/api/sessions", "/api/home", "/api/starred-sessions",
+      "/api/worktrees", "/api/sessions/worktrees", "/api/git/status"].includes(request.path) || request.path.startsWith("/api/files/"))) {
+      assert.equal(defaultChat && typeof defaultComposition === "function", true);
+      request.navigationPayload = navigationRoute({ url: parsed, options: init });
+      assert.notEqual(request.navigationPayload, undefined, "declared navigation response capability");
+      return request;
+    }
     const nativeRepair = request.method === "GET" && (parsed.search === "?tree=summary&tail=1" || parsed.search === "?tools=1");
     if (request.path.endsWith("/lease") || request.path === "/api/native-tools" && request.method === "GET" || nativeRepair) assert.equal(init.cache, "no-store");
     else if (defaultChat && request.method === "GET" && /^\/api\/agent\/[^/]+$/.test(request.path)) assert.ok(init.cache === undefined || init.cache === "no-store");
@@ -469,11 +482,14 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
           default: throw new Error("unknown agent command");
         }
       }
+    } else if (defaultChat && request.path === "/api/app-update") {
+      assert.equal(request.method, "GET"); query(request, []);
     } else if (defaultChat && request.path === "/api/auth/providers") {
       assert.equal(request.method, "GET"); query(request, []);
     } else if (defaultChat && request.path === "/api/auth/accounts/selection" && request.method === "GET") {
       query(request, ["cwd", "sessionId"], { cwd });
-      assert.ok(knownSessions.has(request.query.get("sessionId")));
+      if (request.query.has("sessionId")) assert.ok(knownSessions.has(request.query.get("sessionId")));
+      else assert.equal(composedOptions?.session == null, true, "only an actual New composer reads project accounts without sessionId");
     } else if (request.path === "/api/auth/accounts/selection") {
       assert.equal(request.method, "PUT"); query(request, []);
       keys(request.body, ["scope", "sessionId", "provider", "accountId"], ["scope", "sessionId", "provider", "accountId"]);
@@ -483,14 +499,20 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
     return request;
   }
   function defaultPayload(request) {
+    if (Object.hasOwn(request, "navigationPayload")) return request.navigationPayload;
     const sid = decodeURIComponent(request.path.split("/")[3] ?? "");
     if (request.path === "/api/native-tools") {
       if (request.method === "POST") return nativeDefault(request);
       assert.equal(typeof nativeMetadata, "function", "explicit metadata response capability");
       return nativeMetadata(request);
     }
+    if (defaultChat && request.path === "/api/app-update") return {
+      currentVersion: "1.0.0", latestVersion: "1.0.0", updateAvailable: false, releaseUrl: "https://example.invalid/releases/1.0.0",
+    };
     if (defaultChat && request.path === "/api/auth/providers") return { providers: [], oauthProviders: [], apiKeyProviders: [] };
-    if (defaultChat && request.path === "/api/auth/accounts/selection" && request.method === "GET") return { accounts: [], project: {}, session: {} };
+    if (defaultChat && request.path === "/api/auth/accounts/selection" && request.method === "GET") return {
+      accounts: [], project: {}, session: request.query.has("sessionId") ? {} : null,
+    };
     if (models(request)) return metadata();
     if (request.path === "/api/agent/new" && request.body?.type === "ensure_session") {
       const row = record(savedId);
@@ -626,6 +648,7 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
           for (const owners of defaultOwners) {
             add(owners.whenMaintenanceSettled); add(owners.work.whenSettled);
           }
+          for (const owner of compositionOwners) add(() => owner.settle());
           for (const join of composerHandles) add(join);
           joins.push(...viewPending, ...pendingTransports, ...observedFrames.map(frame => frame.promise));
           for (const result of await Promise.allSettled(joins)) if (result.status === "rejected") joinedFailures.push(result.reason);
@@ -664,6 +687,14 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
   const stopForCleanup = () => {
     cleanupStarted = true;
     stopping = true;
+    if (!compositionReleased) {
+      compositionReleased = true;
+      // Attempt every independent domain release before any transitive join.
+      for (const owner of compositionOwners) {
+        try { publicOwner.track("composition domain release", Promise.resolve(owner.release())); }
+        catch (error) { rememberFailure(error); }
+      }
+    }
     releasePeers();
     for (const rule of rules) {
       rule.admitted.reject(new Error("Fixture cleanup before held request admission"));
@@ -867,6 +898,10 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
   if (questionSets) ({ QuestionSetDialog: QuestionSet } = await subject.loadQuestionSet());
   if (nativeControl) ({ SessionToolsSession: NativeControl } = await subject.loadNativeControl());
   if (defaultChat) ({ ChatWindow: DefaultChat } = await subject.loadDefault());
+  if (defaultComposition) {
+    assert.equal(defaultChat && typeof defaultComposition === "function", true);
+    NavigationGraph = await subject.loadNavigation(); // Same pre-import admission fence.
+  }
   importing = false;
 
   const api = {
@@ -917,6 +952,11 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
     get loader() { return systemLoader; },
     get maintenanceHandle() { return maintenanceHandles.get(incarnation); },
     get mountedOptions() { return mountedOptions; },
+    get composedOptions() { return composedOptions; },
+    async navigationGraph() {
+      assert.equal(defaultChat && typeof defaultComposition === "function", true);
+      return NavigationGraph;
+    },
     // These are the actual key/options used below, not a replacement selection
     // controller. Captured keys/owners distinguish a returned A from its old A.
     get keyedProps() { return { key: incarnation, options: mountedOptions }; },
@@ -964,17 +1004,22 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
       mountedOptions = options;
       const key = sameInstance ? incarnation : ++incarnation;
       const hookOptions = ownGraceTimers ? { ...options, onGraceTimer: observeGraceTimer } : options;
-      const element = createElement(subject.I18nProvider, null, defaultChat
-        ? createElement(DefaultChat, { archivedRootSessionId: null, archiveActionBusy: false, onSessionRestored() {},
-          ...hookOptions, key, chatInputRef: composerRef, workObserver: {
+      const renderDefault = (binding = {}, bindingKey = key) => {
+        const publicOptions = { ...hookOptions, ...binding };
+        composedOptions = publicOptions;
+        return createElement(DefaultChat, { archivedRootSessionId: null, archiveActionBusy: false, onSessionRestored() {},
+          ...publicOptions, key: bindingKey, chatInputRef: composerRef, workObserver: {
             ...defaultObserver,
-            ...(options.workObserver?.copy ? { copy(observation) {
+            ...(publicOptions.workObserver?.copy ? { copy(observation) {
               try {
                 observeDefaultCopy(observation);
-                options.workObserver.copy(observation); // Actual current public observer, not a cloned handler.
+                publicOptions.workObserver.copy(observation); // Actual current public observer, not a cloned handler.
               } catch (error) { rememberFailure(error); } // Unknown callback errors remain fatal through joins.
             } } : {}),
-          } })
+          } });
+      };
+      const element = createElement(subject.I18nProvider, null, defaultChat
+        ? defaultComposition ? defaultComposition(renderDefault) : renderDefault()
         : createElement(receiveCreatedSession ? CreatedSessionReceiver : Probe, {
         subject, key, options: hookOptions, composer: Composer, composerDraftKey: options.composerDraftKey, composerRef, viewport,
         questionSet: QuestionSet, observeSubmission, NativeControl, modelControls,
@@ -1092,6 +1137,10 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
           });
           installRealm(window, "matchMedia", query => ({ matches: mobile && query.includes("max-width"), media: query,
             addEventListener() {}, removeEventListener() {} }));
+        }
+        if (defaultComposition) {
+          installRealm(globalThis, "localStorage", window.localStorage);
+          installRealm(globalThis, "sessionStorage", window.sessionStorage);
         }
         window.localStorage.setItem("pi-tool-preset", preset);
         replace("requestAnimationFrame", window.requestAnimationFrame.bind(window));

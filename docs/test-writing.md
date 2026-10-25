@@ -271,6 +271,13 @@ retire old tests or constitute full candidate acceptance.
   text; keep its actual shared native HEAD/tree and both original inline drawer
   selection/close ceremonies. Shared Pierre is warm; content/state rows are not
   viewport geometry or a new mobile exceptional-work execution.
+- The opt-in default-chat/navigation composition reuses ONE guarded Jiti graph,
+  DOM, transport and complete existing default owners. Pass the actual navigation
+  binding and numeric key; never copy a creation/key policy or replay a supplied
+  created-session row as public caller proof. Import under the admission fence,
+  release all domain peers before joins, and keep unknown failures fatal. Check
+  actual callback adoption before success-dependent readiness; a stream that a
+  broken callback cannot admit must not become an unbounded test waiter.
 - Selected Git policy belongs to the existing native server owner: caller/session
   policy is not the selected checkout's policy. The existing RPC UI case separately
   drives an external signal through actual `pluginCard`, original settlement,

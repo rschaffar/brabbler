@@ -38,13 +38,14 @@ export function NavigationFirstPaint({ search }: { search: string }) {
 
 /** External lifecycle/statistics/viewport ports only. Production hooks, real
  * Sidebar default composition and actual toolbar buttons own all decisions. */
-export function NavigationHarness({ search = "", router, isMobile = false, sidebar, onCommit, onFocus = () => {}, renderWorkspace, chatController, onChatCommit }: {
+export function NavigationHarness({ search = "", router, isMobile = false, sidebar, onCommit, onFocus = () => {}, renderWorkspace, chatController, onChatCommit, renderChat }: {
   search?: string; router: NavigationUi["router"]; isMobile?: boolean;
   sidebar?: Omit<ComponentProps<typeof SessionNavigationSidebar>, "state" | "navigation">;
   onCommit: (value: Record<string, unknown>) => void; onFocus?: () => void;
   renderWorkspace?: (binding: ReturnType<typeof useSessionFileBinding>, panel: { rightPanelOpen: boolean; activeFileTabId: string | null; showFiles: () => void }) => ReactNode;
   chatController?: ActivityClientController;
   onChatCommit?: (props: ReturnType<typeof useSessionNavigationChatBinding>) => void;
+  renderChat?: (props: ReturnType<typeof useSessionNavigationChatBinding>, key: ReturnType<typeof useNavigationState>["sessionKey"]) => ReactNode;
 }) {
   const state = useNavigationState(new URLSearchParams(search));
   const [chatHidden, setChatHidden] = useState(false);
@@ -86,7 +87,7 @@ export function NavigationHarness({ search = "", router, isMobile = false, sideb
   return <>
     <SessionSystemInfoButtons systemBtnRef={systemBtnRef} mobile={isMobile} showChat={navigation.showChat} activeTopPanel={activeTopPanel}
       systemPrompt={systemInfo.systemPrompt} systemTools={systemInfo.systemTools} handleSystemInfoToggle={handleSystemInfoToggle} />
-    {chatController && onChatCommit && <ChatPublication state={state} navigation={navigation} controller={chatController} onCommit={onChatCommit} />}
+    {chatController && (onChatCommit || renderChat) && <ChatPublication state={state} navigation={navigation} controller={chatController} onCommit={onChatCommit} renderChat={renderChat} />}
     {renderWorkspace?.(fileBinding, { rightPanelOpen, activeFileTabId, showFiles: () => { setActiveFileTabId("files"); setRightPanelOpen(true); } })}
     <ArchivedSessionNotice rootSessionId={archive.archivedRootSessionId} busy={archive.archiveActionBusy} onRestored={archive.onSessionRestored} />
     <OverviewNavigationButtons activeOverview={activeOverview} isMobile={isMobile} overviewMobileList={overviewMobileList}
@@ -113,11 +114,14 @@ export function PrivacyHarness({ sessions, onCommit }: Omit<ComponentProps<typeo
   return <ProjectPrivacySettings sessions={sessions} privacy={privacy} />;
 }
 
-function ChatPublication({ state, navigation, controller, onCommit }: {
+function ChatPublication({ state, navigation, controller, onCommit, renderChat }: {
   state: ReturnType<typeof useNavigationState>; navigation: ReturnType<typeof useSessionNavigation>;
-  controller: ActivityClientController; onCommit: (props: ReturnType<typeof useSessionNavigationChatBinding>) => void;
+  controller: ActivityClientController; onCommit?: (props: ReturnType<typeof useSessionNavigationChatBinding>) => void;
+  renderChat?: (props: ReturnType<typeof useSessionNavigationChatBinding>, key: ReturnType<typeof useNavigationState>["sessionKey"]) => ReactNode;
 }) {
   const props = useSessionNavigationChatBinding(state, navigation, controller);
-  useLayoutEffect(() => { onCommit(props); });
-  return <output data-chat-session={props.session?.id ?? ""} data-chat-running={String(props.sessionRunning)} />;
+  useLayoutEffect(() => { onCommit?.(props); });
+  // Same binding and actual navigation key as AppShell, without importing a
+  // second chat graph or deriving another key/creation policy in the fixture.
+  return <>{renderChat?.(props, state.sessionKey)}<output data-chat-session={props.session?.id ?? ""} data-chat-running={String(props.sessionRunning)} /></>;
 }
