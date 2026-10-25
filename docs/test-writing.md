@@ -230,6 +230,11 @@ retire old tests or constitute full candidate acceptance.
 - `components/MarkdownBody.behavior.test.mjs` mounts actual local/blocked/reader
   links and scoped anchors; `MarkdownMedia.behavior.test.mjs` owns activation,
   visibility and effect/source lifetime, not browser decoding or native popovers.
+- `components/ChatWindow.process-details.test.mjs` owns all three original deferred
+  Thinking reads, complete cached loader/effect-tail work, current observer, cache,
+  chronology and no-duplication policy. History retains one installed Process →
+  Thinking → actual body at each original LD/LM profile; controlled effects do not
+  replace native rendering, Clipboard, selection or the wider default connection.
 - `lib/file-line-navigation.test.mjs` uses real isolated DOM trees; the actual
   FileViewer text/media mounts own request/body identities, watcher lifetimes,
   current links and Save races. Workspace mounts add stable hosts and independent

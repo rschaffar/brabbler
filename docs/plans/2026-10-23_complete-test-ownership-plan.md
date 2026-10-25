@@ -4,9 +4,10 @@
 > Authorization covers implementation, coordinated checks and reviewable feature
 > commits only. No rebase, merge, resource cleanup, publication or ordinary-session
 > launch is authorized. The handoff's historical default pause was superseded for
-> this session only. **Now stopped at the early whole-feedback performance gate,
-> awaiting the required bounded user decision.** No deferred core/RPC/cache work
-> resumes automatically; all correctness and performance requirements remain.
+> this session only. **Bounded decision: finish WP2 browser retirement first.**
+> Continue its finite slices serially; keep the core ceiling blocker explicit and
+> core/RPC/cache work deferred. Do not repeat unchanged full timing. All correctness
+> and performance requirements remain.
 
 ## Goal
 
@@ -54,12 +55,13 @@ contracts. See [reflection](2026-10-23_complete-test-ownership-reflection.md) an
 
 | State | Authoritative evidence / limit |
 | --- | --- |
-| **Verified current early whole correctness; ceiling FAILED** | `R/resumed-implementation/early-all-analysis.json`: fresh `nix run .#test -- all --workers 4 --jobs 4`, source digest `6873c082fc4d1a4e403fa3464b9d181d15efac86c0492be2e2454309ec572b0b`; **508 files /4143 tests /14 suites**, all26 browser/terminal groups and genuine VM pass. Command **398.058438374s**, core file window **388.662s** alone exceeds351.05 by37.612s. This is not a matched NET comparison or final task completion. |
+| **Verified receiving-baseline early whole correctness; ceiling FAILED** | `R/resumed-implementation/early-all-analysis.json`: fresh `nix run .#test -- all --workers 4 --jobs 4`, source digest `6873c082fc4d1a4e403fa3464b9d181d15efac86c0492be2e2454309ec572b0b`; **508 files /4143 tests /14 suites**, all26 browser/terminal groups and genuine VM pass. Command **398.058438374s**, core file window **388.662s** alone exceeds351.05 by37.612s. This is not a matched NET comparison or final task completion. |
 | **Verified, historical full correctness; performance FAILED** | [Matched full timing](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/matched-first-critical-path.json): 421.959333907→430.231565s, +8.272231s; candidate 79.181565s above ceiling. Both roots already have the middle layer. Core 415.258→422.398s dominates; browser 348.749→347.310s. No later full pair supersedes it. |
 | **Verified, finite private compositions** | [Coherent Sixth](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/browser-retirement-v2-coherent-sixth-composition/RAW-EXECUTED-FIRST.json): 42 files / 571 tests / 85s and 11 affected installed receipts. [Thinking/Tool](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/browser-retirement-v2-thinking-tool-composition/RAW-EXECUTED-FIRST.json): combined24 and six producer faults; restored60 files / 806 tests / 104s. Focused, not current whole acceptance. |
 | **Verified latest lower subset, receiving impact still open** | [Navigation Fourth binding](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/browser-retirement-v2-navigation-default-composition/FOURTH-BINDING.json) plus `R/browser-v2-navigation-default-owners-4.*`: 26 green / 44s. Optional explicit composerDraftKey fixture port has not rerun its shared pool or three producer faults. |
 | **Verified receiving lifetime slice, not whole acceptance** | `R/resumed-wp1-receiving-2.*`: exact27 files /173 tests GREEN51s, including unchanged Save200/409. Latest three-file normal/restored runs cover21 cases (including actual partial leaf installation failure and sole HOST observation). Unconditional-unmount regression fails both original Save premises; omitted leaf rollback fails both actual descriptor/partial-install assertions. Exact logs/hashes: `R/resumed-implementation/lifetime-regressions.json`. Review corrected an additional HOST collector-order gap. Initial receiving run and unsuccessful diagnostic attempts remain retained; no unchanged-failure retry is credited. |
-| **Implemented but unverified / conditional** | Composer browser remedy, Thinking exceptional controls, Git desktop reader and Activity navigation/badges remain private. Files common lower additions are receiving-tested, but the smaller upload browser cut and its gates remain unadopted. Experimental version LM cut executes both receipts /52s and protocol118 /39s but is excluded from the receiving candidate. Exact paths/limits remain in the pause record. |
+| **Verified finite Thinking retirement, not whole acceptance** | `R/resumed-implementation/thinking-browser-result.json`: original-work15 has normal13 plus both expected REDs reaching terminal SAME-error/full-tail/phase assertions42s; restored13+protocol4 =131 GREEN44s. Fresh installed History bothv4 receipts GREEN50s/capsule38.073s. Three deferred reads/waits become one per original LD/LM: four actual GET/body/wait transactions and the unused request listener leave Chromium. Tool/composer/version/native neighbors stay unchanged. |
+| **Implemented but unverified / conditional** | Composer browser remedy, Git desktop reader and Activity navigation/badges remain private. Files common lower additions are receiving-tested, but the smaller upload browser cut and its gates remain unadopted. Experimental version LM cut executes both receipts /52s and protocol118 /39s but is excluded from the receiving candidate. Exact paths/limits remain in the pause record. |
 | **Partial or proposed** | Web lower controls: authored case + unrun assembler only. New Tool exceptional packet and Git policy/large remedy: no deliverable. Do not restart stopped tasks automatically or mark proposals implemented. |
 | **Abandoned / excluded** | Unsafe timestamp4→2 and speed4→3 cuts, copied-error acceptance, unsupported fixture assumptions and false failed-body/native-closure claims. Deferred RPC/cache/packing proposals are not adopted or authorized next work. Preserve their failures; do not revive automatically. |
 
@@ -92,12 +94,12 @@ contracts. See [reflection](2026-10-23_complete-test-ownership-reflection.md) an
 | --- | --- | --- |
 | B1 | Receiving divergence/composition resolved; final surviving-browser disposition remains WP2 | Coherent source commit `c694c014`, exact guarded adoption and original-input map index in `docs/test-ownership.md`; both Thinking/Copy lanes, Settings18, inherited work/guidance preserved. Current508/all-native acceptance supplies shared receiving impact. Final B3–B7 per-step dispositions remain open, not another68 census. |
 | B2 | **Closed receiving lifetime residues**; smaller browser upload cut stays WP2 | Receiving27 /173 GREEN; exact original Save200/409 premises fail under unconditional release. Eight actual descriptors restore before close on normal/partial setup and after independent restore failure; omission fails both descriptor witnesses. Sole HOST-observation/next-mount and actual partial leaf-installer failure pass. Latest3-file21 restored plus current full508/native acceptance supplies receiving impact. This is not native kernel-closure or smaller upload-cut qualification. |
-| B3 | Thinking/Web/Tool original-work exceptional qualification | Execute ready Thinking controls; finish partial Web and missing Tool work only for named uncovered contracts. SAME errors, real phase/terminal witnesses and normal restoration; no generic control-count target. |
+| B3 | Thinking finite gate closed; Web/Tool original-work qualification remains | Both Thinking schedules now execute through terminal refs/phase/next-mount assertions, followed by normal restoration and actual native retirement. Tool needs one named primary-with-two-held-Copy-peers across real unmount conjunction on its existing default owner, not another value matrix. Web's partial authored schedule still needs completion/execution. SAME errors and full work/ACK settlement remain distinct; no control-count target. |
 | B4 | Composer native models-route/body/RAW/ACK/disposal/primary cleanup remedy remains source-only | Existing source-admitted normal + two witnesses qualify on receiving bytes; retain native undo/selection/focus/IME and installed bridges. |
 | B5 | Navigation optional fixture impact, three producer faults and branch native body/ACK/unroute handoff | Receiving shared pool and three meaningful faults/restoration; actual branch port ownership. Hook+Input draft proof does not replace the AppShell saved-key caller bridge. |
 | B6 | Git desktop reader and exact policy/current-origin/cross-cancel/mobile/history/45-file conjunctions | Qualify existing reader; bind remaining exact obligations to sufficient production/native owners and smallest installed bridges. No policy/large remedy packet exists yet. |
 | B7 | Activity navigation/badges/Toolbar/default restoration | Qualify existing additions and needed fault witnesses; preserve native New/restoration and independent Acceptance authority. |
-| B8 | Current early whole correctness passes; core execution alone blocks ceiling | Fresh all4/4 **398.058s**; core file execution **388.662s**, excluding2.513s pre-file setup and0.367s afterward. No browser-only cut removes that floor. Final settled acceptance, matched NET and Panel median remain open. Stop for bounded user direction before any deferred core/RPC/cache work. |
+| B8 | Current early whole correctness passes; core execution alone blocks ceiling | Fresh all4/4 **398.058s**; core file execution **388.662s**, excluding2.513s pre-file setup and0.367s afterward. No browser-only cut removes that floor. Final settled acceptance, matched NET and Panel median remain open. User selected finishing WP2 first; no deferred core/RPC/cache work is authorized. |
 
 New findings must bind to a blocker or identify the specific original obligation
 that requires changing this list. Speculative universal idle/escaped-work theorems
@@ -121,7 +123,9 @@ and interrupted diagnostics remain retained, not meaningful producer reds.
 checkpoint now supplies current complete correctness and wider receiving impact,
 not completion or NET success. All1569 exported files matched the physical checkout
 before status-only follow-up edits. Source commit `c694c014` retains those tested
-application/test bytes. No new WP2 browser cut was adopted in this session.
+application/test bytes at that checkpoint. Subsequent Thinking-only WP2 retirement
+has its own131-case and two-profile installed evidence; do not relabel the earlier
+full run as execution of these later bodies.
 
 **Whole-feedback checkpoint and stop:** command398.058438374s. Core391.542s includes
 2.513s before the388.662s file window and0.367s afterward. Browser320.743s includes
@@ -135,8 +139,10 @@ partly preparing run is not compared as a warm matched speedup. Full command is
 
 The longest observed core files are reconciliation-mounted97.107s, rpc-manager
 95.778s and Git cleanup75.418s; these are observations, not permission to reopen
-RPC/cache work. **Stop and request a bounded next-step decision.** B3–B7 browser
-retirement still must finish; no performance waiver or automatic core tangent.
+RPC/cache work. **The user selected finishing WP2 browser retirement first.**
+B3–B7 proceed serially, beginning with the coupled Reading/Thinking/Tool/version/
+navigation slice. Do not repeat unchanged full timing; no performance waiver or
+core tangent is implied.
 Use independent review for changed risk, not an automatic second packet pipeline.
 
 - [x] **WP1 — consolidate and repair shared foundations (B1/B2 receiving slice).** Build one
@@ -156,7 +162,16 @@ Use independent review for changed risk, not an automatic second packet pipeline
   exceptional schedules, receiving-impact check and exact installed bridge.
   **Stop** on a gate failure to diagnose it; do not expand investigations or repeat
   unchanged runs. Additional controls need a named uncovered changed contract.
-- [ ] **WP3 — whole feedback and closure (B8).** **Early checkpoint executed; correctness passed, ceiling failed and bounded decision pending.** At the first coherent candidate,
+  - [x] **H-THINK finite cut:** qualify original-work failure schedules, restore
+    normal13, then actually remove two Thinking GET/body/waits per original input
+    and the request listener. Freshv4 IDs, independent guards and both retired-ID
+    negatives pass; installed LD/LM histories pass. Tool/clipboard/composer/version/
+    navigation fragments remain separate. Evidence: `R/resumed-implementation/thinking-browser-result.json`.
+  - [ ] **Next active slice — H-TOOL:** qualify the one held-Copy/primary/unmount
+    conjunction using existing actual-default ports, then delete duplicate value/
+    refusal/synthetic-page work while preserving native Clipboard/geometry and the
+    exact dynamic write/edit caller bridge. No new platform or fake hook handoff.
+- [ ] **WP3 — whole feedback and closure (B8).** **Early checkpoint executed; correctness passed, ceiling failed; user selected WP2 first.** At the first coherent candidate,
   take a whole-feedback checkpoint before optional expansion, even if remaining
   unadopted proposals keep completion open. Once source/review settle, run fresh
   matched reference/candidate `nix run .#test -- all --workers 4 --jobs 4`

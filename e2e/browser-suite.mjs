@@ -974,7 +974,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "history") {
-    await coverage.run(`history/${inputId === "legacy-desktop" ? "reading-receiving-compaction-v2" : "reading-touch-compaction-v2"}@${inputId}`, async () => {
+    await coverage.run(`history/installed-thinking-body-native-v4@${inputId}`, async () => {
     const finishHistoryStage = stage.start(`history/${inputId}/chain`);
     // Interception needs its own SW-blocked context. The original history/PWA
     // context below stays unchanged, and reload cannot alter its reading state.
@@ -1126,38 +1126,17 @@ let nativeToolsFixture;
     console.log("PASS: interrupted run notice survives reload until dismissed and never replaces saved history");
     finishRecoveryStage();
     const finishReadingStage = stage.start(`history/${inputId}/rendering-reading-branch`);
-    const thinkingRequests = [];
-    page.on("request", (request) => {
-      if (new URL(request.url()).pathname.endsWith("/thinking")) thinkingRequests.push(request.url());
-    });
     await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
     await page.locator("strong").filter({ hasText: "E2E markdown" }).waitFor();
     await page.locator("pre").filter({ hasText: "console.log('E2E code');" }).waitFor();
     await page.getByText("E2E final answer", { exact: true }).waitFor();
     const processDetails = page.getByRole("button", { name: /^Process details/ });
     const thinking = page.getByRole("button", { name: /^Thinking/ });
-    assert.equal(await processDetails.count(), 1);
-    assert.equal(await thinking.count(), 0, "All thinking stays inside process details");
-    const finalMessage = page.locator("[data-entry-id='answer']");
-    assert.equal(await finalMessage.getByRole("button", { name: /^Thinking/ }).count(), 0);
-    assert.equal(await finalMessage.getByText("test/E2E Model", { exact: true }).count(), 1);
-    assert.equal(thinkingRequests.length, 0);
+    // Exact three-read/body/cache/order policy has its actual lower owner.
+    // Retain the installed Process -> Thinking -> real body at THIS profile.
     await processDetails.click();
-    assert.equal(await thinking.count(), 3);
-    assert.equal(await thinking.last().innerText(), "E2E final reasoning");
-    assert.equal(thinkingRequests.length, 0);
-    for (const [index, text] of ["Intermediate thinking details.", "Follow-up thinking details.", "Final thinking details."].entries()) {
-      await thinking.nth(index).click();
-      await page.getByText(text, { exact: false }).waitFor();
-    }
-    assert.equal(thinkingRequests.length, 3);
-    const processText = await processDetails.locator("..").innerText();
-    assert.ok(processText.indexOf("E2E intermediate reasoning") < processText.indexOf("echo E2E tool output"));
-    assert.ok(processText.indexOf("echo E2E tool output") < processText.indexOf("E2E follow-up reasoning"));
-    assert.ok(processText.indexOf("E2E follow-up reasoning") < processText.indexOf("E2E process note"));
-    assert.ok(processText.indexOf("E2E process note") < processText.indexOf("E2E final reasoning"));
-    assert.equal(processText.split("E2E final reasoning").length - 1, 1);
-    assert.ok(!(await finalMessage.last().innerText()).includes("E2E final reasoning"));
+    await thinking.first().click();
+    await page.getByText("Intermediate thinking details.", { exact: false }).waitFor();
     await page.getByText("echo E2E tool output", { exact: true }).waitFor();
     await page.getByRole("button", { name: /bash.*echo E2E tool output/ }).click();
     await page.getByText("E2E tool output", { exact: true }).waitFor();
