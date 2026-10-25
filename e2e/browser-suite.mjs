@@ -482,7 +482,7 @@ let nativeToolsFixture;
     });
   } else if (group === "git-plugin") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/reader-input-owned-v5@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/cancel-input-owned-v6@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage();

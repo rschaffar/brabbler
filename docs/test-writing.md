@@ -278,6 +278,15 @@ retire old tests or constitute full candidate acceptance.
   release all domain peers before joins, and keep unknown failures fatal. Check
   actual callback adoption before success-dependent readiness; a stream that a
   broken callback cannot admit must not become an unbounded test waiter.
+- Ordinary Git Cancel is not Reject, Stop or settings abort. Compose the actual
+  inline public Card→real hook response (existing Probe/`ownControl`, same original
+  promise) with the actual RPC cancelled-response→null receiver while the signal
+  stays live, and the native exact tuple/full-origin/no-effect owner. Declared
+  plain-response IDs admit only cancelled:true with no batch signal; existing
+  batch/ordinary guards remain. This is not a mounted default Window or native
+  geometry claim. Retain each original installed Ask/default-wire bridge and
+  Allow/Large history. Failed FETCH E can reach the hook catch; JSON E is instead
+  caught by `sendAgentCommand` decoding, so never invent a hook-catch witness.
 - Selected Git policy belongs to the existing native server owner: caller/session
   policy is not the selected checkout's policy. The existing RPC UI case separately
   drives an external signal through actual `pluginCard`, original settlement,

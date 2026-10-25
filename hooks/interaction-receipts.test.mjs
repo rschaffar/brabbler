@@ -245,3 +245,55 @@ for (const view of ["live", "browsed"]) test(`slow canonical snapshot carries re
   await f.finish(reading, () => body.resolve(snapshot));
   assert.deepEqual(f.current.entryIds, view === "live" ? ["user", "entry"] : ["user"]);
 });
+
+// Same actual hook and public card caller, not supplied fake state or a direct
+// private-method invocation. Default Window/SDK/geometry remain native bridges.
+for (const width of [1280, 390]) test(`original cancel-${width} inline public Escape reaches its own real hook response without Stop`, options, async t => {
+  const requestId = `own-cancel-${width}`;
+  const f = await sessionFixture(t, { pluginCards: true, mobile: width === 390, plainUiCancellationIds: [requestId] });
+  await f.mountReady(f.existingOptions());
+  const stream = source(f), beforeAbort = f.requests.filter(request => request.body?.type === 'abort').length;
+  const acknowledgement = f.hold(request => request.body?.type === 'extension_ui_response' && request.body.id === requestId);
+  const request = { type: 'extension_ui_request', id: requestId, method: 'plugin_card', pluginId: 'git-workflow', title: 'Git commit',
+    fields: [{ label: 'Checkout', value: f.cwd }, { label: 'Branch', value: 'feature' }],
+    sections: [{ title: 'Commit message', text: `Plugin browser commit cancel-${width}`, code: true }],
+    actions: [{ id: 'reject', label: 'Reject' }, { id: 'approve', label: 'Approve commit', primary: true }] };
+  await f.event(stream, request);
+  assert.deepEqual(f.current.extensionDialog, request);
+  const cancel = [...f.view.container.querySelectorAll('button')].find(button => button.textContent.trim() === 'Cancel');
+  assert.equal(Boolean(cancel), true, 'actual public PluginCard Cancel is mounted');
+  await f.run('actual focused inline Cancel Escape', () => {
+    cancel.focus(); assert.equal(f.view.window.document.activeElement, cancel);
+    const event = new f.view.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    let escaped = false;
+    const documentObserver = () => { escaped = true; };
+    const document = f.view.window.document;
+    document.addEventListener('keydown', documentObserver);
+    try { cancel.dispatchEvent(event); }
+    finally { document.removeEventListener('keydown', documentObserver); }
+    assert.equal(event.defaultPrevented, true, 'actual PluginCard owns this Escape, not Stop');
+    assert.equal(escaped, false, 'inline Cancel Escape never bubbles to the document abort boundary');
+  });
+  // Inspect callback/wire primitives before awaiting any success-dependent
+  // request entry. A broken public gesture must not create an unadmitted wait.
+  const responses = f.requests.filter(request => request.body?.type === 'extension_ui_response' && request.body.id === requestId);
+  assert.equal(responses.length, 1, 'focused inline Cancel Escape sends exactly one actual current cancellation');
+  assert.equal(f.controlWorks.length, 1);
+  const original = f.controlWorks[0];
+  assert.equal(original.label, 'actual plugin response');
+  assert.equal(original.settled, false, 'actual response catch/finally survives immediate public card removal');
+  assert.equal(f.current.extensionDialog, null);
+  assert.equal(f.view.container.querySelector('.blocking-card') === null, true);
+  assert.equal(stream.readyState, 1);
+  assert.equal(responses[0].path, `/api/agent/${f.savedId}`);
+  assert.deepEqual(responses[0].body, { type: 'extension_ui_response', id: requestId, cancelled: true });
+  assert.equal(responses[0].signal, undefined, 'ordinary response has no batch deadline/abort signal');
+  await acknowledgement.entered.promise;
+  await f.deliver(acknowledgement, { success: true, data: { accepted: true } });
+  await original.promise; await f.settleControl(); await f.settleMaintenance();
+  assert.equal(original.settled, true);
+  assert.equal(f.requests.filter(request => request.body?.type === 'abort').length, beforeAbort);
+  assert.equal(f.requests.some(request => request.body?.type === 'prompt'), false);
+  assert.equal(f.requests.filter(request => request.body?.type === 'extension_ui_response').length, 1);
+  assert.equal(f.current.extensionDialog, null);
+});

@@ -499,11 +499,17 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     await card.getByRole("button", { name: "Reject", exact: true }).click();
     await finish(`preview-${action}`, "refused");
   }
-  card = await start("cancel");
-  const beforeCancel = tip();
-  await card.getByRole("button", { name: "Cancel", exact: true }).focus();
-  await page.keyboard.press("Escape");
-  await finish("cancel", "refused"); assert.equal(tip(), beforeCancel);
+  if (retainNativeMatrices) {
+    card = await start("cancel");
+    const beforeCancel = tip();
+    await card.getByRole("button", { name: "Cancel", exact: true }).focus();
+    await page.keyboard.press("Escape");
+    await finish("cancel", "refused"); assert.equal(tip(), beforeCancel);
+  }
+  // Reduced inputs compose actual public Card/hook Escape + ordinary RPC
+  // cancelled:true/null + both exact native own-Cancel/origin owners. Keep
+  // each original native Ask/Decline/reconnect, Stop, Allow and Large subject;
+  // Stop overwrites BOTH omitted dirty candidate files before its operation.
 
   // An unrelated repository uses its own Ask/check settings, never the caller's Deny.
   const foreign = `${repo}-foreign`;

@@ -29,6 +29,7 @@ function loadProductionGraph() {
     return { useAgentSession, I18nProvider, AgentEventConnection, ...drafts, receipts, operations, questionDrafts,
       loadComposer: () => jiti.import("../components/ChatInput.tsx"),
       loadQuestionSet: () => jiti.import("../components/QuestionSetDialog.tsx"),
+      loadPluginRequest: () => jiti.import("../components/BlockingRequestCard.tsx"),
       loadNativeControl: () => jiti.import("../components/session-tools-session.fixture.tsx"),
       loadDefault: () => jiti.import("../components/ChatWindow.tsx"),
       loadNavigation: async () => ({ ...await jiti.import("../components/navigation-composition.fixture.tsx"),
@@ -60,7 +61,7 @@ export const command = type => request => request.method === "POST" && request.b
 export const detail = request => request.method === "GET" && /^\/api\/sessions\/[^/]+$/.test(request.path);
 export const models = request => request.path === "/api/models";
 
-function Probe({ subject, options, capture, composer, composerDraftKey, ownComposer, composerRef, viewport, questionSet, observeSubmission, NativeControl, ownControl, nativePeer, modelControls }) {
+function Probe({ subject, options, capture, composer, composerDraftKey, ownComposer, composerRef, viewport, questionSet, observeSubmission, PluginRequest, NativeControl, ownControl, nativePeer, modelControls }) {
   const { useAgentSession } = subject;
   const value = useAgentSession(options);
   capture(value);
@@ -73,6 +74,13 @@ function Probe({ subject, options, capture, composer, composerDraftKey, ownCompo
       key: value.extensionDialog.id, request: value.extensionDialog,
       sessionId: options.session?.id ?? '', onRespond: value.respondToExtensionUi,
       onSubmissionWork: observeSubmission,
+    }));
+  if (PluginRequest) return createElement('div', null, output,
+    value.extensionDialog?.method === 'plugin_card' && createElement(PluginRequest, {
+      key: value.extensionDialog.id, request: value.extensionDialog, sessionId: options.session?.id,
+      // Same real hook return, arguments and ORIGINAL promise. The observer
+      // adds no response/default/abort policy and survives card unmount.
+      onRespond: (...args) => ownControl('actual plugin response', value.respondToExtensionUi(...args)),
     }));
   if (NativeControl) {
     const control = createElement(NativeControl, { value, options, onWork: ownControl });
@@ -128,10 +136,10 @@ function CreatedSessionReceiver(props) {
 }
 
 export async function sessionFixture(t, { preset = "configured", policyTime = null, composer = false, mobile = false, viewport = false,
-  questionSets = false, nativeControl = false, nativeMetadata, nativeDefault, nativePeerSessionId = null, modelControls = false,
+  questionSets = false, pluginCards = false, nativeControl = false, nativeMetadata, nativeDefault, nativePeerSessionId = null, modelControls = false,
   fixtureProvider = provider, modelIds = ["A", "B", "canonical", "old"], modelRefs = null, savedSessionId = null, fixtureCwd = null,
   observeProduction = null, ownGraceTimers = false, defaultChat = false, receiveCreatedSession = false, clipboard = null,
-  defaultComposition = null, navigationRoute = null, compositionOwners = [],
+  defaultComposition = null, navigationRoute = null, compositionOwners = [], plainUiCancellationIds = [],
   numeric = { height: 2000, client: 600 },
 } = {}) {
   // Transport vocabulary only: preserve legacy literal identities without copying hook policy.
@@ -191,7 +199,7 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
     viewPending.add(entry.settled);
   }
   let DefaultChat, NavigationGraph, realmWindow, composedOptions, compositionReleased = false;
-  let Composer, QuestionSet, NativeControl, composerOperation, mountedOptions, leafChange;
+  let Composer, QuestionSet, PluginRequest, NativeControl, composerOperation, mountedOptions, leafChange;
   const controlWorks = [];
   const submissionWorks = [], submissionWaiters = [];
   const observeSubmission = work => {
@@ -454,7 +462,13 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
             assert.notEqual(Object.hasOwn(request.body, "answers"), Object.hasOwn(request.body, "cancelled"));
             if (Object.hasOwn(request.body, "answers")) assert.ok(Array.isArray(request.body.answers));
             else assert.equal(request.body.cancelled, true);
-            assert.ok(request.signal instanceof AbortSignal, "batch acknowledgement owns a deadline signal");
+            if (plainUiCancellationIds.includes(request.body.id)) {
+              // Explicit real public non-batch cancellation capability only;
+              // ordinary/batch callers retain their original signal guard.
+              assert.equal(pluginCards, true, "explicit actual inline-plugin caller capability only");
+              assert.deepEqual(request.body, { type: "extension_ui_response", id: request.body.id, cancelled: true });
+              assert.equal(request.signal, undefined, "ordinary plugin response is not a batch deadline or Stop");
+            } else assert.ok(request.signal instanceof AbortSignal, "batch acknowledgement owns a deadline signal");
             break;
           }
           case "set_model": keys(request.body, ["type", "provider", "modelId"], ["type", "provider", "modelId"]); choice(request.body); break;
@@ -896,6 +910,10 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
     afterSettlement(finalize) { observationFinalizers.push(finalize); } });
   if (composer || modelControls) ({ ChatInput: Composer } = await subject.loadComposer());
   if (questionSets) ({ QuestionSetDialog: QuestionSet } = await subject.loadQuestionSet());
+  if (pluginCards) {
+    assert.equal(defaultChat || questionSets || nativeControl || composer || modelControls, false, "one existing Probe caller port per realm");
+    ({ BlockingRequestCard: PluginRequest } = await subject.loadPluginRequest());
+  }
   if (nativeControl) ({ SessionToolsSession: NativeControl } = await subject.loadNativeControl());
   if (defaultChat) ({ ChatWindow: DefaultChat } = await subject.loadDefault());
   if (defaultComposition) {
@@ -1022,7 +1040,7 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
         ? defaultComposition ? defaultComposition(renderDefault) : renderDefault()
         : createElement(receiveCreatedSession ? CreatedSessionReceiver : Probe, {
         subject, key, options: hookOptions, composer: Composer, composerDraftKey: options.composerDraftKey, composerRef, viewport,
-        questionSet: QuestionSet, observeSubmission, NativeControl, modelControls,
+        questionSet: QuestionSet, observeSubmission, PluginRequest, NativeControl, modelControls,
         nativePeer: nativePeerSessionId ? {
           options: api.existingOptions(nativePeerSessionId),
           capture(value) {

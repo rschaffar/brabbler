@@ -106,7 +106,7 @@ contracts. See [reflection](2026-10-23_complete-test-ownership-reflection.md) an
 | B3 | Thinking, Tool and Web finite gates closed | Current normal, meaningful original-work failures, restoration, independent review and actual installed work retirement qualify these named slices. Tool's false-green catch/font masking and composer's concrete native removal-order bug were corrected without product-policy changes. Existing Web authored schedule executes strict actual P/E/full-work/cleanup/phase/next-mount vector; no stopped delegate restarted or new source-only packet. Exact native version port reused and LM duplicate removed under fresh v7 receipts. SAME errors, work/ACK/native settlement and unforced limits remain distinct. |
 | B4 | Finite native composer remedy/composite03 deletion closed | Exact guards/lower68/312/six semantic defects reused, not rediscovered. Initial native failure retained and concrete Playwright auto-continue ordering fixed; source-only review was not native admission. Current normal and restored BOTH profiles pass; original native V1/V2 pass strict SAME-reference phase/cause-tree assertions then rethrow intended failures, with private owning metadata and zero normal completions. Current normal rejects private/superseded IDs before callbacks. P1/e32/imported native helper/overflow preserved; no failed-native-phase or universal-idle claim. |
 | B5 | Finite Navigation optional-port/lower/native branch cut closed | Current26 normal, all3 meaningful actual producer faults, exact reused60/814 restored impact, current149 protocol and original native body/UI+raw/UI strict controls/normal/restoration qualify this slice. Original current11-case prefix including held Copy remains exact. Desktop context-gate replay removed; AppShell saved-key native caller remains. SDK context read versus inert controlled agent reply, native body/ACK versus lower full hook promise, and after-success versus actual native-failure limits remain explicit. |
-| B6 | Both live-reader data tuples and selected-policy cancellation closed; own Cancel/Allow/history/45-file remainder open | ED126/native/restored/strict original-work controls qualify its replay; added original390 lower tuple +two390-only meaningful defects/current127/both-v5 restoration qualify mobile cached replay, retaining BOTH original inline drawer subjects. Native02 + actual default-RPC/hook receiving phases and five defects/current234/both-v4 qualify B-P composition. Physical cold/native subjects and shared HEAD/order remain. Native45/default46-entry picker/session/history conjunctions remain unexecuted/unadopted; pair future owners with retirement. No new census, SDK fixture, similar-text subject substitution or blanket journey KEEP. |
+| B6 | Both live-reader data tuples, selected-policy cancellation and finite own Cancel closed; Allow/history/45-file remainder open | Prior ED/mobile reader and B-P evidence remain unchanged. Own Cancel adds original selected-file/mode/native live-null/builtin-Ask own-session/full-origin/no-effect rows, actual inline public Card→real hook SAME callback promise, and actual normal RPC cancelled-response→null receiver (not abort default). Nine meaningful producer controls plus two controlled FETCH failures after real root unmount qualify both input replays; first wrong abort-default mutant survived and first JSON/hook-catch oracle failed, both retained/uncredited with concrete phase corrections. Current64/859/2suites and both fresh v6 native receipts pass on the same eight runtime bytes. Only ownCancel prompt/card/keyboard/finish/dirty-write replay retires; original Ask/Decline/reconnect, Stop, Allow/Large commits/current subjects/history/order remain. Native fixture branch/OID/session are not installed authority; compositional native bridges remain independent. Native45/default46-entry picker/session/history additions remain unexecuted/unadopted. `R/resumed-implementation/git-own-cancel-{controls-qualified,browser-binding,browser-result}.json`. No new SDK/platform/production seam/policy or blanket KEEP. |
 | B7 | Finite Toolbar and New/public-caller restoration transfers qualified; final coherent acceptance remains WP3 | Toolbar checkpoint above plus adopted four-way actual navigation/Sidebar/chat binding and a SINGLE same-realm real default ChatWindow public eager-persistence→ensure→hook-created row→real navigation→ChatInput receiver. Five actual producer primitives qualify; initial unadmitted-stream control was stopped/retained/uncredited and oracle repaired before a complete 8/1 semantic RED. Current63/833/2suites GREEN and all3 native receipts GREEN on the same pinned source qualify ONLY duplicate mobile Starred→New ceremony retirement. First original Activity→New native source/destination/returned ID/empty context/non-inert input/backdrop/source restoration and all3 held initial-URL receivers remain. Full helper preserves both ceremonies; no fake created row, source-chat lower mount, input-triggered creation, Version-continuation/global-idle/native-IO-failure or NET claim. `R/resumed-implementation/activity-restore-{controls-qualified,browser-binding,browser-result}.json`. |
 | B8 | Current early whole correctness passes; core execution alone blocks ceiling | Fresh all4/4 **398.058s**; core file execution **388.662s**, excluding2.513s pre-file setup and0.367s afterward. No browser-only cut removes that floor. Final settled acceptance, matched NET and Panel median remain open. User selected finishing WP2 first; no deferred core/RPC/cache work is authorized. |
 
@@ -224,6 +224,22 @@ Use independent review for changed risk, not an automatic second packet pipeline
     BOTH inline-mobile drawer selection/close ceremonies remain on the original
     native subject; no Large stand-in, shared-HEAD change or historical closure.
     `R/resumed-implementation/git-mobile-reader-browser-result.json`.
+  - [x] **Own manual Cancel (finite B6):** actual inline public Card/real hook
+    original response plus ordinary RPC cancelled:true→null while signal stays
+    live, native selected-file/mode/builtin-Ask/session/full-origin/no-effect rows.
+    Nine actual producer REDs, both controlled FETCH E/SAME hook-catch/full callback
+    after real root unmount, current64/859/2suites GREEN142s and both fresh native
+    v6 GREEN54s/capsule39.790s on SAME pinned8 bytes qualify two original replay
+    removals. Wrong abort-default mutant22GREEN and first JSON/hook-catch oracle
+    are retained/uncredited; source `sendAgentCommand` JSON fallback is unchanged.
+    No new SDK/session/platform/production seam, error filter/deadline or native
+    failed-IO/whole-DefaultWindow/PEC/global-idle/NET claim. Native Ask/Decline/
+    reconnect/Stop/Allow/Large and cross-profile commit/tree/history order remain.
+    Core: 35.674s pre-lifecycle, 101.457s lifecycle, .144s after runner; wall includes
+    realization. Native: 4.342s support, 5.005s definitions, 39.790s capsule.
+    `/tmp/pi-web-test-core.s8msoH/run.json`, `/tmp/pi-web-test-browser.VMr9zF/run.json`;
+    pinned `/nix/store/hmhjjiqld4a52kijjvxrl7br3y4r3i1y-source`.
+    `R/resumed-implementation/git-own-cancel-browser-result.json`.
   - [x] **Activity Toolbar (finite B7 subset):** actual family/badge helper plus
     original genuine native S family/current registry/full body/default Toolbar
     bridge, two helper faults and actual AppShell count-forwarding semantic fault
@@ -247,8 +263,8 @@ Use independent review for changed risk, not an automatic second packet pipeline
     `R/resumed-implementation/activity-restore-browser-result.json`;
     `/tmp/pi-web-test-core.ItexJK/run.json`, `/tmp/pi-web-test-browser.1sfBM1/run.json`;
     pinned `/nix/store/sk7gkc2qgnbvvyyhh2m1qvgy1nld0ly1-source`.
-  - [ ] **Next active slice — remaining Git (B6):** reuse delivered own
-    Cancel/Allow/history/large maps/reviews, close only named remaining gates,
+  - [ ] **Next active slice — remaining Git (B6):** reuse delivered
+    Allow/history/large maps/reviews, close only named remaining gates,
     and retire corresponding browser work. No new census, stopped author restart
     or core/RPC/cache optimization tangent.
 - [ ] **WP3 — whole feedback and closure (B8).** **Early checkpoint executed; correctness passed, ceiling failed; user selected WP2 first.** At the first coherent candidate,

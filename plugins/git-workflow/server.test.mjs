@@ -743,3 +743,134 @@ test("original foreign Ask/PWD approval and selected Deny cancellation preserve 
   if (errors.length === 1) throw errors[0];
   if (errors.length) throw new AggregateError(errors, 'Original selected Ask/check/cancellation conjunction failed');
 });
+
+// Own Cancel is a null UI result with a LIVE signal, not Reject, policy abort
+// or Stop. Exact selected-file inputs are native operations in the existing
+// fixture; its OIDs/session IDs never substitute for installed SDK authority.
+test('original own Cancel keeps its live signal, builtin Ask session origin and complete native state', async () => {
+  const { readPluginSettings } = await jiti.import('../../lib/plugins/settings.ts');
+  const repo = fixture('-own-cancel');
+  const errors = [], receipts = [];
+  const remember = error => { if (!errors.includes(error)) errors.push(error); };
+  const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const files = ['draft.txt', 'second-draft.txt'];
+  const writeCandidate = mode => {
+    const lines = Array.from({ length: 5000 }, (_, index) => `Plugin context ${index + 1}\n`);
+    lines[49] = `Plugin whole-file candidate ${mode}\n`;
+    lines[4499] = `Plugin distant candidate ${mode}\n`;
+    writeFileSync(join(repo, files[0]), lines.join(''));
+    writeFileSync(join(repo, files[1]), `Second plugin candidate ${mode}\n`);
+    return { action: 'commit', checkout: repo, mode: 'files', files, message: `Plugin browser commit ${mode}` };
+  };
+  const state = () => {
+    // Complete our own status refresh BEFORE reading the raw index snapshot.
+    const status = git(repo, 'status', '--porcelain');
+    return { head: git(repo, 'rev-parse', 'HEAD'), status,
+      index: readFileSync(git(repo, 'rev-parse', '--path-format=absolute', '--git-path', 'index')),
+      files: files.map(file => readFileSync(join(repo, file))),
+      unrelated: ['a', 'b'].map(file => readFileSync(join(repo, file))) };
+  };
+  let pending;
+  try {
+    for (const width of [1280, 390]) {
+      const session = { id: `own-cancel-${width}`, cwd: repo };
+      // Explicit selected-file preimage setup, not a rewrite of fixture() or
+      // the installed cross-profile HEAD/tree/Allow/Large history.
+      writeCandidate(`reconnect-${width}`);
+      git(repo, 'add', '--', ...files);
+      git(repo, 'commit', '-m', `Native own Cancel preimage ${width}`);
+      const mode = `cancel-${width}`, op = writeCandidate(mode);
+      const global = readPluginSettings(gitWorkflowManifest, repo).global;
+      updatePluginSettings(gitWorkflowManifest, 'global', repo,
+        { enabled: true, targetBranch: 'target' }, Object.keys(global).filter(key => !['enabled', 'targetBranch'].includes(key)), undefined, session);
+      updatePluginSettings(gitWorkflowManifest, 'session', repo,
+        gitWorkflowManifest.presets['always-ask'].values, [], undefined, session);
+      updatePluginSettings(gitWorkflowManifest, 'session', repo, {}, ['commit'], undefined, session);
+      const origin = readPluginSettings(gitWorkflowManifest, repo, undefined, session);
+      const sessionValues = { ...gitWorkflowManifest.presets['always-ask'].values };
+      delete sessionValues.commit;
+      assert.equal(origin.sessionId, session.id);
+      assert.equal(origin.sessionProject, git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
+      assert.equal(origin.project, origin.sessionProject);
+      assert.equal(origin.sessionApplicable, true, 'own Cancel carries the actual own session project');
+      assert.deepEqual(origin.global, { enabled: true, targetBranch: 'target' });
+      assert.deepEqual(origin.overrides, {});
+      assert.deepEqual(origin.sessionOverrides, sessionValues);
+      assert.equal(origin.effective.commit, 'ask');
+      assert.equal(origin.sources.commit, 'builtin', 'original UI resets session commit to builtin, not fixture-global Ask');
+      assert.deepEqual(origin.effective.commitChecks, []);
+      assert.equal(origin.sources.commitChecks, 'builtin');
+      assert.equal(origin.sources.mergeChecks, 'builtin');
+      assert.equal(origin.sources.enabled, 'global');
+      assert.equal(origin.sources.targetBranch, 'global');
+      for (const key of Object.keys(sessionValues)) assert.equal(origin.sources[key], 'session');
+      const before = state(), from = receipts.length;
+      let suppliedCard, suppliedSignal, callbacks = 0;
+      pending = executeGitOperation(repo, op, {
+        operationReceipt(id, receipt) {
+          try { assert.equal(id, 'git-workflow'); receipts.push(snapshotOperationReceipt(id, receipt, receipts.length + 1)); }
+          catch (error) { remember(error); throw error; }
+        },
+        async pluginCard(id, card, signal) {
+          try {
+            callbacks++; suppliedCard = card; suppliedSignal = signal;
+            assert.equal(id, 'git-workflow');
+            assert.equal(signal.aborted, false, 'manual own Cancel begins with a live policy signal');
+            assert.equal(card.fields.find(field => field.label === 'Checkout').value, repo);
+            assert.equal(card.fields.find(field => field.label === 'Branch').value, 'main');
+            assert.equal(card.sections.find(section => section.title === 'Commit message').text, op.message);
+            assert.equal(card.sections.some(section => section.title === 'Required checks'), false);
+            assert.equal(card.review.operationId, card.operationId);
+            assert.equal(card.review.entries, 3);
+            const exact = JSON.parse((await reviewPreview(card.review, await reviewEntry(card.review, 0))).text);
+            assert.deepEqual(exact.operation, op);
+            assert.equal(exact.presentation.operationId, card.operationId);
+            assert.deepEqual(exact.presentation.fields, card.fields);
+            assert.equal(exact.comparison.before, before.head);
+            assert.equal(receipts[from].authorization.revision, digest(origin), 'own Cancel receipt retains the complete own-session origin');
+            const draftPatch = (await reviewPreview(card.review, await reviewEntry(card.review, 1))).text;
+            const secondPatch = (await reviewPreview(card.review, await reviewEntry(card.review, 2))).text;
+            assert.equal(draftPatch.includes(`-Plugin whole-file candidate reconnect-${width}\n`), true);
+            assert.equal(draftPatch.includes(`+Plugin whole-file candidate ${mode}\n`), true);
+            assert.equal(draftPatch.includes(`-Plugin distant candidate reconnect-${width}\n`), true);
+            assert.equal(draftPatch.includes(`+Plugin distant candidate ${mode}\n`), true);
+            assert.equal(secondPatch.includes(`+Second plugin candidate ${mode}\n`), true);
+            assert.equal(git(repo, 'show', `${before.head}:draft.txt`).split('\n').length, 5000);
+            assert.equal(signal.aborted, false, 'no settings write or outer Stop fabricates Cancel');
+            return null;
+          } catch (error) { remember(error); throw error; }
+        },
+      }, undefined, session);
+      const result = await pending; pending = undefined;
+      if (errors.length) throw errors[0];
+      assert.equal(callbacks, 1);
+      assert.equal(suppliedSignal.aborted, false, 'manual own Cancel settles without aborting its signal');
+      failed(result, /not approved/);
+      assert.equal(result.details.completed, false);
+      assert.equal(result.details.checksStarted, false);
+      assert.equal(result.details.effectStarted, false);
+      assert.deepEqual(result.details.effects, []);
+      assert.deepEqual(state(), before, 'manual own Cancel preserves HEAD, RAW index, both candidate files and unrelated files');
+      const current = receipts.slice(from);
+      assert.deepEqual(current.map(receipt => receipt.phase), ['prepared', 'cancelled']);
+      assert.equal(result.details.operationId, suppliedCard.operationId);
+      assert.equal(current.at(-1).authorization.mode, 'ask');
+      assert.equal(current.at(-1).authorization.source, 'builtin');
+      assert.equal(current.at(-1).authorization.decision, 'not-approved');
+      for (const receipt of current) {
+        assert.equal(receipt.operationId, suppliedCard.operationId);
+        assert.equal(receipt.card.review.id, suppliedCard.review.id);
+        assert.equal(receipt.card.review.operationId, suppliedCard.operationId);
+        assert.equal(receipt.authorization.revision, digest(origin));
+        assert.equal(receipt.effectStarted, false);
+      }
+    }
+  } catch (error) { remember(error); }
+  finally {
+    // Join the actual executor after EVERY callback/body/receipt failure before
+    // retaining SAME original errors; no ACK/null result as a native idle probe.
+    if (pending) { try { await pending; } catch (error) { remember(error); } }
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length) throw new AggregateError(errors, 'Original own Cancel/native origin and settlement failed');
+});
