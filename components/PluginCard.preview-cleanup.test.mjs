@@ -2,7 +2,7 @@ import '../lib/testing/client-native-boundary.fixture.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { act, createElement } from 'react';
-import { packet, click, textButton } from './cards-git.fixture.mjs';
+import { packet, click, input, textButton } from './cards-git.fixture.mjs';
 
 const patch = 'diff --git a/notes.txt b/notes.txt\nindex 4824a54..d914290 100644\n--- a/notes.txt\n+++ b/notes.txt\n@@ -1 +1 @@\n-Old text\n+New text\n';
 const top = ['node_modules', '.codegraph', '.next', 'test-results', 'next-env.d.ts'];
@@ -283,6 +283,220 @@ test('seven generic card tuples join original valid descendant work and preserve
     assert.equal(loaderDone, true);
     await join(from); assert.equal(h.view.container.childNodes.length, 0);
     phase('context-abort:end');
+  }
+
+  // Exact original desktop live-reader conjunction. Same physical realm and
+  // existing review/opaque-context HTTP capability; no second Pierre/cache fake.
+  {
+    phase('reader-parent:begin');
+    release();
+    const pierre = await import('@pierre/diffs');
+    const setups = [];
+    const setup = pierre.CodeView.prototype.setup;
+    t.mock.method(pierre.CodeView.prototype, 'setup', function (...args) {
+      const value = setup.apply(this, args);
+      setups.push({ instance: this, container: this.getContainerElement() });
+      return value;
+    });
+    const width = 1280, requestStart = h.requests.length;
+    const oldLines = Array.from({ length: 5000 }, (_, index) => `Plugin context ${index + 1}\n`);
+    const newLines = [...oldLines];
+    newLines[49] = `Plugin whole-file candidate reconnect-${width}\n`;
+    newLines[4499] = `Plugin distant candidate reconnect-${width}\n`;
+    const firstPatch = `diff --git a/draft.txt b/draft.txt\nindex 4824a54..d914290 100644\n--- a/draft.txt\n+++ b/draft.txt\n@@ -47,7 +47,7 @@\n Plugin context 47\n Plugin context 48\n Plugin context 49\n-Plugin context 50\n+Plugin whole-file candidate reconnect-${width}\n Plugin context 51\n Plugin context 52\n Plugin context 53\n@@ -4497,7 +4497,7 @@\n Plugin context 4497\n Plugin context 4498\n Plugin context 4499\n-Plugin context 4500\n+Plugin distant candidate reconnect-${width}\n Plugin context 4501\n Plugin context 4502\n Plugin context 4503\n`;
+    // Only this second file's selected/unselected renderer and default context
+    // state are transferred. Its native old bytes/hash remain installed proof.
+    const secondPatch = `diff --git a/second-draft.txt b/second-draft.txt\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/second-draft.txt\n@@ -0,0 +1 @@\n+Second plugin candidate reconnect-${width}\n`;
+    const supplied = firstPatch + secondPatch;
+    // Controlled immutable body for this block, NOT native handle authority.
+    const snapshot = {
+      oldFile: { name: 'draft.txt', contents: oldLines.join(''), cacheKey: 'reader-immutable-before' },
+      newFile: { name: 'draft.txt', contents: newLines.join(''), cacheKey: 'reader-immutable-proposed' },
+    };
+    const originalRequest = { ...requestFor('reconnect-parent', 'Git commit'), operationId,
+      patchBefore: 'HEAD', patchAfter: 'Candidate',
+      review: { ...review, entries: 3, bytes: Buffer.byteLength(supplied) + metadata.bytes },
+      actions: [{ id: 'reject', label: 'Reject' }, { id: 'approve', label: 'Approve commit', primary: true }] };
+    const serialized = JSON.stringify(originalRequest);
+    const pageData = { entries: [metadata,
+      { ...patchEntry, label: 'a/draft.txt b/draft.txt', bytes: Buffer.byteLength(firstPatch) },
+      { ...patchEntry, id: 2, label: 'a/second-draft.txt b/second-draft.txt', bytes: Buffer.byteLength(secondPatch) }], total: 3, next: null };
+    const first = () => h.view.container.querySelector('[aria-label="File changes: draft.txt"]');
+    const control = name => first().querySelector(`[aria-label="${name}"]`);
+    const namedFile = path => [...h.view.container.querySelectorAll('button')].find(button =>
+      (button.getAttribute('aria-label') ?? button.textContent.trim()) === `Open diff: ${path}`);
+    const contextReads = () => h.requests.slice(requestStart).filter(read => read.url.pathname === '/api/plugins/bundled/git-workflow/patch-context');
+    const bindFrames = async () => {
+      // Actual navigate schedules two nested frames; CodeView.scrollTo then
+      // queues Pierre's render frame. Deliver that admitted renderer callback,
+      // not a guessed idle loop or a clock/deadline advance.
+      await h.frames.fire(h.frames.take());
+      await h.frames.fire(h.frames.take());
+      await h.frames.fire(h.frames.take());
+    };
+    const reader = () => {
+      const container = first().querySelector('.git-diff-code-view');
+      assert.equal(Boolean(container), true, 'actual parent selected CodeView exists');
+      const record = setups.findLast(item => item.container === container);
+      assert.equal(Boolean(record), true, 'actual public CodeView owns this selected renderer');
+      const item = record.instance.getRenderedItems()[0];
+      assert.equal(Boolean(item?.element.shadowRoot), true, 'actual Pierre shadow renderer, not raw fallback');
+      return { ...record, item };
+    };
+    const expectLine = (number, text) => {
+      const current = reader(), root = current.item.element.shadowRoot;
+      const targets = [...root.querySelectorAll(`[data-line="${number}"]`)];
+      const row = targets.find(element => element.textContent.trimEnd() === text);
+      if (!row) {
+        const lines = [...root.querySelectorAll('[data-line]')];
+        const describe = rows => rows.map(element => [element.getAttribute('data-line'), element.textContent.slice(0, 100)]);
+        phase(`reader-row-mismatch:${JSON.stringify({ number, text, targets: describe(targets),
+          head: describe(lines.slice(0, 3)), tail: describe(lines.slice(-3)),
+          scrollTop: current.container.scrollTop, clientHeight: current.container.clientHeight,
+          queuedFrames: h.frames.take() })}`);
+      }
+      assert.equal(Boolean(row), true, `actual selected renderer line ${number}`);
+    };
+    const jump = async (number, text) => {
+      const from = h.work.length;
+      await input(h.view, control('Line number'), String(number));
+      await click(h.view, textButton(first(), 'Go to line'));
+      release(); await join(from); await bindFrames();
+      expectLine(number, text);
+    };
+    const mountInline = async (request, respond) => {
+      const from = h.requests.length, workFrom = h.work.length;
+      await render(request, respond);
+      const reads = h.requests.slice(from);
+      assert.equal(reads.length, 4, 'same original inline StrictMode page/patch replay');
+      const page = await replayPair([reads[0], reads[2]], 'start=0', pageData);
+      const patchRead = await replayPair([reads[1], reads[3]], 'patch=1', supplied);
+      await body(page, pageData); await body(patchRead, supplied);
+      release(); await join(workFrom); await bindFrames();
+      assert.equal(Boolean(first()), true);
+    };
+    const showFull = async (transport = true) => {
+      const from = h.work.length, count = contextReads().length;
+      await click(h.view, textButton(first(), 'Show full file'));
+      assert.equal(contextReads().length, count + Number(transport));
+      if (transport) {
+        const read = contextReads().at(-1);
+        assert.equal(read.url.href, 'https://fixture.invalid/api/plugins/bundled/git-workflow/patch-context?handle=captured-context&file=0');
+        await body(read, snapshot);
+        assert.equal(read.bodyCalls, 1);
+      }
+      release(); await join(from); await bindFrames();
+    };
+    const start = h.work.length, responses = [];
+    await mountInline(originalRequest, responses);
+    await click(h.view, textButton(h.view.container, 'Side by side'));
+    assert.equal(contextReads().length, 0, 'parent patch/read controls never eagerly load context');
+    await showFull();
+    await jump(2500, 'Plugin context 2500');
+    await click(h.view, textButton(first(), 'Diff context'));
+    await click(h.view, textButton(h.view.container, 'Unified'));
+    await showFull(false); // real parent cache, no second transport read
+    await jump(2500, 'Plugin context 2500');
+    await click(h.view, textButton(first(), 'Before')); release(); await join(start); await bindFrames();
+    await jump(50, 'Plugin context 50'); await jump(4500, 'Plugin context 4500');
+    await click(h.view, textButton(first(), 'After')); release(); await join(start); await bindFrames();
+    await jump(50, 'Plugin whole-file candidate reconnect-1280');
+    await jump(4500, 'Plugin distant candidate reconnect-1280');
+    await input(h.view, control('Search full file'), 'plugin context 2500');
+    await click(h.view, control('Next match')); release(); await join(start); await bindFrames();
+    expectLine(2500, 'Plugin context 2500');
+    assert.equal(first().textContent.includes('1/1 matches'), true);
+    // Browser scrollTo notifies scroll listeners after rendering. The fixture's
+    // jsdom shim only assigns scrollTop; deliver that real DOM notification so
+    // the actual parent records its own numeric anchor before renderer unmount.
+    await h.view.dispatch(reader().container, new h.view.window.Event('scroll'));
+    await bindFrames();
+    const oldRenderer = reader().instance;
+    await click(h.view, namedFile('second-draft.txt'));
+    release(); await join(start); await bindFrames();
+    assert.equal(first() === null, true, 'selecting second file actually unmounts first renderer');
+    await click(h.view, h.view.container.querySelector('[aria-label="Previous file"]'));
+    release(); await join(start); await bindFrames();
+    assert.equal(reader().instance !== oldRenderer, true, 'actual renderer was recreated, not hidden or copied');
+    assert.equal(textButton(first(), 'After').getAttribute('aria-pressed'), 'true');
+    assert.equal(control('Search full file').value, 'plugin context 2500');
+    expectLine(2500, 'Plugin context 2500');
+    assert.equal(contextReads().length, 1, 'parent retains the requested immutable context across renderer unmount');
+    await click(h.view, textButton(first(), 'Changes')); release(); await join(start); await bindFrames();
+    assert.equal(textButton(first(), 'Diff context').getAttribute('aria-pressed'), 'true');
+    await click(h.view, h.view.container.querySelector('[aria-label="Next file"]'));
+    release(); await join(start); await bindFrames();
+    const second = h.view.container.querySelector('[aria-label="File changes: second-draft.txt"]');
+    assert.equal(Boolean(second), true);
+    assert.equal(textButton(second, 'Show full file').getAttribute('aria-pressed'), 'false', 'per-file full state cannot leak');
+    await click(h.view, namedFile('draft.txt'));
+    release(); await join(start); await bindFrames();
+    assert.equal(Boolean(first().querySelector('[aria-label="Unified diff"]')), true);
+    await click(h.view, h.view.container.querySelector('[aria-label="Collapse"]'));
+    await click(h.view, h.view.container.querySelector('.blocking-card-collapsed'));
+    release(); await join(start); await bindFrames();
+    assert.equal(Boolean(first().querySelector('[aria-label="Unified diff"]')), true);
+    assert.equal(contextReads().length, 1, 'card collapse cannot admit another snapshot read');
+    await click(h.view, textButton(first(), 'Before')); release(); await join(start); await bindFrames();
+    await jump(50, 'Plugin context 50');
+    await click(h.view, textButton(first(), 'After')); release(); await join(start); await bindFrames();
+    assert.equal(control('Search full file').value, 'plugin context 2500');
+    assert.equal(contextReads().length, 1, 'real collapse/reopen retains full context, not only a partial patch');
+    assert.equal(responses.length, 0, 'all parent reading controls are display-only');
+
+    // Real whole-parent unmount, followed by the same serialized request/source.
+    // This is component reload wiring; installed document/history reload stays.
+    await unmount(); release(); await join(start);
+    const restored = JSON.parse(serialized);
+    assert.deepEqual(restored, originalRequest);
+    await mountInline(restored, responses);
+    assert.equal(contextReads().length, 1, 'fresh parent remains lazy, not prehydrated');
+    await click(h.view, textButton(h.view.container, 'Side by side'));
+    await showFull();
+    await click(h.view, textButton(first(), 'Before')); release(); await join(start); await bindFrames();
+    await jump(50, 'Plugin context 50');
+    await click(h.view, textButton(first(), 'After')); release(); await join(start); await bindFrames();
+    await jump(50, 'Plugin whole-file candidate reconnect-1280');
+    assert.equal(contextReads().length, 2);
+    assert.equal(contextReads()[1].url.href, contextReads()[0].url.href, 'opaque source survives serialized remount');
+
+    await unmount(); release(); await join(start);
+    const expiredRequest = JSON.parse(serialized);
+    await mountInline(expiredRequest, responses);
+    await click(h.view, textButton(h.view.container, 'Side by side'));
+    const expiredBody = { error: 'This context snapshot has expired or the server restarted; the saved patch remains available.' };
+    const from = h.work.length;
+    await click(h.view, textButton(first(), 'Show full file'));
+    const expired = contextReads().at(-1);
+    assert.equal(expired.url.href, contextReads()[0].url.href);
+    await act(async () => { expired.reply(expiredBody, { status: 409 }); });
+    release(); await join(from); await bindFrames();
+    assert.equal(expired.bodyCalls, 1);
+    assert.equal(expired.status, 409);
+    const rejected = h.work.slice(from).filter(entry => entry.error);
+    assert.equal(rejected.length > 0, true, 'original context rejection remains independently owned');
+    const originalError = rejected[0].error;
+    assert.equal(originalError.message, expiredBody.error);
+    for (const entry of rejected) {
+      assert.equal(entry.error, originalError, 'context/action/finally preserve SAME original error');
+      h.expectFailure(entry.error); // ONLY this exact expected 409 cause after full join
+    }
+    assert.equal(first().querySelector('[role="alert"]').textContent.includes(expiredBody.error), true);
+    assert.equal(Boolean(first().querySelector('[aria-label="Side-by-side diff"]')), true);
+    await click(h.view, textButton(h.view.container, 'Raw patch'));
+    assert.equal(first().querySelector('[aria-label="Raw patch"]').textContent, firstPatch);
+    assert.equal(contextReads().length, 3, 'expired opaque context never automatically retries');
+    assert.equal(responses.length, 0, 'error/raw fallback is not authority to answer');
+    const current = { ...expiredRequest, title: 'Git commit current' }, currentResponses = [];
+    await render(current, currentResponses);
+    assert.equal(contextReads().length, 3, 'current callback swap cannot restart accepted work');
+    await click(h.view, textButton(h.view.container, 'Approve commit'));
+    assert.equal(responses.length, 0);
+    assert.equal(currentResponses.length, 1);
+    assert.equal(currentResponses[0][0] === current, true, 'actual response uses current original request, never serialized stale object');
+    assert.deepEqual(currentResponses[0][1], { action: 'approve' });
+    await unmount(); release(); await join(start);
+    phase('reader-parent:end');
   }
   phase('cleanup:begin');
   await h.cleanup(); // releases and full joins; realm restores BEFORE central, host AFTER

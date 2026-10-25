@@ -50,11 +50,10 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   return checkGitWorkflowPluginConnection(page, base, repo, sessionId, artifacts, width, true);
 }
 
-// UNEXECUTED G07/G10 proposal only. Original export retains both full matrices.
-// This alternative still retains the other original native operations at BOTH
-// widths: it is not the final unequal desktop/mobile floor from the audit.
-// Parent must close exact preview/cleanup native + client gates before dispatch,
-// and use new git-plugin/native-review-partial-v1 receipt IDs, never full IDs.
+// Reduced installed connection; the original export retains its full matrices.
+// Each finite transfer versions its dispatched input independently. Both native
+// incarnations retain their cold readers, real operation subjects and authority;
+// desktop reader state is not mobile or historical-context proof.
 export async function checkGitWorkflowPluginNativeBridge(page, base, repo, sessionId, artifacts, width) {
   return checkGitWorkflowPluginConnection(page, base, repo, sessionId, artifacts, width, false);
 }
@@ -213,6 +212,10 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   const beforeDraft = execFileSync("git", ["-C", repo, "show", `${before}:draft.txt`], { encoding: "utf8" });
   const beforeLines = beforeDraft.trimEnd().split("\n");
   assert.equal(beforeLines.length, 5000, "draft.txt must be committed as a 5,000-line context fixture");
+  if (width === 1280) {
+    assert.equal(beforeDraft, Array.from({ length: 5000 }, (_, index) => `Plugin context ${index + 1}\n`).join(""),
+      "the exact original desktop before tuple, not another viewport incarnation");
+  }
   const candidate = `Plugin whole-file candidate reconnect-${width}`;
   const distantCandidate = `Plugin distant candidate reconnect-${width}`;
   page.on("request", recordReviewRequest);
@@ -264,39 +267,43 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     assert.ok(await first.getByRole("region", { name: "Side-by-side diff", exact: true }).locator("[data-line]").count() < 1000,
       "Full-file reading remains virtualized");
     assert.equal(contextReads.length, 1);
-    await first.getByRole("button", { name: "Diff context", exact: true }).click();
-    await card.getByRole("button", { name: "Unified", exact: true }).click();
-    await first.getByRole("button", { name: "Show full file", exact: true }).click();
-    await jumpTo(first, "Unified diff", 2500, "Plugin context 2500");
-    await version(first, "Before").click();
-    await jumpTo(first, "Before file", 50, beforeLines[49]);
-    await jumpTo(first, "Before file", 4500, beforeLines[4499]);
-    await version(first, "After").click();
-    await jumpTo(first, "After file", 50, candidate);
-    await jumpTo(first, "After file", 4500, distantCandidate);
-    await first.getByRole("searchbox", { name: "Search full file", exact: true }).fill("plugin context 2500");
-    await first.getByRole("button", { name: "Next match", exact: true }).click();
-    await expectLine(first, "After file", 2500, "Plugin context 2500");
-    await first.getByText("1/1 matches", { exact: true }).waitFor();
-    await openFile(card, "second-draft.txt");
-    assert.equal(await first.locator(".git-diff-code-view").count(), 0, "Unselected file renderers unmount");
-    await card.getByRole("button", { name: "Previous file", exact: true }).click();
-    assert.equal(await version(first, "After").getAttribute("aria-pressed"), "true");
-    assert.equal(await first.getByRole("searchbox", { name: "Search full file", exact: true }).inputValue(), "plugin context 2500");
-    await expectLine(first, "After file", 2500, "Plugin context 2500");
-    await version(first, "Changes").click();
-    assert.equal(await first.getByRole("button", { name: "Diff context", exact: true }).getAttribute("aria-pressed"), "true");
-    await card.getByRole("button", { name: "Next file", exact: true }).click();
-    await second.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
-    assert.equal(await second.getByRole("button", { name: "Show full file", exact: true }).getAttribute("aria-pressed"), "false",
-      "Showing one full file does not expand another file's context");
-    await openFile(card, "draft.txt");
-    await first.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
-    await first.getByRole("button", { name: "Diff context", exact: true }).waitFor();
-    await card.getByRole("button", { name: "Collapse", exact: true }).click();
-    await page.getByRole("button", { name: /Awaiting response.*Git commit/ }).click();
-    await first.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
-    assert.equal(contextReads.length, 1, "View/version switches, file selection and card collapse reuse only the requested snapshot");
+    // Only the exact original desktop parent tuple moves to the real Card owner.
+    // Both cold native readers and every following physical/history check stay.
+    if (retainNativeMatrices || width !== 1280) {
+      await first.getByRole("button", { name: "Diff context", exact: true }).click();
+      await card.getByRole("button", { name: "Unified", exact: true }).click();
+      await first.getByRole("button", { name: "Show full file", exact: true }).click();
+      await jumpTo(first, "Unified diff", 2500, "Plugin context 2500");
+      await version(first, "Before").click();
+      await jumpTo(first, "Before file", 50, beforeLines[49]);
+      await jumpTo(first, "Before file", 4500, beforeLines[4499]);
+      await version(first, "After").click();
+      await jumpTo(first, "After file", 50, candidate);
+      await jumpTo(first, "After file", 4500, distantCandidate);
+      await first.getByRole("searchbox", { name: "Search full file", exact: true }).fill("plugin context 2500");
+      await first.getByRole("button", { name: "Next match", exact: true }).click();
+      await expectLine(first, "After file", 2500, "Plugin context 2500");
+      await first.getByText("1/1 matches", { exact: true }).waitFor();
+      await openFile(card, "second-draft.txt");
+      assert.equal(await first.locator(".git-diff-code-view").count(), 0, "Unselected file renderers unmount");
+      await card.getByRole("button", { name: "Previous file", exact: true }).click();
+      assert.equal(await version(first, "After").getAttribute("aria-pressed"), "true");
+      assert.equal(await first.getByRole("searchbox", { name: "Search full file", exact: true }).inputValue(), "plugin context 2500");
+      await expectLine(first, "After file", 2500, "Plugin context 2500");
+      await version(first, "Changes").click();
+      assert.equal(await first.getByRole("button", { name: "Diff context", exact: true }).getAttribute("aria-pressed"), "true");
+      await card.getByRole("button", { name: "Next file", exact: true }).click();
+      await second.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
+      assert.equal(await second.getByRole("button", { name: "Show full file", exact: true }).getAttribute("aria-pressed"), "false",
+        "Showing one full file does not expand another file's context");
+      await openFile(card, "draft.txt");
+      await first.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
+      await first.getByRole("button", { name: "Diff context", exact: true }).waitFor();
+      await card.getByRole("button", { name: "Collapse", exact: true }).click();
+      await page.getByRole("button", { name: /Awaiting response.*Git commit/ }).click();
+      await first.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
+      assert.equal(contextReads.length, 1, "View/version switches, file selection and card collapse reuse only the requested snapshot");
+    }
 
     await card.getByRole("button", { name: "Side by side", exact: true }).click();
     const beforeWide = decisions().length;
@@ -666,5 +673,5 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   await card.getByRole("button", { name: "Approve commit", exact: true }).click();
   await finish("large", "completed");
   assert.equal(execFileSync("git", ["-C", repo, "show", "--format=", "--name-only", "HEAD"], { encoding: "utf8" }).trim().split("\n").length, 45);
-  console.log(`PASS: ${width}px durable Ask/Allow outcomes; ${retainNativeMatrices ? "full preview and cleanup matrices" : "conditional partial native-review bridge with historical native download"}; Git approval layouts, lazy snapshot context in split/unified/Before/After, search/navigation/collapse, wide Escape, exact read-only historical context and expired raw fallback, cross-repository settings, installed enable/default, rejection, reconnect and native Stop`);
+  console.log(`PASS: ${width}px durable Ask/Allow outcomes; ${retainNativeMatrices ? "full preview and cleanup matrices" : "conditional partial native-review bridge with historical native download"}; Git approval layouts, ${retainNativeMatrices || width !== 1280 ? "live split/unified/Before/After search/navigation/collapse matrix" : "cold native snapshot/virtualization and mounted-owner desktop reader policy"}, wide Escape, exact read-only historical context and expired raw fallback, cross-repository settings, installed enable/default, rejection, reconnect and native Stop`);
 }

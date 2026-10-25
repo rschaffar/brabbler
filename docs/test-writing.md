@@ -257,6 +257,16 @@ retire old tests or constitute full candidate acceptance.
   native body/finished/raw/e32/ACK/removal ownership; the inert agent reply remains
   controlled, not native SDK-write authority. Node body/ACK settlement is not the
   browser hook's hidden promise or a universal idle signal.
+- `PluginCard.preview-cleanup.test.mjs` drives the actual default card/attachment/
+  stack/Pierre chain for the exact desktop reader tuple: retained per-file model,
+  real renderer destruction/recreation, version/query/position, collapse and lazy
+  serialized-parent remount/409/current response. Deliver the application's two
+  navigation frames and Pierre's admitted render frame; jsdom's scroll shim also
+  needs the actual post-render DOM scroll notification, not a copied anchor.
+  A held transport/loader-finally is not an already-admitted JSON body. Abort and
+  action ACKs can settle before that loader; observe an actual future JSON error
+  before its catch only if consumption really occurs. Both cold installed readers,
+  opaque/native subjects, mobile/history and physical Download remain distinct.
 - `lib/file-line-navigation.test.mjs` uses real isolated DOM trees; the actual
   FileViewer text/media mounts own request/body identities, watcher lifetimes,
   current links and Save races. Workspace mounts add stable hosts and independent
