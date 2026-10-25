@@ -611,3 +611,135 @@ test("FF-only refuses divergence without fallback; conflicts remain explicit", a
     failed(await call(repo, { action, checkout, featureBranch: "feature" }), /Conflicting Git operation/);
   }
 });
+
+// Original cross-approve/cross-cancel conjunction in the EXISTING native repo
+// fixture. No SDK session/model startup and no new fixture/seed implementation.
+test("original foreign Ask/PWD approval and selected Deny cancellation preserve caller, source and both candidate files", async () => {
+  const { readPluginSettings } = await jiti.import('../../lib/plugins/settings.ts');
+  const caller = fixture(), selected = fixture('-foreign');
+  git(selected, 'branch', '-m', 'delivery');
+  const session = { id: '55555555-5555-4555-8555-555555555555', cwd: caller };
+  updatePluginSettings(gitWorkflowManifest, 'session', caller,
+    gitWorkflowManifest.presets['always-ask'].values, [], undefined, session);
+  updatePluginSettings(gitWorkflowManifest, 'global', caller, { targetBranch: 'target' }, [], undefined, session);
+  const checks = [{ name: 'Selected checkout check', command: `test "$PWD" = '${selected}'` }];
+  const callerCheck = [{ name: 'Caller check must not run', command: 'exit 7' }];
+  const errors = [], receipts = [], cards = [];
+  const remember = error => { if (!errors.includes(error)) errors.push(error); };
+  const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const callerState = () => ({ head: git(caller, 'rev-parse', 'HEAD'), index: git(caller, 'write-tree'),
+    status: git(caller, 'status', '--porcelain'), a: readFileSync(join(caller, 'a'), 'utf8'),
+    draft: readFileSync(join(caller, 'draft.txt'), 'utf8'), second: readFileSync(join(caller, 'second-draft.txt'), 'utf8') });
+  // These are operation inputs copied from the existing browser command, NOT
+  // changes to fixture() or to its tracked base/history seeds.
+  const writeCandidate = (checkout, mode) => {
+    const lines = Array.from({ length: 5000 }, (_, index) => `Plugin context ${index + 1}\n`);
+    lines[49] = `Plugin whole-file candidate ${mode}\n`;
+    lines[4499] = `Plugin distant candidate ${mode}\n`;
+    writeFileSync(join(checkout, 'draft.txt'), lines.join(''));
+    writeFileSync(join(checkout, 'second-draft.txt'), `Second plugin candidate ${mode}\n`);
+    return { action: 'commit', checkout, mode: 'files', files: ['draft.txt', 'second-draft.txt'], message: `Plugin browser commit ${mode}` };
+  };
+  let pending;
+  try {
+    for (const width of [1280, 390]) {
+      // Preserve original dirty caller premise and exact candidate write order.
+      change(caller); git(caller, 'add', 'a');
+      writeCandidate(caller, `cancel-${width}`);
+      set(caller, { commit: 'deny', commitChecks: callerCheck });
+      set(selected, { commit: 'ask', commitChecks: checks });
+      const beforeCaller = callerState(), beforeSelected = git(selected, 'rev-parse', 'HEAD');
+      const op = writeCandidate(selected, `cross-approve-${width}`);
+      const origin = readPluginSettings(gitWorkflowManifest, selected, undefined, session);
+      assert.equal(origin.sessionApplicable, false);
+      assert.deepEqual(origin.sessionOverrides, {});
+      assert.equal(origin.effective.commit, 'ask'); assert.equal(origin.sources.commit, 'project');
+      assert.deepEqual(origin.effective.commitChecks, checks);
+      assert.equal(origin.global.targetBranch, 'target');
+      const own = readPluginSettings(gitWorkflowManifest, caller, undefined, session);
+      assert.equal(own.effective.commit, 'deny'); assert.deepEqual(own.effective.commitChecks, callerCheck);
+      const from = receipts.length, cardFrom = cards.length;
+      const ui = {
+        operationReceipt(id, receipt) { receipts.push(snapshotOperationReceipt(id, receipt, receipts.length + 1)); },
+        async pluginCard(id, card, signal) {
+          try {
+            cards.push(card);
+            assert.equal(id, 'git-workflow'); assert.equal(signal.aborted, false);
+            assert.equal(card.fields.find(field => field.label === 'Checkout').value, selected);
+            assert.equal(card.fields.find(field => field.label === 'Branch').value, 'delivery');
+            assert.deepEqual(card.sections.find(section => section.title === 'Required checks').fields,
+              [{ label: checks[0].name, value: checks[0].command, code: true }]);
+            assert.equal(card.sections.find(section => section.title === 'Commit message').text, op.message);
+            assert.equal(card.review.operationId, card.operationId);
+            const entry = await reviewEntry(card.review, 0);
+            const exact = JSON.parse((await reviewPreview(card.review, entry)).text);
+            assert.deepEqual(exact.operation, op);
+            assert.equal(exact.presentation.operationId, card.operationId);
+            assert.equal(exact.comparison.before, beforeSelected);
+            assert.equal(receipts[from].authorization.revision, digest(origin));
+            return 'approve';
+          } catch (error) { remember(error); throw error; }
+        },
+      };
+      pending = executeGitOperation(caller, op, ui, undefined, session);
+      const approvedResult = await pending; pending = undefined;
+      if (errors.length) throw errors[0];
+      success(approvedResult);
+      assert.equal(cards.length, cardFrom + 1);
+      assert.deepEqual(callerState(), beforeCaller);
+      assert.notEqual(git(selected, 'rev-parse', 'HEAD'), beforeSelected);
+      assert.equal(git(selected, 'show', 'HEAD:draft.txt'), readFileSync(join(selected, 'draft.txt'), 'utf8').trimEnd());
+      assert.equal(git(selected, 'show', 'HEAD:second-draft.txt'), `Second plugin candidate cross-approve-${width}`);
+      const terminal = receipts.at(-1), nativeCard = cards.at(-1);
+      assert.equal(terminal.phase, 'succeeded');
+      assert.equal(terminal.operationId, nativeCard.operationId);
+      assert.equal(terminal.card.review.id, nativeCard.review.id);
+      assert.equal(terminal.authorization.mode, 'ask'); assert.equal(terminal.authorization.source, 'project');
+      assert.equal(terminal.authorization.decision, 'user-approved');
+      assert.equal(terminal.authorization.revision, digest(origin));
+
+      const committed = git(selected, 'rev-parse', 'HEAD');
+      const cancelOp = writeCandidate(selected, `cross-cancel-${width}`);
+      const cancelOrigin = readPluginSettings(gitWorkflowManifest, selected, undefined, session);
+      let cancelledCard;
+      pending = executeGitOperation(caller, cancelOp, {
+        operationReceipt(id, receipt) { receipts.push(snapshotOperationReceipt(id, receipt, receipts.length + 1)); },
+        async pluginCard(id, card, signal) {
+          try {
+            cancelledCard = card;
+            assert.equal(id, 'git-workflow'); assert.equal(signal.aborted, false);
+            assert.equal(card.fields.find(field => field.label === 'Checkout').value, selected);
+            assert.deepEqual(card.sections.find(section => section.title === 'Required checks').fields,
+              [{ label: checks[0].name, value: checks[0].command, code: true }]);
+            assert.equal(card.sections.find(section => section.title === 'Commit message').text, cancelOp.message);
+            set(caller, { commit: 'allow' });
+            assert.equal(signal.aborted, false, 'caller Allow does not cancel selected Ask');
+            assert.equal(digest(readPluginSettings(gitWorkflowManifest, selected, undefined, session)), digest(cancelOrigin));
+            set(selected, { commit: 'deny' });
+            assert.equal(signal.aborted, true, 'selected project Deny cancels the ORIGINAL pending request');
+            return null;
+          } catch (error) { remember(error); throw error; }
+        },
+      }, undefined, session);
+      const refused = await pending; pending = undefined;
+      if (errors.length) throw errors[0];
+      failed(refused, /not approved/);
+      assert.equal(refused.details.effectStarted, false); assert.equal(refused.details.checksStarted, false);
+      assert.equal(git(selected, 'rev-parse', 'HEAD'), committed);
+      assert.deepEqual(callerState(), beforeCaller);
+      assert.equal(readFileSync(join(selected, 'second-draft.txt'), 'utf8'), `Second plugin candidate cross-cancel-${width}\n`);
+      assert.equal(receipts.at(-1).operationId, cancelledCard.operationId);
+      assert.equal(receipts.at(-1).card.review.id, cancelledCard.review.id);
+      assert.equal(receipts.at(-1).authorization.revision, digest(cancelOrigin));
+      updatePluginSettings(gitWorkflowManifest, 'project', caller, {}, ['commit', 'commitChecks'], undefined, session);
+      assert.equal(readPluginSettings(gitWorkflowManifest, selected, undefined, session).effective.commit, 'deny');
+    }
+  } catch (error) { remember(error); }
+  finally {
+    // No manually held peers exist here. Await the admitted ORIGINAL executor,
+    // which includes selected checks/native child/reporting and callback work.
+    if (pending) { try { await pending; } catch (error) { remember(error); } }
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length) throw new AggregateError(errors, 'Original selected Ask/check/cancellation conjunction failed');
+});

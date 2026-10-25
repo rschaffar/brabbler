@@ -64,6 +64,29 @@ test("actual receipt SSE deduplicates aligned IDs, rejects malformed entries, an
   assert.equal(f.current.extensionDialog, null); assert.equal(f.current.messages.length, 1);
   await emit(f, { ...saved, id: "malformed", data: { ...saved.data, version: 2 } });
   assert.deepEqual(f.current.entryIds, ["entry"]);
+
+  // Keep the answered-confirm tuple above. The same real Source/hook receiver
+  // must consume the policy-aborted plugin-card closure, without sending an
+  // invented approval/cancellation response back to an already-settled server.
+  const plugin = { type: "extension_ui_request", id: "selected-policy-pending", method: "plugin_card",
+    pluginId: "git-workflow", title: "Git commit", actions: [{ id: "approve", label: "Approve commit" }] };
+  const responses = () => f.requests.filter(command("extension_ui_response"));
+  const responsesBefore = responses().length;
+  await f.event(source(f), plugin); assert.equal(f.current.extensionDialog.id, plugin.id);
+  await f.event(source(f), { type: "extension_ui_closed", id: "another-policy-request" });
+  assert.equal(f.current.extensionDialog.id, plugin.id, "unrelated close cannot clear the current plugin request");
+  await f.event(source(f), { type: "extension_ui_closed", id: plugin.id });
+  assert.equal(f.current.extensionDialog === null, true, "actual matching policy-close event removes the live plugin dialog");
+  assert.equal(responses().length, responsesBefore);
+  assert.deepEqual(f.current.entryIds, ["entry"], "closed event is not a fabricated receipt");
+
+  const abortedRequest = { ...plugin, id: "selected-policy-aborted-receipt" };
+  await f.event(source(f), abortedRequest);
+  const aborted = { ...saved, id: "aborted-plugin-entry", data: { version: 1, outcome: "aborted", request: abortedRequest } };
+  await emit(f, aborted);
+  assert.equal(f.current.extensionDialog === null, true, "actual aborted plugin receipt independently closes its matching request");
+  assert.deepEqual(f.current.entryIds, ["entry", "aborted-plugin-entry"]);
+  assert.equal(responses().length, responsesBefore);
 });
 
 test("actual operation SSE chooses terminal sequence, keeps IDs aligned and ignores malformed/older stages", options, async t => {

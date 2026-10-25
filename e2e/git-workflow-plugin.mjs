@@ -514,10 +514,17 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   await finish("cross-approve", "completed");
   assert.notEqual(foreignGit("rev-parse", "HEAD"), foreignBefore); assert.equal(tip(), ownTip);
   const foreignCommitted = foreignGit("rev-parse", "HEAD");
-  card = await start("cross-cancel");
-  await patch({ commit: "allow" }, "project"); await card.waitFor();
-  await patch({ commit: "deny" }, "project", [], foreign); await card.waitFor({ state: "hidden" });
-  await finish("cross-cancel", "refused");
+  if (retainNativeMatrices) {
+    card = await start("cross-cancel");
+    await patch({ commit: "allow" }, "project"); await card.waitFor();
+    await patch({ commit: "deny" }, "project", [], foreign); await card.waitFor({ state: "hidden" });
+    await finish("cross-cancel", "refused");
+  } else {
+    // Keep the original real selected-project boundary/source. The native
+    // selected-policy owner plus actual RPC/Source receivers own cancellation;
+    // both installed cross-approve subjects/checks and the caller reset remain.
+    await patch({ commit: "deny" }, "project", [], foreign);
+  }
   assert.equal(foreignGit("rev-parse", "HEAD"), foreignCommitted); assert.equal(tip(), ownTip);
   await patch({}, "project", ["commit", "commitChecks"]);
 

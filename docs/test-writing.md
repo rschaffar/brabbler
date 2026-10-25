@@ -267,6 +267,14 @@ retire old tests or constitute full candidate acceptance.
   action ACKs can settle before that loader; observe an actual future JSON error
   before its catch only if consumption really occurs. Both cold installed readers,
   opaque/native subjects, mobile/history and physical Download remain distinct.
+- Selected Git policy belongs to the existing native server owner: caller/session
+  policy is not the selected checkout's policy. The existing RPC UI case separately
+  drives an external signal through actual `pluginCard`, original settlement,
+  aborted receipt, pending-map/attention removal and no replay. Mounted receipt
+  tests drive both matching `extension_ui_closed` and aborted-plugin-receipt paths
+  without manufacturing responses. Preserve the original confirm/Stop inputs and
+  both installed selected-checkout approval subjects. This is composed owner/wire
+  evidence, not a new end-to-end SDK cancellation or per-policy-row startup claim.
 - `lib/file-line-navigation.test.mjs` uses real isolated DOM trees; the actual
   FileViewer text/media mounts own request/body identities, watcher lifetimes,
   current links and Save races. Workspace mounts add stable hosts and independent
