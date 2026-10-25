@@ -83,7 +83,24 @@ export async function checkSubagentLifecycle(page, { base, api, post, root, agen
     await page.locator("textarea").last().fill(task);
     await page.getByRole("button", { name: "Send", exact: true }).click();
   };
-  let completed = false;
+  let completed = false, primaryCaught = false, primary;
+  // Only the two application reads admitted by the existing final reload. Own
+  // their original wait, full read continuation and native JSON separately.
+  const reads = [];
+  const observe = original => {
+    const record = { original };
+    record.observation = original.then(value => { record.value = value; }, error => { record.failed = true; record.error = error; });
+    reads.push(record); return record;
+  };
+  const applicationRead = pathname => {
+    const waiting = observe(page.waitForResponse(response => new URL(response.url()).pathname === pathname && response.request().method() === "GET"));
+    return observe(waiting.original.then(async response => {
+      const nativeJSON = observe(response.json());
+      const body = await nativeJSON.original;
+      assert.equal(response.status(), 200, `Original application ${pathname} body`);
+      return { response, body };
+    }));
+  };
   try {
     await page.goto(`${base}/?session=${parentId}`, { waitUntil: "domcontentloaded" });
     await page.getByText("Lifecycle idle", { exact: true }).waitFor();
@@ -143,6 +160,10 @@ export async function checkSubagentLifecycle(page, { base, api, post, root, agen
     const queued = queueSnapshot.find(child => child.relation.status === "queued");
     assert.ok(queued);
     assert.equal(queueSnapshot.filter(child => child.relation.status === "running").length, 1, "one foreground child owns the only slot regardless of parallel setup order");
+    const childIds = queueSnapshot.map(child => child.id).sort();
+    assert.equal(childIds.length, 3, "the existing native stage owns isolated, held and queued children");
+    assert.equal(new Set(childIds).size, 3);
+    assert.equal(childIds.includes(isolated.id), true);
     if (width <= 640) await page.getByRole("button", { name: "More controls", exact: true }).click();
     await page.getByRole("button", { name: "Stop", exact: true }).click();
     await waitForAsyncCondition(page, async id => {
@@ -155,11 +176,37 @@ export async function checkSubagentLifecycle(page, { base, api, post, root, agen
     assert.equal(stopped.entries.some(entry => entry.type === "message" && entry.message.role === "user"), false);
     await page.goto(`${base}/?session=${queued.id}`, { waitUntil: "domcontentloaded" });
     await page.locator("textarea").last().waitFor();
+    const catalogue = applicationRead("/api/sessions"), running = applicationRead("/api/agent/running");
     await page.reload({ waitUntil: "domcontentloaded" });
     assert.equal((await saved(queued.id)).run.runId, stopped.run.runId);
-    console.log(`PASS: ${width}px native subagent IDs, worktree history/refusal, settings suffix and never-prompted queued Stop`);
+    const [catalogueRead, runningRead] = await Promise.all([catalogue.original, running.original]);
+    const nativeRows = catalogueRead.body.sessions;
+    const nativeParent = nativeRows.find(row => row.id === parentId);
+    assert.equal(nativeParent?.cwd, cwd, "application catalogue carries this actual native parent");
+    assert.deepEqual(nativeRows.filter(row => row.relation?.kind === "subagent" && row.relation.parentSessionId === parentId).map(row => row.id).sort(), childIds);
+    const familyIds = [parentId, ...childIds];
+    assert.deepEqual(runningRead.body.runningSessionIds.filter(id => familyIds.includes(id)), [], "separate native registry snapshot has no running family member");
+    assert.deepEqual(runningRead.body.queuedSessionIds.filter(id => familyIds.includes(id)), [], "separate native queue snapshot has no queued family member");
+    for (const id of childIds) {
+      const native = await saved(id);
+      assert.equal(["completed", "aborted"].includes(native.run.status), true, "original native terminal result is separate from toolbar idle");
+      assert.equal(typeof native.run.completedAt, "string");
+    }
+    const nativeAgents = page.getByRole("button", { name: "Agents · 3 subagents", exact: true });
+    await nativeAgents.waitFor();
+    assert.equal(await nativeAgents.getAttribute("title"), "Agents · 3 subagents");
+    assert.equal(await nativeAgents.locator(":scope > span[aria-hidden=true]").innerText(), "3", "actual default Toolbar forwards the genuine native family count");
+    console.log(`PASS: ${width}px native subagent IDs, worktree history/refusal, settings suffix, never-prompted queued Stop and actual idle family Toolbar count`);
     completed = true;
+  } catch (error) {
+    primaryCaught = true; primary = error;
   } finally {
+    const failures = primaryCaught ? [primary] : [];
+    // Full continuations above include bodies admitted after this join begins;
+    // each new native JSON is also retained and independently observed here.
+    for (const read of reads) await read.observation;
+    for (const read of reads) if (read.failed && !failures.includes(read.error)) failures.push(read.error);
+    try {
     if (completed) {
       // Unmount the selected child and settle navigation before deleting its family.
       // Otherwise its still-mounted polling can race deletion during trace export.
@@ -171,5 +218,8 @@ export async function checkSubagentLifecycle(page, { base, api, post, root, agen
       // Settle the owned family but preserve its files for failure diagnostics.
       await post(`/api/agent/${parentId}`, { type: "abort" });
     }
+    } catch (error) { if (!failures.includes(error)) failures.push(error); }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length) throw new AggregateError(failures, "Native subagent observation and independent cleanup failed");
   }
 }

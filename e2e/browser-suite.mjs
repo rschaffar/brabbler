@@ -802,7 +802,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "activity") {
-      const activityScenario = inputId === "legacy-desktop" ? "activity/native-state-recipe-owned-v4" : "activity/compact-state-recipe-owned-v4";
+      const activityScenario = inputId === "legacy-desktop" ? "activity/native-toolbar-owned-v5" : "activity/compact-state-recipe-owned-v4";
       await coverage.run(`${activityScenario}@${inputId}`, async () => {
       const finishActivityStage = stage.start(`activity/${inputId}/chain`);
       // Seed only after the selected chat has loaded, so clicking its newly

@@ -66,3 +66,47 @@ test('AppShell uses the mounted navigation coordinator, default Sidebar and real
   assert.equal(Boolean(returned && ts.isObjectLiteralExpression(returned)
     && returned.properties.some(item => ts.isShorthandPropertyAssignment(item) && item.name.text === 'handleAgentEnd')), true, 'default shell receives that owned callback');
 });
+
+// Behavioral helper ownership, separate from the architecture case above. No
+// Panel props, copied badge rule, whole-AppShell fixture or SDK startup is used.
+test('actual Agents family producer uses only current running descendants, otherwise the deduplicated full family', async () => {
+  const { createJiti } = await import('jiti');
+  const jiti = createJiti(import.meta.url, { fsCache: false });
+  const { getSessionFamily, getAgentsBadge } = await jiti.import('../lib/session-family.ts');
+  // Only fields consumed by the actual family helper; these are policy rows,
+  // never native session identities or a promise of persisted status authority.
+  const root = { id: 'root', modified: '2026-01-01' };
+  const a = { id: 'child-a', modified: '2026-01-02', relation: { kind: 'subagent', parentSessionId: 'root' } };
+  const b = { id: 'child-b', modified: '2026-01-03', relation: { kind: 'subagent', parentSessionId: 'child-a' } };
+  const c = { id: 'child-c', modified: '2026-01-04', relation: { kind: 'subagent', parentSessionId: 'root' } };
+  const rows = [root, a, b, c,
+    { id: 'other-root', modified: '2026-01-05' },
+    { id: 'foreign', modified: '2026-01-06', relation: { kind: 'subagent', parentSessionId: 'other-root' } },
+    { id: 'fork', modified: '2026-01-07', parentSession: '/saved/root.jsonl' }];
+  for (const selected of ['root', 'child-a', 'child-b', 'child-c']) {
+    const family = getSessionFamily(rows, selected);
+    assert.equal(family?.root.id, 'root', 'selected descendant keeps its actual root family');
+    assert.equal(family.subagents.map(row => row.id).sort().join(','), 'child-a,child-b,child-c');
+    for (const [phase, ids, running, count] of [
+      ['root/foreign/queue-only are not running descendants', ['root', 'foreign', 'queue-only'], false, 3],
+      ['nested descendant runs', ['root', 'foreign', 'child-b'], true, 1],
+      ['two descendants run', ['root', 'child-a', 'child-b', 'foreign'], true, 2],
+      ['all descendants idle in the current snapshot', [], false, 3],
+      ['running resumes', ['child-c'], true, 1],
+    ]) {
+      const badge = getAgentsBadge(family.subagents, new Set(ids));
+      assert.equal(badge.running, running, `${selected}: ${phase}: running`);
+      assert.equal(badge.count, count, `${selected}: ${phase}: count`);
+    }
+    const duplicate = getAgentsBadge([...family.subagents, a], new Set(['child-a']));
+    assert.equal(duplicate.running, true);
+    assert.equal(duplicate.count, 1, 'duplicate catalogue identity is not another running subagent');
+    const idleDuplicate = getAgentsBadge([...family.subagents, a], new Set());
+    assert.equal(idleDuplicate.running, false);
+    assert.equal(idleDuplicate.count, 3, 'duplicate catalogue identity is not another idle descendant');
+  }
+  assert.equal(getAgentsBadge([], new Set(['root'])).count, 0);
+  assert.equal(getAgentsBadge([], new Set(['root'])).running, false);
+  assert.equal(getSessionFamily(rows, 'foreign')?.root.id, 'other-root');
+  assert.equal(getSessionFamily(rows, 'fork')?.subagents.length, 0, 'fork is not a subagent descendant');
+});

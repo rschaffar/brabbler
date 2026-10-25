@@ -29,6 +29,7 @@ close and HOST afterward. None of this cancels independent Acceptance work.
 | Owner | Contract and proof boundary |
 | --- | --- |
 | `lib/activity.test.mjs`, `lib/activity-review.test.mjs` | Existing real projections/precedence/nesting/project identity/exact receipt helpers; no browser/native execution claim. |
+| `components/SessionNavigation.composition.test.mjs` | Actual family/badge helper: selected root/descendants, nested/foreign/fork scope, current running registry, deduplicated idle count and empty input. The separate installed native S stage proves default Toolbar forwarding; helper rows are not native IDs. |
 | `lib/activity-client-controller.test.mjs` | Real controller, controlled transport/body/time/events: ignored-abort A/B/A, current error/finally, exact tokens, failed/ambiguous confirmation-before-retry, B during A, shared leases and full callback/body joins. |
 | `components/ActivityViews.behavior.test.mjs` | Real views/root/consumer/notification hooks under StrictMode; actual controls/current callbacks, target eligibility, privacy/restoration inputs, errors, stars and teardown admission. Not full Sidebar/AppShell/router/metrics mounting or CSS/native touch/networking. |
 | `components/ActivityOverview.test.mjs` | Complementary SSR privacy withholding and rendered structure; static markup is not click/effect proof. |
@@ -49,7 +50,7 @@ legacy inputs and whole-input trace/context closure before success:
 
 | Receipt | Coverage |
 | --- | --- |
-| `activity/native-state-recipe-owned-v4@legacy-desktop` | 1280×800 legacy preferences: complete native question→Later→reload→answer→Ready→Read; actual short completions/archive/new generation/independent peers/bulk receipts; complete subagent, row/global Pause and five-job Acceptance/default-tools/independence chains once. |
+| `activity/native-toolbar-owned-v5@legacy-desktop` | 1280×800 legacy preferences: complete native question→Later→reload→answer→Ready→Read; actual short completions/archive/new generation/independent peers/bulk receipts; complete subagent, row/global Pause and five-job Acceptance/default-tools/independence chains once. |
 | `activity/compact-state-recipe-owned-v4@legacy-tablet` | 700×800: retained early restoration/Starred/worktree/interruption plus working/question/Ready/control geometry, full shared metrics, natural genuine default observation and actual Enter completion receipts/reload, real Acceptance Settings/status/bounds/Escape/focus. |
 | `activity/compact-state-recipe-owned-v4@legacy-mobile` | 390×844 touch/legacy preferences: corresponding actual navigation/back/touch fragments, full metrics tap/Enter, real completion tap receipts/reload, real Acceptance Plugins switch/focus/layout and actual Sub-agents model-suffix Settings. Incoming persistent-New assertions stay in the early mobile segment. |
 
@@ -66,6 +67,15 @@ none is submitted to mutation endpoints. Remove and join those routes, then
 positively observe a natural genuine application GET/body, exact real completion
 and rendered transition before real Later/Read. Unroute/headers/substitute API
 reads/optimistic disappearance alone cannot supply that bridge.
+
+The existing native S stage also binds the real Toolbar idle count to its actual
+isolated/held/queued child IDs. Its existing final reload supplies original full
+application catalogue/running bodies; terminal native results and the unchanged
+unmount/family-delete/shutdown chain remain separate from the count assertion.
+The default AppShell forwarding defect must fail that real count, not an earlier
+synthetic metrics family. Two synthetic false/true transitions, visibility wakes
+and next-poll waits are retired; native stats/error/no-ACK and all physical metrics
+inputs remain. This is not new queue-slot/finally or universal-idle proof.
 
 ## Original assertion disposition
 
