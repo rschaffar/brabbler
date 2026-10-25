@@ -1,6 +1,14 @@
 # Complete test ownership — fresh-session handoff
 
-Paste the block below into a fresh session. **Do not launch it automatically.**
+The block below is the **historical handoff used for the resumed session**.
+The [active plan](2026-10-23_complete-test-ownership-plan.md) now owns the adopted
+receiving commit, early whole-feedback result and required bounded next decision.
+Do not treat the block's old HEAD, source-only status or absence of current full
+acceptance as current state. For a later restart, validate the exact HEAD supplied
+by that user's resume request. Current-session implementation authority does not
+carry into a new session; rebase/merge/cleanup/publication remain unauthorized.
+
+Retain the block below as historical restart context. **Do not launch it automatically.**
 The recommendation is recorded, not new implementation authority. To explicitly
 resume in the new session, replace the block's opening pause instruction with:
 “Resume implementation under the revised plan after read-only state validation;

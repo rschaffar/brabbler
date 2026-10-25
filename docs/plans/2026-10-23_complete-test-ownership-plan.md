@@ -1,9 +1,12 @@
 # Complete behavioral test ownership — execution plan
 
-> **PAUSED.** The latest user authorization is assessment, repository-local guidance,
-> handoff and a documentation-only commit. No implementation, tests, benchmarks,
-> agents, rebase, merge, cleanup or publication may resume from this plan alone.
-> The earlier “continue until done; only then merge” does not override the pause.
+> **Implementation resumed by explicit user request in the current session.**
+> Authorization covers implementation, coordinated checks and reviewable feature
+> commits only. No rebase, merge, resource cleanup, publication or ordinary-session
+> launch is authorized. The handoff's historical default pause was superseded for
+> this session only. **Now stopped at the early whole-feedback performance gate,
+> awaiting the required bounded user decision.** No deferred core/RPC/cache work
+> resumes automatically; all correctness and performance requirements remain.
 
 ## Goal
 
@@ -25,9 +28,15 @@ contracts. See [reflection](2026-10-23_complete-test-ownership-reflection.md) an
 
 - Use existing linked checkout
   `/home/robert/projects/3rdparty/pi-desk-worktrees/complete-test-ownership`, branch
-  `refactor/complete-test-ownership`; implementation base HEAD
-  `ac9a205fe8d5e973fe57897785cfa2ba2b2ba539`. This replan adds documentation only.
-  Preserve all dirty/untracked implementation and retained resources.
+  `refactor/complete-test-ownership`; resumed HEAD
+  `53fc2e6502d2debc4741a13bc9736d0536949d11`. Checkout/branch/HEAD, empty index,
+  operation state and live Git policy were validated before mutation. All 56
+  inherited dirty/untracked implementation files matched their retained original
+  hashes; exact bytes are additionally preserved in `R/resumed-implementation/initial`.
+  Preserve all existing work and retained resources. Coherent source commit:
+  `c694c01405ead47d97ba0adfdf68f867e4af512d`; subsequent evidence-only documentation
+  does not change the tested application/test inputs. Branch/worktree remain
+  unintegrated; no rebase, cleanup, publication or ordinary-session launch occurred.
 - [Testing](../testing.md), [Writing tests](../test-writing.md),
   [browser acceptance](../../e2e/README.md), ADR0034 and applicable product guides
   remain owning contracts. No new framework/backend/runner or acceptance fallback.
@@ -45,10 +54,12 @@ contracts. See [reflection](2026-10-23_complete-test-ownership-reflection.md) an
 
 | State | Authoritative evidence / limit |
 | --- | --- |
+| **Verified current early whole correctness; ceiling FAILED** | `R/resumed-implementation/early-all-analysis.json`: fresh `nix run .#test -- all --workers 4 --jobs 4`, source digest `6873c082fc4d1a4e403fa3464b9d181d15efac86c0492be2e2454309ec572b0b`; **508 files /4143 tests /14 suites**, all26 browser/terminal groups and genuine VM pass. Command **398.058438374s**, core file window **388.662s** alone exceeds351.05 by37.612s. This is not a matched NET comparison or final task completion. |
 | **Verified, historical full correctness; performance FAILED** | [Matched full timing](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/matched-first-critical-path.json): 421.959333907→430.231565s, +8.272231s; candidate 79.181565s above ceiling. Both roots already have the middle layer. Core 415.258→422.398s dominates; browser 348.749→347.310s. No later full pair supersedes it. |
 | **Verified, finite private compositions** | [Coherent Sixth](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/browser-retirement-v2-coherent-sixth-composition/RAW-EXECUTED-FIRST.json): 42 files / 571 tests / 85s and 11 affected installed receipts. [Thinking/Tool](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/browser-retirement-v2-thinking-tool-composition/RAW-EXECUTED-FIRST.json): combined24 and six producer faults; restored60 files / 806 tests / 104s. Focused, not current whole acceptance. |
 | **Verified latest lower subset, receiving impact still open** | [Navigation Fourth binding](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/browser-retirement-v2-navigation-default-composition/FOURTH-BINDING.json) plus `R/browser-v2-navigation-default-owners-4.*`: 26 green / 44s. Optional explicit composerDraftKey fixture port has not rerun its shared pool or three producer faults. |
-| **Implemented but unverified / conditional** | Files remedy, composer browser remedy, Thinking exceptional controls, Git desktop reader and Activity navigation/badges. Experimental version LM cut executes both receipts / 52s and protocol118 / 39s, but lower cleanup gate remains. Exact paths and limits are in the pause record; no adoption implied. |
+| **Verified receiving lifetime slice, not whole acceptance** | `R/resumed-wp1-receiving-2.*`: exact27 files /173 tests GREEN51s, including unchanged Save200/409. Latest three-file normal/restored runs cover21 cases (including actual partial leaf installation failure and sole HOST observation). Unconditional-unmount regression fails both original Save premises; omitted leaf rollback fails both actual descriptor/partial-install assertions. Exact logs/hashes: `R/resumed-implementation/lifetime-regressions.json`. Review corrected an additional HOST collector-order gap. Initial receiving run and unsuccessful diagnostic attempts remain retained; no unchanged-failure retry is credited. |
+| **Implemented but unverified / conditional** | Composer browser remedy, Thinking exceptional controls, Git desktop reader and Activity navigation/badges remain private. Files common lower additions are receiving-tested, but the smaller upload browser cut and its gates remain unadopted. Experimental version LM cut executes both receipts /52s and protocol118 /39s but is excluded from the receiving candidate. Exact paths/limits remain in the pause record. |
 | **Partial or proposed** | Web lower controls: authored case + unrun assembler only. New Tool exceptional packet and Git policy/large remedy: no deliverable. Do not restart stopped tasks automatically or mark proposals implemented. |
 | **Abandoned / excluded** | Unsafe timestamp4→2 and speed4→3 cuts, copied-error acceptance, unsupported fixture assumptions and false failed-body/native-closure claims. Deferred RPC/cache/packing proposals are not adopted or authorized next work. Preserve their failures; do not revive automatically. |
 
@@ -79,14 +90,14 @@ contracts. See [reflection](2026-10-23_complete-test-ownership-reflection.md) an
 
 | ID | Remaining blocker | Decisive closure evidence |
 | --- | --- | --- |
-| B1 | Private-source/dirty-checkout divergence and shared-file composition; final original68 + added-gap + surviving-browser disposition map not consolidated | One receiving candidate; reconcile existing maps rather than repeat census. Preserve both Thinking/Copy seams, Settings appends, fixtures, current guidance and exact inventories. Review actual receiving diff. |
-| B2 | Files terminal-release versus intentional held-Save input; eight Navigation REALM descriptors restored after close | [Concrete review](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/browser-retirement-v2-files-exact-final-review/REMEDY-REVIEW.md): unchanged Save200/409 held-unmount schedules, actual descriptor order, finite failure cleanup and known Files/Navigation/native receiving users. Smaller upload cut remains conditional. |
+| B1 | Receiving divergence/composition resolved; final surviving-browser disposition remains WP2 | Coherent source commit `c694c014`, exact guarded adoption and original-input map index in `docs/test-ownership.md`; both Thinking/Copy lanes, Settings18, inherited work/guidance preserved. Current508/all-native acceptance supplies shared receiving impact. Final B3–B7 per-step dispositions remain open, not another68 census. |
+| B2 | **Closed receiving lifetime residues**; smaller browser upload cut stays WP2 | Receiving27 /173 GREEN; exact original Save200/409 premises fail under unconditional release. Eight actual descriptors restore before close on normal/partial setup and after independent restore failure; omission fails both descriptor witnesses. Sole HOST-observation/next-mount and actual partial leaf-installer failure pass. Latest3-file21 restored plus current full508/native acceptance supplies receiving impact. This is not native kernel-closure or smaller upload-cut qualification. |
 | B3 | Thinking/Web/Tool original-work exceptional qualification | Execute ready Thinking controls; finish partial Web and missing Tool work only for named uncovered contracts. SAME errors, real phase/terminal witnesses and normal restoration; no generic control-count target. |
 | B4 | Composer native models-route/body/RAW/ACK/disposal/primary cleanup remedy remains source-only | Existing source-admitted normal + two witnesses qualify on receiving bytes; retain native undo/selection/focus/IME and installed bridges. |
 | B5 | Navigation optional fixture impact, three producer faults and branch native body/ACK/unroute handoff | Receiving shared pool and three meaningful faults/restoration; actual branch port ownership. Hook+Input draft proof does not replace the AppShell saved-key caller bridge. |
 | B6 | Git desktop reader and exact policy/current-origin/cross-cancel/mobile/history/45-file conjunctions | Qualify existing reader; bind remaining exact obligations to sufficient production/native owners and smallest installed bridges. No policy/large remedy packet exists yet. |
 | B7 | Activity navigation/badges/Toolbar/default restoration | Qualify existing additions and needed fault witnesses; preserve native New/restoration and independent Acceptance authority. |
-| B8 | No current whole acceptance; failed complete-feedback gate and core-dominated critical path | Current static/core/plugins/all-browser/terminal/VM acceptance, matched4/4 comparison, complete≤351.05s, NET improvement and Panel median≤20.5s. Focused or source-only evidence cannot close it. |
+| B8 | Current early whole correctness passes; core execution alone blocks ceiling | Fresh all4/4 **398.058s**; core file execution **388.662s**, excluding2.513s pre-file setup and0.367s afterward. No browser-only cut removes that floor. Final settled acceptance, matched NET and Panel median remain open. Stop for bounded user direction before any deferred core/RPC/cache work. |
 
 New findings must bind to a blocker or identify the specific original obligation
 that requires changing this list. Speculative universal idle/escaped-work theorems
@@ -95,11 +106,40 @@ failure; if reproduced, diagnose exact identity changes without relaxing guards.
 
 ## Plan
 
-**All execution below requires explicit user resumption.** One repository writer,
-one active implementation slice and one coordinated export/check budget. Use
-independent review for changed risk, not an automatic second packet pipeline.
+**Current execution:** one repository writer, WP1 active, one coordinated export/
+check budget. Qualified Thinking/Tool Second (including Sixth, excluding Navigation
+Fourth and experimental LM retirement) was reconciled through 343 guarded source
+file deltas, including the two explicitly mapped extracted-callback retirements.
+Current instructions/guides were not replaced. The common-only Files remedy and
+terminal-versus-observer/Navigation leaf/HOST-restoration repair have receiving
+normal/regression/restoration evidence and independent source review. The first
+receiving run exposed an incorrect newline oracle and a missing body-gate access
+that stalled cleanup; exact-byte expectation and synchronous explicit-reason release
+fix these fixture mismatches without production/input/deadline changes. Failed
+and interrupted diagnostics remain retained, not meaningful producer reds.
+`R/resumed-implementation/composition.json` binds adoption. The early whole4/4
+checkpoint now supplies current complete correctness and wider receiving impact,
+not completion or NET success. All1569 exported files matched the physical checkout
+before status-only follow-up edits. Source commit `c694c014` retains those tested
+application/test bytes. No new WP2 browser cut was adopted in this session.
 
-- [ ] **WP1 — consolidate and repair shared foundations (B1/B2).** Build one
+**Whole-feedback checkpoint and stop:** command398.058438374s. Core391.542s includes
+2.513s before the388.662s file window and0.367s afterward. Browser320.743s includes
+89.312874s support/application realization and4.593235s definition preparation;
+its group-client window is226.832s, summed client work824.912826s and summed capsule
+work809.596038s (overlapping work, not additive elapsed savings). Genuine service
+70.358s includes18.712s evidence execution; the remainder is mixed realization/
+driver overhead, not all test execution. Core/browser intervals overlap. This
+partly preparing run is not compared as a warm matched speedup. Full command is
+47.008438s above ceiling; core test-file execution alone is37.612s above it.
+
+The longest observed core files are reconciliation-mounted97.107s, rpc-manager
+95.778s and Git cleanup75.418s; these are observations, not permission to reopen
+RPC/cache work. **Stop and request a bounded next-step decision.** B3–B7 browser
+retirement still must finish; no performance waiver or automatic core tangent.
+Use independent review for changed risk, not an automatic second packet pipeline.
+
+- [x] **WP1 — consolidate and repair shared foundations (B1/B2 receiving slice).** Build one
   receiving candidate from qualified compositions, sparsely reconciling dirty work;
   do not overwrite with old whole postimages or admit the experimental LM cut as
   qualified. Fix the two concrete lifetime residues. Acceptance: exact receiving
@@ -116,7 +156,7 @@ independent review for changed risk, not an automatic second packet pipeline.
   exceptional schedules, receiving-impact check and exact installed bridge.
   **Stop** on a gate failure to diagnose it; do not expand investigations or repeat
   unchanged runs. Additional controls need a named uncovered changed contract.
-- [ ] **WP3 — whole feedback and closure (B8).** At the first coherent candidate,
+- [ ] **WP3 — whole feedback and closure (B8).** **Early checkpoint executed; correctness passed, ceiling failed and bounded decision pending.** At the first coherent candidate,
   take a whole-feedback checkpoint before optional expansion, even if remaining
   unadopted proposals keep completion open. Once source/review settle, run fresh
   matched reference/candidate `nix run .#test -- all --workers 4 --jobs 4`
@@ -145,5 +185,6 @@ independent review for changed risk, not an automatic second packet pipeline.
   reassess relevant inputs, exact-state unsigned non-FF integration approval and
   separate bounded cleanup. No remote authorization exists.
 
-**Known gaps:** B1–B8 remain open. This documentation-only replan does not change
-implementation or establish new acceptance/performance evidence.
+**Known gaps:** Final surviving-browser B1/B3–B7 dispositions, final settled
+acceptance and matched NET/Panel gates remain open. Current early full correctness
+does not supersede the failed authoritative matched pair or establish completion.
