@@ -21,6 +21,12 @@ bridges, and what the test cannot prove. Choose the lowest sufficient owner:
 | Layout, scrolling, capture, decoding, browser transport, user connection | Installed-package Chromium | DOM geometry/media doubles cannot replace this |
 | User-service activation, restart, PTY/cgroup and deployment | Genuine Home Manager/systemd NixOS VM | Browser process backend is not deployment proof |
 
+Mounted production components/hooks execute real **client-side** code: event
+handlers, state, effects and subscriptions. Most functional permutations belong
+there, not in Chromium merely because the feature is client-side. Establishing
+that ownership and retiring duplicate browser execution are separate tasks; adding
+middle-layer tests while keeping the duplicate flows does not finish a migration.
+
 A mocked React hook, extracted component body or copied algorithm cannot establish
 React subscriptions, dependencies, state transitions or cleanup. Prefer a small
 existing production leaf/composition rather than mounting the entire application
@@ -73,12 +79,15 @@ A result, complete work settlement and durable publication are distinct. Registe
 cleanup before import/admission. On success **and failure**:
 
 1. Close the operation's own admission; request only cancellation it owns.
-2. Unmount the observer and release/reject every accepted gate, including peers
-   when a release or assertion fails.
+2. On terminal or failed-setup teardown, release/reject all known peers before
+   the first teardown join, then await observer unmount as required. If observer
+   unmount is itself a behavioral input, preserve its deliberately held work until
+   that premise is asserted; emergency release must not change cancellation policy.
 3. Independently attempt all real work/native joins, even if release/React fails.
 4. Keep runtime-error and unexpected-admission collectors live through those joins.
-5. Dispose the realm, restore globals and only then remove owned private roots.
-   Preserve the primary and cleanup failures together.
+5. Restore realm-owned descriptors before destroying the realm; restore host
+   globals afterward. Remove private roots only after certain native completion
+   and restoration. Preserve the primary and cleanup failures together.
 
 Use [named async owners](testing.md#three-small-core-patterns), complete promises
 including body/catch/finally/nested continuations, and actual native closure.
@@ -98,7 +107,19 @@ or React defects. A late-consumption tracking failure must enter the collector.
 Do not broadly suppress console/5xx errors, retry unchanged failures, add sleeps
 as joins, inflate deadlines or call repeated microtask flushing settlement.
 
+Owning a callback's original promise does not automatically own new rejecting
+promises created by its external dispatcher. If that boundary needs an adapter,
+keep the original work and same Error references in live owners; distinguish the
+transport acknowledgement from the operation result, and rethrow failures after
+independent settlement. Unregister the exact registered adapter. A no-op catch or
+global unhandled-rejection suppression is not ownership. For an admitted response,
+join its body before status assertions that could bypass the join, including on
+non-200 paths. A failed body join remains an error, not proof of native completion.
+
 Preserve file/session/cwd/source/account/incarnation identities independently.
+Host-request, native-operation and saved-review UUIDs can be independently
+allocated; compare each with its actual owner, not another field with the same
+syntax. Keep the endpoint's host/review identity separate from a native receipt.
 Exercise A/B/A reuse, obsolete success/error/catch/finally after ignored abort,
 current callbacks, current loading/error, Strict Effects and teardown when relevant.
 A redundant generation fence can make an isolated mutation green: disclose that
@@ -127,6 +148,17 @@ omitted line forwarding, broken active-and-visible gating, an ignored stale body
 missing direct dormant visibility/instructions, or unnecessary streaming commits.
 Do not count a source guard, compile/import error, fixture admission bug or unrelated
 exception as the intended red. Fault variants never become application inputs.
+Reuse existing fault/restoration evidence when relevant inputs and the contract
+are unchanged. Add a control for a named uncovered changed obligation, not to meet
+a count or repeat an unchanged review. Shared support needs its actual receiving
+users and failure schedules, not a generic marker claimed to certify all cleanup.
+Confirm selectors, translations and fixture policy from source before costly runs.
+
+For sequential multi-item operations, fixture-array or checkbox-click order is not
+necessarily request order. Bind the actual family/admission order independently
+before choosing the last peer to hold. A timeout caused by holding the first
+request cannot prove the intended final-peer barrier; preserve it as a failed
+control precondition, without forcing DOM changes or extending deadlines.
 
 For a real streaming store, distinguish publications, state/reply identities,
 selected values and React commits. A thousand synchronous publications need not
@@ -151,11 +183,40 @@ file policy, real Pause ledger or browser restoration. A dormant row in querySel
 is not accessible if hidden by an ancestor; programmatic dispatch bypasses that.
 A loop over zero content requests does not prove a real instructions child ran.
 
-Keep original browser IDs, tuples, order and whole-chain receipts unless separately
-reviewed. Retire repeated browser work only after every unique assertion has a
-named replacement and genuine default/native bridge. Preserve keyboard/touch,
-responsive geometry, persistence, current identities and real transport/media.
-Synthetic statuses prove geometry only, never authorize native operations.
+### Retire browser work step by step
+
+For **each retained step/input**, answer:
+
+> What concrete failure can this browser step catch that its verified lower owner
+> plus a thin installed-app bridge cannot catch?
+
+Chromium primarily owns actual rendering/layout/responsiveness/overflow/scroll,
+fonts/media, native focus/selection/pointer/keyboard/IME/clipboard/uploads/downloads,
+and representative installed interaction→server→visible-result/restoration wiring.
+The last category needs thin real connections, not every policy/state/retry/model/
+settings/currentness permutation. One browser-dependent step does **not** retain
+its surrounding functional journey. Split out that ceremony; delete redundant
+execution, setup, navigation, transactions and waits, not merely assertions.
+
+Record original receipt/step/input → actual lower test and meaningful proof →
+smallest remaining native/default/browser bridge → concrete incremental failure →
+delete/split/retain decision. Reuse already verified owners instead of discovering
+fixtures again. Unknown ownership is a finite gap to resolve, not a blanket
+whole-journey retain. Deduplication needs evidence that the removed input's relevant
+state/identity is represented; do not normalize distinct physical/touch/locale/
+height/preference or authority inputs merely because widths or labels match.
+
+Preserve unretired IDs, inputs and dependent ordering. After exact review, bodies,
+journeys and groups may be thinned, split, replaced or removed: historical counts
+are not quotas. Changed bodies need truthful fresh IDs, atomic dispatch/inventory/
+definition/validator updates and pre-callback retirement negatives. Never run a
+shorter body under its old complete-chain ID or reconstruct expectations from
+successes. Source/package/nonce freshness is not execution or retirement authority.
+
+Keep genuine physical/native/security/service proof real and full failure/cleanup
+ownership intact. Synthetic statuses prove geometry only, never authorize native
+operations. A representative bridge does not certify unreturned/escaped work or
+replace materially different native input/authority obligations.
 
 The [Activity recipe](testing.md#activity-client-pilot-recipe) and
 [Activity ledger](activity-testing.md) remain Activity-only. The
@@ -182,21 +243,19 @@ retire old tests or constitute full candidate acceptance.
   through the existing external-capability loader. Its controlled stat/watch/path/
   authority and heartbeat sentinels are not native filesystem/security proof.
 
-The model/session mounted prototype was **not adopted**: unexpected asynchronous
-React ownership diagnostics remain unresolved. Its exact failed source/reviews are
-retained with the rollout evidence, and original production/test bytes restored.
-Do not infer a product defect, suppress diagnostics or treat that proposed named
-maintenance join as shipped machinery. This batch adds no production seam and
-leaves all browser matrices unchanged. The plan records exact original-coordinate
-retirements and deliberately retained behavioral gaps, not an all-family rewrite.
+The completed batched rollout **did not adopt** its model/session prototype:
+unexpected asynchronous React ownership diagnostics remained unresolved, failed
+source/reviews were retained and original bytes restored. That historical outcome
+is not current status for the unfinished complete-ownership feature; its
+[active plan](plans/2026-10-23_complete-test-ownership-plan.md) owns verified private
+replacements and remaining gaps. Neither private passes nor this guide establish
+shipping/adoption. Do not suppress the old diagnostics or infer a product defect.
 
-Follow-up owners remain explicit here: model/session work must first establish
-honest actual-work/React boundaries and rerun guarded startup/selection/event
-proof before retirement; preserve the failed prototype rather than treating its
-assertions as accepted machinery. Files mode/supported-Diff/grammar, parked/queued
-workspace and menu connections retain the existing mixed/browser owners until
-exact runtime replacements exist. Four broad-import E holds need actual dependency/
-effect/settlement review, not promotion from a focused green or a faster schedule.
+Model/session, Files mode/Diff/grammar, parked/queued workspace and menu obligations
+retain their mixed/native/browser owners until exact replacements qualify. Broad-
+import holds require actual dependency/effect/settlement review, not promotion from
+a focused green or faster schedule. Reconcile existing maps rather than treating
+historical pending language as a request to repeat completed discovery.
 
 ## Guards, classification and acceptance
 
@@ -217,6 +276,11 @@ Iterate with exact existing core-file/browser-group selections, then follow
 [Testing](testing.md#nix-native-acceptance) for complete static/core/browser/service
 acceptance. Bind commands, source/candidate, outcomes and retained artifacts.
 Separate preparation, test execution, overlapping envelopes and total command wall
-time. Measure rather than assume savings; fewer browser repetitions need not move
-the whole-suite critical path. Do not infer causal, cold-cache, CI/ARM, statistical,
-GC-stress or escaped-descendant guarantees from a bounded local pass.
+time. Report actual retired browser work (including reloads/setup/transactions/
+waits), summed group work, browser critical path/elapsed time and complete feedback
+separately. Faster core, improved packing, added middle coverage or unchanged/fewer
+receipts alone do not prove browser retirement. Match shared non-reduction changes,
+prerequisites and worker widths between references; a cold/preparing command is not
+a warm benchmark. Fewer repetitions need not move the whole-suite critical path.
+Do not infer causal, cold-cache, CI/ARM, statistical, GC-stress or escaped-descendant
+guarantees from a bounded local pass.

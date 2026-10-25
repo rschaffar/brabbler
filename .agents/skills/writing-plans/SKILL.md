@@ -77,7 +77,37 @@ environment, hardware, and dataset that produced them. Label every extrapolation
 as an extrapolation.
 
 When investigation overturns an earlier recommendation, record the retraction
-visibly instead of deleting the original claim.
+visibly instead of deleting the original claim. Keep the current decision visible;
+link the superseded claim/evidence instead of appending its chronology to the plan.
+Preserve an uncommitted superseded revision before replacing it; that is historical
+evidence, not a declaration that the unfinished plan is completed or archived.
+
+## Keep the Execution Control Small
+
+Separate user requirements and repository contracts from agent-chosen mechanics.
+Do not turn a packet format, control count, private snapshot or review convention
+into a completion requirement without a concrete contract it protects.
+
+Use one active plan as the next-work authority: a finite blocker list, a few
+dependency-ordered packages, decisive acceptance gates and stop conditions. Label
+verified (with exact scope), implemented-but-unverified, proposed and abandoned
+work separately. Put raw results and historical chronology behind evidence links;
+update the plan at meaningful decision/package boundaries, not after every run.
+
+Keep work in flight small: one receiving candidate and one implementation slice
+per repository writer. Delegate only a bounded independent deliverable that the
+profile can produce, and compose/review it in that candidate before accumulating
+more variants.
+Reuse existing discovery and unchanged review findings. A failed precondition needs
+targeted diagnosis, not another broad investigation or automatic task restart.
+
+For performance work, distinguish architectural improvement, actual work removed
+and whole-feedback improvement. Take a whole-feedback checkpoint at the first
+coherent candidate before optional expansion. State what would make the approach
+unviable or require a scope decision. Reuse input-bound checks proportionally;
+new commit IDs and evidence-only edits do not alone require another full suite.
+Preserve required safety, meaningful faults and complete acceptance; do not invent
+universal proofs, duplicate reports or new execution infrastructure by default.
 
 ## Write Executable Tasks
 

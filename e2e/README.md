@@ -54,6 +54,9 @@ The independent baseline inventory/order tests protect the extraction; runtime
 Missing, duplicate, unowned, reordered or retried scenarios fail. Browser selection
 must be exactly one known selector before allocating fixtures. There is no hidden
 unselected `general` aggregate or account/API footer in unrelated focused groups.
+These counts and the feature-family table describe an inventory, not a quota or
+permission to retain every historical step. Reviewed retirement changes the current
+source-derived inventory and fresh receipts; the historical baseline stays intact.
 
 | Group | Coverage |
 | --- | --- |
@@ -90,22 +93,52 @@ Preserve distinct viewport heights/locales/preferences, not just desktop/mobile
 widths. History desktop acknowledges recovery before fresh mobile checks it;
 Explorer precedes merge mutation; file panel precedes diff/edit draft checks.
 Real polling, submission acknowledgement and expiry observations keep their original
-deadlines. Embedded assertions in different integration chains are not duplicates.
+deadlines. Duplication is judged by the exact obligation/input and sufficient owner,
+not merely by membership in different integration chains. Preserve the necessary
+connection or physical step, not all of its functional neighbors.
 
 The Markdown media helper seeds synthetic PCM WAV and a tiny VP8 WebM from reviewed inline bytes (with provenance/hash), not downloaded fixtures or runtime ffmpeg. Desktop/mobile checks observe zero eager media/remote requests, native playback and seeking, session-scoped external-reference range reads/denials, corrupt-file feedback and explicit repair reload, narrow layout, covered-pane/session teardown and no automatic resumption. Direct authorization negatives use Node HTTP, preserving unfiltered browser console/5xx reporting. These are native Chromium proofs, not every browser/codec combination; the static demo and Markdown-file previews are outside this feature's scope.
 
 ## Contributor recipes and proof boundaries
 
 Keep browser ownership thin: production-module/controller tests own decision
-matrices, mounted React owns effects/closures/cleanup, and private native fixtures
-own Git/path/SDK resources. Chromium retains layout, native capture/scroll/media,
-networking and real user connections; callback or emulated-DOM tests cannot replace
-those. See [Writing tests](../docs/test-writing.md) and the existing
-[core recipes](../docs/testing.md#contributor-ownership-and-recipes).
-Before retiring a repeated matrix, map every exact old assertion/input tuple to
-its new owner, retained native/browser/default bridge and proof limit (or explicit
-obsolete reason). Additive green alone does not authorize removal; preserve IDs,
-variants, order and whole-chain receipts.
+matrices, actual mounted React owns client-side handlers/state/effects/closures/
+cleanup, and private native fixtures own Git/path/SDK resources. Building those
+owners and **retiring duplicate browser execution** are separate obligations.
+Chromium retains actual layout/responsive/overflow/scroll/fonts/media and native
+focus/selection/pointer/keyboard/IME/clipboard/upload/download behavior, plus thin
+representative installed interaction→server→visible-result/restoration bridges.
+Callback or emulated-DOM tests cannot replace those native facts; their existence
+does not justify repeating every functional permutation in the browser.
+
+For every retained **step/input**, name the concrete failure that its verified lower
+owner plus a thin installed bridge cannot catch. One browser-dependent step never
+retains a whole functional journey. Split out that ceremony and remove redundant
+setup, navigation, transactions and waits—not just assertions. An unresolved step
+gets a finite gap, not a blanket whole-journey retain. Reuse verified ownership maps.
+See [Writing tests](../docs/test-writing.md#retire-browser-work-step-by-step) and the
+existing [core recipes](../docs/testing.md#contributor-ownership-and-recipes).
+
+Map each exact old step/input to its actual lower test/proof, smallest remaining
+native/default/browser bridge, unique retained failure and delete/split/retain
+verdict. Preserve materially distinct physical/authority inputs and dependent
+ordering. After review, thin/remove/replace journeys or groups without preserving
+historical counts as targets. Changed bodies need truthful fresh IDs and atomic
+inventory/dispatch/definition/validator updates; reject retired IDs before their
+callbacks execute. No old complete-chain receipt for a shorter body, skipped inputs,
+expectations harvested from successes or replayed native authority.
+
+For example, exhaustive real palette-control and actual first-paint-script tests
+can own selection/storage/restoration permutations. Keep compiled CSS/contrast,
+needed swatch geometry, native keys/media and a representative installed reload;
+do not automatically reload every palette again in every context. Measure actual
+removed work and browser critical-path time separately from full-feedback time.
+Faster core or advisory scheduling alone does not complete browser retirement.
+The inventory above describes checked-in chains, not adoption of private cuts. The
+[active ownership plan](../docs/plans/2026-10-23_complete-test-ownership-plan.md)
+separates verified private reductions from source-only and conditional proposals.
+Reuse exact unaffected bridge/control evidence; new controls need a named changed
+boundary, not a quota. Final complete acceptance remains mandatory.
 
 `browserFixtureRecipe(group)` and `prepareBrowserPrelude(group, options, stage)` in
 `browser-fixture-recipes.mjs` describe the reviewed ordered prelude. Expected IDs
@@ -115,7 +148,8 @@ and worktree-manager repositories.** These omissions have source ownership revie
 and installed whole-chain evidence, not a name-based owner assumption. Every recipe
 retains separate shared model-speed defaults and transcript fragments; those IDs
 also serve session-launch. Other groups retain both shared fragments plus the
-running-fork and manager recipes. Appearance keeps all four complete inputs;
+running-fork and manager recipes. Retaining input variants does not require each
+variant to repeat a complete functional journey; review the steps by the rule above.
 Activity keeps the complete native subagent/Pause/Acceptance chains once at desktop,
 plus both named responsive inputs and their genuine layout/input/default bridges;
 Markdown keeps both preview/line-link chains.
@@ -128,7 +162,9 @@ compares sorted arrays, preserving duplicate rejection; never filter actual resp
 or derive expectations from writers. Other setup stays in `browser-suite.mjs`'s
 original order. Do not infer owner-only seeding from a group name or drop shared
 inputs opportunistically.
-Group splitting and immutable-seed adoption remain deferred pending measured benefit.
+Removing redundant scenarios/groups is ordinary reviewed ownership retirement,
+not blocked by the old inventory. Regrouping solely to exploit scheduling/concurrency
+and immutable-seed experiments remain separate from this ownership rule.
 
 ### Activity ownership and responsive receipts
 
@@ -249,10 +285,12 @@ All selections retain the same package/inventory/deadlines; budgets are not rese
    installed `bin/pi-web` with a sanitized production environment. This is explicitly
    the process backend, not a simulated systemd service. Bind the registered child
    generation/package; unexpected exit, spawn/log failure or incomplete stop fails.
-4. Run each original browser/terminal assertion chain, collecting every context trace,
-   server log, events and console/HTTP errors. The original scenario/input inventory
-   and success-only coverage order are unchanged. Generated helpers resolve against
-   the **installed package**, not a copied application or checkout dependencies.
+4. Run every reviewed current browser/terminal chain, collecting each context trace,
+   server log, event and console/HTTP error. Unretired inputs and dependent ordering
+   remain intact; reviewed shorter/replacement bodies use their fresh current IDs,
+   exact source-defined inventory and success-only receipts. Generated helpers
+   resolve against the **installed package**, not a copied application or checkout
+   dependencies.
 5. Require exact package/source/nonce/group/coverage receipts, closed service port,
    settled child/pipes and absent original POSIX group. Inner observations do **not**
    certify escaped descendants: Nix owns outer builder containment.
