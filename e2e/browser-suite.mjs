@@ -974,48 +974,298 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "history") {
-    await coverage.run(`history/reading-composer-native-v6@${inputId}`, async () => {
+    await coverage.run(`history/${inputId === "legacy-desktop" ? "reading-version-bridge-v7" : "reading-version-lower-v7"}@${inputId}`, async () => {
     const finishHistoryStage = stage.start(`history/${inputId}/chain`);
     // Interception needs its own SW-blocked context. The original history/PWA
     // context below stays unchanged, and reload cannot alter its reading state.
+    if (inputId === "legacy-desktop") {
     const finishVersionStage = stage.start(`history/${inputId}/version-reload`);
-    const versionContext = await newInputContext(inputId, { serviceWorkers: "block" });
-    const versionErrors = harness.errorsFor(versionContext);
-    const versionPage = await versionContext.newPage();
-    versionPage.setDefaultTimeout(30_000);
-    const versionPattern = "**/api/app-version";
-    const versionRoute = createOwnedRoutes(route => route.fulfill({ json: { version: "99.99.99" } }), route => route.continue());
-    try {
-      const initialVersion = versionPage.waitForResponse(response => new URL(response.url()).pathname === "/api/app-version");
-      void initialVersion.catch(() => {});
-      await versionPage.bringToFront();
-      await versionPage.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
-      assert.equal(await versionPage.evaluate(() => document.visibilityState), "visible");
-      assert.equal((await (await initialVersion).json()).version, null, "isolated fixtures disable live version checks");
-      await versionPage.getByText("E2E final answer", { exact: true }).waitFor();
-      const reloadWeb = versionPage.getByRole("button", { name: "Reload Pi Web" });
-      assert.equal(await reloadWeb.count(), 0, "The running version should not show a reload prompt");
-      await versionPage.route(versionPattern, versionRoute.handler);
-      const changedVersion = versionPage.waitForResponse(response => new URL(response.url()).pathname === "/api/app-version");
-      void changedVersion.catch(() => {});
-      await versionPage.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-      assert.equal((await (await changedVersion).json()).version, "99.99.99");
-      await reloadWeb.waitFor();
-      assert.ok(await versionPage.getByText("Pi Web v99.99.99 is running.").isVisible());
-      versionPage.once("dialog", (dialog) => dialog.dismiss());
-      await reloadWeb.click();
-      await reloadWeb.waitFor();
-      await versionRoute.dispose(handler => versionPage.unroute(versionPattern, handler));
-      versionPage.once("dialog", (dialog) => dialog.accept());
-      await Promise.all([versionPage.waitForNavigation(), reloadWeb.click()]);
-      await reloadWeb.waitFor({ state: "detached" });
-      assert.deepEqual(versionErrors, [], "Browser errors during version mismatch/reload");
+    {
+      // Finite stage-local ownership. This is not a general async/idle platform.
+      const versionWork = [], versionPhases = [], versionObserverCauses = [], versionCollectorCauses = [], versionCleanupCauses = [];
+      const versionRegistrations = [], versionRestorations = [], versionPages = [], versionDialogs = [], versionDialogScopes = [], versionRouteEvents = [];
+      let versionContext, versionPage, versionRoute, versionRouteAdapter, versionErrors = [];
+      let versionRouteTried = false, versionUnroute, versionRouteDisposal, versionPrimary, versionHasPrimary = false, versionJoined = 0;
+      // PRIVATE-WITNESS-DECLARATIONS
+      const ownVersion = (label, operation, meta = {}) => {
+        const entry = { label, meta, state: 'admitted', kind: 'sync', original: undefined, joined: false };
+        versionWork.push(entry);
+        try {
+          entry.original = operation();
+          if (entry.original && typeof entry.original.then === 'function') {
+            entry.kind = 'promise'; entry.state = 'pending';
+            // Nonthrowing passive observers retain original outcomes/references.
+            // Their actual derivative promises are joined too, never used as work ACKs.
+            entry.observation = entry.original.then(value => {
+              entry.state = 'fulfilled'; entry.outcome = { status: 'fulfilled', value };
+              versionPhases.push(`${label}:fulfilled`);
+            }, reason => {
+              entry.state = 'rejected'; entry.outcome = { status: 'rejected', reason };
+              versionPhases.push(`${label}:rejected`);
+            });
+          } else {
+            entry.state = 'fulfilled'; entry.outcome = { status: 'fulfilled', value: entry.original };
+          }
+        } catch (reason) {
+          entry.state = 'threw'; entry.outcome = { status: 'rejected', reason };
+          versionPhases.push(`${label}:threw`);
+        }
+        return entry;
+      };
+      const versionValue = async entry => {
+        if (entry.state === 'threw') throw entry.outcome.reason;
+        return await entry.original;
+      };
+      const registerVersion = (target, event, listener, label) => {
+        const registration = { target, event, listener, label, attempted: true, removed: false, removals: [] };
+        versionRegistrations.push(registration); // Before the native registration can throw.
+        registration.addition = ownVersion(`${label}.on`, () => target.on(event, listener), { target, event, listener });
+        if (registration.addition.state === 'threw') throw registration.addition.outcome.reason;
+        return registration;
+      };
+      const removeVersion = registration => {
+        if (!registration || registration.removed) return;
+        const removal = ownVersion(`${registration.label}.off`, () => registration.target.off(registration.event, registration.listener),
+          { target: registration.target, event: registration.event, listener: registration.listener });
+        registration.removals.push(removal);
+        if (removal.outcome?.status === 'fulfilled') registration.removed = true;
+      };
+      // Only these two EXISTING close ports are locally instrumented. Return the
+      // EXACT native promise/throw to the harness; do not replace its trace/close
+      // order, existing deadlines, diagnostics, error policy or native behavior.
+      const observeVersionClose = (target, key, label) => {
+        const previous = Object.getOwnPropertyDescriptor(target, key), original = target[key];
+        const restoration = { target, key, previous, original, restored: false };
+        versionRestorations.push(restoration);
+        const adapter = function (...args) {
+          const entry = ownVersion(label, () => Reflect.apply(original, this, args), { receiver: this, method: original, args });
+          if (entry.state === 'threw') throw entry.outcome.reason;
+          return entry.original;
+        };
+        restoration.adapter = adapter;
+        const installed = ownVersion(`${label}.observe`, () => Object.defineProperty(target, key, { configurable: true, writable: true, value: adapter }));
+        if (installed.state === 'threw') throw installed.outcome.reason;
+      };
+      const collectVersionPage = page => {
+        if (versionPages.includes(page)) return;
+        versionPages.push(page);
+        registerVersion(page, 'pageerror', error => { versionCollectorCauses.push(error); }, 'collector.pageerror');
+        registerVersion(page, 'console', message => {
+          try { if (message.type() === 'error') versionCollectorCauses.push(message); }
+          catch (error) { versionCollectorCauses.push(error); }
+        }, 'collector.console');
+        registerVersion(page, 'response', response => {
+          try {
+            if (new URL(response.url()).origin === new URL(base).origin && response.status() >= 500) versionCollectorCauses.push(response);
+          } catch (error) { versionCollectorCauses.push(error); }
+        }, 'collector.local5xx');
+      };
+      const admitVersionResponse = (label, expected) => {
+        const waiter = ownVersion(`${label}.wait.original`, () => versionPage.waitForResponse(response => new URL(response.url()).pathname === '/api/app-version'));
+        // BOTH complete consumers are admitted immediately, BEFORE bringToFront,
+        // goto or evaluate. A failed UI await cannot skip json/body consumption.
+        const parsed = ownVersion(`${label}.parse.consumer`, async () => {
+          const response = await versionValue(waiter);
+          const jsonMethod = response.json;
+          const json = ownVersion(`${label}.json.native`, () => Reflect.apply(jsonMethod, response, []), { receiver: response, method: jsonMethod });
+          const data = await versionValue(json);
+          return { response, data, json };
+        });
+        const consumer = ownVersion(`${label}.full.consumer`, async () => {
+          const result = await versionValue(parsed);
+          assert.equal(result.data.version, expected, `${label}: original complete version body`);
+          // PRIVATE-WITNESS-BODY-CONSUMER
+          return result;
+        });
+        return { waiter, parsed, consumer };
+      };
+      const admitVersionDialog = action => {
+        const scope = { action, events: [], registration: undefined };
+        versionDialogScopes.push(scope);
+        const listener = dialog => {
+          const event = { action, dialog, listener, ack: undefined, ackReturned: false };
+          scope.events.push(event); versionDialogs.push(event);
+          // Manual once semantics expose the EXACT registered listener to cleanup.
+          // An off failure is retained but never skips the actual native operation.
+          removeVersion(scope.registration);
+          const nativeMeta = { receiver: dialog, method: undefined };
+          event.native = ownVersion(`dialog.${action}.native`, () => {
+            nativeMeta.method = dialog[action];
+            return Reflect.apply(nativeMeta.method, dialog, []);
+          }, nativeMeta);
+          event.originalPromise = event.native.original;
+          event.consumer = ownVersion(`dialog.${action}.consumer`, async () => {
+            const result = await versionValue(event.native);
+            // PRIVATE-WITNESS-DIALOG-CONSUMER
+            return result;
+          });
+          // PRIVATE-WITNESS-DIALOG-UI
+          // Explicit external callback ACK, NOT a native operation completion.
+          event.ackReturned = true; versionPhases.push(`dialog.${action}:ack`);
+          return undefined;
+        };
+        scope.listener = listener;
+        scope.registration = registerVersion(versionPage, 'dialog', listener, `dialog.${action}.listener`);
+        return scope;
+      };
+      const unregisterVersionRoute = handler => {
+        assert.equal(handler, versionRoute.handler, 'OwnedRoutes supplies its own exact raw handler');
+        if (!versionRouteTried) return undefined; // No unadmitted dispatcher wait.
+        if (!versionUnroute) versionUnroute = ownVersion('route.unroute.exact', () => versionPage.unroute('**/api/app-version', versionRouteAdapter), { adapter: versionRouteAdapter });
+        if (versionUnroute.state === 'threw') throw versionUnroute.outcome.reason;
+        return versionUnroute.original;
+      };
+      const disposeVersionRoute = () => {
+        if (!versionRouteDisposal) versionRouteDisposal = ownVersion('route.owner.dispose', () => versionRoute.dispose(unregisterVersionRoute));
+        return versionRouteDisposal;
+      };
+      const joinVersionKnown = async () => {
+        while (versionJoined < versionWork.length) {
+          const batch = versionWork.slice(versionJoined); versionJoined = versionWork.length;
+          const promises = [], slots = [];
+          for (const entry of batch) if (entry.kind === 'promise') {
+            slots.push([entry, 'original']); promises.push(entry.original);
+            slots.push([entry, 'observation']); promises.push(entry.observation);
+          }
+          const results = await Promise.allSettled(promises);
+          for (let index = 0; index < results.length; index++) {
+            const [entry, role] = slots[index], outcome = results[index];
+            if (role === 'original') entry.outcome = outcome;
+            else {
+              entry.observerOutcome = outcome;
+              if (outcome.status === 'rejected') versionObserverCauses.push(outcome.reason);
+            }
+          }
+          for (const entry of batch) entry.joined = true;
+        }
+      };
+      // REGISTERED BEFORE context acquisition, page setup, collectors or triggers.
+      // Every external release/restoration is attempted independently via ownVersion.
+      const cleanupVersion = async () => {
+        versionPhases.push('release-start');
+        // PRIVATE-WITNESS-RELEASE-ALL
+        for (const registration of versionRegistrations) if (registration.event === 'dialog') removeVersion(registration);
+        for (const event of versionDialogs) {
+          if (event.native.state === 'threw' || event.native.state === 'rejected') {
+            event.release = ownVersion('cleanup.dialog.dismiss', () => event.dialog.dismiss(), { dialog: event.dialog });
+          }
+          // Pending native dismiss/accept is ALREADY an admitted release. Native
+          // page/context close below releases it even if it fails later; do not
+          // double-accept or pretend a post-native consumer failure is a live dialog.
+        }
+        if (versionRoute) ownVersion('route.begin-disposal', () => versionRoute.beginDisposal());
+        if (versionRouteTried && !versionUnroute) {
+          versionUnroute = ownVersion('route.unroute.exact', () => versionPage.unroute('**/api/app-version', versionRouteAdapter), { adapter: versionRouteAdapter });
+        }
+        for (const page of versionPages) ownVersion('cleanup.page.close', () => page.close(), { page });
+        if (versionContext) ownVersion('cleanup.context.harness', () => harness.closeContext(versionContext), { context: versionContext });
+        versionPhases.push('releases-initiated');
+        // No joins (including OwnedRoutes' internal drain) start before ALL
+        // known gate/dialog/route/page/context release operations above are begun.
+        if (versionRoute) disposeVersionRoute();
+        try { await joinVersionKnown(); } catch (error) { versionCleanupCauses.push(error); }
+        versionPhases.push('first-join-complete');
+        ownVersion('harness.errors.assert', () => assert.deepEqual(versionErrors, [], 'Browser errors during version mismatch/reload'));
+        for (const restoration of versionRestorations.toReversed()) {
+          ownVersion('close-observer.restore', () => {
+            if (restoration.previous) Object.defineProperty(restoration.target, restoration.key, restoration.previous);
+            else delete restoration.target[restoration.key];
+            restoration.restored = true;
+          });
+        }
+        // Local page/context collectors stay live THROUGH native/harness close
+        // AND exact method restoration. HOST registrations were made first and
+        // are therefore removed last. Existing harness collectors are unchanged.
+        versionPhases.push('close-restoration-complete');
+        for (const registration of versionRegistrations.toReversed()) removeVersion(registration);
+        try { await joinVersionKnown(); } catch (error) { versionCleanupCauses.push(error); }
+        versionPhases.push('all-settled');
+      };
+      try {
+        registerVersion(process, 'unhandledRejection', error => { versionCollectorCauses.push(error); }, 'collector.host-rejection');
+        registerVersion(process, 'uncaughtExceptionMonitor', error => { versionCollectorCauses.push(error); }, 'collector.host-exception');
+        versionContext = await versionValue(ownVersion('context.acquire', () => newInputContext(inputId, { serviceWorkers: 'block' })));
+        versionErrors = harness.errorsFor(versionContext); // Keep the live array through close.
+        observeVersionClose(versionContext.tracing, 'stop', 'native.trace.stop');
+        observeVersionClose(versionContext, 'close', 'native.context.close');
+        registerVersion(versionContext, 'page', page => {
+          try { collectVersionPage(page); } catch (error) { versionCollectorCauses.push(error); }
+        }, 'collector.context-page');
+        for (const page of versionContext.pages()) collectVersionPage(page);
+        versionPage = await versionValue(ownVersion('page.acquire', () => versionContext.newPage()));
+        collectVersionPage(versionPage);
+        versionPage.setDefaultTimeout(30_000);
+        const routeNative = (route, closing) => {
+          const operation = closing ? 'continue' : 'fulfill', method = route[operation];
+          const args = closing ? [] : [{ json: { version: '99.99.99' } }];
+          const native = ownVersion(`route.${operation}.native`, () => Reflect.apply(method, route, args), { receiver: route, method, args });
+          versionRouteEvents.push({ route, closing, native });
+          if (native.state === 'threw') throw native.outcome.reason;
+          return native.original;
+        };
+        versionRoute = createOwnedRoutes(route => routeNative(route, false), route => routeNative(route, true));
+        versionRouteAdapter = route => {
+          const raw = ownVersion('route.callback.raw', () => versionRoute.handler(route), { route, adapter: versionRouteAdapter });
+          const ack = ownVersion('route.callback.ack', async () => {
+            try { return { ok: true, value: await versionValue(raw) }; }
+            catch (error) { return { ok: false, error }; } // SAME error remains fatal in raw/OwnedRoutes ledgers.
+          }, { raw, adapter: versionRouteAdapter });
+          return ack.original; // Exact registered adapter's NONTHROWING dispatcher ACK, not raw work.
+        };
+        const initialVersion = admitVersionResponse('initial', null);
+        await versionValue(ownVersion('ui.bring-to-front', () => versionPage.bringToFront()));
+        await versionValue(ownVersion('ui.initial.goto', () => versionPage.goto(`${base}/?session=${RICH}`, { waitUntil: 'domcontentloaded' })));
+        assert.equal(await versionValue(ownVersion('ui.initial.visible', () => versionPage.evaluate(() => document.visibilityState))), 'visible');
+        // PRIVATE-WITNESS-BODY-UI
+        await versionValue(initialVersion.consumer);
+        await versionValue(ownVersion('ui.initial.answer', () => versionPage.getByText('E2E final answer', { exact: true }).waitFor()));
+        const reloadWeb = versionPage.getByRole('button', { name: 'Reload Pi Web' });
+        assert.equal(await versionValue(ownVersion('ui.initial.notice-count', () => reloadWeb.count())), 0, 'The running version should not show a reload prompt');
+        versionRouteTried = true;
+        await versionValue(ownVersion('route.register.exact', () => versionPage.route('**/api/app-version', versionRouteAdapter), { adapter: versionRouteAdapter }));
+        const changedVersion = admitVersionResponse('changed', '99.99.99');
+        await versionValue(ownVersion('ui.changed.visibility', () => versionPage.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))));
+        await versionValue(changedVersion.consumer);
+        await versionValue(ownVersion('ui.changed.notice', () => reloadWeb.waitFor()));
+        assert.ok(await versionValue(ownVersion('ui.changed.text', () => versionPage.getByText('Pi Web v99.99.99 is running.').isVisible())));
+        const cancel = admitVersionDialog('dismiss');
+        await versionValue(ownVersion('ui.cancel.click', () => reloadWeb.click()));
+        assert.equal(cancel.events.length, 1, 'one actually admitted native Cancel callback; never wait for an unadmitted dialog');
+        await versionValue(cancel.events[0].native);
+        await versionValue(cancel.events[0].consumer);
+        await versionValue(ownVersion('ui.cancel.notice-retained', () => reloadWeb.waitFor()));
+        await versionValue(disposeVersionRoute());
+        const accept = admitVersionDialog('accept');
+        const navigation = ownVersion('ui.accept.navigation', () => versionPage.waitForNavigation());
+        const click = ownVersion('ui.accept.click', () => reloadWeb.click());
+        // Both originals were admitted before either await. An early rejection
+        // enters finally, whose independent releases/joins still own its peer.
+        await versionValue(click);
+        await versionValue(navigation);
+        assert.equal(accept.events.length, 1, 'one actually admitted native Accept callback');
+        await versionValue(accept.events[0].native);
+        // PRIVATE-WITNESS-DIALOG-UI-EXIT
+        await versionValue(accept.events[0].consumer);
+        await versionValue(ownVersion('ui.accept.notice-detached', () => reloadWeb.waitFor({ state: 'detached' })));
+      } catch (error) {
+        versionHasPrimary = true; versionPrimary = error; versionPhases.push('primary-caught');
+      } finally {
+        try { await cleanupVersion(); } catch (error) { versionCleanupCauses.push(error); }
+      }
+      const versionFailed = versionWork.filter(entry => entry.outcome?.status === 'rejected');
+      const versionCauses = [];
+      if (versionHasPrimary) versionCauses.push(versionPrimary);
+      if (versionFailed.length) versionCauses.push(new AggregateError(versionFailed.map(entry => entry.outcome.reason), 'Original owned version-work causes (admission order; no deduplication)'));
+      if (versionObserverCauses.length) versionCauses.push(new AggregateError(versionObserverCauses, 'Version observation causes'));
+      if (versionCollectorCauses.length) versionCauses.push(new AggregateError(versionCollectorCauses, 'Version live collector causes'));
+      if (versionCleanupCauses.length) versionCauses.push(new AggregateError(versionCleanupCauses, 'Version independent cleanup/join causes'));
+      const versionFailure = versionCauses.length ? new AggregateError(versionCauses, 'Native WebVersion stage failed after owned settlement') : undefined;
+      // PRIVATE-WITNESS-VERIFY-THEN-RETHROW
+      if (versionFailure) throw versionFailure;
       console.log(`PASS: ${viewport.width}px version mismatch prompts before page reload`);
-    } finally {
-      try { await versionRoute.dispose(handler => versionPage.unroute(versionPattern, handler)); }
-      finally { await harness.closeContext(versionContext); }
     }
     finishVersionStage();
+    }
     await stage(`history/${inputId}/composer`, async () => { await checkUpstreamComposer(context, base, RICH, LONG, viewport.width); });
     const finishPaginationStage = stage.start(`history/${inputId}/identity-pagination`);
     const stateReady = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/sessions/${LONG}/state`);

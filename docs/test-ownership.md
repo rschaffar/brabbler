@@ -31,9 +31,15 @@ They justify the mapped four-file cull, including intentional absence of
 remain. They do not close the later surviving-browser audit or whole acceptance.
 
 [Receiving composition](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/resumed-implementation/composition.json)
-binds exact source deltas from qualified Thinking/Tool Second (including Sixth),
-without importing Navigation Fourth or the conditional LM version cut. Both
-Thinking/Copy observer lanes and all eighteen Settings cases are retained.
+initially bound exact source deltas from qualified Thinking/Tool Second (including
+Sixth), without Navigation Fourth or the then-conditional LM version cut. Both
+Thinking/Copy observer lanes and all eighteen normal Settings cases remain.
+Later finite Thinking, Tool and composer retirements have separate source-bound
+results in the active plan. The [qualified Web/version retirement](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/resumed-implementation/web-version-browser-result.json)
+closes the specific original-JSON/primary/support handoff and reuses the exact
+qualified native port: LD keeps real Cancel/Accept/reload, LM loses only its
+second version ceremony, not main physical History/PWA. Node JSON/emulated close,
+native after-success continuations and real native actions remain distinct proofs.
 The active plan's B1–B8 map owns remaining added/receiving/browser/performance gaps;
 no historical count or private source proposal is a completion claim.
 
