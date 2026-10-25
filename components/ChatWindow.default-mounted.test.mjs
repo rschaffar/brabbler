@@ -342,7 +342,7 @@ test('default H-TOOL: actual SSE partial/current Copy work and canonical input c
   const failures = [], registered = [], originals = new Map(), clipboardQueue = [], clipboardCalls = [], clipboardReturns = [];
   const firstEvents = [], currentEvents = [], callerOwners = [], callerStarts = [];
   const refusal = new Error('Expected clipboard refusal');
-  let f, finishing = false, admissionClosed = false;
+  let f, finishing = false, admissionClosed = false, heldCopyExit;
   const attempt = async callback => { try { await callback(); } catch (error) { failures.push(error); } };
   const own = (label, promise, expectedRejection = null) => {
     if (originals.has(promise)) return originals.get(promise);
@@ -360,6 +360,7 @@ test('default H-TOOL: actual SSE partial/current Copy work and canonical input c
       try {
         if (entry.expectedRejection) entry.gate.reject(entry.expectedRejection.error);
         else entry.gate.resolve(undefined);
+        entry.released = true; // Release acknowledgement only, never handler settlement.
       } catch (error) { errors.push(error); }
     }
     if (errors.length) throw new AggregateError(errors, 'Independent accepted clipboard releases failed');
@@ -641,12 +642,89 @@ test('default H-TOOL: actual SSE partial/current Copy work and canonical input c
     assert.equal(f.copyWorks.length, clipboardCalls.length, 'outer original handlers and inner calls counted separately, one per actual control action');
     assert.equal([...originals.values()].every(record => record.outcome !== 'pending'), true);
     assert.equal(currentEvents.filter(event => event.kind === 'caught').length, 1);
-    // As in the original synthetic probe: no agent_end because this event data
-    // is not persisted into the native fixture history. Do not invent authority.
-    await f.unmount(releaseClipboardPeers); await f.settleDefault();
-    assert.equal(stream.readyState, 2, 'actual default unmount closes the original ready source');
+    // Actual Copy handlers remain owned after their observer is removed. Admit
+    // BOTH peers before a primary failure, then unmount without releasing either.
+    const peers = [await beginCopy(card('readable-stream'), canonical),
+      await beginCopy(card('readable-stream'), canonical, { error: refusal })];
+    const latest = [];
+    options = { ...options, workObserver: observe(latest) };
+    await f.rerender(options);
+    const teardownHeader = header(card('readable-stream'));
+    assert.equal(Boolean(teardownHeader), true, 'actual pending-Copy card header exists');
+    const expandedBeforeUnmount = teardownHeader.getAttribute('aria-expanded');
+    assert.equal(expandedBeforeUnmount, 'true', 'establish the real expanded-card premise outside intentional catch');
+    heldCopyExit = { peers, latest, cleanup: new Error('Registered Tool cleanup hook failure'), firstHook: null, close: null };
+    try {
+      assert.equal(expandedBeforeUnmount, 'false',
+        'intentional independent UI assertion while both original Copy handlers are held');
+    } catch (error) {
+      if (!(error instanceof assert.AssertionError) || error.actual !== 'true' || error.expected !== 'false' || error.operator !== 'strictEqual') throw error;
+      heldCopyExit.primary = error; failures.push(error);
+    }
+    assert.equal(Object.hasOwn(heldCopyExit, 'primary'), true, 'original primary captured at its assertion origin');
+    assert.equal(peers.every(entry => !entry.outer.finished && originals.get(entry.outer.promise).outcome === 'pending'), true);
+    const window = f.view.window, closeDescriptor = Object.getOwnPropertyDescriptor(window, 'close'), nativeClose = window.close;
+    window.close = function (...args) {
+      heldCopyExit.close = {
+        originals: peers.every(entry => originals.get(entry.outer.promise).outcome === 'fulfilled'),
+        observations: peers.every(entry => entry.outer.finished),
+        sourceClosed: stream.readyState === 2,
+      };
+      // Restore this observation descriptor before delegating actual destruction.
+      try {
+        if (closeDescriptor) Object.defineProperty(window, 'close', closeDescriptor);
+        else delete window.close;
+      } catch (error) { failures.push(error); }
+      return Reflect.apply(nativeClose, this, args);
+    };
+    registered.unshift(() => {
+      heldCopyExit.firstHook = {
+        bothReleased: peers.every(entry => entry.released === true),
+        originalsStillPending: peers.every(entry => !entry.outer.finished),
+      };
+      throw heldCopyExit.cleanup; // A registered hook fault, NOT native unmount failure.
+    });
+    // No agent_end: these controlled events are not native persisted history.
+    await f.unmount();
+    assert.equal(stream.readyState, 2, 'real observer unmount closes the original ready source');
+    assert.equal(peers.every(entry => !entry.outer.finished && originals.get(entry.gate.promise).outcome === 'pending'), true,
+      'observer removal does not settle original Clipboard or outer handler work');
     assert.equal(f.defaultOwners.size, 1);
-    assert.equal(f.copyWorks.every(entry => entry.finished), true, 'all original Copy/catch work joined before realm disposal');
   } catch (error) { failures.push(error); }
-  finally { await finish(); }
+  finally {
+    const [outcome] = await Promise.allSettled([finish()]);
+    if (!heldCopyExit) {
+      if (outcome.status === 'rejected') throw outcome.reason;
+    } else {
+      try {
+        assert.equal(outcome.status, 'rejected');
+        assert.equal(outcome.reason instanceof AggregateError, true);
+        assert.equal(outcome.reason.errors.length, 2, 'unknown failures remain fatal, never filtered');
+        assert.equal(outcome.reason.errors[0] === heldCopyExit.primary, true, 'SAME original primary retained');
+        assert.equal(outcome.reason.errors[1] === heldCopyExit.cleanup, true, 'SAME preceding registered-hook failure retained');
+        assert.equal(heldCopyExit.firstHook.bothReleased && heldCopyExit.firstHook.originalsStillPending, true,
+          'both release ACKs precede first hook/join while original handlers remain pending');
+        assert.equal(heldCopyExit.close.originals && heldCopyExit.close.observations && heldCopyExit.close.sourceClosed, true,
+          'full original Copy handlers and distinct observations joined BEFORE actual realm close');
+        for (const entry of heldCopyExit.peers) {
+          assert.equal(entry.outer.finished, true);
+          assert.equal(originals.get(entry.outer.promise).outcome, 'fulfilled', 'real catch fulfills the outer handler');
+          const inner = originals.get(entry.gate.promise);
+          assert.equal(inner.outcome, entry.expectedRejection ? 'rejected' : 'fulfilled');
+          if (entry.expectedRejection) assert.equal(inner.error === refusal, true);
+        }
+        const caught = heldCopyExit.latest.filter(event => event.kind === 'caught');
+        assert.equal(caught.length, 1, 'latest observer receives one caught outcome after real unmount');
+        assert.equal(caught[0].error === refusal, true, 'latest observer receives SAME original refusal after unmount');
+        assert.equal(f.copyWorks.every(entry => entry.finished), true);
+      } catch (error) {
+        if (error instanceof assert.AssertionError) {
+          const primitive = value => ['string', 'number', 'boolean', 'undefined'].includes(typeof value) ? value : '[non-scalar]';
+          t.diagnostic('H-TOOL terminal assertion: ' + JSON.stringify([error.message.slice(0, 400), primitive(error.actual), primitive(error.expected)]));
+        }
+        throw new AggregateError([...(outcome.status === 'rejected' ? [outcome.reason] : []), error],
+          'Tool primary/unmount settlement assertions failed; original failures retained');
+      }
+    }
+  }
 });

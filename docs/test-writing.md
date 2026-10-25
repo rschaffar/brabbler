@@ -235,6 +235,13 @@ retire old tests or constitute full candidate acceptance.
   chronology and no-duplication policy. History retains one installed Process →
   Thinking → actual body at each original LD/LM profile; controlled effects do not
   replace native rendering, Clipboard, selection or the wider default connection.
+- `components/ChatWindow.default-mounted.test.mjs` owns actual hook/Source partial-
+  input, current Copy/refusal/canonical/message-end and full literal Tool corpus.
+  Original Clipboard promises differ from complete Copy handlers; the real catch
+  fulfills its handler, even across observer unmount. History retains native flat
+  Clipboard/raw-keyboard/scroll/fonts at both original profiles and one installed
+  dynamic write/edit path/Copy/result bridge, not another synthetic streaming page.
+  Retained font overrides independently preserve primary and restoration errors.
 - `lib/file-line-navigation.test.mjs` uses real isolated DOM trees; the actual
   FileViewer text/media mounts own request/body identities, watcher lifetimes,
   current links and Save races. Workspace mounts add stable hosts and independent

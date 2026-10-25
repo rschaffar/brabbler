@@ -22,7 +22,7 @@ export const browserInputs = {
 export const scenarios = {
   "ssh-agent": ["ssh-agent/native-consumers@en-desktop", "ssh-agent/compact-native@en-mobile-tall"],
   "state": ["state/api-append-accounts@service", "state/agents-reload@default", "state/durable-account@default"],
-  "history": ["history/installed-thinking-body-native-v4@legacy-desktop", "history/installed-thinking-body-native-v4@legacy-mobile"],
+  "history": ["history/reading-tool-native-v5@legacy-desktop", "history/reading-tool-native-v5@legacy-mobile"],
   "extension-dialogs": ["extension-dialogs/wrap-native-publication-v2@legacy-desktop", "extension-dialogs/compact-wrap-native-v2@legacy-mobile"],
   "mobile-sidebar": ["mobile-sidebar/compact-search-native-rename-restore-move-v3@legacy-mobile"],
   "worktrees": ["worktrees/native-loss-bound-review-v3@en-desktop", "worktrees/modal-review-layout-v2@en-mobile-tall"],

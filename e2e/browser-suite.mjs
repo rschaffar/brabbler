@@ -51,7 +51,7 @@ import { checkCompactionVisibility } from "./compaction.mjs";
 import { seedSourceHighlighting, checkSourceHighlighting } from "./source-highlighting.mjs";
 import { checkHighlightFailure } from "./highlight-failure.mjs";
 import { createOwnedRoutes } from "./owned-routes.mjs";
-import { seedToolArguments, checkToolArguments, checkStreamedToolArguments } from "./tool-arguments.mjs";
+import { seedToolArguments, checkToolArguments } from "./tool-arguments.mjs";
 
 // Validate one-hot ownership before the harness or any fixture side effects.
 const group = selectGroup(process.env);
@@ -974,7 +974,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "history") {
-    await coverage.run(`history/installed-thinking-body-native-v4@${inputId}`, async () => {
+    await coverage.run(`history/reading-tool-native-v5@${inputId}`, async () => {
     const finishHistoryStage = stage.start(`history/${inputId}/chain`);
     // Interception needs its own SW-blocked context. The original history/PWA
     // context below stays unchanged, and reload cannot alter its reading state.
@@ -1140,7 +1140,7 @@ let nativeToolsFixture;
     await page.getByText("echo E2E tool output", { exact: true }).waitFor();
     await page.getByRole("button", { name: /bash.*echo E2E tool output/ }).click();
     await page.getByText("E2E tool output", { exact: true }).waitFor();
-    await stage(`history/${inputId}/tool-arguments`, async () => { await checkToolArguments(page, toolArgumentFixtures, { artifacts, width: viewport.width }); });
+    await stage(`history/${inputId}/tool-arguments`, async () => { await checkToolArguments(page, toolArgumentFixtures, { artifacts, width: viewport.width, project, sessionId: RICH }); });
     await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
     const heading = page.getByRole("heading", { name: "E2E compacted heading", exact: true });
     await heading.waitFor({ state: "attached" });
@@ -1237,7 +1237,6 @@ let nativeToolsFixture;
     }
     finishReadingStage();
     await stage(`history/${inputId}/bottom-follow`, async () => { await checkChatBottomFollow(page, { base, id: RICH, timestamp }); });
-    await stage(`history/${inputId}/streamed-tool-arguments`, async () => { await checkStreamedToolArguments(page, { base, id: RICH, timestamp }); });
     await stage(`history/${inputId}/compaction`, async () => { await checkCompactionVisibility(page, { base, id: COMPACTED, artifacts, width: viewport.width }); });
     assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
     console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`);
