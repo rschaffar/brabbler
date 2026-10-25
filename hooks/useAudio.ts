@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { createComposerWork, type ComposerWork } from "@/lib/client-completion";
 
 function playTone(ctx: AudioContext) {
   const now = ctx.currentTime;
@@ -21,7 +22,9 @@ function playTone(ctx: AudioContext) {
   });
 }
 
-export function useAudio() {
+export function useAudio(suppliedWork?: ComposerWork) {
+  const localWork = useMemo(() => createComposerWork(), []);
+  const work = suppliedWork ?? localWork;
   const [enabled, setEnabled] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     try {
@@ -53,8 +56,8 @@ export function useAudio() {
     if (!force && !enabledRef.current) return;
     const ctx = getCtx();
     if (!ctx || ctx.state !== "suspended") return;
-    ctx.resume().catch(() => {});
-  }, [getCtx]);
+    void work.run(() => ctx.resume().catch(() => {}));
+  }, [getCtx, work]);
 
   const toggle = useCallback(() => {
     const next = !enabledRef.current;
@@ -76,11 +79,11 @@ export function useAudio() {
       }
     };
     if (ctx.state === "suspended") {
-      ctx.resume().then(play).catch(() => {});
+      void work.run(() => ctx.resume().then(play).catch(() => {}));
       return;
     }
     play();
-  }, [getCtx]);
+  }, [getCtx, work]);
 
-  return { soundEnabled: enabled, onSoundToggle: toggle, playDoneSound: playDone, unlockAudio, soundEnabledRef: enabledRef };
+  return { whenSettled: work.whenSettled, soundEnabled: enabled, onSoundToggle: toggle, playDoneSound: playDone, unlockAudio, soundEnabledRef: enabledRef };
 }

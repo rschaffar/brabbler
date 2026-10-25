@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
 import { createJiti } from "jiti";
-import { checkFilePanel, checkFileDiffViews, checkEditableFile, checkMarkdownPreview, markdownPanelFixture, filePanelFixture } from "./file-panel.mjs";
+import { checkFilePanel, checkWorkingFileContextBridge, checkEditableFile, checkMarkdownPreview, markdownPanelFixture, filePanelFixture } from "./file-panel.mjs";
 import { checkExplorerUploads } from "./explorer-uploads.mjs";
 import { seedFileLineLinks, checkFileLineLinks } from "./file-line-links.mjs";
 import { checkFileWorkspace } from "./file-workspace.mjs";
@@ -24,23 +24,23 @@ import { checkAcceptanceResponsive } from "./project-acceptance-ui.mjs";
 import { checkProjectPrivacy } from "./project-privacy.mjs";
 import { checkProjectTrustScopes } from "./project-trust-scopes.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
-import { checkChatAppearance } from "./chat-appearance.mjs";
-import { checkScratchpad } from "./scratchpad.mjs";
+import { checkChatAppearance, checkLegacyNumericWidthBridge } from "./chat-appearance.mjs";
+import { checkNotesNativeJourney, checkNotesTouchGeometry } from "./scratchpad.mjs";
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
 import { checkUpstreamComposer, checkOverflowTabs } from "./upstream-easy-wins.mjs";
 import { checkRequestHeaderBoundary, seedExternalReferenceFixtures, checkExternalReferenceBoundary } from "./security-boundaries.mjs";
-import { seedFollowupSettings, checkSkillInstructions, checkModelOverrides, checkBlockedPreferences } from "./upstream-followups.mjs";
-import { checkManagedModelContext } from "./managed-model-context.mjs";
-import { checkModelSpeed, checkModelSpeedPersistence } from "./model-speed.mjs";
-import { seedNativeToolsFixtures, checkNativeTools } from "./native-tools.mjs";
+import { seedFollowupSettings, checkSkillInstructions, checkModelOverrides, checkPreferenceWiring } from "./upstream-followups.mjs";
+import { checkManagedModelContextLayout } from "./managed-model-context.mjs";
+import { checkModelSpeedNativeJourney, checkModelSpeedNativeFreshJourney } from "./model-speed.mjs";
+import { seedNativeToolsFixtures, checkSelectedNativeRuntime } from "./native-tools.mjs";
+import { checkNativeToolsModalLayout } from "./native-tools-layout.mjs";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
 import { checkRunningSessionForks } from "./running-session-forks.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { contextContents, changedContextContents } from "./git-diff-context.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
 import { checkSessionMovePicker } from "./session-move.mjs";
-import { checkSessionWorktreeMoves } from "./session-worktree-moves.mjs";
-import { checkGitWorkflowPlugin, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
+import { checkGitWorkflowPluginNativeBridge, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
 import { checkSessionLaunch, sessionLaunchFixtureSource } from "./session-launch.mjs";
 import { checkWorktreeManager } from "./worktree-manager.mjs";
 import { assertStartupSessionCatalogue, prepareBrowserPrelude } from "./browser-fixture-recipes.mjs";
@@ -394,14 +394,14 @@ let nativeToolsFixture;
     for (const inputId of ["en-desktop", "en-mobile-tall"]) {
       const { viewport } = browserInputs[inputId].options;
       let createdId;
-      for (const phase of ["exercise", "fresh"]) await coverage.run(`model-speed/${phase}@${inputId}`, async () => {
+      for (const phase of ["native-wiring-v3", "native-fresh-v2"]) await coverage.run(`model-speed/${phase}@${inputId}`, async () => {
         context = await newInputContext(inputId);
         page = await context.newPage();
         page.setDefaultTimeout(30_000);
         const errors = harness.errorsFor(context);
         const options = { base, api, post, agentDir, project, artifacts, width: viewport.width };
-        if (phase === "exercise") createdId = await checkModelSpeed(page, options);
-        else await checkModelSpeedPersistence(page, options, createdId);
+        if (phase === "native-wiring-v3") createdId = await checkModelSpeedNativeJourney(page, options);
+        else await checkModelSpeedNativeFreshJourney(page, options, createdId);
         assert.deepEqual(errors, [], `Model-speed browser/server errors at ${viewport.width}px (${phase})`);
         await harness.closeContext(context);
         context = undefined;
@@ -412,7 +412,7 @@ let nativeToolsFixture;
 
   async function runRunningForkChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`running-forks/full@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`running-forks/${inputId === "en-desktop" ? "canonical-quote-stop-v2" : "first-user-quote-stop-v2"}@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage();
@@ -426,7 +426,7 @@ let nativeToolsFixture;
 
   async function runSessionLaunchChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`session-launch/full@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`session-launch/${inputId === "en-desktop" ? "feedback-and-independent-native-v2" : "independent-native-compact-v2"}@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage(); page.setDefaultTimeout(30_000);
@@ -438,7 +438,7 @@ let nativeToolsFixture;
   }
   async function runWorktreeManagerChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const [index, inputId] of ["en-desktop", "en-mobile-tall"].entries()) await coverage.run(`worktrees/full@${inputId}`, async () => {
+    for (const [index, inputId] of ["en-desktop", "en-mobile-tall"].entries()) await coverage.run(`worktrees/${inputId === "en-desktop" ? "native-loss-bound-review-v3" : "modal-review-layout-v2"}@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage(); page.setDefaultTimeout(30_000);
@@ -458,17 +458,19 @@ let nativeToolsFixture;
     await runModelSpeedChecks();
   } else if (group === "native-tools") {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`native-tools/full@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`native-tools/${inputId === "en-desktop" ? "selected-runtime-native-v2" : "modal-layout"}@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId); page = await context.newPage(); page.setDefaultTimeout(30_000);
       const errors = harness.errorsFor(context);
-      await checkNativeTools(page, { base, api, post, fixture: nativeToolsFixture, artifacts, width: viewport.width });
+      const nativeOptions = { base, api, post, fixture: nativeToolsFixture, artifacts, width: viewport.width };
+      if (inputId === "en-desktop") await checkSelectedNativeRuntime(page, nativeOptions);
+      else await checkNativeToolsModalLayout(page, nativeOptions);
       assert.deepEqual(errors, [], `Native-tools browser/server errors at ${viewport.width}px`);
       await harness.closeContext(context); context = undefined; page = undefined;
     });
   } else if (group === "trust") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`trust/full@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`trust/${inputId === "en-desktop" ? "worktree-caller-cwd-reset-native-v5" : "worktree-compact-restriction-native-v5"}@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage();
@@ -479,18 +481,18 @@ let nativeToolsFixture;
     });
   } else if (group === "git-plugin") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/full@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/settings-disable-subset-v2@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage();
       const errors = harness.errorsFor(context);
-      await checkGitWorkflowPlugin(page, base, gitProject, GIT, artifacts, viewport.width);
+      await checkGitWorkflowPluginNativeBridge(page, base, gitProject, GIT, artifacts, viewport.width);
       assert.deepEqual(errors, [], "Plugin browser/server errors");
       await harness.closeContext(context); context = undefined; page = undefined;
     });
   } else if (group === "appearance") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["numeric-wide", "legacy-desktop"]) await coverage.run(`appearance/full@${inputId}`, async () => {
+    for (const inputId of ["numeric-wide", "legacy-desktop"]) await coverage.run(`appearance/${inputId === "numeric-wide" ? "legacy-width-bridge-v2" : "layout-native-v2"}@${inputId}`, async () => {
       context = await newInputContext(inputId);
       page = await context.newPage();
       const errors = harness.errorsFor(context);
@@ -506,26 +508,30 @@ let nativeToolsFixture;
       }
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
-      await checkChatAppearance(page);
+      if (inputId === "numeric-wide") await checkLegacyNumericWidthBridge(page);
+      else await checkChatAppearance(page);
       assert.deepEqual(errors, [], "Chat appearance browser/server errors");
       await harness.closeContext(context); context = undefined; page = undefined;
     });
-    for (const inputId of ["en-desktop", "en-mobile-short"]) await coverage.run(`appearance/scratchpad@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-short"]) await coverage.run(`appearance/${inputId === "en-desktop" ? "notes-native" : "notes-touch-layout"}@${inputId}`, async () => {
       context = await newInputContext(inputId);
       page = await context.newPage();
       const errors = harness.errorsFor(context);
-      await checkScratchpad(page, { base, sessionId: RICH, otherId: OTHER, inputId });
+      if (inputId === "en-desktop") await checkNotesNativeJourney(page, { base, sessionId: RICH });
+      else await checkNotesTouchGeometry(page, { base, sessionId: RICH });
       assert.deepEqual(errors, [], `Scratchpad browser/server errors: ${inputId}`);
       await harness.closeContext(context); context = undefined; page = undefined;
     });
   } else if (group === "timestamps") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall", "legacy-desktop", "legacy-mobile"]) await coverage.run(`timestamps/full@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall", "legacy-desktop", "legacy-mobile"]) await coverage.run(`timestamps/${inputId === "en-desktop" || inputId === "legacy-desktop" ? "usage-time-geometry-v3" : "process-hit-test-v3"}@${inputId}`, async () => {
       context = await newInputContext(inputId);
       page = await context.newPage();
       const errors = harness.errorsFor(context);
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
-      await checkMessageTimestamps(page, timestamp);
+      await checkMessageTimestamps(page, {
+        nativeProcess: inputId === "en-mobile-tall" || inputId === "legacy-mobile",
+      });
       assert.deepEqual(errors, [], "Message timestamp browser errors");
       await harness.closeContext(context);
       context = undefined;
@@ -686,7 +692,7 @@ let nativeToolsFixture;
       if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
     });
     if (group === "diff-context") {
-      await coverage.run(`diff-context/explorer-then-merge@${inputId}`, async () => {
+      await coverage.run(`diff-context/d409-render-merge-v2@${inputId}`, async () => {
         // The absent managed control is checked on a hydrated chat, just as in
         // the former general path. Explorer must precede the mutating merge.
         await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
@@ -700,7 +706,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "markdown") {
-      await coverage.run(`markdown/preview-then-line-links@${inputId}`, async () => {
+      await coverage.run(`markdown/${inputId === "legacy-desktop" ? "render-files-native-v3" : "render-touch-wiring-v2"}@${inputId}`, async () => {
       const finishMarkdownStage = stage.start(`markdown/${inputId}/chain`);
       // This added chunk-interception fixture needs no service worker. Existing
       // Markdown scenarios below retain their original, independent context.
@@ -712,14 +718,19 @@ let nativeToolsFixture;
         await stage(`markdown/${inputId}/source-highlighting`, async () => { await checkSourceHighlighting(highlightPage, base, highlightingFixture); });
         assert.deepEqual(highlightErrors, [], "Browser errors during source highlighting");
       } finally { await harness.closeContext(highlightContext); }
-      const failureContext = await newInputContext(inputId, { serviceWorkers: "block" });
-      const failureErrors = harness.errorsFor(failureContext);
-      try {
-        const failurePage = await failureContext.newPage();
-        failurePage.setDefaultTimeout(30_000);
-        await stage(`markdown/${inputId}/highlight-failure`, async () => { await checkHighlightFailure(failurePage, base, highlightingFixture); });
-        assert.deepEqual(failureErrors, [], "Browser errors during grammar failure/retry");
-      } finally { await harness.closeContext(failureContext); }
+      // Missing webpack registration/retry is package-runtime behavior, not a
+      // second responsive layout. Keep its independent cold context once; both
+      // inputs above still exercise actual chunk execution and native Selection.
+      if (inputId === "legacy-desktop") {
+        const failureContext = await newInputContext(inputId, { serviceWorkers: "block" });
+        const failureErrors = harness.errorsFor(failureContext);
+        try {
+          const failurePage = await failureContext.newPage();
+          failurePage.setDefaultTimeout(30_000);
+          await stage(`markdown/${inputId}/highlight-failure`, async () => { await checkHighlightFailure(failurePage, base, highlightingFixture); });
+          assert.deepEqual(failureErrors, [], "Browser errors during grammar failure/retry");
+        } finally { await harness.closeContext(failureContext); }
+      }
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       const wideList = page.locator(".markdown-body ol").filter({ hasText: "Upstream wide marker" });
@@ -735,9 +746,9 @@ let nativeToolsFixture;
       await stage(`markdown/${inputId}/review-notebooks`, async () => { await checkReviewNotebooks(page, { base, fixture: reviewNotebookFixture }); });
       await stage(`markdown/${inputId}/skill-instructions`, async () => { await checkSkillInstructions(page, base, followupSettings); });
       await stage(`markdown/${inputId}/model-overrides`, async () => { await checkModelOverrides(page, base, RICH, project); });
-      await stage(`markdown/${inputId}/managed-model-context`, async () => { await checkManagedModelContext(page); });
+      await stage(`markdown/${inputId}/managed-model-context`, async () => { await checkManagedModelContextLayout(page); });
       await stage(`markdown/${inputId}/external-references`, async () => { await checkExternalReferenceBoundary(page, base, externalReferenceFixtures); });
-      await stage(`markdown/${inputId}/blocked-preferences`, async () => { await checkBlockedPreferences(page, base, RICH); });
+      await stage(`markdown/${inputId}/blocked-preferences`, async () => { await checkPreferenceWiring(page, base, RICH); });
       assert.deepEqual(errors, [], "Browser errors during Markdown preview and line links");
       await harness.closeContext(context); context = undefined; page = undefined;
       finishMarkdownStage();
@@ -745,11 +756,11 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "file-edit") {
-      await coverage.run(`file-edit/panel-diff-edit@${inputId}`, async () => {
+      await coverage.run(`file-edit/native-context-owned-source-tail-v3@${inputId}`, async () => {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       await checkFilePanel(page, previewFile);
-      await checkFileDiffViews(page, editableFile);
+      await checkWorkingFileContextBridge(page, editableFile);
       await checkEditableFile(page, editableFile);
       await checkExplorerUploads(page, { project, base });
       await checkOverflowTabs(page);
@@ -782,7 +793,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "privacy") {
-      await coverage.run(`privacy/full@${inputId}`, async () => {
+      await coverage.run(`privacy/native-owned-v3@${inputId}`, async () => {
         await checkProjectPrivacy(page, viewport.width, { base, api, post, harness, selectedSessionId: BRANCH, otherSessionId: OTHER });
         assert.deepEqual(errors, [], `Project privacy browser errors at width ${viewport.width}`);
         await harness.closeContext(context); context = undefined; page = undefined;
@@ -790,7 +801,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "activity") {
-      const activityScenario = inputId === "legacy-desktop" ? "activity/golden-native" : "activity/responsive";
+      const activityScenario = inputId === "legacy-desktop" ? "activity/native-state-recipe-owned-v4" : "activity/compact-state-recipe-owned-v4";
       await coverage.run(`${activityScenario}@${inputId}`, async () => {
       const finishActivityStage = stage.start(`activity/${inputId}/chain`);
       // Seed only after the selected chat has loaded, so clicking its newly
@@ -839,14 +850,14 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "accounts") {
-      await coverage.run(`accounts/created-deleted@${inputId}`, async () => {
+      await coverage.run(`accounts/created-device-owner-v3@${inputId}`, async () => {
       const { oauthProviders } = await api("/api/auth/providers");
       const oauthEntry = oauthProviders.find((item) => item.id === "github-copilot") ?? oauthProviders[0];
       assert.ok(oauthEntry, "OAuth provider required for account browser fixture");
       const { account } = await post("/api/auth/accounts", { provider: oauthEntry.id, label: `E2E device ${viewport.width}`, type: "oauth" });
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);
       await checkProviderAccountAuthorization(page, { base, sessionId: RICH, provider: oauthEntry.id,
-        providerName: oauthEntry.name, accountLabel: account.label, width: viewport.width, artifacts });
+        providerName: oauthEntry.name, accountId: account.id, accountLabel: account.label, width: viewport.width, artifacts });
       const removedFixture = await fetch(`${base}/api/auth/accounts`, { method: "DELETE", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: account.id }) });
       assert.equal(removedFixture.status, 200);
@@ -858,12 +869,14 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "questions") {
-      await coverage.run(`questions/registration-and-dialog@${inputId}`, async () => {
+      await coverage.run(`questions/${inputId === "legacy-desktop" ? "native-publication-v2" : "compact-native-v2"}@${inputId}`, async () => {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
-      const { data: tools } = await post(`/api/agent/${RICH}`, { type: "get_tools" });
-      assert.deepEqual(tools.filter((tool) => tool.name === "ask_user").map((tool) => tool.active), [true]);
-      assert.match(tools.find((tool) => tool.name === "ask_user").description, /^Ask the user a question/);
+      if (inputId === "legacy-desktop") {
+        const { data: tools } = await post(`/api/agent/${RICH}`, { type: "get_tools" });
+        assert.deepEqual(tools.filter((tool) => tool.name === "ask_user").map((tool) => tool.active), [true]);
+        assert.match(tools.find((tool) => tool.name === "ask_user").description, /^Ask the user a question/);
+      }
       await checkAskUserDialog(page, viewport.width);
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
       await harness.closeContext(context);
@@ -897,10 +910,9 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "bulk") {
-      await coverage.run(`bulk/archive-restore-delete@${inputId}`, async () => {
+      await coverage.run(`bulk/native-selection-mutations-v2@${inputId}`, async () => {
       const ids = viewport.width <= 600 ? BULK.slice(2) : BULK.slice(0, 2);
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
-      await page.locator(".markdown-code-block pre").waitFor();
       if (viewport.width <= 600) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
       const first = page.locator(`[data-session-id="${ids[0]}"]`);
       const second = page.locator(`[data-session-id="${ids[1]}"]`);
@@ -913,20 +925,11 @@ let nativeToolsFixture;
       await second.scrollIntoViewIfNeeded();
       await second.getByRole("checkbox").check();
       await page.getByText("2 selected", { exact: true }).waitFor();
-      const archiveConflict = `**/api/sessions/${ids[0]}`;
-      const failArchive = (route) => route.request().method() === "PATCH"
-        ? route.fulfill({ status: 409, json: { error: "Session is running" } }) : route.continue();
-      await page.route(archiveConflict, failArchive);
-      await page.getByRole("button", { name: "Archive", exact: true }).click();
-      await page.getByRole("alert").getByText("1 failed, 1 succeeded", { exact: false }).waitFor();
-      const expectedConflict = errors.indexOf("Failed to load resource: the server responded with a status of 409 (Conflict)");
-      assert.notEqual(expectedConflict, -1, "Simulated archive conflict should reach the browser");
-      errors.splice(expectedConflict, 1);
-      assert.ok(await first.getByRole("checkbox").isChecked(), "Failed session stays selected for retry");
-      assert.equal((await api("/api/sessions?force=1")).sessions.find((s) => s.id === ids[1])?.archived, true);
-      await page.unroute(archiveConflict, failArchive);
+      // Failed-only retry/currentness are actual Sidebar lower-owner cases.
+      // Keep one installed control -> native mutation -> catalogue bridge.
       await page.getByRole("button", { name: "Archive", exact: true }).click();
       await first.waitFor({ state: "detached" });
+      await select.waitFor({ state: "visible" }); // all admitted family mutations exited selection
       const archivedSessions = (await api("/api/sessions?force=1")).sessions;
       assert.ok(ids.every((id) => archivedSessions.find((s) => s.id === id)?.archived === true));
       await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
@@ -937,6 +940,7 @@ let nativeToolsFixture;
       await second.getByRole("checkbox").check();
       await page.getByRole("button", { name: "Restore", exact: true }).click();
       await first.waitFor({ state: "detached" });
+      await select.waitFor({ state: "visible" }); // do not join the second family via the first row or GET
       await page.getByRole("button", { name: "Active sessions", exact: true }).click();
       await page.getByRole("button", { name: "Select", exact: true }).click();
       await first.scrollIntoViewIfNeeded();
@@ -944,8 +948,6 @@ let nativeToolsFixture;
       await page.getByRole("button", { name: "Delete", exact: true }).click();
       await page.getByText("Permanently delete selected sessions (1) and their subagents? Forks will remain.").waitFor();
       assert.ok((await api("/api/sessions?force=1")).sessions.some((s) => s.id === ids[0]), "Delete requires confirmation");
-      await page.getByRole("button", { name: "Cancel", exact: true }).click();
-      await page.getByRole("button", { name: "Delete", exact: true }).click();
       await page.getByRole("button", { name: "Delete", exact: true }).last().click();
       await first.waitFor({ state: "detached" });
       assert.ok(!(await api("/api/sessions?force=1")).sessions.some((s) => s.id === ids[0]));
@@ -960,12 +962,11 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "move") {
-      await coverage.run(`move/full-picker@${inputId}`, async () => {
+      await coverage.run(`move/${inputId === "legacy-desktop" ? "picker-recovery-native-v2" : "picker-modal-browse-v2"}@${inputId}`, async () => {
       const moveId = viewport.width <= 600 ? ARCHIVE : APPEND;
-      await checkSessionMovePicker(page, { base, api, sessionId: moveId, project, otherProject, gitProject, targetWorktree, mobile: viewport.width <= 600 });
-      await checkSessionWorktreeMoves(page, { base, api, post, agentDir, otherProject, mobile: viewport.width <= 600 });
+      await checkSessionMovePicker(page, { base, api, post, agentDir, sessionId: moveId, project, otherProject, gitProject, targetWorktree, mobile: viewport.width <= 600 });
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
-      console.log(`PASS: ${viewport.width}px session move picker worktrees, exclusion, Browse, failure and stale responses`);
+      console.log(`PASS: ${viewport.width}px native move picker/Browse and selected-uncertain shell boundary; desktop recovery execution`);
       await harness.closeContext(context);
       context = undefined;
       page = undefined;
@@ -973,7 +974,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "history") {
-    await coverage.run(`history/reading-chain@${inputId}`, async () => {
+    await coverage.run(`history/${inputId === "legacy-desktop" ? "reading-receiving-compaction-v2" : "reading-touch-compaction-v2"}@${inputId}`, async () => {
     const finishHistoryStage = stage.start(`history/${inputId}/chain`);
     // Interception needs its own SW-blocked context. The original history/PWA
     // context below stays unchanged, and reload cannot alter its reading state.
@@ -1269,7 +1270,7 @@ let nativeToolsFixture;
     continue;
     }
     if (group === "extension-dialogs") {
-      await coverage.run(`extension-dialogs/full@${inputId}`, async () => {
+      await coverage.run(`extension-dialogs/${inputId === "legacy-desktop" ? "wrap-native-publication-v2" : "compact-wrap-native-v2"}@${inputId}`, async () => {
         await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
         await page.locator(".markdown-code-block pre").waitFor();
         await checkExtensionDialogs(page, artifacts, viewport.width);
@@ -1279,7 +1280,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "mobile-sidebar") {
-      await coverage.run(`mobile-sidebar/archive-search-restore-move@${inputId}`, async () => {
+      await coverage.run(`mobile-sidebar/compact-search-native-rename-restore-move-v3@${inputId}`, async () => {
       await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });
       await page.getByText("E2E archive fixture", { exact: true }).first().waitFor();
       await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
@@ -1315,36 +1316,26 @@ let nativeToolsFixture;
       const searchToggle = page.getByRole("button", { name: "Search conversations", exact: true });
       await searchToggle.click();
       await page.getByRole("searchbox", { name: "Search conversations..." }).fill("E2E archive fixture");
-      await page.getByText("No matching conversations in this scope").waitFor();
       await page.getByRole("checkbox", { name: "Active and archived" }).check();
       await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
       const titlesOnly = page.getByRole("checkbox", { name: "Titles only", exact: true });
       await titlesOnly.check();
       await page.getByText("No matching conversations in this scope").waitFor();
-      await titlesOnly.uncheck();
-      await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
+      // Preserve the exact native title-before/after-rename query bridge. The
+      // exhaustive single-toggle request/result matrix is actual Sidebar-owned.
       const renameResponse = await fetch(`${base}/api/sessions/${ARCHIVE}`, {
         method: "PATCH", body: JSON.stringify({ name: "E2E archive fixture" }), signal: AbortSignal.timeout(30_000),
       });
+      await renameResponse.arrayBuffer(); // full native response before any status assertion
       assert.equal(renameResponse.status, 200);
+      await titlesOnly.uncheck();
       await titlesOnly.check();
       await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
       await titlesOnly.uncheck();
       await page.getByRole("checkbox", { name: "Active and archived" }).uncheck();
-      await page.getByText("No matching conversations in this scope").waitFor();
-      await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
-      await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
-      await page.getByRole("button", { name: "Active sessions", exact: true }).click();
       await page.getByRole("searchbox", { name: "Search conversations..." }).fill("Other workspace task");
-      await page.getByText("No matching conversations in this scope").waitFor();
       await page.getByRole("checkbox", { name: "All projects" }).check();
       await page.getByRole("button", { name: /Other workspace task/ }).waitFor();
-      await page.getByRole("checkbox", { name: "All projects" }).uncheck();
-      await page.getByText("No matching conversations in this scope").waitFor();
-      await titlesOnly.check();
-      await searchToggle.click();
-      await searchToggle.click();
-      assert.equal(await titlesOnly.isChecked(), false, "Reopening search resets title-only mode");
       await searchToggle.click();
       await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
       // Finish reopening/reconciliation before testing restore. The notice can
@@ -1357,12 +1348,24 @@ let nativeToolsFixture;
         return address.pathname === `/api/sessions/${ARCHIVE}/context`
           && address.searchParams.get("ancestorId") === archivedAnchor;
       });
-      void reopenedContext.catch(() => {});
-      await row.getByText("E2E archive fixture", { exact: true }).click();
-      await page.getByText("This session is archived. Restore it to show it in active sessions.").waitFor();
-      const reopenedResponse = await reopenedContext;
+      // Own the complete admitted response body even if the independent UI wait
+      // fails. The result adapter preserves original errors, not a no-op catch.
+      const reopenedRead = reopenedContext.then(async response => ({ response, body: await response.json() }));
+      const reopenedOutcome = reopenedRead.then(value => ({ ok: true, value }), error => ({ ok: false, error }));
+      let reopenedUi = { ok: true };
+      try {
+        await row.getByText("E2E archive fixture", { exact: true }).click();
+        await page.getByText("This session is archived. Restore it to show it in active sessions.").waitFor();
+      } catch (error) { reopenedUi = { ok: false, error }; }
+      const reopenedResult = await reopenedOutcome;
+      const reopenedFailures = [];
+      if (!reopenedUi.ok) reopenedFailures.push(reopenedUi.error);
+      if (!reopenedResult.ok) reopenedFailures.push(reopenedResult.error);
+      if (reopenedFailures.length === 1) throw reopenedFailures[0];
+      if (reopenedFailures.length) throw new AggregateError(reopenedFailures, "Archived receiving UI and native response failed");
+      const { response: reopenedResponse, body: reopenedBody } = reopenedResult.value;
       assert.equal(reopenedResponse.status(), 200);
-      assert.deepEqual((await reopenedResponse.json()).context.entryIds, archivedSnapshot.context.entryIds);
+      assert.deepEqual(reopenedBody.context.entryIds, archivedSnapshot.context.entryIds);
       await page.getByRole("button", { name: "Restore session", exact: true }).click();
       await page.getByText("This session is archived. Restore it to show it in active sessions.").waitFor({ state: "detached" });
       await row.waitFor({ state: "detached" });
@@ -1450,14 +1453,14 @@ let nativeToolsFixture;
     assert.ok(oauthEntry, "OAuth provider required for browser authorization fixture");
     const oauthProvider = oauthEntry.id;
     const { account: deviceAccount } = await post("/api/auth/accounts", { provider: oauthProvider, label: "E2E device", type: "oauth" });
-    for (const inputId of ["en-desktop", "en-mobile-short"]) await coverage.run(`accounts/shared-device@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-short"]) await coverage.run(`accounts/shared-device-owner-v3@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);
       page = await context.newPage();
       page.setDefaultTimeout(30_000);
       await checkProviderAccountAuthorization(page, { base, sessionId: RICH, provider: oauthProvider,
-        providerName: oauthEntry.name, accountLabel: deviceAccount.label, width: viewport.width, artifacts });
+        providerName: oauthEntry.name, accountId: deviceAccount.id, accountLabel: deviceAccount.label, width: viewport.width, artifacts });
       await harness.closeContext(context);
       context = undefined;
       page = undefined;

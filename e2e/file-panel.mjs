@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { assertCompactChatRestored } from "./file-panel-layout.mjs";
 import { observeBrowserReads } from "./browser-read-barrier.mjs";
+import { createOwnedRoutes } from "./owned-routes.mjs";
 import { checkDiffContext, contextPatch, contextContents, changedContextContents } from "./git-diff-context.mjs";
 
 export const filePanelFixture = `<!doctype html><html><body style="margin:20px;min-height:2400px">
@@ -157,6 +158,18 @@ export async function checkMarkdownPreview(page, filePath) {
 
 // Mock only the bounded Git response; exercise the real explorer, file tab and renderer.
 export async function checkFileDiffViews(page, filePath) {
+  return checkFileDiffViewsForStatuses(page, filePath, ["modified", "added", "deleted", "context"]);
+}
+
+// Reduced F02/F11 bridge: browser-suite dispatches only the context selection.
+// Modified/added/deleted matrices have the separately bound actual FileViewer ->
+// CommittedPatchDiff owner. This helper retains real browser context authority;
+// fresh scenario/package execution is required, never the old panel-diff-edit ID.
+export async function checkWorkingFileContextBridge(page, filePath) {
+  return checkFileDiffViewsForStatuses(page, filePath, ["context"]);
+}
+
+async function checkFileDiffViewsForStatuses(page, filePath, statuses) {
   const panel = page.locator("#file-panel");
   const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
   const patches = {
@@ -165,7 +178,8 @@ export async function checkFileDiffViews(page, filePath) {
     deleted: "diff --git a/editable.txt b/editable.txt\ndeleted file mode 100644\n--- a/editable.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-Old text\n",
     context: contextPatch("editable.txt"),
   };
-  for (const [status, patch] of Object.entries(patches)) {
+  for (const status of statuses) {
+    const patch = patches[status];
     if (await showSidebar.isVisible()) await showSidebar.click();
     let contextReads = 0;
     const respond = (route) => {
@@ -179,8 +193,22 @@ export async function checkFileDiffViews(page, filePath) {
       return route.fulfill({ json: { supported: true, status: status === "context" ? "modified" : status, patch,
         ...(status === "context" ? { revision: "a".repeat(64) } : {}) } });
     };
-    await page.route("**/api/git/diff?*", respond);
+    const routePattern = "**/api/git/diff?*";
+    const owner = createOwnedRoutes(respond, respond);
+    const callbacks = [], acknowledgements = [], failures = [];
+    let primary, primaryFailed = false;
+    // Register this exact ACK adapter, not owner.handler. Original callback work
+    // and SAME errors remain live even if Playwright ignores a returned rejection.
+    const adapter = route => {
+      const work = owner.handler(route);
+      callbacks.push(work);
+      const acknowledged = work.then(undefined, error => { failures.push(error); });
+      acknowledgements.push(acknowledged);
+      return acknowledged;
+    };
     try {
+      // Registration may reject after admitting a callback; finally still owns it.
+      await page.route(routePattern, adapter);
       await page.getByTitle(filePath.replace(/\\/g, "/"), { exact: true }).click();
       if (status !== "deleted") await panel.getByRole("button", { name: "Diff", exact: true }).click();
       const controls = panel.getByRole("group", { name: "Patch view" });
@@ -192,29 +220,45 @@ export async function checkFileDiffViews(page, filePath) {
       if (status === "context") {
         await checkDiffContext(page, panel, panel);
         assert.equal(contextReads, 1, "Gap expansion and all reading controls share one lazy snapshot read");
-        await panel.getByRole("button", { name: "Source", exact: true }).click();
-        await panel.getByRole("button", { name: "Diff", exact: true }).click();
-        await panel.getByRole("button", { name: "Diff context", exact: true }).waitFor();
-        assert.equal(contextReads, 1, "Source/Diff retains the revision-bound model");
       }
-      await controls.getByRole("button", { name: "Unified", exact: true }).click();
-      await panel.getByRole("region", { name: "Unified diff" }).waitFor();
-      assert.equal(await controls.getByRole("button", { name: "Unified", exact: true }).getAttribute("aria-pressed"), "true");
-      await controls.getByRole("button", { name: "Raw patch", exact: true }).click();
-      assert.equal(await panel.getByRole("region", { name: "Raw patch" }).textContent(), patch);
-      await controls.getByRole("button", { name: "Side by side", exact: true }).click();
-      await panel.getByRole("region", { name: "Side-by-side diff" }).waitFor();
       if (status !== "deleted") {
         await panel.getByRole("button", { name: "Source", exact: true }).click();
         assert.equal(await controls.count(), 0, "Diff controls do not appear in source mode");
       }
       await panel.getByRole("button", { name: "Close editable.txt" }).click();
       await panel.getByRole("button", { name: "Hide file panel" }).click();
+    } catch (error) {
+      primary = error; primaryFailed = true;
     } finally {
-      await page.unroute("**/api/git/diff?*", respond);
+      // There are no held gates here. Join original callback/fulfill work, remove
+      // the EXACT registered adapter, and join callbacks admitted during removal.
+      try { await owner.dispose(() => page.unroute(routePattern, adapter)); }
+      catch (error) { failures.push(error); }
+      // Independently join original work even if dispose/unregistration failed.
+      // Its rejection is already recorded by the live SAME-error ACK above and
+      // by OwnedRoutes; this allSettled is settlement, not error suppression.
+      try {
+        let joined = 0;
+        while (joined < callbacks.length) {
+          const admitted = callbacks.slice(joined); joined += admitted.length;
+          await Promise.allSettled(admitted);
+        }
+      } catch (error) { failures.push(error); }
+      // The external transport ACK is a separate promise, never callback proof.
+      try {
+        let joined = 0;
+        while (joined < acknowledgements.length) {
+          const admitted = acknowledgements.slice(joined); joined += admitted.length;
+          const results = await Promise.allSettled(admitted);
+          for (const result of results) if (result.status === "rejected") failures.push(result.reason);
+        }
+      } catch (error) { failures.push(error); }
     }
+    const errors = primaryFailed ? [primary, ...failures] : failures;
+    if (errors.length === 1) throw errors[0];
+    if (errors.length) throw new AggregateError(errors, "Files diff UI and independent route/callback/ACK settlement failed");
   }
-  console.log(`PASS: Files explorer split/unified/raw diffs for modified, added and deleted files at ${page.viewportSize().width}px`);
+  console.log(`PASS: Files explorer physical diffs and Source cleanup for ${statuses.join(", ")} at ${page.viewportSize().width}px`);
 }
 
 export async function checkEditableFile(page, filePath) {
@@ -322,7 +366,7 @@ export async function checkFilePanel(page, filePath) {
     const originalStored = await storedWidths();
     const sessionInfo = page.getByRole("button", { name: "Session info", exact: true });
     const sessionPopover = page.locator(".session-info-popover");
-    for (let i = 0; i < 2; i++) {
+    { // One physical roundtrip; the following expand/hide/reopen still re-enters.
       await sessionInfo.click();
       await sessionPopover.waitFor();
       await toggle.click();

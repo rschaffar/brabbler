@@ -8,6 +8,7 @@ import { isProviderUsageId } from "@/lib/provider-usage-ids";
 import { bankedResetDetails, remainingRateLimits } from "@/lib/provider-usage-limits";
 import type { ProviderUsageResult } from "@/lib/provider-usage";
 import { DeviceAuthorization } from "./DeviceAuthorization";
+import { useSettingsWork } from "./SettingsUi";
 
 type Account = { id: string; provider: string; label: string; type: "oauth" | "api_key"; authorized: boolean };
 type Selection = Record<string, string>;
@@ -28,6 +29,9 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
   onAccountsChanged: () => Promise<void>;
 }) {
   const { locale, t } = useI18n();
+  const observe = useSettingsWork();
+  const work = useRef(observe);
+  work.current = observe;
   const panelId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -72,7 +76,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
     setSession(result.session);
     setLoadedFor(JSON.stringify([cwd, sessionId]));
   }, [cwd, sessionId]);
-  useEffect(() => { void reload().catch((cause) => setError(String(cause))); }, [reload]);
+  useEffect(() => { void work.current("accounts.reload", reload().catch((cause) => setError(String(cause)))); }, [reload]);
   const reloadProviders = useCallback(async () => {
     const response = await fetch("/api/auth/providers");
     if (!response.ok) return;
@@ -81,7 +85,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
     setApiKeyChoices((result.apiKeyProviders ?? []).map((item) => item.id));
     setProviderChoices([...new Set([...(result.oauthProviders ?? []), ...(result.apiKeyProviders ?? [])].map((item) => item.id))].sort());
   }, []);
-  useEffect(() => { void reloadProviders().catch(() => {}); }, [reloadProviders]);
+  useEffect(() => { void work.current("accounts.providers", reloadProviders().catch(() => {})); }, [reloadProviders]);
   const usageKey = (providerId: string, accountId: string | null) => JSON.stringify([providerId, accountId]);
   const clearUsage = (providerId: string, accountId: string | null) => {
     const key = usageKey(providerId, accountId);
@@ -89,7 +93,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
     usageRequestsRef.current.delete(key);
     setUsage((previous) => { const next = { ...previous }; delete next[key]; return next; });
   };
-  const queryUsage = useCallback(async (providerId: string, accountId: string | null, force = false) => {
+  const queryUsage = useCallback((providerId: string, accountId: string | null, force = false) => work.current("accounts.usage", (async () => {
     if (!isProviderUsageId(providerId)) return;
     const key = JSON.stringify([providerId, accountId]);
     if (usageRequestsRef.current.has(key) || (!force && Date.now() - (usageFetchedRef.current.get(key) ?? 0) < 60_000)) return;
@@ -110,7 +114,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
       usageFetchedRef.current.set(key, Date.now() - 45_000);
       setUsage((previous) => ({ ...previous, [key]: { providerId, status: "query-failed", message: "Usage unavailable" } as ProviderUsageResult }));
     } finally { if (usageRequestsRef.current.get(key) === requestId) usageRequestsRef.current.delete(key); }
-  }, []);
+  })()), []);
   useEffect(() => () => { eventsRef.current?.close(); eventsRef.current = null; }, []);
   useEffect(() => {
     if (open) return;
@@ -215,7 +219,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
   const currentUsage = currentLimits?.status === "ready" ? remainingRateLimits(currentLimits.report).join(" · ") : "";
   const compactUsage = currentUsage.replaceAll("Weekly ", "W ").replaceAll(" remaining", "");
 
-  const changeSession = async (value: string) => {
+  const changeSession = (value: string) => work.current("accounts.session", (async () => {
     setPending(true); setError("");
     const next = { ...(session ?? project) };
     if (value) next[provider] = value;
@@ -226,8 +230,8 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
       await onAccountsChanged();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not switch account"); }
     finally { setPending(false); }
-  };
-  const changeProject = async (value: string) => {
+  })());
+  const changeProject = (value: string) => work.current("accounts.project", (async () => {
     setPending(true); setError("");
     try {
       const result = await jsonRequest("/api/auth/accounts/selection", "PUT", {
@@ -238,7 +242,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
       // New composers without an override follow this default; existing sessions do not.
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not set project default"); }
     finally { setPending(false); }
-  };
+  })());
   const cancelOAuth = () => {
     eventsRef.current?.close(); eventsRef.current = null;
     setPending(false); setOauthPending(false); setDevice(null); setOauthUrl(""); setManualRequest(null);
@@ -281,9 +285,9 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
         setPending(false); setOauthPending(false); setAdding(false); setOauthUrl(""); setDevice(null); setManualRequest(null);
         setMessage("Account authorized");
         clearUsage(loginProvider, id);
-        void Promise.all([reload(), reloadProviders(), onAccountsChanged()]).then(() => {
+        void work.current("accounts.authorized", Promise.all([reload(), reloadProviders(), onAccountsChanged()]).then(() => {
           void queryUsage(loginProvider, id, true);
-        }).catch((cause) => setError(String(cause)));
+        }).catch((cause) => setError(String(cause))));
       } else if (data.type === "error" || data.type === "cancelled") {
         events.close(); eventsRef.current = null;
         setPending(false); setOauthPending(false); setOauthUrl(""); setDevice(null); setManualRequest(null);
@@ -296,15 +300,15 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
       setPending(false); setOauthPending(false); setError("Authorization connection closed");
     };
   };
-  const submitManual = async (value: string) => {
+  const submitManual = (value: string) => work.current("accounts.manual", (async () => {
     if (!manualRequest || !value.trim()) return;
     try {
       await jsonRequest(`/api/auth/login/${encodeURIComponent(manualRequest.provider)}`, "POST", { token: manualRequest.token, code: value.trim() });
       setManualRequest(null);
       setMessage("Verifying…");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not submit authorization code"); }
-  };
-  const addAccount = async () => {
+  })());
+  const addAccount = () => work.current("accounts.add", (async () => {
     setPending(true); setError(""); setMessage(""); setOauthUrl(""); setDevice(null);
     try {
       const result = await jsonRequest("/api/auth/accounts", "POST", { provider, label, type });
@@ -315,7 +319,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
         await Promise.all([reload(), onAccountsChanged()]);
       } else startOAuth(created.id);
     } catch (cause) { setPending(false); setError(cause instanceof Error ? cause.message : "Could not add account"); }
-  };
+  })());
 
   return <div className="min-w-0 shrink-0">
     <button ref={triggerRef} type="button" className="flex h-8 min-w-0 items-center gap-1 rounded-lg px-2 text-xs text-text-muted hover:bg-bg-hover" style={{ maxWidth: "min(58vw, 280px)" }}
@@ -376,9 +380,9 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
           {apiKeyChoices.includes(provider) && <button className={field} type="button" disabled={pending} onClick={() => setEditingDefaultKey((value) => !value)}>Change API key</button>}
           {editingDefaultKey && apiKeyChoices.includes(provider) && <form className="flex w-full gap-1" onSubmit={(event) => { event.preventDefault(); if (!defaultApiKey.trim()) return;
             setPending(true); setError("");
-            void jsonRequest(`/api/auth/api-key/${encodeURIComponent(provider)}`, "POST", { apiKey: defaultApiKey })
+            void work.current("accounts.defaultKey", jsonRequest(`/api/auth/api-key/${encodeURIComponent(provider)}`, "POST", { apiKey: defaultApiKey })
               .then(async () => { clearUsage(provider, null); setDefaultApiKey(""); setEditingDefaultKey(false); await onAccountsChanged(); await queryUsage(provider, null, true); })
-              .catch((cause) => setError(String(cause))).finally(() => setPending(false));
+              .catch((cause) => setError(String(cause))).finally(() => setPending(false)));
           }}><input className={`${field} flex-1`} type="password" autoComplete="off" aria-label="Pi default API key" value={defaultApiKey} onChange={(event) => setDefaultApiKey(event.target.value)} />
             <button type="submit" className={field} disabled={pending || !defaultApiKey.trim()}>Save</button></form>}
           <span className="w-full text-text-dim">{usageText(provider, null)}</span>
@@ -388,11 +392,11 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
           <span>{account.label}{!account.authorized ? " (not authorized)" : ""}</span>
           <button className={field} type="button" disabled={pending} onClick={() => {
             const next = window.prompt("Rename account", account.label);
-            if (next) void jsonRequest("/api/auth/accounts", "PATCH", { id: account.id, label: next }).then(reload).catch((cause) => setError(String(cause)));
+            if (next) void work.current("accounts.rename", jsonRequest("/api/auth/accounts", "PATCH", { id: account.id, label: next }).then(reload).catch((cause) => setError(String(cause))));
           }}>Rename</button>
           <button className={field} type="button" disabled={pending} onClick={() => {
             if (window.confirm(`Remove ${account.label}? Sessions using it will become unavailable until switched.`)) {
-              void jsonRequest("/api/auth/accounts", "DELETE", { id: account.id }).then(reload).catch((cause) => setError(String(cause)));
+              void work.current("accounts.remove", jsonRequest("/api/auth/accounts", "DELETE", { id: account.id }).then(reload).catch((cause) => setError(String(cause))));
             }
           }}>Remove</button>
           {account.type === "oauth" && <button className={field} type="button" disabled={pending} onClick={() => startOAuth(account.id)}>{account.authorized ? "Change login" : "Retry login"}</button>}

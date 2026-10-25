@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
 import { SCRATCHPAD_MAX_LENGTH } from "@/lib/scratchpad";
-import { ScratchpadController } from "@/lib/scratchpad-client";
+import { ScratchpadController, type ScratchpadWorkObserver } from "@/lib/scratchpad-client";
 import "./ScratchpadPanel.css";
 
 function NoteEditor({ controller, session, open }: { controller: ScratchpadController; session: boolean; open: boolean }) {
@@ -85,7 +85,7 @@ function NoteEditor({ controller, session, open }: { controller: ScratchpadContr
   </section>;
 }
 
-export function ScratchpadPanel({ open, sessionId, onClose }: { open: boolean; sessionId: string | null; onClose: () => void }) {
+export function ScratchpadPanel({ open, sessionId, onClose, onWork }: { open: boolean; sessionId: string | null; onClose: () => void; onWork?: ScratchpadWorkObserver }) {
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const [controllers] = useState(() => new Map<string | null, ScratchpadController>());
@@ -94,7 +94,7 @@ export function ScratchpadPanel({ open, sessionId, onClose }: { open: boolean; s
     if (!controller) {
       let storage = null;
       try { storage = window.sessionStorage; } catch { /* Reported when a draft cannot be persisted. */ }
-      controller = new ScratchpadController(id, storage);
+      controller = new ScratchpadController(id, storage, undefined, onWork);
       controllers.set(id, controller);
     }
     return controller;

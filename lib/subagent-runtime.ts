@@ -295,8 +295,20 @@ export function createSubagentController(
       catch (error) { queueError = error; }
       queued.cancel();
     }
-    void queued.promise.catch((error) => finish({ ...initialRun, status: "failed", completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) }));
-    return { run: stored.run, completion };
+    let observedQueueFailure: { error: unknown } | undefined;
+    const recovered = queued.promise.catch((error) => {
+      observedQueueFailure = { error };
+      return finish({ ...initialRun, status: "failed", completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) });
+    });
+    // Keep result publication timing unchanged. Observers can separately join the
+    // queue's actual slot-release and the complete failure/persistence handler.
+    return { run: stored.run, completion, get settled() {
+      return Promise.allSettled([queued.settled, recovered]).then(results => {
+        const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
+        if (observedQueueFailure && !failures.includes(observedQueueFailure.error)) failures.push(observedQueueFailure.error);
+        if (failures.length) throw new AggregateError(failures, "Subagent queue/recovery settlement failed");
+      });
+    } };
   }
 
   async function start(request: StartSubagentRequest): Promise<SubagentExecution> {

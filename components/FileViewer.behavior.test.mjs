@@ -1,8 +1,8 @@
+import '../lib/testing/client-native-boundary.fixture.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { act, createElement } from 'react';
 import { createJiti } from 'jiti';
-import { mount } from '../lib/testing/react.fixture.mjs';
 import { filesRuntime } from './files-runtime.fixture.mjs';
 
 const jiti = createJiti(import.meta.url, {
@@ -45,7 +45,8 @@ async function type(view, field, value) {
   await view.dispatch(field, new view.window.Event('input', { bubbles: true }));
 }
 async function open(t, overrides = {}) {
-  const props = { ...defaults, ...overrides }, runtime = filesRuntime(t);
+  const runtime = filesRuntime();
+  const props = { ...defaults, onWork: runtime.onWork, ...overrides };
   let view;
   // Register BEFORE mount; keep collector alive through gate rejection and joins.
   t.after(() => runtime.dispose(() => view?.unmount(), () => view?.dispose()));
@@ -54,8 +55,8 @@ async function open(t, overrides = {}) {
   const { FileViewerComposition, FileEditSessions } = await (composition ??= jiti.import('./file-viewer-composition.fixture.tsx'));
   const store = new FileEditSessions();
   const initial = [expectRead(runtime, props), expectRead(runtime, props)];
-  const element = viewers => createElement(FileViewerComposition, { store, viewers });
-  view = await mount(t, element([{ ...props, viewId: 'reader' }]), { setup: runtime.setup });
+  const element = viewers => createElement(FileViewerComposition, { store, viewers: viewers.map(props => ({ onWork: runtime.onWork, ...props })) });
+  view = await runtime.mount(t, element([{ ...props, viewId: 'reader' }]), { setup: runtime.setup, beforeDispose: runtime.settle });
   assert.equal(runtime.requests.length, 2, 'real Strict Effects admits replay plus current read');
   return {
     view, runtime, store, props, initial,
@@ -341,7 +342,7 @@ test('real Markdown default preview, current link callback and stable focused bl
   assert.equal(button(reader(view), 'Preview').getAttribute('aria-pressed'), 'true');
   const blocked = reader(view).querySelector('.blocked-file-link-trigger'); assert.equal(Boolean(blocked), true);
   assert.equal(blocked.hasAttribute('href'), false);
-  await act(() => blocked.focus()); await click(view, blocked);
+  await act(async () => { blocked.focus(); }); await click(view, blocked);
   assert.equal(blocked.getAttribute('aria-expanded'), 'true');
   const explanation = reader(view).querySelector('.blocked-file-link-explanation');
   assert.match(explanation.textContent, /absolute filesystem path/);

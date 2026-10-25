@@ -10,6 +10,7 @@ import {
   type SshPublicRecoveryItem, type SshRecoveryAcknowledgement, type SshRecoveryHint, type SshRecoveryIssue, type SshRecoveryRegistry,
 } from "@/lib/browser-ssh-client";
 import { shouldShowBrowserNotification, showBrowserNotification } from "@/lib/browser-notifications";
+import { createClientCompletion, type ClientCompletion } from "@/lib/client-completion";
 import type {
   SshAgentStatus, SshBackend, SshCandidate, SshConnectionProof, SshConnectionView,
   SshEnrollmentBegin, SshEnrollmentProof, SshKeyPolicy, SshPoll, SshSigningRequest,
@@ -38,7 +39,8 @@ function isRequestUnlockTransition(before: SshSigningRequest, after: SshSigningR
 }
 
 /** Mount exactly once above Settings visibility. No automatic enrollment, connect, takeover or discovery. */
-export function useSshAgent() {
+export function useSshAgent(completion?: ClientCompletion) {
+  const [work] = useState(() => completion ?? createClientCompletion());
   const { t } = useI18n();
   const [status, setStatus] = useState<DisplayStatus | null>(null);
   const [auth, setAuth] = useState<SshAuthState>("checking");
@@ -181,7 +183,7 @@ export function useSshAgent() {
     changeAuth("ready"); return true;
   }, [changeAuth, loseConnection]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(() => work.track((async () => {
     if (operation.current || discovery.current || !alive.current) return;
     reloadRecovery();
     const controller = new AbortController();
@@ -199,7 +201,7 @@ export function useSshAgent() {
       if (discovery.current === controller) discovery.current = null;
       if (alive.current) setDiscovering(false);
     }
-  }, [probeAuth, readStatus, reportFailure, reloadRecovery]);
+  })()), [probeAuth, readStatus, reportFailure, reloadRecovery, work]);
 
   const cancelDiscovery = useCallback(() => { discovery.current?.abort("settings-closed"); }, []);
 
@@ -221,25 +223,25 @@ export function useSshAgent() {
     const leave = () => {
       epoch.current++; operation.current?.controller.abort("page-leaving"); discovery.current?.abort();
       const own = owned.current; owned.current = null;
-      if (own) void browserSshApi({ action: "disconnect", token: own.token }, undefined, { keepalive: true }).catch(() => {});
+      if (own) work.track(browserSshApi({ action: "disconnect", token: own.token }, undefined, { keepalive: true }).catch(() => {}));
       for (const notification of notifications.current.values()) notification.close();
       notifications.current.clear();
       if (alive.current) { setConnection(null); publishRequests([]); }
     };
     window.addEventListener("pagehide", leave);
     return () => { alive.current = false; window.removeEventListener("storage", storageChanged); window.removeEventListener("pagehide", leave); leave(); };
-  }, [publishRequests, reloadRecovery, t]);
+  }, [publishRequests, reloadRecovery, t, work]);
 
   useEffect(() => {
     const controller = new AbortController();
-    void (async () => {
+    work.track((async () => {
       try { if (await probeAuth(controller.signal)) await readStatus(controller.signal); }
       catch (failure) {
         if (!controller.signal.aborted && alive.current) { changeAuth("error"); reportFailure(failure); }
       }
-    })();
+    })());
     return () => controller.abort();
-  }, [probeAuth, readStatus, changeAuth, reportFailure]);
+  }, [probeAuth, readStatus, changeAuth, reportFailure, work]);
 
   // Observers refresh status, not discovery and not anybody else's lease. Fail closed on auth errors.
   useEffect(() => {
@@ -247,17 +249,17 @@ export function useSshAgent() {
     const controller = new AbortController();
     const timer = setInterval(() => {
       if (document.visibilityState !== "visible" || operation.current || discovery.current) return;
-      void readStatus(controller.signal).catch(failure => { if (!controller.signal.aborted) reportFailure(failure); });
+      work.track(readStatus(controller.signal).catch(failure => { if (!controller.signal.aborted) reportFailure(failure); }));
     }, 10_000);
     return () => { controller.abort(); clearInterval(timer); };
-  }, [auth, connection, readStatus, reportFailure]);
+  }, [auth, connection, readStatus, reportFailure, work]);
 
   const token = connection?.token;
   useEffect(() => {
     if (!token || auth !== "ready") return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const poll = async () => {
+    const poll = work.wrap(async () => {
       const started = epoch.current;
       const sampledAt = performance.now();
       try {
@@ -272,12 +274,12 @@ export function useSshAgent() {
         if (controller.signal.aborted || owned.current?.token !== token) return;
         // A missing heartbeat/ambiguous response is not permission to reconnect or sign again.
         loseConnection(); reportFailure(failure);
-        void browserSshApi({ action: "disconnect", token }).catch(() => {});
+        work.track(browserSshApi({ action: "disconnect", token }).catch(() => {}));
       }
-    };
+    });
     void poll();
     return () => { controller.abort(); if (timer) clearTimeout(timer); };
-  }, [token, auth, applyStatus, receiveRequests, loseConnection, reportFailure]);
+  }, [token, auth, applyStatus, receiveRequests, loseConnection, reportFailure, work]);
 
   // A stalled native prompt is cancelled locally at the exact request deadline as well as by poll.
   useEffect(() => {
@@ -286,12 +288,12 @@ export function useSshAgent() {
     return () => clearTimeout(timer);
   }, [requests, publishRequests]);
 
-  const run = useCallback(async (work: (signal: AbortSignal) => Promise<void>, requestId?: string): Promise<boolean> => {
+  const run = useCallback((operationWork: (signal: AbortSignal) => Promise<void>, requestId?: string): Promise<boolean> => work.track((async () => {
     if (!alive.current || authState.current !== "ready" || operation.current || discovery.current) return false;
     const op: Operation = { controller: new AbortController(), requestId };
     operation.current = op; epoch.current++; setBusy(true); setApprovingId(requestId ?? null); setApprovalStage(null); setError(""); setNotice("");
     try {
-      await work(op.controller.signal);
+      await operationWork(op.controller.signal);
       return !op.controller.signal.aborted;
     } catch (failure) {
       if (alive.current && !op.controller.signal.aborted) reportFailure(failure);
@@ -306,7 +308,7 @@ export function useSshAgent() {
       epoch.current++;
       if (alive.current) { setBusy(false); setApprovingId(null); setApprovalStage(null); }
     }
-  }, [readStatus, reportFailure, t]);
+  })()), [readStatus, reportFailure, t, work]);
 
   const mutate = useCallback((body: Record<string, unknown>) => run(async signal => {
     const sampledAt = performance.now();
@@ -362,10 +364,10 @@ export function useSshAgent() {
       if (!signal.aborted && alive.current && created) acknowledged(ack, created);
       await readStatus(signal);
     } catch (failure) {
-      void browserSshApi({ action: "cancel-enroll", token: begin.token }).catch(() => {});
+      work.track(browserSshApi({ action: "cancel-enroll", token: begin.token }).catch(() => {}));
       throw failure;
     }
-  }), [run, stage, acknowledged, readStatus, reloadRecovery]);
+  }), [run, stage, acknowledged, readStatus, reloadRecovery, work]);
   const importKey = useCallback((item: SshRecoveryItem, name: string) => run(async signal => {
     if (item.credential.origin !== location.origin) return;
     const registry = currentStatus.current?.registry;
@@ -377,10 +379,10 @@ export function useSshAgent() {
       if (!signal.aborted && alive.current) acknowledged(ack, item);
       await readStatus(signal);
     } catch (failure) {
-      void browserSshApi({ action: "cancel-enroll", token: proof.token }).catch(() => {});
+      work.track(browserSshApi({ action: "cancel-enroll", token: proof.token }).catch(() => {}));
       throw failure;
     }
-  }), [run, acknowledged, readStatus]);
+  }), [run, acknowledged, readStatus, work]);
 
   const connect = useCallback((keyId: string, device: string, unlock: boolean) => run(async signal => {
     if (owned.current) return;
@@ -395,22 +397,22 @@ export function useSshAgent() {
       owned.current = next; setConnection(next); applyStatus(result.status, sampledAt);
     } catch (failure) {
       // Cleanup is revocation, not a replay of ambiguous activation or automatic reconnect.
-      void browserSshApi({ action: "disconnect", token: proof.token }).catch(() => {});
+      work.track(browserSshApi({ action: "disconnect", token: proof.token }).catch(() => {}));
       throw failure;
     }
-  }), [run, applyStatus]);
+  }), [run, applyStatus, work]);
   const makeActive = useCallback(() => owned.current ? mutate({ action: "select", token: owned.current.token }) : Promise.resolve(false), [mutate]);
   const disconnect = useCallback(() => {
     operation.current?.controller.abort("disconnect");
     const own = owned.current; loseConnection(); const started = ++epoch.current, sampledAt = performance.now();
-    if (own) void browserSshApi<SshAgentStatus>({ action: "disconnect", token: own.token }).then(next => {
+    if (own) work.track(browserSshApi<SshAgentStatus>({ action: "disconnect", token: own.token }).then(next => {
       if (alive.current && started === epoch.current && !owned.current) applyStatus(next, sampledAt);
     }).catch(async failure => {
       if (!alive.current) return;
       reportFailure(failure);
       if (authState.current === "ready") { try { await readStatus(); } catch (readFailure) { if (alive.current) reportFailure(readFailure); } }
-    });
-  }, [loseConnection, applyStatus, readStatus, reportFailure]);
+    }));
+  }, [loseConnection, applyStatus, readStatus, reportFailure, work]);
   const lock = useCallback((connectionId: string) => mutate({ action: "lock", connectionId }), [mutate]);
   const revoke = useCallback((connectionId: string) => mutate({ action: "revoke", connectionId }), [mutate]);
   const unlock = useCallback(() => run(async signal => {
@@ -448,8 +450,8 @@ export function useSshAgent() {
     if (!own || !currentRequests.current.some(item => item.id === id) || terminalRequests.current.has(id)) return;
     if (operation.current?.requestId === id) operation.current.controller.abort("denied");
     finishLocal(id);
-    void browserSshApi({ action: "respond", token: own.token, requestId: id }).catch(failure => { if (alive.current) reportFailure(failure); });
-  }, [finishLocal, reportFailure]);
+    work.track(browserSshApi({ action: "respond", token: own.token, requestId: id }).catch(failure => { if (alive.current) reportFailure(failure); }));
+  }, [finishLocal, reportFailure, work]);
   const approve = useCallback((id: string) => run(async signal => {
     const own = owned.current;
     const original = currentRequests.current.find(item => item.id === id);
@@ -522,7 +524,7 @@ export function useSshAgent() {
       // server unlock may remain live; denial never automatically renews/replays it.
       if (!dispatched && !terminalRequests.current.has(id) && owned.current?.token === own.token && signal.reason !== "request-settled" && signal.reason !== "connection-lost") {
         terminalRequests.current.add(id);
-        void browserSshApi({ action: "respond", token: own.token, requestId: id }).catch(() => {});
+        work.track(browserSshApi({ action: "respond", token: own.token, requestId: id }).catch(() => {}));
       }
       throw failure;
     } finally {
@@ -532,14 +534,14 @@ export function useSshAgent() {
       }
       if (alive.current) finishLocal(id);
     }
-  }, id), [run, finishLocal, applyStatus, receiveRequests, t]);
+  }, id), [run, finishLocal, applyStatus, receiveRequests, t, work]);
   const cancel = useCallback(() => {
     const op = operation.current;
     if (op?.requestId && !op.submitted) deny(op.requestId);
     else op?.controller.abort("cancelled");
   }, [deny]);
 
-  const toggleNotifications = useCallback(async (enabled: boolean) => {
+  const toggleNotifications = useCallback((enabled: boolean) => work.track((async () => {
     if (notificationBusy) return;
     setNotificationBusy(true); setNotificationStatus("");
     try {
@@ -552,7 +554,7 @@ export function useSshAgent() {
       if (!enabled) { for (const item of notifications.current.values()) item.close(); notifications.current.clear(); }
     } catch { if (alive.current) { setNotificationsEnabled(false); setNotificationStatus(t("sshAgent.notificationUnavailable")); } }
     finally { if (alive.current) setNotificationBusy(false); }
-  }, [notificationBusy, t]);
+  })()), [notificationBusy, t, work]);
 
   useEffect(() => {
     if (!notificationsEnabled || !("Notification" in window) || Notification.permission !== "granted" || !shouldShowBrowserNotification()) return;
@@ -561,11 +563,11 @@ export function useSshAgent() {
       notified.current.add(request.id);
       // Deliberately page-local: generic worker URL delivery cannot validate this page's live request.
       // On browsers requiring worker notifications this reports unavailable instead of persisting authority.
-      void showBrowserNotification({
+      work.track(showBrowserNotification({
         title: t("sshAgent.notificationTitle"), body: t("sshAgent.notificationBody"), sessionUrl: "/",
         onClick: () => {
           if (!alive.current) return;
-          if (!owned.current || !currentRequests.current.some(item => item.id === request.id && item.deadline > performance.now())) { setNotice(t("sshAgent.staleRequest")); return; }
+          if (!owned.current || !currentRequests.current.some(item => sameSigningPayload(item, request) && item.userVerification === request.userVerification && item.unlock === request.unlock && item.deadline > performance.now())) { setNotice(t("sshAgent.staleRequest")); return; }
           window.focus(); reviewRequest(request.id);
         },
       }, {
@@ -573,9 +575,9 @@ export function useSshAgent() {
         createWindowNotification: (title, options) => {
           const item = new Notification(title, options); notifications.current.set(request.id, item); return item;
         },
-      }).then(delivery => { if (!delivery && alive.current) setNotificationStatus(t("sshAgent.notificationUnavailable")); });
+      }).then(delivery => { if (!delivery && alive.current) setNotificationStatus(t("sshAgent.notificationUnavailable")); }));
     }
-  }, [requests, notificationsEnabled, reviewRequest, t]);
+  }, [requests, notificationsEnabled, reviewRequest, t, work]);
 
   const clearMessages = useCallback(() => { setError(""); setNotice(""); }, []);
   const backend = status?.runtime.selected;

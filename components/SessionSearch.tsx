@@ -1,5 +1,6 @@
 "use client";
 
+import { useNavigationWork } from "@/lib/navigation-work";
 import { useEffect, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { formatRelativeTime } from "@/lib/i18n/format";
@@ -18,6 +19,7 @@ export function SessionSearch({ open, query, projectKey, allProjects, status, ti
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, entryId?: string, blockIndex?: number) => void;
 }) {
+  const work = useNavigationWork();
   const { t, locale } = useI18n();
   const [refresh, setRefresh] = useState(0);
   const [state, setState] = useState<{ key: string; response?: SessionSearchResponse; failed?: boolean }>({ key: "" });
@@ -39,7 +41,7 @@ export function SessionSearch({ open, query, projectKey, allProjects, status, ti
     if (!open || !search || !canSearch) return;
     const controller = new AbortController();
     setState({ key: requestKey });
-    const timer = setTimeout(async () => {
+    const timer = setTimeout(() => work.observe((async () => {
       try {
         const res = await fetch(`/api/sessions/search?${searchKey}`, { signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -48,12 +50,12 @@ export function SessionSearch({ open, query, projectKey, allProjects, status, ti
       } catch {
         if (!controller.signal.aborted) setState({ key: requestKey, failed: true });
       }
-    }, 300);
+    })()), 300);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [open, search, canSearch, searchKey, requestKey]);
+  }, [open, search, canSearch, searchKey, requestKey, work]);
 
   if (!open || !search) return children;
   const scopeLabel = `${allProjects ? t("sidebar.searchAllProjects") : t("sidebar.searchCurrentProject")} · ${status === "both" ? t("sidebar.searchBothStatuses") : status === "archived" ? t("sidebar.archivedSessions") : t("sidebar.activeSessions")}`;

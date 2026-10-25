@@ -43,6 +43,9 @@ export interface ScratchpadView {
 }
 interface Edit { text: string; start: number; end: number }
 
+/** Optional passive observation of the original complete read/write promises. */
+export type ScratchpadWorkObserver = (work: Promise<void>) => void;
+
 /** One note owns IO/history even while its editor is closed or another session is selected. */
 export class ScratchpadController {
   private base: ScratchpadNote | null = null;
@@ -57,7 +60,7 @@ export class ScratchpadController {
     text: "", ready: false, loading: false, saving: false, dirty: false, error: null,
     recoveryUnavailable: false, conflict: null, canUndo: false, canRedo: false, selection: null,
   };
-  constructor(readonly sessionId: string | null, private storage: ScratchpadStorage | null, private transport = scratchpadTransport) {
+  constructor(readonly sessionId: string | null, private storage: ScratchpadStorage | null, private transport = scratchpadTransport, private onWork?: ScratchpadWorkObserver) {
     this.storageKey = `pi-web:scratchpad:${JSON.stringify(sessionId)}`;
     try {
       const raw = storage?.getItem(this.storageKey);
@@ -83,7 +86,12 @@ export class ScratchpadController {
     } catch { failed = true; }
     this.publish({ recoveryUnavailable: failed && this.view.dirty });
   }
-  async refresh() {
+  refresh() {
+    const work = this.refreshFullWork();
+    this.onWork?.(work);
+    return work;
+  }
+  private async refreshFullWork() {
     if (this.view.loading || this.view.saving || this.view.conflict || (this.view.ready && this.view.dirty && this.view.error !== "load")) return;
     this.publish({ loading: true, error: null });
     try {
@@ -149,7 +157,12 @@ export class ScratchpadController {
     this.publish({ error: null });
     void this.drain();
   }
-  private async drain() {
+  private drain() {
+    const work = this.drainFullWork();
+    this.onWork?.(work);
+    return work;
+  }
+  private async drainFullWork() {
     if (!this.base || !this.view.ready || this.view.loading || this.view.saving || this.view.error || this.view.conflict || !this.view.dirty) return;
     this.publish({ saving: true });
     try {

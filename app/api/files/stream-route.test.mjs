@@ -1,102 +1,120 @@
-import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { EventEmitter } from "node:events";
-import { stripTypeScriptTypes } from "node:module";
-import test from "node:test";
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import test from 'node:test';
+import { loadBackend, backendCase } from '../../../lib/backend-ownership.fixture.mjs';
 
-const source = await readFile(new URL("./[...path]/route.ts", import.meta.url), "utf8");
-const start = source.indexOf("function streamFile");
-const end = source.indexOf("function escapeHtml", start);
-assert.notEqual(start, -1, "streamFile not found");
-assert.notEqual(end, -1, "streamFile end not found");
-const streamBlock = source.slice(start, end);
-
-test("file body streams preserve binary chunks and encode string chunks as UTF-8", async () => {
-  const helperStart = source.indexOf("function createFileBodyStream");
-  const helperEnd = source.indexOf("function encodeHeaderValue", helperStart);
-  assert.ok(helperStart !== -1 && helperEnd > helperStart);
-  const helper = stripTypeScriptTypes(source.slice(helperStart, helperEnd));
-  const fileStream = new EventEmitter();
-  let destroyed = false;
-  fileStream.destroy = () => { destroyed = true; };
-  // Compile only the repository-owned helper, with a fake filesystem stream.
-  const createStream = new Function("fs", `${helper}; return createFileBodyStream;`)({
-    createReadStream: () => fileStream,
-  });
-  const body = createStream("fixture.bin");
-  fileStream.emit("data", Buffer.from([0, 255, 128]));
-  fileStream.emit("data", "Grüße");
-  fileStream.emit("end");
-  const bytes = Buffer.from(await new Response(body).arrayBuffer());
-  assert.deepEqual(bytes, Buffer.concat([Buffer.from([0, 255, 128]), Buffer.from("Grüße")]));
-  assert.equal(destroyed, false);
-});
-
-test("single-range responses preserve exact bytes, headers and cancellation ownership", async () => {
-  const streams = [];
-  const helper = stripTypeScriptTypes(source.slice(source.indexOf("function createFileBodyStream"), end));
-  const streamFile = new Function("fs", "path", `${helper}; return streamFile;`)({
-    createReadStream(file, range) {
+async function fixture(t, produce) {
+  const owner = backendCase(t), streams = [];
+  const loadedFileBody = await loadBackend(new URL('../../../lib/file-body-stream.ts', import.meta.url), {
+    fs: { createReadStream(file, range) {
+      owner.admit();
       const stream = new EventEmitter();
       stream.destroyed = false;
       stream.destroy = () => { stream.destroyed = true; };
       streams.push(stream);
-      queueMicrotask(() => {
-        if (stream.destroyed) return;
-        stream.emit("data", Buffer.from([0, 1, 2, 255, 4, 5]).subarray(range?.start ?? 0, (range?.end ?? 5) + 1));
-        stream.emit("end");
-      });
+      if (produce) queueMicrotask(() => { if (!stream.destroyed) produce(stream, range); });
       return stream;
-    },
-  }, path);
+    } }, path,
+  });
+  owner.release(() => { for (const stream of streams) stream.destroy(); });
+  return { ...loadedFileBody, streams, owner };
+}
+test('file body streams preserve binary chunks and encode string chunks as UTF-8', async t => {
+  const f = await fixture(t);
+  const body = f.createFileBodyStream('fixture.bin');
+  const response = new Response(body);
+  f.owner.release(() => !response.bodyUsed ? response.body.cancel() : undefined);
+  const stream = f.streams[0];
+  stream.emit('data', Buffer.from([0, 255, 128])); stream.emit('data', 'Grüße'); stream.emit('end');
+  const bytes = Buffer.from(await f.owner.work(response.arrayBuffer()));
+  assert.deepEqual(bytes, Buffer.concat([Buffer.from([0, 255, 128]), Buffer.from('Grüße')]));
+  assert.equal(stream.destroyed, false);
+});
+
+test('single-range responses preserve exact bytes, headers and cancellation ownership', async t => {
+  const f = await fixture(t, (stream, range) => {
+    stream.emit('data', Buffer.from([0, 1, 2, 255, 4, 5]).subarray(range?.start ?? 0, (range?.end ?? 5) + 1));
+    stream.emit('end');
+  });
   for (const [range, status, expected, contentRange] of [
     [null, 200, [0, 1, 2, 255, 4, 5], null],
-    ["bytes=1-3", 206, [1, 2, 255], "bytes 1-3/6"],
-    ["bytes=3-", 206, [255, 4, 5], "bytes 3-5/6"],
-    ["bytes=-2", 206, [4, 5], "bytes 4-5/6"],
-    ["bytes=4-999", 206, [4, 5], "bytes 4-5/6"],
+    ['bytes=1-3', 206, [1, 2, 255], 'bytes 1-3/6'],
+    ['bytes=3-', 206, [255, 4, 5], 'bytes 3-5/6'],
+    ['bytes=-2', 206, [4, 5], 'bytes 4-5/6'],
+    ['bytes=4-999', 206, [4, 5], 'bytes 4-5/6'],
   ]) {
-    const response = streamFile("take.wav", { size: 6 }, "audio/wav", range);
+    const response = f.streamFile('take.wav', { size: 6 }, 'audio/wav', range);
+    f.owner.release(() => !response.bodyUsed ? response.body.cancel() : undefined);
     assert.equal(response.status, status);
-    assert.equal(response.headers.get("content-range"), contentRange);
-    assert.equal(response.headers.get("content-length"), String(expected.length));
-    assert.equal(response.headers.get("accept-ranges"), "bytes");
-    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
-    assert.deepEqual([...new Uint8Array(await response.arrayBuffer())], expected);
+    assert.equal(response.headers.get('content-range'), contentRange);
+    assert.equal(response.headers.get('content-length'), String(expected.length));
+    assert.equal(response.headers.get('accept-ranges'), 'bytes');
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+    assert.deepEqual([...new Uint8Array(await f.owner.work(response.arrayBuffer()))], expected);
   }
-  for (const range of ["bytes=9-", "bytes=4-2", "bytes=0-1,3-4", "items=0-1", "bytes=-0"]) {
-    const before = streams.length;
-    const response = streamFile("take.wav", { size: 6 }, "audio/wav", range);
+  for (const range of ['bytes=9-', 'bytes=4-2', 'bytes=0-1,3-4', 'items=0-1', 'bytes=-0']) {
+    const before = f.streams.length;
+    const response = f.streamFile('take.wav', { size: 6 }, 'audio/wav', range);
     assert.equal(response.status, 416);
-    assert.equal(response.headers.get("content-range"), "bytes */6");
-    assert.equal(streams.length, before, "invalid ranges never acquire a file stream");
+    assert.equal(response.headers.get('content-range'), 'bytes */6');
+    assert.equal(f.streams.length, before, 'invalid ranges never acquire a file stream');
+    await f.owner.work(response.arrayBuffer());
   }
-  const response = streamFile("take.wav", { size: 6 }, "audio/wav", "bytes=0-");
-  const stream = streams.at(-1);
+  const response = f.streamFile('take.wav', { size: 6 }, 'audio/wav', 'bytes=0-');
+  const stream = f.streams.at(-1);
   await response.body.cancel();
   assert.equal(stream.destroyed, true);
-  stream.emit("data", Buffer.from([1]));
-  stream.emit("error", new Error("late cancelled stream"));
+  stream.emit('data', Buffer.from([1])); stream.emit('error', new Error('late cancelled stream'));
 });
 
-test("streamed responses are not content-type sniffable", () => {
-  assert.match(streamBlock, /"X-Content-Type-Options": "nosniff"/);
+test('SVG restrictive headers survive full, partial and both 416 response shapes', async t => {
+  const f = await fixture(t, stream => stream.emit('end'));
+  for (const type of ['image/svg+xml', 'audio/wav']) for (const range of [null, 'bytes=1-3', 'items=0-1', 'bytes=9-']) {
+    const response = f.streamFile('name.svg', { size: 6 }, type, range);
+    f.owner.release(() => !response.bodyUsed ? response.body?.cancel() : undefined);
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(response.headers.get('content-type'), type);
+    assert.equal(response.headers.get('content-security-policy'), type === 'image/svg+xml'
+      ? "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'" : null);
+    assert.equal(response.headers.get('referrer-policy'), type === 'image/svg+xml' ? 'no-referrer' : null);
+    await f.owner.work(response.arrayBuffer());
+  }
+});
+test('stream errors reject the full body and late events cannot revive it', async t => {
+  const f = await fixture(t);
+  const response = f.streamFile('fixture.bin', { size: 6 }, 'application/octet-stream', null);
+  const failure = new Error('fixture read failure');
+  const consumed = f.owner.work(assert.rejects(response.arrayBuffer(), error => error === failure));
+  f.streams[0].emit('error', failure);
+  await consumed;
+  f.streams[0].emit('data', Buffer.from('late')); f.streams[0].emit('end');
 });
 
-test("inline SVG is served with a script-blocking content security policy", () => {
-  // SVG is the only inline preview type a browser executes as a document, so
-  // it must never be able to run script in the Pi Web origin.
-  assert.match(streamBlock, /contentType === "image\/svg\+xml"/);
-  assert.match(streamBlock, /Content-Security-Policy/);
-  assert.match(streamBlock, /default-src 'none'/);
-  assert.match(streamBlock, /style-src 'unsafe-inline'/);
-  assert.match(streamBlock, /frame-ancestors 'self'/);
-});
 
-test("the restrictive headers are applied to every streamFile response shape", () => {
-  // The header object is shared by the full-body, 416, and 206 paths.
-  const headerObject = streamBlock.indexOf("const headers");
-  const firstReturn = streamBlock.indexOf("createFileBodyStream", headerObject);
-  assert.ok(headerObject !== -1 && firstReturn > headerObject, "headers must be built before any response");
+test('default file-body composition joins actual descriptor closure on EOF, cancellation and read error', async t => {
+  const owner = backendCase(t), root = await mkdtemp(path.join(tmpdir(), 'pi-web-file-body-'));
+  owner.remove(() => rm(root, { recursive: true, force: true }));
+  const file = path.join(root, 'native.bin'); await writeFile(file, Buffer.from([0, 255, 128, 3, 4, 5]));
+  const streams = [], closed = [];
+  const nativeFileBody = await loadBackend(new URL('../../../lib/file-body-stream.ts', import.meta.url), {
+    fs: { ...fs, createReadStream(...args) {
+      const stream = fs.createReadStream(...args); streams.push(stream);
+      closed.push(new Promise(resolve => stream.once('close', resolve)));
+      return stream;
+    } }, path,
+  });
+  owner.release(() => { for (const stream of streams) stream.destroy(); });
+  owner.join(() => Promise.all(closed));
+  const complete = nativeFileBody.streamFile(file, { size: 6 }, 'application/octet-stream', 'bytes=1-3');
+  assert.deepEqual([...new Uint8Array(await owner.work(complete.arrayBuffer()))], [255, 128, 3]);
+  await closed[0]; assert.equal(streams[0].closed, true); assert.equal(streams[0].fd, null);
+  const cancelled = nativeFileBody.streamFile(file, { size: 6 }, 'application/octet-stream', null);
+  await cancelled.body.cancel(); await closed[1]; assert.equal(streams[1].closed, true); assert.equal(streams[1].fd, null);
+  const missing = nativeFileBody.streamFile(path.join(root, 'missing'), { size: 6 }, 'application/octet-stream', null);
+  await owner.work(assert.rejects(missing.arrayBuffer(), { code: 'ENOENT' }));
+  await closed[2]; assert.equal(streams[2].closed, true); assert.equal(streams[2].fd, null);
 });

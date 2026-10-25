@@ -1,296 +1,182 @@
-import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { stripTypeScriptTypes } from "node:module";
-import test from "node:test";
-import vm from "node:vm";
-import { createJiti } from "jiti";
+import '../lib/testing/client-native-boundary.fixture.mjs';
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { click, button, exact } from './navigation-runtime.fixture.mjs';
+import { shellHarness, session } from './navigation-cases.fixture.mjs';
 
-const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
-const jiti = createJiti(import.meta.url);
-const draftStore = await jiti.import("../lib/draft-store.ts");
-
-function callbackBody(name, nextName) {
-  const start = source.indexOf(`const ${name} = useCallback`);
-  const end = source.indexOf(`\n  const ${nextName}`, start);
-  assert.notEqual(start, -1, `${name} callback not found`);
-  assert.notEqual(end, -1, `${nextName} callback not found after ${name}`);
-  return source.slice(start, end);
-}
-
-test("explicit context changes invalidate a pending workspace restore", () => {
-  const callbacks = [
-    ["handleCwdChange", "handleSelectSession"],
-    ["handleSelectSession", "handleNewSession"],
-    ["handleNewSession", "hydrateSelectedSession"],
-    ["handleSessionCreated", "handleAgentEnd"],
-    ["handleSessionForked", "handleInitialRestoreDone"],
-    ["handleSessionDeleted", "handleOpenFile"],
-  ];
-
-  for (const [name, nextName] of callbacks) {
-    assert.match(callbackBody(name, nextName), /invalidateWorkspaceRestore\(\);/);
-  }
+for (const initial of ['activity', 'starred', 'git', null]) test(`background adoption preserves ${initial}; explicit selection forwards current entry and closes overview`, async t => {
+  const h = await shellHarness(t);
+  await h.command(c => c.setActiveOverview(initial));
+  await h.select(session('url', '/repo/worktree'), true);
+  assert.equal(h.current.activeOverview, initial);
+  assert.equal(h.current.state.selectedSession.id, 'url');
+  const key = h.current.state.sessionKey;
+  await h.select(session('url', '/repo/worktree'), false, 'source-entry', 2);
+  assert.equal(h.current.activeOverview, null);
+  assert.equal(h.current.state.sessionKey, key, 're-click retains mounted chat identity');
+  assert.deepEqual(h.current.state.searchTarget, { sessionId: 'url', entryId: 'source-entry', blockIndex: 2 });
+  assert.equal(h.routerCalls.at(-1), '?session=url');
 });
 
-test("late initial session adoption preserves an explicitly opened overview, while sidebar navigation closes it", () => {
-  const callback = callbackBody("handleSidebarSelectSession", "handleOpenSession");
-  for (const initial of ["activity", "starred", "git", null]) {
-    let overview = initial;
-    const adopted = [];
-    const context = vm.createContext({ useCallback: fn => fn,
-      closeOverview: () => { overview = null; },
-      handleSelectSession: (...args) => adopted.push(args),
-    });
-    vm.runInContext(stripTypeScriptTypes(`${callback}\nglobalThis.select = handleSidebarSelectSession;`), context);
-    const session = { id: "url-session", cwd: "/project-worktree" };
-    context.select(session, true);
-    assert.equal(overview, initial, "background adoption cannot close a newer overview");
-    assert.deepEqual(adopted[0], [session, true, undefined, undefined]);
-    for (const explicit of [false, undefined]) {
-      overview = initial;
-      context.select(session, explicit, "source-entry", 2);
-      assert.equal(overview, null, "an explicit sidebar pick still closes every overview");
-      assert.deepEqual(adopted.at(-1), [session, explicit, "source-entry", 2]);
+for (const width of [390, 820, 1440]) test(`real overview buttons preserve independent Files at ${width}px`, async t => {
+  const h = await shellHarness(t, { isMobile: width <= 640, setup(window) { Object.defineProperty(window, 'innerWidth', { value: width, configurable: true }); } });
+  for (const open of [false, true]) for (const panel of ['activity', 'starred']) for (const previous of [null, panel === 'activity' ? 'starred' : 'activity', panel]) {
+    await h.command(c => { c.setRightPanelOpen(open); c.setActiveOverview(previous); c.setReviewNavigation({ cwd: '/repo', branch: 'main', oid: 'a', head: 'a', requestId: 1 }); });
+    const revision = h.current.reviewNavigationId.current;
+    await click(h.view, button(h.view, panel === 'activity' ? 'Activity' : 'Starred'));
+    assert.equal(h.current.activeOverview, previous === panel ? null : panel);
+    assert.equal(h.current.rightPanelOpen, width <= 640 && previous !== panel ? false : open);
+    if (previous !== panel) {
+      assert.equal(h.current.reviewNavigation, null);
+      assert.equal(h.current.reviewNavigationId.current, revision + 1);
     }
   }
 });
 
-test("Activity and Starred toggles preserve desktop Files and only hide Files on mobile", () => {
-  for (const panel of ["activity", "starred"]) {
-    const marker = source.indexOf(`if (activeOverview === "${panel}" && isMobile`);
-    const start = source.lastIndexOf("onClick={() => {", marker);
-    const end = source.indexOf("\n            }}", marker);
-    assert.ok(marker !== -1 && start !== -1 && end !== -1, `${panel} handler found`);
-    const handler = source.slice(start + "onClick={() => {".length, end);
-    for (const width of [390, 820, 1440]) {
-      for (const initialOpen of [false, true]) {
-        const context = vm.createContext({
-          isMobile: width <= 640, window: { innerWidth: width },
-          activeOverview: null, overviewMobileList: true, rightPanelOpen: initialOpen,
-          reviewNavigationId: { current: 0 }, reviewNavigation: "pending",
-          setActiveTopPanel() {}, setSidebarOpen() {},
-        });
-        context.setReviewNavigation = value => { context.reviewNavigation = value; };
-        context.setActiveOverview = value => { context.activeOverview = value; };
-        context.setOverviewMobileList = value => { context.overviewMobileList = value; };
-        context.setRightPanelOpen = value => { context.rightPanelOpen = value; };
-        context.closeOverview = () => { context.activeOverview = null; };
-        for (const previous of [null, panel === "activity" ? "starred" : "activity", panel]) {
-          context.activeOverview = previous;
-          context.reviewNavigationId.current = 0;
-          context.reviewNavigation = "pending";
-          vm.runInContext(`(() => {${handler}\n})()`, context);
-          assert.equal(context.rightPanelOpen, width <= 640 ? false : initialOpen,
-            `${panel} preserves Files visibility at ${width}px`);
-          assert.equal(context.activeOverview, previous === panel ? null : panel);
-          if (previous !== panel) {
-            assert.equal(context.reviewNavigationId.current, 1, "Opening an overview supersedes pending review reveals");
-            assert.equal(context.reviewNavigation, null);
-          }
-        }
+test('A/B/A workspace generations reject old success/error and use the current catalogue/callback', async t => {
+  const h = await shellHarness(t, { route(request) { exact(request, '/api/sessions'); return undefined; } });
+  const { setLastOpenSession } = h.graph.workspaceMemory;
+  setLastOpenSession('/a', 'a'); setLastOpenSession('/b', 'b');
+  await h.cwd('/a'); const oldA = h.latest('/api/sessions'); await h.headers(oldA);
+  await h.cwd('/b'); const oldB = h.latest('/api/sessions'); await h.headers(oldB);
+  await h.cwd('/a'); const newA = h.latest('/api/sessions'); await h.headers(newA);
+  const a = session('a', '/a', { projectRoot: '/a', projectKey: '/a' });
+  await h.body(newA, { sessions: [a] });
+  assert.equal(h.current.state.selectedSession.id, 'a');
+  const key = h.current.state.sessionKey;
+  await h.body(oldA, { sessions: [session('a', '/old', { projectKey: '/a' })] });
+  await h.body(oldB, { sessions: [session('b', '/b', { projectKey: '/b' })] });
+  assert.equal(h.current.state.selectedSession.cwd, '/a');
+  assert.equal(h.current.state.sessionKey, key);
+  await h.settled();
+  await h.command(c => c.navigation.handleSessionsChange([session('other', '/other', { projectKey: '/other' })]));
+  setLastOpenSession('/other', 'other'); await h.cwd('/other');
+  assert.equal(h.current.state.selectedSession.id, 'other', 'latest catalogue fast path');
+});
+
+test('all explicit transition admissions invalidate remembered restores; late creation refreshes but cannot adopt another draft', async t => {
+  const h = await shellHarness(t, { route(request) { exact(request, '/api/sessions', {}, request.options.cache ? { cache: 'no-store' } : {}); return undefined; } });
+  const { setLastOpenSession } = h.graph.workspaceMemory;
+  for (const transition of ['cwd', 'select', 'new', 'created', 'fork', 'deleted']) {
+    await h.command(c => c.navigation.handleSessionsChange([]));
+    const p = `/pending-${transition}`; setLastOpenSession(p, 'remembered'); await h.cwd(p);
+    const old = h.latest('/api/sessions'); await h.headers(old);
+    await h.command(c => {
+      if (transition === 'cwd') c.navigation.handleCwdChange('/new-project');
+      if (transition === 'select') c.navigation.handleSelectSession(session('chosen'));
+      if (transition === 'new') c.navigation.handleNewSession('fresh', '/repo');
+      if (transition === 'created') {
+        c.navigation.handleNewSession('fresh', '/repo');
+        c.navigation.handleSessionCreated(session('saved'), 'new:fresh:/repo');
       }
-    }
+      if (transition === 'fork') c.navigation.handleSessionForked('fork');
+      if (transition === 'deleted') c.navigation.handleSessionDeleted(c.state.selectedSession?.id ?? 'other');
+    });
+    const selection = h.current.state.selectedSession?.id ?? null;
+    await h.body(old, { sessions: [session('remembered', p, { projectKey: p })] });
+    assert.equal(h.current.state.selectedSession?.id ?? null, selection, transition);
+    // Release real hydration peers, including the fork/creation lookup.
+    for (const request of h.requests.filter(r => r !== old && !r.answered)) await h.reply(request, { sessions: [] });
+  }
+  await h.command(c => c.navigation.handleNewSession('one', '/repo'));
+  const outgoing = h.current.state.activeNewSessionDraftKeyRef.current;
+  await h.command(c => c.navigation.handleNewSession('two', '/repo'));
+  const refresh = h.current.state.refreshKey;
+  await h.command(c => c.navigation.handleSessionCreated(session('late'), outgoing));
+  assert.equal(h.current.state.selectedSession, null);
+  assert.equal(h.current.state.newSessionDraftId, 'two');
+  assert.equal(h.current.state.refreshKey, refresh + 1);
+  await h.settled();
+});
+
+test('same-project checkout changes retain saved chat; fresh drafts remount, park and preserve explicit New identity', async t => {
+  const h = await shellHarness(t);
+  const { draftStore } = h.graph;
+  await h.cwd('/repo');
+  const passive = h.current.state.activeNewSessionDraftKeyRef.current;
+  const draft = { value: 'unsent project draft', images: [{ data: 'aGVsbG8=', mimeType: 'image/png' }] };
+  draftStore.setDraft(passive, draft);
+  await h.select(session('a'));
+  assert.deepEqual(draftStore.getDraft('parked-new:/repo'), draft);
+  const key = h.current.state.sessionKey;
+  await h.cwd('/repo-wt', '/repo', '/repo');
+  assert.equal(h.current.state.selectedSession.id, 'a');
+  assert.equal(h.current.state.sessionKey, key);
+  await h.command(c => c.navigation.handleNewSession('pending', '/repo'));
+  const explicit = h.current.state.activeNewSessionDraftKeyRef.current;
+  assert.deepEqual(draftStore.getDraft(explicit), draft);
+  await h.select(session('a'));
+  assert.deepEqual(draftStore.getDraft(explicit), draft, 'outgoing creation retains its literal draft key');
+  await h.cwd('/different', '/different', '/different');
+  assert.equal(h.current.state.selectedSession, null);
+  draftStore.clearDraft(explicit); draftStore.clearDraft(passive); draftStore.clearDraft('parked-new:/repo');
+});
+
+test('fresh-focus revision and draft identity refuse superseded requests; mobile New leaves every overview', async t => {
+  let focuses = 0;
+  const h = await shellHarness(t, { onFocus: () => focuses++ });
+  for (const panel of ['activity', 'starred', 'git']) {
+    await h.command(c => c.setActiveOverview(panel));
+    await h.command(c => c.navigation.handleNewSession(`desktop-${panel}`, '/repo'));
+    assert.equal(h.current.activeOverview, panel);
+  }
+  await h.frame(); assert.equal(focuses, 1, 'only latest draft revision focuses');
+  await h.command(c => c.navigation.handleNewSession('obsolete', '/repo'));
+  await h.select(session('a')); await h.frame();
+  assert.equal(focuses, 1);
+  await h.command(c => c.navigation.handleNewSession('same-key-revision', '/repo'));
+  await h.command(c => c.navigation.handleSessionDeleted('unrelated'));
+  await h.frame(); assert.equal(focuses, 1, 'navigation revision refuses focus even when draft key is unchanged');
+  await h.update({ isMobile: true });
+  for (const panel of ['activity', 'starred', 'git']) {
+    await h.command(c => c.setActiveOverview(panel));
+    await h.command(c => c.navigation.handleNewSession(`mobile-${panel}`, '/empty-project'));
+    assert.equal(h.current.activeOverview, null);
+    assert.equal(h.current.state.activeNewSessionDraftKeyRef.current, `new:mobile-${panel}:/empty-project`);
+    assert.equal(h.current.state.persistNewSession, true);
   }
 });
 
-test("all active-session transitions share one persistence effect", () => {
-  assert.match(
-    source,
-    /useEffect\(\(\) => \{\s+if \(selectedSession\) \{[\s\S]*?setLastOpenSession\(projectKey, selectedSession\.id\);\s+setTabOpenSession\(selectedSession\.id\);\s+return;\s+\}\s+if \(newSessionCwd\) setTabOpenNewSession\(newSessionCwd, undefined, newSessionDraftId\);\s+\}, \[newSessionCwd, newSessionDraftId, selectedSession\]\);/,
-  );
-});
-
-test("reload before creation acknowledgement recovers the provisional text identity without replaying startup", () => {
-  const start = source.indexOf("        const tabOpen = getTabOpen();");
-  const end = source.indexOf("        setInitialCwdStatus", start);
-  assert.ok(start !== -1 && end !== -1);
-  for (const remembered of [null, { kind: "new", cwd: "/other", draftId: "foreign" }, { kind: "new", cwd: "/pending", draftId: "pending-id" }]) {
-    let draftId, cwd;
-    const context = vm.createContext({ getTabOpen: () => remembered, requestedCwd: "/pending", data: { cwd: "/pending" },
-      activeNewSessionDraftKeyRef: { current: null },
-      setNewSessionDraftId: value => { draftId = value; }, setNewSessionCwd: value => { cwd = value; } });
-    vm.runInContext(source.slice(start, end), context);
-    assert.equal(draftId, remembered?.cwd === "/pending" ? "pending-id" : "initial:/pending");
-    assert.equal(context.activeNewSessionDraftKeyRef.current, `new:${draftId}:/pending`);
-    assert.equal(cwd, "/pending");
-    assert.doesNotMatch(source.slice(start, end), /setPersistentNewSessionDraftId/);
-  }
-});
-
-test("keeps chat scroll positions in page memory by session id", () => {
-  assert.match(source, /useRef\(new Map<string, ChatScrollPosition>\(\)\)/);
-  assert.match(source, /sessionScrollPositionsRef\.current\.set\(sessionId, position\)/);
-  assert.match(source, /initialScrollPosition=\{selectedSession \? sessionScrollPositionsRef\.current\.get\(selectedSession\.id\) \?\? null : null\}/);
-  assert.match(source, /onScrollPositionChange=\{handleSessionScrollPositionChange\}/);
-  assert.doesNotMatch(source, /localStorage[^\n]*sessionScroll/i);
-});
-
-test("New focus requests are bound to the intended fresh draft and navigation revision, and reveal mobile chat from every overview", () => {
-  const callback = callbackBody("handleNewSession", "hydrateSelectedSession");
-  const requests = [];
-  let overview = "activity";
-  const context = vm.createContext({
-    useCallback: (fn) => fn, useGlobalKeyboardShortcuts() {}, setTabOpenNewSession() {},
-    parkedNewSessionDraftKey: (cwd) => `parked-new:${cwd}`, rekeyDraft() {},
-    activeNewSessionDraftKeyRef: { current: null }, workspaceRestoreTokenRef: { current: 0 },
-    router: { replace() {} }, isMobile: false, activeCwd: "/p", chatInputRef: { current: null },
-    requestFreshComposerFocus: (...args) => requests.push(args), closeOverview() { overview = null; },
+test('page-memory scrolls are session-local and archive restoration never clears the selected conversation', async t => {
+  const h = await shellHarness(t);
+  await h.select(session('root', '/repo', { archived: true }));
+  await h.command(c => {
+    c.state.handleSessionScrollPositionChange('root', { atBottom: false, anchorEntryId: 'entry', anchorOffset: 17, oldestEntryId: null });
+    c.navigation.handleSessionsChange([session('root', '/repo', { archived: true }), session('child')]);
   });
-  context.invalidateWorkspaceRestore = () => context.workspaceRestoreTokenRef.current++;
-  for (const [setter] of callback.matchAll(/\bset[A-Z]\w*(?=\()/g)) context[setter] = () => {};
-  vm.runInContext(stripTypeScriptTypes(`${callback}\nglobalThis.start = handleNewSession;`), context);
-  context.start("first", "/p");
-  assert.equal(overview, "activity", "desktop New preserves independent sidecars");
-  assert.equal(requests.length, 1);
-  assert.equal(requests[0][2](), true);
-  context.start("second", "/p");
-  assert.equal(requests[0][2](), false);
-  assert.equal(requests[1][2](), true);
-  context.activeNewSessionDraftKeyRef.current = null;
-  assert.equal(requests[1][2](), false);
-  context.start("third", "/p");
-  context.invalidateWorkspaceRestore();
-  assert.equal(requests[2][2](), false);
-  for (const panel of ["activity", "starred", "git"]) {
-    overview = panel;
-    context.start(`desktop-${panel}`, "/p");
-    assert.equal(overview, panel, "desktop New must retain the overview's mounted state");
-  }
-  context.isMobile = true;
-  for (const panel of ["activity", "starred", "git"]) {
-    overview = panel;
-    context.start(`mobile-${panel}`, "/another-project-with-no-sessions");
-    assert.equal(overview, null);
-    assert.equal(context.activeNewSessionDraftKeyRef.current, `new:mobile-${panel}:/another-project-with-no-sessions`);
-  }
+  const key = h.current.state.sessionKey, refresh = h.current.state.refreshKey;
+  await h.command(c => c.navigation.handleSessionRestored('root'));
+  assert.equal(h.current.state.selectedSession.id, 'root');
+  assert.equal(h.current.state.selectedSession.archived, false);
+  assert.equal(h.current.state.sessionCatalog.find(s => s.id === 'root').archived, false);
+  assert.equal(h.current.state.sessionKey, key);
+  assert.equal(h.current.state.refreshKey, refresh + 1);
+  assert.equal(h.current.state.sessionScrollPositionsRef.current.get('root').anchorOffset, 17);
+  assert.equal(h.current.state.sessionScrollPositionsRef.current.has('child'), false);
 });
 
-test("workspace restoration remains inside the cross-project branch", () => {
-  assert.match(
-    callbackBody("handleCwdChange", "handleSelectSession"),
-    /if \(currentProject !== newProject\) \{[\s\S]*?restoreWorkspaceContext\(newProject, cwd\);[\s\S]*?\}/,
-  );
-});
 
-test("passive project drafts park, but explicit in-flight New drafts retain their own identity", async (t) => {
-  const callbacks = [
-    callbackBody("restoreWorkspaceContext", "handleCwdChange"),
-    callbackBody("handleCwdChange", "handleSelectSession"),
-    callbackBody("handleSelectSession", "handleNewSession"),
-    callbackBody("handleNewSession", "hydrateSelectedSession"),
-  ].join("\n");
-  const parkedKeyHelper = source.slice(source.indexOf("function parkedNewSessionDraftKey"), source.indexOf("export function AppShell"));
-  const hookSource = await readFile(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8");
-  const cleanupStart = hookSource.indexOf("    return () => {", hookSource.indexOf("  // Load session on mount"));
-  const cleanupEnd = hookSource.indexOf("    // eslint-disable-next-line", cleanupStart);
-
-  for (const rememberedCwd of ["/draft-project", "/draft-project-worktree"]) {
-    await t.test(`remembered session cwd: ${rememberedCwd}`, async () => {
-      const cwd = "/draft-project";
-      const session = { id: "remembered", cwd: rememberedCwd, projectKey: cwd };
-      const response = Promise.withResolvers();
-      const context = vm.createContext({
-        ...draftStore,
-        crypto: globalThis.crypto,
-        queueMicrotask,
-        URLSearchParams,
-        window: { location: { pathname: "/", search: "" } },
-        router: { replace() {} },
-        fetch: () => response.promise,
-        getLastOpenSession: (key) => key === cwd ? session.id : null,
-        clearLastOpen() {},
-        workspaceKeyOf: (value) => value.projectKey ?? value.cwd,
-        useCallback: (callback) => callback,
-        useGlobalKeyboardShortcuts() {}, setTabOpenNewSession() {},
-        chatInputRef: { current: null },
-        requestFreshComposerFocus() {}, closeOverview() {},
-        activeNewSessionDraftKeyRef: { current: `new:initial:${cwd}` },
-        pendingMovedCheckoutRef: { current: null },
-        activeProjectKeyRef: { current: cwd },
-        workspaceRestoreTokenRef: { current: 0 },
-        suppressCwdBumpRef: { current: false },
-        branchLeafChangeFnRef: { current: null },
-        liveFollowFrameRef: { current: null },
-        bashRecoveryIdRef: { current: 0 },
-        cancelEventStreamGrace() {},
-        closeEvents() {},
-        isMobile: false,
-        activeCwd: cwd,
-        activeFileTabId: null,
-        newSessionCwd: null,
-        newSessionDraftId: "initial",
-        persistentNewSessionDraftId: null, persistNewSession: false,
-        selectedSession: null,
-        sessionCatalog: [],
-        sessionKey: 0,
-      });
-      context.invalidateWorkspaceRestore = () => context.workspaceRestoreTokenRef.current++;
-      for (const [setter] of callbacks.matchAll(/\bset[A-Z]\w*(?=\()/g)) {
-        const state = setter[3].toLowerCase() + setter.slice(4);
-        context[setter] = (value) => {
-          context[state] = typeof value === "function" ? value(context[state]) : value;
-        };
-      }
-      vm.runInContext(stripTypeScriptTypes(`${parkedKeyHelper}\n${callbacks}
-        globalThis.navigate = { handleCwdChange, handleSelectSession, handleNewSession };
-      `), context);
-      // Run the actual hook cleanup with the outgoing mount's captured draft key.
-      const makeCleanup = vm.runInContext(stripTypeScriptTypes(`((isNew, newSessionDraftKey, persistNewSession) => {
-        const opts = { persistNewSession };
-        const sessionHookMountedRef = { current: true };
-        const compactionPhase = { active: false, generation: 0 };
-        const newSessionPromotedRef = { current: false };
-        const sessionIdRef = { current: null };
-        const dataRef = { current: null };
-        const messagesRef = { current: [] };
-        const entryIdsRef = { current: [] };
-        const activeLeafIdRef = { current: null };
-        const historyCursorRef = { current: null };
-        const hasEarlierMessagesRef = { current: false };
-        const getSessionViewSnapshot = () => null;
-        const setSessionViewSnapshot = () => false;
-        const deleteSessionViewSnapshot = () => {};
-        ${hookSource.slice(cleanupStart, cleanupEnd)}
-      })`), context);
-      let mountedKey = context.sessionKey;
-      let cleanup = makeCleanup(true, context.activeNewSessionDraftKeyRef.current);
-      async function commit() {
-        if (mountedKey !== context.sessionKey) {
-          cleanup();
-          mountedKey = context.sessionKey;
-          const activeCwd = context.newSessionCwd ?? context.activeCwd;
-          const key = context.selectedSession ? null : `new:${context.newSessionDraftId}:${activeCwd}`;
-          context.activeNewSessionDraftKeyRef.current = key;
-          context.persistNewSession = context.newSessionCwd !== null && context.persistentNewSessionDraftId === context.newSessionDraftId;
-          cleanup = makeCleanup(!context.selectedSession, key, context.persistNewSession);
-        }
-        await new Promise((resolve) => setImmediate(resolve));
-      }
-
-      const draft = { value: "unsent project draft", images: [{ data: "aGVsbG8=", mimeType: "image/png" }] };
-      draftStore.setDraft(context.activeNewSessionDraftKeyRef.current, draft);
-      context.navigate.handleSelectSession({ ...session, cwd });
-      await commit();
-      context.navigate.handleNewSession("direct-return", cwd);
-      await commit();
-      assert.deepEqual(draftStore.getDraft(context.activeNewSessionDraftKeyRef.current), draft);
-      const pendingKey = context.activeNewSessionDraftKeyRef.current;
-      context.navigate.handleSelectSession({ ...session, cwd });
-      await commit();
-      assert.deepEqual(draftStore.getDraft(pendingKey), draft, "a late creation response can still find its draft");
-      context.navigate.handleCwdChange("/other-project", "/other-project", "/other-project");
-      await commit();
-      context.navigate.handleCwdChange(cwd, cwd, cwd);
-      await commit();
-      assert.equal(draftStore.getDraft(context.activeNewSessionDraftKeyRef.current), null, "project placeholders do not borrow an explicit session draft");
-      response.resolve({ ok: true, json: async () => ({ sessions: [session] }) });
-      await new Promise((resolve) => setImmediate(resolve));
-      await commit();
-      assert.equal(context.selectedSession.id, session.id);
-      context.navigate.handleNewSession("after-auto-restore", cwd);
-      await commit();
-      assert.equal(draftStore.getDraft(context.activeNewSessionDraftKeyRef.current), null, "another New starts independently");
-      draftStore.clearDraft(pendingKey);
-    });
-  }
+for (const rememberedCwd of ['/draft-project', '/draft-project-worktree']) test(`navigation parks passive text/images across actual remembered-session adoption: ${rememberedCwd}`, async t => {
+  const cwd = '/draft-project', remembered = session('remembered', rememberedCwd, { projectRoot: cwd, projectKey: cwd });
+  const h = await shellHarness(t, { route(request) { exact(request, '/api/sessions'); return undefined; } });
+  const { draftStore } = h.graph;
+  await h.cwd(cwd, cwd, cwd);
+  const passive = h.current.state.activeNewSessionDraftKeyRef.current;
+  const draft = { value: 'unsent project draft', images: [{ data: 'aGVsbG8=', mimeType: 'image/png' }] };
+  draftStore.setDraft(passive, draft);
+  await h.select({ ...remembered, cwd });
+  await h.command(c => c.navigation.handleNewSession('direct-return', cwd));
+  const pending = h.current.state.activeNewSessionDraftKeyRef.current;
+  assert.deepEqual(draftStore.getDraft(pending), draft);
+  await h.select({ ...remembered, cwd });
+  assert.deepEqual(draftStore.getDraft(pending), draft, 'explicit in-flight New retains its own text/image key');
+  await h.cwd('/other-project', '/other-project', '/other-project');
+  await h.cwd(cwd, cwd, cwd);
+  const response = h.latest('/api/sessions');
+  assert.equal(draftStore.getDraft(h.current.state.activeNewSessionDraftKeyRef.current), null);
+  await h.reply(response, { sessions: [remembered] }); await h.settled();
+  assert.equal(h.current.state.selectedSession.id, remembered.id); assert.equal(h.current.state.selectedSession.cwd, rememberedCwd);
+  await h.command(c => c.navigation.handleNewSession('after-auto-restore', cwd));
+  assert.equal(draftStore.getDraft(h.current.state.activeNewSessionDraftKeyRef.current), null);
+  draftStore.clearDraft(pending); draftStore.clearDraft(passive); draftStore.clearDraft('parked-new:/draft-project');
 });

@@ -1,5 +1,6 @@
 "use client";
 
+import { useNavigationWork } from "@/lib/navigation-work";
 import { createContext, FormEvent, useCallback, useContext, useEffect, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
@@ -59,6 +60,7 @@ interface Props {
 }
 
 export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false, error }: Props) {
+  const work = useNavigationWork();
   const { t } = useI18n();
   const portalRoot = useContext(DirectoryPickerPortalContext);
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
@@ -70,7 +72,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const navigateTo = useCallback(async (directory?: string) => {
+  const navigateTo = useCallback((directory?: string) => work.observe((async () => {
     setLoading(true);
     setLoadError(null);
     try {
@@ -86,7 +88,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
     } finally {
       setLoading(false);
     }
-  }, []);
+  })()), [work]);
 
   useEffect(() => {
     setPortalTarget(portalRoot?.current ?? document.body);

@@ -1,41 +1,69 @@
+import '../lib/testing/client-native-boundary.fixture.mjs';
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import test from "node:test";
-import { Script } from "node:vm";
+import test, { after, before, describe } from "node:test";
+import { act, createElement } from "react";
+import { composerFixture, inputText, click, exactQuery, exactHeaders } from "./composer.fixture.mjs";
 import { createJiti } from "jiti";
-import ts from "typescript";
 
-const jiti = createJiti(import.meta.url, {
-  jsx: { runtime: "automatic" },
-  tsconfigPaths: true,
-});
-const React = await jiti.import("react");
-const { renderToStaticMarkup } = await jiti.import("react-dom/server");
-const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, compressImageFile, cycleListIndex, filterModelOptions, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, modelSupportsImageInput, replaceLinksWithMarkdown, shouldCompressImageFile, stacksComposerLayout } = await jiti.import("./ChatInput.tsx");
-const { ModelSelector } = await jiti.import("./ModelSelector.tsx");
-const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } = await jiti.import("@/lib/draft-store.ts");
-const { I18nProvider } = await jiti.import("@/hooks/useI18n");
+describe("ChatInput fixture ownership", () => {
+  let fixtureCleanup;
+  let React, renderToStaticMarkup;
+  let ChatInput, ModelErrorBanner, ModelScopeWarningBanner, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, compressImageFile, cycleListIndex, filterModelOptions, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, modelSupportsImageInput, replaceLinksWithMarkdown, shouldCompressImageFile, stacksComposerLayout;
+  let ModelSelector, clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft, I18nProvider;
 
-test("composer active-row reselection is explicit and other model pickers retain their no-op", () => {
-  const sourceText = readFileSync(new URL("./ModelSelector.tsx", import.meta.url), "utf8");
-  const source = ts.createSourceFile("ModelSelector.tsx", sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  function findChoose(node) {
-    if (ts.isVariableDeclaration(node) && node.name.getText(source) === "choose") return node.initializer;
-    return ts.forEachChild(node, findChoose);
-  }
-  const script = new Script(ts.transpileModule(findChoose(source).getText(source), { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText);
-  const option = { provider: "fixture", modelId: "one" };
+  // A child-suite disposer, registered even if async setup rejects. Capture the
+  // fixture's own early cleanup registration, including partial construction.
+  after(async () => { if (fixtureCleanup) await fixtureCleanup(); });
+  before(async () => {
+    composerFixture({ after: cleanup => { fixtureCleanup = cleanup; } });
+    // Deny external effects before the SSR/rule import graph as well as mounts.
+    const jiti = createJiti(import.meta.url, {
+      jsx: { runtime: "automatic" },
+      tsconfigPaths: true,
+      fsCache: false,
+    });
+    React = await jiti.import("react");
+    ({ renderToStaticMarkup } = await jiti.import("react-dom/server"));
+    ({ ChatInput, ModelErrorBanner, ModelScopeWarningBanner, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, compressImageFile, cycleListIndex, filterModelOptions, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, modelSupportsImageInput, replaceLinksWithMarkdown, shouldCompressImageFile, stacksComposerLayout } = await jiti.import("./ChatInput.tsx"));
+    ({ ModelSelector } = await jiti.import("./ModelSelector.tsx"));
+    ({ clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } = await jiti.import("@/lib/draft-store.ts"));
+    ({ I18nProvider } = await jiti.import("@/hooks/useI18n"));
+  });
+
+test("composer active-row reselection is explicit and other model pickers retain their no-op", async t => {
   const calls = [];
-  const choose = (overrides = {}) => script.runInNewContext({ value: option, isAutoSelection: false,
-    onChange: (...args) => calls.push(["change", ...args]), setOpen() {}, setFilter() {}, onReselect: undefined, ...overrides });
-  choose()(option); assert.deepEqual(calls, []);
-  choose({ onReselect: (...args) => calls.push(["reselect", ...args]) })(option);
-  choose({ isAutoSelection: true })(option);
-  choose()({ provider: "other", modelId: "one" });
-  assert.deepEqual(calls, [["reselect", "fixture", "one"], ["change", "fixture", "one"], ["change", "other", "one"]]);
-  const composer = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-  assert.match(composer, /onReselect=\{onModelChange\}/);
-  assert.match(composer, /disabled=\{isStreaming \|\| isCompacting\}/);
+  const c = await mountedInput(t, { model: { provider: 'fixture', modelId: 'one' },
+    modelList: [{ provider: 'fixture', id: 'one', name: 'One' }, { provider: 'other', id: 'one', name: 'Other One' }],
+    onModelChange: (...args) => calls.push(args) });
+  const choose = async name => {
+    await click(c.view, c.view.container.querySelector('.model-selector > button'));
+    const row = [...c.view.container.querySelectorAll('button')].find(node => node.textContent.includes(name) && node.getAttribute('role') === 'option');
+    assert.ok(row, `model option ${name}`); await click(c.view, row);
+  };
+  await choose('One'); assert.deepEqual(calls, [['fixture', 'one']]);
+  const currentModel = []; await c.update({ onModelChange: (...args) => currentModel.push(args) });
+  await choose('One'); assert.deepEqual(currentModel, [['fixture', 'one']]); assert.equal(calls.length, 1);
+  await c.update({ isStreaming: true });
+  assert.equal(c.view.container.querySelector('.model-selector > button').disabled, true);
+  await c.update({ isStreaming: false, isCompacting: true });
+  assert.equal(c.view.container.querySelector('.model-selector > button').disabled, true);
+  await c.f.dispose();
+  const f = composerFixture(t), p = await f.load();
+  let props = { options: [{ provider: 'fixture', modelId: 'one', name: 'One' }, { provider: 'other', modelId: 'one', name: 'Other One' }],
+    value: { provider: 'fixture', modelId: 'one' }, onChange: (...args) => calls.push(args), ariaLabel: 'Picker' };
+  const element = () => createElement(p.I18nProvider, null, createElement(p.ModelSelector, props));
+  const view = await f.mount(element());
+  const select = async name => {
+    await click(view, view.container.querySelector('[aria-label="Picker"]'));
+    const row = [...view.container.querySelectorAll('[role="option"]')].find(node => node.textContent.includes(name));
+    assert.ok(row); await click(view, row);
+  };
+  await select('One'); assert.equal(calls.length, 1, 'ordinary active selection is a no-op');
+  props = { ...props, isAutoSelection: true }; await view.rerender(element());
+  await select('One');
+  props = { ...props, isAutoSelection: false }; await view.rerender(element());
+  await select('Other One');
+  assert.deepEqual(calls, [['fixture', 'one'], ['fixture', 'one'], ['other', 'one']]);
 });
 
 test("preserves pasted HTML links as Markdown without changing plain text layout", () => {
@@ -65,116 +93,82 @@ test("only compact quotes and streaming mobile composers stack their action row"
   }
 });
 
-test("follow-up shortcuts preserve newline, IME, mobile and completion behavior", () => {
-  const source = ts.createSourceFile("ChatInput.tsx", readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  function findHandler(node) {
-    if (ts.isVariableDeclaration(node) && node.name.getText(source) === "handleKeyDown") {
-      return node.initializer.arguments[0];
-    }
-    return ts.forEachChild(node, findHandler);
-  }
-  // Execute the component's actual callback without mounting the rest of the UI.
-  const script = new Script(ts.transpileModule(findHandler(source).getText(source), {
-    compilerOptions: { target: ts.ScriptTarget.ES2020 },
-  }).outputText);
+test("follow-up shortcuts preserve newline, IME, mobile and completion behavior", async t => {
   const cases = [
-    ["Enter steers", {}, {}, "steer"],
-    ["Alt+Enter follows up", { altKey: true }, {}, "followup"],
-    ["idle Alt+Enter sends", { altKey: true }, { isStreaming: false }, "send"],
-    ["Shift+Enter inserts a newline", { shiftKey: true }, {}, "native"],
-    ["Alt+Shift+Enter keeps native behavior", { altKey: true, shiftKey: true }, {}, "native"],
-    ["composition ref blocks sending", { altKey: true }, { isComposingRef: { current: true } }, "native"],
-    ["native composition blocks sending", { altKey: true, nativeEvent: { isComposing: true } }, {}, "native"],
-    ["IME keyCode blocks sending", { altKey: true, nativeEvent: { keyCode: 229 } }, {}, "native"],
-    ["composition grace blocks sending", { altKey: true }, { lastCompositionEndAtRef: { current: 950 } }, "prevented"],
-    ["mobile Alt+Enter keeps native behavior", { altKey: true }, { isMobile: true }, "native"],
-    ["mobile composition grace cannot send", { altKey: true }, { isMobile: true, lastCompositionEndAtRef: { current: 950 } }, "native"],
-    ["mobile Ctrl+Alt+Enter follows up", { altKey: true, ctrlKey: true }, { isMobile: true }, "followup"],
-    ["mobile Cmd+Alt+Enter follows up", { altKey: true, metaKey: true }, { isMobile: true }, "followup"],
-    ["mobile modified Enter respects composition grace", { altKey: true, ctrlKey: true }, { isMobile: true, lastCompositionEndAtRef: { current: 950 } }, "prevented"],
-    ["Enter falls back to follow-up", {}, { onSteer: undefined }, "followup"],
-    ["Alt+Enter falls back to steer", { altKey: true }, { onFollowUp: undefined }, "steer"],
-    ["slash completion takes priority", { altKey: true }, { slashMenuOpen: true, slashQuery: "help" }, "slash"],
-    ["available built-in commands take priority", { altKey: true }, { slashMenuOpen: true, slashQuery: "copy", value: "/copy", displayedSlashCommands: [{ name: "copy", source: "builtin", availableWhileStreaming: true }] }, "send"],
-    ["file completion takes priority", { altKey: true }, { atMenuOpen: true, atQuery: {} }, "file"],
-    ["history selection takes priority", { altKey: true }, { historyMenuOpen: true }, "history"],
+    ['Enter steers', {}, {}, 'steer'], ['Alt+Enter follows up', { altKey: true }, {}, 'followup'],
+    ['idle Alt+Enter sends', { altKey: true }, { isStreaming: false }, 'send'],
+    ['Shift+Enter inserts a newline', { shiftKey: true }, {}, 'native'],
+    ['Alt+Shift+Enter keeps native behavior', { altKey: true, shiftKey: true }, {}, 'native'],
+    ['composition ref blocks sending', { altKey: true }, { composition: true }, 'native'],
+    ['native composition blocks sending', { altKey: true, isComposing: true }, {}, 'native'],
+    ['IME keyCode blocks sending', { altKey: true, keyCode: 229 }, {}, 'native'],
+    ['composition grace blocks sending', { altKey: true }, { grace: true }, 'prevented'],
+    ['mobile Alt+Enter keeps native behavior', { altKey: true }, { mobile: true }, 'native'],
+    ['mobile composition grace cannot send', { altKey: true }, { mobile: true, grace: true }, 'native'],
+    ['mobile Ctrl+Alt+Enter follows up', { altKey: true, ctrlKey: true }, { mobile: true }, 'followup'],
+    ['mobile Cmd+Alt+Enter follows up', { altKey: true, metaKey: true }, { mobile: true }, 'followup'],
+    ['mobile modified Enter respects grace', { altKey: true, ctrlKey: true }, { mobile: true, grace: true }, 'prevented'],
+    ['Enter falls back to follow-up', {}, { noSteer: true }, 'followup'],
+    ['Alt+Enter falls back to steer', { altKey: true }, { noFollowUp: true }, 'steer'],
   ];
-  for (const [name, keys, state, expected] of cases) {
-    let action = "native";
-    const handler = script.runInNewContext({
-      Date: { now: () => 1000 },
-      COMPOSITION_END_ENTER_GRACE_MS: 100,
-      isMobile: false, isStreaming: true,
-      isComposingRef: { current: false }, lastCompositionEndAtRef: { current: 0 },
-      historyMenuOpen: false, inputHistory: ["previous"], historyActiveIndex: 0,
-      slashMenuOpen: false, slashQuery: null, displayedSlashCommands: [{}], slashActiveIndex: 0,
-      atMenuOpen: false, atQuery: null, atMatches: [{}], atActiveIndex: 0,
-      onSteer() {}, onFollowUp() {},
-      sendQueued(mode) { action = mode; }, handleSend() { action = "send"; },
-      applySlashCommand() { action = "slash"; },
-      isExactSlashCommand, value: "", setSlashMenuOpen() {},
-      applyAtCompletion() { action = "file"; },
-      applyHistoryInput() { action = "history"; },
-      ...state,
-    });
-    handler({
-      key: "Enter", shiftKey: false, altKey: false, ctrlKey: false, metaKey: false,
-      nativeEvent: { isComposing: false, keyCode: 13 },
-      preventDefault() { action = "prevented"; },
-      ...keys,
-    });
-    assert.equal(action, expected, name);
-  }
+  for (const [name, keys, state, expected] of cases) await t.test(name, async child => {
+    const actions = [];
+    const c = await mountedInput(child, { isStreaming: state.isStreaming ?? true,
+      onSend: text => actions.push(['send', text]),
+      onSteer: state.noSteer ? undefined : text => actions.push(['steer', text]),
+      onFollowUp: state.noFollowUp ? undefined : text => actions.push(['followup', text]),
+    }, { mobile: state.mobile });
+    let now = 1000; c.f.replace(Date, 'now', () => now);
+    await inputText(c.view, c.ta, 'literal draft');
+    if (state.composition) await c.view.dispatch(c.ta, new c.view.window.CompositionEvent('compositionstart', { bubbles: true }));
+    if (state.grace) {
+      now = 950; await c.view.dispatch(c.ta, new c.view.window.CompositionEvent('compositionend', { bubbles: true })); now = 1000;
+    }
+    const prevented = await c.f.key(c.ta, 'Enter', keys);
+    await act(async () => { await c.api.current.whenSettled(); });
+    assert.deepEqual(actions.map(([action]) => action), ['native', 'prevented'].includes(expected) ? [] : [expected]);
+    assert.equal(prevented, expected !== 'native');
+    assert.equal(c.ta.value, ['native', 'prevented'].includes(expected) ? 'literal draft' : '');
+  });
 });
 
-test("file mention arrows wrap around the match list", () => {
-  const source = ts.createSourceFile("ChatInput.tsx", readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  function findHandler(node) {
-    if (ts.isVariableDeclaration(node) && node.name.getText(source) === "handleKeyDown") {
-      return node.initializer.arguments[0];
-    }
-    return ts.forEachChild(node, findHandler);
-  }
-  const script = new Script(ts.transpileModule(findHandler(source).getText(source), {
-    compilerOptions: { target: ts.ScriptTarget.ES2020 },
-  }).outputText);
+test('real palette/history completion wins over queue shortcuts and uses current callbacks', async t => {
+  const calls = [];
+  const c = await mountedInput(t, { isStreaming: true, onSteer: text => calls.push(['old', text]), onFollowUp: text => calls.push(['old-follow', text]),
+    slashCommands: [{ name: 'help', source: 'extension', description: 'help' }], onBuiltinCommand: async text => { calls.push(['builtin', text]); return { handled: true }; } });
+  await inputText(c.view, c.ta, '/he');
+  // Builtins and extensions retain their actual production grouping/order.
+  // Select the real named extension row rather than assuming it is first.
+  const help = [...c.view.container.querySelectorAll('button')].find(button =>
+    [...button.querySelectorAll('span')].some(label => label.textContent.trim() === '/help'));
+  assert.ok(help, 'the actual Help completion row is present');
+  await c.view.dispatch(help, new c.view.window.MouseEvent('mouseover', { bubbles: true, relatedTarget: c.view.window.document.body }));
+  await c.f.key(c.ta, 'Enter', { altKey: true }); await c.f.frame();
+  assert.equal(c.ta.value, '/help '); assert.deepEqual(calls, []);
+  await inputText(c.view, c.ta, '/copy'); await c.f.key(c.ta, 'Enter', { altKey: true });
+  await act(async () => { await c.api.current.whenSettled(); }); assert.deepEqual(calls, [['builtin', '/copy']]);
+  await c.update({ isStreaming: false, inputHistory: ['previous'] });
+  await inputText(c.view, c.ta, ''); await c.f.key(c.ta, 'ArrowUp'); await c.f.key(c.ta, 'Enter', { altKey: true }); await c.f.frame();
+  assert.equal(c.ta.value, 'previous'); assert.equal(calls.length, 1);
+  await c.update({ isStreaming: true, onSteer: text => calls.push(['current', text]) });
+  await c.f.key(c.ta, 'Enter'); assert.deepEqual(calls.at(-1), ['current', 'previous']);
+});
 
-  function move(key, atActiveIndex, length) {
-    let next = null;
-    const handler = script.runInNewContext({
-      Date: { now: () => 1000 },
-      COMPOSITION_END_ENTER_GRACE_MS: 100,
-      isMobile: false, isStreaming: false,
-      isComposingRef: { current: false }, lastCompositionEndAtRef: { current: 0 },
-      historyMenuOpen: false, inputHistory: [], historyActiveIndex: 0,
-      slashMenuOpen: false, slashQuery: null, displayedSlashCommands: [], slashActiveIndex: 0,
-      atMenuOpen: true, atQuery: {}, atMatches: Array.from({ length }, () => ({})), atActiveIndex,
-      onSteer() {}, onFollowUp() {},
-      sendQueued() {}, handleSend() {},
-      applySlashCommand() {},
-      isExactSlashCommand() { return false; }, value: "@file",
-      setSlashMenuOpen() {}, setAtMenuOpen() {},
-      applyAtCompletion() {},
-      applyHistoryInput() {},
-      cycleListIndex,
-      setAtActiveIndex(update) {
-        next = typeof update === "function" ? update(atActiveIndex) : update;
-      },
-    });
-    handler({
-      key, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false,
-      nativeEvent: { isComposing: false, keyCode: 0 },
-      preventDefault() {},
-    });
-    return next;
+test("file mention arrows wrap around the match list", async t => {
+  const c = await mountedInput(t, { cwd: '/fixture', isStreaming: true, onSteer() {}, onFollowUp() {} }, { route(request) {
+    assert.equal(request.url.pathname, '/api/file-index'); exactQuery(request, { cwd: '/fixture' }); exactHeaders(request);
+    assert.equal(request.options.method ?? 'GET', 'GET'); return { files: ['a.ts', 'b.ts', 'c.ts'], truncated: false };
+  } });
+  await inputText(c.view, c.ta, '@'); await act(async () => { await c.api.current.whenSettled(); });
+  const selected = () => [...c.view.container.querySelectorAll('button')].filter(node => ['a.ts', 'b.ts', 'c.ts'].includes(node.textContent.trim()) && node.style.background === 'var(--bg-selected)').map(node => node.textContent.trim());
+  assert.deepEqual(selected(), ['a.ts']);
+  for (const [key, expected] of [['ArrowDown', 'b.ts'], ['ArrowDown', 'c.ts'], ['ArrowDown', 'a.ts'], ['ArrowUp', 'c.ts'], ['ArrowUp', 'b.ts'], ['ArrowUp', 'a.ts']]) {
+    await c.f.key(c.ta, key); assert.deepEqual(selected(), [expected]);
   }
-
-  assert.equal(move("ArrowDown", 0, 3), 1);
-  assert.equal(move("ArrowDown", 2, 3), 0);
-  assert.equal(move("ArrowUp", 0, 3), 2);
-  assert.equal(move("ArrowUp", 1, 3), 0);
-  assert.equal(move("ArrowDown", 0, 1), 0);
-  assert.equal(move("ArrowDown", 0, 0), 0);
+  await c.f.key(c.ta, 'Enter', { altKey: true }); await c.f.frame(); assert.equal(c.ta.value, '@a.ts ');
+  await inputText(c.view, c.ta, '@b'); await c.f.key(c.ta, 'ArrowDown'); await c.f.key(c.ta, 'ArrowUp');
+  assert.deepEqual(selected(), ['b.ts']);
+  await inputText(c.view, c.ta, '@missing'); await c.f.key(c.ta, 'ArrowDown'); await c.f.key(c.ta, 'ArrowUp'); assert.deepEqual(selected(), []);
 });
 
 test("cycleListIndex wraps in both directions", () => {
@@ -398,37 +392,60 @@ test("caps an upward menu to the visible space above its anchor", () => {
   assert.ok(getUpwardMenuMaxHeight(200, 36) < 400);
 });
 
-test("file mention menu applies the measured upward height cap", () => {
-  const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-  const start = source.indexOf("{atMenuOpen && atQuery !== null && (() => {");
-  assert.notEqual(start, -1);
-  const block = source.slice(start, start + 4000);
-  assert.match(block, /ref=\{atMenuRef\}/);
-  assert.match(block, /min\(48vh, 400px, \$\{atMenuMaxHeight\}px\)/);
-  assert.match(block, /flexDirection: "column"/);
-  assert.match(block, /minHeight: 0/);
-  assert.equal(block.includes("maxHeight: \"min(48vh, 400px)\""), false);
+test("file mention menu applies the measured upward height cap", async t => {
+  const c = await mountedInput(t, { cwd: '/fixture' }, { route(request) { exactQuery(request, { cwd: '/fixture' }); assert.equal(request.url.pathname, '/api/file-index'); return { files: ['a.ts'] }; } });
+  await inputText(c.view, c.ta, '@'); await act(async () => { await c.api.current.whenSettled(); });
+  const menu = [...c.view.container.querySelectorAll('div')].find(node => node.style.maxHeight.startsWith('min(48vh'));
+  assert.ok(menu); assert.equal(menu.style.flexDirection, 'column');
+  assert.equal([...menu.children].some(node => node.style.minHeight === '0'), true);
+  menu.getBoundingClientRect = () => ({ bottom: 200 });
+  const layout = menu.parentElement.parentElement;
+  layout.style.overflowY = 'hidden'; layout.getBoundingClientRect = () => ({ top: 36 });
+  await c.f.resize(layout); await c.f.frame();
+  assert.equal(menu.style.maxHeight, 'min(48vh, 400px, 156px)');
 });
 
-test("file mention menu remeasures when its layout container shifts the anchor", () => {
-  const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-  const start = source.indexOf("function subscribeUpwardMenuMaxHeight");
-  assert.notEqual(start, -1);
-  const block = source.slice(start, start + 1800);
-  assert.match(block, /const layoutContainer = parent\?\.parentElement;/);
-  assert.match(block, /anchorObserver\?\.observe\(layoutContainer\)/);
+test("file mention menu remeasures when its layout container shifts the anchor", async t => {
+  const c = await mountedInput(t, { cwd: '/fixture' }, { route(request) { assert.equal(request.url.pathname, '/api/file-index'); exactQuery(request, { cwd: '/fixture' }); return { files: ['a.ts'] }; } });
+  await inputText(c.view, c.ta, '@'); await act(async () => { await c.api.current.whenSettled(); });
+  const menu = [...c.view.container.querySelectorAll('div')].find(node => node.style.maxHeight.startsWith('min(48vh'));
+  const parent = menu.parentElement, layout = parent.parentElement;
+  assert.equal([...c.f.observers].some(observer => observer.targets.has(parent) && observer.targets.has(layout)), true);
+  menu.getBoundingClientRect = () => ({ bottom: 343 });
+  layout.style.overflowY = 'hidden'; layout.getBoundingClientRect = () => ({ top: 36 });
+  await c.f.resize(layout); await c.f.frame(); assert.equal(menu.style.maxHeight, 'min(48vh, 400px, 299px)');
+  menu.getBoundingClientRect = () => ({ bottom: 200 });
+  await c.f.resize(layout); assert.equal(c.f.frames.size, 1); await c.f.frame();
+  assert.equal(menu.style.maxHeight, 'min(48vh, 400px, 156px)');
+  await c.f.key(c.ta, 'Escape'); assert.equal([...c.f.observers].some(observer => observer.targets.has(layout)), false);
+  assert.equal(c.f.frames.size, 0);
 });
 
-test("compresses large images while preserving small images and GIFs", async () => {
+test('real file-menu viewport/window subscriptions coalesce measurements and release on close/unmount', async t => {
+  let viewport, viewportEvents, windowEvents;
+  const c = await mountedInput(t, { cwd: '/menu-viewport' }, { setup(window, f) {
+    viewport = new window.EventTarget(); Object.assign(viewport, { offsetTop: 36 });
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
+    viewportEvents = f.watchEvents(viewport, ['resize', 'scroll']); windowEvents = f.watchEvents(window, ['resize', 'scroll']);
+  }, route(request) { assert.equal(request.url.pathname, '/api/file-index'); exactQuery(request, { cwd: '/menu-viewport' }); return { files: ['only.ts'] }; } });
+  await inputText(c.view, c.ta, '@'); await act(async () => { await c.api.current.whenSettled(); });
+  const menu = [...c.view.container.querySelectorAll('div')].find(node => node.style.maxHeight.startsWith('min(48vh')); assert.ok(menu);
+  let bottom = 200; menu.getBoundingClientRect = () => ({ bottom });
+  await c.view.dispatch(viewport, new c.view.window.Event('resize')); await c.view.dispatch(viewport, new c.view.window.Event('scroll'));
+  assert.equal(c.f.frames.size, 1); await c.f.frame(); assert.equal(menu.style.maxHeight, 'min(48vh, 400px, 156px)');
+  bottom = 343; await c.view.dispatch(c.view.window, new c.view.window.Event('resize')); await c.f.frame();
+  assert.equal(menu.style.maxHeight, 'min(48vh, 400px, 299px)'); assert.equal(viewportEvents.size, 2);
+  await c.view.dispatch(viewport, new c.view.window.Event('resize')); assert.equal(c.f.frames.size, 1);
+  await c.f.key(c.ta, 'Escape'); assert.equal(c.f.frames.size, 0); assert.equal(viewportEvents.size, 0);
+  await c.view.unmount(); assert.equal(windowEvents.size, 0);
+});
+
+test("compresses large images while preserving small images and GIFs", async t => {
   assert.equal(shouldCompressImageFile({ size: 1024 * 1024, type: "image/png" }), false);
   assert.equal(shouldCompressImageFile({ size: 1024 * 1024 + 1, type: "image/png" }), true);
   assert.equal(shouldCompressImageFile({ size: 2 * 1024 * 1024, type: "image/gif" }), false);
 
-  const originals = {
-    FileReader: globalThis.FileReader,
-    createImageBitmap: globalThis.createImageBitmap,
-    document: globalThis.document,
-  };
+  const f = composerFixture(t);
   let bitmapCalls = 0;
   let closed = false;
   const canvas = {
@@ -438,19 +455,19 @@ test("compresses large images while preserving small images and GIFs", async () 
     toDataURL: () => "data:image/jpeg;base64,COMPRESSED",
   };
 
-  globalThis.FileReader = class {
+  f.replace(globalThis, 'FileReader', class {
     readAsDataURL() {
       this.result = "data:image/png;base64,ORIGINAL";
       this.onload();
     }
-  };
-  globalThis.createImageBitmap = async () => {
+  });
+  f.replace(globalThis, 'createImageBitmap', async () => {
     bitmapCalls += 1;
     return { width: 2048, height: 1024, close() { closed = true; } };
-  };
-  globalThis.document = { createElement: () => canvas };
+  });
+  f.replace(globalThis, 'document', { createElement: () => canvas });
 
-  try {
+  {
     assert.deepEqual(await compressImageFile({ size: 1024, type: "image/png" }), {
       data: "ORIGINAL",
       mimeType: "image/png",
@@ -463,10 +480,6 @@ test("compresses large images while preserving small images and GIFs", async () 
     assert.equal(canvas.width, 1024);
     assert.equal(canvas.height, 512);
     assert.equal(closed, true);
-  } finally {
-    globalThis.FileReader = originals.FileReader;
-    globalThis.createImageBitmap = originals.createImageBitmap;
-    globalThis.document = originals.document;
   }
 });
 
@@ -485,37 +498,18 @@ test("clears a completed built-in only while its submitted input is unchanged", 
   assert.equal(canClearBuiltinCommandInput("/copy", 1, "/copy"), false);
 });
 
-test("locks built-in command submission until it settles", async () => {
-  const sourceText = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-  const source = ts.createSourceFile("ChatInput.tsx", sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  function findCallback(node) {
-    if (ts.isVariableDeclaration(node) && node.name.getText(source) === "runBuiltinCommand") {
-      return node.initializer.arguments[0];
-    }
-    return ts.forEachChild(node, findCallback);
-  }
-  const callback = new Script(ts.transpileModule(findCallback(source).getText(source), {
-    compilerOptions: { target: ts.ScriptTarget.ES2020 },
-  }).outputText).runInNewContext({
-    attachedImages: [],
-    attachedImagesRef: { current: [] },
-    builtinCommandPendingRef: { current: false },
-    canClearBuiltinCommandInput,
-    clearInput() {},
-    onBuiltinCommand: async () => new Promise((resolve) => { callback.resolve = resolve; }),
-    setBuiltinCommandPending(value) { callback.pendingStates.push(value); },
-    valueRef: { current: "/reload" },
-  });
-  callback.pendingStates = [];
-
-  const first = callback("/reload");
-  assert.deepEqual(callback.pendingStates, [true]);
-  assert.equal(await callback("/reload"), true);
-  assert.deepEqual(callback.pendingStates, [true]);
-  callback.resolve({ handled: true });
-  assert.equal(await first, true);
-  assert.deepEqual(callback.pendingStates, [true, false]);
-  assert.match(sourceText, /<fieldset\s+disabled=\{builtinCommandPending\}\s+aria-busy=\{builtinCommandPending && !isCompacting\}/);
+test("locks built-in command submission until it settles", async t => {
+  let resolve; const gate = new Promise(done => { resolve = done; }); const calls = [];
+  const c = await mountedInput(t, { onBuiltinCommand: message => { calls.push(message); return gate; } });
+  c.f.release(() => resolve({ handled: true }));
+  await inputText(c.view, c.ta, '/reload'); await c.f.key(c.ta, 'Enter');
+  assert.deepEqual(calls, ['/reload']);
+  const fieldset = c.view.container.querySelector('fieldset');
+  assert.equal(fieldset.disabled, true); assert.equal(fieldset.getAttribute('aria-busy'), 'true');
+  await c.f.key(c.ta, 'Enter'); assert.equal(calls.length, 1);
+  const complete = c.api.current.whenSettled();
+  await act(async () => { resolve({ handled: true }); await complete; });
+  assert.equal(fieldset.disabled, false); assert.equal(fieldset.getAttribute('aria-busy'), 'false'); assert.equal(c.ta.value, '');
 });
 
 test("keeps only read-only built-ins available while a run is active", () => {
@@ -730,4 +724,203 @@ test("renders image warnings for known text-only defaults without an explicit mo
   } finally {
     clearDraft(draftKey);
   }
+});
+
+async function mountedInput(t, initial = {}, options = {}) {
+  const f = composerFixture(t, options);
+  return { f, ...await f.input(initial) };
+}
+
+for (const [mode, keys] of [['send', {}], ['steer', {}], ['followup', { altKey: true }]]) {
+  test(`actual ${mode} events use a separately rerendered current callback and trim submitted text`, async t => {
+    const old = [], current = [], initial = { isStreaming: mode !== 'send',
+      onSend: (...args) => old.push(args), onSteer: (...args) => old.push(args), onFollowUp: (...args) => old.push(args) };
+    const c = await mountedInput(t, initial);
+    const prop = mode === 'send' ? 'onSend' : mode === 'steer' ? 'onSteer' : 'onFollowUp';
+    await inputText(c.view, c.ta, '  exact current text  ');
+    // Value/menu state is already committed: change ONLY the callback before use.
+    await c.update({ [prop]: (...args) => current.push(args) });
+    await c.f.key(c.ta, 'Enter', keys);
+    await act(async () => { await c.api.current.whenSettled(); });
+    assert.deepEqual(old, []); assert.deepEqual(current, [['exact current text', undefined]]);
+    assert.equal(c.ta.value, '');
+  });
+}
+
+test('real streaming slash queue routes its explicit behavior through the current callback rather than dropping the command', async t => {
+  const calls = [], old = [];
+  const c = await mountedInput(t, { isStreaming: true, onSteer() {}, onFollowUp() {}, onPromptWithStreamingBehavior: (...args) => old.push(args) });
+  await inputText(c.view, c.ta, '/custom literal argument');
+  await c.update({ onPromptWithStreamingBehavior: (...args) => calls.push(args) });
+  await c.f.key(c.ta, 'Enter', { altKey: true });
+  assert.deepEqual(calls, [['/custom literal argument', 'followUp', undefined]]); assert.deepEqual(old, []);
+});
+
+for (const [mode, keys] of [['send', {}], ['steer', {}], ['followup', { altKey: true }]]) {
+  test(`actual ${mode} completion includes the returned external callback after unmount`, async t => {
+    let resolve, entered = 0; const gate = new Promise(done => { resolve = done; });
+    const callback = () => { entered++; return gate; };
+    const c = await mountedInput(t, { isStreaming: mode !== 'send', onSend: callback, onSteer: callback, onFollowUp: callback });
+    c.f.release(resolve);
+    await inputText(c.view, c.ta, 'owned callback'); await c.f.key(c.ta, 'Enter', keys); assert.equal(entered, 1);
+    let complete = false; const joined = c.api.current.whenSettled().then(() => { complete = true; });
+    await c.view.unmount(); assert.equal(complete, false);
+    await act(async () => { resolve(); await joined; }); assert.equal(complete, true);
+  });
+}
+
+test('actual submission restore updates imperative text/image refs before same-turn rekey and survives remount', async t => {
+  const oldKey = 'new:mounted-restore', newKey = 'saved-mounted-restore', image = { data: 'AQID', mimeType: 'image/png' };
+  const c = await mountedInput(t, { draftKey: oldKey });
+  c.f.release(() => { c.p.clearDraft(oldKey); c.p.clearDraft(newKey); });
+  await act(async () => {
+    c.api.current.restoreSubmission(' literal rejected text ', [image]);
+    c.api.current.rekeyDraft(oldKey, newKey);
+  });
+  assert.deepEqual(c.p.getDraft(newKey), { value: ' literal rejected text ', images: [image] });
+  assert.equal(c.p.getDraft(oldKey), null);
+  await c.update({ draftKey: newKey }); assert.equal(c.ta.value, ' literal rejected text ');
+  assert.equal(c.view.container.querySelectorAll('img').length, 1);
+  await c.view.rerender(null);
+  const ref = { current: null };
+  await c.view.rerender(createElement(c.p.I18nProvider, null, createElement(c.p.ChatInput, { draftKey: newKey, onSend() {}, onAbort() {}, isStreaming: false, ref })));
+  assert.equal(c.view.container.querySelector('textarea').value, ' literal rejected text ');
+  assert.equal(c.view.container.querySelectorAll('img').length, 1);
+  const handle = ref.current; c.f.join(() => handle.whenSettled());
+});
+
+
+// Add inside the EXISTING fixture-owning describe; no new fixture or test file.
+for (const [inputId, mobile] of [['legacy-desktop', false], ['legacy-mobile', true]]) {
+  test(`H-COMPOSER exact ${inputId} browser vectors reach the real filter and newline handlers`, async t => {
+    const commands = [], sends = [], selections = [];
+    let editingSupported = true;
+    const modelList = Array.from({ length: 12 }, (_, i) => ({
+      provider: i === 11 ? 'relay-fixture' : 'fixture', id: `model-${i}`, name: `Fixture model ${i}`,
+    }));
+    const c = await mountedInput(t, {
+      modelList,
+      onSend: (...args) => sends.push(args),
+      onModelChange: (...args) => selections.push(args),
+    }, { mobile, setup(window, f) {
+      // The external editing capability applies ONLY the edit supplied by real
+      // ChatInput. It does not compute a list prefix, IME state or fallback.
+      // This is not browser undo, native clipboard or native newline insertion.
+      const document = window.document;
+      const original = Object.getOwnPropertyDescriptor(document, 'execCommand');
+      let restored = false;
+      // Register before installing the realm capability. Existing beforeDispose
+      // releases run after unmount and BEFORE this realm is destroyed, including
+      // failed mount. Do not put a realm descriptor in the host-restoration tail.
+      f.release(() => {
+        if (restored) return;
+        if (original) Object.defineProperty(document, 'execCommand', original);
+        else delete document.execCommand;
+        restored = true;
+      });
+      Object.defineProperty(document, 'execCommand', { configurable: true, writable: true,
+        value: function(command, showUI, text) {
+          return f.http.check(() => {
+            assert.equal(this === document, true, 'editing receiver is the current document');
+            assert.equal(command === 'insertText' || command === 'delete', true, 'only the declared external editing ports');
+            assert.equal(showUI, false);
+            assert.equal(typeof text, 'string');
+            if (command === 'delete') assert.equal(text, '');
+            const editor = document.activeElement;
+            assert.equal(editor instanceof window.HTMLTextAreaElement, true, 'the actual textarea owns editing');
+            commands.push({ command, showUI, text, start: editor.selectionStart, end: editor.selectionEnd });
+            if (!editingSupported) return false;
+            editor.setRangeText(text, editor.selectionStart, editor.selectionEnd, 'end');
+            editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+            return true;
+          });
+        },
+      });
+    } });
+    const handle = c.api.current;
+    const settleInput = () => act(async () => { await handle.whenSettled(); });
+    const originalTextarea = c.ta;
+
+    await click(c.view, c.view.container.querySelector('.model-selector > button'));
+    const filter = c.view.container.querySelector('input[aria-label="Filter models…"]');
+    assert.equal(filter !== null, true, 'the actual 12-model picker exposes its filter');
+    const setFilterValue = Object.getOwnPropertyDescriptor(c.view.window.HTMLInputElement.prototype, 'value').set;
+    await act(async () => { setFilterValue.call(filter, ' RELAY-FIXTURE/model-11 '); });
+    await c.view.dispatch(filter, new c.view.window.Event('input', { bubbles: true }));
+    const options = [...c.view.container.querySelectorAll('[role="listbox"] [role="option"]')];
+    assert.equal(options.length, 1, 'literal qualified query has exactly one real option');
+    assert.equal(options[0].textContent.includes('Fixture model 11'), true);
+    assert.equal(c.view.container.querySelector('input[aria-label="Filter models…"]') === filter, true);
+    assert.equal(c.view.container.querySelector('textarea') === originalTextarea, true);
+    assert.equal(selections.length, 0, 'filtering never selects a synthetic provider');
+    await click(c.view, c.view.container.querySelector('.model-selector > button'));
+
+    const prepare = async text => {
+      await inputText(c.view, c.ta, text);
+      await act(async () => { c.ta.focus(); c.ta.setSelectionRange(text.length, text.length); });
+    };
+    const lineBreak = async () => {
+      const event = new c.view.window.InputEvent('beforeinput', {
+        bubbles: true, cancelable: true, inputType: 'insertLineBreak', isComposing: false,
+      });
+      await c.view.dispatch(c.ta, event);
+      await settleInput();
+      return event.defaultPrevented;
+    };
+    // Literal browser vectors. A null plan deliberately leaves DOM text alone:
+    // jsdom has no native default newline action. The browser keeps that bridge.
+    for (const [before, after, edit] of [
+      ['9. ninth', '9. ninth\n10. ', { command: 'insertText', start: 8, end: 8, text: '\n10. ' }],
+      ['- [x] finished', '- [x] finished\n- [ ] ', { command: 'insertText', start: 14, end: 14, text: '\n- [ ] ' }],
+      ['1. first\n2. ', '1. first\n', { command: 'delete', start: 9, end: 12, text: '' }],
+      ['```\n- code', null, null],
+      ['    - indented code', null, null],
+    ]) {
+      await prepare(before);
+      const start = commands.length;
+      const prevented = await lineBreak();
+      assert.equal(prevented, edit !== null, `${inputId}: beforeinput decision for ${JSON.stringify(before)}`);
+      assert.equal(commands.length - start, edit === null ? 0 : 1, 'one declared edit or native default');
+      if (edit !== null) {
+        assert.equal(commands[start].command, edit.command);
+        assert.equal(commands[start].showUI, false);
+        assert.equal(commands[start].start, edit.start);
+        assert.equal(commands[start].end, edit.end);
+        assert.equal(commands[start].text, edit.text);
+        assert.equal(c.ta.value, after);
+      } else {
+        assert.equal(c.ta.value, before, 'no fake native default action');
+      }
+      assert.equal(sends.length, 0);
+      assert.equal(c.view.container.querySelector('textarea') === originalTextarea, true);
+    }
+
+    await prepare('1. unsupported command');
+    editingSupported = false;
+    const fallbackStart = commands.length;
+    assert.equal(await lineBreak(), false, 'a false external edit result cannot swallow the native newline');
+    assert.equal(commands.length - fallbackStart, 1);
+    assert.equal(commands[fallbackStart].command, 'insertText');
+    assert.equal(commands[fallbackStart].showUI, false);
+    assert.equal(commands[fallbackStart].text, '\n2. ');
+    assert.equal(commands[fallbackStart].start, 22);
+    assert.equal(commands[fallbackStart].end, 22);
+    assert.equal(c.ta.value, '1. unsupported command', 'native default insertion is not simulated');
+    editingSupported = true;
+
+    await prepare('1. composition');
+    await c.view.dispatch(c.ta, new c.view.window.CompositionEvent('compositionstart', { bubbles: true }));
+    const imeStart = commands.length;
+    assert.equal(await lineBreak(), false, 'composition ref wins even when InputEvent.isComposing is false');
+    assert.equal(commands.length, imeStart, 'IME confirmation never invokes external list editing');
+    assert.equal(c.ta.value, '1. composition');
+    await c.view.dispatch(c.ta, new c.view.window.CompositionEvent('compositionend', { bubbles: true }));
+    await settleInput();
+    assert.equal(sends.length, 0);
+    assert.equal(selections.length, 0);
+    // Key choice, native undo/redo/selected replacement and phone focus/IME
+    // geometry remain in the installed browser. No persistence case is reopened.
+  });
+}
+
 });

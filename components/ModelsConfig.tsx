@@ -29,6 +29,7 @@ import {
   type ModelCostKey,
 } from "./models-config-helpers";
 import {
+  useSettingsWork,
   ConfigButton,
   ConfigDetail,
   ConfigDetailActions,
@@ -310,11 +311,12 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 // ── Provider detail ───────────────────────────────────────────────────────────
 
-function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddModels, enabledModels }: {
+export function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddModels, enabledModels }: {
   name: string; provider: ProviderEntry;
   onChange: (p: ProviderEntry) => void; onRename: (n: string) => void; onDelete: () => void;
   onAddModels: (models: DiscoveredModel[]) => void; enabledModels: EnabledModelsController;
 }) {
+  const observe = useSettingsWork();
   const { t } = useI18n();
   const [editingName, setEditingName] = useState(name);
   const [discoveryState, setDiscoveryState] = useState<ModelDiscoveryState>({ phase: "idle" });
@@ -337,7 +339,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
     setSelectedModelIds([]);
   }, [name, provider.baseUrl, provider.api, provider.apiKey]);
 
-  const handleDiscoverModels = useCallback(async () => {
+  const handleDiscoverModels = useCallback(() => observe("models.handleDiscoverModels", (async () => {
     if (!provider.baseUrl?.trim() || discoveryState.phase === "loading") return;
     const requestId = ++discoveryRequestIdRef.current;
     setDiscoveryState({ phase: "loading" });
@@ -359,7 +361,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
       if (requestId !== discoveryRequestIdRef.current) return;
       setDiscoveryState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
     }
-  }, [discoveryState.phase, name, provider]);
+  })()), [discoveryState.phase, name, provider, observe]);
 
   const existingModelIds = new Set((provider.models ?? []).map((model) => model.id));
   const discoveredModels = discoveryState.phase === "success" ? discoveryState.models : [];
@@ -823,7 +825,7 @@ function fillEmptyModelFields(
   return { model: next, appliedCount };
 }
 
-function ModelDetail({
+export function ModelDetail({
   providerName,
   provider,
   model,
@@ -836,6 +838,7 @@ function ModelDetail({
   onChange: (m: ModelEntry) => void;
   onDelete: () => void;
 }) {
+  const observe = useSettingsWork();
   const [testState, setTestState] = useState<ModelTestState>({ phase: "idle" });
   const { t } = useI18n();
   const [catalogState, setCatalogState] = useState<ModelCatalogState>({ phase: "idle" });
@@ -899,7 +902,7 @@ function ModelDetail({
     catalogUndoRef.current = null;
   }, [providerName, effectiveBaseUrl, model.id]);
 
-  const handleTest = useCallback(async () => {
+  const handleTest = useCallback(() => observe("models.handleTest", (async () => {
     if (!model.id.trim() || testState.phase === "testing") return;
     const requestId = ++testRequestIdRef.current;
     setTestState({ phase: "testing" });
@@ -935,9 +938,9 @@ function ModelDetail({
     } catch (e) {
       if (requestId === testRequestIdRef.current) setTestState({ phase: "error", message: e instanceof Error ? e.message : String(e) });
     }
-  }, [model, provider, providerName, testState.phase]);
+  })()), [model, provider, providerName, testState.phase, observe]);
 
-  const handleCatalogFill = useCallback(async () => {
+  const handleCatalogFill = useCallback(() => observe("models.handleCatalogFill", (async () => {
     const query = model.id.trim();
     if (!query || catalogState.phase === "loading") return;
     const requestId = ++catalogRequestIdRef.current;
@@ -967,7 +970,7 @@ function ModelDetail({
       if (requestId !== catalogRequestIdRef.current) return;
       setCatalogState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
     }
-  }, [catalogState.phase, model, onChange, effectiveBaseUrl, providerName]);
+  })()), [catalogState.phase, model, onChange, effectiveBaseUrl, providerName, observe]);
 
   const undoCatalogFill = () => {
     const previous = catalogUndoRef.current;
@@ -1320,10 +1323,11 @@ function ModelDetail({
 
 // ── OAuth detail ──────────────────────────────────────────────────────────────
 
-function OAuthDetail({ provider, onRefresh, enabledModels, contextSettings }: {
+export function OAuthDetail({ provider, onRefresh, enabledModels, contextSettings }: {
   provider: OAuthProvider; onRefresh: () => void; enabledModels: EnabledModelsController;
   contextSettings: ModelContextSettings;
 }) {
+  const observe = useSettingsWork();
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const { t } = useI18n();
   const [inputValue, setInputValue] = useState("");
@@ -1407,13 +1411,13 @@ function OAuthDetail({ provider, onRefresh, enabledModels, contextSettings }: {
     };
   }, [provider.id, onRefresh, t]);
 
-  const handleLogout = useCallback(async () => {
+  const handleLogout = useCallback(() => observe("models.handleLogout", (async () => {
     await fetch(`/api/auth/logout/${encodeURIComponent(provider.id)}`, { method: "POST" });
     setLoginState({ phase: "idle" });
     onRefresh();
-  }, [provider.id, onRefresh]);
+  })()), [provider.id, onRefresh, observe]);
 
-  const submitCode = useCallback(async (token: string, code: string) => {
+  const submitCode = useCallback((token: string, code: string) => observe("models.submitCode", (async () => {
     if (!code.trim()) return;
     setLoginState({ phase: "progress", message: "Verifying…" });
     try {
@@ -1432,9 +1436,9 @@ function OAuthDetail({ provider, onRefresh, enabledModels, contextSettings }: {
     } catch (e) {
       setLoginState({ phase: "error", message: e instanceof Error ? e.message : "Network error" });
     }
-  }, [provider.id]);
+  })()), [provider.id, observe]);
 
-  const submitSelection = useCallback(async (token: string, value: string) => {
+  const submitSelection = useCallback((token: string, value: string) => observe("models.submitSelection", (async () => {
     setLoginState({ phase: "progress", message: "Continuing…" });
     try {
       const res = await fetch(`/api/auth/login/${encodeURIComponent(provider.id)}`, {
@@ -1449,7 +1453,7 @@ function OAuthDetail({ provider, onRefresh, enabledModels, contextSettings }: {
     } catch (e) {
       setLoginState({ phase: "error", message: e instanceof Error ? e.message : "Network error" });
     }
-  }, [provider.id]);
+  })()), [provider.id, observe]);
 
   const isWorking = loginState.phase === "connecting" || loginState.phase === "progress" ||
     loginState.phase === "auth" || loginState.phase === "device_code" ||
@@ -1589,10 +1593,11 @@ function OAuthDetail({ provider, onRefresh, enabledModels, contextSettings }: {
 
 // ── API Key detail ────────────────────────────────────────────────────────────
 
-function ApiKeyDetail({ provider, onRefresh, enabledModels, contextSettings }: {
+export function ApiKeyDetail({ provider, onRefresh, enabledModels, contextSettings }: {
   provider: ApiKeyProvider; onRefresh: () => void; enabledModels: EnabledModelsController;
   contextSettings: ModelContextSettings;
 }) {
+  const observe = useSettingsWork();
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -1607,7 +1612,7 @@ function ApiKeyDetail({ provider, onRefresh, enabledModels, contextSettings }: {
     setSavedOk(false);
   }, [provider.id]);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(() => observe("models.handleSave", (async () => {
     if (!apiKey.trim()) return;
     setSaving(true);
     setError(null);
@@ -1632,9 +1637,9 @@ function ApiKeyDetail({ provider, onRefresh, enabledModels, contextSettings }: {
     } finally {
       setSaving(false);
     }
-  }, [apiKey, provider.id, onRefresh]);
+  })()), [apiKey, provider.id, onRefresh, observe]);
 
-  const handleRemove = useCallback(async () => {
+  const handleRemove = useCallback(() => observe("models.handleRemove", (async () => {
     setRemoving(true);
     setError(null);
     try {
@@ -1647,7 +1652,7 @@ function ApiKeyDetail({ provider, onRefresh, enabledModels, contextSettings }: {
     } finally {
       setRemoving(false);
     }
-  }, [provider.id, onRefresh]);
+  })()), [provider.id, onRefresh, observe]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1734,7 +1739,7 @@ interface AddProviderPickerProps {
   onClose: () => void;
 }
 
-function AddProviderPicker({
+export function AddProviderPicker({
   oauthProviders, apiKeyProviders,
   onSelectOAuth, onSelectApiKey, onAddCustom, onClose,
 }: AddProviderPickerProps) {
@@ -1869,6 +1874,7 @@ function AddProviderPicker({
 export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
   onClose: () => void; embedded?: boolean; cwd?: string | null;
 }) {
+  const observe = useSettingsWork();
   const { t } = useI18n();
   // `enabledModels` lives in pi's settings, not models.json, so these switches
   // apply immediately instead of waiting for this panel's Save button.
@@ -1898,7 +1904,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
   const savedModelIdsRef = useRef<Map<string, (string | null)[]>>(new Map());
 
   const refreshAuthProviders = useCallback(() => {
-    fetch("/api/auth/providers")
+    void observe("models.authProviders", fetch("/api/auth/providers")
       .then(async (r) => {
         const d = await r.json() as { oauthProviders?: OAuthProvider[]; apiKeyProviders?: ApiKeyProvider[] };
         if (!r.ok || !Array.isArray(d.oauthProviders) || !Array.isArray(d.apiKeyProviders)) throw new Error("Provider discovery unavailable");
@@ -1910,11 +1916,11 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
         setAuthListed(true);
         setAuthListFailed(false);
       })
-      .catch(() => setAuthListFailed(true));
-  }, []);
+      .catch(() => setAuthListFailed(true)));
+  }, [observe]);
 
   useEffect(() => {
-    fetch("/api/models-config")
+    void observe("models.config", fetch("/api/models-config")
       .then(async (r) => {
         const d = await r.json() as ModelsJson & { error?: string };
         if (!r.ok || d.error) throw new Error(d.error ?? `HTTP ${r.status}`);
@@ -1933,9 +1939,9 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
             : null);
       })
       .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+      .finally(() => setLoading(false)));
     refreshAuthProviders();
-  }, [refreshAuthProviders]);
+  }, [refreshAuthProviders, observe]);
 
   useEffect(() => {
     if (selection) setLastSettingsSelection("models", JSON.stringify(selection));
@@ -2076,7 +2082,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
     setSelection({ type: "provider", name: providerName });
   }, []);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(() => observe("models.handleSave", (async () => {
     if (loadError) return;
     setSaving(true);
     setSaveError(null);
@@ -2110,7 +2116,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
     } finally {
       setSaving(false);
     }
-  }, [config, enabledModels, loadError, t]);
+  })()), [config, enabledModels, loadError, t, observe]);
 
   const providers = Object.entries(config.providers ?? {}).filter(([id, entry]) => {
     if (!isOverridesOnlyProvider(entry)) return true;

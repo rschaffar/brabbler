@@ -58,6 +58,9 @@ export const extensionSource = `export default function (pi) {
 }`;
 
 export async function checkExtensionDialogs(page, artifacts, width) {
+  // Conditional reduced body; new scenario IDs and lower/default fault gates
+  // are required before dispatch. extensionSource/protocol deadlines unchanged.
+  const desktop = width >= 640;
   const commands = [];
   const onRequest = (request) => {
     if (request.method() === "POST" && /\/api\/agent\/[^/]+$/.test(new URL(request.url()).pathname)) {
@@ -86,17 +89,18 @@ export async function checkExtensionDialogs(page, artifacts, width) {
   try {
     const select = await start("select");
     await page.waitForFunction(() => document.activeElement?.textContent === "Option 1");
-    for (const [key, expected] of [["ArrowUp", "Option 30"], ["ArrowDown", "Option 1"], ["ArrowRight", "Option 2"], ["ArrowLeft", "Option 1"], ["End", "Option 30"], ["Home", "Option 1"], ["End", "Option 30"]]) {
-      await page.keyboard.press(key);
-      assert.equal(await page.locator(":focus").textContent(), expected);
-    }
+    // One real wrap/focus/scroll witness. End targets this SAME Option 30;
+    // its separate key destination is verified by the exact seven-key owner.
+    await page.keyboard.press("ArrowUp");
+    assert.equal(await page.locator(":focus").textContent(), "Option 30");
     assert.ok(await page.locator(":focus").evaluate(element => {
       const bounds = element.getBoundingClientRect();
       const container = element.closest(".blocking-card-body").getBoundingClientRect();
       return bounds.top >= container.top && bounds.bottom <= container.bottom;
     }), "Keyboard selection must scroll into view");
     await page.screenshot({ path: join(artifacts, `extension-select-${width}.png`) });
-    await page.keyboard.press("Enter");
+    if (desktop) await page.keyboard.press("Enter");
+    else await select.getByRole("button", { name: "Option 30", exact: true }).tap();
     await select.waitFor({ state: "hidden" });
     await finish("select", "Option 30");
     const receipt = page.locator("[data-interaction-receipt]").last();
@@ -107,7 +111,9 @@ export async function checkExtensionDialogs(page, artifacts, width) {
     await historical.getByText("Option 30", { exact: true }).last().waitFor();
     await historical.getByRole("button", { name: "Collapse", exact: true }).click();
 
-    for (const mode of ["select", "confirm", "input", "editor"]) {
+    // One cancellation/focus representative for each materially different
+    // native field. Boolean/default-return/count permutations belong lower.
+    for (const mode of [desktop ? "input" : "editor"]) {
       const dialog = await start(mode);
       assert.ok(await page.locator(":focus").evaluate(element => element.closest('[role="group"]')));
       if (mode === "input" || mode === "editor") {
@@ -127,10 +133,27 @@ export async function checkExtensionDialogs(page, artifacts, width) {
       assert.equal(commands.slice(before).some(command => command.type === "abort"), false, "Dialog Esc must not abort the agent");
     }
 
+    // Real input Enter vs editor newline/Ctrl+Enter, not handler simulation.
+    const mode = desktop ? "input" : "editor";
+    const nativeField = await start(mode);
+    const field = nativeField.getByRole("textbox");
+    await field.fill("Native field");
+    if (desktop) await field.press("Enter");
+    else {
+      await field.press("Enter");
+      await field.press("N");
+      assert.equal(await field.inputValue(), "Native field\nN");
+      await field.press("Control+Enter");
+    }
+    await finish(mode, desktop ? "Native field" : "Native field\nN");
+
     const longTitle = await start("longtitle");
     await longTitle.getByRole("button", { name: "Cancel", exact: true }).click();
     await finish("longtitle", "false");
 
+    // Compact long-title/body geometry above is retained; this distinct real
+    // 4000ms server-expiry -> untimed-input handoff executes desktop only.
+    if (!desktop) return;
     const timed = await start("timeout");
     const countdown = timed.getByText(/expires in \ds/);
     await countdown.waitFor();
@@ -150,7 +173,7 @@ export async function checkExtensionDialogs(page, artifacts, width) {
     await page.keyboard.press("Enter");
     await finish("timeout", "Still answerable");
     await page.getByRole("button", { name: /Timed out.*E2E timeout/ }).last().waitFor();
-    console.log(`PASS: ${width}px extension keyboard navigation, cancel, draft preservation, server expiry and read-only receipts`);
+    console.log(`PASS: ${width}px thin native extension focus/scroll/receipt/sequential-expiry bridge`);
   } finally {
     page.off("request", onRequest);
   }

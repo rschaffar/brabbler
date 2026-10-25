@@ -1,3 +1,4 @@
+import '../lib/testing/client-native-boundary.fixture.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { act, createElement } from 'react';
@@ -5,9 +6,7 @@ import { createJiti } from 'jiti';
 import { mount } from '../lib/testing/react.fixture.mjs';
 import { deferred } from '../lib/testing/async.fixture.mjs';
 
-const jiti = createJiti(import.meta.url, { jsx: { runtime: 'automatic' }, tsconfigPaths: true });
-const { ActivityFeatureFixture } = await jiti.import('./ActivityViews.behavior.fixture.tsx');
-const { I18nProvider } = await jiti.import('../hooks/useI18n.tsx');
+let jiti; // Existing configuration, initialized only after local collectors are live.
 const session = (id, parent, project = '/alpha') => ({
   id, name: id, cwd: project, projectRoot: project, projectKey: project,
   created: '2026-01-01T00:00:00Z', modified: '2026-01-02T00:00:00Z',
@@ -22,16 +21,49 @@ const pause = (sessionId, parentSessionId) => ({ id: `pause-${sessionId}`, sessi
 // or React callback algorithm is reproduced here; all feature wiring is production.
 async function fixture(t, options = {}) {
   const timers = new Map(), listeners = new Set(), requests = [], holds = [], bodyTasks = [], failures = [];
-  const selected = [], snapshots = [];
-  let owner, view, closed = false, visible = true, nextTimer = 0, closeCount = 0, sounds = 0, catalogueRefreshes = 0;
+  const selected = [], snapshots = [], owners = new Set(), ownerDisposals = [], recoveryWorks = [], externalJoins = [];
+  const hostRestores = [], realmRestores = [], releases = [];
+  const phases = { collectorsBeforeGraph: false, beforeDispose: false, domainJoined: false,
+    domainBeforeRealmRestore: false, realmRestored: false, hostAfterRealm: false, hostRestored: false };
+  let owner, view, realm, closed = false, visible = true, nextTimer = 0, closeCount = 0, sounds = 0, catalogueRefreshes = 0;
+  let ActivityFeatureFixture, I18nProvider, settlement, finishing;
+  let realmFetchDescriptor;
   let running = { sessionListVersion: 1, completedRuns: [], reviewedRuns: [], laterRuns: [], laterRequests: [], ...options.running };
   let stars = { ids: [], projectKeys: [], ...options.stars };
   let interrupted = options.interrupted ?? [];
   let pauseReply = { status: 200, payload: {} };
   const closing = new Error('Activity feature fixture closed before body delivery');
+  // The SAME live ledger retains original fetch, runtime, release, join and restore
+  // causes. No snapshot, exception filter, Error-to-scalar substitution or E hold.
+  const errors = failures;
+  const attempt = async callback => { try { await callback(); } catch (error) { errors.push(error); } };
+  const replaceIn = (stack, target, key, value) => {
+    const descriptor = Object.getOwnPropertyDescriptor(target, key);
+    Object.defineProperty(target, key, { configurable: true, writable: true, value });
+    stack.push(() => descriptor ? Object.defineProperty(target, key, descriptor) : Reflect.deleteProperty(target, key));
+  };
+  const restore = async stack => {
+    let complete = true;
+    for (const callback of stack.splice(0).reverse()) {
+      try { await callback(); } catch (error) { complete = false; errors.push(error); }
+    }
+    return complete;
+  };
+  const observe = (work, entries) => {
+    const entry = { work, settled: false, result: undefined, reported: false };
+    // Own the original outcome immediately, including its original rejection.
+    // This is an outcome receipt, NOT a replacement algorithm or a body-return join.
+    entry.outcome = Promise.allSettled([work]).then(([result]) => {
+      entry.result = result; entry.settled = true; return result;
+    });
+    entries.push(entry); return entry;
+  };
   const hold = kind => {
     const body = deferred(), entered = deferred();
-    const entry = { kind, body, entered, used: false, settled: false, jsonReturned: false,
+    const entry = { kind, body, entered, used: false, settled: false, jsonStarted: false, jsonReturned: false,
+      // An unused/aborted-before-json controlled gate also has an owned outcome.
+      // Its delivery is not evidence of the producer's complete continuation.
+      bodyOutcome: Promise.allSettled([body.promise]),
       async deliver(payload) {
         assert.equal(entry.used, true, `${kind} request must have arrived`);
         await entered.promise;
@@ -50,12 +82,12 @@ async function fixture(t, options = {}) {
     if (!held) return Response.json(payload, { status });
     held.used = true; held.signal = init.signal;
     return { ok: status >= 200 && status < 300, status, json() {
-      held.entered.resolve();
+      held.jsonStarted = true; held.entered.resolve();
       const task = held.body.promise.then(value => { held.jsonReturned = true; return value; });
-      void task.catch(() => {}); bodyTasks.push(task); return task;
+      held.jsonWork = task; observe(task, bodyTasks); return task;
     } };
   };
-  t.mock.method(globalThis, 'fetch', async (input, init = {}) => {
+  const request = async (input, init = {}) => {
     try {
       assert.equal(closed, false, 'no external request after fixture admission closes');
       const path = new URL(String(input), 'https://fixture.invalid/').pathname;
@@ -80,7 +112,7 @@ async function fixture(t, options = {}) {
       }
       assert.fail(`Unexpected request ${path}`);
     } catch (error) { failures.push(error); throw error; }
-  });
+  };
   const ports = {
     request: (...args) => fetch(...args), visible: () => visible,
     schedule(callback, ms) { const id = ++nextTimer; timers.set(id, { callback, ms }); return id; },
@@ -88,36 +120,103 @@ async function fixture(t, options = {}) {
     listen(callback) { listeners.add(callback); return () => listeners.delete(callback); },
     legacy: { read: () => [], clear() {} },
   };
+  const releaseAll = () => {
+    // Reuse the lowerRuntime order: invoke ALL peer releases first, without an
+    // await that could prevent the next peer's release, then independently join.
+    for (const release of releases.splice(0)) {
+      try { const work = release(); if (work?.then) observe(work, externalJoins); }
+      catch (error) { errors.push(error); }
+    }
+    for (const entry of holds) if (!entry.settled) {
+      try { entry.settled = true; entry.body.reject(closing); } catch (error) { errors.push(error); }
+    }
+  };
+  const beginOwnerJoins = () => {
+    for (const instance of owners) if (!ownerDisposals.some(entry => entry.owner === instance)) {
+      try { const entry = observe(instance.dispose(), ownerDisposals); entry.owner = instance; }
+      catch (error) { errors.push(error); }
+    }
+  };
+  const drain = async (entries, fatal) => {
+    // Named instance-owned receipts only, including descendants admitted to this
+    // fixture before disposal. No global idle, deadline, universal flush or sleep.
+    for (let index = 0; index < entries.length; index++) {
+      const entry = entries[index], result = await entry.outcome;
+      if (fatal && result.status === 'rejected' && !entry.reported) {
+        entry.reported = true; errors.push(result.reason);
+      }
+    }
+  };
+  const joinOriginals = async () => {
+    beginOwnerJoins();
+    await drain(ownerDisposals, true);
+    await drain(recoveryWorks, true); // the ORIGINAL complete post-catch promises
+    await drain(bodyTasks, false); // deliberate scripted body errors remain inputs
+    await drain(externalJoins, true);
+  };
+  const settleDomain = () => settlement ??= (async () => {
+    closed = true;
+    await attempt(() => act(async () => { releaseAll(); await joinOriginals(); }));
+    releaseAll();
+    // An act/release error cannot skip the independent original joins.
+    await attempt(joinOriginals);
+    await attempt(() => { assert.equal(timers.size, 0); assert.equal(listeners.size, 0); });
+    phases.domainJoined = ownerDisposals.length === owners.size
+      && [...ownerDisposals, ...recoveryWorks, ...bodyTasks, ...externalJoins].every(entry => entry.settled);
+  })();
+  const beforeDispose = async () => {
+    phases.beforeDispose = true;
+    await attempt(settleDomain);
+    phases.domainBeforeRealmRestore = phases.domainJoined;
+    phases.realmRestored = await restore(realmRestores);
+    await attempt(() => options.afterRealmRestore?.(api, realm));
+  };
+  const finish = () => finishing ??= (async () => {
+    closed = true;
+    await attempt(() => view?.unmount());
+    await attempt(settleDomain);
+    await attempt(() => view?.dispose()); // actual shared realm close + DOM HOST restore
+    // Also covers failure before setup installed a realm or before view returned.
+    if (realmRestores.length) phases.realmRestored = await restore(realmRestores);
+    phases.hostAfterRealm = phases.beforeDispose && phases.realmRestored;
+    phases.hostRestored = await restore(hostRestores);
+    if (errors.length) throw new AggregateError(errors, 'Activity feature guarded lifetime (original causes retained)');
+  })();
+  // Before graph, mount, setup, transport mutation or admission. The same supplied
+  // beforeDispose runs on shared mount's internal partial-failure disposal path.
+  t.after(finish);
+
+  const monitor = error => errors.push(new Error('Activity uncaught exception', { cause: error }));
+  process.on('uncaughtExceptionMonitor', monitor);
+  hostRestores.push(() => process.off('uncaughtExceptionMonitor', monitor));
+  const consoleError = console.error;
+  replaceIn(hostRestores, console, 'error', (...args) => {
+    errors.push(new AggregateError(args, 'Activity console.error (original arguments retained)'));
+    return Reflect.apply(consoleError, console, args); // unchanged public diagnostics
+  });
+  replaceIn(hostRestores, globalThis, 'fetch', request);
   let props = {
     ports, sessions: options.sessions ?? [session('root')], view: 'activity', privacy: privacy(),
-    onOwner(value) { owner = value; }, onSnapshot(value) { snapshots.push(value); },
+    onSnapshot(value) { snapshots.push(value); },
     onSelect(...args) { selected.push(args); }, onClose() { closeCount++; },
     refreshCatalogue() { catalogueRefreshes++; }, onBackgroundTaskDone() { sounds++; }, ...options.props,
+    captureOwner(value) { owners.add(value); options.props?.captureOwner?.(value); },
+    onOwner(value) { options.beforeOwnerPublish?.(value); owner = value; options.props?.onOwner?.(value); },
+    onRecoveryWork(work) {
+      observe(work, recoveryWorks);
+      options.onRecoveryWork?.(work, api); options.props?.onRecoveryWork?.(work);
+    },
   };
-  const element = () => createElement(I18nProvider, null, createElement(ActivityFeatureFixture, props));
-  t.after(async () => {
-    closed = true;
-    // Keep the live collector: admission violations can arrive while joining
-    // released bodies, after cleanup has already started.
-    const errors = failures;
-    try { await view?.unmount(); } catch (error) { errors.push(error); }
-    try {
-      await act(async () => {
-        for (const entry of holds) if (!entry.settled) { entry.settled = true; entry.body.reject(closing); }
-        await Promise.allSettled(bodyTasks);
-        await owner?.dispose();
-      });
-    } catch (error) { errors.push(error); }
-    try { assert.equal(timers.size, 0); assert.equal(listeners.size, 0); } catch (error) { errors.push(error); }
-    try { await view?.dispose(); } catch (error) { errors.push(error); }
-    if (errors.length) throw new AggregateError(errors, 'Activity feature teardown failed');
-  });
-  view = await mount(t, element(), { setup(window) { options.setup?.(window); } });
-  await act(() => owner.whenIdle());
-  return {
+  // Just delayed typed composition: shared mount invokes this only AFTER setup
+  // has installed realm collectors and imported the actual graph. No fake React.
+  const ActivityRoot = () => createElement(I18nProvider, null, createElement(ActivityFeatureFixture, props));
+  const element = () => createElement(ActivityRoot);
+  const api = {
     get owner() { return owner; }, get view() { return view; }, get snapshot() { return owner.getSnapshot(); },
+    get realm() { return realm; }, get realmFetchDescriptor() { return realmFetchDescriptor; },
     get closeCount() { return closeCount; }, get sounds() { return sounds; }, get catalogueRefreshes() { return catalogueRefreshes; },
-    requests, selected, snapshots, timers, listeners, hold,
+    requests, selected, snapshots, timers, listeners, hold, owners, ownerDisposals, recoveryWorks, bodyTasks, externalJoins, errors, phases,
+    finish, releaseOnClose(callback) { releases.push(callback); }, joinOnClose(work) { observe(work, externalJoins); return work; },
     posts(path = '/api/activity/review') { return requests.filter(request => request.path === path && request.method === 'POST'); },
     async render(next, { join = true } = {}) { props = { ...props, ...next }; await view.rerender(element()); if (join) await act(() => owner.whenIdle()); },
     async poll(next = {}, { join = true } = {}) { running = { ...running, ...next }; await act(async () => { owner.refresh(); }); if (join) await act(() => owner.whenIdle()); },
@@ -129,6 +228,39 @@ async function fixture(t, options = {}) {
     async click(button) { await view.dispatch(button, new view.window.MouseEvent('click', { bubbles: true })); },
     async choose(selector, value) { const select = view.container.querySelector(selector); assert.ok(select); select.value = value; await view.dispatch(select, new view.window.Event('change', { bubbles: true })); return select; },
   };
+  try {
+    options.configure?.(api);
+    view = await mount({ after() {} }, element(), {
+      beforeUnmount() { closed = true; },
+      beforeDispose,
+      async setup(window) {
+        realm = window;
+        // Registered FIRST in REALM, therefore removed LAST in its LIFO phase.
+        const onError = event => errors.push(new Error('Activity window error', { cause: event.error ?? event }));
+        const onRejection = event => errors.push(new Error('Activity window rejection', { cause: event.reason }));
+        window.addEventListener('error', onError); window.addEventListener('unhandledrejection', onRejection);
+        realmRestores.push(() => window.removeEventListener('error', onError));
+        realmRestores.push(() => window.removeEventListener('unhandledrejection', onRejection));
+        realmFetchDescriptor = Object.getOwnPropertyDescriptor(window, 'fetch');
+        replaceIn(realmRestores, window, 'fetch', request);
+        phases.collectorsBeforeGraph = true;
+        // Keep the existing Jiti configuration/cache policy; only defer the graph
+        // until the local HOST and REALM collectors are actually live.
+        jiti ??= createJiti(import.meta.url, { jsx: { runtime: 'automatic' }, tsconfigPaths: true });
+        ({ ActivityFeatureFixture } = await jiti.import('./ActivityViews.behavior.fixture.tsx'));
+        ({ I18nProvider } = await jiti.import('../hooks/useI18n.tsx'));
+        await options.setup?.(window, (target, key, value) => replaceIn(realmRestores, target, key, value));
+      },
+    });
+    await act(() => owner.whenIdle());
+    return api;
+  } catch (primary) {
+    // Shared mount has ALREADY used beforeDispose on its internal failure path.
+    // Preserve its SAME primary/cleanup tree through independent HOST restoration.
+    try { await finish(); }
+    catch (cleanup) { throw new AggregateError([primary, cleanup], 'Activity mount and guarded cleanup failed'); }
+    throw primary;
+  }
 }
 
 test('StrictMode production owner and Activity/Starred consumers share one loop across panel closure and visibility', async t => {
@@ -264,7 +396,9 @@ test('privacy loading/failure, inherited concealment and unresolved identity rem
     props: { privacy: { ...privacy(), keys: null } } });
   assert.doesNotMatch(f.view.container.innerHTML, /secret-title|secret-child|secret-path|other-path|secret-worktree|unresolved-secret|>public</);
   assert.equal(f.view.container.querySelector('#activity-project').disabled, true);
+  assert.equal(f.button('Show hidden projects').disabled, true);
   await f.render({ privacy: { ...privacy(), keys: null, error: true, refresh() { refreshed++; } } });
+  assert.equal(f.button('Show hidden projects').disabled, true);
   await f.click(f.button('Retry')); assert.equal(refreshed, 1);
   await f.render({ privacy: privacy(['/secret-path']) });
   assert.ok(f.row('public'));
@@ -275,6 +409,33 @@ test('privacy loading/failure, inherited concealment and unresolved identity rem
   await f.click(f.button('Conceal hidden projects'));
   assert.equal(f.view.container.querySelector('#activity-project').value, '');
   assert.doesNotMatch(f.view.container.innerHTML, /secret-title|secret-child|secret-path|other-path/);
+});
+
+test('retirement privacy: visible reveal and exact private project filter survive loading, while conceal clears that filter', async t => {
+  const secret = { ...session('e2e-branch-session', undefined, '/repo'), name: 'Branch root' };
+  const other = { ...session('e2e-other-project', undefined, '/other-project'), name: 'Other workspace task' };
+  const f = await fixture(t, { sessions: [secret, other], running: { runningSessionIds: [secret.id, other.id] },
+    props: { privacy: privacy(['/repo']) } });
+  await f.click(f.button('Show hidden projects'));
+  assert.ok(f.row('Branch root'));
+  await f.choose('#activity-project', '/repo');
+  await f.render({ privacy: { ...privacy(), keys: null } });
+  assert.equal(f.row('Branch root'), undefined);
+  assert.equal(f.view.container.querySelector('#activity-project').disabled, true);
+  assert.equal(f.button('Show hidden projects').disabled, true, 'retirement/activity eye disabled while privacy loads');
+  await f.render({ privacy: { ...privacy(), keys: null, error: true } });
+  assert.equal(f.row('Branch root'), undefined);
+  assert.equal(f.view.container.querySelector('#activity-project').disabled, true);
+  assert.equal(f.button('Show hidden projects').disabled, true, 'retirement/activity eye disabled on privacy error');
+  await f.render({ privacy: privacy(['/repo']) });
+  assert.equal(f.view.container.querySelector('#activity-project').value, '/repo', 'retirement/activity exact private filter restored after withheld keys');
+  assert.equal(f.row('Other workspace task'), undefined, 'retirement/activity restored filter did not silently widen');
+  assert.equal(f.button('Conceal hidden projects').getAttribute('aria-pressed'), 'true');
+  assert.ok(f.row('Branch root'));
+  await f.click(f.button('Conceal hidden projects'));
+  assert.equal(f.view.container.querySelector('#activity-project').value, '');
+  assert.equal(f.row('Branch root'), undefined);
+  assert.doesNotMatch(f.view.container.innerHTML, /Branch root|e2e-branch-session|value="\/repo"/);
 });
 
 test('Pause/Resume controls preserve exact IDs, pending double-submit protection, main navigation and partial/error feedback', async t => {

@@ -1,350 +1,224 @@
+import '../lib/testing/client-native-boundary.fixture.mjs';
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
-import ts from "typescript";
-import { createJiti } from "jiti";
-
-const source = await readFile(new URL("./useAgentSession.ts", import.meta.url), "utf8");
-const jiti = createJiti(import.meta.url);
-const helpers = await jiti.import("../lib/interaction-receipts.ts");
-const operations = await jiti.import("../lib/operation-receipts.ts");
-function runCase(type, next, bindings, event) {
-  bindings = { sessionIdRef: { current: "session" }, clearQuestionDraft() {}, ...bindings };
-  const body = source.slice(source.indexOf(`case "${type}"`), source.indexOf(`case "${next}"`, source.indexOf(`case "${type}"`)));
-  const js = ts.transpileModule(`switch (event.type) { ${body} }`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  new Function("event", ...Object.keys(bindings), js)(event, ...Object.values(bindings));
+import { act } from "react";
+import { sessionFixture, detail, command } from "./agent-session-mounted.fixture.mjs";
+import { policyClockFixture } from "./agent-session-clock.fixture.mjs";
+const options = { timeout: 10000 }, stamp = Date.parse("2026-10-06T10:00:00.000Z");
+const source = f => f.sources.find(item => item.readyState !== 2);
+const contexts = f => request => request.path === `/api/sessions/${f.savedId}/context`;
+const chain = ids => ids.reduceRight((children, id, index) => [{ entry: { type: "custom", id, parentId: ids[index - 1] ?? null,
+  timestamp: new Date(stamp).toISOString(), customType: "fixture:branch", data: {} }, children }], []);
+function entry(f, id = "entry", parentId = "live", offset = 0) {
+  return { type: "custom", customType: f.receipts.INTERACTION_RECEIPT_TYPE, id, parentId,
+    timestamp: new Date(stamp + offset).toISOString(), data: { version: 1, outcome: "answered", response: { confirmed: true },
+      request: { type: "extension_ui_request", id: `request-${id}`, method: "confirm", title: "Continue?", message: "Context" } } };
 }
-const entry = { type: "custom", customType: helpers.INTERACTION_RECEIPT_TYPE, id: "entry", parentId: null,
-  timestamp: "2026-10-06T10:00:00.000Z", data: { version: 1, outcome: "answered", response: { confirmed: true },
-    request: { type: "extension_ui_request", id: "request", method: "confirm", title: "Continue?", message: "Context" } } };
-
-test("receipt events append aligned deduplicated history and close only their own live dialog", () => {
-  let transcript = { messages: [], entryIds: [] };
-  let dialog = { id: "other-request" };
-  const bindings = {
-    activeLeafIdRef: { current: null }, dataRef: { current: { leafId: null } },
-    interactionReceiptMessage: helpers.interactionReceiptMessage,
-    appendInteractionReceipt: helpers.appendInteractionReceipt,
-    setTranscript: (update) => { transcript = update(transcript); },
-    setExtensionDialog: (update) => { dialog = update(dialog); },
-  };
-  const run = (value = entry) => runCase("interaction_receipt", "extension_ui_request", bindings, { type: "interaction_receipt", entry: value });
-  run();
-  assert.equal(dialog.id, "other-request");
-  assert.deepEqual(transcript.entryIds, ["entry"]);
-  assert.equal(transcript.messages.length, 1);
-  dialog = { id: "request" };
-  run(); assert.equal(dialog, null);
-  assert.equal(transcript.messages.length, 1);
-  run({ ...entry, data: { version: 2 } });
-  assert.equal(transcript.messages.length, 1);
-});
-
-const operation = (id, sequence, phase) => ({ ...entry, id, customType: operations.OPERATION_RECEIPT_TYPE,
-  data: operations.snapshotOperationReceipt("example", { version: 1, operationId: "a046677d-8293-4445-9a2b-558317345abc",
-    card: { title: "Operation", actions: [] }, phase, authorization: { mode: "allow", source: "session", revision: "r1", decision: "policy-authorized" },
-    checks: [], effectStarted: phase === "succeeded" }, sequence) });
-
-test("operation SSE updates and deduplicates stages with aligned IDs, rejects malformed entries and verifies branch ancestry", () => {
-  let transcript = { messages: [], entryIds: [] };
-  const activeLeafIdRef = { current: null };
-  const reads = [];
-  const bindings = {
-    activeLeafIdRef, dataRef: { current: { leafId: null } }, sessionIdRef: { current: "session" },
-    operationReceiptMessage: operations.operationReceiptMessage,
-    appendOperationReceipt: operations.appendOperationReceipt,
-    setTranscript: (update) => { transcript = update(transcript); },
-    reconcileInteractionReceipts: (...args) => reads.push(args),
-  };
-  const run = (entry) => runCase("operation_receipt", "interaction_receipt", bindings, { type: "operation_receipt", entry });
-  run(operation("prepared", 1, "prepared"));
-  const terminal = operation("terminal", 2, "succeeded");
-  run(terminal); run(terminal); run(operation("prepared", 1, "prepared"));
-  assert.deepEqual(transcript.entryIds, ["terminal"]);
-  assert.equal(transcript.messages.length, 1);
-  run({ ...terminal, data: { ...terminal.data, version: 2 } });
-  assert.deepEqual(transcript.entryIds, ["terminal"]);
-  activeLeafIdRef.current = "other-branch";
-  run(operation("failed", 3, "failed"));
-  assert.deepEqual(transcript.entryIds, ["terminal"]);
-  activeLeafIdRef.current = null;
-  run({ ...terminal, parentId: "remote-ancestor" });
-  assert.equal(reads.length, 1);
-  assert.equal(reads[0][1].parentId, "remote-ancestor");
-});
-
-test("connecting reconciles persisted receipts even when the agent is idle", () => {
-  const loads = [];
-  runCase("connected", "agent_start", {
-    dispatch() {}, sessionIdRef: { current: "session" }, reconcileInteractionReceipts: (id) => loads.push(id),
-  }, { type: "connected", isStreaming: false });
-  assert.deepEqual(loads, ["session"]);
-});
-
-test("reconnect closes a settled batch and reconciles only the selected session's drafts", () => {
-  let dialog = { id: "settled", method: "ask_user_batch" };
-  const snapshots = [];
-  const bindings = { dispatch() {}, sessionIdRef: { current: "session" }, reconcileInteractionReceipts() {},
-    reconcileQuestionDrafts: (...args) => snapshots.push(args),
-    setExtensionDialog: (update) => { dialog = update(dialog); } };
-  runCase("connected", "agent_start", bindings, { type: "connected", pendingQuestionSetIds: ["pending"], isStreaming: false });
-  assert.equal(dialog, null);
-  assert.deepEqual(snapshots, [["session", ["pending"]]]);
-  dialog = { id: "pending", method: "ask_user_batch" };
-  runCase("connected", "agent_start", bindings, { type: "connected", pendingQuestionSetIds: ["pending"], isStreaming: false });
-  assert.equal(dialog.id, "pending");
-});
-
-test("a live receipt never enters an independently browsed branch", () => {
-  let transcript = { messages: [], entryIds: [] };
-  let dialog = { id: "request" };
-  runCase("interaction_receipt", "extension_ui_request", {
-    activeLeafIdRef: { current: "browsed" }, dataRef: { current: { leafId: "live" } },
-    interactionReceiptMessage: helpers.interactionReceiptMessage,
-    appendInteractionReceipt: helpers.appendInteractionReceipt,
-    setTranscript: (update) => { transcript = update(transcript); },
-    setExtensionDialog: (update) => { dialog = update(dialog); },
-  }, { type: "interaction_receipt", entry });
-  assert.equal(transcript.messages.length, 0);
-  assert.equal(dialog, null, "the live request still settles while browsing elsewhere");
-});
-
-test("remote descendant receipts require server ancestry validation even if local live refs agree", () => {
-  let transcript = { messages: [], entryIds: [] };
-  const reads = [];
-  runCase("interaction_receipt", "extension_ui_request", {
-    activeLeafIdRef: { current: "a" }, dataRef: { current: { leafId: "a" } },
-    sessionIdRef: { current: "session" },
-    interactionReceiptMessage: helpers.interactionReceiptMessage,
-    appendInteractionReceipt: helpers.appendInteractionReceipt,
-    setTranscript: (update) => { transcript = update(transcript); },
-    setExtensionDialog() {}, reconcileInteractionReceipts: (...args) => reads.push(args),
-  }, { type: "interaction_receipt", entry: { ...entry, parentId: "b" } });
-  assert.equal(transcript.messages.length, 0);
-  assert.equal(reads.length, 1);
-  assert.equal(reads[0][0], "session");
-  assert.equal(reads[0][1].parentId, "b");
-});
-
-function reconnectHarness(history, ok = true) {
-  let transcript = { messages: [], entryIds: [] };
-  let finishRead;
-  const requests = [];
-  const activeLeafIdRef = { current: "live" };
-  const dataRef = { current: { leafId: "live" } };
-  const bindings = {
-    useCallback: (fn) => fn, activeLeafIdRef, dataRef, messagesRef: { current: [] },
-    branchViewRevisionRef: { current: 0 },
-    sessionHookMountedRef: { current: true }, sessionIdRef: { current: "session" },
-    fetch: async (url) => {
-      requests.push(url);
-      const context = typeof history === "function" ? history(new URL(url, "http://localhost").searchParams) : history;
-      return { ok: ok && context !== null, json: () => new Promise((resolve) => { finishRead = () => resolve({ context }); }) };
-    },
-    setTranscript: (update) => { transcript = update(transcript); },
-    mergeInteractionReceiptHistory: helpers.mergeInteractionReceiptHistory,
-    appendInteractionReceipt: helpers.appendInteractionReceipt,
-  };
-  const callback = source.slice(source.indexOf("  const reconcileInteractionReceipts ="), source.indexOf("  const loadContext ="));
-  const js = ts.transpileModule(callback + "\nreturn reconcileInteractionReceipts;", { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  const reconcile = new Function(...Object.keys(bindings), js)(...Object.values(bindings));
-  return { reconcile, activeLeafIdRef, dataRef, requests, finish: () => finishRead(),
-    branchViewRevisionRef: bindings.branchViewRevisionRef,
-    sessionHookMountedRef: bindings.sessionHookMountedRef, sessionIdRef: bindings.sessionIdRef,
-    get: () => transcript, update: (next) => { transcript = next; } };
+function operation(f, id, sequence, phase, parentId = "live") {
+  return { ...entry(f, id, parentId), customType: f.operations.OPERATION_RECEIPT_TYPE,
+    data: f.operations.snapshotOperationReceipt("example", { version: 1, operationId: "a046677d-8293-4445-9a2b-558317345abc",
+      card: { title: "Operation", actions: [] }, phase, authorization: { mode: "allow", source: "session", revision: "r1", decision: "policy-authorized" },
+      checks: [], effectStarted: phase === "succeeded" }, sequence) };
+}
+function history(f, entries, ordinary = []) {
+  return { ...f.snapshot(f.savedId).context,
+    messages: [...entries.map(value => f.receipts.interactionReceiptMessage(value) ?? f.operations.operationReceiptMessage(value)), ...ordinary],
+    entryIds: [...entries.map(value => value.id), ...ordinary.map((_, index) => `ordinary-${index}`)] };
+}
+async function ready(t) {
+  const time = policyClockFixture(), f = await sessionFixture(t, { policyTime: time });
+  f.record(f.savedId).leaf = "live"; f.record(f.savedId).tree = chain(["live"]);
+  await f.mountReady(f.existingOptions()); return f;
+}
+async function emit(f, value) { await f.event(source(f), { type: value.customType === f.receipts.INTERACTION_RECEIPT_TYPE ? "interaction_receipt" : "operation_receipt", entry: value }); }
+async function advanceCanonical(f, leaf = "new-canonical-leaf", messages = [], entryIds = []) {
+  const row = f.record(f.savedId); row.leaf = leaf; row.tree = chain(["live", leaf]); row.messages = messages; row.entryIds = entryIds; row.revision++;
+  await f.run("actual canonical read without changing browser navigation revision", value => value.handleBuiltinSlashCommand("/name canonical"));
+  assert.equal(f.current.activeLeafId, leaf);
+}
+async function browse(f, leaf = "browsed") {
+  const nav = f.hold(command("navigate_tree"));
+  const action = await f.start("actual independent branch context and cancelled live navigation", () => f.leafChange(leaf));
+  await nav.entered.promise;
+  await f.finish(action, () => nav.resolve({ success: true, data: { cancelled: true } }));
+  assert.equal(f.current.activeLeafId, leaf);
+}
+async function retryAtNewAnchor(f, receipt) {
+  const first = f.hold(contexts(f)), second = f.hold(contexts(f));
+  await emit(f, { ...receipt, parentId: "remote-ancestor" }); await first.entered.promise;
+  assert.equal(first.request.query.get("leafId"), receipt.id);
+  assert.equal(first.request.query.get("ancestorId"), "live");
+  await advanceCanonical(f);
+  await act(async () => { first.resolve({ context: history(f, [receipt]) }); await second.entered.promise; });
+  assert.equal(second.request.query.get("ancestorId"), "new-canonical-leaf");
+  assert.equal(second.request.query.has("leafId"), false, "never invert descendant anchor and captured receipt leaf");
+  return second;
 }
 
-test("slow reconnect merges receipts without erasing newer cards or preloading ordinary SSE messages", async () => {
-  const savedReceipt = helpers.interactionReceiptMessage(entry);
-  const ordinary = { role: "user", content: "SSE message", timestamp: savedReceipt.timestamp + 1000 };
-  const harness = reconnectHarness({ messages: [savedReceipt, ordinary], entryIds: ["entry", "ordinary"] });
-  const pending = harness.reconcile("session");
-  await Promise.resolve();
-  const newer = { ...entry, id: "newer", timestamp: "2026-10-06T10:00:02.000Z", data: {
-    ...entry.data, request: { ...entry.data.request, id: "newer-request" },
-  } };
-  harness.update(helpers.appendInteractionReceipt(harness.get(), newer));
-  harness.finish(); await pending;
-  assert.deepEqual(harness.get().entryIds, ["entry", "newer"]);
-  assert.equal(new URL(harness.requests[0], "http://localhost").searchParams.get("ancestorId"), "live");
-  assert.equal(harness.get().messages.some((message) => message === ordinary), false,
-    "ordinary message_end remains the sole live delivery path");
+test("actual receipt SSE deduplicates aligned IDs, rejects malformed entries, and closes only its request dialog", options, async t => {
+  const f = await ready(t), saved = entry(f);
+  await f.event(source(f), { type: "extension_ui_request", id: "other", method: "confirm", title: "Other", message: "Keep" });
+  await emit(f, saved); assert.equal(f.current.extensionDialog.id, "other");
+  assert.deepEqual(f.current.entryIds, ["entry"]); assert.equal(f.current.messages.length, 1);
+  await f.event(source(f), saved.data.request); await emit(f, saved);
+  assert.equal(f.current.extensionDialog, null); assert.equal(f.current.messages.length, 1);
+  await emit(f, { ...saved, id: "malformed", data: { ...saved.data, version: 2 } });
+  assert.deepEqual(f.current.entryIds, ["entry"]);
 });
 
-test("slow reconnect history cannot downgrade terminal operations; missed terminal delivery reconciles on reconnect", async () => {
-  const prepared = operation("prepared", 1, "prepared");
-  const terminal = operation("terminal", 2, "succeeded");
-  const harness = reconnectHarness({ messages: [operations.operationReceiptMessage(prepared)], entryIds: ["prepared"] });
-  const pending = harness.reconcile("session");
-  await Promise.resolve();
-  harness.update(operations.appendOperationReceipt(harness.get(), terminal));
-  harness.finish(); await pending;
-  assert.deepEqual(harness.get().entryIds, ["terminal"]);
-  const replay = reconnectHarness({ messages: [operations.operationReceiptMessage(terminal)], entryIds: ["terminal"] });
-  replay.update(operations.appendOperationReceipt(replay.get(), prepared));
-  const replaying = replay.reconcile("session");
-  await Promise.resolve(); replay.finish(); await replaying;
-  assert.deepEqual(replay.get().entryIds, ["terminal"]);
+test("actual operation SSE chooses terminal sequence, keeps IDs aligned and ignores malformed/older stages", options, async t => {
+  const f = await ready(t), prepared = operation(f, "prepared", 1, "prepared"), terminal = operation(f, "terminal", 2, "succeeded");
+  await emit(f, prepared); await emit(f, terminal); await emit(f, terminal); await emit(f, prepared);
+  await emit(f, { ...terminal, id: "bad", data: { ...terminal.data, version: 2 } });
+  assert.deepEqual(f.current.entryIds, ["terminal"]); assert.equal(f.current.messages.length, 1);
+  assert.equal(f.current.messages[0].details.phase, "succeeded");
 });
 
-for (const [kind, receipt] of [["interaction", entry], ["operation", operation("terminal", 2, "succeeded")]]) {
-  test(`canonical advancement rereads ${kind} receipts without pairing a descendant anchor with an older leaf`, async () => {
-    const saved = helpers.appendInteractionReceipt({ messages: [], entryIds: [] }, receipt);
-    const ordinary = { role: "user", content: "SSE message", timestamp: Date.parse(receipt.timestamp) + 1000 };
-    const harness = reconnectHarness((params) => {
-      if (params.get("ancestorId") === "new-canonical-leaf") {
-        // The new canonical leaf is below the receipt, just as in the retained
-        // browser failure. That inverted anchor/leaf pair must be rejected.
-        if (params.has("leafId")) return null;
-        return { messages: [...saved.messages, ordinary], entryIds: [...saved.entryIds, "ordinary"] };
-      }
-      return saved;
-    });
-    const pending = harness.reconcile("session", receipt);
-    await Promise.resolve();
-    harness.activeLeafIdRef.current = "new-canonical-leaf";
-    harness.dataRef.current = { leafId: "new-canonical-leaf" };
-    harness.finish();
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(harness.requests.length, 2);
-    const params = new URL(harness.requests[1], "http://localhost").searchParams;
-    assert.equal(params.get("ancestorId"), "new-canonical-leaf");
-    assert.equal(params.has("leafId"), false);
-    harness.finish(); await pending;
-    assert.deepEqual(harness.get().entryIds, [receipt.id]);
-    assert.equal(harness.get().messages.includes(ordinary), false);
-  });
-}
-
-test("canonical reread never appends an old receipt absent from the revalidated branch", async () => {
-  const sibling = { ...entry, id: "sibling-receipt", data: { ...entry.data,
-    request: { ...entry.data.request, id: "sibling-request" } } };
-  const oldHistory = helpers.appendInteractionReceipt({ messages: [], entryIds: [] }, entry);
-  const siblingHistory = helpers.appendInteractionReceipt({ messages: [], entryIds: [] }, sibling);
-  const harness = reconnectHarness((params) => params.has("leafId") ? oldHistory : siblingHistory);
-  const pending = harness.reconcile("session", entry);
-  await Promise.resolve();
-  // Canonical state can change externally without a browser navigation event.
-  harness.activeLeafIdRef.current = "sibling-leaf";
-  harness.dataRef.current = { leafId: "sibling-leaf" };
-  harness.finish();
-  await new Promise((resolve) => setImmediate(resolve));
-  harness.finish(); await pending;
-  assert.deepEqual(harness.get().entryIds, ["sibling-receipt"]);
+test("idle connected JSON reconciles real history and current-session question drafts only", options, async t => {
+  const f = await ready(t), keys = f.questionDrafts.questionDraftKey, store = f.view.window.sessionStorage;
+  store.setItem(keys(f.savedId, "settled"), "outgoing draft"); store.setItem(keys(f.savedId, "pending"), "keep"); store.setItem(keys("another-session", "settled"), "other identity");
+  const batch = id => ({ type: "extension_ui_request", id, method: "ask_user_batch", title: "Questions",
+    questions: [{ id: "q", shortLabel: "Q", question: "Why?", type: "text", required: true, options: [] }] });
+  await f.event(source(f), batch("settled"));
+  const read = f.hold(contexts(f));
+  await f.event(source(f), { type: "connected", isStreaming: false, pendingQuestionSetIds: ["pending"] }); await read.entered.promise;
+  assert.equal(f.current.extensionDialog, null); assert.equal(store.getItem(keys(f.savedId, "settled")), null);
+  assert.equal(store.getItem(keys(f.savedId, "pending")), "keep"); assert.equal(store.getItem(keys("another-session", "settled")), "other identity");
+  await f.deliver(read, { context: history(f, [entry(f)]) }); await f.settleMaintenance();
+  assert.deepEqual(f.current.entryIds, ["entry"]); assert.equal(f.current.agentRunning, false);
+  await f.event(source(f), batch("pending"));
+  await f.event(source(f), { type: "connected", isStreaming: false, pendingQuestionSetIds: ["pending"] }); await f.settleMaintenance();
+  assert.equal(f.current.extensionDialog.id, "pending");
 });
 
-for (const [reason, invalidate] of [
-  ["session switch", (harness) => { harness.sessionIdRef.current = "other-session"; }],
-  ["unmount", (harness) => { harness.sessionHookMountedRef.current = false; }],
-  ["navigation revision", (harness) => { harness.branchViewRevisionRef.current += 1; }],
-  ["independently browsed leaf", (harness) => { harness.activeLeafIdRef.current = "browsed"; }],
-]) {
-  test(`canonical receipt retry discards its response after ${reason}`, async () => {
-    const history = helpers.appendInteractionReceipt({ messages: [], entryIds: [] }, entry);
-    const harness = reconnectHarness(history);
-    const pending = harness.reconcile("session", entry);
-    await Promise.resolve();
-    harness.activeLeafIdRef.current = "new-canonical-leaf";
-    harness.dataRef.current = { leafId: "new-canonical-leaf" };
-    harness.finish();
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(harness.requests.length, 2);
-    invalidate(harness);
-    harness.finish(); await pending;
-    assert.deepEqual(harness.get(), { messages: [], entryIds: [] });
-    assert.equal(harness.requests.length, 2);
-  });
-}
-
-test("canonical receipt retry preserves newer live cards and terminal operations", async () => {
-  const prepared = operation("prepared", 1, "prepared");
-  const terminal = operation("terminal", 2, "succeeded");
-  const history = helpers.appendInteractionReceipt(
-    helpers.appendInteractionReceipt({ messages: [], entryIds: [] }, prepared), entry);
-  const harness = reconnectHarness(history);
-  const pending = harness.reconcile("session", prepared);
-  await Promise.resolve();
-  harness.activeLeafIdRef.current = "new-canonical-leaf";
-  harness.dataRef.current = { leafId: "new-canonical-leaf" };
-  harness.finish();
-  await new Promise((resolve) => setImmediate(resolve));
-  const newer = { ...entry, id: "newer", timestamp: "2026-10-06T10:00:02.000Z", data: {
-    ...entry.data, request: { ...entry.data.request, id: "newer-request" },
-  } };
-  harness.update(helpers.appendInteractionReceipt(
-    helpers.appendInteractionReceipt(harness.get(), terminal), newer));
-  harness.finish(); await pending;
-  assert.deepEqual(harness.get().entryIds, ["terminal", "entry", "newer"]);
+for (const kind of ["interaction", "operation"]) test(`${kind} receipt cannot enter an independently browsed branch`, options, async t => {
+  const f = await ready(t), saved = kind === "interaction" ? entry(f) : operation(f, "terminal", 2, "succeeded");
+  await browse(f);
+  const before = f.requests.filter(contexts(f)).length;
+  await f.event(source(f), { type: "extension_ui_request", id: "request-entry", method: "confirm", title: "Confirm", message: "Wait" });
+  await emit(f, saved);
+  assert.equal(f.current.messages.length, 0); assert.equal(f.requests.filter(contexts(f)).length, before);
+  if (kind === "interaction") assert.equal(f.current.extensionDialog, null, "only the matching live request settles");
 });
 
-test("live receipt branch verification is bound to its exact entry and fails closed", async () => {
-  const harness = reconnectHarness({ messages: [helpers.interactionReceiptMessage(entry)], entryIds: ["entry"] }, false);
-  await harness.reconcile("session", entry);
-  const params = new URL(harness.requests[0], "http://localhost").searchParams;
-  assert.equal(params.get("leafId"), "entry");
-  assert.equal(params.get("ancestorId"), "live");
-  assert.equal(harness.get().messages.length, 0);
+for (const kind of ["interaction", "operation"]) for (const allowed of [false, true]) test(`remote ${kind} entry requires exact server ancestry (${allowed ? "admitted" : "refused"})`, options, async t => {
+  const f = await ready(t), saved = kind === "interaction" ? entry(f) : operation(f, "terminal", 2, "succeeded");
+  const read = f.hold(contexts(f), { stage: allowed ? "body" : "headers", status: allowed ? 200 : 409 });
+  await emit(f, { ...saved, parentId: "remote-ancestor" }); await read.entered.promise;
+  assert.equal(read.request.query.get("leafId"), saved.id); assert.equal(read.request.query.get("ancestorId"), "live");
+  assert.equal(f.current.messages.length, 0, "event is not itself branch authorization");
+  await f.deliver(read, { context: history(f, [saved]) }); await f.settleMaintenance();
+  assert.deepEqual(f.current.entryIds, allowed ? [saved.id] : []);
 });
 
-test("branch changes discard in-flight reconnect receipt history", async () => {
-  const harness = reconnectHarness({ messages: [helpers.interactionReceiptMessage(entry)], entryIds: ["entry"] });
-  const pending = harness.reconcile("session");
-  await Promise.resolve();
-  harness.activeLeafIdRef.current = "browsed";
-  harness.finish(); await pending;
-  assert.deepEqual(harness.get(), { messages: [], entryIds: [] });
+test("slow connected history preserves newer cards and never preloads ordinary SSE messages", options, async t => {
+  const f = await ready(t), saved = entry(f), newer = entry(f, "newer", "live", 2000);
+  const ordinary = { role: "user", content: "ordinary SSE", timestamp: stamp + 1000 };
+  const read = f.hold(contexts(f)); await f.event(source(f), { type: "connected", isStreaming: false }); await read.entered.promise;
+  await emit(f, newer);
+  await f.deliver(read, { context: history(f, [saved], [ordinary]) }); await f.settleMaintenance();
+  assert.deepEqual(f.current.entryIds, ["entry", "newer"]);
+  assert.equal(f.current.messages.some(message => message.role === "user"), false);
+  await f.event(source(f), { type: "agent_start" });
+  await f.event(source(f), { type: "message_end", entryId: "ordinary-0", message: ordinary });
+  assert.equal(f.current.messages.filter(message => message.role === "user" && message.content === ordinary.content).length, 1);
 });
 
-test("delayed canonical reads are discarded before installing a newer branch's data or transcript", async () => {
-  const begin = source.indexOf("      const d = await res.json() as SessionData;");
-  const code = source.slice(begin, source.indexOf("      // Freshness check:", begin));
-  const js = ts.transpileModule(code + "\nreturn 'apply';", { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
-  const bindings = {
-    res: { json: async () => ({ leafId: "old-live" }) }, shouldApply: undefined,
-    branchViewRevisionRef: { current: 1 }, viewRevisionAtRead: 0,
-    modelSelectionVersionRef: { current: 0 }, selectionVersionAtRead: 0,
-    sessionIdRef: { current: "session" }, sid: "session",
-  };
-  assert.equal(await new AsyncFunction(...Object.keys(bindings), js)(...Object.values(bindings)), "superseded");
-  bindings.branchViewRevisionRef.current = 0;
-  assert.equal(await new AsyncFunction(...Object.keys(bindings), js)(...Object.values(bindings)), "apply");
-  bindings.modelSelectionVersionRef.current++;
-  assert.equal(await new AsyncFunction(...Object.keys(bindings), js)(...Object.values(bindings)), "superseded");
+for (const missed of [false, true]) test(`slow operation history ${missed ? "repairs missed terminal" : "cannot downgrade live terminal"}`, options, async t => {
+  const f = await ready(t), prepared = operation(f, "prepared", 1, "prepared"), terminal = operation(f, "terminal", 2, "succeeded");
+  await emit(f, prepared); const read = f.hold(contexts(f)); await f.event(source(f), { type: "connected", isStreaming: false }); await read.entered.promise;
+  if (!missed) await emit(f, terminal);
+  await f.deliver(read, { context: history(f, [missed ? terminal : prepared]) }); await f.settleMaintenance();
+  assert.deepEqual(f.current.entryIds, ["terminal"]);
 });
 
-test("warm cache restoration updates live refs before starting its canonical freshness read", () => {
-  const begin = source.indexOf("      if (cached) {", source.indexOf("  // Load session on mount"));
-  const code = source.slice(begin, source.indexOf("      loadSession(session.id", begin));
-  const js = ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  const bindings = {
-    cached: { leafId: "cached-leaf", messages: [], entryIds: [], thinkingLevel: "off", model: null },
-    session: { id: "session" }, dataRef: { current: null }, activeLeafIdRef: { current: null },
-    modelSpeedRef: { current: "standard" }, compactionVersionRef: { current: 0 }, setModelSpeed() {},
-    setData() {}, setActiveLeafId() {}, setMessages() {}, setEntryIds() {},
-    setHistoryCursor() {}, setHasEarlierMessages() {}, setError() {}, setLoading() {},
-  };
-  new Function(...Object.keys(bindings), js)(...Object.values(bindings));
-  assert.equal(bindings.dataRef.current.leafId, "cached-leaf");
-  assert.equal(bindings.activeLeafIdRef.current, "cached-leaf");
+for (const kind of ["interaction", "operation"]) test(`canonical advancement rereads ${kind} without stale leaf and excludes ordinary history`, options, async t => {
+  const f = await ready(t), saved = kind === "interaction" ? entry(f) : operation(f, "terminal", 2, "succeeded");
+  const retry = await retryAtNewAnchor(f, saved);
+  await f.deliver(retry, { context: history(f, [saved], [{ role: "user", content: "not preloaded", timestamp: stamp + 1000 }]) });
+  await f.settleMaintenance(); assert.deepEqual(f.current.entryIds, [saved.id]);
+  assert.equal(f.current.messages.some(message => message.role === "user"), false);
 });
 
-test("slow canonical snapshot preserves newly emitted receipts without carrying them across branch views", () => {
-  const begin = source.indexOf("        const preserveRecentReceipts =");
-  const code = source.slice(begin, source.indexOf("        setHistoryCursor(", begin));
-  const js = ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  const saved = { role: "user", content: "Before", timestamp: Date.parse(entry.timestamp) - 1000 };
-  for (const view of ["live", "browsed"]) {
-    let transcript = helpers.appendInteractionReceipt({ messages: [saved], entryIds: ["user"] }, entry);
-    const bindings = {
-      followsLiveAtRead: true, branchViewRevisionRef: { current: view === "live" ? 0 : 1 }, viewRevisionAtRead: 0, viewLeafAtRead: "live",
-      persistedMessages: [saved], d: { context: { entryIds: ["user"] }, tree: [], leafId: "live" },
-      alignEntryIds: (messages, ids) => messages.map((_, i) => ids[i] ?? ""),
-      mergeInteractionReceiptHistory: helpers.mergeInteractionReceiptHistory,
-      receiptBranchContains: helpers.receiptBranchContains,
-      setTranscript: (update) => { transcript = update(transcript); },
-    };
-    new Function(...Object.keys(bindings), js)(...Object.values(bindings));
-    assert.deepEqual(transcript.entryIds, view === "live" ? ["user", "entry"] : ["user"]);
-  }
+test("canonical reread never appends captured old receipt absent from revalidated branch", options, async t => {
+  const f = await ready(t), saved = entry(f), sibling = entry(f, "sibling-receipt");
+  const retry = await retryAtNewAnchor(f, saved);
+  await f.deliver(retry, { context: history(f, [sibling]) }); await f.settleMaintenance();
+  assert.deepEqual(f.current.entryIds, ["sibling-receipt"]);
+});
+
+for (const reason of ["session recreation", "keyed A/B/A unmount", "navigation revision", "independent leaf"]) test(`canonical retry drops delivery after actual ${reason}`, options, async t => {
+  const f = await ready(t), saved = entry(f), retry = await retryAtNewAnchor(f, saved), outgoing = f.maintenanceHandle;
+  if (reason === "session recreation") {
+    const sid = `${f.savedId}-replacement`; f.declareSession(sid);
+    const tools = f.hold(command("set_tools")), changing = await f.start("real Tools identity replacement", value => value.handleToolPresetChange("none"));
+    await f.finish(changing, () => tools.resolve({ success: true, data: { sessionId: sid, recreated: true } }));
+  } else if (reason === "keyed A/B/A unmount") {
+    await f.mountReady(f.existingOptions(`${f.savedId}-B`)); await f.mountReady(f.existingOptions());
+  } else if (reason === "navigation revision") {
+    const nav = f.hold(command("navigate_tree")), moving = await f.start("real vetoed navigation still advances revision", value => value.handleNavigate("another"));
+    await f.finish(moving, () => nav.resolve({ success: true, data: { cancelled: true } }));
+  } else await browse(f);
+  const count = f.requests.filter(contexts(f)).length;
+  await f.deliver(retry, { context: history(f, [saved]) }); await f.settleMaintenance(outgoing);
+  assert.equal(f.current.entryIds.includes(saved.id), false); assert.equal(f.requests.filter(contexts(f)).length, count);
+});
+
+test("canonical retry preserves newer live cards and terminal operation order", options, async t => {
+  const f = await ready(t), prepared = operation(f, "prepared", 1, "prepared"), terminal = operation(f, "terminal", 2, "succeeded"), saved = entry(f), newer = entry(f, "newer", "new-canonical-leaf", 2000);
+  await emit(f, prepared); const retry = await retryAtNewAnchor(f, prepared);
+  await emit(f, { ...terminal, parentId: "new-canonical-leaf" }); await emit(f, newer);
+  await f.deliver(retry, { context: history(f, [prepared, saved]) }); await f.settleMaintenance();
+  assert.deepEqual(f.current.entryIds, ["terminal", "entry", "newer"]);
+});
+
+test("branch navigation discards initial in-flight reconnect history", options, async t => {
+  const f = await ready(t), read = f.hold(contexts(f));
+  await f.event(source(f), { type: "connected", isStreaming: false }); await read.entered.promise;
+  await browse(f);
+  await f.deliver(read, { context: history(f, [entry(f)]) }); await f.settleMaintenance();
+  assert.deepEqual(f.current.entryIds, []);
+});
+
+for (const invalidation of ["branch", "selection"]) test(`delayed canonical JSON cannot install data/transcript across ${invalidation}`, options, async t => {
+  const f = await ready(t), old = f.hold(request => detail(request) && !request.query.has("force"));
+  const read = await f.start("real disk-only canonical load", value => value.handleBuiltinSlashCommand("/name old"));
+  await old.entered.promise;
+  if (invalidation === "branch") await browse(f);
+  else await f.run("real model selection version change", value => value.handleModelChange("mounted-fixture", "A"));
+  const before = f.current.data.context.model.modelId;
+  await f.finish(read, () => old.resolve(f.snapshot(f.savedId, { leafId: "old-live", context: { ...f.snapshot(f.savedId).context, model: { provider: "mounted-fixture", modelId: "old" } } })));
+  assert.notEqual(f.current.data.leafId, "old-live"); assert.equal(f.current.data.context.model.modelId, before);
+});
+
+test("warm cache restores actual transcript/live anchor before its held canonical freshness read", options, async t => {
+  const f = await ready(t); await emit(f, entry(f));
+  const original = f.maintenanceHandle;
+  await f.mountReady(f.existingOptions(`${f.savedId}-B`)); await f.settleMaintenance(original);
+  const force = f.hold(request => detail(request) && request.path === `/api/sessions/${f.savedId}` && request.query.get("force") === "1", { repeat: true, stage: "headers" });
+  const read = f.hold(contexts(f));
+  await f.mount(f.existingOptions());
+  assert.deepEqual(f.current.entryIds, ["entry"], "actual synchronous cache restoration, not extracted setters");
+  assert.equal(force.used, true, "cached live refs must admit the actual forced freshness read");
+  await f.connect(source(f)); await read.entered.promise;
+  assert.equal(read.request.query.get("ancestorId"), "live", "live refs precede freshness response");
+  await f.deliver(read, { context: history(f, []) });
+  // The real GET revision includes leafId. A sibling cannot reuse the cached
+  // live branch's opaque token (which deliberately preserves wider history).
+  await f.deliver(force, f.snapshot(f.savedId, { snapshotRevision: `${f.id}:sibling-v1`, leafId: "sibling", tree: chain(["sibling"]),
+    context: { ...f.snapshot(f.savedId).context, messages: [], entryIds: [] } }));
+  await f.settleMaintenance();
+  assert.deepEqual(f.current.entryIds, [], "a sibling canonical branch must not inherit the cached live receipt");
+});
+
+for (const view of ["live", "browsed"]) test(`slow canonical snapshot carries recent receipt only in ${view} live context`, options, async t => {
+  const f = await ready(t), row = f.record(f.savedId);
+  row.messages = [{ role: "user", content: "Before", timestamp: stamp - 1000 }]; row.entryIds = ["user"]; row.revision++;
+  await f.run("load canonical baseline", value => value.handleBuiltinSlashCommand("/name baseline"));
+  const snapshot = f.snapshot(f.savedId), body = f.hold(request => detail(request) && !request.query.has("force"));
+  const reading = await f.start("snapshot captured before live card", value => value.handleBuiltinSlashCommand("/name pending"));
+  await body.entered.promise; await emit(f, entry(f));
+  if (view === "browsed") await browse(f);
+  await f.finish(reading, () => body.resolve(snapshot));
+  assert.deepEqual(f.current.entryIds, view === "live" ? ["user", "entry"] : ["user"]);
 });

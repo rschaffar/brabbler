@@ -1,5 +1,6 @@
 "use client";
 
+import { useNavigationWork } from "@/lib/navigation-work";
 import { useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 
@@ -8,13 +9,14 @@ export function ArchivedSessionNotice({ rootSessionId, busy, onRestored }: {
   busy: boolean;
   onRestored: (id: string) => void;
 }) {
+  const work = useNavigationWork();
   const { t } = useI18n();
   const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState(false);
 
   if (!rootSessionId) return null;
 
-  const restore = async () => {
+  const restore = () => work.observe((async () => {
     if (busy || restoring) return;
     setRestoring(true);
     setError(false);
@@ -31,7 +33,7 @@ export function ArchivedSessionNotice({ rootSessionId, busy, onRestored }: {
     } finally {
       setRestoring(false);
     }
-  };
+  })());
 
   return (
     <div role="status" className="mx-4 mt-3 flex items-start gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-text">

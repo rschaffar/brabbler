@@ -1,12 +1,20 @@
+import '../lib/testing/client-native-boundary.fixture.mjs';
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after, before, describe } from "node:test";
 import { createJiti } from "jiti";
-import { readFileSync } from "node:fs";
-import { stripTypeScriptTypes } from "node:module";
-import vm from "node:vm";
+import { act, createElement } from "react";
+import { composerFixture } from "../components/composer.fixture.mjs";
 
-const jiti = createJiti(import.meta.url);
-const { shouldUseVisualViewportHeight } = await jiti.import("./useViewportHeight.ts");
+describe("useViewportHeight fixture ownership", () => {
+  let fixtureCleanup, shouldUseVisualViewportHeight;
+  // Register under this suite before setup can fail, not beside the root guard.
+  after(async () => { if (fixtureCleanup) await fixtureCleanup(); });
+  before(async () => {
+    composerFixture({ after: cleanup => { fixtureCleanup = cleanup; } });
+    // Guard the pure-rule import graph too, once for this suite's warm modules.
+    const jiti = createJiti(import.meta.url, { fsCache: false });
+    ({ shouldUseVisualViewportHeight } = await jiti.import("./useViewportHeight.ts"));
+  });
 
 test("uses the visual viewport for a focused editor when the keyboard shrinks it", () => {
   assert.equal(shouldUseVisualViewportHeight({
@@ -60,47 +68,90 @@ test("zoom-aware keyboard detection excludes toolbar motion and handles an inval
   assert.equal(shouldUseVisualViewportHeight({ ...base, viewportScale: 0 }), true);
 });
 
-test("viewport settling follows late IME heights without restarting its chain and cleans up", () => {
-  const listeners = new Map(), frames = new Map(), timers = new Map(), styles = new Map();
-  let nextId = 0, cleanup;
-  const events = (prefix) => ({
-    addEventListener: (name, fn) => listeners.set(`${prefix}:${name}`, fn),
-    removeEventListener: (name, fn) => { assert.equal(listeners.get(`${prefix}:${name}`), fn); listeners.delete(`${prefix}:${name}`); },
-  });
-  class Editable { tagName = "INPUT"; }
-  const viewport = { ...events("viewport"), height: 844, scale: 1 };
-  const root = { dataset: {}, style: { setProperty: (key, value) => styles.set(key, value), removeProperty: (key) => styles.delete(key) } };
-  const document = { ...events("document"), documentElement: root, activeElement: new Editable() };
-  const window = {
-    ...events("window"), visualViewport: viewport, innerHeight: 844, scrollX: 0, scrollY: 0,
-    requestAnimationFrame: (fn) => { const id = ++nextId; frames.set(id, fn); return id; },
-    cancelAnimationFrame: (id) => frames.delete(id),
-    setTimeout: (fn, delay) => { const id = ++nextId; timers.set(id, { fn, delay }); return id; },
-    clearTimeout: (id) => timers.delete(id),
-  };
-  const source = readFileSync(new URL("./useViewportHeight.ts", import.meta.url), "utf8")
-    .replace('import { useEffect } from "react";', "").replaceAll("export ", "");
-  vm.runInNewContext(stripTypeScriptTypes(`${source}\nuseViewportHeight();`), {
-    window, document, HTMLElement: Editable, useEffect: (effect) => { cleanup = effect(); },
-  });
-  const flush = () => { for (const [id, fn] of frames) { frames.delete(id); fn(); } };
-  const step = () => { const [id, timer] = timers.entries().next().value; timers.delete(id); timer.fn(); };
-  flush();
-  const firstTimer = [...timers.keys()][0];
-  viewport.height = 450; // No viewport event: WebKit's late settled value.
-  listeners.get("document:compositionupdate")(); flush();
-  assert.equal([...timers.keys()][0], firstTimer, "typing must not push settling into the future");
-  assert.equal(styles.get("--app-viewport-height"), "450px");
-  viewport.height = 280;
-  step();
-  assert.equal(styles.get("--app-viewport-height"), "280px");
-  assert.equal(root.dataset.keyboardOpen, "true");
-  document.activeElement = null;
-  listeners.get("window:focusout")(); flush();
-  assert.equal(styles.has("--app-viewport-height"), false);
+test("mounted viewport follows late IME heights without restarting the bounded chain and releases all resources", async t => {
+  let viewport, windowEvents, documentEvents, viewportEvents;
+  const f = composerFixture(t, { timers: 'window', setup(window) {
+    viewport = new window.EventTarget(); viewport.height = 844; viewport.scale = 1;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 844 });
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
+    windowEvents = f.watchEvents(window, ['resize', 'focusin', 'focusout', 'pageshow']);
+    documentEvents = f.watchEvents(window.document, ['compositionstart', 'compositionupdate', 'compositionend', 'input', 'keyup']);
+    viewportEvents = f.watchEvents(viewport, ['resize', 'scroll']);
+  } });
+  const { ViewportProbe } = await f.load();
+  const view = await f.mount(createElement(ViewportProbe));
+  const input = view.container.querySelector('input'), root = view.window.document.documentElement;
+  const initialFrames = [...f.frames.keys()];
+  assert.equal(initialFrames.length, 1, 'Strict setup/cleanup/setup leaves one actual viewport frame');
+  await f.frame(); // Deliver this finite initial viewport callback, before focus.
+  assert.equal(f.frames.size, 0, 'initial viewport frame completed');
+  const firstTimer = [...f.timeouts.keys()][0];
+  assert.deepEqual([...f.timeouts.values()].map(({ port, delay }) => ({ port, delay })), [{ port: 'window.setTimeout', delay: 48 }], 'only the admitted window policy reread is counted');
+  await act(async () => input.focus());
+  assert.equal(f.frames.size, 1, 'focus coalesces to one new viewport frame');
+  assert.equal([...f.frames.keys()][0] === initialFrames[0], false, 'focus does not reuse the completed initial callback');
+  await f.frame();
+  assert.equal([...f.timeouts.keys()][0], firstTimer, 'focus does not restart the initial settling chain');
+  assert.equal(f.timeouts.size, 1);
+  assert.equal(f.timeouts.get(firstTimer).delay, 48, 'the first bounded reread retains its original 48ms delay');
+  viewport.height = 450;
+  await view.dispatch(input, new view.window.CompositionEvent('compositionupdate', { bubbles: true }));
+  assert.equal(f.frames.size, 1, 'editable activity schedules one owned viewport frame');
+  await f.frame();
+  assert.equal([...f.timeouts.keys()][0], firstTimer, 'typing does not postpone settling');
+  assert.equal(root.style.getPropertyValue('--app-viewport-height'), '450px');
+  viewport.height = 280; await f.timer(firstTimer);
+  assert.equal(root.style.getPropertyValue('--app-viewport-height'), '280px');
+  assert.equal(root.dataset.keyboardOpen, 'true');
+  await act(async () => input.blur()); await f.frame();
+  assert.equal(root.style.getPropertyValue('--app-viewport-height'), '');
   assert.equal(root.dataset.keyboardOpen, undefined);
-  cleanup();
-  assert.equal(listeners.size, 0);
-  assert.equal(timers.size, 0);
-  assert.equal(frames.size, 0);
+  // The existing fixed sequence ends, even with repeated composition activity.
+  for (const delay of [120, 240, 420, 720]) {
+    assert.equal(f.timeouts.size, 1, 'bounded settling retains one named next reread');
+    const [id, timer] = [...f.timeouts][0]; assert.equal(timer.delay, delay); await f.timer(id);
+  }
+  assert.equal(f.timeouts.size, 0);
+  await act(async () => input.focus());
+  assert.equal(f.timeouts.size, 1, 'new editable activity can begin another chain');
+  await view.unmount();
+  assert.equal(windowEvents.size, 0); assert.equal(documentEvents.size, 0); assert.equal(viewportEvents.size, 0);
+  assert.equal(f.timeouts.size, 0); assert.equal(f.frames.size, 0);
+  assert.equal(root.style.getPropertyValue('--app-viewport-height'), '');
+  assert.equal(root.dataset.keyboardOpen, undefined);
+});
+
+test('mounted viewport coalesces resize/scroll and corrects only unscaled page shifts', async t => {
+  let viewport, pageY = 40;
+  const f = composerFixture(t, { timers: 'window', setup(window) {
+    viewport = new window.EventTarget(); Object.assign(viewport, { height: 450, scale: 1 });
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 844 });
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => pageY });
+    const scrollTo = window.scrollTo;
+    f.replace(window, 'scrollTo', (...args) => { scrollTo(...args); pageY = args[1]; });
+  } });
+  const { ViewportProbe } = await f.load(); const view = await f.mount(createElement(ViewportProbe));
+  const initialFrames = [...f.frames.keys()];
+  assert.equal(initialFrames.length, 1, 'one viewport setup frame survives Strict replay');
+  await f.frame(); // Join only the explicitly admitted initial callback.
+  assert.equal(f.frames.size, 0); assert.equal(pageY, 0, 'initial unscaled page correction updates the external geometry');
+  assert.deepEqual([...f.timeouts.values()].map(({ port, delay }) => ({ port, delay })), [{ port: 'window.setTimeout', delay: 48 }]);
+  await act(async () => view.container.querySelector('input').focus());
+  await view.dispatch(view.window, new view.window.Event('resize'));
+  await view.dispatch(viewport, new view.window.Event('scroll'));
+  assert.equal(f.frames.size, 1, 'focus/window resize/viewport scroll replace one pending frame');
+  assert.equal([...f.frames.keys()][0] === initialFrames[0], false);
+  await f.frame();
+  assert.deepEqual(f.scrolls.filter(call => call.page).map(call => call.args), [[0, 0]]);
+  pageY = 40; // A new external pan keeps the original shifted+zoomed input live.
+  viewport.scale = 2;
+  await view.dispatch(viewport, new view.window.Event('resize')); await f.frame();
+  assert.equal(f.scrolls.filter(call => call.page).length, 1);
+  assert.equal(view.window.document.documentElement.dataset.keyboardOpen, undefined);
+  viewport.scale = 1; viewport.height = 844;
+  await view.dispatch(view.window, new view.window.Event('focusout')); await f.frame();
+  assert.equal(view.window.document.documentElement.style.getPropertyValue('--app-viewport-height'), '');
+});
+
 });

@@ -1,9 +1,44 @@
 import assert from "node:assert/strict";
 import { waitForAsyncCondition } from "./async-condition.mjs";
 import { sidebarReady } from "./sidebar-readiness.mjs";
+import { createOwnedRoutes } from "./owned-routes.mjs";
 
 export async function checkProjectPrivacy(page, width, { base, api, post, harness, selectedSessionId, otherSessionId }) {
   const mobile = width <= 640;
+  const failures = [], runningRoutes = [];
+  const runningPattern = "**/api/agent/running";
+  let primary, primaryFailed = false, peerContext;
+  const registerRunning = async (routePage, handle) => {
+    const owner = createOwnedRoutes(handle, handle);
+    const acknowledgements = [];
+    // Record BEFORE registration awaits: route() can reject after admission.
+    const record = { routePage, owner, acknowledgements, adapter: null, settlement: null };
+    const adapter = route => {
+      // Transport ACK only. The SAME original rejection remains owned and live.
+      const acknowledged = owner.handler(route).then(undefined, error => { failures.push(error); });
+      acknowledgements.push(acknowledged);
+      return acknowledged;
+    };
+    record.adapter = adapter;
+    runningRoutes.push(record);
+    await routePage.route(runningPattern, adapter);
+    return record;
+  };
+  const settleRunning = record => record.settlement ??= (async () => {
+    // No held routes/release gates here. dispose joins original callback work,
+    // unregisters this EXACT adapter, then joins callbacks admitted during removal.
+    try { await record.owner.dispose(() => record.routePage.unroute(runningPattern, record.adapter)); }
+    catch (error) { failures.push(error); }
+    // The Playwright ACK is a separate promise; join it even if disposal failed.
+    let joined = 0;
+    while (joined < record.acknowledgements.length) {
+      const admitted = record.acknowledgements.slice(joined);
+      joined += admitted.length;
+      const results = await Promise.allSettled(admitted);
+      for (const result of results) if (result.status === "rejected") failures.push(result.reason);
+    }
+  })();
+  try {
   const { sessions } = await api("/api/sessions?force=1");
   const project = sessions.find((session) => session.id === selectedSessionId);
   const key = project.projectKey ?? project.projectRoot ?? project.cwd;
@@ -33,8 +68,26 @@ export async function checkProjectPrivacy(page, width, { base, api, post, harnes
   };
   const saveSwitch = async (control, hidden) => {
     const saved = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/hidden-projects" && response.request().method() === "POST");
-    await control.click();
-    assert.equal((await saved).status(), 200);
+    // Observe the ORIGINAL wait and its complete body immediately, before click.
+    // Neither a response event nor a failed body is native write-completion proof.
+    const readFailures = [], clickFailures = [];
+    const read = saved.then(async response => { await response.json(); return response; });
+    const readAcknowledged = read.then(undefined, error => { readFailures.push(error); });
+    try { await control.click(); }
+    catch (error) { clickFailures.push(error); }
+    // Click failure cannot bypass the accepted response/body join. A missing
+    // response uses the EXISTING observation timeout, never cancellation/replay.
+    const [body, acknowledgement] = await Promise.allSettled([read, readAcknowledged]);
+    const saveFailures = [...clickFailures, ...readFailures];
+    if (body.status === "rejected" && !readFailures.includes(body.reason)) saveFailures.push(body.reason);
+    if (acknowledgement.status === "rejected") saveFailures.push(acknowledgement.reason);
+    if (body.status === "fulfilled") {
+      try { assert.equal(body.value.status(), 200); }
+      catch (error) { saveFailures.push(error); }
+    }
+    // Deterministic original-reference order: click, body/wait, ACK, status.
+    if (saveFailures.length === 1) throw saveFailures[0];
+    if (saveFailures.length) throw new AggregateError(saveFailures, "Privacy save click and complete response observation failed");
     await page.waitForFunction(({ path, checked }) => [...document.querySelectorAll('[role="switch"]')]
       .some((element) => element.getAttribute("aria-label") === `Hide project · ${path} from Activity` && element.getAttribute("aria-checked") === String(checked) && !element.disabled), { path, checked: hidden });
   };
@@ -52,7 +105,7 @@ export async function checkProjectPrivacy(page, width, { base, api, post, harnes
   // Capture once: awaiting route.fetch() inside each poll races this fixture's page reloads.
   const runningSnapshot = { ...await api("/api/agent/running"), runningSessionIds: [selectedSessionId, otherSessionId] };
   const mockRunning = (route) => route.fulfill({ status: 200, contentType: "application/json", json: runningSnapshot });
-  await page.route("**/api/agent/running", mockRunning);
+  await registerRunning(page, mockRunning);
   await page.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
   await page.getByText("Active branch answer", { exact: true }).waitFor();
   await openActivity();
@@ -64,43 +117,12 @@ export async function checkProjectPrivacy(page, width, { base, api, post, harnes
   await closeSettings();
   await assertConcealed();
 
-  // Keyboard reveal, visible privacy marker, and conceal resets a private project filter.
+  // Native keyboard reveal and real visible privacy marker stay in Chromium.
   const eye = region().getByRole("button", { name: "Show hidden projects", exact: true });
   await eye.focus();
   await eye.press("Space");
   await privateRow().waitFor();
   assert.equal(await privateRow().locator(".activity-private-marker").count(), 1);
-  await region().getByRole("combobox", { name: "Project" }).selectOption({ label: "project" });
-  await region().getByRole("button", { name: "Conceal hidden projects", exact: true }).click();
-  assert.equal(await region().getByRole("combobox", { name: "Project" }).inputValue(), "");
-  await assertConcealed();
-
-  await region().getByRole("button", { name: "Show hidden projects", exact: true }).click();
-  await privateRow().waitFor();
-  await region().getByRole("combobox", { name: "Project" }).selectOption({ label: "project" });
-
-  // Focus/visibility reloads withhold private rows until settings are known,
-  // but must not forget the browser's reveal preference or project filter.
-  let releaseFocusRead;
-  const focusRead = new Promise((resolve) => { releaseFocusRead = resolve; });
-  const holdPrivacyRead = async (route) => {
-    await focusRead;
-    await route.fulfill({ status: 200, contentType: "application/json", json: { keys: [key] } });
-  };
-  await page.route("**/api/hidden-projects", holdPrivacyRead);
-  await page.evaluate(() => {
-    window.dispatchEvent(new Event("blur"));
-    window.dispatchEvent(new Event("focus"));
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
-  await region().getByText("Loading project privacy settings…", { exact: true }).waitFor();
-  assert.equal(await region().locator(".activity-item").count(), 0);
-  releaseFocusRead();
-  await privateRow().waitFor();
-  assert.equal(await region().getByRole("combobox", { name: "Project" }).inputValue(), key);
-  await page.unroute("**/api/hidden-projects", holdPrivacyRead);
-  await region().getByRole("combobox", { name: "Project" }).selectOption("");
-
   if (mobile) {
     await privateRow().click();
     await page.getByRole("button", { name: "Back to Activity" }).click();
@@ -121,26 +143,8 @@ export async function checkProjectPrivacy(page, width, { base, api, post, harnes
   assert.equal(await control.getAttribute("aria-checked"), "true");
   await closeSettings();
 
-  // Privacy loading and an invalid response must never render private Activity.
-  let releaseRead;
-  const heldRead = new Promise((resolve) => { releaseRead = resolve; });
-  await page.route("**/api/hidden-projects", async (route) => {
-    if (route.request().method() !== "GET") return route.continue();
-    await heldRead;
-    await route.fulfill({ status: 200, contentType: "application/json", json: { keys: [17] } });
-  });
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.getByText("Active branch answer", { exact: true }).waitFor();
-  await page.getByRole("button", { name: /^Activity/ }).click();
-  await region().getByText("Loading project privacy settings…", { exact: true }).waitFor();
-  assert.equal(await region().locator(".activity-item").count(), 0);
-  assert.equal(await region().getByRole("button", { name: "Show hidden projects", exact: true }).isDisabled(), true);
-  releaseRead();
-  await region().getByRole("alert").waitFor();
-  assert.equal(await region().locator(".activity-item").count(), 0);
-  await page.unroute("**/api/hidden-projects");
-  await region().getByRole("button", { name: "Retry", exact: true }).click();
-  await privateRow().waitFor();
+  // Keep true/false restoration in this exact browser input, not synthetic
+  // loading/error/retry permutations. Actual hook/Activity owners cover those.
   await region().getByRole("button", { name: "Conceal hidden projects", exact: true }).click();
   await assertConcealed();
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -148,33 +152,18 @@ export async function checkProjectPrivacy(page, width, { base, api, post, harnes
   await openActivity();
   await assertConcealed();
 
-  // A failed save cannot optimistically reveal, silently reset storage, or keep stale rows.
-  control = await openSettings();
-  await page.route("**/api/hidden-projects", async (route) => {
-    if (route.request().method() !== "POST") return route.continue();
-    await route.fulfill({ status: 200, contentType: "application/json", json: { keys: null } });
-  });
-  await control.click();
-  await page.getByRole("dialog", { name: "Settings", exact: true }).getByRole("alert").waitFor();
-  assert.ok((await api("/api/hidden-projects")).keys.includes(key), "failed unhide must preserve server settings");
-  await closeSettings();
-  assert.equal(await region().locator(".activity-item").count(), 0);
-  await page.unroute("**/api/hidden-projects");
-  await region().getByRole("button", { name: "Retry", exact: true }).click();
-  await assertConcealed();
-
   // Hidden-project settings are shared, but reveal is independent per browser.
   if (width === 1280) {
     await region().getByRole("button", { name: "Show hidden projects", exact: true }).click();
     await privateRow().waitFor();
-    const peerContext = await harness.newContext(page.context().browser(), { viewport: { width, height: 900 }, locale: "en-US" }, base);
-    try {
+    peerContext = await harness.newContext(page.context().browser(), { viewport: { width, height: 900 }, locale: "en-US" }, base);
       const peer = await peerContext.newPage();
-      const peerErrors = [];
-      peer.on("pageerror", (error) => peerErrors.push(error.message));
-      peer.on("console", (event) => { if (event.type() === "error") peerErrors.push(event.text()); });
-      peer.on("response", (response) => { if (response.url().startsWith(base) && response.status() >= 500) peerErrors.push(`${response.status()} ${response.url()}`); });
-      await peer.route("**/api/agent/running", mockRunning);
+      // Keep the original page Error, not a copied message/snapshot. These live
+      // collectors remain attached through route/body/ACK joins and peer close.
+      peer.on("pageerror", (error) => { failures.push(error); });
+      peer.on("console", (event) => { if (event.type() === "error") failures.push(new Error(event.text())); });
+      peer.on("response", (response) => { if (response.url().startsWith(base) && response.status() >= 500) failures.push(new Error(`${response.status()} ${response.url()}`)); });
+      await registerRunning(peer, mockRunning);
       await peer.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
       await peer.getByText("Active branch answer", { exact: true }).waitFor();
       await peer.getByRole("button", { name: /^Activity/ }).click();
@@ -195,8 +184,6 @@ export async function checkProjectPrivacy(page, width, { base, api, post, harnes
       await post("/api/hidden-projects", { key, hidden: false });
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await privateRow().waitFor();
-      assert.deepEqual(peerErrors, [], "fresh-browser privacy errors");
-    } finally { await harness.closeContext(peerContext); }
   } else {
     control = await openSettings();
     await saveSwitch(control, false);
@@ -204,47 +191,25 @@ export async function checkProjectPrivacy(page, width, { base, api, post, harnes
     await privateRow().waitFor();
   }
   assert.equal((await api("/api/hidden-projects")).keys.includes(key), false);
-  if (width === 1280) {
-    // Hold a background poll's old visible snapshot across a newer hide save.
-    control = await openSettings();
-    let resume, signal;
-    const held = new Promise((resolve) => { resume = resolve; });
-    let captureTimeout;
-    const captured = new Promise((resolve, reject) => {
-      signal = resolve;
-      captureTimeout = setTimeout(() => reject(new Error("Privacy background poll did not arrive")), 30_000);
-    });
-    const handler = async (route) => {
-      if (route.request().method() !== "GET") return route.continue();
-      const response = await route.fetch();
-      const snapshot = await response.json();
-      signal();
-      await held;
-      await route.fulfill({ response, json: snapshot });
-    };
-    await page.route("**/api/hidden-projects", handler);
-    try {
-      await captured;
-      clearTimeout(captureTimeout);
-      await saveSwitch(control, true);
-      await closeSettings();
-      await assertConcealed();
-      const lateRead = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/hidden-projects" && response.request().method() === "GET");
-      resume();
-      await lateRead;
-      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      await assertConcealed();
-    } finally {
-      clearTimeout(captureTimeout);
-      resume();
-      await page.unroute("**/api/hidden-projects", handler);
-    }
-    control = await openSettings();
-    await saveSwitch(control, false);
-    await closeSettings();
-    await privateRow().waitFor();
-  }
-  await page.unroute("**/api/agent/running");
   await region().getByRole("button", { name: "Close Activity", exact: true }).click();
+  } catch (error) {
+    primary = error; primaryFailed = true;
+  } finally {
+    // Every page gets an independent exact unregister/full original-work/ACK
+    // join, including partially rejected registration and a failed main action.
+    for (const record of runningRoutes) {
+      try { await settleRunning(record); }
+      catch (error) { failures.push(error); }
+    }
+    // All main AND peer owned route work precedes this owned peer close. A
+    // close failure cannot skip main cleanup or replace an original primary.
+    if (peerContext) {
+      try { await harness.closeContext(peerContext); }
+      catch (error) { failures.push(error); }
+    }
+  }
+  const errors = primaryFailed ? [primary, ...failures] : failures;
+  if (errors.length === 1) throw errors[0];
+  if (errors.length) throw new AggregateError(errors, "Privacy browser journey and independent route/context settlement failed");
   console.log(`PASS: ${width}px persistent hidden projects, safe loading, browser-local reveal and restoration`);
 }

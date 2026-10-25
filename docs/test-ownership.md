@@ -21,6 +21,22 @@ follow-up. Each retired browser obligation must have an exact demonstrated real
 lower owner and retained default/native/browser bridge; every retained browser
 case must state a concrete failure only that boundary can catch.
 
+## Receiving-candidate evidence index
+
+The resumed candidate reuses the [exact original-input dispositions](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/legacy-retirement-complete-current/maps/original-68-dispositions.md)
+and [finite independent retirement review](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/final-68-retirement-input-review/report.md).
+They justify the mapped four-file cull, including intentional absence of
+`hooks/model-scope-startup.test.mjs` and
+`hooks/useAgentSession.model-selection.test.mjs`; their real mounted/native owners
+remain. They do not close the later surviving-browser audit or whole acceptance.
+
+[Receiving composition](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/resumed-implementation/composition.json)
+binds exact source deltas from qualified Thinking/Tool Second (including Sixth),
+without importing Navigation Fourth or the conditional LM version cut. Both
+Thinking/Copy observer lanes and all eighteen Settings cases are retained.
+The active plan's B1–B8 map owns remaining added/receiving/browser/performance gaps;
+no historical count or private source proposal is a completion claim.
+
 ## Original 68-file inventory
 
 Paths abbreviated in the Family column still name exact original files.

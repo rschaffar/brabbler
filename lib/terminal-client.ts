@@ -1,3 +1,5 @@
+import type { ClientCompletion } from "./client-completion";
+
 export async function terminalRequest(path: string, options?: RequestInit): Promise<{ id?: string; cwd?: string }> {
   const response = await fetch(path, { ...options, signal: AbortSignal.timeout(15_000) });
   const data = await response.json().catch(() => {
@@ -8,7 +10,7 @@ export async function terminalRequest(path: string, options?: RequestInit): Prom
   return data;
 }
 
-export function createTerminalWriter(id: string, onError: (error: Error) => void) {
+export function createTerminalWriter(id: string, onError: (error: Error) => void, completion?: ClientCompletion) {
   let pending = Promise.resolve();
   let stopped = false;
   let bufferedInput: { type: "input"; data: string } | null = null;
@@ -27,6 +29,7 @@ export function createTerminalWriter(id: string, onError: (error: Error) => void
       stopped = true;
       onError(error);
     });
+    completion?.track(pending);
   };
   return {
     write(data: string) {
@@ -43,6 +46,8 @@ export function createTerminalWriter(id: string, onError: (error: Error) => void
       bufferedInput = null;
       enqueue({ type: "resize", cols, rows });
     },
+    // Observe delivery without closing admission or discarding buffered input.
+    settle() { return pending; },
     stop() { stopped = true; bufferedInput = null; return pending; },
   };
 }

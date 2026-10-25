@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentUsage } from "@/hooks/useAgentUsage";
 import { countRunningSubagents } from "@/lib/session-family";
-import { formatAgentCost, formatAgentDuration, formatAgentTokens, sumAgentUsage, type AgentUsageEntry, type AgentUsageSnapshot } from "@/lib/agent-usage";
+import { formatAgentCost, formatAgentDuration, formatAgentTokens, sumAgentUsage, type AgentUsageEntry, type AgentUsageSnapshot, type AgentUsageWorkObserver } from "@/lib/agent-usage";
 import type { SessionUsageSummary } from "@/lib/session-stats";
 import type { SessionInfo, SubagentSessionStatus } from "@/lib/types";
 
@@ -14,6 +14,8 @@ interface Props {
   selectedSessionId: string;
   runningSessionIds: ReadonlySet<string>;
   onSelectSession: (session: SessionInfo) => void;
+  /** Optional passive lifetime observation; never supplies usage or policy. */
+  onUsageWork?: AgentUsageWorkObserver;
 }
 
 function UsageLine({ entry }: { entry?: AgentUsageEntry }) {
@@ -187,7 +189,7 @@ function AgentRow({
 
 export function AgentSessionPanel(props: Props) {
   const ids = [props.rootSession.id, ...props.subagents.map((session) => session.id)];
-  const usage = useAgentUsage(ids, props.runningSessionIds);
+  const usage = useAgentUsage(ids, props.runningSessionIds, props.onUsageWork);
   return <AgentSessionPanelContent {...props} usage={usage} />;
 }
 

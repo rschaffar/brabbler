@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import path from "node:path";
 import { loadTsModule, sseFixture, readText } from "../../../lib/sse-stream.fixture.mjs";
+import { fileBodyModuleFixture } from "./file-body-module.fixture.mjs";
 
 // Execute the entire GET and real SSE helper. Stat/watch, path resolution and
 // authorization are supplied capabilities, not native filesystem/security proof.
@@ -130,6 +131,7 @@ function watchFixture(t, { failWatch = false, initiallyMissing = false, initiall
   const roots = new Set(["/fixture"]);
   const now = Date.parse("2026-01-02T03:04:05Z");
   let sse;
+  let fileBody;
   let change;
   let error;
   let closes = 0;
@@ -164,6 +166,10 @@ function watchFixture(t, { failWatch = false, initiallyMissing = false, initiall
         sse.intervals.delete(timer);
       }
     }
+    if (fileBody) await attempt(async () => {
+      const { closed } = await fileBody.finish();
+      assert.equal(closed, true, "watch fixture must not retain a finite body stream");
+    });
     change = undefined;
     error = undefined;
     if (failures.length) throw new AggregateError(failures, "watch fixture runtime/cleanup failures");
@@ -255,6 +261,8 @@ function watchFixture(t, { failWatch = false, initiallyMissing = false, initiall
     constructor(...args) { super(...(args.length ? args : [now])); }
     static now() { return now; }
   }
+  fileBody = fileBodyModuleFixture(mocks.fs, { allowReads: false, failures });
+  mocks["@/lib/file-body-stream"] = fileBody.load({ Date: ClockDate });
   const { GET } = loadTsModule(new URL("./[...path]/route.ts", import.meta.url), mocks, { Date: ClockDate }).exports;
   const request = new Request("http://localhost/api/files/fixture/quiet.txt?type=watch", { signal: abort.signal });
   request.nextUrl = new URL(request.url);

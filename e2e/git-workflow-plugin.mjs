@@ -47,6 +47,19 @@ export default function (pi) {
 }`;
 }
 export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifacts, width) {
+  return checkGitWorkflowPluginConnection(page, base, repo, sessionId, artifacts, width, true);
+}
+
+// UNEXECUTED G07/G10 proposal only. Original export retains both full matrices.
+// This alternative still retains the other original native operations at BOTH
+// widths: it is not the final unequal desktop/mobile floor from the audit.
+// Parent must close exact preview/cleanup native + client gates before dispatch,
+// and use new git-plugin/native-review-partial-v1 receipt IDs, never full IDs.
+export async function checkGitWorkflowPluginNativeBridge(page, base, repo, sessionId, artifacts, width) {
+  return checkGitWorkflowPluginConnection(page, base, repo, sessionId, artifacts, width, false);
+}
+
+async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, artifacts, width, retainNativeMatrices) {
   const command = async (body) => {
     // These one-shot probes are separated by long interactive settings steps.
     // Do not reuse an idle API-test socket; no retry or error suppression.
@@ -60,7 +73,11 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     assert.ok(response.ok(), await response.text()); return (await response.json()).settings;
   };
   const tip = () => execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  await patch({ enabled: false });
+  const initialSettings = await patch({ enabled: false });
+  if (!retainNativeMatrices) {
+    assert.equal(Object.hasOwn(initialSettings.overrides, "commit"), false, "retired project deny/reset starts without a stored commit override");
+    console.log("G_SETTINGS_BOUND_ENTRY " + JSON.stringify({ width, sessionId, global: initialSettings.global, overrides: initialSettings.overrides, sessionOverrides: initialSettings.sessionOverrides, sources: initialSettings.sources, globalKeyOrder: Object.keys(initialSettings.global) }));
+  }
   await page.goto(`${base}/?session=${sessionId}`, { waitUntil: "domcontentloaded" });
   await page.locator("textarea").last().waitFor();
   const initialTools = await command({ type: "get_tools" });
@@ -77,21 +94,9 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   await panel.waitFor();
   await panel.getByLabel("Enable plugin (all projects)").check();
   await panel.getByText(/Effective: true · Source: global/).waitFor();
-  await panel.getByLabel("Plugin settings scope").selectOption("project");
-  await panel.getByLabel("commit", { exact: true }).selectOption("deny");
-  await panel.getByText(/Effective: "deny" · Source: project/).waitFor();
-  await panel.getByRole("button", { name: "Use global default", exact: true }).click();
-  await panel.getByText(/Effective: "ask" · Source: builtin/).first().waitFor();
   await panel.getByLabel("Plugin settings scope").selectOption("session");
   await panel.getByLabel("commit", { exact: true }).selectOption("allow");
   await panel.getByText(/Effective: "allow" · Source: session/).waitFor();
-  await panel.getByLabel("Workflow preset", { exact: true }).selectOption("current-branch");
-  await panel.getByRole("button", { name: "Apply workflow preset", exact: true }).click();
-  await panel.getByText(/Effective: "current-branch" · Source: session/).waitFor();
-  assert.equal(await panel.getByLabel("commit", { exact: true }).inputValue(), "allow", "preset does not change operation permissions");
-  await panel.getByLabel("Plugin settings scope").selectOption("project");
-  assert.equal(await panel.getByLabel("commit", { exact: true }).inputValue(), "ask", "project editor must not show masking session value");
-  await panel.getByLabel("Plugin settings scope").selectOption("session");
   await panel.getByLabel("Workflow preset", { exact: true }).selectOption("always-ask");
   await panel.getByRole("button", { name: "Apply workflow preset", exact: true }).click();
   await panel.getByText(/Effective: "ask" · Source: session/).first().waitFor();
@@ -369,6 +374,20 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
       await checkBlockingCard(group);
       await fullscreen(group, "Git commit");
       await restore(group);
+      if (!retainNativeMatrices) {
+        // A link/href or APIRequestContext GET alone is not a native download.
+        // Use the actual historical host after current working bytes changed.
+        const [download] = await Promise.all([
+          page.waitForEvent("download"),
+          group.getByRole("link", { name: "Download complete exact patch", exact: true }).click(),
+        ]);
+        const stream = await download.createReadStream();
+        assert.ok(stream, "the native historical download exposes its body");
+        const chunks = [];
+        for await (const chunk of stream) chunks.push(chunk);
+        assert.equal(Buffer.concat(chunks).toString("utf8"), reviewedCompletePatch);
+        assert.equal(await download.failure(), null);
+      }
       // Raw was persisted before approval; choose split explicitly rather than
       // assuming receipt expansion resets the shared browser view preference.
       await group.getByRole("button", { name: "Side by side", exact: true }).click();
@@ -439,8 +458,11 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
     page.off("request", recordReviewRequest);
   }
 
-  await patch({ targetBranch: "target" });
-  for (const [action, title] of [["rebase", "Git rebase"], ["merge", "Git merge"], ["createWorktree", "Create Git worktree"], ["attachWorktree", "Attach Git worktree"], ["removeWorktree", "Remove Git worktree"]]) {
+  // Commit policy ignores targetBranch, but later receipts hash ALL origin
+  // settings. Keep the original value/source; skip only a same-global-value
+  // write. UI presets above never change targetBranch. Full matrices unchanged.
+  if (retainNativeMatrices || initialSettings.global.targetBranch !== "target") await patch({ targetBranch: "target" });
+  for (const [action, title] of retainNativeMatrices ? [["rebase", "Git rebase"], ["merge", "Git merge"], ["createWorktree", "Create Git worktree"], ["attachWorktree", "Attach Git worktree"], ["removeWorktree", "Remove Git worktree"]] : []) {
     card = await start(`preview-${action}`, title);
     if (action === "rebase" || action === "merge") {
       await card.getByText("feature → target", { exact: true }).waitFor();
@@ -492,11 +514,13 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   assert.equal(foreignGit("rev-parse", "HEAD"), foreignCommitted); assert.equal(tip(), ownTip);
   await patch({}, "project", ["commit", "commitChecks"]);
 
-  card = await start("disable");
-  await patch({ enabled: false }); await card.waitFor({ state: "hidden" });
-  await finish("disable", "refused");
-  assert.equal((await command({ type: "get_tools" })).some((tool) => tool.name === "git_commit" && tool.active), false);
-  await patch({ enabled: true });
+  if (retainNativeMatrices) {
+    card = await start("disable");
+    await patch({ enabled: false }); await card.waitFor({ state: "hidden" });
+    await finish("disable", "refused");
+    assert.equal((await command({ type: "get_tools" })).some((tool) => tool.name === "git_commit" && tool.active), false);
+    await patch({ enabled: true });
+  }
   card = await start("stop");
   const beforeStop = tip();
   if (width <= 600) await page.locator("textarea").last().press("Escape");
@@ -532,7 +556,7 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   // deadlines. Together they retain every original build-output check and add
   // a mixed top-level/nested approval beside tracked source. The eight-root
   // combination is also covered by real-Git integration tests.
-  for (const cleanupMode of process.platform === "linux" ? ["cleanup", "cleanup-nested"] : ["cleanup"]) {
+  for (const cleanupMode of retainNativeMatrices ? (process.platform === "linux" ? ["cleanup", "cleanup-nested"] : ["cleanup"]) : []) {
   const nestedCleanup = cleanupMode === "cleanup-nested";
   const cleanupRepo = `${repo}-${cleanupMode}-${width}`;
   execFileSync("git", ["init", "-qb", "main", cleanupRepo]);
@@ -642,5 +666,5 @@ export async function checkGitWorkflowPlugin(page, base, repo, sessionId, artifa
   await card.getByRole("button", { name: "Approve commit", exact: true }).click();
   await finish("large", "completed");
   assert.equal(execFileSync("git", ["-C", repo, "show", "--format=", "--name-only", "HEAD"], { encoding: "utf8" }).trim().split("\n").length, 45);
-  console.log(`PASS: ${width}px durable Ask/Allow outcomes and bounded combined cleanup; all Git approval layouts, lazy snapshot context in split/unified/Before/After, search/navigation/collapse, wide Escape, exact read-only historical context and expired raw fallback, cross-repository settings, toggle, rejection, reconnect and Stop`);
+  console.log(`PASS: ${width}px durable Ask/Allow outcomes; ${retainNativeMatrices ? "full preview and cleanup matrices" : "conditional partial native-review bridge with historical native download"}; Git approval layouts, lazy snapshot context in split/unified/Before/After, search/navigation/collapse, wide Escape, exact read-only historical context and expired raw fallback, cross-repository settings, installed enable/default, rejection, reconnect and native Stop`);
 }

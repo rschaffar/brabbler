@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createOwnedRoutes } from "./owned-routes.mjs";
 
 function twoPagePdf() {
   const streams = [1, 2].map(page => `BT /F1 18 Tf 30 200 Td (Review page ${page}) Tj ET`);
@@ -158,47 +159,71 @@ export async function checkFileLineLinks(page, base, fixture) {
   await click("Missing line");
   await panel.getByRole("status").getByText("Line 9999 is beyond the end of this file (260 lines).", { exact: true }).waitFor();
   assert.equal(await pane.locator("[data-file-line-target]").count(), 0);
-  // A linked-file round trip must not create a second writer for an unfinished save.
-  await click("linkedFunction");
-  await assertJump('[data-line-number="180"]');
-  await panel.getByRole("button", { name: "Edit", exact: true }).click();
-  const editor = panel.getByRole("textbox", { name: "Edit", exact: true });
-  const savedContent = `// save baseline\n${fixture.codeContent}`;
-  const laterDraft = `// typed during save\n${savedContent}`;
-  await editor.fill(savedContent);
-  let releaseSave, saveStarted;
-  const gate = new Promise(resolve => { releaseSave = resolve; });
-  const started = new Promise(resolve => { saveStarted = resolve; });
-  const holdSave = async (route) => {
-    if (route.request().method() === "PUT") { saveStarted(); await gate; }
-    await route.continue();
-  };
-  await page.route("**/api/files/**", holdSave);
-  try {
-    await panel.getByRole("button", { name: "Save", exact: true }).click();
-    await started;
-    assert.equal(await editor.getAttribute("readonly"), null, "the original save owner keeps accepting draft keystrokes");
-    await editor.fill(laterDraft);
-    await click("Heading");
+  // The exact queued-link/native Save bridge runs once in the ordered desktop
+  // input; actual FileViewer/Workspace mounts own held-write/draft policy. Both
+  // physical inputs above retain all source/Markdown jump geometries.
+  if (page.viewportSize().width > 640) {
     await click("linkedFunction");
-    await editor.waitFor();
-    assert.equal(await editor.getAttribute("readonly"), null, "the retained original save owner remains the only writable editor");
-    assert.equal(await editor.inputValue(), laterDraft, "tab activation does not construct a replacement draft");
-    const saved = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).searchParams.get("type") === "save");
-    releaseSave();
-    await saved;
     await assertJump('[data-line-number="180"]');
-    await panel.getByText("Showing the saved file for this link; your unsaved draft is retained.", { exact: true }).waitFor();
     await panel.getByRole("button", { name: "Edit", exact: true }).click();
-    assert.equal(await editor.inputValue(), laterDraft, "the queued jump preserves keystrokes typed during the save");
-  } finally {
-    releaseSave();
-    await page.unroute("**/api/files/**", holdSave);
+    const editor = panel.getByRole("textbox", { name: "Edit", exact: true });
+    const savedContent = `// save baseline\n${fixture.codeContent}`;
+    const laterDraft = `// typed during save\n${savedContent}`;
+    await editor.fill(savedContent);
+    let releaseSave, saveStarted;
+    const gate = new Promise(resolve => { releaseSave = resolve; });
+    const started = new Promise(resolve => { saveStarted = resolve; });
+    const holdSave = async (route) => {
+      const request = route.request(), save = request.method() === "PUT";
+      if (save) { saveStarted(); await gate; }
+      await route.continue();
+      if (save) {
+        const response = await request.response();
+        assert.notEqual(response, null, "the admitted original Save has a native response");
+        await response.body(); // Join real PUT bytes even when status is non-200.
+        assert.equal(response.status(), 200);
+      }
+    };
+    // Track admitted callbacks; matching PUTs also join their native response
+    // bodies (not GET/watch streams). Release the gate before route joins.
+    const saves = createOwnedRoutes(holdSave, holdSave), routeFailures = [], errors = [];
+    // Playwright's dispatch acknowledgement must not expose a rejecting callback
+    // as an unowned promise. Keep the original rejected work in the route owner
+    // AND this live reference collector; rethrow only after release/join/removal.
+    const routeHandler = route => saves.handler(route).then(undefined, error => { routeFailures.push(error); });
+    try {
+      await page.route("**/api/files/**", routeHandler);
+      await panel.getByRole("button", { name: "Save", exact: true }).click();
+      await started;
+      assert.equal(await editor.getAttribute("readonly"), null, "the original save owner keeps accepting draft keystrokes");
+      await editor.fill(laterDraft);
+      await click("Heading");
+      await click("linkedFunction");
+      await editor.waitFor();
+      assert.equal(await editor.getAttribute("readonly"), null, "the retained original save owner remains the only writable editor");
+      assert.equal(await editor.inputValue(), laterDraft, "tab activation does not construct a replacement draft");
+      const saved = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).searchParams.get("type") === "save");
+      releaseSave();
+      await saved;
+      await assertJump('[data-line-number="180"]');
+      await panel.getByText("Showing the saved file for this link; your unsaved draft is retained.", { exact: true }).waitFor();
+      await panel.getByRole("button", { name: "Edit", exact: true }).click();
+      assert.equal(await editor.inputValue(), laterDraft, "the queued jump preserves keystrokes typed during the save");
+    } catch (error) {
+      errors.push(error);
+    } finally {
+      try { releaseSave(); } catch (error) { errors.push(error); }
+      try { await saves.dispose(() => page.unroute("**/api/files/**", routeHandler)); }
+      catch (error) { errors.push(error); }
+      errors.push(...routeFailures);
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length) throw new AggregateError(errors, "Queued line-link Save and route settlement failed");
+    await panel.getByRole("button", { name: "Save", exact: true }).click();
+    await panel.getByText("Unsaved changes", { exact: true }).waitFor({ state: "hidden" });
+    writeFileSync(fixture.code, fixture.codeContent);
+    await page.waitForFunction(expected => document.querySelector('#file-panel textarea')?.value === expected, fixture.codeContent);
   }
-  await panel.getByRole("button", { name: "Save", exact: true }).click();
-  await panel.getByText("Unsaved changes", { exact: true }).waitFor({ state: "hidden" });
-  writeFileSync(fixture.code, fixture.codeContent);
-  await page.waitForFunction(expected => document.querySelector('#file-panel textarea')?.value === expected, fixture.codeContent);
   await click("CSV preview");
   const table = panel.getByRole("table");
   await table.getByRole("columnheader", { name: "name", exact: true }).waitFor();
@@ -231,5 +256,5 @@ export async function checkFileLineLinks(page, base, fixture) {
   assert.equal(page.context().pages().length, pages);
   await returnToChat();
   console.log(`PASS: CSV/TSV virtualization, quoted records, CSV source-line override and scoped Markdown fragments at ${page.viewportSize().width}px`);
-  console.log(`PASS: rejected relative links with accessible feedback, absolute siblings, nested previews, chat explicit/inline line links, ranges, repeated tabs, large chunks, rendered Markdown and save-owner/draft retention at ${page.viewportSize().width}px`);
+  console.log(`PASS: rejected relative links with accessible feedback, absolute siblings, nested previews, chat explicit/inline line links, ranges, repeated tabs, large chunks, rendered Markdown${page.viewportSize().width > 640 ? " and save-owner/draft retention" : ""} at ${page.viewportSize().width}px`);
 }

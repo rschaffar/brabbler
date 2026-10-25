@@ -2,8 +2,9 @@
 
 [Testing](./testing.md) owns the single Nix acceptance/resource/evidence contract;
 [Feature contracts](./feature-internals.md) own product behavior. This is the
-Activity pilot's assertion migration ledger, not a new runner or acceptance level.
-The execution plan records source-bound results; source review alone is not a pass.
+Activity assertion migration ledger, not a new runner or acceptance level.
+The measured pilot below is historical. The complete-ownership plan records current
+source-bound verification; source review alone is not a pass.
 
 ## Production boundaries
 
@@ -15,6 +16,13 @@ mounted tests. Catalogue/navigation, privacy/star persistence, selected-chat
 SSE/questions, interrupted-journal demand, native SDK and Acceptance remain existing
 owners. Release is replayable; terminal dispose closes admission and joins its own
 complete promises, not independent native work. React unmount is not an I/O join.
+
+`ActivityOverview`'s interrupted-journal work remains separate. Optional
+`onRecoveryWork`, forwarded by actual `ActivityViews`, passively observes the same
+original post-catch promise without a new awaited return, request, retry or timer.
+Recovery remains15000ms; controller polling remains2500ms. Fixtures release known
+peers, join original controller/recovery/body/descendant work, restore REALM before
+close and HOST afterward. None of this cancels independent Acceptance work.
 
 ## Primary behavioral owners
 
@@ -41,13 +49,18 @@ legacy inputs and whole-input trace/context closure before success:
 
 | Receipt | Coverage |
 | --- | --- |
-| `activity/golden-native@legacy-desktop` | 1280×800 legacy preferences: complete native question→Later→reload→answer→Ready→Read; actual short completions/archive/new generation/independent peers/bulk receipts; complete subagent, row/global Pause and five-job Acceptance/default-tools/independence chains once. |
-| `activity/responsive@legacy-tablet` | 700×800: retained early restoration/Starred/worktree/interruption plus working/question/Ready/control geometry, full shared metrics, natural genuine default observation and actual Enter completion receipts/reload, real Acceptance Settings/status/bounds/Escape/focus. |
-| `activity/responsive@legacy-mobile` | 390×844 touch/legacy preferences: corresponding actual navigation/back/touch fragments, full metrics tap/Enter, real completion tap receipts/reload, real Acceptance Plugins switch/focus/layout and actual Sub-agents model-suffix Settings. Incoming persistent-New assertions stay in the early mobile segment. |
+| `activity/native-state-recipe-owned-v4@legacy-desktop` | 1280×800 legacy preferences: complete native question→Later→reload→answer→Ready→Read; actual short completions/archive/new generation/independent peers/bulk receipts; complete subagent, row/global Pause and five-job Acceptance/default-tools/independence chains once. |
+| `activity/compact-state-recipe-owned-v4@legacy-tablet` | 700×800: retained early restoration/Starred/worktree/interruption plus working/question/Ready/control geometry, full shared metrics, natural genuine default observation and actual Enter completion receipts/reload, real Acceptance Settings/status/bounds/Escape/focus. |
+| `activity/compact-state-recipe-owned-v4@legacy-mobile` | 390×844 touch/legacy preferences: corresponding actual navigation/back/touch fragments, full metrics tap/Enter, real completion tap receipts/reload, real Acceptance Plugins switch/focus/layout and actual Sub-agents model-suffix Settings. Incoming persistent-New assertions stay in the early mobile segment. |
 
 `activity-layout.mjs` preserves all original action-box predicates and worktree
-metadata/bounds checks. `activity-family-usage.mjs` retains every original rich
-metrics assertion at all three widths: no wider mounted metrics owner is claimed.
+metadata/bounds checks. `activity-family-usage.mjs` retains real four-ID native
+stats/no-ack observations and physical disclosure, overflow, focus, Enter and touch
+at all three inputs. `AgentSessionPanel.usage.behavior.test.mjs` owns literal family/
+selected arithmetic, errors, currentness and filter/selection policy; the repeated
+synthetic browser stats transactions and waits are removed. One desktop selected-
+toolbar/URL/default bridge remains. Native stats bodies are joined before status
+assertions and after independent click failure, preserving original cleanup errors.
 Responsive read-only synthetic question/pause/running statuses prove geometry only;
 none is submitted to mutation endpoints. Remove and join those routes, then
 positively observe a natural genuine application GET/body, exact real completion
@@ -72,7 +85,7 @@ implementation plan's evidence root.
 | A370–410: durable Later success with unusable reply, held confirmation poll/unavailable recovery, peer convergence | Controlled controller/mounted ambiguity cases plus unchanged genuine desktop store/API/lost-response/peer bridge. |
 | A412–470: archived live/question precedence, actual ack, stable emptied filter, reload/new completion invalidation | Real projections/controller/mounted matrix plus complete desktop actual persistence/generation bridge. Responsive synthetic-status geometry is separate from subsequent genuine default polling and real completion input. |
 | A471–488,583–617: real seed, exact bulk eligible targets, B during A, unchanged unrelated receipts and reload absence | Real controller/mounted bulk actions and existing native store; complete two-target genuine desktop bulk/default/reload bridge retained. |
-| A490–582: family/header usage/selected toolbar, native tap/Enter/disclosures, reduced motion/count transitions, four-ID store/network no-ack | Complete shared browser metrics helper at **all three** widths, not deleted in favor of ActivityViews. |
+| A490–582: family/header usage/selected toolbar, native tap/Enter/disclosures, reduced motion/count transitions, four-ID store/network no-ack | Actual AgentSessionPanel owns literal arithmetic/currentness/error/selection. All three browser inputs retain native four-ID/default/no-ack and physical disclosures; one desktop selected-toolbar/URL/count bridge remains. ActivityViews alone is not a wider metrics owner. |
 | A618–627: OTHER-reviewed result and shared reset | Actual OTHER assertion desktop only; checked ack-all cleanup every input, never relabelled individual review proof. |
 | S47–185: actual Agent/Git/UUID/history/missing-folder networking/refusal/settings suffix/slot/never-prompted Stop/persistence | Complete genuine desktop native chain unchanged, extracted actual Settings suffix UI additionally mobile. Generic actual mobile More/Stop remains unchanged running-forks/composer owners; combined queued-child scenario is not falsely claimed mobile. |
 | P88–319: row and global native Pause, accepted tool-batch drain/card receipts/main-only continuation/concealed peer/no completion | Entire native two-cycle desktop chain unchanged; complementary real core ledger negatives. Responsive synthetic controls only prove geometry. |

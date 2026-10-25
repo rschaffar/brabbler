@@ -1,106 +1,164 @@
-import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import test from "node:test";
-import React from "react";
-import ts from "typescript";
-import { isDelimitedTablePath } from "../lib/delimited-table.ts";
-import { needsPrismLanguage } from "../lib/prism-languages.ts";
+import '../lib/testing/client-native-boundary.fixture.mjs';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+import { createJiti } from 'jiti';
+import { filesRuntime } from './files-runtime.fixture.mjs';
+import { open, read, reader, denied, editable, click, button, expectEdit } from './file-viewer-harness.fixture.mjs';
 
-const source = await readFile(new URL("./FileViewer.tsx", import.meta.url), "utf8");
-
-test("large source previews bypass the per-line syntax highlighter", () => {
-  assert.match(source, /const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;/);
-  assert.match(source, /const useLightweightSource = sourceLines\.length > SOURCE_HIGHLIGHT_MAX_LINES/);
-
-  // Both source trees are memoized so unrelated re-renders (panel open/close,
-  // selection changes) reuse them instead of rebuilding every line element.
+// Intentional source retain: rendered-tree reuse is an import/performance
+// obligation, not inferred from identical DOM after a re-render.
+test('source trees retain component-local memoization, including line-number styling', async () => {
+  const source = await readFile(new URL('./FileViewer.tsx', import.meta.url), 'utf8');
   assert.match(source, /const highlightedSource = useMemo\(/);
-
-  const lightweightStart = source.indexOf("const lightweightSourceLines = useMemo(");
-  const lightweightEnd = source.indexOf("[sourceLines, useLightweightSource, wrapLines]", lightweightStart);
-  assert.notEqual(lightweightStart, -1);
-  assert.notEqual(lightweightEnd, -1);
-
-  const lightweightSource = source.slice(lightweightStart, lightweightEnd);
-  assert.match(lightweightSource, /useLightweightSource \? sourceLines\.map\(\(line, lineIndex\) =>/);
-  assert.match(lightweightSource, /className="file-source-line"/);
-  assert.match(lightweightSource, /className="file-source-line-content"/);
-  assert.match(lightweightSource, /style=\{FILE_LINE_NUMBER_STYLE\}/);
-
-  // The lightweight branch still wins over the syntax highlighter in the JSX.
-  const branchStart = source.indexOf(") : useLightweightSource ? (");
-  assert.notEqual(branchStart, -1);
-  assert.match(source.slice(branchStart), /className="file-source-view is-lightweight"/);
-  assert.notEqual(source.indexOf("highlightedSource", branchStart), -1);
+  assert.match(source, /const lightweightSourceLines = useMemo\(/);
+  assert.match(source, /\[sourceLines, useLightweightSource, wrapLines\]/);
+  assert.match(source, /style=\{FILE_LINE_NUMBER_STYLE\}/);
 });
 
-test("lightweight source rows are skipped for highlighted, diff, and preview views", () => {
-  // Execute the source-view calculations without mounting the file-fetching component.
-  const file = ts.createSourceFile("FileViewer.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const viewer = file.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "TextFileViewer");
-  const calculations = viewer.body.statements.filter((node) =>
-    ts.isVariableStatement(node) && node.declarationList.declarations.some((declaration) =>
-      ["viewerContent", "sourceLines", "language", "isHtml", "isMarkdown", "isDelimitedTable", "hasPreview", "effectiveDisplayMode", "useLightweightSource", "lightweightSourceLines"].includes(declaration.name.getText(file)),
-    ),
-  ).map((node) => node.getText(file)).join("\n");
-  const { outputText } = ts.transpileModule(`
-    return (data, displayMode, hasGitDiff = false, isDeletedDiff = false, wrapLines = false, dirty = false, draft = null, initialLineTarget = null, editing = false, filePath = "file.txt") => {
-      const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
-      const FILE_LINE_NUMBER_STYLE = {};
-      ${calculations}
-      return lightweightSourceLines;
-    };
-  `, { compilerOptions: { jsx: ts.JsxEmit.React } });
-  const render = new Function("React", "useMemo", "isDelimitedTablePath", outputText)(React, (calculate) => calculate(), isDelimitedTablePath);
-  const large = { content: "line\n".repeat(1_000), language: "text" };
+async function policy(t) {
+  const runtime = filesRuntime();
+  t.after(() => runtime.dispose());
+  return createJiti(import.meta.url, { jsx: { runtime: 'automatic' }, tsconfigPaths: true, fsCache: false }).import('./FileViewer.tsx');
+}
 
-  assert.equal(render({ ...large, content: "line\n".repeat(999) }, "source"), null);
-  assert.equal(render(large, "diff", true), null);
-  assert.equal(render(large, "source", true, true), null);
-  for (const language of ["html", "markdown"]) {
-    assert.equal(render({ ...large, language }, "preview"), null);
+test('actual production source policy preserves the full old cutoff/mode/fallback/draft matrix', async t => {
+  const { fileSourceView, fileViewerContent, SOURCE_HIGHLIGHT_MAX_LINES } = await policy(t);
+  assert.equal(SOURCE_HIGHLIGHT_MAX_LINES, 1000);
+  const large = { ...read('line\n'.repeat(1000)), language: 'text' };
+  const decide = (data, displayMode, extra = {}) => fileSourceView({ data, displayMode, filePath: 'file.txt',
+    sourceLines: fileViewerContent(data, extra.dirty ?? false, extra.draft, extra.initialLineTarget, extra.editing ?? false).split('\n'), ...extra });
+  assert.equal(decide({ ...large, content: 'line\n'.repeat(999) }, 'source').useLightweightSource, false);
+  assert.equal(decide(large, 'diff', { hasGitDiff: true }).useLightweightSource, false);
+  assert.equal(decide(large, 'source', { hasGitDiff: true, isDeletedDiff: true }).useLightweightSource, false);
+  for (const language of ['html', 'markdown']) assert.equal(decide({ ...large, language }, 'preview').useLightweightSource, false);
+  assert.equal(decide(large, 'preview', { filePath: 'fixture.csv' }).useLightweightSource, false);
+  for (const mode of ['source', 'diff', 'preview']) assert.equal(decide(large, mode).useLightweightSource, true, `${mode} keeps source fallback`);
+  assert.equal(decide(large, 'source', { dirty: true, draft: { content: 'draft', baseline: 'old', revision: 'r' } }).useLightweightSource, false);
+  const draft = { content: 'draft', baseline: 'old', revision: 'r' };
+  for (const target of [undefined, { line: 2 }]) for (const editing of [false, true]) {
+    assert.equal(fileViewerContent(large, true, draft, target, editing), !target || editing ? 'draft' : large.content);
+    assert.equal(fileViewerContent(large, false, draft, target, editing), large.content);
   }
-  assert.equal(render(large, "preview", false, false, false, false, null, null, false, "fixture.csv"), null);
-  for (const mode of ["source", "diff", "preview"]) {
-    const rows = render(large, mode);
-    assert.equal(rows.length, 1_001, `${mode} must retain its source fallback`);
-    assert.equal(rows[0].props["data-line-number"], 1);
-    assert.equal(rows[0].props.children[1].props.children, "line");
-  }
-  assert.equal(render(large, "source", false, false, true)[0].props.children[1].props.style.whiteSpace, "pre-wrap");
-  assert.equal(render(large, "source", false, false, false, true, { content: "draft", baseline: "old" }), null);
+  for (const language of ['html', 'markdown']) assert.equal(decide({ ...large, language, truncated: true }, 'preview').useLightweightSource, true);
 });
 
-test("grammar demand belongs only to an active bounded typed Source view", () => {
-  const file = ts.createSourceFile("FileViewer.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const viewer = file.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "TextFileViewer");
-  const names = ["viewerContent", "sourceLines", "language", "isHtml", "isMarkdown", "isDelimitedTable", "hasPreview", "effectiveDisplayMode", "useLightweightSource", "prismReady"];
-  const calculations = viewer.body.statements.filter(node => ts.isVariableStatement(node)
-    && node.declarationList.declarations.some(declaration => names.includes(declaration.name.getText(file)))).map(node => node.getText(file)).join("\n");
-  const { outputText } = ts.transpileModule(`
-    return (data, displayMode = "source", hasGitDiff = false, editing = false, filePath = "fixture.tsx", autoPreview = false) => {
-      const SOURCE_HIGHLIGHT_MAX_LINES = 1000, dirty = false, initialLineTarget = null, isDeletedDiff = false, contentRef = {}, defaultPreviewEligibleRef = { current: autoPreview };
-      const useMemo = calculate => calculate(), usePrismLanguages = enabled => enabled;
-      ${calculations}
-      return prismReady;
-    };`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } });
-  const eligible = new Function("isDelimitedTablePath", "needsPrismLanguage", outputText)(isDelimitedTablePath, needsPrismLanguage);
-  const small = { content: "line\n".repeat(999), language: "tsx" };
-  assert.equal(eligible(small), true, "1000 loaded rows still qualify");
-  assert.equal(eligible({ ...small, content: small.content + "\n" }), false);
+test('actual production grammar policy preserves every original demand input', async t => {
+  const { fileSourceView } = await policy(t);
+  const small = { ...read('line\n'.repeat(999)), language: 'tsx' };
+  const eligible = (data = small, displayMode = 'source', extra = {}) => fileSourceView({ data, displayMode,
+    filePath: 'fixture.tsx', sourceLines: (data?.content ?? '').split('\n'), ...extra }).demandGrammar;
+  assert.equal(eligible(), true);
+  assert.equal(eligible({ ...small, content: small.content + '\n' }), false);
   assert.equal(eligible(null), false);
-  assert.equal(eligible({ ...small, language: "text" }), false);
-  assert.equal(eligible(small, "diff", true), false);
-  assert.equal(eligible(small, "source", false, true), false, "editor is not source highlighting");
-  for (const language of ["html", "markdown"]) {
-    assert.equal(eligible({ ...small, language }, "preview"), false);
-    assert.equal(eligible({ ...small, language }, "source", false, false, "preview.md", true), false, "auto-preview's transient Source render must not load grammars");
+  assert.equal(eligible({ ...small, language: 'text' }), false);
+  assert.equal(eligible(small, 'diff', { hasGitDiff: true }), false);
+  assert.equal(eligible(small, 'source', { editing: true }), false);
+  for (const language of ['html', 'markdown']) {
+    assert.equal(eligible({ ...small, language }, 'preview'), false);
+    assert.equal(eligible({ ...small, language }, 'source', { filePath: 'preview.md', autoPreview: true }), false);
   }
-  for (const ext of ["csv", "tsv"]) assert.equal(eligible(small, "preview", false, false, `table.${ext}`), false);
-  assert.equal(eligible(small, "diff", false), true, "unavailable Diff falls back to Source");
+  for (const ext of ['csv', 'tsv']) assert.equal(eligible(small, 'preview', { filePath: `table.${ext}` }), false);
+  assert.equal(eligible(small, 'diff'), true);
 });
 
-test("local file link menu actions forward file disposition", async () => {
-  const localLink = await readFile(new URL("./LocalFileLink.tsx", import.meta.url), "utf8");
-  assert.match(localLink, /onOpenFile\(filePath, page, lineTarget, disposition\)/);
+for (const [path, language, truncated] of [
+  ['/root/large.md', 'markdown', false], ['/root/prefix.md', 'markdown', true], ['/root/prefix.html', 'html', true],
+]) test(`${path} mounts the actual large preview/fallback, not a calculated element replica`, async t => {
+  const h = await open(t, { filePath: path });
+  const content = '# saved\n' + 'line\n'.repeat(1000);
+  await h.initial[1].deliver({ ...read(content, denied, language), truncated, nextOffset: content.length });
+  await h.initial[0].deliver(read('obsolete'));
+  const root = reader(h.view);
+  if (!truncated) {
+    assert.equal(button(root, 'Preview').getAttribute('aria-pressed'), 'true');
+    assert.equal(Boolean(root.querySelector('.markdown-file-preview')), true);
+    assert.equal(root.querySelector('.is-lightweight') === null, true);
+    await click(h.view, button(root, 'Source'));
+  }
+  assert.equal(Boolean(root.querySelector('.is-lightweight')), true);
+  assert.equal(root.querySelectorAll('.file-source-line').length, 1002);
+  const number = root.querySelector('[data-line-number="1"] [aria-hidden]');
+  assert.equal(number.textContent, '1'); assert.equal(number.style.width, '48px');
+  assert.equal(number.style.fontVariantNumeric, 'tabular-nums');
+  assert.equal(root.querySelector('.file-source-line-content').style.whiteSpace, 'pre');
+  await click(h.view, root.querySelector('[aria-label="Enable word wrap"]'));
+  assert.equal(root.querySelector('.file-source-line-content').style.whiteSpace, 'pre-wrap');
+  h.runtime.assertHealthy();
+});
+// LocalFileLink's fourth-argument/menu contract is now exercised through the real
+// mounted FileWorkspace in AppShell.file-viewer-state.test.mjs, not source text.
+
+for (const [mode, wrapLines, lineBreaks] of [
+  ['source', false, 999], ['source', false, 1000], ['diff', false, 1000], ['preview', false, 1000], ['source', true, 1000],
+]) test(`real legacy line content/mode tuple ${mode}/${wrapLines}/${lineBreaks} retains exact Source fallback rows`, async t => {
+  const h = await open(t, { initialState: { displayMode: mode, wrapLines, scrollTop: 0, scrollLeft: 0 } });
+  await h.initial[1].deliver(read('line\n'.repeat(lineBreaks))); await h.initial[0].deliver(read('obsolete'));
+  const root = reader(h.view), rows = root.querySelectorAll('.file-source-line');
+  assert.equal(rows.length, lineBreaks + 1);
+  assert.equal(Boolean(root.querySelector('.is-lightweight')), lineBreaks > 999);
+  assert.equal(rows[0].dataset.lineNumber, '1');
+  assert.equal(rows[0].querySelector('.file-source-line-content').textContent.replace(/\n$/, ''), 'line');
+  assert.equal(rows[0].querySelector('.file-source-line-content').style.whiteSpace, wrapLines ? 'pre-wrap' : 'pre');
+  assert.equal(h.grammarWorks.length, 0, 'plain fallback does not import grammars');
+});
+
+for (const [filePath, language, content, initialDisplayMode] of [
+  ['/root/plain.txt', 'text', 'plain', undefined],
+  ['/root/large.tsx', 'tsx', 'line\n'.repeat(1000), undefined],
+  ['/root/page.html', 'html', '<h1>saved</h1>', undefined],
+  ['/root/guide.md', 'markdown', '# saved', undefined],
+  ['/root/table.csv', 'tsx', 'name,value\nx,y', 'preview'],
+  ['/root/table.tsv', 'tsx', 'name\tvalue\nx\ty', 'preview'],
+]) test(`real ${filePath} mode excludes grammar demand before any manual Source command`, async t => {
+  const h = await open(t, { filePath, initialDisplayMode });
+  assert.equal(h.grammarWorks.length, 0, 'loading shell has no grammar effect');
+  await h.initial[1].deliver(read(content, denied, language)); await h.initial[0].deliver(read('obsolete'));
+  assert.equal(h.grammarWorks.length, 0, 'actual hook never admits the excluded grammar operation');
+  const root = reader(h.view);
+  if (language === 'html' || language === 'markdown') {
+    assert.equal(button(root, 'Preview').getAttribute('aria-pressed'), 'true');
+    await click(h.view, button(root, 'Source'));
+    assert.equal(h.grammarWorks.length, 1, 'manual bounded typed Source owns genuine demand');
+    await h.joinGrammar();
+    assert.equal(Boolean(root.querySelector('.file-source-view .token')), true, 'real package registration colors Source');
+  }
+  h.runtime.assertHealthy();
+});
+
+test('actual active bounded TSX Source demands the package only after current data and renders genuine tokens', async t => {
+  const h = await open(t, { filePath: '/root/component.tsx' });
+  assert.equal(h.grammarWorks.length, 0);
+  const content = 'const answer = <span>ok</span>;';
+  await h.initial[1].deliver(read(content, denied, 'tsx')); await h.initial[0].deliver(read('obsolete'));
+  assert.equal(h.grammarWorks.length, 1, 'actual enabled hook, not a test-triggered loader call');
+  await h.joinGrammar();
+  const root = reader(h.view);
+  assert.equal(Boolean(root.querySelector('.file-source-view .token')), true);
+  assert.equal(root.querySelector('.file-source-line-content').textContent.replace(/\n$/, ''), content);
+  h.runtime.assertHealthy();
+});
+
+test('a real seeded edit owner suppresses grammar demand and saved-line navigation never substitutes its draft', async t => {
+  const draft = { content: 'draft', baseline: 'saved', revision: 'r1' };
+  const h = await open(t, { filePath: '/root/a.tsx', initialDraft: draft }, { seed(store) {
+    assert.equal(store.bind('reader', 'server-edit-identity'), true); store.draft('reader', draft);
+  } });
+  const edit = expectEdit(h.runtime, h.props);
+  await h.initial[1].deliver(read('saved', editable, 'tsx')); await h.initial[0].deliver(read('obsolete'));
+  await edit.deliver({ content: 'saved', revision: 'r1', writable: true, editIdentity: 'server-edit-identity' });
+  const root = reader(h.view);
+  assert.equal(root.querySelector('textarea').value, 'draft');
+  assert.equal(h.grammarWorks.length, 0, 'editor is not a Source grammar consumer');
+  await click(h.view, button(root, 'Edit'));
+  assert.equal(h.grammarWorks.length, 1);
+  await h.joinGrammar();
+  assert.equal(root.querySelector('.file-source-line-content').textContent.replace(/\n$/, ''), 'draft');
+  await h.render({ ...h.props, initialLineTarget: { line: 1 }, navigationId: 1 });
+  assert.equal(root.querySelector('textarea') === null, true);
+  assert.equal(root.querySelector('.file-source-line-content').textContent.replace(/\n$/, ''), 'saved');
+  assert.match(root.textContent, /saved file|saved content/i);
+  await click(h.view, button(root, 'Edit'));
+  assert.equal(root.querySelector('textarea').value, 'draft');
+  assert.equal(h.store.snapshot('reader').draft.content, 'draft');
 });

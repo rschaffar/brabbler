@@ -1,5 +1,7 @@
 "use client";
 
+import { useSettingsWork } from "./SettingsUi";
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { SkillInstructions } from "./SkillInstructions";
@@ -562,6 +564,7 @@ export function SkillsConfig({
   onClose: () => void;
   embedded?: boolean;
 }) {
+  const observe = useSettingsWork();
   const { t } = useI18n();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -577,7 +580,7 @@ export function SkillsConfig({
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [projectResourcesLoaded, setProjectResourcesLoaded] = useState(true);
 
-  const loadSkills = useCallback(async () => {
+  const loadSkills = useCallback(() => observe("skills.loadSkills", (async () => {
     setLoading(true);
     setError(null);
     try {
@@ -599,7 +602,7 @@ export function SkillsConfig({
     } finally {
       setLoading(false);
     }
-  }, [cwd]);
+  })()), [cwd, observe]);
 
   useEffect(() => {
     setUpdateStatuses({});
@@ -611,7 +614,7 @@ export function SkillsConfig({
     if (selected) setLastSettingsSelection("skills", selected, cwd);
   }, [cwd, selected]);
 
-  const checkForUpdates = useCallback(async (skill?: Skill) => {
+  const checkForUpdates = useCallback((skill?: Skill) => observe("skills.checkForUpdates", (async () => {
     const targets = skill
       ? [skill]
       : skills.filter((item) => Boolean(item.install));
@@ -655,9 +658,9 @@ export function SkillsConfig({
       });
       if (!skill) setCheckingAll(false);
     }
-  }, [cwd, skills]);
+  })()), [cwd, skills, observe]);
 
-  const updateInstalledSkill = useCallback(async (skill: Skill) => {
+  const updateInstalledSkill = useCallback((skill: Skill) => observe("skills.updateInstalledSkill", (async () => {
     if (!skill.install) return;
     const key = updateKey(skill)!;
     setUpdatingSkill(key);
@@ -697,9 +700,9 @@ export function SkillsConfig({
     } finally {
       setUpdatingSkill(null);
     }
-  }, [cwd, loadSkills]);
+  })()), [cwd, loadSkills, observe]);
 
-  const toggle = useCallback(async (skill: Skill) => {
+  const toggle = useCallback((skill: Skill) => observe("skills.toggle", (async () => {
     const next = !skill.disableModelInvocation;
     setToggling((s) => new Set(s).add(skill.filePath));
     setSaveError(null);
@@ -733,7 +736,7 @@ export function SkillsConfig({
         return n;
       });
     }
-  }, []);
+  })()), [observe]);
 
   const selectedSkill = skills.find((s) => s.filePath === selected) ?? null;
 

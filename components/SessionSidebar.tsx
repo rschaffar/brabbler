@@ -1,5 +1,6 @@
 "use client";
 
+import { useNavigationWork } from "@/lib/navigation-work";
 import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import type { SessionInfo } from "@/lib/types";
 import { useActivityController, useActivityNotifications } from "@/hooks/useActivityController";
@@ -24,7 +25,7 @@ import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { SessionMoveDestinationPicker } from "./SessionMoveDestinationPicker";
 import { SessionMoveStatus } from "./SessionMoveStatus";
-import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
+import { SessionFileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import type { FileRevealRequest } from "@/lib/explorer-reveal";
 import { isHistoryOnlySession } from "@/lib/session-directory";
 import { SessionSearch } from "./SessionSearch";
@@ -405,6 +406,7 @@ function PiWebTitle() {
 }
 
 export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, selectedCwdState: selectedCwdStateProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, fileRevealRequest, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, activityController, onSessionsChange }: Props) {
+  const work = useNavigationWork();
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const { starredIds, starredProjectKeys, toggleStarred, toggleStarredProject } = useStarredSessions();
@@ -566,7 +568,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     return () => ro.disconnect();
   }, [sessionSearchActive]);
 
-  const loadSessions = useCallback(async (showLoading = false, force = false, summary = false) => {
+  const loadSessions = useCallback((showLoading = false, force = false, summary = false) => work.observe((async () => {
     const loadId = ++sessionLoadIdRef.current;
     try {
       if (showLoading) setLoading(true);
@@ -594,7 +596,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } finally {
       if (loadId === sessionLoadIdRef.current) setLoading(false);
     }
-  }, [activityController]);
+  })()), [activityController, work]);
 
   useEffect(() => activityController.observeCatalogue(async (version) => {
     if (version !== sessionListVersionRef.current) await loadSessions();
@@ -614,13 +616,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       // Header/stat metadata is enough to select the URL session and paint the
       // sidebar. Hydrate exact counts, names, and first messages once the
       // selected chat has had a chance to start loading.
-      void loadSessions(true, false, true).then(() => {
+      work.observe(loadSessions(true, false, true).then(() => {
         if (!active) return;
         detailsHydrationTimerRef.current = setTimeout(() => {
           detailsHydrationTimerRef.current = null;
           if (active) void loadSessions(false, true);
         }, SESSION_DETAILS_HYDRATION_DELAY_MS);
-      });
+      }));
     } else {
       void loadSessions(false, true);
     }
@@ -632,7 +634,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         detailsHydrationTimerRef.current = null;
       }
     };
-  }, [loadSessions, refreshKey]);
+  }, [loadSessions, refreshKey, work]);
 
   // Browser storage is unavailable during server rendering. Restore the panel
   // preference after hydration so a collapsed explorer stays collapsed on reload.
@@ -649,10 +651,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [explorerRefreshKey]);
 
   useEffect(() => {
-    fetch("/api/home").then((r) => r.json()).then((d: { home?: string }) => {
+    work.observe(fetch("/api/home").then((r) => r.json()).then((d: { home?: string }) => {
       if (d.home) setHomeDir(d.home);
-    }).catch(() => {});
-  }, []);
+    }).catch(() => {}));
+  }, [work]);
 
   const restoredRef = useRef(false);
 
@@ -722,7 +724,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     }
     let cancelled = false;
     setWorktreeLoadingCwd(selectedCwd);
-    fetch(`/api/worktrees?cwd=${encodeURIComponent(selectedCwd)}`)
+    work.observe(fetch(`/api/worktrees?cwd=${encodeURIComponent(selectedCwd)}`)
       .then((r) => r.json())
       .then((d: { projectRoot?: string; projectKey?: string; isGit?: boolean; isTopLevel?: boolean; currentWorktreePath?: string | null; worktrees?: WorktreeEntry[]; localBranches?: LocalBranchTip[]; error?: string }) => {
         if (cancelled) return;
@@ -747,9 +749,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           setWorktreeLoadingCwd(null);
           setWorktreeState(null);
         }
-      });
+      }));
     return () => { cancelled = true; };
-  }, [directoryUnavailable, selectedCwd, wtRefreshKey, refreshKey]);
+  }, [directoryUnavailable, selectedCwd, wtRefreshKey, refreshKey, work]);
 
   // Auto-select cwd and restore session from URL on first load
   useEffect(() => {
@@ -785,7 +787,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     : undefined, [worktreeState, selectedCwd]);
   const currentWorktreePath = currentWorktree?.path ?? null;
 
-  const commitCustomPath = useCallback(async (candidate?: string) => {
+  const commitCustomPath = useCallback((candidate?: string) => work.observe((async () => {
     const path = (candidate ?? customPathValue).trim();
     if (!path || customPathValidating) return;
 
@@ -822,14 +824,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } finally {
       setCustomPathValidating(false);
     }
-  }, [customPathValue, customPathValidating]);
+  })()), [customPathValue, customPathValidating, work]);
 
   const handleCustomPathClick = useCallback(() => {
     setCustomPathOpen(true);
     setCustomPathError(null);
     setDropdownOpen(false);
   }, []);
-  const handleDefaultCwd = useCallback(async () => {
+  const handleDefaultCwd = useCallback(() => work.observe((async () => {
     try {
       const res = await fetch("/api/default-cwd", { method: "POST" });
       const data = await res.json() as { cwd?: string; error?: string };
@@ -842,9 +844,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } catch {
       // ignore
     }
-  }, []);
+  })()), [work]);
 
-  const handleCreateWorktree = useCallback(async () => {
+  const handleCreateWorktree = useCallback(() => work.observe((async () => {
     const branch = wtMode === "attach" ? wtAttach?.branch : wtNewBranch.trim();
     if (!branch || wtBusy || !worktreeState || !wtBase || wtBase.projectRoot !== worktreeState.projectRoot
       || (wtMode === "attach" && (!wtAttach || wtAttach.projectRoot !== worktreeState.projectRoot))) return;
@@ -886,9 +888,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } finally {
       setWtBusy(false);
     }
-  }, [wtNewBranch, wtMode, wtAttach, wtBase, wtBusy, worktreeState]);
+  })()), [wtNewBranch, wtMode, wtAttach, wtBase, wtBusy, worktreeState, work]);
 
-  const handleRemoveWorktree = useCallback(async (path: string, force: boolean) => {
+  const handleRemoveWorktree = useCallback((path: string, force: boolean) => work.observe((async () => {
     if (!worktreeState || wtBusy) return;
     setWtBusy(true);
     setWtError(null);
@@ -918,7 +920,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } finally {
       setWtBusy(false);
     }
-  }, [worktreeState, wtBusy, currentWorktreePath]);
+  })()), [worktreeState, wtBusy, currentWorktreePath, work]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -971,7 +973,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setMoveError(null);
   }, [setMoveDestination, setMoveError]);
 
-  const confirmMove = useCallback(async () => {
+  const confirmMove = useCallback(() => work.observe((async () => {
     if (!movingSession || !moveDestination || moveBusy) return;
     setMoveBusy(true);
     setMoveError(null);
@@ -996,7 +998,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } finally {
       setMoveBusy(false);
     }
-  }, [movingSession, moveDestination, moveBusy, selectedSessionId, onSessionDeleted, loadSessions, setMovingSession, setMoveError, t]);
+  })()), [movingSession, moveDestination, moveBusy, selectedSessionId, onSessionDeleted, loadSessions, setMovingSession, setMoveError, t, work]);
 
   const recentProjects = useMemo(() => {
     const projects = getRecentProjects(allSessions);
@@ -1099,7 +1101,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setBulkError(null);
   };
 
-  const performBulkAction = async (action: BulkSessionAction) => {
+  const performBulkAction = (action: BulkSessionAction) => work.observe((async () => {
     if (bulkBusy || !bulkSelecting || selectedFamilyIds.size === 0 || (action !== "delete" && bulkArchiveBlocked)) return;
     const ids = [...selectedFamilyIds];
     const selectedFamilies = sessionFamilies.filter((family) => selectedFamilyIds.has(family.root.id));
@@ -1133,7 +1135,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } finally {
       setBulkBusy(false);
     }
-  };
+  })());
 
   const virtualIndices = useMemo(() => getSessionListIndices(
     sessionFamilies.length,
@@ -2298,8 +2300,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           </div>
           {explorerOpen && (
             <div ref={explorerScrollRef} data-explorer-scroll className="scrollbar-subtle" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}>
-              <FileExplorer
-                key={JSON.stringify([selectedCwd ?? selectedCwdProp, selectedSessionId])}
+              <SessionFileExplorer
+                contextSessionId={selectedSessionId}
                 ref={fileExplorerRef}
                 revealRequest={pendingReveal?.context === revealContext ? pendingReveal.request : undefined}
                 onRevealSettled={handleRevealSettled}
@@ -2408,7 +2410,7 @@ function showProjectActivity(
   );
 }
 
-function SessionItem({
+export function SessionItem({
   session,
   isSelected,
   bulkSelecting = false,
@@ -2453,6 +2455,7 @@ function SessionItem({
   collapsed?: boolean;
   onToggleCollapse?: () => void;
 }) {
+  const work = useNavigationWork();
   const { locale, t } = useI18n();
   const [hovered, setHovered] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -2508,7 +2511,7 @@ function SessionItem({
     setRenaming(true);
   }, [session.name, session.transient, displayFirstMessage, session.id]);
 
-  const commitRename = useCallback(async () => {
+  const commitRename = useCallback(() => work.observe((async () => {
     const name = renameValue.trim();
     setRenaming(false);
     // No-op when unchanged: the fallback title (first message / id) isn't a
@@ -2527,9 +2530,9 @@ function SessionItem({
     } catch (error) {
       setActionError(String(error));
     }
-  }, [renameValue, session.id, session.name, onRenamed, title]);
+  })()), [renameValue, session.id, session.name, onRenamed, title, work]);
 
-  const performDelete = useCallback(async () => {
+  const performDelete = useCallback(() => work.observe((async () => {
     if (session.transient) return;
     setConfirmDelete(false);
     setDeleting(true);
@@ -2542,9 +2545,9 @@ function SessionItem({
     } finally {
       setDeleting(false);
     }
-  }, [session.id, session.transient, onDeleted]);
+  })()), [session.id, session.transient, onDeleted, work]);
 
-  const handleArchive = useCallback(async (e: React.MouseEvent) => {
+  const handleArchive = useCallback((e: React.MouseEvent) => work.observe((async () => {
     e.stopPropagation();
     if (session.transient || archiveBusy || isRunning || archiveDisabled) return;
     setArchiveBusy(true);
@@ -2562,9 +2565,9 @@ function SessionItem({
     } finally {
       setArchiveBusy(false);
     }
-  }, [session.id, session.transient, archiveBusy, isRunning, archiveDisabled, archivedView, onArchived]);
+  })()), [session.id, session.transient, archiveBusy, isRunning, archiveDisabled, archivedView, onArchived, work]);
 
-  const handleCopyLink = useCallback(async (e: React.MouseEvent) => {
+  const handleCopyLink = useCallback((e: React.MouseEvent) => work.observe((async () => {
     e.stopPropagation();
     setActionsOpen(false);
     try {
@@ -2573,7 +2576,7 @@ function SessionItem({
     } catch (error) {
       setActionError(String(error));
     }
-  }, [session.id]);
+  })()), [session.id, work]);
 
   const handleDeleteClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();

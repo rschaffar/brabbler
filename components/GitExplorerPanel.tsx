@@ -10,7 +10,7 @@ import type { ReviewNavigation } from "@/lib/review-notebook";
 type SelectedCommit = { branch: string; head: string; oid: string };
 
 /** Worktree-scoped, read-only history alongside chat. The detail never opens a file tab. */
-export function GitExplorerPanel({ cwd, onClose, expanded, canExpand, onToggleExpanded, initialSelection, onReturnToWorkspace }: {
+export function GitExplorerPanel({ cwd, onClose, expanded, canExpand, onToggleExpanded, initialSelection, onReturnToWorkspace, onReadWork }: {
   cwd: string | null;
   onClose: () => void;
   expanded: boolean;
@@ -18,6 +18,7 @@ export function GitExplorerPanel({ cwd, onClose, expanded, canExpand, onToggleEx
   onToggleExpanded: () => void;
   initialSelection?: ReviewNavigation;
   onReturnToWorkspace?: () => void;
+  onReadWork?: (work: Promise<void>) => void;
 }) {
   const { t } = useI18n();
   const [selected, setSelected] = useState<SelectedCommit | null>(initialSelection ?? null);
@@ -78,7 +79,7 @@ export function GitExplorerPanel({ cwd, onClose, expanded, canExpand, onToggleEx
     </div>}
     {cwd ? <div className={`git-explorer-columns${mobileDetail ? " git-explorer-mobile-detail" : ""}`}>
       <div className="git-explorer-graph">
-        <GitExplorer cwd={cwd} initialSelection={initialSelection} onBranchChange={clearSelection} onOpenCommit={(branch, head, oid) => {
+        <GitExplorer cwd={cwd} initialSelection={initialSelection} onReadWork={onReadWork} onBranchChange={clearSelection} onOpenCommit={(branch, head, oid) => {
           setSelected({ branch, head, oid });
           setMobileDetail(true);
         }} />
@@ -86,7 +87,7 @@ export function GitExplorerPanel({ cwd, onClose, expanded, canExpand, onToggleEx
       <div className="git-explorer-detail">
         <button type="button" className="git-explorer-back" onClick={() => setMobileDetail(false)}>← Back to commits</button>
         {selected ? <GitCommitViewer key={`${selected.branch}:${selected.head}:${selected.oid}`}
-          cwd={cwd} branch={selected.branch} head={selected.head} oid={selected.oid} />
+          cwd={cwd} branch={selected.branch} head={selected.head} oid={selected.oid} onReadWork={onReadWork} />
           : <p className="p-4 text-sm text-text-muted">Select a commit to inspect its files and patch.</p>}
       </div>
     </div> : <p className="p-4 text-sm text-text-muted">Select a worktree to browse its local branches.</p>}

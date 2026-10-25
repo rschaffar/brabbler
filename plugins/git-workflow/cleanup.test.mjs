@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { lstatSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { finished } from "node:stream/promises";
 import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { nativeCleanupAccess } from "./cleanup-access.fixture.mjs";
@@ -242,6 +245,124 @@ test("nested cleanup fails closed before approval without no-follow directory-ha
     failed(await execute(f.repo, f.op, { ...f.ui, pluginCard: () => assert.fail("Unsupported deletion must not ask") }), /Linux no-follow directory handles/);
     assert.equal(f.receipts.length, 0); assert.equal(existsSync(join(f.path, "src/meetings/__pycache__/cache")), true);
   } finally { mocked.mock.restore(); syncBuiltinESMExports(); }
+});
+
+test("browser cleanup top and nested five-root tuples keep one-time consent, native identity and durable no-replay outcome", async (t) => {
+  const { reviewEntry, reviewPreview, reviewManifest, reviewStream } = await jiti.import("../../lib/plugins/review-store.ts");
+  // Native storage download API, not HTTP/browser historical-download proof.
+  const download = async (ref, entry) => {
+    const stream = await reviewStream(ref, entry);
+    if (!stream) return Buffer.alloc(0);
+    const closed = finished(stream, { cleanup: true }); void closed.catch(() => {});
+    const chunks = [];
+    try { for await (const chunk of stream) chunks.push(Buffer.from(chunk)); }
+    finally { stream.destroy(); await closed; }
+    assert.equal(stream.closed, true); assert.equal(stream.fd, null);
+    return Buffer.concat(chunks);
+  };
+  const { readOperationReceipt, collapseOperationReceipts } = await jiti.import("../../lib/operation-receipts.ts");
+  const { acquireDirectoryReservation, assertDirectoryAdmissionAllowed } = await jiti.import("../../lib/directory-reservations.ts");
+  for (const nested of [false, true]) await t.test(nested ? "nested" : "top", { skip: nested && process.platform !== "linux" }, async st => {
+    const f = fixture(st);
+    // Reuse the native fixture, but retain both original tracked siblings in BOTH tuples.
+    for (const [name, body] of [["src/meetings/main.py", "# tracked sibling, not a cleanup artifact\n"], ["src/other/main.py", "# second tracked sibling\n"]]) {
+      mkdirSync(join(f.path, name, ".."), { recursive: true }); writeFileSync(join(f.path, name), body);
+    }
+    writeFileSync(join(f.path, ".gitignore"), readFileSync(join(f.path, ".gitignore"), "utf8") + "__pycache__/\n*.pyc\n");
+    git(f.path, "add", "."); git(f.path, "commit", "-qm", "Tracked siblings and nested ignores");
+    git(f.repo, "merge", "--no-ff", "--no-edit", "feature");
+    f.op.featureTip = git(f.path, "rev-parse", "HEAD"); f.op.integrationCommit = git(f.repo, "rev-parse", "HEAD");
+    const directories = nested ? ["node_modules", "src/meetings/__pycache__", "src/other/__pycache__"] : ["node_modules", ".codegraph", ".next", "test-results"];
+    const files = ["next-env.d.ts", ...(nested ? ["src/meetings/main.pyc"] : [])], roots = [...directories, ...files];
+    for (const name of directories) { mkdirSync(join(f.path, name), { recursive: true }); writeFileSync(join(f.path, name, "generated"), "fixture artifact"); }
+    writeFileSync(join(f.path, "next-env.d.ts"), "/// <reference types=\"next\" />\n");
+    if (nested) writeFileSync(join(f.path, "src/meetings/main.pyc"), "fixture bytecode");
+    f.set({ cleanupFeature: "allow", approvedArtifactRoots: null });
+    const settings = f.settingsBytes(), saved = join(f.root, "receipts.jsonl");
+    const identity = path => { const s = lstatSync(path); return [s.dev, s.ino, s.mode]; };
+    const bytes = path => readFileSync(path).toString("hex");
+    const state = () => ({ refs: git(f.repo, "show-ref"), registrations: git(f.repo, "worktree", "list", "--porcelain"),
+      path: identity(f.path), administrative: bytes(join(f.path, ".git")), head: git(f.path, "rev-parse", "HEAD"),
+      index: bytes(git(f.path, "rev-parse", "--path-format=absolute", "--git-path", "index")),
+      artifacts: roots.map(name => [name, identity(join(f.path, name)), bytes(join(f.path, directories.includes(name) ? `${name}/generated` : name))]),
+      source: [f.repo, f.path].flatMap(path => ["src/meetings/main.py", "src/other/main.py"].map(name => [path, name, identity(join(path, name)), bytes(join(path, name))])) });
+    const before = state(), main = git(f.repo, "rev-parse", "main"), mainIdentity = identity(f.repo);
+    const disk = [], cards = [];
+    const record = (id, receipt) => {
+      f.ui.operationReceipt(id, receipt);
+      disk.push(snapshotOperationReceipt(id, receipt, disk.length + 1));
+      writeFileSync(saved, disk.map(value => JSON.stringify(value)).join("\n") + "\n", { mode: 0o600 });
+    };
+    const inventory = card => card.sections.flatMap(s => s.fields ?? []).filter(field => /SHA256/.test(field.value));
+    const checkCard = async card => {
+      validatePluginCard(card); cards.push(structuredClone(card));
+      assert.equal(card.title, "Clean up integrated Git feature"); assert.equal(card.patch, undefined);
+      assert.deepEqual(inventory(card).map(field => field.label).sort(), [...roots].sort());
+      for (const field of inventory(card)) {
+        assert.match(field.value, /Needs one-time approval/); assert.match(field.value, /entries · \d+ bytes · SHA256 [a-f0-9]{64}$/);
+        if (files.includes(field.label)) assert.match(field.value, /1 entries · /);
+      }
+      // Bundle identity covers data, entry metadata AND offsets; validate that
+      // domain through the public API rather than hashing a text concatenation.
+      assert.deepEqual(await reviewManifest(card.review, "git-workflow"), {
+        version: 1, pluginId: "git-workflow", operationId: card.operationId,
+        entries: card.review.entries, bytes: card.review.bytes, sha256: card.review.sha256,
+      });
+      assert.equal(card.review.entries, 1, "field-only cleanup has one exact metadata entry");
+      const entry = await reviewEntry(card.review, 0), exact = await reviewPreview(card.review, entry);
+      assert.equal(exact.complete, true);
+      assert.equal(entry.kind, "text"); assert.equal(entry.start, 0);
+      const data = JSON.parse(exact.text); assert.deepEqual(data.operation, f.op);
+      assert.deepEqual(inventory(data.presentation), inventory(card));
+      // Entry SHA binds entry bytes. The reference SHA above binds the bundle.
+      const exactBytes = Buffer.from(exact.text);
+      assert.equal(exactBytes.length, entry.bytes); assert.equal(exactBytes.length, card.review.bytes);
+      assert.equal(createHash("sha256").update(exactBytes).digest("hex"), entry.sha256);
+      assert.deepEqual(await download(card.review, entry), exactBytes);
+      assert.deepEqual(await download(card.review), exactBytes, "complete native download retains exact cleanup review");
+    };
+    const native = { operationReceipt: record,
+      // This fixture has no sessions/terminals. Real reservation, not native-idle proof.
+      reserveDirectory: path => acquireDirectoryReservation(path, () => false) };
+    const kept = await f.call({}, { ...native, pluginCard: async (_id, card) => {
+      await checkCard(card); assert.equal(card.actions.find(a => a.id === "reject").label, "Keep resources"); return "reject";
+    } });
+    failed(kept, /not approved/); assert.deepEqual(state(), before); assert.equal(f.settingsBytes(), settings);
+    assert.equal(disk.at(-1).phase, "cancelled"); assert.equal(disk.at(-1).effectStarted, false);
+    const approved = await f.call({}, { ...native, pluginCard: async (_id, card) => {
+      await checkCard(card);
+      assert.notEqual(card.operationId, cards[0].operationId); assert.notEqual(card.review.id, cards[0].review.id);
+      assert.deepEqual(state(), before, "fresh capture keeps exact native incarnation through review");
+      assert.deepEqual(inventory(card), inventory(cards[0])); return "approve";
+    } });
+    passed(approved); assert.equal(cards.length, 2); assert.equal(existsSync(f.path), false);
+    assert.equal(git(f.repo, "branch", "--list", "feature"), ""); assert.equal(git(f.repo, "rev-parse", "main"), main);
+    assert.equal(git(f.repo, "show-ref"), before.refs.split("\n").filter(line => !line.endsWith(" refs/heads/feature")).join("\n"));
+    assert.equal(git(f.repo, "worktree", "list", "--porcelain"), before.registrations.split("\n\n").filter(record => !record.startsWith(`worktree ${f.path}\n`)).join("\n\n"));
+    assert.deepEqual(identity(f.repo), mainIdentity); assert.equal(f.settingsBytes(), settings);
+    for (const name of ["src/meetings/main.py", "src/other/main.py"]) {
+      const expected = before.source.find(row => row[0] === f.repo && row[1] === name);
+      assert.deepEqual(identity(join(f.repo, name)), expected[2]); assert.equal(bytes(join(f.repo, name)), expected[3]);
+    }
+    assert.equal(approved.details.effects.length, roots.length + 2);
+    for (const name of roots) assert.equal(approved.details.effects.includes(`Removed generated artifact: ${name}`), true);
+    assert.equal(approved.details.effects.includes(`Removed worktree: ${f.path}`), true);
+    assert.equal(approved.details.effects.includes(`Deleted local branch: feature at ${f.op.featureTip}`), true);
+    assert.equal(git(f.repo, "worktree", "list", "--porcelain").includes(f.path), false);
+    assertDirectoryAdmissionAllowed(f.path); // release observed after whole executor promise
+    const reload = () => readFileSync(saved, "utf8").trim().split("\n").map(line => readOperationReceipt(JSON.parse(line)));
+    const history = reload(); assert.equal(history.every(Boolean), true);
+    const messages = history.map(details => ({ role: "custom", customType: "pi-web:operation-receipt", details }));
+    const collapsed = collapseOperationReceipts({ messages, entryIds: messages.map((_, i) => String(i)) });
+    assert.equal(collapsed.messages.length, 2);
+    const outcome = collapsed.messages.find(m => m.details.operationId === cards[1].operationId).details;
+    assert.equal(outcome.phase, "succeeded"); assert.equal(outcome.authorization.mode, "ask");
+    assert.equal(outcome.authorization.decision, "user-approved"); assert.equal(outcome.authorization.source, "one-time artifacts (project allow)");
+    assert.deepEqual(outcome.card.actions, []); assert.deepEqual(inventory(outcome.card), inventory(cards[1]));
+    const finalRefs = git(f.repo, "show-ref"), count = disk.length;
+    reload(); reload(); assert.equal(disk.length, count); assert.equal(cards.length, 2);
+    assert.equal(git(f.repo, "show-ref"), finalRefs); assert.equal(f.settingsBytes(), settings);
+  });
 });
 
 test("one approval removes explicit generated roots, worktree and exact integrated branch with durable outcome", async (t) => {

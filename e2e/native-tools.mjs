@@ -54,11 +54,13 @@ async function idle(id) {
   const response = await fetch(`/api/agent/${encodeURIComponent(id)}`); if (!response.ok) throw new Error(`Native state HTTP ${response.status}`);
   const data = await response.json(); return data.running && !data.state.isStreaming && !data.state.isPromptRunning;
 }
-export async function checkNativeTools(page, { base, api, post, fixture, artifacts, width }) {
-  const id = MODEL_SPEED_IDS[width > 600 ? 0 : 1], other = MODEL_SPEED_IDS[width > 600 ? 1 : 0];
+export async function checkSelectedNativeRuntime(page, { base, api, post, fixture, artifacts, width }) {
+  const id = MODEL_SPEED_IDS[0], other = MODEL_SPEED_IDS[1];
+  const failures = [];
   const before = records(fixture.starts).length;
   const beforeMessages = (await api(`/api/sessions/${id}`)).stats.userMessages;
   if (existsSync(fixture.release)) rmSync(fixture.release);
+  try {
   await page.goto(`${base}/?session=${id}`, { waitUntil: "domcontentloaded" });
   const input = page.locator("textarea").last(); await input.waitFor(); await input.fill("Unsent native draft");
   const button = page.getByRole("button", { name: "Session tools", exact: true });
@@ -86,12 +88,20 @@ export async function checkNativeTools(page, { base, api, post, fixture, artifac
   const row = name => dialog.locator("label").filter({ has: page.getByText(name, { exact: true }) });
   assert.equal(await row("oauth").getByRole("checkbox").isDisabled(), true);
   await dialog.getByRole("checkbox", { name: "Code-mode", exact: true }).check(); await row("selected").getByRole("checkbox").check();
-  await dialog.getByRole("button", { name: "Apply", exact: true }).click(); await dialog.waitFor({ state: "hidden" });
+  const [applied] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === `/api/agent/${id}` && response.request().method() === "POST" && response.request().postDataJSON()?.type === "set_native_resources"),
+    dialog.getByRole("button", { name: "Apply", exact: true }).click(),
+  ]);
+  assert.deepEqual(applied.request().postDataJSON(), { type: "set_native_resources", nativeResources: selection });
+  assert.equal(applied.status(), 200);
+  assert.equal((await applied.json()).success, true);
+  await dialog.waitFor({ state: "hidden" });
   assert.equal(await input.inputValue(), "Unsent native draft");
   const saved = await api(`/api/sessions/${id}`); assert.deepEqual(saved.nativeResources, selection);
   assert.equal(saved.stats.userMessages, beforeMessages, "apply creates no prompt, including after the other viewport's busy-session chain");
   dialog = await show();
-  await dialog.getByRole("button", { name: "Refresh status", exact: true }).click();
+  // Await the genuine native connection, then Refresh once to publish it.
+  // A pre-connection Refresh repeats a controlled read without a new bridge.
   await waitForAsyncCondition(page, async id => {
     const response = await fetch(`/api/agent/${id}`); if (!response.ok) throw new Error("Native status failed");
     return (await response.json()).state?.mcpServers?.[0]?.state === "connected";
@@ -120,37 +130,62 @@ export async function checkNativeTools(page, { base, api, post, fixture, artifac
   const restored = await showCard();
   await restored.getByRole("region", { name: "Nested calls", exact: true }).getByText("Failed", { exact: true }).waitFor();
 
-  // Another real SDK session waits for user input; this idle session can still apply.
-  await post(`/api/agent/${other}`, { type: "prompt", message: "native busy sentinel" });
-  await waitForAsyncCondition(page, async other => (await (await fetch(`/api/agent/${other}`)).json()).state?.isStreaming === true, other);
-  dialog = await show(); await dialog.getByRole("checkbox", { name: "Code-mode", exact: true }).uncheck(); await row("selected").getByRole("checkbox").uncheck();
-  const routePattern = `**/api/agent/${id}`; let dispatched = 0;
-  const ambiguous = async route => {
-    if (route.request().method() !== "POST" || route.request().postDataJSON()?.type !== "set_native_resources") return route.continue();
-    dispatched++; const response = await route.fetch(); assert.equal(response.status(), 200);
-    await route.fulfill({ status: 200, json: { success: false, error: "Synthetic acknowledgement unavailable" } });
-  };
-  await page.route(routePattern, ambiguous);
+  // Conditional first-export retention: one genuine OTHER SDK busy window at ED.
+  // The ACK owner's client otherProbe is not this native-running authority.
+  // Keep the cheap ACK/default matrices below Chromium and the EM bridge intact.
+  const busyFailures = [];
+  let otherPrompt;
   try {
-    await dialog.getByRole("button", { name: "Apply", exact: true }).click();
-    await dialog.getByText("Synthetic acknowledgement unavailable", { exact: true }).waitFor();
-    assert.equal(dispatched, 1); assert.equal(await dialog.getByRole("button", { name: "Apply", exact: true }).isDisabled(), true);
-    await dialog.getByRole("button", { name: "Refresh status", exact: true }).click();
-    await dialog.getByText(/The change could not be confirmed/).waitFor({ state: "hidden" });
-    await page.waitForFunction(() => !document.querySelector('dialog[open] fieldset')?.disabled);
-    assert.equal(await dialog.getByRole("checkbox", { name: "Code-mode", exact: true }).isChecked(), false);
+    otherPrompt = post(`/api/agent/${other}`, { type: "prompt", message: "native busy sentinel" });
+    await otherPrompt;
+    await waitForAsyncCondition(page, async other => (await (await fetch(`/api/agent/${other}`)).json()).state?.isStreaming === true, other);
+    dialog = await show();
+    await dialog.getByRole("checkbox", { name: "Code-mode", exact: true }).uncheck();
+    await row("selected").getByRole("checkbox").uncheck();
+    const [disabled] = await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === `/api/agent/${id}`
+        && response.request().method() === "POST" && response.request().postDataJSON()?.type === "set_native_resources"),
+      dialog.getByRole("button", { name: "Apply", exact: true }).click(),
+    ]);
+    assert.equal(disabled.status(), 200);
+    assert.equal((await disabled.json()).success, true);
+    await dialog.waitFor({ state: "hidden" });
     assert.deepEqual((await api(`/api/sessions/${id}`)).nativeResources, off);
+    assert.throws(() => process.kill(observed.pid, 0), { code: "ESRCH" });
     assert.equal((await api(`/api/agent/${other}`)).state.isStreaming, true, "unrelated busy runtime was not waited on or stopped");
-  } finally { await page.unroute(routePattern, ambiguous); await post(`/api/agent/${other}`, { type: "abort" }); }
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  assert.throws(() => process.kill(observed.pid, 0), { code: "ESRCH" });
+  } catch (error) {
+    busyFailures.push(error);
+  } finally {
+    // Release admitted stdio BEFORE waiting on either original prompt or abort.
+    // Attempt peer shutdown independently even if prompt/body/assertion failed.
+    try { writeFileSync(fixture.release, "release native fixture during settlement"); }
+    catch (error) { busyFailures.push(error); }
+    const outcomes = await Promise.allSettled([
+      otherPrompt,
+      ...(otherPrompt ? [
+        post(`/api/agent/${other}`, { type: "abort" }),
+        waitForAsyncCondition(page, idle, other),
+      ] : []),
+    ]);
+    for (const outcome of outcomes) {
+      if (outcome.status === "rejected" && !busyFailures.includes(outcome.reason)) busyFailures.push(outcome.reason);
+    }
+  }
+  if (busyFailures.length) throw new AggregateError(busyFailures, "Native OTHER busy window and settlement failed");
 
   // Saving project defaults is a settings operation, not an Apply or connection.
   dialog = await show();
   const defaultSelection = { ...off, mcpServers: [{ scope: "global", name: "selected" }] };
   await row("selected").getByRole("checkbox").check();
   const defaultStarts = records(fixture.starts).length;
-  await dialog.getByRole("button", { name: "Save selection as project default", exact: true }).click();
+  const [defaultSaved] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === "/api/native-tools" && response.request().method() === "POST"),
+    dialog.getByRole("button", { name: "Save selection as project default", exact: true }).click(),
+  ]);
+  assert.equal(defaultSaved.status(), 200);
+  assert.deepEqual(defaultSaved.request().postDataJSON().nativeResources, defaultSelection);
+  assert.equal(defaultSaved.request().postDataJSON().cwd, fixture.project);
+  await defaultSaved.json();
   await dialog.getByText("Project default saved. Existing sessions are unchanged.", { exact: true }).waitFor();
   assert.equal(records(fixture.starts).length, defaultStarts);
   assert.deepEqual((await api(`/api/sessions/${id}`)).nativeResources, off);
@@ -188,29 +223,27 @@ export async function checkNativeTools(page, { base, api, post, fixture, artifac
   assert.deepEqual((await api(`/api/sessions/${optedOut.sessionId}`)).nativeResources, off);
   assert.equal(records(fixture.starts).length, beforeOptOut, "explicit off never briefly connects the default");
 
-  // Lose the acknowledgement after a real reset. Reconcile explicitly; never
-  // retry the mutation or alter either existing session's saved resources.
+  // One genuine default clear; contradictory/lost ACK decisions belong below.
   dialog = await show();
-  let resets = 0;
-  const loseDefaultAck = async route => {
-    if (route.request().method() !== "POST") return route.continue();
-    resets++; const response = await route.fetch(); assert.equal(response.status(), 200);
-    const actual = await response.json();
-    // Valid-shaped but contradictory data is not confirmation of the reset.
-    await route.fulfill({ status: 200, json: { ...actual, projectDefault: { ...actual.projectDefault, selection: defaultSelection }, error: "Synthetic default acknowledgement unavailable" } });
-  };
-  await page.route("**/api/native-tools", loseDefaultAck);
-  try {
-    await dialog.getByRole("button", { name: "Clear project default", exact: true }).click();
-    await dialog.getByText("Synthetic default acknowledgement unavailable", { exact: true }).waitFor();
-    assert.equal(resets, 1);
-    assert.equal(await dialog.getByRole("button", { name: "Save selection as project default", exact: true }).isDisabled(), true);
-    await dialog.getByRole("button", { name: "Refresh status", exact: true }).click();
-    await dialog.getByText("No project default. New sessions start with native tools off unless explicitly selected.", { exact: true }).waitFor();
-    await dialog.getByText(/The save could not be confirmed/).waitFor({ state: "hidden" });
-    assert.deepEqual((await api(`/api/sessions/${inherited.sessionId}`)).nativeResources, defaultSelection);
-    assert.deepEqual((await api(`/api/sessions/${id}`)).nativeResources, off);
-  } finally { await page.unroute("**/api/native-tools", loseDefaultAck); }
+  const [cleared] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === "/api/native-tools" && response.request().method() === "POST"),
+    dialog.getByRole("button", { name: "Clear project default", exact: true }).click(),
+  ]);
+  assert.equal(cleared.status(), 200);
+  assert.equal(cleared.request().postDataJSON().nativeResources, null);
+  await cleared.json();
+  await dialog.getByText("No project default. New sessions start with native tools off unless explicitly selected.", { exact: true }).waitFor();
+  assert.deepEqual((await api(`/api/sessions/${inherited.sessionId}`)).nativeResources, defaultSelection);
+  assert.deepEqual((await api(`/api/sessions/${id}`)).nativeResources, off);
   await page.screenshot({ path: join(artifacts, `native-tools-${width}.png`) });
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    // Release any already-admitted stdio call even after a browser assertion.
+    // Harness still joins native/browser/service disposal; this is not a retry.
+    try { writeFileSync(fixture.release, "release native fixture during settlement"); }
+    catch (error) { failures.push(error); }
+  }
+  if (failures.length) throw new AggregateError(failures, "Selected native runtime body and release failed");
 }

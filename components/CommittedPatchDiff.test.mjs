@@ -1,96 +1,10 @@
-import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import Module, { createRequire } from "node:module";
-import test from "node:test";
-import React from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { parsePatchFiles } from "@pierre/diffs";
-import ts from "typescript";
-import { createJiti } from "jiti";
-const jiti = createJiti(import.meta.url, { fsCache: false, jsx: { runtime: "automatic" }, alias: { "@": new URL("..", import.meta.url).pathname } });
-const review = await jiti.import("../lib/git-diff-review.ts");
-const toolbar = await jiti.import("./GitDiffToolbar.tsx");
-const preferences = await jiti.import("../hooks/useGitDiffPreferences.ts");
-
-const filename = new URL("./CommittedPatchDiff.tsx", import.meta.url).pathname;
-const source = await readFile(filename, "utf8");
-const mod = new Module(filename);
-mod.filename = filename;
-const require = createRequire(import.meta.url);
-// The component is transpiled to CJS for this focused SSR test; Pierre exports ESM-only entrypoints.
-mod.require = (id) => {
-  if (id === "@/hooks/useTheme") return { useTheme: () => ({ isDark: false }) };
-  if (id === "@/lib/git-diff-review") return review;
-  if (id === "./GitDiffToolbar") return toolbar;
-  if (id === "@/hooks/useGitDiffPreferences") return preferences;
-  if (id === "@pierre/diffs") return require(new URL("../node_modules/@pierre/diffs/dist/index.js", import.meta.url).pathname);
-  if (id === "@pierre/diffs/react") return require(new URL("../node_modules/@pierre/diffs/dist/react/index.js", import.meta.url).pathname);
-  return require(id);
-};
-mod._compile(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
-const { CommittedPatchDiff } = mod.exports;
-const render = (patch, hasBinaryChanges = false) => renderToStaticMarkup(React.createElement(CommittedPatchDiff, {
-  patch, hasBinaryChanges, before: "parent", after: "commit",
-}));
-
-// Exercise the actual callbacks with public viewer doubles, including layout before passive effects.
-// SSR cannot exercise CodeView's browser lifecycle; the unchanged VM collapse/reopen assertion does.
-function positionCallbacks(bindings) {
-  const ast = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const declarations = new Map();
-  const names = ["rememberPosition", "bindViewer"];
-  const visit = (node) => {
-    if (ts.isVariableDeclaration(node) && names.includes(node.name.getText(ast))) declarations.set(node.name.getText(ast), node.getText(ast));
-    ts.forEachChild(node, visit);
-  };
-  visit(ast);
-  assert.equal(declarations.size, names.length);
-  const code = ts.transpileModule([...declarations.values()].map((text) => `const ${text};`).join("\n"), {
-    compilerOptions: { target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  return new Function(...Object.keys(bindings), `${code}\nreturn { ${names.join(", ")} };`)(...Object.values(bindings));
-}
-
-function retainedPosition(mounted = false) {
-  const anchor = { lineNumber: 50, side: "additions", offset: -7 };
-  const model = { reading: "after", anchors: { after: anchor }, scrollLeft: 19 };
-  let top = 0;
-  const calls = [];
-  const renderer = { getNumericScrollAnchor: () => top === 0 ? { lineNumber: 1, top: 0 } : { lineNumber: 50, top: 1000 } };
-  const item = { type: "file", instance: renderer, element: {} };
-  const instance = { getRenderedItems: () => [item], getScrollTop: () => top };
-  const viewer = { current: { getInstance: () => instance, scrollTo: (target) => {
-    calls.push(target);
-    // Pierre's start alignment is lineTop - stickyOffset - offset (headers disabled here).
-    top = 1000 - target.offset;
-  } } };
-  const viewport = { current: { scrollLeft: 0 } }, bound = { current: new WeakSet() };
-  const callbacks = positionCallbacks({ model, viewer, viewport, bound, mounted: { current: mounted },
-    accessibleButtons: { current: new WeakSet() }, ensureContext: () => {}, useCallback: (callback) => callback });
-  return { ...callbacks, anchor, model, viewer, viewport, bound, renderer, calls };
-}
-
-test("initial viewport notifications cannot replace a retained anchor before binding", () => {
-  const state = retainedPosition();
-  state.rememberPosition();
-  assert.equal(state.model.anchors.after, state.anchor);
-  assert.equal(state.model.scrollLeft, 19);
-});
-
-for (const mounted of [false, true]) test(`retained After position restores once ${mounted ? "after" : "before"} passive mount, without offset drift`, () => {
-  const state = retainedPosition(mounted);
-  state.bindViewer();
-  assert.deepEqual(state.calls, [{ type: "line", id: "after", lineNumber: 50, side: undefined, offset: -7, align: "start", behavior: "instant" }]);
-  assert.equal(state.viewport.current.scrollLeft, 19);
-  state.rememberPosition();
-  assert.deepEqual(state.model.anchors.after, state.anchor);
-  state.bindViewer();
-  assert.equal(state.calls.length, 1);
-  state.viewer.current = null;
-  state.bindViewer(); // A queued post-render frame after unmount must be harmless.
-  state.rememberPosition();
-  assert.deepEqual(state.model.anchors.after, state.anchor);
-});
+import '../lib/testing/client-native-boundary.fixture.mjs';
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { act, createElement, useEffect, useLayoutEffect } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { deferred } from '../lib/testing/async.fixture.mjs';
+import { packet, click, choose, input, key, textButton } from './cards-git.fixture.mjs';
 
 const modified = `diff --git a/notes.txt b/notes.txt
 index 4824a54..d914290 100644
@@ -101,64 +15,289 @@ index 4824a54..d914290 100644
 -Old text
 +New text
 `;
+const rootPatch = count => `diff --git a/notes.txt b/notes.txt\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/notes.txt\n@@ -0,0 +1,${count} @@\n${Array.from({ length: count }, (_, i) => `+Line ${i + 1}`).join('\n')}\n`;
 
-test("committed text patches keep the three view controls while highlighting loads", () => {
-  const html = render(modified);
-  assert.match(html, /aria-label="Patch view"/);
-  assert.match(html, /role="region" aria-label="Raw patch"/);
-  assert.match(html, />Side by side<|>Unified<|>Raw patch</);
-  assert.match(html, /aria-pressed="true"[^>]*>Raw patch/);
-  assert.match(html, /-Old text/);
-  assert.doesNotMatch(html, /<diffs-container/);
-  const file = parsePatchFiles(modified, undefined, true)[0].files[0];
-  assert.equal(file.hunks[0].hunkSpecs.trim(), "@@ -1,2 +1,2 @@");
-  assert.deepEqual(file.deletionLines.map((line) => line.trim()), ["First line", "Old text"]);
-  assert.deepEqual(file.additionLines.map((line) => line.trim()), ["First line", "New text"]);
-});
-
-test("a stack can own the view without repeating per-file controls, retaining raw while highlighting loads", () => {
-  const html = renderToStaticMarkup(React.createElement(CommittedPatchDiff, {
-    patch: modified, hasBinaryChanges: false, before: "parent", after: "commit", view: "unified",
+// A single owned realm per file keeps Pierre's real custom-element registration
+// and application React identity in one physical graph. Subcases are serial;
+// each unmounts its actual reader. There is no CodeView/renderer/hook double.
+test('CommittedPatchDiff: actual SSR, CodeView bindings and controls', async t => {
+  const h = await packet(t), api = await h.load('@pierre/diffs');
+  const { CommittedPatchDiff } = await h.load('./CommittedPatchDiff.tsx');
+  const { createDiffReview } = await h.load('../lib/git-diff-review.ts');
+  const render = (patch, hasBinaryChanges = false, extra = {}) => renderToStaticMarkup(createElement(CommittedPatchDiff, {
+    patch, hasBinaryChanges, before: 'parent', after: 'commit', ...extra,
   }));
-  assert.doesNotMatch(html, /aria-label="Patch view"/);
-  assert.match(html, /role="region" aria-label="Raw patch"/);
-  assert.match(html, /-Old text/);
-});
+  const show = props => h.render(createElement(CommittedPatchDiff, {
+    hasBinaryChanges: false, before: 'parent', after: 'commit', onReadWork: h.onReadWork, ...props,
+  }));
+  const run = async (name, body) => t.test(name, async st => {
+    st.after(async () => { await h.render(null); });
+    await body(st);
+  });
 
-test("root commits parse additions next to an empty parent; raw fallback escapes contents", () => {
-  const root = `diff --git a/base.txt b/base.txt
-new file mode 100644
-index 0000000..1111111
---- /dev/null
-+++ b/base.txt
-@@ -0,0 +1 @@
-+<script>alert(1)</script>
-`;
-  const file = parsePatchFiles(root, undefined, true)[0].files[0];
-  assert.equal(file.type, "new");
-  assert.deepEqual(file.deletionLines, []);
-  assert.deepEqual(file.additionLines.map((line) => line.trim()), ["<script>alert(1)</script>"]);
-  assert.match(render(root), /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
-  const raw = render(root.repeat(2)); // unsupported multi-file responses must not lose content
-  assert.match(raw, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
-  assert.doesNotMatch(raw, /<script>/);
-});
+  await run('committed text patches keep the three view controls while highlighting loads', async () => {
+    const html = render(modified);
+    assert.match(html, /aria-label="Patch view"/); assert.match(html, /role="region" aria-label="Raw patch"/);
+    for (const label of ['Side by side', 'Unified', 'Raw patch']) assert.equal(html.includes(`>${label}<`), true, label);
+    assert.match(html, /aria-pressed="true"[^>]*>Raw patch/); assert.match(html, /-Old text/);
+    assert.doesNotMatch(html, /<diffs-container/);
+    const file = api.parsePatchFiles(modified, undefined, true)[0].files[0];
+    assert.equal(file.hunks[0].hunkSpecs.trim(), '@@ -1,2 +1,2 @@');
+    assert.deepEqual(file.deletionLines.map(line => line.trim()), ['First line', 'Old text']);
+    assert.deepEqual(file.additionLines.map(line => line.trim()), ['First line', 'New text']);
+  });
+  await run('a stack can own the view without repeating per-file controls, retaining raw while highlighting loads', async () => {
+    const html = render(modified, false, { view: 'unified' });
+    assert.doesNotMatch(html, /aria-label="Patch view"/); assert.match(html, /role="region" aria-label="Raw patch"/);
+    assert.match(html, /-Old text/);
+  });
+  await run('root commits parse additions next to an empty parent; raw fallback escapes contents', async () => {
+    const root = 'diff --git a/base.txt b/base.txt\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/base.txt\n@@ -0,0 +1 @@\n+<script>alert(1)</script>\n';
+    const file = api.parsePatchFiles(root, undefined, true)[0].files[0];
+    assert.equal(file.type, 'new'); assert.deepEqual(file.deletionLines, []);
+    assert.deepEqual(file.additionLines.map(line => line.trim()), ['<script>alert(1)</script>']);
+    assert.match(render(root), /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+    const raw = render(root.repeat(2));
+    assert.match(raw, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/); assert.doesNotMatch(raw, /<script>/);
+  });
+  await run('large patches keep their complete raw text rather than creating thousands of DOM rows', async () => {
+    const added = Array.from({ length: 2501 }, (_, index) => `+Line ${index}`).join('\n');
+    const patch = `diff --git a/large b/large\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/large\n@@ -0,0 +1,2501 @@\n${added}\n`;
+    const html = render(patch);
+    assert.match(html, /Too many lines for the interactive diff/); assert.match(html, /Line 2500/);
+    assert.doesNotMatch(html, /aria-label="Side-by-side diff"/);
+  });
+  await run('binary and metadata-only changes retain a truthful raw patch, never fake columns', async () => {
+    const binary = render('diff --git a/x.png b/x.png\nBinary files a/x.png and b/x.png differ\n', true);
+    assert.match(binary, /Binary changes are summarized/); assert.match(binary, /Binary files a\/x.png and b\/x.png differ/);
+    assert.doesNotMatch(binary, /Side-by-side diff|Side by side/);
+    const metadata = render('diff --git a/tool b/tool\nold mode 100644\nnew mode 100755\n');
+    assert.match(metadata, /metadata-only change/); assert.match(metadata, /new mode 100755/);
+  });
 
-test("large patches keep their complete raw text rather than creating thousands of DOM rows", () => {
-  const added = Array.from({ length: 2501 }, (_, index) => `+Line ${index}`).join("\n");
-  const patch = `diff --git a/large b/large\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/large\n@@ -0,0 +1,2501 @@\n${added}\n`;
-  const html = render(patch);
-  assert.match(html, /Too many lines for the interactive diff/);
-  assert.match(html, /Line 2500/);
-  assert.doesNotMatch(html, /aria-label="Side-by-side diff"/);
-});
+  // Warm the actual highlighter for text, explicitly awaiting its real promise.
+  // This is not an import/renderer double or a background-work flush. CodeView's
+  // warm text rendering is synchronous; unexpected async renderer admission below
+  // is observed and fails, rather than being presumed joined by preload alone.
+  await act(async () => {
+    const warm = api.preloadHighlighter({ themes: ['pierre-light', 'pierre-dark'], langs: ['text'] });
+    h.onReadWork(warm); await warm;
+  });
+  const asyncRenders = [];
+  for (const Type of [api.FileRenderer, api.DiffHunksRenderer]) {
+    assert.equal(typeof Type, 'function', 'the actual renderer export exists');
+    for (const method of ['asyncHighlight', 'initializeHighlighter']) {
+      const original = Type.prototype[method];
+      assert.equal(typeof original, 'function', `real renderer ${method} exists`);
+      t.mock.method(Type.prototype, method, function (...args) {
+        const promise = original.apply(this, args); asyncRenders.push(promise); h.onReadWork(promise); return promise;
+      });
+    }
+  }
+  const setups = [], moves = [], selections = [];
+  let passive = false, scrollNotifications = 0;
+  const originalSetup = api.CodeView.prototype.setup;
+  t.mock.method(api.CodeView.prototype, 'setup', function (...args) {
+    const value = originalSetup.apply(this, args); setups.push(this); return value;
+  });
+  const originalMove = api.CodeView.prototype.scrollTo;
+  t.mock.method(api.CodeView.prototype, 'scrollTo', function (target) {
+    moves.push({ instance: this, target: { ...target }, passive }); return originalMove.call(this, target);
+  });
+  const originalSelection = api.CodeView.prototype.setSelectedLines;
+  t.mock.method(api.CodeView.prototype, 'setSelectedLines', function (selection, ...args) {
+    selections.push({ id: selection?.id, range: selection?.range && { ...selection.range } });
+    return originalSelection.call(this, selection, ...args);
+  });
+  const originalSubscribe = api.CodeView.prototype.subscribeToScroll;
+  t.mock.method(api.CodeView.prototype, 'subscribeToScroll', function (callback) {
+    return originalSubscribe.call(this, (...args) => { scrollNotifications++; callback(...args); });
+  });
+  const current = () => {
+    const viewport = h.view.container.querySelector('.git-diff-code-view');
+    assert.equal(Boolean(viewport), true, 'the real CodeView is mounted');
+    const instance = setups.findLast(item => item.getContainerElement() === viewport);
+    assert.equal(Boolean(instance), true, 'the real public CodeView instance owns this viewport');
+    return { viewport, instance };
+  };
+  const awaitReads = async from => act(async () => { await h.settle(from); });
 
-test("binary and metadata-only changes retain a truthful raw patch, never fake columns", () => {
-  const binary = render("diff --git a/x.png b/x.png\nBinary files a/x.png and b/x.png differ\n", true);
-  assert.match(binary, /Binary changes are summarized/);
-  assert.match(binary, /Binary files a\/x.png and b\/x.png differ/);
-  assert.doesNotMatch(binary, /Side-by-side diff|Side by side/);
-  const metadata = render("diff --git a/tool b/tool\nold mode 100644\nnew mode 100755\n");
-  assert.match(metadata, /metadata-only change/);
-  assert.match(metadata, /new mode 100755/);
+  for (const beforePassive of [false, true]) await run(`retained After position restores once ${beforePassive ? 'before' : 'after'} passive mount, without offset drift`, async () => {
+    const model = createDiffReview(rootPatch(120)), anchor = { lineNumber: 50, side: 'additions', offset: -7 };
+    model.reading = 'after'; model.anchors.after = anchor; model.scrollLeft = 19;
+    const beforeBinding = [], startNotifications = scrollNotifications, startMoves = moves.length, from = h.work.length;
+    function LayoutBoundary({ children }) {
+      useLayoutEffect(() => {
+        const { viewport } = current();
+        // Actual CodeView's DOM scroll listener calls actual rememberPosition.
+        viewport.dispatchEvent(new h.view.window.Event('scroll'));
+        beforeBinding.push(model.anchors.after === anchor && model.scrollLeft === 19);
+        if (beforePassive) h.frames.fireDuringLayout(h.frames.take());
+      }, []);
+      useEffect(() => { passive = true; return () => { passive = false; }; }, []);
+      return children;
+    }
+    const tree = wrap => createElement(LayoutBoundary, null, createElement(CommittedPatchDiff, {
+      patch: model.patch, reviewModel: model, hasBinaryChanges: false, before: 'empty tree', after: 'captured commit',
+      view: 'split', wrap, onReadWork: h.onReadWork,
+    }));
+    await h.render(tree(false)); await awaitReads(from);
+    assert.equal(scrollNotifications > startNotifications, true, 'real initial scroll notifications ran');
+    assert.equal(beforeBinding.length > 0 && beforeBinding.every(Boolean), true, 'initial viewport notifications cannot replace a retained anchor before binding');
+    await h.frames.fire(h.frames.take()); // actual post-render binding frame
+    await h.frames.fire(h.frames.take()); // actual renderer applies the requested position
+    const { viewport, instance } = current(), item = instance.getRenderedItems()[0];
+    assert.equal(item?.type, 'file'); assert.equal(Boolean(item.element.shadowRoot), true, 'actual Pierre open shadow tree');
+    const restored = moves.slice(startMoves).filter(move => move.instance === instance);
+    assert.equal(restored.length, 1, 'one restoration per real viewer instance, not per notification');
+    assert.deepEqual(restored[0].target, { type: 'line', id: 'after', lineNumber: 50, side: undefined, offset: -7, align: 'start', behavior: 'instant' });
+    assert.equal(restored[0].passive, !beforePassive, 'binding phase uses the real live ref, not a fabricated mounted flag');
+    assert.equal(viewport.scrollLeft, 19);
+    const position = item.instance.getLinePosition(anchor.lineNumber).top - anchor.offset;
+    assert.equal(instance.getScrollTop(), position);
+    await h.view.dispatch(viewport, new h.view.window.Event('scroll'));
+    const retained = model.anchors.after;
+    // Pierre chooses the first visible numeric line. A negative-offset line 50
+    // may canonically become line 51 with positive offset; the viewport point,
+    // not a fabricated renderer's line identity, must remain exactly unchanged.
+    assert.equal(item.instance.getLinePosition(retained.lineNumber).top - retained.offset, position);
+    assert.equal(model.scrollLeft, 19);
+    await h.render(tree(true)); await h.frames.fire(h.frames.take());
+    assert.equal(current().instance === instance, true, 'layout options preserve the real viewer');
+    assert.equal(moves.slice(startMoves).filter(move => move.instance === instance).length, 1, 'repeated binding cannot restore/drift again');
+    await h.render(tree(false));
+    const lateFrames = h.frames.take(), previousMoves = moves.length, previousNotifications = scrollNotifications;
+    await h.render(null);
+    await h.frames.fire(lateFrames); // really deliver queued post-render work after ref clear
+    await h.view.dispatch(viewport, new h.view.window.Event('scroll'));
+    assert.equal(moves.length, previousMoves, 'late frame cannot bind a disposed reader');
+    assert.equal(scrollNotifications, previousNotifications, 'actual CodeView scroll subscription was removed');
+    assert.equal(model.anchors.after === retained, true, 'unmounted callbacks preserve the retained anchor');
+  });
+
+  await run('gap controls bind actual shadow buttons once, handle Enter/Space and replay comparison-local expansion', async () => {
+    const oldLines = Array.from({ length: 120 }, (_, i) => `Line ${i + 1}\n`), newLines = [...oldLines];
+    oldLines[49] = 'Old text\n'; newLines[49] = 'New text\n';
+    const patch = 'diff --git a/notes.txt b/notes.txt\nindex 4824a54..d914290 100644\n--- a/notes.txt\n+++ b/notes.txt\n@@ -49,3 +49,3 @@\n Line 49\n-Old text\n+New text\n Line 51\n';
+    const context = { oldFile: { name: 'notes.txt', contents: oldLines.join(''), cacheKey: 'immutable:before' },
+      newFile: { name: 'notes.txt', contents: newLines.join(''), cacheKey: 'immutable:after' } };
+    const model = createDiffReview(patch);
+    // Real already-hydrated comparison state, like a reopened cached review.
+    // Partial-object fetch/hydration remains in the installed diff-context chain;
+    // no asynchronous third-party loader is fabricated or privately extracted.
+    api.hydratePartialDiff('merge', model.file, context); model.context = context;
+    const props = { patch, reviewModel: model, view: 'split', wrap: false };
+    const from = h.work.length; await show(props); await awaitReads(from); await h.frames.fire(h.frames.take());
+    const gapButtons = () => [...current().instance.getRenderedItems()[0].element.shadowRoot.querySelectorAll('[data-expand-button]')];
+    const first = gapButtons(); assert.equal(first.length > 0, true, 'real omitted context has real gap controls');
+    for (const button of first) {
+      assert.equal(button.tabIndex, 0); assert.match(button.getAttribute('aria-label'), /^Expand (?:entire gap|previous context|following context|nearby context)$/);
+    }
+    const instance = current().instance.getRenderedItems()[0].instance, boundExpand = instance.expandHunk, expanded = [];
+    t.mock.method(instance, 'expandHunk', function (...args) { expanded.push(args); return boundExpand.apply(this, args); });
+    const near = first.find(button => !button.hasAttribute('data-expand-all-button')) ?? first[0];
+    let workFrom = h.work.length;
+    assert.equal(await key(h.view, near, 'Enter'), true); await awaitReads(workFrom);
+    assert.equal(expanded.length, 1, 'one key creates one real native expansion');
+    assert.equal(model.expansions.size > 0, true);
+    await h.frames.fire(h.frames.take());
+    await show({ ...props, wrap: true }); await h.frames.fire(h.frames.take());
+    const remaining = gapButtons().find(button => !button.hasAttribute('data-expand-all-button')) ?? gapButtons()[0];
+    assert.equal(Boolean(remaining), true, 'another real gap remains after bounded expansion');
+    workFrom = h.work.length;
+    assert.equal(await key(h.view, remaining, ' '), true); await awaitReads(workFrom);
+    assert.equal(expanded.length, 2, 'rebinding must not duplicate keyboard listeners');
+    const saved = [...model.expansions].map(([index, amount]) => [index, { ...amount }]);
+    await h.render(null); const reopened = h.work.length; await show(props); await awaitReads(reopened); await h.frames.fire(h.frames.take());
+    assert.deepEqual([...model.expansions], saved, 'replay does not count the saved expansion twice');
+    assert.equal(model.context === context, true); assert.equal(h.requests.length, 0, 'local reading state cannot initiate Git mutation/transport');
+  });
+
+  await run('real version/search/line/change/wrap/wide controls bind the current immutable comparison', async () => {
+    const model = createDiffReview(rootPatch(120)), from = h.work.length;
+    await show({ patch: model.patch, reviewModel: model }); await awaitReads(from); await h.frames.fire(h.frames.take());
+    const button = label => h.view.container.querySelector(`[aria-label="${label}"]`);
+    await click(h.view, textButton(h.view.container, 'Unified'));
+    assert.equal(Boolean(h.view.container.querySelector('[aria-label="Unified diff"]')), true);
+    await click(h.view, textButton(h.view.container, 'Side by side'));
+    assert.equal(Boolean(h.view.container.querySelector('[aria-label="Side-by-side diff"]')), true);
+    await input(h.view, button('Search full file'), 'lInE 50');
+    let workFrom = h.work.length;
+    await click(h.view, button('Next match')); await awaitReads(workFrom);
+    await h.frames.fire(h.frames.take()); await h.frames.fire(h.frames.take());
+    assert.deepEqual(selections.at(-1), { id: 'diff', range: { start: 50, end: 50, side: 'additions' } });
+    await choose(h.view, button('Search file version'), 'deletions');
+    workFrom = h.work.length; await click(h.view, button('Next match')); await awaitReads(workFrom);
+    assert.match(h.view.container.textContent, /No matches in this file version/);
+    await click(h.view, textButton(h.view.container, 'After')); await awaitReads(h.work.length - 1);
+    assert.equal(model.reading, 'after'); assert.equal(Boolean(h.view.container.querySelector('[aria-label="After file"]')), true);
+    await input(h.view, button('Line number'), '75'); workFrom = h.work.length;
+    await key(h.view, button('Line number'), 'Enter'); await awaitReads(workFrom);
+    await h.frames.fire(h.frames.take()); await h.frames.fire(h.frames.take());
+    assert.deepEqual(selections.at(-1), { id: 'after', range: { start: 75, end: 75 } });
+    await click(h.view, textButton(h.view.container, 'Before')); await awaitReads(h.work.length - 1);
+    assert.match(h.view.container.textContent, /does not exist in the before version/);
+    await click(h.view, textButton(h.view.container, 'Changes')); await awaitReads(h.work.length - 1);
+    await click(h.view, button('Next change'));
+    await h.frames.fire(h.frames.take()); await h.frames.fire(h.frames.take());
+    assert.equal(model.changeIndex, 0); assert.equal(selections.at(-1).id, 'diff');
+    await click(h.view, textButton(h.view.container, 'Wrap lines'));
+    assert.equal(textButton(h.view.container, 'Wrap lines').getAttribute('aria-pressed'), 'false');
+    await click(h.view, textButton(h.view.container, 'Raw patch'));
+    assert.equal(h.view.container.querySelector('[aria-label="Raw patch"]').textContent, model.patch);
+    await click(h.view, textButton(h.view.container, 'Side by side')); await h.frames.fire(h.frames.take());
+    const wide = textButton(h.view.container, 'Wide view'); wide.focus();
+    await click(h.view, wide); const dialog = h.view.container.querySelector('dialog');
+    assert.equal(dialog.open, true); assert.equal(dialog.contains(h.view.container.querySelector('.git-diff-code-view')), true);
+    assert.equal(await key(h.view, dialog, 'Escape'), true); assert.equal(dialog.open, false);
+    assert.equal(h.view.window.document.activeElement === textButton(h.view.container, 'Wide view'), true);
+    const saved = JSON.parse(h.view.window.localStorage.getItem('pi-web:git-diff-preferences'));
+    assert.deepEqual(saved, { view: 'split', wrap: false }, 'only presentation preferences persist, never contents or search/expansion authority');
+    assert.equal(h.requests.length, 0);
+  });
+
+  await run('context failures/retry/current refresh and ignored-abort work settle through actual control continuations', async st => {
+    const requests = [], closing = new Error('Owned context gate released during cleanup');
+    h.expectFailure(closing);
+    const release = () => { for (const request of requests) request.gate.reject(closing); };
+    h.addDomainRelease(release);
+    st.after(async () => { await h.render(null); release(); await awaitReads(0); });
+    const loadContext = signal => { const gate = deferred(); requests.push({ gate, signal }); return gate.promise; };
+    const context = { oldFile: { name: 'notes.txt', contents: 'First line\nOld text\n', cacheKey: 'captured:parent' },
+      newFile: { name: 'notes.txt', contents: 'First line\nNew text\n', cacheKey: 'captured:commit' } };
+    const model = createDiffReview(modified), refreshed = [], from = h.work.length;
+    const props = { patch: modified, reviewModel: model, view: 'split', wrap: false, loadContext, onRefresh: () => refreshed.push('old') };
+    await show(props); await awaitReads(from); assert.equal(requests.length, 0, 'context is lazy even with the real renderer');
+    await click(h.view, textButton(h.view.container, 'After'));
+    assert.equal(requests.length, 1); assert.equal(model.context, null);
+    const failure = new Error('Captured context unavailable'); h.expectFailure(failure);
+    let workFrom = from;
+    await act(async () => { requests[0].gate.reject(failure); await h.settle(workFrom); });
+    assert.match(h.view.container.querySelector('[role=alert]').textContent, /Captured context unavailable/);
+    await show({ ...props, onRefresh: () => refreshed.push('current') });
+    await click(h.view, textButton(h.view.container, 'Refresh diff')); assert.deepEqual(refreshed, ['current']);
+    workFrom = h.work.length;
+    await click(h.view, textButton(h.view.container, 'Retry context'));
+    assert.equal(requests.length, 2);
+    await act(async () => { requests[1].gate.resolve(context); await h.settle(workFrom); });
+    assert.equal(model.context === context, true); assert.equal(h.view.container.querySelector('[role=alert]') === null, true);
+    await click(h.view, textButton(h.view.container, 'After')); await awaitReads(h.work.length - 1);
+    assert.equal(model.reading, 'after');
+    assert.match(h.view.container.querySelector('[aria-label="After file"]').textContent, /After · commit/);
+    // Admit a different comparison; its pending body outlives observation. Only
+    // the exact aborted request may fail with the production-created AbortError.
+    const oldModel = createDiffReview(modified), nextFrom = h.work.length;
+    await show({ ...props, key: 'pending-old', reviewModel: oldModel }); await awaitReads(nextFrom);
+    workFrom = h.work.length; await click(h.view, textButton(h.view.container, 'After'));
+    const obsolete = requests.at(-1);
+    await show({ patch: rootPatch(2), key: 'new-comparison', view: 'raw' });
+    assert.equal(obsolete.signal.aborted, true);
+    await act(async () => { obsolete.gate.resolve(context); await h.settle(workFrom); });
+    const rejected = h.work.slice(workFrom).filter(entry => entry.error);
+    assert.equal(rejected.length, 1); assert.equal(rejected[0].error.name, 'AbortError'); h.expectFailure(rejected[0].error);
+    assert.equal(oldModel.context, null); assert.equal(oldModel.reading, 'diff');
+    assert.equal(h.view.container.querySelector('[aria-label="Raw patch"]').textContent, rootPatch(2));
+  });
+  await act(async () => { await h.settle(); });
+  assert.equal(asyncRenders.length, 0, 'the warm text fixture must not admit unjoined third-party async rendering');
 });

@@ -1,0 +1,21 @@
+// One physical graph: application React, actual contexts/forms, no child success doubles.
+export { I18nProvider } from "@/hooks/useI18n";
+export * from "./SettingsUi";
+export * from "./AgentsConfig";
+export * from "./ModelsConfig";
+export * from "./EnabledModelsSection";
+export * from "./SettingsPanel";
+export * from "./FontSettings";
+export { SkillsConfig } from "./SkillsConfig";
+export { PluginsConfig } from "./PluginsConfig";
+export { SubagentIcon } from "./SubagentIcon";
+export { enLocale } from "@/lib/i18n/messages/en";
+export * from "./agents-config-helpers";
+export * from "./models-config-helpers";
+export * from "@/lib/settings-navigation";
+export * from "@/lib/font-preferences";
+export { useChatAppearance, clampChatContentWidth, clampChatContentFontSize } from "@/hooks/useChatAppearance";
+export { useFontPreferences } from "@/hooks/useFontPreferences";
+export { THEME_OPTIONS } from "@/lib/theme";
+export { useTheme } from "@/hooks/useTheme";
+export { TITLE_LANGUAGES } from "@/lib/title-language-options";

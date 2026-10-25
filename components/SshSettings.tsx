@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
 import type { SshAgentController, SshDisplayConnection, SshRecoveryItem } from "@/hooks/useSshAgent";
@@ -14,8 +14,16 @@ const field = { display: "grid", gap: 4 } as const;
 function backendId(backend: SshBackend) { return backend.type === "socket" ? `socket:${backend.path}:${backend.label}` : backend.type; }
 
 /** Dedicated embedded Settings content only. Its controller must outlive this component. */
-export function SshSettings({ controller: c, active = true }: { controller: SshAgentController; active?: boolean }) {
+export function SshSettings({ controller: c, active = true, onWork }: { controller: SshAgentController; active?: boolean; onWork?: (work: Promise<unknown>) => void }) {
   const { t } = useI18n();
+  // Passive observation of already-started complete handlers. Observer identity
+  // never participates in discovery/resource dependencies or grants authority.
+  const workObserver = useRef(onWork);
+  workObserver.current = onWork;
+  const observeWork = useCallback(<T,>(work: Promise<T>): Promise<T> => {
+    workObserver.current?.(work);
+    return work;
+  }, []);
   const [draft, setDraft] = useState<SshBackend | null>(null);
   const [path, setPath] = useState("");
   const [socketLabel, setSocketLabel] = useState("");
@@ -29,7 +37,7 @@ export function SshSettings({ controller: c, active = true }: { controller: SshA
   const [copiedId, setCopiedId] = useState("");
   const { refresh, cancelDiscovery } = c;
   // Settings owns discovery, never the signer's connection or signing prompt.
-  useEffect(() => { if (active) void refresh(); return cancelDiscovery; }, [active, refresh, cancelDiscovery]);
+  useEffect(() => { if (active) observeWork(refresh()); return cancelDiscovery; }, [active, refresh, cancelDiscovery, observeWork]);
 
   const status = c.status;
   const disabled = c.busy || c.discovering || c.auth !== "ready" || !status?.supported;
@@ -82,7 +90,7 @@ export function SshSettings({ controller: c, active = true }: { controller: SshA
           </select>
         </label>
         <div style={actions}>
-          <ConfigButton variant="primary" disabled={disabled} onClick={() => void c.useAgent(chosen).then(ok => { if (ok) setDraft(null); })}>{t("sshAgent.useAgent")}</ConfigButton>
+          <ConfigButton variant="primary" disabled={disabled} onClick={() => void observeWork(c.useAgent(chosen).then(ok => { if (ok) setDraft(null); }))}>{t("sshAgent.useAgent")}</ConfigButton>
           <ConfigButton disabled={c.busy || c.discovering} onClick={() => void c.refresh()}>{t(c.discovering ? "sshAgent.refreshing" : "sshAgent.refresh")}</ConfigButton>
         </div>
         <p style={muted}>{t("sshAgent.discoveryHelp")}</p>
@@ -91,7 +99,7 @@ export function SshSettings({ controller: c, active = true }: { controller: SshA
           <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
             <label style={field}>{t("sshAgent.socketLabel")}<input maxLength={80} value={socketLabel} disabled={disabled} onChange={event => setSocketLabel(event.target.value)} /></label>
             <label style={field}>{t("sshAgent.socketPath")}<input value={path} disabled={disabled} onChange={event => setPath(event.target.value)} placeholder={t("sshAgent.socketPlaceholder")} /></label>
-            <ConfigButton disabled={disabled || !socketLabel.trim() || !path.startsWith("/")} onClick={() => void c.addSocket(path, socketLabel.trim()).then(ok => { if (ok) { setPath(""); setSocketLabel(""); } })}>{t("sshAgent.saveSocket")}</ConfigButton>
+            <ConfigButton disabled={disabled || !socketLabel.trim() || !path.startsWith("/")} onClick={() => void observeWork(c.addSocket(path, socketLabel.trim()).then(ok => { if (ok) { setPath(""); setSocketLabel(""); } }))}>{t("sshAgent.saveSocket")}</ConfigButton>
             <p style={muted}>{t("sshAgent.socketHelp")}</p>
           </div>
         </details>
@@ -123,7 +131,7 @@ export function SshSettings({ controller: c, active = true }: { controller: SshA
       <section style={box} aria-label={t("sshAgent.keys")}>
         <ConfigSectionTitle>{t("sshAgent.keys")}</ConfigSectionTitle>
         {!status?.registry.keys.length && <p>{t("sshAgent.noKeys")}</p>}
-        {status?.registry.keys.map(key => <KeyRow key={key.id} item={key} controller={c} disabled={disabled} copied={copiedId === key.id} onCopy={() => {
+        {status?.registry.keys.map(key => <KeyRow key={key.id} item={key} controller={c} observeWork={observeWork} disabled={disabled} copied={copiedId === key.id} onCopy={() => {
           setLocalError(""); setCopiedId("");
           void copyText(key.publicKey).then(() => setCopiedId(key.id)).catch(() => setLocalError(t("sshAgent.copyFailed")));
         }} />)}
@@ -139,7 +147,7 @@ export function SshSettings({ controller: c, active = true }: { controller: SshA
             <p style={muted}>{t("sshAgent.protectionHelp")}</p>
             <p style={muted}>{t("sshAgent.enrollmentHelp")}</p>
             {hasStaged && <p role="status">{t("sshAgent.resolveStaged")}</p>}
-            <ConfigButton disabled={disabled || !c.supported || !status?.registry.revision || !name.trim() || hasStaged} onClick={() => void c.enroll(name.trim(), policy, applicationOnly).then(ok => { if (ok) { setName(""); setPolicy("strict"); setApplicationOnly(false); } })}>{t("sshAgent.enroll")}</ConfigButton>
+            <ConfigButton disabled={disabled || !c.supported || !status?.registry.revision || !name.trim() || hasStaged} onClick={() => void observeWork(c.enroll(name.trim(), policy, applicationOnly).then(ok => { if (ok) { setName(""); setPolicy("strict"); setApplicationOnly(false); } }))}>{t("sshAgent.enroll")}</ConfigButton>
           </div>
         </details>
       </section>
@@ -198,7 +206,7 @@ function RemainingUnlock({ deadline }: { deadline: number }) {
   return <span>{t("sshAgent.remaining", { minutes: Math.ceil(Math.max(0, deadline - now) / 60_000) })}</span>;
 }
 
-function KeyRow({ item, controller: c, disabled, copied, onCopy }: { item: SshKeyView; controller: SshAgentController; disabled: boolean; copied: boolean; onCopy: () => void }) {
+function KeyRow({ item, controller: c, observeWork, disabled, copied, onCopy }: { item: SshKeyView; controller: SshAgentController; observeWork: <T>(work: Promise<T>) => Promise<T>; disabled: boolean; copied: boolean; onCopy: () => void }) {
   const { t } = useI18n();
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(item.name);
@@ -216,13 +224,13 @@ function KeyRow({ item, controller: c, disabled, copied, onCopy }: { item: SshKe
     </div>
     {renaming && <div style={actions}>
       <label style={field}>{t("sshAgent.keyName")}<input maxLength={80} disabled={disabled} value={name} onChange={event => setName(event.target.value)} /></label>
-      <ConfigButton disabled={disabled || !name.trim()} onClick={() => void c.renameKey(item.id, name.trim()).then(ok => { if (ok) setRenaming(false); })}>{t("sshAgent.saveName")}</ConfigButton>
+      <ConfigButton disabled={disabled || !name.trim()} onClick={() => void observeWork(c.renameKey(item.id, name.trim()).then(ok => { if (ok) setRenaming(false); }))}>{t("sshAgent.saveName")}</ConfigButton>
       <ConfigButton disabled={disabled} onClick={() => setRenaming(false)}>{t("sshAgent.cancel")}</ConfigButton>
     </div>}
     {removing && <div style={box}>
       <p>{t("sshAgent.removeWarning", { name: item.name })}</p>
       <div style={actions}>
-        <ConfigButton variant="danger" disabled={disabled} onClick={() => void c.removeKey(item.id).then(ok => { if (ok) setRemoving(false); })}>{t("sshAgent.confirmRemove")}</ConfigButton>
+        <ConfigButton variant="danger" disabled={disabled} onClick={() => void observeWork(c.removeKey(item.id).then(ok => { if (ok) setRemoving(false); }))}>{t("sshAgent.confirmRemove")}</ConfigButton>
         <ConfigButton disabled={disabled} onClick={() => setRemoving(false)}>{t("sshAgent.cancel")}</ConfigButton>
       </div>
     </div>}

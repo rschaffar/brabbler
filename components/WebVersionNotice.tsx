@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 
 const CLIENT_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
 const POLL_INTERVAL_MS = 60_000;
 
-export function WebVersionNotice() {
+export function WebVersionNotice({ onCheckWork }: { onCheckWork?: (work: Promise<void>) => void } = {}) {
+  const onCheckWorkRef = useRef(onCheckWork);
+  onCheckWorkRef.current = onCheckWork;
   const { t } = useI18n();
   const [serverVersion, setServerVersion] = useState<string | null>(null);
 
@@ -25,13 +27,18 @@ export function WebVersionNotice() {
         // A restarting or offline server should not interrupt the current tab.
       }
     };
-    void check();
-    const timer = setInterval(() => void check(), POLL_INTERVAL_MS);
-    document.addEventListener("visibilitychange", check);
+    const startCheck = () => {
+      const originalPromise = check();
+      onCheckWorkRef.current?.(originalPromise);
+      return originalPromise;
+    };
+    void startCheck();
+    const timer = setInterval(() => void startCheck(), POLL_INTERVAL_MS);
+    document.addEventListener("visibilitychange", startCheck);
     return () => {
       controller.abort();
       clearInterval(timer);
-      document.removeEventListener("visibilitychange", check);
+      document.removeEventListener("visibilitychange", startCheck);
     };
   }, []);
 

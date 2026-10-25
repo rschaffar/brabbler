@@ -1,5 +1,6 @@
 "use client";
 
+import { useNavigationWork } from "@/lib/navigation-work";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { normalizeFilePathSlashes } from "@/lib/file-paths";
@@ -134,6 +135,7 @@ interface Props {
 }
 
 export function SessionMoveDestinationPicker({ projects, currentProject, currentCwd, sourceUnavailable = false, allowCurrentDirectory = false, destination, onChange, disabled }: Props) {
+  const work = useNavigationWork();
   const { t } = useI18n();
   const [project, setProject] = useState(currentProject);
   const [sourceExplicitlySelected, setSourceExplicitlySelected] = useState(false);
@@ -148,7 +150,7 @@ export function SessionMoveDestinationPicker({ projects, currentProject, current
     if (!project || unavailableSource) return;
     const controller = new AbortController();
     let cancelled = false;
-    void (async () => {
+    work.observe((async () => {
       try {
         const response = await fetch(`/api/worktrees?cwd=${encodeURIComponent(project)}`, { signal: controller.signal });
         const data = await readSessionMoveResponse<{ worktrees?: DirectoryOption[] }>(response);
@@ -159,9 +161,9 @@ export function SessionMoveDestinationPicker({ projects, currentProject, current
         if (!cancelled) setListing({ project, options: [], error: error instanceof SessionMoveResponseError
           ? t("sessionWorktrees.invalidResponse", { status: error.status }) : String(error) });
       }
-    })();
+    })());
     return () => { cancelled = true; controller.abort(); };
-  }, [project, currentProject, currentCwd, unavailableSource, onChange, attempt, t]);
+  }, [project, currentProject, currentCwd, unavailableSource, onChange, attempt, t, work]);
 
   const options = listing?.project === project ? [...listing.options] : [];
   const showingSource = sameMoveDirectory(project, currentProject);

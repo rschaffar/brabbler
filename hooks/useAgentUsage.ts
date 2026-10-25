@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createAgentUsageCoordinator, readAgentUsage, type AgentUsageSnapshot } from "@/lib/agent-usage";
+import { createAgentUsageCoordinator, readAgentUsage, type AgentUsageSnapshot, type AgentUsageWorkObserver } from "@/lib/agent-usage";
 
 /** Only mounted by the open Agents panel; does not start or renew any wrapper. */
-export function useAgentUsage(ids: readonly string[], runningSessionIds: ReadonlySet<string>): AgentUsageSnapshot {
+export function useAgentUsage(ids: readonly string[], runningSessionIds: ReadonlySet<string>, onWork?: AgentUsageWorkObserver): AgentUsageSnapshot {
+  const observer = useRef(onWork);
+  observer.current = onWork;
   const [snapshot, setSnapshot] = useState<AgentUsageSnapshot>(() => new Map());
   const owner = useRef<ReturnType<typeof createAgentUsageCoordinator> | null>(null);
   const idsKey = JSON.stringify([...new Set(ids)].sort());
@@ -13,6 +15,7 @@ export function useAgentUsage(ids: readonly string[], runningSessionIds: Readonl
   useEffect(() => {
     const coordinator = createAgentUsageCoordinator({
       read: readAgentUsage, visible: () => document.visibilityState === "visible", publish: setSnapshot,
+      observeWork: (work) => observer.current?.(work),
     });
     owner.current = coordinator;
     const onVisibility = () => coordinator.visibilityChanged();

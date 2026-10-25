@@ -31,6 +31,8 @@ interface Props {
   onFocusWorkspace: (key: string) => void;
   onRevealFile?: (location: FileLocation) => void;
   mentionCwd?: string;
+  /** Observe admitted reader work; observer disposal does not cancel writes. */
+  onWork?: (work: Promise<unknown>, kind?: "grammar" | "diff-highlighter") => void;
   onMentionLines: (path: string, start: number, end: number) => void;
   onAtMention: (path: string, isDir: boolean) => void;
 }
@@ -233,6 +235,7 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
         <FileLinkMenuContext.Provider value={{ ...menuContext, contextKey: props.workspaceKey,
           follow: { sourceGroup: groupId, right: canSplit(groupId, "right"), below: canSplit(groupId, "below") } }}>
           <FileViewer filePath={view.filePath} cwd={view.cwd} sourceSessionId={view.sourceSessionId} gitRefreshKey={props.gitRefreshKey}
+            onWork={props.onWork}
             navigationId={view.viewerRevision} initialDisplayMode={view.initialDisplayMode} initialState={view.viewerState}
             initialPage={view.page} initialLineTarget={view.lineTarget} watchEnabled={visible && props.active}
             onEditingChange={() => commit(key, state => patchFileView(state, view.id, { preview: false }))}

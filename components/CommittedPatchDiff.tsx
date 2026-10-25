@@ -16,11 +16,20 @@ const GAP_CSS = `[data-expand-all-button] { display: flex !important; }`;
 
 /** Display only: the original patch and its approval scope never change. */
 export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, independentScroll = false,
-  view: controlledView, wrap: controlledWrap, reviewModel, loadContext, onRefresh }: {
+  view: controlledView, wrap: controlledWrap, reviewModel, loadContext, onRefresh, onReadWork, onWork }: {
   patch: string; hasBinaryChanges: boolean; before: string; after: string;
   independentScroll?: boolean; view?: PatchView; wrap?: boolean;
   reviewModel?: DiffReviewModel; loadContext?: LoadDiffContext; onRefresh?: () => void;
+  /** Parent-owned observation of the complete default highlighter handler. */
+  onWork?: (work: Promise<void>) => void;
+  /** Observation only: retain complete highlighter/context/action work, including caught failures. */
+  onReadWork?: (work: Promise<unknown>) => void;
 }) {
+  const workObserver = useRef(onWork);
+  workObserver.current = onWork;
+  const readObserver = useRef(onReadWork);
+  readObserver.current = onReadWork;
+  const observeRead = useCallback((work: Promise<unknown>) => { readObserver.current?.(work); }, []);
   const localModel = useMemo(() => createDiffReview(patch), [patch]);
   const model = reviewModel ?? localModel;
   const { file, fallback } = model;
@@ -49,11 +58,13 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
     setReady(false); setHighlightFailed(false);
     if (!file || hasBinaryChanges) return;
     let active = true;
-    void preloadHighlighter({ themes: ["pierre-light", "pierre-dark"],
+    const work = preloadHighlighter({ themes: ["pierre-light", "pierre-dark"],
       langs: [getFiletypeFromFileName(file.prevName ?? file.name), getFiletypeFromFileName(file.name)] }).then(
       () => { if (active) setReady(true); }, () => { if (active) setHighlightFailed(true); });
+    workObserver.current?.(work);
+    observeRead(work);
     return () => { active = false; };
-  }, [file, hasBinaryChanges]);
+  }, [file, hasBinaryChanges, observeRead]);
   useEffect(() => {
     const element = dialog.current;
     if (!element) return;
@@ -82,8 +93,9 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
       if (mounted.current && !request.signal.aborted) setLoading(false);
     });
     pending.current = promise;
+    observeRead(promise);
     return promise;
-  }, [loadContext, model, refresh]);
+  }, [loadContext, model, refresh, observeRead]);
   const loader = useCallback<FileDiffContentsLoader>(async () => {
     const context = await ensureContext();
     if (file?.type === "rename-pure" && context.newFile) return { oldFile: null, newFile: context.newFile };
@@ -121,11 +133,12 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
       const nativeExpand = item.instance.expandHunk;
       // Observe the public expansion method, not Pierre's protected renderer state.
       item.instance.expandHunk = (index, direction, count = 20) => {
-        void ensureContext().then(() => {
+        const work = ensureContext().then(() => {
           if (!mounted.current) return;
           rememberExpansion(model, index, direction, count);
           nativeExpand(index, direction, count);
         }).catch(() => {}); // The request error is shown beside the unchanged patch.
+        observeRead(work);
       };
       for (const [index, amount] of model.expansions) {
         if (amount.fromStart) nativeExpand(index, "up", amount.fromStart);
@@ -136,7 +149,7 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
     if (anchor) viewer.current?.scrollTo({ type: "line", id: model.reading, lineNumber: anchor.lineNumber,
       side: model.reading === "diff" ? anchor.side : undefined, offset: anchor.offset, align: "start", behavior: "instant" });
     if (viewport.current) viewport.current.scrollLeft = model.scrollLeft;
-  }, [ensureContext, model]);
+  }, [ensureContext, model, observeRead]);
   const options = useMemo<CodeViewReactOptions<undefined, undefined>>(() => ({
     diffStyle: view === "unified" ? "unified" : "split", themeType: isDark ? "dark" : "light", disableFileHeader: true,
     hunkSeparators: loadContext || model.context ? "line-info" : "metadata", expansionLineCount: 20,
@@ -211,12 +224,12 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
       {file && !hasBinaryChanges && <div className="flex flex-wrap items-center gap-1">
         <button type="button" className="git-diff-control" disabled={!canContext || loading || !interactive || view === "raw" || model.reading !== "diff"}
           aria-pressed={model.full} title={!canContext ? "The supplied patch has no matching full-file snapshot" : "Reveal all unchanged lines for this file only"}
-          onClick={() => { if (model.full) { model.full = false; refresh(); } else void ensureContext().then(() => { model.full = true; refresh(); }).catch(() => {}); }}>
+          onClick={() => { if (model.full) { model.full = false; refresh(); } else observeRead(ensureContext().then(() => { model.full = true; refresh(); }).catch(() => {})); }}>
           {model.full ? "Diff context" : "Show full file"}
         </button>
         <div role="group" aria-label="File version" className="flex gap-1">
           {(["diff", "before", "after"] as const).map((mode) => <button key={mode} type="button" className="git-diff-control"
-            aria-pressed={model.reading === mode} disabled={mode !== "diff" && (!canContext || loading)} onClick={() => void chooseReading(mode)}>
+            aria-pressed={model.reading === mode} disabled={mode !== "diff" && (!canContext || loading)} onClick={() => observeRead(chooseReading(mode))}>
             {mode === "diff" ? "Changes" : mode === "before" ? "Before" : "After"}
           </button>)}
         </div>
@@ -231,22 +244,22 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
           setWide(!wide);
         }}>{wide ? "Close wide view" : "Wide view"}</button>
       </div>}
-      {canContext && <form className="flex flex-wrap items-center gap-1" onSubmit={(event) => { event.preventDefault(); void find(1); }}>
+      {canContext && <form className="flex flex-wrap items-center gap-1" onSubmit={(event) => { event.preventDefault(); observeRead(find(1)); }}>
         {model.reading === "diff" && <select aria-label="Search file version" className="git-diff-field" value={searchSide} onChange={(event) => { setSearchSide(event.target.value as typeof searchSide); setMatchIndex(-1); }}>
           <option value="additions">After</option><option value="deletions">Before</option>
         </select>}
         <input type="search" aria-label="Search full file" placeholder="Find in file…" className="git-diff-field min-w-0 flex-1" value={model.query}
           onChange={(event) => { model.query = event.target.value; setMatchIndex(-1); setNavigationError(null); refresh(); }} />
-        <button type="button" className="git-diff-control" aria-label="Previous match" disabled={!model.query || loading || visibleView === "raw"} onClick={() => void find(-1)}>↑ Find</button>
+        <button type="button" className="git-diff-control" aria-label="Previous match" disabled={!model.query || loading || visibleView === "raw"} onClick={() => observeRead(find(-1))}>↑ Find</button>
         <button type="submit" className="git-diff-control" aria-label="Next match" disabled={!model.query || loading || visibleView === "raw"}>↓ Find</button>
         {matches.length > 0 && <span aria-live="polite" className="text-text-muted">{matchIndex < 0 ? matches.length : `${matchIndex + 1}/${matches.length}`} matches</span>}
         <input aria-label="Line number" inputMode="numeric" placeholder="Line" className="git-diff-field w-16" value={line} onChange={(event) => setLine(event.target.value)}
-          onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void jump(); } }} />
-        <button type="button" className="git-diff-control" disabled={!line || loading || visibleView === "raw"} onClick={() => void jump()}>Go to line</button>
+          onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); observeRead(jump()); } }} />
+        <button type="button" className="git-diff-control" disabled={!line || loading || visibleView === "raw"} onClick={() => observeRead(jump())}>Go to line</button>
       </form>}
     </div>
     {loading && <p role="status" className="px-3 py-2 text-xs text-text-muted">Loading matching full-file context…</p>}
-    {contextError && <p role="alert" className="px-3 py-2 text-xs text-text-muted">{contextError} <button type="button" className="text-accent underline" onClick={() => void ensureContext().catch(() => {})}>Retry context</button>
+    {contextError && <p role="alert" className="px-3 py-2 text-xs text-text-muted">{contextError} <button type="button" className="text-accent underline" onClick={() => observeRead(ensureContext().catch(() => {}))}>Retry context</button>
       {onRefresh && <button type="button" className="ml-2 text-accent underline" onClick={onRefresh}>Refresh diff</button>}</p>}
     {navigationError && <p role="status" className="px-3 py-2 text-xs text-text-muted">{navigationError}</p>}
     {hasBinaryChanges && <p className="px-3 pt-2 text-xs text-text-muted">Binary changes are summarized; file contents are not shown.</p>}

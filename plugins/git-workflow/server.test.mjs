@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { finished } from "node:stream/promises";
+import { lstatSync } from "node:fs";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +16,7 @@ after(() => { if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_
 const jiti = createJiti(import.meta.url);
 const { executeGitOperation: executeWithReceipts } = await jiti.import("./server.ts");
 const { OPERATION_MARKERS } = await jiti.import("./operation-paths.ts");
-const { preparePluginReview, reviewEntry, reviewPreview } = await jiti.import("../../lib/plugins/review-store.ts");
+const { preparePluginReview, reviewEntry, reviewPreview, reviewManifest, reviewStream } = await jiti.import("../../lib/plugins/review-store.ts");
 const { snapshotOperationReceipt } = await jiti.import("../../lib/operation-receipts.ts");
 const { validatePluginCard } = await jiti.import("../../lib/plugins/ui.ts");
 const executeGitOperation = (cwd, op, ui, ...rest) => executeWithReceipts(cwd, op, {
@@ -171,6 +174,93 @@ function feature(repo, branch = "feature") {
   git(repo, "worktree", "add", "-b", branch, path);
   return path;
 }
+test("five browser preview/reject tuples preserve selected native resources and exact read-only cards", async () => {
+  // Native storage download API, not HTTP/browser historical-download proof.
+  const download = async (ref, entry) => {
+    const stream = await reviewStream(ref, entry);
+    if (!stream) return Buffer.alloc(0);
+    const closed = finished(stream, { cleanup: true }); void closed.catch(() => {});
+    const chunks = [];
+    try { for await (const chunk of stream) chunks.push(Buffer.from(chunk)); }
+    finally { stream.destroy(); await closed; }
+    assert.equal(stream.closed, true); assert.equal(stream.fd, null);
+    return Buffer.concat(chunks);
+  };
+  // Frozen command resources, in the original order; one shared native history.
+  const repo = fixture(); git(repo, "branch", "comparison-base");
+  git(repo, "branch", "target"); git(repo, "switch", "-c", "feature");
+  change(repo); git(repo, "add", "a"); git(repo, "commit", "-m", "Feature");
+  const target = join(`${repo}-worktrees`, "target");
+  git(repo, "worktree", "add", target, "target");
+  writeFileSync(join(target, "b"), "target b\n"); git(target, "add", "b"); git(target, "commit", "-m", "Target");
+  set(repo, { targetBranch: "target" });
+  const destination = join(`${repo}-worktrees`, "preview-new");
+  const identity = path => { const s = lstatSync(path); return [s.dev, s.ino, s.mode]; };
+  const state = () => ({ refs: git(repo, "show-ref"), registrations: git(repo, "worktree", "list", "--porcelain"),
+    checkouts: [repo, target].map(path => ({ path, identity: identity(path), head: git(path, "rev-parse", "HEAD"),
+      status: git(path, "status", "--porcelain"), index: readFileSync(git(path, "rev-parse", "--path-format=absolute", "--git-path", "index")).toString("hex"),
+      files: ["a", "b"].map(name => [name, identity(join(path, name)), readFileSync(join(path, name)).toString("hex")]) })),
+    destination: existsSync(destination) });
+  for (const [action, title] of [["rebase", "Git rebase"], ["merge", "Git merge"], ["createWorktree", "Create Git worktree"],
+    ["attachWorktree", "Attach Git worktree"], ["removeWorktree", "Remove Git worktree"]]) {
+    const op = action === "rebase" || action === "merge" ? { action, checkout: action === "merge" ? target : repo, featureBranch: "feature" }
+      : action === "removeWorktree" ? { action, checkout: repo, path: target }
+      : { action, checkout: repo, branch: action === "attachWorktree" ? "comparison-base" : "preview-new",
+        baseBranch: action === "attachWorktree" ? "comparison-base" : "target", path: destination };
+    const before = state(); let cards = 0;
+    const result = await call(repo, op, { pluginCard: async (_id, card) => {
+      cards++; assert.equal(card.title, title); assert.equal(card.patch, undefined, "reference-only review");
+      assert.equal(card.fields.find(f => f.label === "Checkout").value, op.checkout);
+      assert.equal(card.fields.find(f => f.label === "Branch").value, action === "merge" ? "target" : "feature");
+      const fields = Object.fromEntries(card.fields.map(f => [f.label, f.value]));
+      const notes = card.sections.find(s => s.title === "Operation notes").text;
+      assert.match(notes, /unsigned and hook-free/); assert.match(card.scope, /entire selected operation/);
+      if (action === "rebase" || action === "merge") {
+        assert.equal(fields["Feature → target"], "feature → target");
+        assert.match(notes, /not a predicted rebase\/merge result/);
+      } else if (action === "removeWorktree") {
+        assert.equal(fields["Remove worktree"], target); assert.match(notes, /Branch and session history remain/);
+      } else {
+        assert.equal(fields["Base branch"], op.baseBranch); assert.equal(fields["Worktree branch"], op.branch);
+        assert.equal(fields.Destination, destination);
+      }
+      // Bundle identity includes data, entry metadata AND offsets. Validate it
+      // through the public owner API; it is not SHA256(downloaded data alone).
+      assert.deepEqual(await reviewManifest(card.review, "git-workflow"), {
+        version: 1, pluginId: "git-workflow", operationId: card.operationId,
+        entries: card.review.entries, bytes: card.review.bytes, sha256: card.review.sha256,
+      });
+      const entries = []; let offset = 0;
+      for (let id = 0; id < card.review.entries; id++) {
+        const entry = await reviewEntry(card.review, id), body = await reviewPreview(card.review, entry);
+        assert.equal(body.complete, true);
+        const bytes = Buffer.from(body.text);
+        assert.equal(entry.start, offset); assert.equal(bytes.length, entry.bytes); offset += entry.bytes;
+        assert.equal(createHash("sha256").update(bytes).digest("hex"), entry.sha256);
+        assert.deepEqual(await download(card.review, entry), bytes);
+        entries.push({ entry, text: body.text });
+      }
+      const exact = JSON.parse(entries[0].text);
+      assert.deepEqual(exact.operation, op); assert.equal(exact.presentation.operationId, card.operationId);
+      assert.deepEqual(exact.presentation.fields, card.fields);
+      const bytes = Buffer.from(entries.map(e => e.text).join(""));
+      assert.equal(bytes.length, card.review.bytes);
+      assert.deepEqual(await download(card.review), bytes, "complete native download preserves all exact entry bytes");
+      const patch = entries.filter(e => e.entry.kind === "patch").map(e => e.text).join("");
+      if (action === "merge" || action === "rebase") {
+        const base = git(repo, "merge-base", "target", "feature"), tip = git(repo, "rev-parse", "feature");
+        assert.deepEqual(exact.comparison, { before: base, after: tip });
+        const expected = execFileSync("git", ["-C", repo, "diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", base, tip, "--"], { encoding: "utf8" });
+        assert.equal(patch, expected); assert.notEqual(patch, "");
+      } else { assert.equal(patch, ""); assert.equal(exact.comparison, undefined); }
+      return "reject";
+    } });
+    failed(result, /not approved/); assert.equal(cards, 1);
+    assert.equal(result.details.effectStarted, false); assert.equal(result.details.checksStarted, false);
+    assert.deepEqual(state(), before, `${action}: rejection has no native effect`);
+  }
+});
+
 test("create/attach/remove use exact local resources and never automatic cleanup", async () => {
   const repo = fixture(); const path = join(`${repo}-worktrees`, "selected");
   success(await call(repo, { action: "createWorktree", checkout: repo, branch: "selected", baseBranch: "main", path }));

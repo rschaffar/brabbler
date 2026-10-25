@@ -11,6 +11,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useI18n } from "@/hooks/useI18n";
 import { createTerminalWriter, terminalRequest } from "@/lib/terminal-client";
+import { createClientCompletion, type ClientCompletion } from "@/lib/client-completion";
 import type { TerminalEvent } from "@/lib/terminal-manager";
 import type { TerminalTab } from "./terminal-tab-state";
 
@@ -23,9 +24,12 @@ interface Props {
   onRestart: () => void;
   onClosed: () => void;
   onCloseError: () => void;
+  /** Optional instance-owned completion observation; never cancellation authority. */
+  completion?: ClientCompletion;
 }
 
-export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }: Props) {
+export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError, completion }: Props) {
+  const [work] = useState(() => completion ?? createClientCompletion());
   const { t } = useI18n();
   const { id, cwd, restored } = tab;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -128,7 +132,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       terminal.options.disableStdin = true;
       setError(reason.message);
       setStatus("error");
-    });
+    }, work);
     writerRef.current = writer;
     const onData = terminal.onData((data) => {
       if (connected && !exited && !inputFailed) writer.write(applyTerminalModifiers(data, consumeModifiers()));
@@ -155,11 +159,12 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
         const generation = ++fontLoadGeneration;
         // Fallback is fitted immediately. Delayed font readiness remeasures the
         // same instance; obsolete completions cannot touch a replacement terminal.
-        void document.fonts.load(`${fontWeight} ${size}px ${fontFamily}`).catch(() => []).then(() => {
+        const fontLoad = document.fonts.load(`${fontWeight} ${size}px ${fontFamily}`).catch(() => []).then(() => {
           if (disposed || generation !== fontLoadGeneration || terminalRef.current !== terminal) return;
           needsRemeasure = true;
           fitAndResize();
         });
+        work.track(fontLoad, "font");
       }
       if (needsRemeasure) {
         needsRemeasure = false;
@@ -183,8 +188,10 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       // Let the real transport determine whether this terminal can reconnect.
       if (disposed || closingRef.current || exited) return;
       events?.close();
-      events = new EventSource(`/api/terminal/${encodeURIComponent(id)}/events${offset === undefined ? "" : `?after=${offset}`}`);
-      events.onmessage = (message) => {
+      const source = new EventSource(`/api/terminal/${encodeURIComponent(id)}/events${offset === undefined ? "" : `?after=${offset}`}`);
+      events = source;
+      source.onmessage = (message) => {
+        if (disposed || closingRef.current || exited || events !== source) return;
         const event = JSON.parse(message.data) as TerminalEvent;
         if (event.type === "output") {
           if (event.reset) terminal.reset();
@@ -200,8 +207,8 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
           setStatus("exited");
         }
       };
-      events.onopen = () => {
-        if (disposed || closingRef.current || exited) return;
+      source.onopen = () => {
+        if (disposed || closingRef.current || exited || events !== source) return;
         connected = true;
         if (inputFailed) return;
         terminal.options.disableStdin = false;
@@ -210,15 +217,15 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
         writer.resize(Math.max(2, terminal.cols), Math.max(2, terminal.rows));
         if (container.offsetWidth && container.offsetHeight) terminal.focus();
       };
-      events.onerror = () => {
-        if (disposed || closingRef.current || exited) return;
+      source.onerror = () => {
+        if (disposed || closingRef.current || exited || events !== source) return;
         connected = false;
         terminal.options.disableStdin = true;
         setStatus(events?.readyState === EventSource.CLOSED ? "error" : "connecting");
       };
     };
 
-    startRef.current = (async () => {
+    startRef.current = work.track((async () => {
       fitAndResize();
       if (restored || reconnectKey > 0) {
         // Restoring a tab must never silently launch a replacement shell.
@@ -235,12 +242,13 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       if (disposed) return;
       setError(reason.message);
       setStatus("error");
-    });
+    }));
 
     const pageHide = () => {
       connected = false;
       terminal.options.disableStdin = true;
       events?.close();
+      events = null;
       if (!exited && !inputFailed) setStatus("connecting");
     };
     disconnectRef.current = pageHide;
@@ -253,7 +261,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       disposed = true;
       if (disconnectRef.current === pageHide) disconnectRef.current = null;
       events?.close();
-      void writer.stop();
+      work.track(writer.stop());
       resizeObserver.disconnect();
       onData.dispose();
       onResize.dispose();
@@ -266,7 +274,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       fitRef.current = null;
       refitRef.current = () => {};
     };
-  }, [id, cwd, restored, reconnectKey, consumeModifiers]);
+  }, [id, cwd, restored, reconnectKey, consumeModifiers, work]);
 
   useEffect(() => {
     if (terminalRef.current) terminalRef.current.options.theme = TERMINAL_XTERM_THEMES[theme];
@@ -290,7 +298,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     // race DELETE with a new subscription to the terminal being removed.
     disconnectRef.current?.();
     if (terminalRef.current) terminalRef.current.options.disableStdin = true;
-    void (async () => {
+    work.track((async () => {
       await startRef.current;
       await writerRef.current?.stop();
       await terminalRequest(`/api/terminal/${encodeURIComponent(id)}`, { method: "DELETE", keepalive: true });
@@ -300,9 +308,9 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       setError(reason.message);
       setStatus("error");
       callbacksRef.current.onCloseError();
-    });
+    }));
     return () => { cancelled = true; };
-  }, [id, tab.closing]);
+  }, [id, tab.closing, work]);
 
   return (
     <section className="terminal-panel" data-terminal-theme={theme} aria-label={t("terminal.title")}>

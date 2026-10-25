@@ -35,6 +35,8 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import { mergeSessionStats, type SessionFileStats } from "@/lib/session-stats";
 import { userMessageKey } from "@/lib/prompt-recovery";
 import { AgentEventConnection } from "@/lib/agent-event-connection";
+import { createAgentSessionMaintenanceScope } from "@/lib/agent-session-maintenance";
+import { agentSessionPolicyClock, type AgentSessionPolicyClock } from "@/lib/agent-session-policy-clock";
 import { isSystemMessageEvent } from "@/lib/agent-event-wire";
 import { getToolExecutionProgress } from "@/lib/tool-execution-progress";
 import { updateExtensionWidgets } from "@/lib/extension-widgets";
@@ -189,6 +191,11 @@ export interface UseAgentSessionOptions {
   onSessionCreated?: (session: SessionInfo, sourceDraftKey: string) => void;
   onSessionForked?: (newSessionId: string) => void;
   modelsRefreshKey?: number;
+  /** Instance-owned elapsed-policy capability; default remains native time. */
+  policyClock?: AgentSessionPolicyClock;
+  /** Passive grace-only native handle observation; observer must not throw.
+   * No observer means no added promise handlers, timer wrappers or policy. */
+  onGraceTimer?: (handle: ReturnType<typeof setTimeout>) => void;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => void;
   onSystemPromptChange?: (prompt: string | null) => void;
@@ -324,6 +331,12 @@ type SlashCommandsResponse = {
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const { t } = useI18n();
+  const policyClock = opts.policyClock ?? agentSessionPolicyClock;
+  const onGraceTimerRef = useRef(opts.onGraceTimer);
+  onGraceTimerRef.current = opts.onGraceTimer;
+  const [maintenanceWork] = useState(() => createAgentSessionMaintenanceScope({
+    reportUnexpected: (name, error) => { console.error(`Unexpected agent-session maintenance (${name}):`, error); },
+  }));
   const {
     session, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
@@ -496,6 +509,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       ),
       readinessTimeoutMs: EVENT_STREAM_READY_TIMEOUT_MS,
       reconnectDelayMs: EVENT_STREAM_RECONNECT_DELAY_MS,
+      onMaintenanceWork: (work) => { maintenanceWork.observe("event-maintenance", work); },
       onUnexpectedError: (error) => {
         console.error("Failed to maintain the agent event stream:", error);
       },
@@ -964,7 +978,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       sessionIdRef.current = realId;
       // Anonymous composer reads cannot certify the new session's account scope.
       // Reload metadata for the captured binding; loadModels owns visible errors.
-      void loadModelsRef.current?.().catch(() => {});
+      const modelRefresh = loadModelsRef.current?.().catch(() => {});
+      if (modelRefresh) maintenanceWork.observe("creation-models", modelRefresh);
       if (isModelSpeed(result.modelSpeed) && modelSpeedRevisionRef.current === selectedSpeedRevision) {
         modelSpeedRef.current = result.modelSpeed;
         setModelSpeed(result.modelSpeed);
@@ -991,17 +1006,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       ensuringNewSessionRef.current = null;
     }
-  }, [isNew, newSessionCwd]);
+  }, [isNew, newSessionCwd, maintenanceWork]);
 
   // Explicit New is durable without a prompt. Share the same single-flight
   // initialization as Send/System, including Strict Mode effect replay. A late
   // response still rekeys the outgoing draft; AppShell guards visible adoption.
   useEffect(() => {
     if (!opts.persistNewSession || !isNew) return;
-    void ensureNewSession().then(() => promoteNewSession()).catch((error: unknown) => {
+    maintenanceWork.observe("eager-creation", ensureNewSession().then(() => promoteNewSession()).catch((error: unknown) => {
       if (sessionHookMountedRef.current) setError(String(error));
-    });
-  }, [opts.persistNewSession, isNew, ensureNewSession, promoteNewSession]);
+    }));
+  }, [opts.persistNewSession, isNew, ensureNewSession, promoteNewSession, maintenanceWork]);
 
   // Opening the System or Tools panel may initialize an otherwise dormant
   // session. This is deliberately a non-prompt command: it creates no message
@@ -1113,17 +1128,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
     };
 
-    const interval = setInterval(() => void renewLease(), SESSION_LEASE_RENEW_INTERVAL_MS);
+    const stopInterval = policyClock.interval("session-lease", SESSION_LEASE_RENEW_INTERVAL_MS, () => { maintenanceWork.observe("lease-renewal", renewLease()); });
     const onVisible = () => {
-      if (document.visibilityState === "visible") void renewLease();
+      if (document.visibilityState === "visible") maintenanceWork.observe("lease-renewal", renewLease());
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       disposed = true;
-      clearInterval(interval);
+      stopInterval();
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [closeEvents, historyOnly, maintainEventsConnected, session?.id]);
+  }, [closeEvents, historyOnly, maintainEventsConnected, session?.id, maintenanceWork, policyClock]);
 
   const respondToExtensionUi = useCallback(async (
     request: ExtensionUiDialogRequest,
@@ -1138,10 +1153,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         type: "extension_ui_response",
         id: request.id,
         ...response,
-      }, batch ? { signal: AbortSignal.timeout(15_000) } : undefined);
+      }, batch ? { signal: policyClock.questionSetAcknowledgementDeadline(15_000) } : undefined);
       if (batch && sessionIdRef.current === sid) {
         setExtensionDialog((current) => current?.id === request.id ? null : current);
-        void reconcileInteractionReceipts(sid);
+        maintenanceWork.observe("receipt-reconciliation", reconcileInteractionReceipts(sid));
         if (result?.accepted === false) dispatchNotice({ type: "add", notice: {
           id: createNoticeId(), type: "info", message: t("chat.questionsAlreadySettled"),
         } });
@@ -1150,7 +1165,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (batch) throw e;
       console.error("Failed to send extension UI response:", e);
     }
-  }, [reconcileInteractionReceipts, t]);
+  }, [reconcileInteractionReceipts, t, maintenanceWork, policyClock]);
 
   const sendExtensionCustomInput = useCallback(async (request: ExtensionUiCustomRequest, data: string) => {
     const sid = sessionIdRef.current;
@@ -1258,7 +1273,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     eventStreamGraceActiveRef.current = true;
     const generation = eventStreamGraceGenerationRef.current;
 
-    const checkServerIdle = async () => {
+    const readServerIdle = async () => {
       if (
         generation !== eventStreamGraceGenerationRef.current
         || sessionIdRef.current !== sid
@@ -1294,6 +1309,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (data.running && state?.isCompacting) {
           if (compactionVersion === compactionVersionRef.current) setCompactionState(true);
           eventStreamGraceTimerRef.current = setTimeout(() => void checkServerIdle(), PROMPT_SETTLE_POLL_MS);
+          onGraceTimerRef.current?.(eventStreamGraceTimerRef.current);
           return;
         }
 
@@ -1308,11 +1324,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           || !eventStreamGraceActiveRef.current
         ) return;
         eventStreamGraceTimerRef.current = setTimeout(() => void checkServerIdle(), PROMPT_SETTLE_POLL_MS);
+        onGraceTimerRef.current?.(eventStreamGraceTimerRef.current);
       }
     };
 
+    // Passive observation of the complete existing read/catch/rearm chain.
+    const checkServerIdle = () => maintenanceWork.observe("grace-state", readServerIdle());
     eventStreamGraceTimerRef.current = setTimeout(() => void checkServerIdle(), EVENT_STREAM_IDLE_GRACE_MS);
-  }, [cancelEventStreamGrace, closeEvents, syncLiveModel, setCompactionState]);
+    onGraceTimerRef.current?.(eventStreamGraceTimerRef.current);
+  }, [cancelEventStreamGrace, closeEvents, syncLiveModel, setCompactionState, maintenanceWork]);
 
   const finishPromptWithoutStream = useCallback(async (sid: string | null = sessionIdRef.current, runId = promptRunIdRef.current) => {
     // Bail out before loadSession too: a stale finish for a previous run
@@ -1448,21 +1468,21 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // Read the ref on every tick: for brand-new sessions the id is
       // assigned only after ensure_session returns.
       const sid = sessionIdRef.current;
-      if (sid) void reconcileAgentState(sid);
+      if (sid) maintenanceWork.observe("agent-state-recovery", reconcileAgentState(sid));
     };
     const onVisible = () => {
       if (document.visibilityState === "visible") reconcile();
     };
-    const interval = setInterval(reconcile, AGENT_STATE_RECONCILE_MS);
+    const stopInterval = policyClock.interval("agent-state", AGENT_STATE_RECONCILE_MS, reconcile);
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", reconcile);
     return () => {
       compactionVersionRef.current += 1;
-      clearInterval(interval);
+      stopInterval();
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("online", reconcile);
     };
-  }, [agentRunning, isCompacting, reconcileAgentState]);
+  }, [agentRunning, isCompacting, reconcileAgentState, maintenanceWork, policyClock]);
 
   useEffect(() => {
     agentRunningRef.current = agentRunning;
@@ -1487,7 +1507,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         // Completed receipts are session entries, not replayable live requests.
         // Reconcile missed history even when another client answered while offline.
-        if (sessionIdRef.current) void reconcileInteractionReceipts(sessionIdRef.current);
+        if (sessionIdRef.current) maintenanceWork.observe("receipt-reconciliation", reconcileInteractionReceipts(sessionIdRef.current));
         if (event.isStreaming === true) {
           cancelEventStreamGrace();
           sdkAgentActiveRef.current = true;
@@ -1516,8 +1536,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (sessionIdRef.current) {
           const sid = sessionIdRef.current;
           const speedRevision = modelSpeedRevisionRef.current;
-          loadSession(sid);
-          fetch(`/api/agent/${encodeURIComponent(sid)}`)
+          maintenanceWork.observe("agent-end-history", loadSession(sid));
+          maintenanceWork.observe("agent-end-state", fetch(`/api/agent/${encodeURIComponent(sid)}`)
             .then((r) => r.json())
             .then((d: { state?: AgentStateResponse }) => {
               if (!sessionHookMountedRef.current || sessionIdRef.current !== sid) return;
@@ -1530,7 +1550,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               // next turn); dead wrapper (no state) means the queue is gone.
               setQueuedMessages(normalizeQueuedMessages(d.state?.queuedMessages));
             })
-            .catch(() => {});
+            .catch(() => {}));
         }
         break;
       case "agent_settled": {
@@ -1542,7 +1562,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const wasRunning = settleUiStage();
         setCompactionState(false);
         if (sid) {
-          void loadSession(sid);
+          maintenanceWork.observe("settled-history", loadSession(sid));
           scheduleEventStreamClose(sid);
         }
         if (wasRunning) onAgentEnd?.();
@@ -1558,7 +1578,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (!promptWasPending && !firstNotification) break;
 
           const sid = sessionIdRef.current;
-          if (sid) void loadSession(sid);
+          if (sid) maintenanceWork.observe("settled-history", loadSession(sid));
           // An extension-injected agent may already have started before the
           // command's prompt_done. Keep that active stage visible and let its
           // agent_settled event perform the next completion transition.
@@ -1731,7 +1751,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           setCompactResult(null);
         } else if (!event.aborted) {
           setCompactResult(readCompactResult(event.result, (event.reason as string | undefined) ?? "auto"));
-          if (sessionIdRef.current) loadSession(sessionIdRef.current);
+          if (sessionIdRef.current) maintenanceWork.observe("compaction-history", loadSession(sessionIdRef.current));
         }
         break;
       case "operation_receipt": {
@@ -1741,7 +1761,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (entry.parentId === activeLeafIdRef.current) {
             setTranscript((current) => appendOperationReceipt(current, entry));
           } else if (sessionIdRef.current) {
-            void reconcileInteractionReceipts(sessionIdRef.current, entry);
+            maintenanceWork.observe("receipt-reconciliation", reconcileInteractionReceipts(sessionIdRef.current, entry));
           }
         }
         break;
@@ -1756,7 +1776,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           } else if (sessionIdRef.current) {
             // Other clients can move the shared wrapper without updating our
             // local refs. Verify ancestry before admitting a remote descendant.
-            void reconcileInteractionReceipts(sessionIdRef.current, entry);
+            maintenanceWork.observe("receipt-reconciliation", reconcileInteractionReceipts(sessionIdRef.current, entry));
           }
         }
         const receipt = message.details as import("@/lib/interaction-receipts").InteractionReceipt;
@@ -1772,7 +1792,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setExtensionDialog((current) => current?.id === event.id ? null : current);
         break;
     }
-  }, [dispatch, addNotice, cancelEventStreamGrace, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel, setCompactionState, setTranscript, reconcileInteractionReceipts]);
+  }, [dispatch, addNotice, cancelEventStreamGrace, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel, setCompactionState, setTranscript, reconcileInteractionReceipts, maintenanceWork]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -1857,7 +1877,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         throw new Error("No active session for the prompt");
       }
       if (isSlashCommandPrompt && sentSessionId) {
-        void waitForPromptSettlement(sentSessionId, promptRunId);
+        maintenanceWork.observe("prompt-settlement", waitForPromptSettlement(sentSessionId, promptRunId));
       }
     } catch (e) {
       console.error("Failed to send message:", e);
@@ -1866,7 +1886,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // have accepted the prompt before the response was lost. Keep SSE alive
       // until server state confirms the run is idle.
       if (!definitivelyRejected && sentSessionId) {
-        void waitForPromptSettlement(sentSessionId, promptRunId);
+        maintenanceWork.observe("prompt-settlement", waitForPromptSettlement(sentSessionId, promptRunId));
         return;
       }
       rpcPromptPendingRef.current = false;
@@ -1883,7 +1903,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // missed may still have a real run active for the same session, so keep
       // its SSE connection until server state says the wrapper is idle.
       if (sentSessionId) {
-        void reconcileAgentState(sentSessionId);
+        const reconciliation = reconcileAgentState(sentSessionId);
+        maintenanceWork.observe("rejected-prompt-reconciliation", reconciliation);
         return;
       }
       agentRunningRef.current = false;
@@ -1892,7 +1913,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentPhase(null);
       dispatch({ type: "end" });
     }
-  }, [dispatch, isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, cancelEventStreamGrace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission, setMessages]);
+  }, [dispatch, isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, cancelEventStreamGrace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission, setMessages, maintenanceWork]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (agentRunningRef.current || bashRunningRef.current) return;
@@ -2442,7 +2463,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       sid ??= await ensuringNewSessionRef.current;
       if (!sid) return;
       const result = await sendAgentCommand<{ modelSpeed: ModelSpeed }>(sid, { type: "set_model_speed", modelSpeed: nextSpeed }, {
-        signal: AbortSignal.timeout(MODEL_SPEED_REQUEST_TIMEOUT_MS),
+        signal: policyClock.modelSpeedDeadline(MODEL_SPEED_REQUEST_TIMEOUT_MS),
       });
       if (!isModelSpeed(result?.modelSpeed)) throw new Error("Invalid model speed response");
       if (!sessionHookMountedRef.current) return;
@@ -2464,7 +2485,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         try {
           const speedRevision = modelSpeedRevisionRef.current;
           const state = await sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" }, {
-            signal: AbortSignal.timeout(MODEL_SPEED_REQUEST_TIMEOUT_MS),
+            signal: policyClock.modelSpeedDeadline(MODEL_SPEED_REQUEST_TIMEOUT_MS),
           });
           if (!isModelSpeed(state?.modelSpeed)) throw new Error("Invalid model speed response");
           if (!sessionHookMountedRef.current) return;
@@ -2496,7 +2517,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (sessionHookMountedRef.current) setModelSpeedChanging(false);
       }
     }
-  }, [addNotice, isCompacting, modelSwitching]);
+  }, [addNotice, isCompacting, modelSwitching, policyClock]);
 
   useEffect(() => {
     if (!modelSpeedRecovery) return;
@@ -2524,7 +2545,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const speedRevision = modelSpeedRevisionRef.current;
       try {
         const state = await sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" }, {
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(MODEL_SPEED_REQUEST_TIMEOUT_MS)]),
+          signal: AbortSignal.any([controller.signal, policyClock.modelSpeedDeadline(MODEL_SPEED_REQUEST_TIMEOUT_MS)]),
         });
         if (cancelled || pendingRead !== controller || controller.signal.aborted || !sessionHookMountedRef.current) return;
         if (sessionIdRef.current !== sid) {
@@ -2550,20 +2571,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (pendingRead === controller) pendingRead = null;
       }
     };
-    const retry = () => { void reconcileSpeed(); };
-    const reconnect = () => { void reconcileSpeed(true); };
+    const retry = () => { maintenanceWork.observe("speed-recovery", reconcileSpeed()); };
+    const reconnect = () => { maintenanceWork.observe("speed-recovery", reconcileSpeed(true)); };
     retry();
-    const timer = setInterval(retry, AGENT_STATE_RECONCILE_MS);
+    const stopInterval = policyClock.interval("speed-recovery", AGENT_STATE_RECONCILE_MS, retry);
     document.addEventListener("visibilitychange", reconnect);
     window.addEventListener("online", reconnect);
     return () => {
       cancelled = true;
       pendingRead?.abort();
-      clearInterval(timer);
+      stopInterval();
       document.removeEventListener("visibilitychange", reconnect);
       window.removeEventListener("online", reconnect);
     };
-  }, [modelSpeedRecovery]);
+  }, [modelSpeedRecovery, maintenanceWork, policyClock]);
 
   const handleThinkingLevelChange = useCallback(async (level: ThinkingLevelOption) => {
     if (level === "auto") {
@@ -2818,11 +2839,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setLoading(false);
       }
       const compactionVersion = ++compactionVersionRef.current;
-      loadSession(session.id, !cached, !historyOnly, { force: true }).then((loadedAgentState) => {
+      maintenanceWork.observe("mount-session", loadSession(session.id, !cached, !historyOnly, { force: true }).then((loadedAgentState) => {
         if (!sessionHookMountedRef.current || sessionIdRef.current !== session.id) return;
         const agentState = loadedAgentState as { running: boolean; state?: AgentStateResponse } | null;
         if (agentState?.running && !historyOnly) {
-          loadTools(session.id);
+          maintenanceWork.observe("mount-tools", loadTools(session.id));
           if (agentState.state?.isStreaming || agentState.state?.isPromptRunning) {
             sdkAgentActiveRef.current = Boolean(agentState.state.isStreaming);
             rpcPromptPendingRef.current = Boolean(agentState.state.isPromptRunning);
@@ -2831,13 +2852,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             setAgentPhase(agentState.state.isStreaming ? { kind: "waiting_model" } : { kind: "running_command" });
             dispatch({ type: "resume" });
             if (!agentState.state.isStreaming && agentState.state.isPromptRunning) {
-              void waitForPromptSettlement(session.id);
+              maintenanceWork.observe("mount-prompt-settlement", waitForPromptSettlement(session.id));
             }
           }
           if (agentState.state?.isBashRunning) {
             bashRunningRef.current = true;
             setBashRunning(true);
-            void waitForBashSettlement(session.id);
+            maintenanceWork.observe("mount-bash-settlement", waitForBashSettlement(session.id));
           }
         }
         if (agentState?.state) {
@@ -2850,7 +2871,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (agentState.state.extensionWidgets !== undefined) setExtensionWidgets(agentState.state.extensionWidgets ?? []);
           if (agentState.state.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(agentState.state.queuedMessages));
         }
-      });
+      }));
     }
     const compactionPhase = compactionPhaseRef.current;
     return () => {
@@ -2948,7 +2969,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // Load the model list with bounded retries; loadModels exposes each failure.
   useEffect(() => {
     const controller = new AbortController();
-    (async () => {
+    maintenanceWork.observe("initial-models", (async () => {
       for (let attempt = 0; ; attempt++) {
         try {
           await loadModels(controller.signal);
@@ -2957,13 +2978,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (controller.signal.aborted) return;
           if (e instanceof DOMException && e.name === "AbortError") return;
           if (attempt >= MODELS_RETRY_DELAYS_MS.length) return;
-          await delay(MODELS_RETRY_DELAYS_MS[attempt]);
+          await policyClock.modelRetryDelay(MODELS_RETRY_DELAYS_MS[attempt]);
           if (controller.signal.aborted) return;
         }
       }
-    })();
+    })());
     return () => controller.abort();
-  }, [loadModels, modelsRefreshKey]);
+  }, [loadModels, modelsRefreshKey, maintenanceWork, policyClock]);
 
   useEffect(() => {
     if (!compactResult) return;
@@ -3037,6 +3058,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Refs
     sessionIdRef, scrollContainerRef,
     initialScrollDoneRef,
+    // Joins only named observed client maintenance (including its continuations).
+    // Not React cleanup, all hook work, public commands, future timers or native/server closure.
+    whenMaintenanceSettled: maintenanceWork.whenSettled,
     // Actions
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange, handleSessionAccountChange, loadModels,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,

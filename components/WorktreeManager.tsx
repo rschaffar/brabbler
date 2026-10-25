@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigationWork } from "@/lib/navigation-work";
 import { useI18n } from "@/hooks/useI18n";
 import type { WorktreeManagementInventory, WorktreeManagementRow, WorktreeManagementDetails, MergeDate } from "@/lib/worktree-management-types";
 import type { ProjectOperation } from "@/lib/plugins/project-operation-types";
@@ -26,6 +27,8 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
   cwd: string; onClose: () => void; onChanged: () => void; onSelectCheckout: (path: string) => void; onReturnFocus: () => void;
 }) {
   const { t, locale } = useI18n();
+  const observer = useNavigationWork();
+  const work = useRef(observer); work.current = observer;
   const dialog = useRef<HTMLDialogElement>(null), body = useRef<HTMLDivElement>(null), operationSurface = useRef<HTMLElement>(null);
   const returnFocus = useRef(onReturnFocus); returnFocus.current = onReturnFocus;
   const scrollBookmark = useRef(0), focusRow = useRef<string | null>(null);
@@ -66,8 +69,8 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
   const outcomeHandled = useRef(new Set<string>()), mounted = useRef(true);
   const cancelOperation = useCallback(() => {
     const op = operationRef.current, request = preparation.current?.body;
-    if (op && pending(op)) void post(`${ACTIONS}/${op.id}`, { cwd: op.cwd, decision: "stop" }).catch(() => {});
-    else if (request) void post(`${ACTIONS}/${request.requestId}`, { cwd: request.cwd, decision: "stop" }).catch(() => {});
+    if (op && pending(op)) void work.current.observe(post(`${ACTIONS}/${op.id}`, { cwd: op.cwd, decision: "stop" }).catch(() => {}));
+    else if (request) void work.current.observe(post(`${ACTIONS}/${request.requestId}`, { cwd: request.cwd, decision: "stop" }).catch(() => {}));
   }, []);
   useEffect(() => {
     mounted.current = true;
@@ -92,7 +95,7 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
     operationReads.current?.abort();
     const controller = new AbortController(); operationReads.current = controller;
     const current = () => mounted.current && !controller.signal.aborted && sequence === operationLoadSequence.current && context === currentContext.current;
-    void json<{ operations: ProjectOperation[] }>(`${ACTIONS}?${new URLSearchParams({ cwd })}`, { signal: controller.signal })
+    void work.current.observe(json<{ operations: ProjectOperation[] }>(`${ACTIONS}?${new URLSearchParams({ cwd })}`, { signal: controller.signal })
       .then(async (data) => {
         if (!current()) return;
         setOperations(data.operations);
@@ -102,9 +105,9 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
           if (current() && !operationRef.current && !preparation.current) { operationRef.current = live; setOperation(live); }
         }
         if (current()) setOperationsReady(true);
-      }).catch((cause) => { if (current()) setError(String(cause)); });
+      }).catch((cause) => { if (current()) setError(String(cause)); }));
   }, [cwd]);
-  const selectHistoricalOperation = async (op: ProjectOperation) => {
+  const selectHistoricalOperation = (op: ProjectOperation) => work.current.observe((async () => {
     selectionRead.current?.abort(); const controller = new AbortController(); selectionRead.current = controller;
     const sequence = ++selectionSequence.current, expectedContext = currentContext.current;
     const current = () => mounted.current && !controller.signal.aborted && sequence === selectionSequence.current && expectedContext === currentContext.current;
@@ -116,7 +119,7 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
       setOperation(latest);
     } catch (cause) { if (current()) setError(String(cause)); }
     finally { if (current()) { selectionRead.current = null; setSelectingOperation(false); } }
-  };
+  })());
   useEffect(() => {
     const changed = () => {
       cancelOperation(); currentContext.current++;
@@ -132,9 +135,9 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
     const controller = new AbortController();
     setLoading(true); setCaptureReady(false); setError(""); setDetails({}); dateAbort.current?.abort(); setDateLoading(false);
     const query = new URLSearchParams({ cwd }); if (target) query.set("target", target);
-    void json<WorktreeManagementInventory>(`/api/worktrees/manage?${query}`, { signal: controller.signal })
+    void work.current.observe(json<WorktreeManagementInventory>(`/api/worktrees/manage?${query}`, { signal: controller.signal })
       .then((data) => { if (!controller.signal.aborted) { setInventory(data); setCaptureReady(true); setLoading(false); } })
-      .catch((cause) => { if (!controller.signal.aborted) { setError(String(cause)); setLoading(false); } });
+      .catch((cause) => { if (!controller.signal.aborted) { setError(String(cause)); setLoading(false); } }));
     reloadOperations();
     return () => controller.abort();
   }, [cwd, target, refresh, reloadOperations]);
@@ -167,7 +170,7 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
     if (loading || !captureReady || settings || dateLoading || !captureId) return;
     const ids: string[] = JSON.parse(visibleIds); if (!ids.length) return;
     const controller = new AbortController();
-    void loadDetails(ids, controller.signal).catch((cause) => { if (!controller.signal.aborted) setError(String(cause)); });
+    void work.current.observe(loadDetails(ids, controller.signal).catch((cause) => { if (!controller.signal.aborted) setError(String(cause)); }));
     return () => controller.abort();
   }, [captureId, visibleIds, loadDetails, loading, captureReady, settings, dateLoading]);
   useEffect(() => {
@@ -179,7 +182,7 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
     if (!ids.length) { setSort("merge"); setDateLoading(false); return; }
     const controller = new AbortController(); dateAbort.current = controller;
     setDateLoading(true); setDateProgress(0); setError("");
-    void (async () => {
+    void work.current.observe((async () => {
       try {
         for (let i = 0; i < ids.length; i += 50) {
           await loadDetails(ids.slice(i, i + 50), controller.signal, true);
@@ -188,19 +191,19 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
         }
         if (!controller.signal.aborted) { setSort("merge"); setDateLoading(false); }
       } catch (cause) { if (!controller.signal.aborted) { setError(String(cause)); setDateLoading(false); setSortIntent("integrated-first"); } }
-    })();
+    })());
     return () => controller.abort();
   }, [captureId, matchingIds, sortIntent, loadDetails, loading, captureReady, dateAttempt]);
   const operationId = operation?.id, operationState = operation?.state;
   useEffect(() => {
     if (!operationId || !["preparing", "review", "dispatched"].includes(operationState ?? "")) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
+    const poll = () => work.current.observe((async () => {
       try {
         const next = await json<ProjectOperation>(`${ACTIONS}/${operationId}`, { signal: controller.signal });
         if (!controller.signal.aborted) { setOperation(next); timer = setTimeout(poll, 600); }
       } catch (cause) { if (!controller.signal.aborted) { setError(String(cause)); timer = setTimeout(poll, 1500); } }
-    };
+    })());
     timer = setTimeout(poll, 250);
     return () => { controller.abort(); clearTimeout(timer); };
   }, [operationId, operationState]);
@@ -221,18 +224,18 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
     // Row kind can change without the path changing (detach/reattach on refresh).
     setResource(selectedResources.resource); setWorktreePath(selectedResources.worktreePath);
   }, [selectionIdentity, selectedResources.resource, selectedResources.worktreePath]);
-  const submitPreparation = async () => {
+  const submitPreparation = () => work.current.observe((async () => {
     const request = preparation.current; if (!request || sending) return;
     setSending(true); setError("");
     try {
       const next = await post<ProjectOperation>(ACTIONS, request.body);
       if (!mounted.current || request.context !== currentContext.current) {
-        void post(`${ACTIONS}/${next.id}`, { cwd: next.cwd, decision: "stop" }).catch(() => {}); return;
+        void work.current.observe(post(`${ACTIONS}/${next.id}`, { cwd: next.cwd, decision: "stop" }).catch(() => {})); return;
       }
       preparation.current = null; setUncertainPreparation(false); operationRef.current = next; setOperation(next);
     } catch (cause) { if (mounted.current && request.context === currentContext.current) { setError(String(cause)); setUncertainPreparation(true); } }
     finally { if (mounted.current && request.context === currentContext.current) setSending(false); }
-  };
+  })());
   const prepare = (row: WorktreeManagementRow) => {
     if (row.id !== expanded || !canReview(row) || preparation.current || !inventory) return;
     const payload = managementRemovalPayload(row, selectedResources, inventory.target);
@@ -243,7 +246,7 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
     preparation.current = { context: currentContext.current, body: { cwd, requestId: crypto.randomUUID(), action: "remove", payload } };
     void submitPreparation();
   };
-  const decide = async (decision: "approve" | "reject" | "stop") => {
+  const decide = (decision: "approve" | "reject" | "stop") => work.current.observe((async () => {
     if (!operation || sending) return;
     if (decision === "approve" && (operation.state !== "review" || !operation.card || operation.cwd !== cwd ||
       operation.card.requiredAcknowledgment && (!acknowledgmentKey || acknowledgedKey !== acknowledgmentKey))) return;
@@ -256,7 +259,7 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
       if (mounted.current && expectedContext === currentContext.current) setOperation(next);
     } catch (cause) { if (mounted.current && expectedContext === currentContext.current) setError(String(cause)); }
     finally { if (mounted.current && expectedContext === currentContext.current) setSending(false); }
-  };
+  })());
   const openSettings = (field: "targetBranch" | "enabled") => { scrollBookmark.current = body.current?.scrollTop ?? 0; setSettings(field); };
   const backFromSettings = () => { setSettings(null); setRefresh((v) => v + 1); requestAnimationFrame(() => { if (body.current) body.current.scrollTop = scrollBookmark.current; }); restoreInteractionFocus(); };
   const dateText = (value: string | null) => value ? new Date(value).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" }) : t("manager.unavailable");

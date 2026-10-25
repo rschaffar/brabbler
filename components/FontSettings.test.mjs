@@ -1,62 +1,48 @@
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import test from "node:test";
-import { Script } from "node:vm";
-import ts from "typescript";
-import * as fonts from "../lib/font-preferences.ts";
+import '../lib/testing/client-native-boundary.fixture.mjs';
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createElement as h } from 'react';
+import { settingsFixture } from './settings.fixture.mjs';
 
-const script = new Script(ts.transpileModule(readFileSync(new URL("./FontSettings.tsx", import.meta.url), "utf8"), {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
-}).outputText);
-function fixture() {
-  const values = { ...fonts.DEFAULT_FONT_PREFERENCES };
-  const calls = [];
-  const exported = {};
-  const jsx = (type, props) => ({ type, props });
-  script.runInNewContext({ exports: exported, require(id) {
-    if (id === "react/jsx-runtime") return { jsx, jsxs: jsx };
-    if (id === "@/hooks/useI18n") return { useI18n: () => ({ t: (key) => key }) };
-    if (id === "@/lib/font-preferences") return fonts;
-    if (id === "./SettingsUi") return { ConfigButton: "button" };
-    if (id === "@/hooks/useFontPreferences") return { useFontPreferences: () => ({ ...values,
-      setFontPreference(kind, value) { calls.push(["family", kind, value]); values[kind] = value; },
-      setFontWeight(kind, value) { calls.push(["weight", kind, value]); values[`${kind}Weight`] = value; },
-      resetFontPreference(kind) { calls.push(["reset-family", kind]); values[kind] = ""; },
-      resetFontWeight(kind) { calls.push(["reset-weight", kind]); values[`${kind}Weight`] = 400; },
-    }) };
-    throw Error(`Unexpected import ${id}`);
+test('real font fields: labels, six weights, independent reset, shared live snapshot and cleanup', async t => {
+  const f = await settingsFixture(t);
+  const { FontSettings, useFontPreferences, FONT_STORAGE_KEYS } = await f.load('fonts');
+  function Peer() { const fonts = useFontPreferences(); return h('output', { id: 'font-peer' }, JSON.stringify(fonts)); }
+  const storageListeners = new Set(), writes = [];
+  await f.mount(h('div', null, h(FontSettings), h(Peer)), { setup(window) {
+    const storage = window.Storage.prototype;
+    for (const method of ['setItem', 'removeItem']) {
+      const original = storage[method];
+      storage[method] = function (key, ...args) { writes.push([method, key, ...args]); return original.call(this, key, ...args); };
+    }
+    const add = window.addEventListener.bind(window), remove = window.removeEventListener.bind(window);
+    window.addEventListener = (type, fn, ...args) => { if (type === 'storage') storageListeners.add(fn); add(type, fn, ...args); };
+    window.removeEventListener = (type, fn, ...args) => { if (type === 'storage') storageListeners.delete(fn); remove(type, fn, ...args); };
   } });
-  function elements(node) {
-    if (Array.isArray(node)) return node.flatMap(elements);
-    if (!node || typeof node !== "object") return [];
-    return [node, ...elements(node.props?.children)];
+  for (const kind of ['ui', 'mono']) {
+    const row = f.node(`#settings-font-${kind}`).closest('.settings-font-row');
+    const [familyReset, weightReset] = row.querySelectorAll('button');
+    const field = f.node(`#settings-font-${kind}`), slider = f.node(`#settings-font-${kind}-weight`);
+    assert.equal(field.maxLength, 500);
+    assert.equal(field.getAttribute('aria-describedby'), 'settings-typography-description');
+    for (const node of [field, slider]) assert.equal(row.querySelector(`label[for="${node.id}"]`) !== null, true);
+    assert.deepEqual([slider.min, slider.max, slider.step], ['100', '600', '100']);
+    assert.deepEqual([familyReset.disabled, weightReset.disabled], [true, true]);
+    await f.input(field, '"Local, Font", monospace');
+    await f.input(slider, '600');
+    assert.match(slider.getAttribute('aria-valuetext'), /^600 /);
+    assert.equal(JSON.parse(f.node('#font-peer').textContent)[kind], '"Local, Font", monospace');
+    assert.equal(f.view.window.localStorage.getItem(FONT_STORAGE_KEYS[kind]), '"Local, Font", monospace');
+    assert.equal(f.view.window.localStorage.getItem(FONT_STORAGE_KEYS[`${kind}Weight`]), '600');
+    await f.click(familyReset);
+    assert.equal(field.value, ''); assert.equal(slider.value, '600');
+    assert.deepEqual([familyReset.disabled, weightReset.disabled], [true, false]);
+    await f.click(weightReset);
+    assert.equal(slider.value, '400');
   }
-  return { values, calls, elements: () => elements(exported.FontSettings()) };
-}
-
-test("font inputs and six-step weight sliders are labelled; family/weight resets never share an action", () => {
-  const f = fixture();
-  for (const kind of ["ui", "mono"]) {
-    const find = (predicate) => f.elements().find(predicate);
-    const field = () => find((node) => node.props?.id === `settings-font-${kind}`);
-    const slider = () => find((node) => node.props?.id === `settings-font-${kind}-weight`);
-    const prefix = kind === "ui" ? "Ui" : "Mono";
-    const resetFamily = () => find((node) => node.props?.["aria-label"] === `settings.reset${prefix}Font`);
-    const resetWeight = () => find((node) => node.props?.["aria-label"] === `settings.reset${prefix}FontWeight`);
-    assert.equal(field().props.maxLength, 500);
-    assert.equal(field().props["aria-describedby"], "settings-typography-description");
-    assert.ok(find((node) => node.type === "label" && node.props.htmlFor === field().props.id));
-    assert.ok(find((node) => node.type === "label" && node.props.htmlFor === slider().props.id));
-    assert.equal(slider().props.min, 100); assert.equal(slider().props.max, 600); assert.equal(slider().props.step, 100);
-    assert.equal(resetFamily().props.disabled, true); assert.equal(resetWeight().props.disabled, true);
-    field().props.onChange({ target: { value: '"Local, Font", monospace' } });
-    slider().props.onChange({ target: { value: "600" } });
-    assert.match(slider().props["aria-valuetext"], /^600 /);
-    resetFamily().props.onClick();
-    assert.equal(f.values[kind], ""); assert.equal(f.values[`${kind}Weight`], 600);
-    assert.equal(resetFamily().props.disabled, true); assert.equal(resetWeight().props.disabled, false);
-    resetWeight().props.onClick();
-    assert.equal(f.values[`${kind}Weight`], 400);
-  }
-  assert.equal(f.calls.length, 8);
+  assert.equal(writes.length, 8, 'eight independent actual family/weight writes or removals');
+  assert.equal(storageListeners.size, 1, 'one shared storage subscription after Strict replay');
+  await f.view.unmount();
+  assert.equal(storageListeners.size, 0, 'last actual subscriber releases storage listener');
+  assert.equal(f.requests.length, 0, 'font preferences are browser-local');
 });

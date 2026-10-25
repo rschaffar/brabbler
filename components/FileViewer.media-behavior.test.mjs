@@ -1,8 +1,8 @@
+import '../lib/testing/client-native-boundary.fixture.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { createJiti } from 'jiti';
-import { mount } from '../lib/testing/react.fixture.mjs';
 import { filesRuntime } from './files-runtime.fixture.mjs';
 
 const jiti = createJiti(import.meta.url, {
@@ -26,10 +26,10 @@ async function openMedia(t, kind) {
   // Host guards precede the real graph import, just as in the text owner.
   const { FileViewerComposition, FileEditSessions } = await (composition ??= jiti.import('./file-viewer-composition.fixture.tsx'));
   const store = new FileEditSessions();
-  const props = { filePath: `/root/asset.${kind.ext}`, cwd: '/old-checkout', sourceSessionId: 'media-origin', watchEnabled: false };
+  const props = { onWork: runtime.onWork, filePath: `/root/asset.${kind.ext}`, cwd: '/old-checkout', sourceSessionId: 'media-origin', watchEnabled: false };
   const initial = kind.ext === 'pdf' ? [meta(runtime, props), meta(runtime, props)] : [];
   const element = props => createElement(FileViewerComposition, { store, viewers: [{ ...props, viewId: 'reader' }] });
-  view = await mount(t, element(props), { setup: runtime.setup });
+  view = await runtime.mount(t, element(props), { setup: runtime.setup, beforeDispose: runtime.settle });
   assert.equal(runtime.requests.length, initial.length, 'only PDF initial metadata is permitted with watching disabled');
   assert.equal(runtime.sources.length, 0, 'watchEnabled is forwarded to the actual selected branch');
   const root = () => view.container.querySelector('[data-test-view="reader"]');

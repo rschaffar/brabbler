@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { ExplorerFile } from "@/lib/git-explorer";
 import { copyText } from "@/lib/clipboard";
@@ -38,7 +38,13 @@ function CopyCommitField({ label, value }: { label: string; value: string }) {
 }
 
 /** Committed objects only. Never reads the working tree or authorizes a Git action. */
-export function GitCommitViewer({ cwd, branch, head, oid }: { cwd: string; branch: string; head: string; oid: string }) {
+export function GitCommitViewer({ cwd, branch, head, oid, onReadWork }: {
+  cwd: string; branch: string; head: string; oid: string;
+  onReadWork?: (work: Promise<void>) => void;
+}) {
+  const readObserver = useRef(onReadWork);
+  readObserver.current = onReadWork;
+  const observeRead = useCallback((work: Promise<void>) => { readObserver.current?.(work); }, []);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const files = useMemo(() => detail?.files.map((file) => ({ id: file.path, path: file.path, status: FILE_STATUS[file.status] ?? file.status })) ?? [], [detail]);
@@ -49,11 +55,12 @@ export function GitCommitViewer({ cwd, branch, head, oid }: { cwd: string; branc
   useEffect(() => {
     const controller = new AbortController();
     setDetail(null); setDetailError(null);
-    void load<Detail>(url(cwd, "commit", { branch, head, oid }), controller.signal)
+    const work = load<Detail>(url(cwd, "commit", { branch, head, oid }), controller.signal)
       .then((result) => { if (!controller.signal.aborted) setDetail(result); })
       .catch((cause) => { if (!controller.signal.aborted) setDetailError(message(cause)); });
+    observeRead(work);
     return () => controller.abort();
-  }, [cwd, branch, head, oid]);
+  }, [cwd, branch, head, oid, observeRead]);
   return <section aria-label="Git commit details" className="h-full min-w-0 overflow-auto p-4 text-sm text-text">
     <p className="mb-2 text-xs text-text-muted">Read-only committed history · {cwd}</p>
     <div className="git-commit-copy-row">

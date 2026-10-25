@@ -7,6 +7,8 @@ export type AgentUsageEntry =
   | { status: "loading" | "unavailable" }
   | { status: "fresh" | "stale"; summary: SessionUsageSummary };
 export type AgentUsageSnapshot = ReadonlyMap<string, AgentUsageEntry>;
+/** Passive ownership only: includes the read/body, catch and finally continuation. */
+export type AgentUsageWorkObserver = (work: Promise<void>) => void;
 
 export function isSessionUsageSummary(value: unknown): value is SessionUsageSummary {
   if (!value || typeof value !== "object") return false;
@@ -43,13 +45,14 @@ export function sumAgentUsage(ids: readonly string[], snapshot: AgentUsageSnapsh
 
 /** Injectable scheduling/IO keeps visibility, chunking and cancellation behavior testable. */
 export function createAgentUsageCoordinator({
-  read, visible, publish,
+  read, visible, publish, observeWork,
   schedule = (callback: () => void, ms: number) => setTimeout(callback, ms),
   cancel = (timer: ReturnType<typeof setTimeout>) => clearTimeout(timer),
 }: {
   read: (ids: string[], signal: AbortSignal) => Promise<Record<string, SessionUsageSummary>>;
   visible: () => boolean;
   publish: (snapshot: AgentUsageSnapshot) => void;
+  observeWork?: AgentUsageWorkObserver;
   schedule?: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>;
   cancel?: (timer: ReturnType<typeof setTimeout>) => void;
 }) {
@@ -72,7 +75,17 @@ export function createAgentUsageCoordinator({
     snapshot = new Map<string, AgentUsageEntry>([...snapshot].map(([id, entry]) => [id,
       "summary" in entry ? { status: "stale" as const, summary: entry.summary } : entry]));
   };
-  const pump = async () => {
+  // Construction is inert. Observation neither replaces IO/scheduling nor owns
+  // native work. Keep the original rejecting promise and default error policy.
+  const pump = (): Promise<void> => {
+    const work = runPump();
+    if (observeWork) {
+      try { observeWork(work); }
+      catch (error) { console.error("Agent usage work observer failed", error); }
+    }
+    return work;
+  };
+  const runPump = async (): Promise<void> => {
     if (disposed || inFlight || !pending || !visible() || ids.length === 0) return;
     clearTimer();
     pending = false;

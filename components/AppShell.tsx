@@ -3,7 +3,15 @@
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { SessionSidebar } from "./SessionSidebar";
+import { useSystemInfoState, useSystemInfoActions } from "@/hooks/useSessionSystemInfo";
+import { SessionSystemInfoButtons } from "./SessionSystemInfoButtons";
+import { useSessionFileBinding } from "@/hooks/useSessionFileBinding";
+import { useSessionNavigationChatBinding } from "./session-navigation-chat";
+import { sessionNavigationArchiveBinding } from "./session-navigation-archive";
+import { SessionNavigationSidebar } from "./SessionNavigation";
+import { useSessionAutoName } from "@/hooks/useSessionAutoName";
+import { SessionAutoNameButton, OverviewNavigationButtons } from "./SessionNavigationControls";
+import { useNavigationState, useSessionNavigation } from "@/hooks/useSessionNavigation";
 import { ChatWindow } from "./ChatWindow";
 import { isHistoryOnlySession } from "@/lib/session-directory";
 import { MarkdownMediaScope } from "./MarkdownMedia";
@@ -11,8 +19,7 @@ import { WebVersionNotice } from "./WebVersionNotice";
 import { ActivityViews } from "./ActivityViews";
 import { useActivityController, useActivityOwner } from "@/hooks/useActivityController";
 import { useHiddenProjects } from "@/hooks/useHiddenProjects";
-import { getActivitySections, type ActivityStatus } from "@/lib/activity";
-import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
+import { getActivitySections } from "@/lib/activity";
 import { FileWorkspace, type FileWorkspaceHandle, type FileWorkspaceStatus } from "./FileWorkspace";
 import { FileLinkMenuContext } from "./LocalFileLink";
 import type { FileDisposition } from "@/lib/file-workspace";
@@ -21,6 +28,8 @@ import { GitExplorerPanel } from "./GitExplorerPanel";
 import { ReviewNavigationContext } from "./ReviewNotebookBlock";
 import type { ReviewCommitReference, ReviewNavigation } from "@/lib/review-notebook";
 import { TabBar, type Tab } from "./TabBar";
+import { useQuotedChatBranch } from "@/hooks/useQuotedChatBranch";
+import { SessionToolbarActions, SessionStatsButton, MainFileToggle, ToolbarActionsStrip, MobileSessionIdentity, shellExpansionState, toggleFileExpansion, SidebarToolbarToggle, GitToolbarToggle, MobileChatToolbar, useTopPanelState, SubagentToolbarMarker, mobileToolbarVisible } from "./AppShellToolbar";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
 import { useSshAgent } from "@/hooks/useSshAgent";
 import { SshSigningCards } from "./SshSigningCards";
@@ -28,11 +37,11 @@ import { SshSidebarButton } from "./SshSidebarButton";
 import { AcceptancePanel } from "./AcceptancePanel";
 import { ScratchpadPanel } from "./ScratchpadPanel";
 import { ProjectTrustDialog, type TrustChoice } from "./ProjectTrustDialog";
+import { respondToProjectTrust } from "./project-trust-transaction";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { SystemPromptPanel } from "./SystemPromptPanel";
 import { ToolDefinitionsPanel } from "./ToolDefinitionsPanel";
 import { AgentSessionPanel } from "./AgentSessionPanel";
-import { SubagentIcon } from "./SubagentIcon";
 import { TerminalPanel } from "./TerminalPanel";
 import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
 import { useTheme } from "@/hooks/useTheme";
@@ -43,26 +52,10 @@ import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useAudio } from "@/hooks/useAudio";
 import { copyText } from "@/lib/clipboard";
-import { sendAgentCommand } from "@/lib/agent-client";
 import { getFileName } from "@/lib/file-paths";
-import { skillExpansionToCommand } from "@/lib/slash-display";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
-import {
-  claimExtensionAttentionNotification,
-  shouldShowBrowserNotification,
-  showBrowserNotification,
-} from "@/lib/browser-notifications";
+import { useShellNotifications } from "./useShellNotifications";
 import { setupPushSubscription } from "@/lib/push-client";
-import { getInitialNavigation, withTabOpen } from "@/lib/initial-navigation";
-import { clearTabOpenSession, getTabOpen, setTabOpenNewSession, setTabOpenSession } from "@/lib/tab-session";
-import { mergeCatalogRow } from "./session-catalog-helpers";
-import { rekeyDraft } from "@/lib/draft-store";
-import {
-  clearLastOpen,
-  getLastOpenSession,
-  setLastOpenSession,
-  workspaceKeyOf,
-} from "@/lib/workspace-memory";
 import {
   getDefaultRightPanelWidth,
   getRightPanelMaxWidth,
@@ -74,33 +67,22 @@ import {
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
 } from "@/lib/panel-layout";
-import type { BlockingExtensionUiRequest, SessionInfo, SessionTreeNode } from "@/lib/types";
+import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
-import { requestFreshComposerFocus } from "@/lib/composer-focus";
 import type { SessionStatsInfo } from "@/lib/pi-types";
-import type { ToolEntry } from "@/lib/tool-presets";
 import { getAgentsBadge, getSessionFamily } from "@/lib/session-family";
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
 
 type SessionCopyField = "file" | "id" | "projectDir" | "gitBranch" | "gitWorktree";
-type AutoNameStatus =
-  | { kind: "idle" }
-  | { kind: "naming" }
-  | { kind: "success" }
-  | { kind: "error"; message: string };
 
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
-const AGENT_PANEL_WIDTH = 420;
-
-function parkedNewSessionDraftKey(cwd: string): string {
-  return `parked-new:${cwd}`;
-}
 
 export function AppShell() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [initialNavigation, setInitialNavigation] = useState(() => getInitialNavigation(searchParams));
+  const navigationState = useNavigationState(searchParams);
+  const { initialNavigation, selectedSession, setSelectedSession, sessionCatalog, newSessionCwd, initialCwdStatus, initialCwdError, setRefreshKey, sessionKey, setSessionKey, sessionScrollPositionsRef, handleSessionScrollPositionChange, searchTarget, handleSearchTargetHandled, activeCwd } = navigationState;
   // Keep the system-theme subscription mounted for the lifetime of the app.
   useTheme();
   // Restore browser typography before opening Settings or a composer.
@@ -142,23 +124,9 @@ export function AppShell() {
   const handleBackgroundTaskDone = useCallback(() => {
     if (soundEnabledRef.current) playDoneSound();
   }, [playDoneSound, soundEnabledRef]);
-  const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   const [scratchpadOpen, setScratchpadOpen] = useState(false);
   const [scratchpadMounted, setScratchpadMounted] = useState(false);
-  const [sessionCatalog, setSessionCatalog] = useState<SessionInfo[]>([]);
   const projectPrivacy = useHiddenProjects();
-  const handleSessionsChange = useCallback((sessions: SessionInfo[]) => {
-    setSessionCatalog(sessions);
-    // The sidebar hydrates metadata after the selected session has already
-    // mounted. Merge that update into the active session without changing the
-    // ChatWindow key or restarting its history load.
-    setSelectedSession((current) => {
-      if (!current) return current;
-      const refreshed = sessions.find((session) => session.id === current.id);
-      if (!refreshed) return current;
-      return mergeCatalogRow(current, refreshed);
-    });
-  }, []);
   const sessionsWithSelection = useMemo(() => {
     if (!selectedSession) return sessionCatalog;
     return [
@@ -185,25 +153,6 @@ export function AppShell() {
     sessionsWithSelection, runningSessionIds, activityAttention, reviewSessionIds, null, queuedSessionIds,
   )["needs-you"].length, [sessionsWithSelection, runningSessionIds, queuedSessionIds, activityAttention, reviewSessionIds]);
   // The temporary id distinguishes consecutive fresh composers in one cwd.
-  const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
-  const [newSessionDraftId, setNewSessionDraftId] = useState("initial");
-  const [persistentNewSessionDraftId, setPersistentNewSessionDraftId] = useState<string | null>(null);
-  const persistNewSession = newSessionCwd !== null && persistentNewSessionDraftId === newSessionDraftId;
-  const activeNewSessionDraftKeyRef = useRef<string | null>(null);
-  const [initialCwdStatus, setInitialCwdStatus] = useState<"idle" | "validating" | "ready" | "error">(
-    () => initialNavigation.requestedCwd ? "validating" : "idle",
-  );
-  const [initialCwdError, setInitialCwdError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [sessionKey, setSessionKey] = useState(0);
-  const sessionScrollPositionsRef = useRef(new Map<string, ChatScrollPosition>());
-  const handleSessionScrollPositionChange = useCallback((sessionId: string, position: ChatScrollPosition) => {
-    sessionScrollPositionsRef.current.set(sessionId, position);
-  }, []);
-  const [searchTarget, setSearchTarget] = useState<{ sessionId: string; entryId: string; blockIndex?: number } | null>(null);
-  const handleSearchTargetHandled = useCallback((target: { sessionId: string; entryId: string }) => {
-    setSearchTarget((current) => current === target ? null : current);
-  }, []);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [fileRevealRequest, setFileRevealRequest] = useState<FileRevealRequest>();
   const fileRevealId = useRef(0);
@@ -238,8 +187,7 @@ export function AppShell() {
   useEffect(() => {
     if (!rightPanelOpen || !isSplitLayout) setChatHidden(false);
   }, [rightPanelOpen, isSplitLayout]);
-  const rightPanelFullWidth = rightPanelOpen && rightPanelExpanded && !isMobile;
-  const gitExplorerFullWidth = activeOverview === "git" && gitExplorerExpanded && !isMobile && !rightPanelFullWidth;
+  const { rightPanelFullWidth, gitExplorerFullWidth } = shellExpansionState({ rightPanelOpen, rightPanelExpanded, isMobile, activeOverview, gitExplorerExpanded });
   useEffect(() => {
     if (activeOverview !== "git" || isMobile || rightPanelFullWidth) setGitExplorerExpanded(false);
   }, [activeOverview, isMobile, rightPanelFullWidth]);
@@ -314,17 +262,7 @@ export function AppShell() {
     reclampRightPanelWidth();
   }, [reclampRightPanelWidth, reclampSidebarWidth, rightPanelOpen]);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
-  const [pendingQuotePrompt, setPendingQuotePrompt] = useState<{ sessionId: string; text: string } | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
-  const topBarActionsRef = useRef<HTMLDivElement>(null);
-  const [topBarScrollEdges, setTopBarScrollEdges] = useState({ left: false, right: false });
-  const updateTopBarScrollEdges = useCallback(() => {
-    const strip = topBarActionsRef.current;
-    if (!strip) return;
-    const left = strip.scrollLeft > 1;
-    const right = strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1;
-    setTopBarScrollEdges((previous) => previous.left === left && previous.right === right ? previous : { left, right });
-  }, []);
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
   const [branchActiveLeafId, setBranchActiveLeafId] = useState<string | null>(null);
@@ -341,34 +279,13 @@ export function AppShell() {
     branchLeafChangeFnRef.current?.(leafId);
   }, []);
 
-  const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
-  const [systemTools, setSystemTools] = useState<ToolEntry[] | null>(null);
-  const [systemInfoLoading, setSystemInfoLoading] = useState(false);
-  const systemInfoLoaderRef = useRef<(() => Promise<void>) | null>(null);
-  const systemInfoLoadIdRef = useRef(0);
+  const systemInfo = useSystemInfoState();
+  const { systemPrompt, systemTools, systemInfoLoading, setSystemPrompt, setSystemTools, setSystemInfoLoading,
+    handleSystemPromptChange, handleSystemToolsChange, handleSystemInfoLoaderChange } = systemInfo;
   const systemBtnRef = useRef<HTMLButtonElement>(null);
-
-  const handleSystemPromptChange = useCallback((prompt: string | null) => {
-    setSystemPrompt(prompt);
-    setSystemInfoLoading(false);
-  }, []);
-
-  const handleSystemToolsChange = useCallback((tools: ToolEntry[] | null) => {
-    setSystemTools(tools);
-  }, []);
-
-  const handleSystemInfoLoaderChange = useCallback((loader: (() => Promise<void>) | null) => {
-    systemInfoLoadIdRef.current += 1;
-    systemInfoLoaderRef.current = loader;
-    setSystemInfoLoading(false);
-  }, []);
 
   // Session stats (tokens + cost) — populated by ChatWindow, displayed in top bar
   const [sessionStats, setSessionStats] = useState<SessionStatsInfo | null>(null);
-  const [autoNameStatus, setAutoNameStatus] = useState<AutoNameStatus>({ kind: "idle" });
-  const autoNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activeSessionIdRef = useRef<string | null>(selectedSession?.id ?? null);
-  activeSessionIdRef.current = selectedSession?.id ?? null;
   const handleSessionStatsChange = useCallback((stats: SessionStatsInfo | null) => {
     setSessionStats(stats);
   }, []);
@@ -385,7 +302,6 @@ export function AppShell() {
   useEffect(() => {
     return () => {
       if (sessionCopyTimerRef.current) clearTimeout(sessionCopyTimerRef.current);
-      if (autoNameTimerRef.current) clearTimeout(autoNameTimerRef.current);
     };
   }, []);
 
@@ -395,60 +311,20 @@ export function AppShell() {
     setContextUsage(usage);
   }, []);
 
-  // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
-  const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
-
-  useEffect(() => {
-    if (!sessionHasBranches) {
-      setActiveTopPanel((panel) => panel === "branches" ? null : panel);
-    }
-  }, [sessionHasBranches]);
-
-  useEffect(() => {
-    if (!hasSubagentSessions) {
-      setActiveTopPanel((panel) => panel === "agents" ? null : panel);
-    }
-  }, [hasSubagentSessions]);
-
-  useEffect(() => {
-    if (rightPanelFullWidth) setActiveTopPanel(null);
-  }, [rightPanelFullWidth]);
-
-  const toggleTopPanel = useCallback((
-    panel: "agents" | "branches" | "system" | "tools" | "session",
-  ) => {
-    if (isMobile) setSidebarOpen(false);
-    setActiveTopPanel((cur) => cur === panel ? null : panel);
-  }, [isMobile]);
-
-  const handleSystemInfoToggle = useCallback((panel: "system" | "tools") => {
-    const opening = activeTopPanel !== panel;
-    toggleTopPanel(panel);
-    if (!opening || systemInfoLoading) return;
-
-    const load = systemInfoLoaderRef.current;
-    if (!load) return;
-    const loadId = ++systemInfoLoadIdRef.current;
-    setSystemInfoLoading(true);
-    void load().catch((error) => {
-      console.error("Failed to load system information:", error);
-    }).finally(() => {
-      if (systemInfoLoadIdRef.current === loadId) {
-        setSystemInfoLoading(false);
-      }
-    });
-  }, [activeTopPanel, systemInfoLoading, toggleTopPanel]);
+  const { activeTopPanel, setActiveTopPanel, topPanelPos, toggleTopPanel } = useTopPanelState({
+    sessionHasBranches, hasSubagentSessions, rightPanelFullWidth, isMobile, topBarRef, setSidebarOpen,
+  });
+  const handleSystemInfoToggle = useSystemInfoActions(systemInfo, activeTopPanel, toggleTopPanel);
 
   const openSessionStatsPanel = useCallback(() => {
     if (isMobile) setSidebarOpen(false);
     setActiveTopPanel("session");
-  }, [isMobile]);
+  }, [isMobile, setActiveTopPanel]);
 
   const handleSidebarToggle = useCallback(() => {
     if (isMobile) setActiveTopPanel(null);
     setSidebarOpen((open) => !open);
-  }, [isMobile]);
+  }, [isMobile, setActiveTopPanel]);
 
   const handleRightPanelToggle = useCallback(() => {
     if (isMobile) {
@@ -456,47 +332,24 @@ export function AppShell() {
       setActiveTopPanel(null);
     }
     setRightPanelOpen((open) => !open);
-  }, [isMobile]);
+  }, [isMobile, setActiveTopPanel]);
 
   const handleGitExplorerExpandToggle = useCallback(() => {
     setActiveTopPanel(null);
     setRightPanelExpanded(false);
     setGitExplorerExpanded((expanded) => !expanded);
-  }, []);
+  }, [setActiveTopPanel]);
   const handleGitExplorerClose = useCallback(() => {
     closeOverview();
     requestAnimationFrame(() => gitExplorerTriggerRef.current?.focus());
   }, [closeOverview]);
 
   const handleRightPanelExpandToggle = useCallback(() => {
-    setGitExplorerExpanded(false);
-    setActiveTopPanel(null);
-    setRightPanelExpanded((expanded) => !expanded);
-  }, []);
-
-  useEffect(() => {
-    if (!activeTopPanel || !topBarRef.current) return;
-    const update = () => {
-      const topBarRect = topBarRef.current!.getBoundingClientRect();
-      if (activeTopPanel === "agents") {
-        setTopPanelPos({
-          top: topBarRect.bottom,
-          left: topBarRect.left,
-          width: Math.min(AGENT_PANEL_WIDTH, topBarRect.width),
-        });
-        return;
-      }
-      setTopPanelPos({ top: topBarRect.bottom, left: topBarRect.left, width: topBarRect.width });
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(topBarRef.current);
-    return () => ro.disconnect();
-  }, [activeTopPanel, isMobile]);
+    toggleFileExpansion(setGitExplorerExpanded, setActiveTopPanel, setRightPanelExpanded);
+  }, [setActiveTopPanel]);
 
   // File workspaces park independently; terminal runtime hosts never move.
   const fileWorkspaceRef = useRef<FileWorkspaceHandle>(null);
-  const [parkedFileWorkspaceKey, setParkedFileWorkspaceKey] = useState<string | null>(null);
   const [fileStatus, setFileStatus] = useState<FileWorkspaceStatus>({ count: 0, groups: [], canSplit: false });
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>("files");
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
@@ -553,8 +406,6 @@ export function AppShell() {
     if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
   }, [isMobile]);
 
-  const initialSessionId = initialNavigation.sessionId;
-  const [activeCwd, setActiveCwd] = useState<string | null>(null);
   const reviewNavigationScope = JSON.stringify([selectedSession?.id, selectedSession?.cwd, activeCwd]);
   useEffect(() => { ++reviewNavigationId.current; setReviewNavigation(null); }, [reviewNavigationScope]);
   const reviewNavigationScopeRef = useRef(reviewNavigationScope);
@@ -571,313 +422,18 @@ export function AppShell() {
       setRightPanelExpanded(false);
       if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
     };
-  }, [isMobile, reviewNavigationScope]);
+  }, [isMobile, reviewNavigationScope, setActiveTopPanel]);
   const returnToWorkspaceHistory = useCallback(() => {
     ++reviewNavigationId.current;
     setReviewNavigation(null);
     requestAnimationFrame(() => document.querySelector<HTMLElement>("#git-explorer-panel section")?.focus());
   }, []);
-  const activeProjectKeyRef = useRef<string | null>(null);
-  // True once the initial ?session= URL param has been resolved (or confirmed absent)
-  const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId);
-  // sessionStorage is empty during SSR. Applying the tab's remembered session
-  // in the useState initializer made the first client tree differ from the
-  // server HTML (sidebar "select project" vs ""). Restore after mount instead.
-  useLayoutEffect(() => {
-    const next = withTabOpen(initialNavigation, getTabOpen());
-    if (next === initialNavigation) return;
-    setInitialNavigation(next);
-    if (next.sessionId) setInitialSessionRestored(false);
-  }, [initialNavigation]);
-  // Suppresses sessionKey bump in handleCwdChange during the initial URL restore
-  const suppressCwdBumpRef = useRef(false);
-  // Guards the async workspace restore so a slow response from an earlier
-  // switch cannot resurrect a session into a project the user already left.
-  const workspaceRestoreTokenRef = useRef(0);
+  const navigation = useSessionNavigation(navigationState, { router, isMobile, closeOverview, activeFileTabId, chatInputRef, branchLeafChangeFnRef, setChatHidden, setBranchTree, setBranchActiveLeafId, setSystemPrompt, setSystemTools, setSystemInfoLoading, setActiveTopPanel, setSidebarOpen, setRightPanelOpen, setActiveFileTabId, setOverviewMobileList });
+  const { handleSelectSession, handleNewSession, handleSessionSettled, handleActivitySelectSession, handleOpenSession, handleSessionForked, handleSessionRestored, effectiveNewSessionCwd, showChat, initialSessionRestored } = navigation;
 
-  const invalidateWorkspaceRestore = useCallback(() => {
-    workspaceRestoreTokenRef.current += 1;
-  }, []);
+  const chatBinding = useSessionNavigationChatBinding(navigationState, navigation, activityController);
 
-  // Persist every active-session transition, including new and forked sessions
-  // that bypass the sidebar selection handler. Transient sessions do not yet
-  // carry projectKey, so use the active project identity until hydration.
-  // The workspace memory is shared by every tab; the tab memory keeps this
-  // tab's own session so a reload does not follow another tab's last pick.
-  // New session is a selection too: remember the composer cwd so reload stays
-  // on that UI instead of resurrecting the previous chat.
-  useEffect(() => {
-    if (selectedSession) {
-      const projectKey = selectedSession.projectKey
-        ?? activeProjectKeyRef.current
-        ?? workspaceKeyOf(selectedSession);
-      setLastOpenSession(projectKey, selectedSession.id);
-      setTabOpenSession(selectedSession.id);
-      return;
-    }
-    if (newSessionCwd) setTabOpenNewSession(newSessionCwd, undefined, newSessionDraftId);
-  }, [newSessionCwd, newSessionDraftId, selectedSession]);
-
-  useEffect(() => {
-    const requestedCwd = initialNavigation.requestedCwd;
-    if (!requestedCwd) return;
-
-    const controller = new AbortController();
-    setInitialCwdStatus("validating");
-    setInitialCwdError(null);
-
-    void fetch("/api/cwd/validate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cwd: requestedCwd }),
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const data = await response.json().catch(() => ({})) as { cwd?: string; error?: string };
-        if (!response.ok || !data.cwd) {
-          throw new Error(data.error ?? `HTTP ${response.status}`);
-        }
-
-        // The sidebar will notify us when it adopts this cwd. Avoid remounting
-        // the just-created empty chat during that initial synchronization.
-        suppressCwdBumpRef.current = true;
-        // A reload can interrupt creation before its real ID reaches this tab.
-        // Recover the same text key, but do not automatically replay creation.
-        const tabOpen = getTabOpen();
-        const draftId = tabOpen?.kind === "new" && tabOpen.cwd === data.cwd && tabOpen.draftId
-          ? tabOpen.draftId : `initial:${requestedCwd}`;
-        setNewSessionDraftId(draftId);
-        activeNewSessionDraftKeyRef.current = `new:${draftId}:${data.cwd}`;
-        setNewSessionCwd(data.cwd);
-        setInitialCwdStatus("ready");
-        if (!new URLSearchParams(window.location.search).get("cwd")) {
-          router.replace(`?cwd=${encodeURIComponent(data.cwd)}`, { scroll: false });
-        }
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setInitialCwdError(error instanceof Error ? error.message : String(error));
-        setInitialCwdStatus("error");
-      });
-
-    return () => controller.abort();
-  }, [initialNavigation, router]);
-
-  // Restore the workspace's last open session after switching to it. Called
-  // from handleCwdChange once the outgoing context has been reset. The session
-  // is looked up against the live list so a deleted or drifted session falls
-  // back to the default welcome page instead of erroring.
-  const restoreWorkspaceContext = useCallback((projectKey: string, cwd: string) => {
-    const token = ++workspaceRestoreTokenRef.current;
-    const lastOpenSessionId = getLastOpenSession(projectKey);
-    if (!lastOpenSessionId) return;
-    const adopt = (d: { sessions: SessionInfo[] } | null) => {
-      if (token !== workspaceRestoreTokenRef.current) return; // stale switch
-      const s = d?.sessions.find((x) => x.id === lastOpenSessionId);
-      if (!s) {
-        // The list loaded but the remembered session is gone — forget it.
-        // When the list itself failed (d === null) keep the memory so a
-        // later switch retries the restore.
-        if (d) clearLastOpen(projectKey);
-        return;
-      }
-      if (workspaceKeyOf(s) !== projectKey) {
-        // Defensive: the remembered session drifted out of this workspace.
-        clearLastOpen(projectKey);
-        return;
-      }
-      // Keep the temporary composer's draft in its cwd, even when the
-      // remembered session belongs to another worktree of this project.
-      const activeDraftKey = activeNewSessionDraftKeyRef.current;
-      if (activeDraftKey) {
-        rekeyDraft(activeDraftKey, parkedNewSessionDraftKey(cwd));
-      }
-      activeNewSessionDraftKeyRef.current = null;
-      // Selecting the session must remount the chat with the session
-      // present: useAgentSession loads content in a mount-only effect, so
-      // the null-session welcome mount from the switch would never load
-      // the restored session's messages.
-      setSelectedSession(s);
-      setSessionKey((k) => k + 1);
-      if (new URLSearchParams(window.location.search).get("session") !== s.id) {
-        router.replace(`?session=${encodeURIComponent(s.id)}`, { scroll: false });
-      }
-    };
-    // Fast path: the sidebar already delivered the catalogue — restore
-    // without waiting on a fresh /api/sessions round trip.
-    if (sessionCatalog.length > 0) {
-      adopt({ sessions: sessionCatalog });
-      return;
-    }
-    void fetch("/api/sessions")
-      .then((r) => (r.ok ? (r.json() as Promise<{ sessions: SessionInfo[] }>) : null))
-      .then(adopt)
-      .catch(() => {
-        // Network hiccup: keep the remembered session for a later retry.
-      });
-  }, [router, sessionCatalog]);
-
-  const handleCwdChange = useCallback((
-    cwd: string | null,
-    projectRoot?: string | null,
-    projectKey?: string | null,
-  ) => {
-    invalidateWorkspaceRestore();
-    const currentFreshCwd = newSessionCwd ?? activeCwd;
-    setActiveCwd(cwd);
-    // Skip if cwd is null (initial mount).
-    if (!cwd) return;
-    const newProject = projectKey ?? projectRoot ?? cwd;
-    const currentProject = activeProjectKeyRef.current
-      ?? (selectedSession ? workspaceKeyOf(selectedSession) : null);
-    activeProjectKeyRef.current = newProject;
-
-    // Keep the project identity in sync during the initial URL restore without
-    // remounting the just-created or restored chat.
-    if (suppressCwdBumpRef.current) {
-      suppressCwdBumpRef.current = false;
-      return;
-    }
-    // The server may hydrate a normalized key after a custom cwd is already
-    // active. Updating identity for the exact same cwd is not a user switch.
-    if (currentFreshCwd === cwd && currentProject !== newProject) return;
-    // Existing sessions stay open when the worktree selector moves within the
-    // same project. A fresh composer must remount when its effective cwd moves,
-    // otherwise its already-created runtime would keep sending to the old cwd.
-    if (
-      currentProject === newProject
-      && (selectedSession !== null || currentFreshCwd === cwd)
-    ) {
-      return;
-    }
-    // Close any session that belongs to a different project — it no longer
-    // matches the selected project directory.
-    const previousDraftKey = activeNewSessionDraftKeyRef.current;
-    // Explicit New owns a saved (or in-flight) session: keep its draft identity
-    // for the creation response rather than moving it to a project placeholder.
-    if (previousDraftKey && currentFreshCwd && !persistNewSession) {
-      rekeyDraft(previousDraftKey, parkedNewSessionDraftKey(currentFreshCwd));
-    }
-    const draftId = typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-    const draftKey = `new:${draftId}:${cwd}`;
-    rekeyDraft(parkedNewSessionDraftKey(cwd), draftKey);
-    setNewSessionDraftId(draftId);
-    activeNewSessionDraftKeyRef.current = draftKey;
-    setSelectedSession(null);
-    setNewSessionCwd((prev) => {
-      if (prev && prev !== cwd) return null;
-      return prev;
-    });
-    setSessionKey((k) => k + 1);
-    setBranchTree([]);
-    setBranchActiveLeafId(null);
-    setSystemPrompt(null);
-    setSystemTools(null);
-    setSystemInfoLoading(false);
-    setActiveTopPanel(null);
-    if (currentProject !== newProject) {
-      // Park the previous file workspace without discarding its drafts.
-      if (!activeFileTabId || activeFileTabId === "files") {
-        setActiveFileTabId("files");
-        setRightPanelOpen(false);
-      }
-      // Restore the workspace we switched to: its last open session, or keep
-      // the default welcome page when none is remembered.
-      restoreWorkspaceContext(newProject, cwd);
-    }
-    router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
-  }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, newSessionCwd, persistNewSession, router, selectedSession, restoreWorkspaceContext]);
-
-  const handleSelectSession = useCallback((session: SessionInfo, isRestore = false, entryId?: string, blockIndex?: number) => {
-    if (!isRestore) setChatHidden(false);
-    setSearchTarget(entryId ? { sessionId: session.id, entryId, blockIndex } : null);
-    // Ignore an older sidebar row for a just-moved session, even on re-click.
-    invalidateWorkspaceRestore();
-    const activeDraftKey = activeNewSessionDraftKeyRef.current;
-    const activeDraftCwd = newSessionCwd ?? (selectedSession === null ? activeCwd : null);
-    if (activeDraftKey && activeDraftCwd && !persistNewSession) {
-      rekeyDraft(activeDraftKey, parkedNewSessionDraftKey(activeDraftCwd));
-    }
-    activeNewSessionDraftKeyRef.current = null;
-    // Adopt an explicitly selected session before the sidebar reports its cwd.
-    const projectKey = workspaceKeyOf(session);
-    // Initial URL restoration is not a project switch. A terminal restored
-    // from sessionStorage may not have reached this callback's render yet.
-    if (activeProjectKeyRef.current !== projectKey && !(isRestore && activeProjectKeyRef.current === null)) {
-      if (!activeFileTabId || activeFileTabId === "files") {
-        setActiveFileTabId("files");
-        setRightPanelOpen(false);
-      }
-      setActiveTopPanel(null);
-    }
-    activeProjectKeyRef.current = projectKey;
-    // Re-clicking the already-open session must not remount the chat and
-    // re-run the full load/positioning cycle. Only skip when the effective
-    // cwd context already matches — otherwise a pending cwd move still needs
-    // the full re-select flow.
-    if (!isRestore && selectedSession) {
-      const sameProject =
-        workspaceKeyOf(selectedSession) === workspaceKeyOf(session);
-      if (selectedSession.id === session.id && sameProject && selectedSession.cwd === session.cwd && selectedSession.cwdState === session.cwdState) {
-        if (isMobile) setSidebarOpen(false);
-        return;
-      }
-    }
-    setNewSessionCwd(null);
-    setSelectedSession(session);
-    setSessionKey((k) => k + 1);
-    setBranchTree([]);
-    setBranchActiveLeafId(null);
-    branchLeafChangeFnRef.current = null;
-    setSystemPrompt(null);
-    setSystemTools(null);
-    setSystemInfoLoading(false);
-    setInitialSessionRestored(true);
-    // On mobile, collapse the overlay drawer so the chat is revealed after pick.
-    if (isMobile && !isRestore) setSidebarOpen(false);
-    if (isRestore) {
-      // Suppress the redundant sessionKey bump that would come from the
-      // onCwdChange effect firing after setSelectedCwd in the sidebar
-      suppressCwdBumpRef.current = true;
-    }
-    // Skip router.replace when the URL already has this session — calling
-    // replace in production Next.js triggers a Suspense remount loop.
-    // Tab-memory restore lands on `/` and must write `?session=` so reload
-    // and copy-link keep this session.
-    if (!isRestore || new URLSearchParams(window.location.search).get("session") !== session.id) {
-      router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
-    }
-  }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, router, isMobile, newSessionCwd, persistNewSession, selectedSession]);
-
-  const handleNewSession = useCallback((sessionId: string, cwd: string) => {
-    if (isMobile) closeOverview();
-    setChatHidden(false);
-    invalidateWorkspaceRestore();
-    const draftKey = `new:${sessionId}:${cwd}`;
-    setTabOpenNewSession(cwd, undefined, sessionId);
-    rekeyDraft(parkedNewSessionDraftKey(cwd), draftKey);
-    activeNewSessionDraftKeyRef.current = draftKey;
-    setNewSessionDraftId(sessionId);
-    setPersistentNewSessionDraftId(sessionId);
-    setSelectedSession(null);
-    setNewSessionCwd(cwd);
-    setSessionKey((k) => k + 1);
-    setBranchTree([]);
-    setBranchActiveLeafId(null);
-    setSystemPrompt(null);
-    setSystemTools(null);
-    setSystemInfoLoading(false);
-    setActiveTopPanel(null);
-    if (isMobile) setSidebarOpen(false);
-    router.replace(`?cwd=${encodeURIComponent(cwd)}`, { scroll: false });
-    const focusRevision = workspaceRestoreTokenRef.current;
-    requestFreshComposerFocus(chatInputRef, isMobile, () => (
-      workspaceRestoreTokenRef.current === focusRevision
-      && activeNewSessionDraftKeyRef.current === draftKey
-    ));
-  }, [closeOverview, invalidateWorkspaceRestore, router, isMobile]);
+  const { autoNameStatus, handleAutoName } = useSessionAutoName({ selectedSession, setSelectedSession, setSessionStats, setRefreshKey, setActiveTopPanel });
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
   useGlobalKeyboardShortcuts({
@@ -889,258 +445,17 @@ export function AppShell() {
   // server-computed projectKey, which the same-project check in
   // handleCwdChange relies on. Hydrate it from the session list so switching
   // worktrees right after creating a session doesn't close the chat.
-  const hydrateSelectedSession = useCallback((sessionId: string) => {
-    void fetch("/api/sessions", { cache: "no-store" })
-      .then((r) => (r.ok ? (r.json() as Promise<{ sessions: SessionInfo[] }>) : null))
-      .then((d) => {
-        const full = d?.sessions.find((s) => s.id === sessionId);
-        if (!full) return;
-        setSelectedSession((prev) => (
-          prev?.id === sessionId
-            ? { ...prev, ...full, transient: full.transient ?? false }
-            : prev
-        ));
-      })
-      .catch(() => {});
-  }, []);
-
-  const handleActivitySelectSession = useCallback((session: SessionInfo, status?: ActivityStatus) => {
-    // Activity can discover a journal entry after this chat's initial load.
-    // Re-selecting the same interrupted row must refresh its warning instead
-    // of taking handleSelectSession's usual no-remount fast path.
-    if (status === "interrupted" && selectedSession?.id === session.id) {
-      setSessionKey((key) => key + 1);
-    } else {
-      handleSelectSession(session);
-    }
-    if (isMobile) setOverviewMobileList(false);
-  }, [handleSelectSession, isMobile, selectedSession?.id]);
-  const handleSidebarSelectSession = useCallback((session: SessionInfo, isRestore?: boolean, entryId?: string, blockIndex?: number) => {
-    // Background URL adoption may finish after the user opens an overview.
-    // Only explicit sidebar navigation should close that newer reading surface.
-    if (!isRestore) closeOverview();
-    handleSelectSession(session, isRestore, entryId, blockIndex);
-  }, [closeOverview, handleSelectSession]);
-
-  const handleOpenSession = useCallback(async (sessionId: string) => {
-    // Prefer the catalogue the sidebar already delivered: selecting from it
-    // avoids a full detail round trip just to obtain the SessionInfo.
-    const catalogued = sessionCatalog.find((s) => s.id === sessionId);
-    // A completed isolated child may have lost its checkout since this catalogue row.
-    if (catalogued && !catalogued.transient && catalogued.relation?.kind !== "subagent") {
-      handleSelectSession(catalogued);
-      return;
-    }
-    try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
-      const data = await response.json() as { info?: SessionInfo; error?: string };
-      if (!response.ok || !data.info) throw new Error(data.error ?? `HTTP ${response.status}`);
-      handleSelectSession(data.info);
-    } catch (error) {
-      console.error("[pi-web] failed to open session:", error instanceof Error ? error.message : error);
-    }
-  }, [handleSelectSession, sessionCatalog]);
-
-  // Called by ChatWindow when a new session gets its real id from pi
-  const handleSessionCreated = useCallback((session: SessionInfo, sourceDraftKey: string) => {
-    setRefreshKey((k) => k + 1);
-    if (activeNewSessionDraftKeyRef.current !== sourceDraftKey) return;
-    invalidateWorkspaceRestore();
-    activeNewSessionDraftKeyRef.current = null;
-    setNewSessionCwd(null);
-    setSelectedSession(session);
-    hydrateSelectedSession(session.id);
-    router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
-  }, [invalidateWorkspaceRestore, router, hydrateSelectedSession]);
-
-  const deliverSessionNotification = useCallback(({
-    targetSession,
-    title,
-    body,
-    tag,
-  }: {
-    targetSession: SessionInfo | null;
-    title: string;
-    body: string;
-    tag?: string;
-  }) => {
-    if (!("Notification" in window)) return;
-
-    const fire = () => {
-      const sessionUrl = targetSession ? `/?session=${encodeURIComponent(targetSession.id)}` : "/";
-      void showBrowserNotification({
-        title,
-        body,
-        sessionUrl,
-        tag,
-        onClick: () => {
-          window.focus();
-          if (targetSession) handleSelectSession(targetSession);
-        },
-      });
-    };
-
-    if (Notification.permission === "granted") {
-      fire();
-      void setupPushSubscription(locale);
-    } else if (Notification.permission === "default") {
-      void Notification.requestPermission().then((p) => {
-        if (p === "granted") {
-          fire();
-          void setupPushSubscription(locale);
-        }
-      });
-    }
-  }, [handleSelectSession, locale]);
-
-  const handleAgentEnd = useCallback(() => {
-    setRefreshKey((k) => k + 1);
-    setExplorerRefreshKey((k) => k + 1);
-    if (selectedSession) hydrateSelectedSession(selectedSession.id);
-
-    if (selectedSession?.relation?.kind === "subagent") return;
-    if (!shouldShowBrowserNotification()) return;
-    const targetSession = selectedSession;
-    deliverSessionNotification({
-      targetSession,
-      title: targetSession?.name ?? translate("i18n.sessionComplete"),
-      body: translate("i18n.taskFinished"),
-      tag: targetSession ? `pi-session-complete:${targetSession.id}` : "pi-session-complete",
-    });
-  }, [deliverSessionNotification, hydrateSelectedSession, selectedSession, translate]);
-
-  const handleAttentionNeeded = useCallback((request: BlockingExtensionUiRequest) => {
-    if (selectedSession?.relation?.kind === "subagent") return;
-    if (!shouldShowBrowserNotification()) return;
-    if (!claimExtensionAttentionNotification(request, notifiedAttentionRequestIdsRef.current)) return;
-
-    deliverSessionNotification({
-      targetSession: selectedSession,
-      title: translate("i18n.attentionNeeded"),
-      body: request.method === "custom"
-        ? translate("i18n.extensionInputNeeded")
-        : request.method === "ask_user" ? request.question
-        : request.title,
-      tag: `pi-extension-ui:${request.id}`,
-    });
-  }, [deliverSessionNotification, selectedSession, translate]);
-
-  const handleAutoName = useCallback(async () => {
-    const sessionId = selectedSession?.id;
-    if (!sessionId || autoNameStatus.kind === "naming") return;
-    if (autoNameTimerRef.current) clearTimeout(autoNameTimerRef.current);
-    setActiveTopPanel(null);
-    setAutoNameStatus({ kind: "naming" });
-
-    try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/auto-name`, {
-        method: "POST",
-      });
-      const body = (await response.json().catch(() => ({}))) as { title?: string; error?: string };
-      if (!response.ok || !body.title) {
-        throw new Error(body.error || `HTTP ${response.status}`);
-      }
-
-      const title = body.title.trim();
-      setRefreshKey((key) => key + 1);
-      if (activeSessionIdRef.current !== sessionId) return;
-      setSelectedSession((current) => current?.id === sessionId ? { ...current, name: title } : current);
-      setSessionStats((current) => current?.sessionId === sessionId ? { ...current, sessionName: title } : current);
-      setAutoNameStatus({ kind: "success" });
-      autoNameTimerRef.current = setTimeout(() => setAutoNameStatus({ kind: "idle" }), 1800);
-    } catch (error) {
-      if (activeSessionIdRef.current !== sessionId) return;
-      const message = error instanceof Error ? error.message : String(error);
-      setAutoNameStatus({ kind: "error", message });
-      autoNameTimerRef.current = setTimeout(() => setAutoNameStatus({ kind: "idle" }), 5000);
-    }
-  }, [autoNameStatus.kind, selectedSession?.id]);
-
-  useEffect(() => {
-    if (autoNameTimerRef.current) clearTimeout(autoNameTimerRef.current);
-    setAutoNameStatus({ kind: "idle" });
-  }, [selectedSession?.id]);
+  const { handleAgentEnd, handleAttentionNeeded } = useShellNotifications({
+    selectedSession, handleSelectSession, locale, handleSessionSettled,
+    setExplorerRefreshKey, translate, notifiedAttentionRequestIdsRef,
+  });
 
   const handleExplorerRefresh = useCallback(() => {
     setExplorerRefreshKey((k) => k + 1);
   }, []);
 
-  const handleSessionForked = useCallback((newSessionId: string) => {
-    invalidateWorkspaceRestore();
-    activeNewSessionDraftKeyRef.current = null;
-    setRefreshKey((k) => k + 1);
-    setSessionKey((k) => k + 1);
-    setNewSessionCwd(null);
-    setSelectedSession((prev) => ({
-      ...(prev ?? { path: "", cwd: "", created: "", modified: "", messageCount: 0, firstMessage: "" }),
-      id: newSessionId,
-      transient: false,
-    }));
-    hydrateSelectedSession(newSessionId);
-    router.replace(`?session=${encodeURIComponent(newSessionId)}`, { scroll: false });
-  }, [invalidateWorkspaceRestore, router, hydrateSelectedSession]);
-
-  const handleAskInNewChat = useCallback(async (
-    prompt: string,
-    sourceSessionId: string,
-    sourceEntryId: string,
-  ) => {
-    const result = await sendAgentCommand<{ newSessionId?: string }>(sourceSessionId, {
-      type: "fork_branch",
-      entryId: sourceEntryId,
-    });
-    if (!result?.newSessionId) throw new Error(translate("chat.quoteForkFailed"));
-    setPendingQuotePrompt({ sessionId: result.newSessionId, text: prompt });
-    handleSessionForked(result.newSessionId);
-  }, [handleSessionForked, translate]);
-
-  const handleInitialRestoreDone = useCallback(() => {
-    setInitialSessionRestored(true);
-  }, []);
-
-  const handleSessionRestored = useCallback((rootId: string) => {
-    setSessionCatalog((current) => current.map((session) => session.id === rootId ? { ...session, archived: false } : session));
-    setSelectedSession((current) => current?.id === rootId ? { ...current, archived: false } : current);
-    setRefreshKey((key) => key + 1);
-  }, []);
-
-  const handleSessionDeleted = useCallback((sessionId: string, replacementCwd?: string | null, refreshCatalogue = true) => {
-    invalidateWorkspaceRestore();
-    if (refreshCatalogue) setRefreshKey((k) => k + 1);
-    if (selectedSession?.id === sessionId && replacementCwd === null) {
-      // An uncertain move is not a deletion or a confirmed destination. Keep
-      // history mounted read-only until canonical metadata/reselection rebinds
-      // it; never create a working composer in a possibly vanished source.
-      setSelectedSession({ ...selectedSession, cwdState: "unavailable" });
-      setSessionKey((k) => k + 1);
-      return;
-    }
-    if (selectedSession?.id === sessionId) {
-      clearTabOpenSession(sessionId);
-      const cwd = replacementCwd ?? selectedSession.cwd;
-      // A confirmed relocation must not create the replacement composer or
-      // Files view in a vanished source directory.
-      if (replacementCwd) {
-        setActiveCwd(replacementCwd);
-        activeProjectKeyRef.current = replacementCwd;
-      }
-      const draftId = typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-      setNewSessionDraftId(draftId);
-      activeNewSessionDraftKeyRef.current = cwd ? `new:${draftId}:${cwd}` : null;
-      setSelectedSession(null);
-      setNewSessionCwd(cwd ?? null);
-      setSessionKey((k) => k + 1);
-      setBranchTree([]);
-      setBranchActiveLeafId(null);
-      setSystemPrompt(null);
-      setSystemTools(null);
-      setSystemInfoLoading(false);
-      setActiveTopPanel(null);
-      router.replace(cwd ? `?cwd=${encodeURIComponent(cwd)}` : (typeof window !== "undefined" ? window.location.pathname : "/"), { scroll: false });
-    }
-  }, [invalidateWorkspaceRestore, selectedSession, router]);
+  const { onAskInNewChat: handleAskInNewChat, initialPrompt: quoteInitialPrompt,
+    onInitialPromptConsumed: consumeQuoteInitialPrompt } = useQuotedChatBranch(selectedSession?.id, handleSessionForked);
 
   const handleOpenFile = useCallback((
     filePath: string,
@@ -1195,31 +510,7 @@ export function AppShell() {
     );
   }, [selectedSession]);
 
-  // Show chat area if a session is selected, or if we have a cwd to start a new session in
-  const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
-  const newSessionDraftKey = selectedSession === null && effectiveNewSessionCwd
-    ? `new:${newSessionDraftId}:${effectiveNewSessionCwd}`
-    : null;
-  useLayoutEffect(() => {
-    activeNewSessionDraftKeyRef.current = newSessionDraftKey;
-  }, [newSessionDraftKey]);
-  const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   // A sidebar checkout selection must never retarget a chat action detail.
-  useEffect(() => {
-    if (!isMobile || !topBarActionsRef.current) return;
-    const strip = topBarActionsRef.current;
-    const observer = new ResizeObserver(updateTopBarScrollEdges);
-    observer.observe(strip);
-    const toolbar = strip.querySelector('[data-mobile-toolbar="true"]');
-    if (toolbar) observer.observe(toolbar);
-    updateTopBarScrollEdges();
-    return () => observer.disconnect();
-  }, [isMobile, showChat, selectedSession?.id, activeOverview, updateTopBarScrollEdges]);
-  const mobileSessionTitle = selectedSession
-    ? selectedSession.name || (skillExpansionToCommand(selectedSession.firstMessage) ?? selectedSession.firstMessage).slice(0, 50) || selectedSession.id.slice(0, 12)
-    : translate("i18n.newSession");
-  const mobileProjectPath = selectedSession?.projectRoot ?? selectedSession?.cwd ?? effectiveNewSessionCwd;
-  const mobileProjectName = mobileProjectPath ? getFileName(mobileProjectPath) || mobileProjectPath : null;
   const historyOnly = isHistoryOnlySession(selectedSession);
   const projectTrustCwd = historyOnly ? null : selectedSession?.cwd ?? effectiveNewSessionCwd;
   const projectTrustCwdRef = useRef(projectTrustCwd);
@@ -1249,34 +540,13 @@ export function AppShell() {
     return () => controller.abort();
   }, [projectTrustCwd]);
 
-  const handleTrustProject = useCallback(async (choice: TrustChoice) => {
-    if (!projectTrustCwd || projectTrustBusy) return;
-    setProjectTrustBusy(true);
-    setProjectTrustError(null);
-    try {
-      const response = await fetch("/api/project-trust", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: projectTrustCwd, ...choice }),
-      });
-      const data = await response.json() as ProjectTrustStatus & { error?: string };
-      if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
-      if (projectTrustCwdRef.current !== projectTrustCwd) return;
-      setProjectTrust(data);
-      setProjectTrustDialogOpen(false);
-      setModelsRefreshKey((key) => key + 1);
-      setSessionKey((key) => key + 1);
-    } catch (error) {
-      if (projectTrustCwdRef.current === projectTrustCwd) setProjectTrustError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setProjectTrustBusy(false);
-    }
-  }, [projectTrustBusy, projectTrustCwd]);
+  const handleTrustProject = useCallback((choice: TrustChoice) => respondToProjectTrust(choice, {
+    projectTrustCwd, projectTrustBusy, projectTrustCwdRef,
+    setProjectTrustBusy, setProjectTrustError, setProjectTrust,
+    setProjectTrustDialogOpen, setModelsRefreshKey, setSessionKey,
+  }), [projectTrustBusy, projectTrustCwd, setSessionKey]);
 
-  const currentFileWorkspaceKey = JSON.stringify([selectedSession?.id ?? null, selectedSession?.cwd ?? activeCwd ?? null]);
-  const fileWorkspaceKey = parkedFileWorkspaceKey ?? currentFileWorkspaceKey;
-  const parkedFileCwd = parkedFileWorkspaceKey ? (JSON.parse(parkedFileWorkspaceKey) as [string | null, string | null])[1] ?? "" : "";
-  useEffect(() => { setParkedFileWorkspaceKey(null); }, [currentFileWorkspaceKey]);
+  const { currentFileWorkspaceKey, fileWorkspaceKey, parkedFileWorkspaceKey, setParkedFileWorkspaceKey, parkedFileCwd } = useSessionFileBinding(selectedSession, activeCwd);
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
   const windowTitle = activeCwdName ? `${activeCwdName} - Pi Web` : "Pi Web";
 
@@ -1293,19 +563,7 @@ export function AppShell() {
 
   const sidebarContent = (
     <>
-      <SessionSidebar
-        selectedSessionId={selectedSession?.id ?? null}
-        onSelectSession={handleSidebarSelectSession}
-        onNewSession={handleNewSession}
-        initialSessionId={initialSessionId}
-        skipInitialProjectSelection={initialNavigation.requestedCwd !== null}
-        onInitialRestoreDone={handleInitialRestoreDone}
-        refreshKey={refreshKey}
-        onSessionDeleted={handleSessionDeleted}
-        onSessionArchived={handleSessionDeleted}
-        selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
-        selectedCwdState={selectedSession?.cwdState}
-        onCwdChange={handleCwdChange}
+      <SessionNavigationSidebar state={navigationState} navigation={navigation}
         onOpenFile={handleOpenFile}
         onOpenTerminal={handleOpenTerminal}
         explorerRefreshKey={explorerRefreshKey}
@@ -1315,7 +573,6 @@ export function AppShell() {
         onAtMentions={handleAtMentions}
         onBackgroundTaskDone={handleBackgroundTaskDone}
         activityController={activityController}
-        onSessionsChange={handleSessionsChange}
       />
       <SshSidebarButton controller={sshController} onOpen={() => setSettingsSection("ssh")} />
       <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
@@ -1423,505 +680,26 @@ export function AppShell() {
     );
   };
 
-  const renderChatToolbarActions = (mobile: boolean) => {
-    if (!mobile && !showChat) return null;
-    return (
-      <div style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
-        <button type="button" aria-label="Session plugin settings" title="Session plugin settings"
-          disabled={!selectedSession || selectedSession.transient}
-          onClick={() => {
-            if (!selectedSession || selectedSession.transient) return;
-            setPluginSettingsSession({ id: selectedSession.id, cwd: selectedSession.cwd });
-            setSettingsSection("plugins");
-          }}
-          className="flex shrink-0 items-center justify-center gap-1 border-r border-border px-2 text-xs text-text-muted hover:bg-bg-hover disabled:opacity-40"
-          style={{ width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined }}>
-          <SettingsSectionIcon section="plugins" />
-          {!mobile && <span>Policy</span>}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            handleViewFullHistory();
-          }}
-          disabled={!selectedSession}
-          title={selectedSession ? translate("history.full") : translate("history.unsaved")}
-          aria-label={translate("history.full")}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-            width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-            height: "100%",
-            padding: mobile ? 0 : "0 12px",
-            background: "none",
-            border: "none",
-            borderTop: "2px solid transparent",
-            borderRight: "1px solid var(--border)",
-            color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
-            cursor: selectedSession ? "pointer" : "not-allowed",
-            opacity: selectedSession ? 1 : 0.45,
-            flexShrink: 0,
-            fontSize: 11,
-            whiteSpace: "nowrap",
-            transition: "color 0.1s, background 0.1s, opacity 0.1s",
-          }}
-          onMouseEnter={(event) => {
-            if (!selectedSession) return;
-            event.currentTarget.style.color = "var(--text)";
-            event.currentTarget.style.background = "var(--bg-hover)";
-          }}
-          onMouseLeave={(event) => {
-            event.currentTarget.style.color = selectedSession ? "var(--text-muted)" : "var(--text-dim)";
-            event.currentTarget.style.background = "none";
-          }}
-          data-mobile-toolbar-action={mobile ? "history" : undefined}
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{
-              color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
-              flexShrink: 0,
-            }}
-            aria-hidden="true"
-          >
-            <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-            <path d="M3 3v5h5" />
-            <path d="M12 7v5l3 2" />
-          </svg>
-          {!mobile && <span>{translate("history.label")}</span>}
-        </button>
-        {(() => {
-          // 上下文压缩后当前消息可能不再包含 user 消息，需同时参考会话文件的消息总数。
-          const hasMessages = Boolean(
-            selectedSession
-            && ((sessionStats?.userMessages ?? 0) > 0 || selectedSession.messageCount > 0),
-          );
-          const disabled = !selectedSession || selectedSession.transient || !hasMessages || autoNameStatus.kind === "naming";
-          const isSuccess = autoNameStatus.kind === "success";
-          const isError = autoNameStatus.kind === "error";
-          const label = autoNameStatus.kind === "naming"
-            ? translate("title.generating")
-            : isSuccess
-              ? translate("title.updated")
-              : isError
-                ? translate("title.failed")
-                : translate("title.generate");
-          const title = !selectedSession || selectedSession.transient
-            ? translate("title.unsaved")
-            : !hasMessages
-              ? translate("title.noMessages")
-              : isError
-                ? autoNameStatus.message
-                : translate("title.generateSession");
-
-          return (
-            <button
-              type="button"
-              onClick={() => {
-                void handleAutoName();
-              }}
-              disabled={disabled}
-              title={title}
-              aria-label={label}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-                height: "100%", padding: mobile ? 0 : "0 12px",
-                background: "none", border: "none",
-                borderTop: "2px solid transparent",
-                borderRight: "1px solid var(--border)",
-                color: isError ? "#dc2626" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)",
-                cursor: disabled ? "not-allowed" : "pointer",
-                opacity: disabled && autoNameStatus.kind !== "naming" ? 0.45 : 1,
-                flexShrink: 0, fontSize: 11, whiteSpace: "nowrap",
-                transition: "color 0.1s, background 0.1s, opacity 0.1s",
-              }}
-              onMouseEnter={(event) => {
-                if (disabled) return;
-                event.currentTarget.style.color = isError ? "#dc2626" : "var(--text)";
-                event.currentTarget.style.background = "var(--bg-hover)";
-              }}
-              onMouseLeave={(event) => {
-                event.currentTarget.style.color = isError ? "#dc2626" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)";
-                event.currentTarget.style.background = "none";
-              }}
-              data-mobile-toolbar-action={mobile ? "name" : undefined}
-            >
-              {autoNameStatus.kind === "naming" ? (
-                <svg className="animate-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.25" />
-                  <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                </svg>
-              ) : isSuccess ? (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="m15 4 5 5L7 22l-5-5Z" />
-                  <path d="m14 5 5 5" />
-                  <path d="M6 4V2M5 3H3M19 19v3M17.5 20.5h3" />
-                </svg>
-              )}
-              {!mobile && <span>{label}</span>}
-            </button>
-          );
-        })()}
-        {hasSubagentSessions && (
-          <button
-            type="button"
-            onClick={() => toggleTopPanel("agents")}
-            title={agentsButtonLabel}
-            aria-label={agentsButtonLabel}
-            aria-pressed={activeTopPanel === "agents"}
-            style={{
-              position: "relative",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-              height: "100%", padding: mobile ? 0 : "0 12px",
-              background: activeTopPanel === "agents" ? "var(--bg-selected)" : "none",
-              border: "none",
-              borderTop: activeTopPanel === "agents" ? "2px solid var(--accent)" : "2px solid transparent",
-              borderRight: "1px solid var(--border)",
-              color: activeTopPanel === "agents" ? "var(--text)" : "var(--text-muted)",
-              cursor: "pointer", flexShrink: 0, fontSize: 11, whiteSpace: "nowrap",
-              transition: "color 0.1s, background 0.1s",
-            }}
-            data-mobile-toolbar-action={mobile ? "agents" : undefined}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
-            </svg>
-            {!mobile && <span>{translate("agentSwitcher.title")}</span>}
-            <span
-              aria-hidden="true"
-              style={{
-                position: "relative",
-                minWidth: 15, height: 15, padding: "0 4px", display: "grid", placeItems: "center",
-                borderRadius: 7, background: agentsBadge.running ? "color-mix(in srgb, var(--accent) 22%, var(--bg-panel))" : "var(--bg-selected)", color: "var(--accent)",
-                fontWeight: agentsBadge.running ? 600 : undefined,
-                fontSize: 10, lineHeight: 1, fontVariantNumeric: "tabular-nums",
-                ...(mobile ? { position: "absolute", top: 2, right: 2, minWidth: 13, height: 13, padding: "0 3px", fontSize: 9 } : {}),
-              }}
-            >
-              {agentsBadge.running && (
-                <svg className="animate-spin motion-reduce:animate-none" viewBox="0 0 24 24" fill="none" aria-hidden="true"
-                  style={{ position: "absolute", top: -3, left: -3, width: "calc(100% + 6px)", height: "calc(100% + 6px)", pointerEvents: "none" }}>
-                  <circle cx="12" cy="12" r="11" stroke="currentColor" strokeWidth="2" opacity="0.2" />
-                  <path d="M23 12a11 11 0 0 0-11-11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                </svg>
-              )}
-              {agentsBadge.count}
-            </span>
-          </button>
-        )}
-        {sessionHasBranches && (mobile ? (
-          <button
-            type="button"
-            onClick={() => toggleTopPanel("branches")}
-            title={translate("i18n.branches")}
-            aria-label={translate("i18n.branches")}
-            aria-pressed={activeTopPanel === "branches"}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: TOP_BAR_ICON_BUTTON_SIZE, height: "100%", padding: 0,
-              background: activeTopPanel === "branches" ? "var(--bg-selected)" : "none",
-              border: "none",
-              borderTop: activeTopPanel === "branches" ? "2px solid var(--accent)" : "2px solid transparent",
-              borderRight: "1px solid var(--border)",
-              color: activeTopPanel === "branches" ? "var(--text)" : "var(--text-muted)",
-              cursor: "pointer", flexShrink: 0,
-            }}
-            data-mobile-toolbar-action="branches"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: branchTree.length > 0 ? "var(--accent)" : "var(--text-dim)" }} aria-hidden="true">
-              <line x1="6" y1="3" x2="6" y2="15" />
-              <circle cx="18" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <path d="M18 9a9 9 0 0 1-9 9" />
-            </svg>
-          </button>
-        ) : (
-          <BranchNavigator
-            tree={branchTree}
-            activeLeafId={branchActiveLeafId}
-            onLeafChange={handleBranchLeafChange}
-            inline
-            containerRef={topBarRef}
-            open={activeTopPanel === "branches"}
-            onToggle={() => toggleTopPanel("branches")}
-            hasSession
-          />
-        ))}
-        <button
-          ref={systemBtnRef}
-          type="button"
-          onClick={() => handleSystemInfoToggle("system")}
-          disabled={mobile && !showChat}
-          title={translate("system.prompt")}
-          aria-label={translate("system.prompt")}
-          aria-pressed={activeTopPanel === "system"}
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-            height: "100%", padding: mobile ? 0 : "0 12px",
-            background: activeTopPanel === "system" ? "var(--bg-selected)" : "none",
-            border: "none",
-            borderTop: activeTopPanel === "system" ? "2px solid var(--accent)" : "2px solid transparent",
-            borderRight: "1px solid var(--border)",
-            cursor: mobile && !showChat ? "not-allowed" : "pointer",
-            color: activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)",
-            opacity: mobile && !showChat ? 0.45 : 1,
-            fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
-          }}
-          onMouseEnter={(event) => {
-            if (mobile && !showChat) return;
-            event.currentTarget.style.color = "var(--text)";
-          }}
-          onMouseLeave={(event) => {
-            event.currentTarget.style.color = activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)";
-          }}
-          data-mobile-toolbar-action={mobile ? "system" : undefined}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: systemPrompt ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }} aria-hidden="true">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="8" y1="13" x2="16" y2="13" />
-            <line x1="8" y1="17" x2="13" y2="17" />
-          </svg>
-          {!mobile && <span>{translate("system.label")}</span>}
-        </button>
-        <button
-          type="button"
-          onClick={() => handleSystemInfoToggle("tools")}
-          disabled={mobile && !showChat}
-          title={translate("tools.title")}
-          aria-label={translate("tools.title")}
-          aria-pressed={activeTopPanel === "tools"}
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-            height: "100%", padding: mobile ? 0 : "0 12px",
-            background: activeTopPanel === "tools" ? "var(--bg-selected)" : "none",
-            border: "none",
-            borderTop: activeTopPanel === "tools" ? "2px solid var(--accent)" : "2px solid transparent",
-            borderRight: "1px solid var(--border)",
-            cursor: mobile && !showChat ? "not-allowed" : "pointer",
-            color: activeTopPanel === "tools" ? "var(--text)" : "var(--text-muted)",
-            opacity: mobile && !showChat ? 0.45 : 1,
-            fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
-          }}
-          onMouseEnter={(event) => {
-            if (mobile && !showChat) return;
-            event.currentTarget.style.color = "var(--text)";
-          }}
-          onMouseLeave={(event) => {
-            event.currentTarget.style.color = activeTopPanel === "tools" ? "var(--text)" : "var(--text-muted)";
-          }}
-          data-mobile-toolbar-action={mobile ? "tools" : undefined}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: systemTools?.some((tool) => tool.active) ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }} aria-hidden="true">
-            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z" />
-          </svg>
-          {!mobile && <span>{translate("tools.label")}</span>}
-        </button>
-      </div>
-    );
-  };
-
-  const renderSessionStatsButton = (mobile: boolean) => {
-    if (!mobile && (!showChat || (!sessionStats && !contextUsage))) return null;
-
-    const tokens = sessionStats?.tokens;
-    const cost = sessionStats?.cost ?? 0;
-    const formatCompact = (value: number) => value >= 1_000_000
-      ? `${(value / 1_000_000).toFixed(1)}M`
-      : value >= 1000
-        ? `${(value / 1000).toFixed(0)}k`
-        : String(value);
-    const costText = cost > 0 ? (cost >= 0.01 ? `$${cost.toFixed(2)}` : `<$0.01`) : null;
-
-    let contextColor = "var(--text-muted)";
-    let desktopContextText: string | null = null;
-    let mobileContextText: string | null = null;
-    if (contextUsage?.contextWindow) {
-      const percent = contextUsage.percent;
-      if (percent !== null && percent > 90) contextColor = "#ef4444";
-      else if (percent !== null && percent > 70) contextColor = "rgba(234,179,8,0.95)";
-      desktopContextText = percent !== null
-        ? `${percent.toFixed(0)}% / ${formatCompact(contextUsage.contextWindow)}`
-        : `? / ${formatCompact(contextUsage.contextWindow)}`;
-      mobileContextText = percent !== null ? `${percent.toFixed(0)}%` : null;
-    }
-
-    const tooltipParts: string[] = [];
-    if (tokens) {
-      tooltipParts.push(`in: ${tokens.input.toLocaleString(locale)}`);
-      tooltipParts.push(`out: ${tokens.output.toLocaleString(locale)}`);
-      tooltipParts.push(`cache read: ${tokens.cacheRead.toLocaleString(locale)}`);
-      tooltipParts.push(`cache write: ${tokens.cacheWrite.toLocaleString(locale)}`);
-      if (cost > 0) tooltipParts.push(`cost: $${cost.toFixed(4)}`);
-    }
-    if (contextUsage?.contextWindow) {
-      const percent = contextUsage.percent;
-      tooltipParts.push(`context: ${percent !== null ? percent.toFixed(1) + "%" : "unknown"} of ${contextUsage.contextWindow.toLocaleString()} tokens`);
-    }
-    const tooltip = tooltipParts.join("  |  ");
-    const hasMobileValues = Boolean(
-      (tokens && (tokens.input > 0 || tokens.output > 0))
-      || costText
-      || mobileContextText,
-    );
-
-    return (
-      <button
-        type="button"
-        onClick={() => toggleTopPanel("session")}
-        disabled={!showChat}
-        title={tooltip || translate("session.title")}
-        aria-label={translate("session.title")}
-        aria-pressed={activeTopPanel === "session"}
-        className={mobile ? "mobile-session-stats" : undefined}
-        data-mobile-toolbar-stats={mobile ? "true" : undefined}
-        style={{
-          marginLeft: mobile ? 0 : "auto",
-          display: "flex", alignItems: "center", justifyContent: "flex-end",
-          flex: mobile ? "0 0 110px" : undefined,
-          minWidth: 0,
-          gap: mobile ? 7 : 10,
-          paddingLeft: mobile ? 6 : 12,
-          paddingRight: mobile ? 6 : 12,
-          height: "100%",
-          overflow: "hidden",
-          background: activeTopPanel === "session" ? "var(--bg-selected)" : "none",
-          border: "none",
-          borderTop: activeTopPanel === "session" ? "2px solid var(--accent)" : "2px solid transparent",
-          fontSize: 11, color: "var(--text-muted)",
-          whiteSpace: "nowrap", cursor: showChat ? "pointer" : "default",
-          fontVariantNumeric: "tabular-nums",
-          transition: "color 0.1s, background 0.1s",
-        }}
-        onMouseEnter={(event) => {
-          if (showChat) event.currentTarget.style.color = "var(--text)";
-        }}
-        onMouseLeave={(event) => {
-          event.currentTarget.style.color = activeTopPanel === "session" ? "var(--text)" : "var(--text-muted)";
-        }}
-      >
-        {mobile ? (
-          <>
-            {tokens && tokens.input > 0 && (
-              <span className="mobile-session-stat-io" style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="5" y1="8.5" x2="5" y2="1.5" /><polyline points="2 4 5 1.5 8 4" />
-                </svg>
-                {formatCompact(tokens.input)}
-              </span>
-            )}
-            {tokens && tokens.output > 0 && (
-              <span className="mobile-session-stat-io" style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="5" y1="1.5" x2="5" y2="8.5" /><polyline points="2 6 5 8.5 8 6" />
-                </svg>
-                {formatCompact(tokens.output)}
-              </span>
-            )}
-            {costText && (
-              <span className="mobile-session-stat-cost" style={{ color: "var(--text)", fontWeight: 500, flexShrink: 0 }}>
-                {costText}
-              </span>
-            )}
-            {mobileContextText && (
-              <span style={{ color: contextColor, flexShrink: 0 }}>
-                {mobileContextText}
-              </span>
-            )}
-            {!hasMobileValues && showChat && (
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", color: "var(--text-dim)" }}>
-                {translate("session.title")}
-              </span>
-            )}
-          </>
-        ) : (
-          <>
-            {tokens && tokens.input > 0 && (
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="5" y1="8.5" x2="5" y2="1.5" /><polyline points="2 4 5 1.5 8 4" />
-                </svg>
-                {formatCompact(tokens.input)}
-              </span>
-            )}
-            {tokens && tokens.output > 0 && (
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="5" y1="1.5" x2="5" y2="8.5" /><polyline points="2 6 5 8.5 8 6" />
-                </svg>
-                {formatCompact(tokens.output)}
-              </span>
-            )}
-            {tokens && tokens.cacheRead > 0 && (
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M8.5 5a3.5 3.5 0 1 1-1-2.45" /><polyline points="6.5 1.5 8.5 2.5 7.5 4.5" />
-                </svg>
-                {formatCompact(tokens.cacheRead)}
-              </span>
-            )}
-            {costText && (
-              <span style={{ display: "flex", alignItems: "center", color: "var(--text)", fontWeight: 500 }}>
-                {costText}
-              </span>
-            )}
-            {desktopContextText && (
-              <span style={{ display: "flex", alignItems: "center", gap: 4, color: contextColor }}>
-                <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M1 9 L1 5 Q1 1 5 1 Q9 1 9 5 L9 9" /><line x1="1" y1="9" x2="9" y2="9" />
-                </svg>
-                {desktopContextText}
-              </span>
-            )}
-          </>
-        )}
-      </button>
-    );
-  };
-
-  const renderMainFileToggle = (mobile: boolean) => (
-      <button
-        type="button"
-        onClick={handleRightPanelToggle}
-        aria-controls="file-panel"
-        aria-expanded={rightPanelOpen}
-        title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
-        aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
-        data-mobile-toolbar-file={mobile ? "true" : undefined}
-        style={{
-          marginLeft: !mobile && !sessionStats && !contextUsage ? "auto" : 0,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
-          background: rightPanelOpen ? "var(--bg-selected)" : "none",
-          border: "none", borderLeft: "1px solid var(--border)",
-          color: rightPanelOpen ? "var(--text)" : "var(--text-muted)",
-          cursor: "pointer", flexShrink: 0, transition: "color 0.12s, background 0.12s",
-        }}
-        onMouseEnter={(event) => { event.currentTarget.style.color = "var(--text)"; }}
-        onMouseLeave={(event) => { event.currentTarget.style.color = rightPanelOpen ? "var(--text)" : "var(--text-muted)"; }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
-        </svg>
-      </button>
+  const renderChatToolbarActions = (mobile: boolean) => (
+    <SessionToolbarActions mobile={mobile} showChat={showChat} selectedSession={selectedSession}
+      setPluginSettingsSession={setPluginSettingsSession} setSettingsSection={setSettingsSection}
+      handleViewFullHistory={handleViewFullHistory} sessionStats={sessionStats}
+      autoNameStatus={autoNameStatus} handleAutoName={handleAutoName}
+      hasSubagentSessions={hasSubagentSessions} agentsButtonLabel={agentsButtonLabel} agentsBadge={agentsBadge}
+      activeTopPanel={activeTopPanel} toggleTopPanel={toggleTopPanel} sessionHasBranches={sessionHasBranches}
+      branchTree={branchTree} branchActiveLeafId={branchActiveLeafId} handleBranchLeafChange={handleBranchLeafChange}
+      topBarRef={topBarRef} systemBtnRef={systemBtnRef} handleSystemInfoToggle={handleSystemInfoToggle}
+      systemPrompt={systemPrompt} systemTools={systemTools} translate={translate}
+      autoNameControl={<SessionAutoNameButton selectedSession={selectedSession} sessionStats={sessionStats}
+        autoNameStatus={autoNameStatus} handleAutoName={handleAutoName} mobile={mobile} />}
+      systemInfoControls={<SessionSystemInfoButtons systemBtnRef={systemBtnRef} mobile={mobile} showChat={showChat}
+        activeTopPanel={activeTopPanel} systemPrompt={systemPrompt} systemTools={systemTools}
+        handleSystemInfoToggle={handleSystemInfoToggle} />}
+    />
   );
+
+  const renderSessionStatsButton = (mobile: boolean) => <SessionStatsButton mobile={mobile} showChat={showChat} sessionStats={sessionStats} contextUsage={contextUsage} locale={locale} toggleTopPanel={toggleTopPanel} activeTopPanel={activeTopPanel} translate={translate} />;
+  const renderMainFileToggle = (mobile: boolean) => <MainFileToggle mobile={mobile} handleRightPanelToggle={handleRightPanelToggle} rightPanelOpen={rightPanelOpen} sessionStats={sessionStats} contextUsage={contextUsage} translate={translate} />;
 
   return (
     <ReviewNavigationContext.Provider value={handleReviewNavigation}>
@@ -2072,30 +850,7 @@ export function AppShell() {
         {/* Top bar with sidebar toggle */}
         <div ref={topBarRef} inert={gitExplorerFullWidth} className="app-topbar" style={{ flexShrink: 0, background: "var(--bg-panel)" }}>
         <div className="app-toolbar-row" style={{ display: "flex", alignItems: "center", position: "relative", borderBottom: "1px solid var(--border)", height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}>
-          <button
-            className="sidebar-toggle-button"
-            onClick={handleSidebarToggle}
-             title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
-             aria-label={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
-              background: "none", border: "none", borderRight: "1px solid var(--border)",
-              color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
-          >
-            {sidebarOpen ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
-              </svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            )}
-          </button>
+          <SidebarToolbarToggle sidebarOpen={sidebarOpen} onToggle={handleSidebarToggle} translate={translate} />
           {isSplitLayout && rightPanelOpen && <button
             ref={chatVisibilityRef}
             type="button"
@@ -2115,64 +870,12 @@ export function AppShell() {
               <path d={chatCollapsed ? "M9 12h6m-3-3v6" : "M9 12h6"} />
             </svg>
           </button>}
-          <div
-            ref={topBarActionsRef}
-            className={`top-bar-actions${topBarScrollEdges.left ? " has-more-left" : ""}${topBarScrollEdges.right ? " has-more-right" : ""}`}
-            onScroll={updateTopBarScrollEdges}
-          >
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTopPanel(null);
-              if (activeOverview === "activity" && isMobile && !overviewMobileList) {
-                setOverviewMobileList(true);
-              } else if (activeOverview === "activity") {
-                closeOverview();
-              } else {
-                setOverviewMobileList(true);
-                ++reviewNavigationId.current;
-                setReviewNavigation(null);
-                setActiveOverview("activity");
-                if (isMobile) setRightPanelOpen(false);
-                if (isMobile || window.innerWidth < 1000) setSidebarOpen(false);
-              }
-            }}
-            aria-label={activeOverview === "activity" && isMobile && !overviewMobileList
-              ? translate("activity.back")
-              : activityNeedsCount ? `${translate("activity.title")} · ${translate("activity.needsCount", { count: activityNeedsCount })}` : translate("activity.title")}
-            aria-pressed={activeOverview === "activity" && (!isMobile || overviewMobileList)}
-            title={activeOverview === "activity" && isMobile && !overviewMobileList ? translate("activity.back") : translate("activity.title")}
-            className="activity-top-button"
-            style={{ position: "relative", width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0, border: 0, borderRight: "1px solid var(--border)", background: activeOverview === "activity" ? "var(--bg-selected)" : "none", color: "var(--text-muted)", cursor: "pointer" }}
-          >
-            {activeOverview === "activity" && isMobile && !overviewMobileList ? "←" : "◉"}
-            {activityNeedsCount > 0 && !(activeOverview === "activity" && isMobile && !overviewMobileList) && <span className="activity-top-count" aria-hidden="true">{activityNeedsCount > 9 ? "9+" : activityNeedsCount}</span>}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTopPanel(null);
-              if (activeOverview === "starred" && isMobile && !overviewMobileList) {
-                setOverviewMobileList(true);
-              } else if (activeOverview === "starred") {
-                closeOverview();
-              } else {
-                setOverviewMobileList(true);
-                ++reviewNavigationId.current;
-                setReviewNavigation(null);
-                setActiveOverview("starred");
-                if (isMobile) setRightPanelOpen(false);
-                if (isMobile || window.innerWidth < 1000) setSidebarOpen(false);
-              }
-            }}
-            aria-label={activeOverview === "starred" && isMobile && !overviewMobileList ? translate("starred.back") : translate("activity.starred")}
-            aria-pressed={activeOverview === "starred" && (!isMobile || overviewMobileList)}
-            title={activeOverview === "starred" && isMobile && !overviewMobileList ? translate("starred.back") : translate("activity.starred")}
-            className="activity-top-button"
-            style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0, border: 0, borderRight: "1px solid var(--border)", background: activeOverview === "starred" ? "var(--bg-selected)" : "none", color: "#eab308", cursor: "pointer" }}
-          >
-            {activeOverview === "starred" && isMobile && !overviewMobileList ? "←" : "★"}
-          </button>
+          <ToolbarActionsStrip isMobile={isMobile} showChat={showChat} selectedSessionId={selectedSession?.id} activeOverview={activeOverview}>
+          <OverviewNavigationButtons activeOverview={activeOverview} isMobile={isMobile} overviewMobileList={overviewMobileList}
+            activityNeedsCount={activityNeedsCount} closeOverview={closeOverview} reviewNavigationId={reviewNavigationId}
+            setActiveTopPanel={setActiveTopPanel} setOverviewMobileList={setOverviewMobileList}
+            setReviewNavigation={setReviewNavigation} setActiveOverview={setActiveOverview}
+            setRightPanelOpen={setRightPanelOpen} setSidebarOpen={setSidebarOpen} />
           <button type="button" className="activity-top-button" aria-label={translate("scratchpad.title")} title={translate("scratchpad.title")}
             aria-haspopup="dialog" aria-expanded={scratchpadOpen}
             onClick={() => { setActiveTopPanel(null); setScratchpadMounted(true); setScratchpadOpen(true); }}
@@ -2181,9 +884,8 @@ export function AppShell() {
               <path d="M14 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9M16 3l5 5-9 9-5 1 1-5Z" />
             </svg>
           </button>
-          <button ref={gitExplorerTriggerRef} type="button" className="activity-top-button" aria-label="Git Explorer" title="Git Explorer"
-            aria-pressed={activeOverview === "git"} aria-controls="git-explorer-panel"
-            onClick={() => {
+          <GitToolbarToggle triggerRef={gitExplorerTriggerRef} active={activeOverview === "git"}
+            onToggle={() => {
               setActiveTopPanel(null);
               if (activeOverview === "git") closeOverview();
               else {
@@ -2195,37 +897,19 @@ export function AppShell() {
                 if (isMobile || window.innerWidth < 1000) setSidebarOpen(false);
               }
             }}
-            style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0,
-              border: 0, borderRight: "1px solid var(--border)", background: activeOverview === "git" ? "var(--bg-selected)" : "none",
-              color: "var(--text-muted)", cursor: "pointer" }}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="6" cy="4" r="2" /><circle cx="6" cy="20" r="2" /><circle cx="18" cy="7" r="2" />
-              <path d="M6 6v12M6 15c0-4 3-8 10-8" />
-            </svg>
-          </button>
+          />
           <button type="button" className="activity-top-button" aria-label={translate("acceptance.title")} title={translate("acceptance.title")} disabled={!activeCwd}
             onClick={() => { setActiveTopPanel(null); setAcceptanceOpen(true); }}
             style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, flexShrink: 0, border: 0, borderRight: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: activeCwd ? "pointer" : "default" }}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m7 12 3 3 7-7" /><rect x="3" y="3" width="18" height="18" rx="4" /></svg>
           </button>
-          {showChat && selectedSession?.relation?.kind === "subagent" && (
-            <span role="img" aria-label={translate("activity.subagent")} title={translate("activity.subagent")}
-              style={{ width: TOP_BAR_ICON_BUTTON_SIZE, height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, borderRight: "1px solid var(--border)", color: "var(--accent)" }}>
-              <SubagentIcon size={16} />
-            </span>
-          )}
+          <SubagentToolbarMarker showChat={showChat} selectedSession={selectedSession} translate={translate} />
           {showChat && selectedSession?.spawnedBy && <a
             href={`/?session=${encodeURIComponent(selectedSession.spawnedBy)}`}
             title={`Started by session ${selectedSession.spawnedBy}`}
             className="shrink-0 border-r border-border px-2 text-xs text-accent underline"
             style={{ display: "flex", alignItems: "center" }}>Started by…</a>}
-          {isMobile && !(activeOverview && overviewMobileList) && (
-            <div data-mobile-toolbar="true" style={{ display: "flex", alignItems: "stretch", height: "100%", flexShrink: 0 }}>
-              {renderChatToolbarActions(true)}
-              {renderSessionStatsButton(true)}
-              {renderMainFileToggle(true)}
-            </div>
-          )}
+          <MobileChatToolbar isMobile={isMobile} overviewList={Boolean(activeOverview && overviewMobileList)} controls={renderChatToolbarActions(true)} stats={renderSessionStatsButton(true)} files={renderMainFileToggle(true)} />
           {!isMobile && (
             <>
               {renderProjectTrustWarning(false)}
@@ -2234,7 +918,7 @@ export function AppShell() {
             </>
           )}
           {!isMobile && renderMainFileToggle(false)}
-          </div>
+          </ToolbarActionsStrip>
           {isMobile && sessionHasBranches && (
             <BranchNavigator
               tree={branchTree}
@@ -2493,15 +1177,8 @@ export function AppShell() {
           )}
 
         </div>
-        {isMobile && showChat && !(activeOverview && overviewMobileList) && (
-          <div className="mobile-session-identity" data-mobile-session-identity="true">
-            <div className="mobile-session-title" title={mobileSessionTitle}>{mobileSessionTitle}</div>
-            {mobileProjectName && (
-              <div className="mobile-session-project" title={mobileProjectPath ?? undefined}>{mobileProjectName}</div>
-            )}
-          </div>
-        )}
-        {isMobile && !(activeOverview && overviewMobileList) && renderProjectTrustWarning(true)}
+        <MobileSessionIdentity isMobile={isMobile} showChat={showChat} overviewList={Boolean(activeOverview && overviewMobileList)} session={selectedSession} newCwd={effectiveNewSessionCwd} translate={translate} />
+        {mobileToolbarVisible(isMobile, Boolean(activeOverview && overviewMobileList)) && renderProjectTrustWarning(true)}
         </div>
 
         {/* Chat content */}
@@ -2530,25 +1207,16 @@ export function AppShell() {
             <MarkdownMediaScope key={sessionKey} active={!scratchpadOpen && !chatCollapsed && settingsSection === null && !projectTrustDialogOpen && !acceptanceOpen && !gitExplorerFullWidth && !rightPanelFullWidth && !(isMobile && (rightPanelOpen || sidebarOpen)) && !(activeOverview && isMobile && overviewMobileList)}>
             <ChatWindow
               key={sessionKey}
-              session={selectedSession}
+              {...chatBinding}
               covered={chatCollapsed || gitExplorerFullWidth || rightPanelFullWidth}
               searchTarget={searchTarget?.sessionId === selectedSession?.id ? searchTarget : null}
               onSearchTargetHandled={handleSearchTargetHandled}
               initialScrollPosition={selectedSession ? sessionScrollPositionsRef.current.get(selectedSession.id) ?? null : null}
               onScrollPositionChange={handleSessionScrollPositionChange}
-              sessionRunning={Boolean(selectedSession && runningSessionIds.has(selectedSession.id))}
-              archivedRootSessionId={activeSessionFamily?.root.archived ? activeSessionFamily.root.id : null}
-              archiveActionBusy={Boolean(activeSessionFamily && [activeSessionFamily.root, ...activeSessionFamily.subagents]
-                .some((item) => runningSessionIds.has(item.id) || queuedSessionIds.has(item.id)))}
-              onSessionRestored={handleSessionRestored}
-              newSessionCwd={effectiveNewSessionCwd}
-              newSessionDraftKey={newSessionDraftKey}
-              persistNewSession={persistNewSession}
+              {...sessionNavigationArchiveBinding(activeSessionFamily, runningSessionIds, queuedSessionIds, handleSessionRestored)}
               onAgentEnd={handleAgentEnd}
               onRecoveryDismissed={handleRecoveryDismissed}
               onAttentionNeeded={handleAttentionNeeded}
-              onSessionCreated={handleSessionCreated}
-              onSessionForked={handleSessionForked}
               modelsRefreshKey={modelsRefreshKey}
               chatInputRef={chatInputRef}
               onBranchDataChange={handleBranchDataChange}
@@ -2562,8 +1230,8 @@ export function AppShell() {
               onOpenSession={handleOpenSession}
               onAskInNewChat={handleAskInNewChat}
               quoteSelectionEnabled={quoteSelectionEnabled}
-              initialPrompt={pendingQuotePrompt?.sessionId === selectedSession?.id ? pendingQuotePrompt?.text : undefined}
-              onInitialPromptConsumed={() => setPendingQuotePrompt(null)}
+              initialPrompt={quoteInitialPrompt}
+              onInitialPromptConsumed={consumeQuoteInitialPrompt}
               soundEnabled={soundEnabled}
               onSoundToggle={onSoundToggle}
               playDoneSound={playDoneSound}

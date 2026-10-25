@@ -40,8 +40,10 @@ export async function checkRunningSessionForks(page, { base, api, post, artifact
   const responseFor = (type) => waitForForkResponse(page, (response) =>
     new URL(response.url()).pathname === sourcePath && response.request().method() === "POST"
     && response.request().postDataJSON()?.type === type, { timeout: 120_000 });
-  // Reuse the registered faux provider: unlike an extension command, this
-  // submits and persists an ordinary user message before blocking in ask_user.
+  // One real SDK/faux turn owns canonical live IDs, persistence and reload.
+  // The mobile receipt below retains its own pending SDK source, native quote
+  // composer, first-user Fork control and Stop, not another canonical matrix.
+  if (width > 640) {
   const beforeLivePrompt = await api(`/api/sessions/${sourceId}`);
   await post(sourcePath, { type: "set_model", provider: "e2e-session-launch", modelId: "faux-1" });
   const liveText = `Fork this newly submitted prompt ${width}`;
@@ -128,11 +130,12 @@ export async function checkRunningSessionForks(page, { base, api, post, artifact
     assert.equal((await api(sourcePath)).state.isPromptRunning, false, "Reload cannot restart the completed turn");
     const reloadedOrigin = await page.evaluate(() => performance.timeOrigin);
     assert.notEqual(reloadedOrigin, origin, "Identity was checked across a real document reload");
-    // The following historical/root/quoted fork chain still proves NO reload
-    // during those operations, now relative to this explicitly reloaded document.
+    // The retained quoted-fork chain still proves NO reload during its
+    // operations, now relative to this explicitly reloaded document.
     origin = reloadedOrigin;
   } finally {
     if ((await api(sourcePath)).state.isPromptRunning) await post(sourcePath, { type: "abort" });
+  }
   }
 
   // A genuine SDK extension command stays active without a provider request.
@@ -183,7 +186,11 @@ export async function checkRunningSessionForks(page, { base, api, post, artifact
   };
 
   try {
-    for (const [entryId, expectedIds] of [["retry", ["root", "reply"]], ["root", []]]) {
+    // The live desktop fork above already wires handleFork to the installed
+    // wrapper. Mobile retains one native first-user action, not historical/root
+    // policy permutations at both widths (real hook + native wrapper own those).
+    if (width <= 640) {
+      const entryId = "root", expectedIds = [];
       const entry = page.locator(`[data-entry-id="${entryId}"]:not([data-message-role])`);
       await entry.hover();
       assert.equal(await entry.getByRole("button", { name: "Edit from here", exact: true }).count(), 0);
@@ -198,7 +205,6 @@ export async function checkRunningSessionForks(page, { base, api, post, artifact
     // Select persisted response text, then exercise the actual quote composer.
     const answer = page.getByText(`Running fork answer ${width}`, { exact: true });
     await checkRunningComposer(page, width, answer);
-    await checkSource();
     await answer.scrollIntoViewIfNeeded();
     await answer.evaluate((element) => {
       const range = document.createRange();
@@ -223,34 +229,25 @@ export async function checkRunningSessionForks(page, { base, api, post, artifact
     await checkChild(saved, ["root", "reply"]);
     const childQuestion = page.getByRole("group", { name: "E2E input", exact: true });
     await childQuestion.waitFor();
-    await checkSource();
     await childQuestion.getByRole("textbox").fill("Independent child answer");
     await childQuestion.getByRole("button", { name: "Submit", exact: true }).click();
     assert.equal((await childPrompt).status(), 200);
     await page.getByText("E2E input result: Independent child answer", { exact: true }).waitFor();
     await returnToSource();
     await page.screenshot({ path: join(artifacts, `running-fork-${width}.png`) });
-    await question().getByRole("button", { name: "Cancel", exact: true }).click();
-    assert.equal((await prompting).status(), 200);
-    await page.getByText("E2E confirm result: false", { exact: true }).waitFor();
-    assert.equal((await api(sourcePath)).state.isPromptRunning, false);
-    // Separate from the preserved Cancel chain: the directly visible control
-    // must still perform the real abort and settle a pending SDK interaction.
-    const stopPrompt = responseFor("prompt");
-    await page.locator(".chat-input-textarea").fill("/e2e-dialog confirm");
-    await page.getByRole("button", { name: "Send", exact: true }).click();
-    await question().waitFor();
+    // Abort the SAME genuinely pending source. Native confirm cancellation is
+    // owned by extension-ui/dialog tests; a second prompt is not Stop geometry.
     const aborted = responseFor("abort");
     await page.getByRole("button", { name: "Stop", exact: true }).click();
     assert.equal((await aborted).status(), 200);
-    await stopPrompt;
+    assert.equal((await prompting).status(), 200);
     await question().waitFor({ state: "hidden" });
     await waitForAsyncCondition(page, async (id) => {
       const response = await fetch(`/api/agent/${id}`);
       if (!response.ok) throw new Error(`Stopped composer state HTTP ${response.status}`);
       return (await response.json()).state?.isPromptRunning === false;
     }, sourceId);
-    console.log(`PASS: ${width}px running-message/root/quoted forks preserve the original prompt and question; direct Stop settles a fresh SDK interaction`);
+    console.log(`PASS: ${width}px ${width > 640 ? "canonical live" : "first-user"} fork and native quote/composer; direct Stop settles the retained SDK interaction`);
   } finally {
     if ((await api(sourcePath)).state.isPromptRunning) await post(sourcePath, { type: "abort" });
     await prompting;

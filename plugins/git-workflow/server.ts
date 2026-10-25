@@ -1,5 +1,5 @@
+import { idle } from "./operation-idle";
 import { gitText as git, gitOutput, gitEnvironment, records, outputDigest, run, withPreparationSignal } from "./process";
-import { OPERATION_MARKERS, operationMarkerPaths } from "./operation-paths";
 import { spawn } from "node:child_process";
 import { buildGitReview, compactGitCard } from "./review";
 import { createReadStream } from "node:fs";
@@ -44,25 +44,6 @@ async function observedHead(cwd: string) {
   return { branch, tip: (await git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"])).trim() };
 }
 function status(cwd: string): Promise<string> { return outputDigest(gitOutput(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])); }
-async function assertIdle(cwd: string) {
-  const paths = await operationMarkerPaths(cwd);
-  for (const [index, name] of OPERATION_MARKERS.entries()) {
-    if (existsSync(toNativePath(paths[index]))) throw new Error(`Conflicting Git operation: ${name}`);
-  }
-  let sparseCheckout = "";
-  try { sparseCheckout = (await git(cwd, ["config", "--get", "core.sparseCheckout"])).trim(); }
-  catch (error) {
-    // Only config --get's absent-key status is expected, never marker failures.
-    if ((error as { status?: number }).status !== 1) throw error;
-  }
-  if (sparseCheckout === "true") throw new Error("Sparse checkout is unsupported");
-}
-async function idle(cwd: string) {
-  await assertIdle(cwd);
-  for await (const entry of records(gitOutput(cwd, ["ls-files", "-v", "-z"]))) {
-    if (/^[a-zS]/.test(entry)) throw new Error("Hidden index flags are unsupported");
-  }
-}
 async function worktrees(cwd: string): Promise<WorktreeRecord[]> {
   return (await git(cwd, ["worktree", "list", "--porcelain", "-z"])).split("\0\0").filter(Boolean).map((record) => {
     const fields = record.split("\0");

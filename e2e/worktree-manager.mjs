@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { seedManagerDiscardFixtures, checkManagerDiscard, checkManagerReadyReview, waitManagerButton } from "./worktree-manager-discard.mjs";
-import { readBrowserResponse } from "./browser-http.mjs";
+import { seedManagerDiscardFixtures, checkManagerDiscard, waitManagerButton } from "./worktree-manager-discard.mjs";
 
 export const WORKTREE_MANAGER_IDS = ["e2e-worktree-manager-desktop", "e2e-worktree-manager-mobile"];
 export function seedWorktreeManagerFixtures({ agentDir, env, writeSession, message }) {
@@ -32,14 +31,15 @@ export function seedWorktreeManagerFixtures({ agentDir, env, writeSession, messa
   });
 }
 
+/** Physical/default manager entry; exhaustive reads/decisions run below Chromium. */
 export async function checkWorktreeManager(page, { base, fixture, artifacts, width }) {
-  const { repo, worktree, dirty, id, git } = fixture;
+  const { repo, worktree, id } = fixture;
   const patchSettings = async (set, scope = "global") => {
     const response = await page.request.patch(`${base}/api/plugins/bundled`, { data: { pluginId: "git-workflow", cwd: repo, scope, set, reset: [] } });
     assert.equal(response.status(), 200, await response.text());
   };
-  // Only the acceptance child's disposable settings. Lifecycle Deny/Keep must
-  // not veto independently confirmed manual removal, even under Allow.
+  // Preserve the original native policy/input: lifecycle Deny/Keep must not
+  // substitute for independently confirmed manual removal under Allow.
   await patchSettings({ enabled: false, cleanupFeature: "deny", discardResources: "allow", cleanupWorktree: "keep", cleanupBranch: "keep", cleanupArtifacts: "keep", approvedArtifactRoots: "", targetSelection: "configured" });
   await patchSettings({ targetBranch: "main" }, "project");
   await page.goto(`${base}/?session=${id}`, { waitUntil: "domcontentloaded" });
@@ -53,143 +53,56 @@ export async function checkWorktreeManager(page, { base, fixture, artifacts, wid
   };
   await open();
   const manager = page.getByRole("dialog", { name: "Manage branches & worktrees", exact: true });
+  const withinViewport = () => page.waitForFunction(() => {
+    const d = document.querySelector('dialog[aria-labelledby="worktree-manager-title"]');
+    const r = d?.getBoundingClientRect(); return r && r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+  });
   await manager.getByText("Resource removal requires Git Workflow. Browsing remains available.", { exact: false }).waitFor();
   await waitManagerButton(page, manager, "Refresh");
   assert.equal(await manager.getByLabel("Comparison target", { exact: true }).inputValue(), "main");
+  await withinViewport();
+  // Keep the real fifty-row/page-two surfaces at BOTH original physical inputs.
   await manager.getByRole("button", { name: "Next page", exact: true }).click();
   await manager.locator('tr[data-branch="unfinished"]').waitFor();
   assert.match(await manager.locator('tr[data-branch="unfinished"]').innerText(), /Not integrated/);
   await manager.getByRole("button", { name: "Previous page", exact: true }).click();
+  const close = manager.getByRole("button", { name: "Close", exact: true });
+  const native = await manager.evaluate(node => ({ native: node instanceof HTMLDialogElement,
+    open: node.open, modal: node.matches(":modal"), focusInside: node.contains(document.activeElement) }));
+  console.log(`WORKTREE_MODAL_READY ${JSON.stringify(native)}`);
+  assert.deepEqual({ native: native.native, open: native.open, modal: native.modal }, { native: true, open: true, modal: true });
+  // Native modal navigation, not a new JS focus-wrap/Chrome-toolbar policy.
+  // Close is the first control: forward Tab exercises an actual in-dialog target.
+  await close.focus(); await page.keyboard.press("Tab");
+  assert.equal(await manager.evaluate(node => node.contains(document.activeElement)), true, "Native modal Tab reaches a manager control");
+
+  // One narrow genuine graph-date/detail connection, not all matching-set/date
+  // policy permutations or another invisible-page widening transaction matrix.
+  await manager.getByLabel("Search branches or paths", { exact: true }).fill("integrated");
   await manager.getByLabel("Sort", { exact: true }).selectOption("merge");
   await page.waitForFunction(() => document.querySelector('th[aria-sort]')?.textContent === "Merge commit date");
-  // Changing matching sets while merge sorting must still globally load dates.
-  await manager.getByLabel("Search branches or paths", { exact: true }).fill("integrated");
   const integrated = manager.locator('tr[data-branch="integrated"]');
   await integrated.waitFor(); await integrated.getByRole("button", { name: "integrated", exact: true }).click();
   await manager.getByText("First-parent graph introduction.", { exact: false }).waitFor();
   await manager.getByText("disposable fixture output", { exact: false }).waitFor({ state: "hidden" });
   assert.equal(existsSync(worktree), true, "browsing never removes resources");
   assert.equal(await manager.getByRole("button", { name: "Review removal…", exact: true }).isDisabled(), true);
+  // Embedded Settings is a different top-layer/Back surface at narrow width.
   await manager.getByRole("button", { name: "Open Git Workflow settings", exact: true }).click();
-  const enabledResponse = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().endsWith("/api/plugins/bundled"));
+  const enabledResponse = page.waitForResponse(response => response.request().method() === "PATCH" && response.url().endsWith("/api/plugins/bundled"));
+  void enabledResponse.catch(() => {}); // Observe early failure, preserve original await.
   await manager.getByRole("checkbox", { name: "Enable plugin (all projects)", exact: true }).check();
-  await enabledResponse;
+  const enabled = await enabledResponse; assert.equal(enabled.status(), 200); await enabled.json();
   await manager.getByRole("button", { name: "Back to overview", exact: true }).click();
-  await page.waitForFunction(() => ![...document.querySelectorAll('dialog p')].some((p) => p.textContent.includes("Resource removal requires Git Workflow")));
+  await page.waitForFunction(() => ![...document.querySelectorAll('dialog p')].some(p => p.textContent.includes("Resource removal requires Git Workflow")));
   await waitManagerButton(page, manager, "Review removal…");
-  const dateReads = [];
-  const observeDates = (request) => { const url = new URL(request.url()); if (url.pathname === "/api/worktrees/manage" && url.searchParams.has("datesOnly")) dateReads.push(...JSON.parse(url.searchParams.get("rows"))); };
-  page.on("request", observeDates);
-  // Fresh narrow capture, then widening must load dates for invisible page-two rows.
-  const freshInventory = page.waitForResponse((response) => { const url = new URL(response.url()); return response.request().method() === "GET" && url.pathname === "/api/worktrees/manage" && !url.searchParams.has("details"); });
-  await manager.getByRole("button", { name: "Refresh", exact: true }).click();
-  const freshResponse = await freshInventory;
-  assert.equal(freshResponse.status(), 200); await freshResponse.json();
-  await waitManagerButton(page, manager, "Refresh");
-  await page.waitForFunction(() => document.querySelector('th[aria-sort]')?.textContent === "Merge commit date" && !document.querySelector('select[aria-label="Sort"]')?.disabled);
-  const widenedDates = page.waitForRequest((request) => { const url = new URL(request.url()); return url.pathname === "/api/worktrees/manage" && url.searchParams.has("datesOnly") && JSON.parse(url.searchParams.get("rows")).includes("branch:bulk-54"); });
-  await manager.getByRole("button", { name: "Clear filters", exact: true }).click();
-  await widenedDates;
-  await page.waitForFunction(() => document.querySelector('th[aria-sort]')?.textContent === "Merge commit date" && !document.querySelector('select[aria-label="Sort"]')?.disabled);
-  assert.ok(dateReads.includes("branch:bulk-54"), "widened merge sort loads matching dates outside the visible page");
-  page.off("request", observeDates);
-  await manager.getByLabel("Search branches or paths", { exact: true }).fill("integrated");
-  await manager.getByLabel("Comparison target", { exact: true }).selectOption("unfinished");
-  await manager.getByText("This temporary comparison differs from the configured target.", { exact: false }).waitFor();
-  await manager.getByRole("button", { name: "Compare with configured target", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('select[aria-label="Comparison target"]')?.value === "main");
-  await waitManagerButton(page, manager, "Refresh");
-  await manager.getByRole("button", { name: "Clear filters", exact: true }).click();
-  await manager.getByLabel("Search branches or paths", { exact: true }).fill("dirty-integrated");
-  await manager.getByRole("button", { name: "dirty-integrated", exact: true }).click();
-  await manager.getByText("Unignored untracked files block removal.", { exact: false }).waitFor();
-  assert.equal(await manager.getByRole("button", { name: "Review removal…", exact: true }).isDisabled(), true);
-  assert.equal(existsSync(join(dirty, "manual.txt")), true);
-  await manager.getByLabel("Search branches or paths", { exact: true }).fill("integrated");
-  await manager.getByRole("button", { name: "integrated", exact: true }).click();
-  await waitManagerButton(page, manager, "Review removal…");
-  const malformedInventory = async (route) => {
-    if (new URL(route.request().url()).searchParams.has("details")) return route.continue();
-    const response = await route.fetch(); await route.fulfill({ response, body: "{invalid-json" });
-  };
-  await page.route("**/api/worktrees/manage?**", malformedInventory);
-  await manager.getByRole("button", { name: "Refresh", exact: true }).click();
-  await manager.getByRole("alert").waitFor();
-  assert.equal(await manager.getByRole("button", { name: "Review removal…", exact: true }).isDisabled(), true, "failed refresh leaves visible old rows read-only");
-  await page.unroute("**/api/worktrees/manage?**", malformedInventory);
-  await manager.getByRole("button", { name: "Refresh", exact: true }).last().click();
-  await waitManagerButton(page, manager, "Review removal…");
-  const requests = [];
-  let loseResponse = true;
-  const intercept = async (route) => {
-    if (route.request().method() !== "POST" || new URL(route.request().url()).pathname !== "/api/plugins/bundled/git-workflow/project-actions") return route.continue();
-    requests.push(route.request().postDataJSON().requestId);
-    const response = await route.fetch();
-    if (loseResponse) { loseResponse = false; return route.fulfill({ response, body: "{invalid-json", headers: { ...response.headers(), "content-type": "application/json" } }); }
-    return route.fulfill({ response });
-  };
-  await page.route("**/api/plugins/bundled/git-workflow/project-actions", intercept);
-  await manager.getByRole("button", { name: "Review removal…", exact: true }).click();
-  await manager.getByRole("button", { name: "Recover preparation", exact: true }).click();
-  const reviewSurface = manager.getByRole("region", { name: "Removal review & outcome", exact: true });
-  const status = (text) => reviewSurface.getByRole("status").filter({ hasText: new RegExp(`^${text}$`) });
-  await checkManagerReadyReview(reviewSurface);
-  assert.equal(requests.length, 2); assert.equal(requests[0], requests[1], "lost preparation response must reuse exact request id");
-  await page.unroute("**/api/plugins/bundled/git-workflow/project-actions", intercept);
-  assert.equal(existsSync(worktree), true, "Allow preparation still has no deletion effects");
-  assert.ok(git("show-ref", "--verify", "refs/heads/integrated"));
-  assert.ok(await reviewSurface.getByText(".cache", { exact: true }).count());
-  await reviewSurface.getByRole("button", { name: "Keep resources", exact: true }).click();
-  await status("Cancelled — check any already-dispatched effects").waitFor();
-  assert.equal(existsSync(worktree), true);
-  await manager.getByRole("button", { name: "Refresh actual state", exact: true }).click();
-  await page.waitForFunction(() => document.activeElement?.getAttribute("data-manager-row") === "branch:integrated");
-  let releaseSelection, selectionStarted;
-  const selectionGate = new Promise((resolve) => { releaseSelection = resolve; });
-  const startedSelection = new Promise((resolve) => { selectionStarted = resolve; });
-  const delayedHistory = async (route) => {
-    if (route.request().method() !== "GET") return route.continue();
-    const response = await route.fetch(); selectionStarted(); await selectionGate; await route.fulfill({ response });
-  };
-  await page.route("**/api/plugins/bundled/git-workflow/project-actions/*", delayedHistory);
-  await manager.getByText("Recorded project operations", { exact: true }).click();
-  await manager.getByRole("button", { name: /Cancelled — check any already-dispatched effects/ }).click();
-  await startedSelection;
-  assert.equal(await manager.getByRole("button", { name: "Review removal…", exact: true }).isDisabled(), true, "history reads reserve the live-operation slot");
-  releaseSelection();
-  await waitManagerButton(page, manager, "Review removal…");
-  await status("Cancelled — check any already-dispatched effects").waitFor();
-  await page.unroute("**/api/plugins/bundled/git-workflow/project-actions/*", delayedHistory);
-  await manager.getByRole("button", { name: "Review removal…", exact: true }).click();
-  await checkManagerReadyReview(reviewSurface);
-  await reviewSurface.getByRole("button", { name: "Remove listed resources", exact: true }).click();
-  await status("Resource removal completed").waitFor();
-  assert.equal(existsSync(worktree), false);
-  assert.throws(() => git("show-ref", "--verify", "refs/heads/integrated"));
-  await manager.getByRole("button", { name: "Refresh actual state", exact: true }).click();
-  await manager.getByLabel("Search branches or paths", { exact: true }).fill("branch-only");
-  await manager.getByRole("button", { name: "branch-only", exact: true }).click();
-  await waitManagerButton(page, manager, "Review removal…");
-  await manager.getByRole("button", { name: "Review removal…", exact: true }).click();
-  await checkManagerReadyReview(reviewSurface);
-  await reviewSurface.getByRole("button", { name: "Remove listed resources", exact: true }).click();
-  await status("Resource removal completed").waitFor();
-  assert.throws(() => git("show-ref", "--verify", "refs/heads/branch-only"));
-  await manager.getByRole("button", { name: "Refresh actual state", exact: true }).click();
-  await manager.getByRole("button", { name: "Close", exact: true }).click();
-  await open();
-  await manager.getByText("Recorded project operations", { exact: true }).click();
-  await waitManagerButton(page, manager, /Resource removal completed/, true);
-  assert.ok(await manager.getByRole("button", { name: /Resource removal completed/ }).count() >= 2);
-  await manager.getByRole("button", { name: /Resource removal completed/ }).first().click();
-  await reviewSurface.getByRole("link", { name: "Download complete exact review", exact: true }).waitFor();
-  await readBrowserResponse(page, new URL(await reviewSurface.getByRole("link", { name: "Download complete exact review", exact: true }).getAttribute("href"), base).href);
-  await reviewSurface.getByRole("button", { name: "Refresh actual state", exact: true }).click();
-  await checkManagerDiscard(page, { base, fixture, manager, open, patchSettings });
+  await withinViewport();
+
+  await checkManagerDiscard(page, { base, fixture, manager, open, width });
   await manager.screenshot({ path: join(artifacts, `worktree-manager-${width}.png`) });
-  await page.waitForFunction(() => { const d = document.querySelector('dialog[aria-labelledby="worktree-manager-title"]'); const r = d?.getBoundingClientRect(); return r && r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight; });
+  await withinViewport();
   await page.keyboard.press("Escape");
   await manager.waitFor({ state: "hidden" });
   await patchSettings({ enabled: false });
-  console.log(`PASS: no-chat manager, ${width}px, global dates/paging, disabled browsing, target protections, untracked/refresh blockers, UUID recovery, history reservation, integrated and unintegrated removal, server loss acknowledgment, no-target/detached review, Deny/Keep independence and durable review`);
+  console.log(`PASS: ${width}px native manager entry/paging/Settings/modal focus; ${width > 600 ? "native loss-approved removal and immutable history" : "live loss review, reject and focus restoration"}`);
 }

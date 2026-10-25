@@ -7,12 +7,14 @@ import type { SubagentProfilesResponse, SubagentSettingsResponse } from "@/lib/a
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { ModelsData } from "@/lib/models-cache";
 import { isSubagentProfileOverridden } from "@/lib/subagent-profile-precedence";
-import type { SubagentProfile, SubagentScope, SubagentWritableScope } from "@/lib/subagents";
+import type { SubagentProfile, SubagentWritableScope } from "@/lib/subagents";
 import {
   getLastSettingsSelection,
   setLastSettingsSelection,
 } from "@/lib/settings-navigation";
 import {
+  useSettingsTask,
+  useSettingsWork,
   ConfigButton,
   ConfigDetail,
   ConfigDetailActions,
@@ -33,13 +35,14 @@ import {
   ConfigStatusDot,
   ConfigSwitch,
 } from "./SettingsUi";
+import { editableProfile, profileKey, duplicateProfileName, isWritableScope, isTogglableScope, shortenPath, displayProfilePath, type EditableProfile } from "./agents-config-helpers";
 import { ModelSelector } from "./ModelSelector";
 import { splitSubagentModelReference } from "@/lib/subagent-model-reference";
 
 const TOOL_OPTIONS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 const THINKING_OPTIONS = ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
-type EditableProfile = Omit<SubagentProfile, "scope" | "filePath">;
+
 type EditorMode = "view" | "edit" | "create";
 
 const EMPTY_PROFILE: EditableProfile = {
@@ -75,64 +78,6 @@ const disabledInputStyle: CSSProperties = {
   cursor: "default",
 };
 
-function editableProfile(profile: SubagentProfile): EditableProfile {
-  return {
-    name: profile.name,
-    displayName: profile.displayName,
-    description: profile.description,
-    systemPrompt: profile.systemPrompt,
-    tools: [...profile.tools],
-    loadSkills: profile.loadSkills,
-    loadExtensions: profile.loadExtensions,
-    promptMode: profile.promptMode,
-    ...(profile.model ? { model: profile.model } : {}),
-    ...(profile.thinking ? { thinking: profile.thinking } : {}),
-    ...(profile.maxTurns ? { maxTurns: profile.maxTurns } : {}),
-    inheritContext: profile.inheritContext,
-    runInBackground: profile.runInBackground,
-    enabled: profile.enabled,
-  };
-}
-
-function profileKey(profile: Pick<SubagentProfile, "scope" | "name">): string {
-  return `${profile.scope}:${profile.name}`;
-}
-
-function duplicateProfileName(name: string, profiles: readonly SubagentProfile[]): string {
-  const existing = new Set(profiles.map((profile) => profile.name.toLowerCase()));
-  const base = `${name}-copy`;
-  let candidate = base;
-  let suffix = 2;
-  while (existing.has(candidate.toLowerCase())) candidate = `${base}-${suffix++}`;
-  return candidate;
-}
-
-function isWritableScope(scope: SubagentScope): scope is SubagentWritableScope {
-  return scope === "global" || scope === "project";
-}
-
-/**
- * A built-in has no file to edit, so its fields stay read-only, but its switch is
- * live: the server records the name in `agents/settings.json` instead of writing a
- * copy of the profile to disk.
- */
-function isTogglableScope(scope: SubagentScope): boolean {
-  return isWritableScope(scope) || scope === "builtin";
-}
-
-function shortenPath(path: string): string {
-  return path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
-}
-
-function displayProfilePath(profile: SubagentProfile, cwd: string): string | null {
-  if (!profile.filePath) return null;
-  if ((profile.scope === "project" || profile.scope === "workspace") && profile.filePath.startsWith(cwd)) {
-    const relative = profile.filePath.slice(cwd.length).replace(/^[/\\]/, "");
-    return `./${relative}`;
-  }
-  return shortenPath(profile.filePath);
-}
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <ConfigField label={label}>{children}</ConfigField>;
 }
@@ -159,6 +104,8 @@ export function AgentsConfig({
   onReloaded?: () => void;
   embedded?: boolean;
 }) {
+  const task = useSettingsTask();
+  const observe = useSettingsWork();
   const isMobile = useIsMobile();
   const { t } = useI18n();
   const [profiles, setProfiles] = useState<SubagentProfile[]>([]);
@@ -192,7 +139,7 @@ export function AgentsConfig({
     name: model.name,
   })), [modelOptions]);
 
-  const loadProfiles = useCallback(async (preferredKey?: string) => {
+  const loadProfiles = useCallback((preferredKey?: string) => observe("agents.profiles", (async () => {
     setLoading(true);
     setError(null);
     try {
@@ -218,7 +165,7 @@ export function AgentsConfig({
     } finally {
       setLoading(false);
     }
-  }, [cwd]);
+  })()), [cwd, observe]);
 
   useEffect(() => {
     void loadProfiles();
@@ -228,7 +175,7 @@ export function AgentsConfig({
     const controller = new AbortController();
     setSettingsLoading(true);
     setSettingsError(null);
-    void (async () => {
+    void task("agents.settings", async () => {
       try {
         const response = await fetch("/api/subagents/settings", {
           cache: "no-store",
@@ -248,7 +195,7 @@ export function AgentsConfig({
       }
     })();
     return () => controller.abort();
-  }, []);
+  }, [task]);
 
   useEffect(() => {
     if (selectedKey) setLastSettingsSelection("agents", selectedKey, cwd);
@@ -258,7 +205,7 @@ export function AgentsConfig({
     const controller = new AbortController();
     setModelsLoading(true);
     setModelsError(null);
-    void (async () => {
+    void task("agents.models", async () => {
       try {
         const response = await fetch(`/api/models?cwd=${encodeURIComponent(cwd)}`, { signal: controller.signal });
         const data = await response.json() as Partial<ModelsData> & { error?: string };
@@ -273,7 +220,7 @@ export function AgentsConfig({
       }
     })();
     return () => controller.abort();
-  }, [cwd]);
+  }, [cwd, task]);
 
   const selectProfile = (profile: SubagentProfile) => {
     setSelectedKey(profileKey(profile));
@@ -308,7 +255,7 @@ export function AgentsConfig({
     setError(null);
   };
 
-  const save = async () => {
+  const save = task("agents.save", async () => {
     setSaving(true);
     setError(null);
     setSavedOk(false);
@@ -328,9 +275,9 @@ export function AgentsConfig({
     } finally {
       setSaving(false);
     }
-  };
+  });
 
-  const remove = async () => {
+  const remove = task("agents.remove", async () => {
     if (!selected || !isWritableScope(selected.scope)) return;
     if (!window.confirm(t("agents.deleteConfirm", { name: selected.displayName }))) return;
     setSaving(true);
@@ -349,7 +296,7 @@ export function AgentsConfig({
     } finally {
       setSaving(false);
     }
-  };
+  });
 
   const editing = mode !== "view";
   const creating = mode === "create";
@@ -381,7 +328,7 @@ export function AgentsConfig({
     setDraft((current) => ({ ...current, [key]: value }));
   };
 
-  const toggleEnabled = async (enabled: boolean) => {
+  const toggleEnabled = task("agents.toggleEnabled", async (enabled: boolean) => {
     if (creating) {
       update("enabled", enabled);
       return;
@@ -405,9 +352,9 @@ export function AgentsConfig({
     } finally {
       setToggling(false);
     }
-  };
+  });
 
-  const toggleBuiltInSubagents = async (enabled: boolean) => {
+  const toggleBuiltInSubagents = task("agents.toggleBuiltInSubagents", async (enabled: boolean) => {
     setSettingsSaving(true);
     setSettingsError(null);
     try {
@@ -427,9 +374,9 @@ export function AgentsConfig({
     } finally {
       setSettingsSaving(false);
     }
-  };
+  });
 
-  const updateMaxConcurrent = async (value: number) => {
+  const updateMaxConcurrent = task("agents.updateMaxConcurrent", async (value: number) => {
     setMaxConcurrent(value);
     setSettingsError(null);
     try {
@@ -444,9 +391,9 @@ export function AgentsConfig({
     } catch (cause) {
       setSettingsError(cause instanceof Error ? cause.message : String(cause));
     }
-  };
+  });
 
-  const reloadSession = async () => {
+  const reloadSession = task("agents.reloadSession", async () => {
     if (!sessionId) return;
     setReloading(true);
     setSettingsError(null);
@@ -459,7 +406,7 @@ export function AgentsConfig({
     } finally {
       setReloading(false);
     }
-  };
+  });
 
   return (
     <ConfigPanelShell embedded={embedded} title={t("common.agents")} subtitle={shortenPath(cwd)} closeLabel={t("agents.close")} onClose={onClose}>

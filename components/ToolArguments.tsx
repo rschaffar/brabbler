@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type CSSProperties } from "react";
+import { useId, useRef, useState, type CSSProperties } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
 import { toolFieldsOfInput, writtenFileText, type ToolField } from "@/lib/tool-fields";
@@ -22,13 +22,19 @@ const CONTROL_STYLE: CSSProperties = {
   background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
 };
 
+export type ToolCopyWorkObservation =
+  | { kind: "started"; toolCallId: string; text: string; work: Promise<void> }
+  | { kind: "caught"; toolCallId: string; text: string; error: unknown };
+
 /** Mounted only inside an expanded tool card. No Markdown, file links or probes. */
-export function ToolArguments({ block, inputText, hasRichView, isError }: {
+export function ToolArguments({ block, inputText, hasRichView, isError, onCopyWork }: {
   block: ToolCallContent;
   /** Canonical full JSON or exact streamed raw input; never derived from rows. */
   inputText: string;
   hasRichView: boolean;
   isError: boolean;
+  /** Passive original-work/error observation; must not throw. */
+  onCopyWork?: (observation: ToolCopyWorkObservation) => void;
 }) {
   const { t } = useI18n();
   const rawId = useId();
@@ -39,14 +45,22 @@ export function ToolArguments({ block, inputText, hasRichView, isError }: {
   const fields = !streaming && !hasRichView && fileText === null ? toolFieldsOfInput(block.input) : null;
   const hasAlternateView = !streaming && (hasRichView || fileText !== null || fields !== null);
   const copyStatus = copyState?.text === inputText ? copyState : null;
+  const copyWorkRef = useRef(onCopyWork);
+  copyWorkRef.current = onCopyWork;
 
   async function copyArguments() {
     try {
       await copyText(inputText);
       setCopyState({ text: inputText, failed: false });
-    } catch {
+    } catch (error) {
       setCopyState({ text: inputText, failed: true });
+      copyWorkRef.current?.({ kind: "caught", toolCallId: block.toolCallId, text: inputText, error });
     }
+  }
+  function copyArgumentsObserved() {
+    const work = copyArguments();
+    copyWorkRef.current?.({ kind: "started", toolCallId: block.toolCallId, text: inputText, work });
+    return work; // SAME original handler promise, no added await/then/catch.
   }
 
   return <div data-tool-arguments style={{
@@ -54,7 +68,7 @@ export function ToolArguments({ block, inputText, hasRichView, isError }: {
     borderTop: isError ? "1px solid rgba(248,113,113,0.25)" : "1px solid rgba(34,197,94,0.2)",
   }}>
     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 6 }}>
-      <button type="button" onClick={copyArguments} style={CONTROL_STYLE}>{t("chat.copyArguments")}</button>
+      <button type="button" onClick={onCopyWork ? copyArgumentsObserved : copyArguments} style={CONTROL_STYLE}>{t("chat.copyArguments")}</button>
       {hasAlternateView && <button type="button" aria-expanded={showRaw} aria-controls={showRaw ? rawId : undefined}
         onClick={() => setShowRaw(!showRaw)} style={CONTROL_STYLE}>
         {t(showRaw ? "chat.hideRawArguments" : "chat.showRawArguments")}

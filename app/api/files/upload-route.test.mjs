@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { createJiti } from "jiti";
 import { loadTsModule } from "../../../lib/sse-stream.fixture.mjs";
+import { fileBodyModuleFixture } from "./file-body-module.fixture.mjs";
 const jiti = createJiti(import.meta.url);
 const upload = await jiti.import("../../../lib/file-upload.ts");
 const bounded = await jiti.import("../../../lib/bounded-form-data.ts");
@@ -13,7 +14,17 @@ const paths = await jiti.import("../../../lib/paths.ts");
 
 function fixture(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-upload-api-")));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  let fileBody;
+  t.after(async () => {
+    const { closed, errors } = fileBody ? await fileBody.finish() : { closed: true, errors: [] };
+    if (closed) {
+      try { fs.rmSync(root, { recursive: true, force: true }); }
+      catch (failure) { errors.push(failure); }
+    } else {
+      errors.push(new Error("upload fixture retained root: native file-body closure is uncertain"));
+    }
+    if (errors.length) throw new AggregateError(errors, "upload file-body runtime/cleanup failures");
+  });
   const allowed = path.join(root, "allowed"), nested = path.join(allowed, "nested"), outside = path.join(root, "outside");
   for (const directory of [nested, outside]) fs.mkdirSync(directory, { recursive: true });
   let trusted = true, references = 0;
@@ -27,12 +38,14 @@ function fixture(t) {
     "@/lib/file-upload": upload, "@/lib/bounded-form-data": bounded,
     "@/lib/paths": paths, "@/lib/text-preview": {}, "@/lib/sse-stream": {},
   };
+  fileBody = fileBodyModuleFixture(mocks.fs, { allowReads: false });
+  mocks["@/lib/file-body-stream"] = fileBody.load();
   const { POST } = loadTsModule(new URL("./[...path]/route.ts", import.meta.url), mocks, { Buffer }).exports;
-  async function request(directory, type, body, headers = {}) {
+  async function request(directory, type, body, headers = {}, literalUrl) {
     // Serialize multipart before dispatch. Cancelling a live Undici FormData
     // producer on early wire-size refusal otherwise leaves its iterator active.
     const multipart = body instanceof FormData ? new Response(body) : null;
-    const request = new Request(`http://localhost/api/files/fixture?type=${type}&sessionId=550e8400-e29b-41d4-a716-446655440000`, {
+    const request = new Request(literalUrl ?? `http://localhost/api/files/fixture?type=${type}&sessionId=550e8400-e29b-41d4-a716-446655440000`, {
       method: "POST", body: multipart ? await multipart.arrayBuffer() : JSON.stringify(body),
       headers: multipart ? { "content-type": multipart.headers.get("content-type"), ...headers } : { "content-type": "application/json", ...headers },
     });
@@ -125,4 +138,27 @@ test("retains per-file and aggregate upload size limits, including wire-body rej
   assert.equal((await f.request(f.nested, "upload", f.form(entries))).status, 413);
   assert.equal((await f.request(f.nested, "upload", f.form([["x", "x"]]), { "content-length": String(102 * 1024 * 1024) })).status, 413);
   assert.deepEqual(fs.readdirSync(f.nested), []);
+});
+
+// Original browser tuple at the EXISTING real default-route/native fixture.
+test("literal outside upload siblings deny sentinel JSON and real FormData without reference authority", async t => {
+  const f = fixture(t);
+  for (const width of [1280, 390]) {
+    const outside = path.join(f.root, `upload-outside-${width}`);
+    fs.mkdirSync(outside, { recursive: true });
+    const encoded = outside.split("/").filter(Boolean).map(encodeURIComponent).join("/");
+    for (const type of ["upload-check", "upload"]) {
+      const form = new FormData(); form.append("files", new Blob(["forbidden"]), "sentinel.txt");
+      const url = `http://localhost/api/files/${encoded}?type=${type}`;
+      const response = await f.request(outside, type,
+        type === "upload-check" ? { fileNames: ["sentinel.txt"] } : form, {}, url);
+      await response.arrayBuffer(); // COMPLETE real response body BEFORE status.
+      assert.equal(response.status, 403, "literal outside-root directories remain non-uploadable");
+      assert.equal(fs.existsSync(path.join(outside, "sentinel.txt")), false, "native no-write for literal forbidden bytes");
+    }
+    assert.deepEqual(fs.readdirSync(outside), []);
+  }
+  assert.equal(f.references, 0, "literal source/request values never become write authority");
+  // Existing fixture.finish joins native file-body closure BEFORE removing root;
+  // a denied status or missing file is not substituted for descriptor closure.
 });
