@@ -163,6 +163,14 @@ export async function navigationRuntime(t, route, setup = () => {}, lifecycle = 
   const api = {
     ...transport, graph, work,
     assertHealthy, dispose, releaseKnown, beforeUnmount,
+    check(fn) {
+      // The shared guard retains a private cause list. Keep the SAME actual
+      // domain callback error observable here before delegating its collection.
+      return transport.check(() => {
+        try { return fn(); }
+        catch (error) { observeFailure('guarded domain callback', error); throw error; }
+      });
+    },
     async reply(...args) {
       try { return await transport.reply(...args); }
       catch (error) { throw diagnosticFailure('Navigation response release failed', error); }

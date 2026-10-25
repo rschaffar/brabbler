@@ -109,6 +109,9 @@ test('closed folder refresh invalidates pending children and re-lists on opening
   await inputText(h.view, h.view.container.querySelector('input[aria-label="Search files"]'), 'match'); await h.fire(150); await h.settled();
   const projectionReads = childVersion;
   await click(h.view, button(h.view, 'Collapse folder (/repo/folder)')); await click(h.view, button(h.view, 'Expand folder (/repo/folder)'));
+  // Join any actual newly admitted load before the unchanged projection witness;
+  // a producer defect must not leave that work solely to failed-test teardown.
+  await h.settled();
   assert.equal(childVersion, projectionReads); assert.ok(h.element('/repo/folder/match'));
 });
 
@@ -296,7 +299,7 @@ test('literal Explorer upload rows, conflict choices, mixed entries and filtered
       ] });
     }, { install() { data.set(nested, [...data.get(nested), entry('mixed.txt')]); } });
     assert.match(h.view.container.textContent, /Folder uploads are not supported/);
-    assert.equal(h.element(`${nested}/folder-input`), null);
+    assert.equal(h.element(`${nested}/folder-input`) === null, true);
     const relative = new File(['nested'], 'nested.txt');
     Object.defineProperty(relative, 'webkitRelativePath', { value: 'tree/sub/nested.txt' });
     const beforeRelative = checks.length, sendsBeforeRelative = xhr.sends.length;
@@ -313,12 +316,15 @@ test('literal Explorer upload rows, conflict choices, mixed entries and filtered
     await h.update({ fileSearchOpen: true });
     await inputText(h.view, h.view.container.querySelector('input[aria-label="Search files"]'), 'existing');
     await h.fire(150); await h.settled();
+    // An already uploaded nonmatch exposes a corrupt projection before another
+    // upload/preflight lifetime; retain the later post-upload witness as well.
+    assert.equal(h.element(`${nested}/collapsed.txt`) === null, true, 'search projection excludes the original already uploaded nonmatch');
     assert.equal(Boolean(h.element(existing)), true);
     await finish(nested, [['not-a-search-match.txt', 'search destination\n']], files => pickFiles(nested, files), {
       install() { data.set(nested, [...data.get(nested), entry('not-a-search-match.txt')]); },
     });
     await h.fire(150); await h.settled();
-    assert.equal(h.element(`${nested}/not-a-search-match.txt`), null, 'search upload must not flatten the unfiltered directory into results');
+    assert.equal(h.element(`${nested}/not-a-search-match.txt`) === null, true, 'search upload must not flatten the unfiltered directory into results');
     assert.equal(Boolean(h.element(existing)), true);
     await finish(nested, [['existing-copy.txt', 'matching search upload\n']], files => pickFiles(nested, files), {
       install() { data.set(nested, [...data.get(nested), entry('existing-copy.txt')]); searchPaths = [...searchPaths, `uploads-${width}/nested/existing-copy.txt`]; },
@@ -331,7 +337,7 @@ test('literal Explorer upload rows, conflict choices, mixed entries and filtered
     await h.update({ refreshKey: ++refresh }); await h.fire(150); await h.settled();
     assert.equal(indexReads.length, beforeRefresh + 1, 'actual refresh reruns bounded index, not an unfiltered projection');
     assert.equal(Boolean(h.element(`${nested}/existing-external.txt`)), true);
-    assert.equal(h.element(`${nested}/not-a-search-match.txt`), null);
+    assert.equal(h.element(`${nested}/not-a-search-match.txt`) === null, true);
     await h.update({ fileSearchOpen: false, changesCollapsed: true }); await h.settled();
   }
   assert.equal(checkPlan, null); assert.equal(sendPlan, null);

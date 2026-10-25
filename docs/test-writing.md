@@ -262,6 +262,23 @@ retire old tests or constitute full candidate acceptance.
   current links and Save races. Workspace mounts add stable hosts and independent
   active/presented admission. Native saves/security/scroll, grammar and incomplete
   supported-Diff/mode/queued-writer contracts keep their existing bridges.
+- The literal Workspace/Explorer/upload-route owners preserve entered external
+  revisions, actual tab/draft/Save wiring, both original upload tuples and sentinel
+  authority. Observe the actual request matcher before an unadmitted ticket can
+  replace its diagnostic; join admitted loads before failed-test assertions and
+  use scalar DOM predicates rather than dumping React/Window graphs. Navigation's
+  existing synchronous `check` guard retains the SAME callback error in its local
+  diagnostic lane; this is not asynchronous-rejection observation.
+  `e2e/explorer-uploads.mjs` retains real changed-row and search callers, external
+  writer, native file-row/mention/picker/mixed-entry and one overwrite/watch/draft/
+  discard/mobile-reconnect bridge. Preserve all six M16 same-node/native Save
+  watcher inputs; a lower upload policy owner does not replace them.
+  For intentional private terminal controls, close the actual outer-owned page
+  and context with collectors live before rethrowing: suite failure starts backend
+  shutdown before later context cleanup. Native trace/context-close originals,
+  the fixture-close promise, helper originals/ACKs and final artifact errors are
+  separate evidence. A clean pre-close collector or fulfilled fixture ACK cannot
+  replace them; never filter late transport errors to manufacture acceptance.
 - Archive/Tools/Agent Content/Skills mounted files and
   `hooks/useStreamingSelector.behavior.test.mjs` own their real controls/store
   transitions. Keep archive shell wiring, toolbar/narrow layout, usage SSR/default

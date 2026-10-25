@@ -36,7 +36,7 @@ export const scenarios = {
   "timestamps": ["timestamps/usage-time-geometry-v3@en-desktop", "timestamps/process-hit-test-v3@en-mobile-tall", "timestamps/usage-time-geometry-v3@legacy-desktop", "timestamps/process-hit-test-v3@legacy-mobile"],
   "diff-context": ["diff-context/d409-render-merge-v2@legacy-desktop"],
   "markdown": ["markdown/render-files-native-v3@legacy-desktop", "markdown/render-touch-wiring-v2@legacy-mobile"],
-  "file-edit": ["file-edit/native-context-owned-source-tail-v3@legacy-desktop", "file-edit/native-context-owned-source-tail-v3@legacy-mobile"],
+  "file-edit": ["file-edit/native-upload-caller-owned-v4@legacy-desktop", "file-edit/native-upload-caller-owned-v4@legacy-mobile"],
   "archive": ["archive/inline-restore@legacy-mobile"],
   "privacy": ["privacy/native-owned-v3@legacy-desktop", "privacy/native-owned-v3@legacy-tablet", "privacy/native-owned-v3@legacy-mobile"],
   "activity": ["activity/native-state-recipe-owned-v4@legacy-desktop", "activity/compact-state-recipe-owned-v4@legacy-tablet", "activity/compact-state-recipe-owned-v4@legacy-mobile"],

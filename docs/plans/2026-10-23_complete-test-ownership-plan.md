@@ -65,7 +65,8 @@ contracts. See [reflection](2026-10-23_complete-test-ownership-reflection.md) an
 | **Verified finite Composer retirement, not whole acceptance** | `R/resumed-implementation/composer-browser-result.json`: five list loops, false-exec setup/override/restoration, synthetic composition and option-count replay leave BOTH original profiles. Initial native normal failed honestly: actual trace shows last exact interceptor removal auto-continued a pending original model Route before its fulfill. Releases now precede captured work joins, then independent exact removal; no error suppression. Current protocol122 GREEN40s; two original native after-success strict expected REDs21/17s; both normal and restoredv6 profiles GREEN45/42s (restored capsule32.820s). Native undo/redo, selection, keyboard/IME geometry, manifest, SPA draft and unchanged P1 retained. |
 | **Verified finite Web/version retirement, not whole acceptance** | `R/resumed-implementation/web-version-browser-result.json`: paused authored case executed directly under current18-prefix/support guards, no new source-only packet. Actual unknown native Node JSON E captured before original check catch, independent P, full known originals/descendants, SAME `[P,body(E),actualFixture(E)]`, Realm-before-emulated-close/Host-after and next real mount reach terminal vector;18 normal+1 intended RED38s. Restored normal/current protocol140 GREEN40s. Exact already-qualified native9ff stage reused, not recoded/retested matrix; sparse LD guard removes LM second version context/page/goto/read/Cancel/Accept/reload/disposal. Both freshv7 receipts GREEN43s/capsule31.419s; only LD version stage executes. |
 | **Verified finite Navigation retirement, not whole acceptance** | `R/resumed-implementation/navigation-browser-result.json`: current two corrected actual-owner cases/common explicit optional input prop pass26; three independent actual producer defects reach stale-row false, scroll1400-vs20 and lost literal41/41/42s, all restored. Exact existing60-file impact/restoration814 GREEN104s (pre-native snapshot, not relabelled). New finite native branch port keeps real SDK current context/UI and original inert agent reply, separates original callback/e32/native/ACK/body, retains actual errors/removal/close/restoration. Both strict after-success body/UI and raw/UI controls27/28s reach all50 known rows and SAME cause trees before intended REDs; current149 GREEN40s and both native normal/restored LDv8+unchangedLMv7 GREEN44/41s. Desktop controlled context gate/route/pending wait/release/no-op catch really leave Chromium. Saved AppShell caller/P1/M16 remain. |
-| **Implemented but unverified / conditional** | Git desktop reader and Activity navigation/badges remain private. Files common lower additions are receiving-tested, but the smaller upload browser cut and its gates remain unadopted. The historical experimental version LM cut executed both receipts52s/protocol11839s before qualification; current v7 composition has its own verified row above. Exact paths/limits remain in the pause record. |
+| **Verified finite Files upload retirement, not whole acceptance** | `R/resumed-implementation/files-upload-browser-result.json`:11 actual producer faults reach semantic witnesses with all20 completed; three first opaque observations remain uncredited. Matcher/callback SAME-error capture, admitted-load join and scalar projection diagnostics repair only the receiving tests/support. Existing receiving27/shared60 union82/940/2suites GREEN137s; exact current7/144 GREEN40s. Five real-native after-success v2 controls join original native/helper/ACK work and actual page/trace/context/fixture closure before SAME-root rethrow; final artifacts contain only the intended error, no completed receipts and bounded owned-resource settlement. Initial v1 late-shutdown contamination and wrong index-refresh premise stay retained/uncredited. Both v4 native profiles normal/restored GREEN48/44s (restored capsule32.706s). Seven upload round trips per profile, related picker/list/wait replay and mobile duplicate denials leave; actual Changed/Search callers, external writer, one overwrite/watch bridge and all M16/P1 remain. |
+| **Implemented but unverified / conditional** | Git desktop reader and Activity navigation/badges remain private. The historical experimental version LM cut executed both receipts52s/protocol11839s before qualification; current v7 composition has its own verified row above. Exact paths/limits remain in the pause record. |
 | **Partial or proposed** | Git policy/large remedy: no deliverable. Do not restart stopped tasks automatically or mark proposals implemented. |
 | **Abandoned / excluded** | Unsafe timestamp4→2 and speed4→3 cuts, copied-error acceptance, unsupported fixture assumptions and false failed-body/native-closure claims. Deferred RPC/cache/packing proposals are not adopted or authorized next work. Preserve their failures; do not revive automatically. |
 
@@ -97,7 +98,7 @@ contracts. See [reflection](2026-10-23_complete-test-ownership-reflection.md) an
 | ID | Remaining blocker | Decisive closure evidence |
 | --- | --- | --- |
 | B1 | Receiving divergence/composition resolved; final surviving-browser disposition remains WP2 | Coherent source commit `c694c014`, exact guarded adoption and original-input map index in `docs/test-ownership.md`; both Thinking/Copy lanes, Settings18, inherited work/guidance preserved. Current508/all-native acceptance supplies shared receiving impact. Final B3–B7 per-step dispositions remain open, not another68 census. |
-| B2 | **Closed receiving lifetime residues**; smaller browser upload cut stays WP2 | Receiving27 /173 GREEN; exact original Save200/409 premises fail under unconditional release. Eight actual descriptors restore before close on normal/partial setup and after independent restore failure; omission fails both descriptor witnesses. Sole HOST-observation/next-mount and actual partial leaf-installer failure pass. Latest3-file21 restored plus current full508/native acceptance supplies receiving impact. This is not native kernel-closure or smaller upload-cut qualification. |
+| B2 | Receiving lifetime residues and finite smaller upload cut closed | Original Save200/409, eight-descriptor/partial-install/HOST lifetime evidence remains. Eleven actual producer controls now reach intended scalar/matcher/callback primitives; current common diagnostic support passes existing82-file/940 shared union. Five strict v2 native continuations independently join native body/work/ACK and real page/trace/context/fixture closure before SAME-root throw; late v1 shutdown errors remain uncredited, not filtered. Current7/144 normal and both v4 native restorations pass. Actual Changed/Search callers, external writer, all six M16 native/same-node watcher inputs and P1 remain. Successful native closure around finite continuations is not failed-IO/close or universal-idle proof. |
 | B3 | Thinking, Tool and Web finite gates closed | Current normal, meaningful original-work failures, restoration, independent review and actual installed work retirement qualify these named slices. Tool's false-green catch/font masking and composer's concrete native removal-order bug were corrected without product-policy changes. Existing Web authored schedule executes strict actual P/E/full-work/cleanup/phase/next-mount vector; no stopped delegate restarted or new source-only packet. Exact native version port reused and LM duplicate removed under fresh v7 receipts. SAME errors, work/ACK/native settlement and unforced limits remain distinct. |
 | B4 | Finite native composer remedy/composite03 deletion closed | Exact guards/lower68/312/six semantic defects reused, not rediscovered. Initial native failure retained and concrete Playwright auto-continue ordering fixed; source-only review was not native admission. Current normal and restored BOTH profiles pass; original native V1/V2 pass strict SAME-reference phase/cause-tree assertions then rethrow intended failures, with private owning metadata and zero normal completions. Current normal rejects private/superseded IDs before callbacks. P1/e32/imported native helper/overflow preserved; no failed-native-phase or universal-idle claim. |
 | B5 | Finite Navigation optional-port/lower/native branch cut closed | Current26 normal, all3 meaningful actual producer faults, exact reused60/814 restored impact, current149 protocol and original native body/UI+raw/UI strict controls/normal/restoration qualify this slice. Original current11-case prefix including held Copy remains exact. Desktop context-gate replay removed; AppShell saved-key native caller remains. SDK context read versus inert controlled agent reply, native body/ACK versus lower full hook promise, and after-success versus actual native-failure limits remain explicit. |
@@ -112,7 +113,7 @@ failure; if reproduced, diagnose exact identity changes without relaxing guards.
 
 ## Plan
 
-**Current execution:** one repository writer, WP1 active, one coordinated export/
+**Current execution:** one repository writer, WP2 active, one coordinated export/
 check budget. Qualified Thinking/Tool Second (including Sixth, excluding Navigation
 Fourth and experimental LM retirement) was reconciled through 343 guarded source
 file deltas, including the two explicitly mapped extracted-callback retirements.
@@ -127,9 +128,9 @@ and interrupted diagnostics remain retained, not meaningful producer reds.
 checkpoint now supplies current complete correctness and wider receiving impact,
 not completion or NET success. All1569 exported files matched the physical checkout
 before status-only follow-up edits. Source commit `c694c014` retains those tested
-application/test bytes at that checkpoint. Subsequent Thinking-only WP2 retirement
-has its own131-case and two-profile installed evidence; do not relabel the earlier
-full run as execution of these later bodies.
+application/test bytes at that checkpoint. Subsequent finite WP2 slices have their
+own input-bound receiving/protocol/native/control evidence in the rows above; do
+not relabel the earlier full run as execution of these later bodies.
 
 **Whole-feedback checkpoint and stop:** command398.058438374s. Core391.542s includes
 2.513s before the388.662s file window and0.367s afterward. Browser320.743s includes
@@ -193,11 +194,16 @@ Use independent review for changed risk, not an automatic second packet pipeline
     native after-success controls and normal/restored receipts pass. Desktop's
     duplicate controlled context race leaves; real branch UI/context and actual
     saved-key caller remain. `R/resumed-implementation/navigation-browser-result.json`.
-  - [ ] **Next active slice — smaller Files upload cut (B2):** reuse the already
-    repaired/qualified common lifetime owners and exact native/caller-preserving
-    remedy; qualify remaining receiving cut gates and remove only mapped duplicate
-    upload work. Preserve all six original M16 same-node/native Save watchers,
-    original error objects/input identities and independent native bridges.
+  - [x] **Smaller Files upload cut (B2):** eleven semantic actual producer faults,
+    existing82/940 shared impact, five strict original-native v2 exceptional/real-
+    closure controls, current144 normal and both v4 installed restorations qualify
+    this finite cut. Original v1 diagnostics/late errors remain uncredited. Actual
+    Changed/Search/native watchers and all six M16/P1 inputs remain; no normal
+    harness policy changed. `R/resumed-implementation/files-upload-browser-result.json`.
+  - [ ] **Next active slice — Git (B6), then Activity (B7):** reuse delivered exact
+    reader/policy/large-remedy and navigation/badge maps/reviews, close only named
+    remaining gates, and retire corresponding browser work. No new census, stopped
+    author restart or core/RPC/cache tangent.
 - [ ] **WP3 — whole feedback and closure (B8).** **Early checkpoint executed; correctness passed, ceiling failed; user selected WP2 first.** At the first coherent candidate,
   take a whole-feedback checkpoint before optional expansion, even if remaining
   unadopted proposals keep completion open. Once source/review settle, run fresh

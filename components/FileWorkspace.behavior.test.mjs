@@ -286,7 +286,11 @@ test('entered external revisions preserve actual Workspace drafts/tabs, disable 
     await type(view, editor, 'A draft\n');
     const save = runtime.expect({ type: 'save', path: row.path, sessionId: location.sourceSessionId,
       body: { content: 'A draft\n', expectedRevision: newRevision, expectedEditIdentity: identity } });
-    await click(view, button(host, 'Save')); await save.headers();
+    await click(view, button(host, 'Save'));
+    // Preserve the actual request matcher failure (including expectedRevision)
+    // before a rejected request can surface only as an unadmitted ticket later.
+    runtime.assertHealthy();
+    await save.headers();
     const close = tab.querySelector('button');
     assert.equal(close.disabled, true, 'actual Workspace onSavingChange reaches actual tab while PUT body is held');
     const savedRead = readPlan(runtime, location);
