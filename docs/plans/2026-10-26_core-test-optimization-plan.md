@@ -1,7 +1,7 @@
 # Core test optimization — investigation and proposed execution
 
-**Status: P1 complete and integrated; P2 implemented and focused-verified,
-complete acceptance pending.** The first stop at `d532fedb44cc819b18085331168d9d78157a01b7`
+**Status: P1 complete and integrated; P2 implemented, independently reviewed and
+fully accepted; retained unintegrated.** The first stop at `d532fedb44cc819b18085331168d9d78157a01b7`
 was premature: it disposed only of the small owner-compilation slice, not the dominant
 retained-import cost. The user explicitly requested thorough continuation in the
 same retained worktree. P1 was merged
@@ -304,22 +304,19 @@ review remains useful; packet counts and universal lifetime theorems are not gat
 - [x] **P1: cheap scheduling candidate.** Update only trust's missing estimate;
   verify runner/manifest contracts. Separate implementation commit and matched
   measurement are recorded below. P1-only completion does not authorize P2–P5.
-- [ ] **P2: targeted RPC preparation — reopened.** Owner-only compilation is small;
-  attribute dominant retained imports, adopt only demonstrated immutable reuse and
-  preserve fresh initialization. Verify source/configuration changes, current
-  aliases/capabilities, fresh side effects and old callbacks retaining original
-  roots/errors. Stop only on evidence about the relevant recoverable work, not by
-  conflating owner compilation with all preparation.
-- [ ] **P3: first coherent checkpoint and possible finish.** Review and measure
-  the adopted P1/P2 candidate before expanding. P1 alone is a valid finish if RPC
-  preparation savings prove immaterial; do not build a cache merely to complete P2.
-  Run complete acceptance using normal definitions. Do not start timer/Git/cache/
-  classification rewrites while this result is pending.
+- [x] **P2: targeted RPC preparation.** Reopened attribution demonstrated dominant
+  repeated dependency transformation. The bounded opt-in code-string reuse preserves
+  fresh evaluation; focused source/configuration/state/callback controls and full
+  acceptance pass on identified inputs below.
+- [x] **P3: first coherent checkpoint.** The first reviewed P2 candidate completed
+  normal full four/four acceptance. No timer/Git/classification/browser or further
+  cache slice was started; this checkpoint is the bounded finish.
 - [ ] **P4: optional further slice, only if worthwhile.** Coordinator-only N review,
   one pure-transform cache site, or native wait overlap. Skip candidates with weak
   benefit-to-complexity, unresolved ownership or noise-sized savings.
-- [ ] **P5: close.** Record actual work removed and focused/whole results separately;
-  leave rejected hypotheses and deferred risks visible. No automatic infinite loop.
+- [x] **P5: bounded P2 close.** Record actual work removed and focused/complete
+  results separately; retain the retracted stop and deferred risks. Other
+  opportunities remain proposals, not automatic follow-on work.
 
 ### Proportionate validation and measurement
 
@@ -632,9 +629,99 @@ unchanged-failure retry or assertion/deadline relaxation occurred.
 Independent pinned-loader/design and final implementation review by
 `01a177da-9860-7402-ad52-001546539dca` found no remaining blockers after that correction.
 This is bounded source review, not general environment-transition certification.
-Diagnostic instrumentation is removed. The first coherent reviewed candidate is
-ready for the required complete four/four checkpoint; no optional expansion is
-started while that is pending.
+Diagnostic instrumentation is removed. The first coherent reviewed candidate
+`574cd1ad471f89639aa416593452cd78e5ecec32` completed the required four/four
+checkpoint below; no optional expansion was started.
+
+## P2 complete acceptance and final disposition
+
+The coherent implementation commit is
+`574cd1ad471f89639aa416593452cd78e5ecec32`. From its clean linked worktree:
+
+```sh
+nix run .#test -- all --workers 4 --jobs 4
+```
+
+**Passed:**509 files /4,177 tests /14 suites, all26 browser/terminal groups /59
+exact receipts and the genuine Home Manager deployment VM. Zero skipped/cancelled
+or failed core tests, uncertain core files or observed survivors. Every group
+retained exact expected/completed coverage, settled resources, no harness errors
+and a closed port. Deployment confirms settled clients, inactive service/MainPID0,
+absent authenticated cgroup and refused port. This is bounded ownership evidence
+under Nix containment, not certification of arbitrary escaped descendants.
+
+Comparison to the retained P1 candidate summary confirms the same509 paths, lanes
+and estimates and all4,171 original outcomes in their original order. Only the
+startup-port file adds six outcomes (four top-level bodies plus two subtests).
+Original test bodies/inputs/deadlines, native authorities and worker counts remain
+unchanged. The production package remains
+`/nix/store/9xqnp83zglbq9ww1fipc3kks8p4f310r-pi-web-0.9.3`; checked realized package
+paths exclude the new/changed fixture support and registered test.
+
+| Identity | Value |
+| --- | --- |
+| Immutable complete source | `/nix/store/fp3p25zznzpm1fi6ncdhqnbim5lsqq2f-source` |
+| Outer content/mode digest | `7d59df8851b29e4dc37d01e90c16824bad30cb6a479bf21debe225301c47a3fe` |
+| Source export and admission | `/tmp/pi-web-test-source-M5Psz5/{source.json,selection.json}` |
+| Core report | `/tmp/pi-web-test-core.mIcbwF/run.json` |
+| Immutable core output | `/nix/store/rkiavwx0vnicd3sn2l10isq98d2z96db-pi-web-core-checks` |
+| Core detailed artifacts | `artifacts/run-KbDVuz/{summary.json,inventory.json,events.jsonl,*.tap}` within that output |
+| Browser report | `/tmp/pi-web-test-browser.EfECLf/run.json` |
+| Genuine deployment report | `/tmp/pwv-ASbqf0/run.json` |
+
+Core's `static-inputs.json` binds Node24.21.0, runtime modules
+`/nix/store/28vpp6bpxj0algr4b4xigfca399flcmi-pi-web-node-modules-0.9.3`, private
+support `/nix/store/1gps3kh9225x4axd5j4b119i9dhchlln-pi-web-test-support-1.0.0`, typing
+source `/nix/store/majsir19c2dywnj7fvrfb3sii6wwb4cv-source` and separate lint source.
+Full acceptance reuses exactly the final restored-port run's typegen/tsc evidence
+`/nix/store/qh06kmg2dbj3a3bpk8ypgflavl9w7bwk-pi-web-types` and lint evidence
+`/nix/store/5y1llbfjqvh5lg9f2vqigkzpzvr67vgl-pi-web-lint`; those checks do not execute
+again in the full command. Exporter contracts and all effectful tests execute fresh.
+No separate preparation command preceded the full invocation beyond the recorded
+focused checks. The source/dependency and pinned-Jiti file identities are retained
+in `/tmp/pi-web-p2-retained.9zEye4/acceptance-summary.json`.
+
+Native x86_64 Linux outer admission (`selection.json`) observed32 CPUs and
+58,857,734,144 available bytes; the later core-local admission observed
+58,055,184,384 bytes. Overlap was admitted with requested/effective four core
+workers and four browser sandboxes. These are resource estimates at different
+stages, not reservations. Full timings:
+
+| Interval | Seconds |
+| --- | ---: |
+| Complete command wall including realization/export | 370.947 |
+| Outer core | 365.953 |
+| Outer core preparation before lifecycle / after lifecycle | 1.715 /0.278 |
+| Core lifecycle | 363.960 |
+| Lifecycle preparation / final-file settlement | 0.858 /0.074 |
+| First-file start to last-file end | 363.028 |
+| F/N pool / tail after pool | 259.812 /103.216 |
+| Browser support / definition preparation | 3.684 /4.806 |
+| Browser group-client envelope / outer browser | 240.238 /248.732 |
+| Deployment outer / guest evidence | 25.356 /18.703 |
+| Browser-through-deployment branch | 276.315 |
+
+Cumulative F/N/E file elapsed is508.476/526.025/103.171s; those overlapping costs
+are **not** whole-suite wall savings. RPC is13.984s in the full overlapping run,
+not a matched comparison to its focused baseline. The focused observed file
+reduction is **76.858s /86.74%** in the identified instrumented pair. There is no
+new matched full-suite baseline and no whole-suite percentage, CPU-savings,
+cold-cache, statistical, ARM or CI claim. The full370.947s result is acceptance
+and observed feedback evidence, not a relabelled P1 comparison.
+
+Raw full log/timestamps/exit and derived verification remain at
+`/tmp/pi-web-p2-retained.9zEye4/{all.log,all.start,all.end,all.exit,acceptance-summary.json}`.
+This final plan update is evidence/status only: executable, test, guide, manifest,
+runner and dependency inputs remain at the accepted implementation commit. Its
+proportional follow-up checks are documentation review, link targets, whitespace
+and exact changed-path/input verification—not another full suite. Feature branch
+`perf/rpc-fixture-preparation` and worktree
+`/home/robert/projects/3rdparty/pi-desk-worktrees/rpc-fixture-preparation` remain.
+No rebase/integration/publication/cleanup or other opportunity is included.
+Final independent evidence review found no substantive blockers; its admission-
+stage and stale-heading nits were corrected. Writer checks confirm that only this
+plan differs from accepted implementation inputs, relative link targets exist
+and `git diff --check` passes. These are source checks, not browser-link verification.
 
 ## Completion Checklist
 
@@ -660,7 +747,7 @@ branch `perf/rpc-fixture-preparation`; CodeGraph was initialized before research
 Other opportunities remain deferred; this multi-opportunity plan is not fully
 executed or archived.
 
-### Initial P2 slice (historical; overall P2 remains open)
+### Initial P2 slice (historical stop, subsequently reopened and completed)
 
 - [x] Measure existing owner compilation/parsing, retained imports and fresh initialization.
 - [x] Decide whether simple immutable reuse is justified; stop with quantified finding.
@@ -679,8 +766,8 @@ executed or archived.
 - [x] Adopt only a demonstrated bounded reduction; retain fresh owner/dependency evaluation.
 - [x] Verify affected consumers and source/configuration/capability/state/callback counterexamples.
 - [x] Measure comparable focused baseline/candidate and record preparation/execution/wall identities.
-- [ ] Independently review and complete core/static/plugin, browser/terminal and genuine deployment acceptance.
-- [ ] Record final evidence, local feature tip and retained resources; do not integrate or expand scope.
+- [x] Independently review and complete core/static/plugin, browser/terminal and genuine deployment acceptance.
+- [x] Record final evidence and retained resources; report the final feature tip in the handoff without integrating or expanding scope.
 
 ## Investigation provenance and known gaps
 
@@ -691,8 +778,8 @@ inspectable; the findings above distinguish source facts from future experiments
 
 **Known gaps:** P1 has one matched fresh four/four pair, not repeated statistical,
 standalone-core, cold-cache, ARM or CI timing evidence. Reopened P2 has one matched
-focused instrumented pair, not repeated statistical or whole-feedback speed evidence;
-complete acceptance is pending. Remaining non-transform import costs are not further
+focused instrumented pair and complete four/four acceptance, not repeated statistical
+or a matched whole-feedback speed comparison. Remaining non-transform import costs are not further
 decomposed, and no general Babel environment-transition guarantee is claimed.
 Other opportunities, native cache/fence compatibility and some pinned SDK
 loader/resource closures remain deferred. Simulations are not promises.
