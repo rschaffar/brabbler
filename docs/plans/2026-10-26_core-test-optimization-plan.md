@@ -1,7 +1,8 @@
 # Core test optimization — investigation and proposed execution
 
-**Status: P1 and P2 complete and integrated; opportunity #3 bounded cohort review
-in progress.** P2 was subsequently merged into local main at
+**Status: P1 and P2 complete and integrated; opportunity #3 implemented and
+focused-verified, but complete acceptance is BLOCKED by the Move browser failure
+below. No valid complete performance comparison is available.** P2 was subsequently merged into local main at
 `ab6b2fa11e3d38fb4cc65a661f3ef9001e8ae534`; its earlier retained-state evidence below
 remains historical. The first stop at `d532fedb44cc819b18085331168d9d78157a01b7`
 was premature: it disposed only of the small owner-compilation slice, not the dominant
@@ -742,11 +743,13 @@ The original P2 acceptance is a reference, not this task's baseline.
 - [x] Verify adopted receivers and existing manifest/discovery/settlement contracts;
   no helper changes require new regressions.
 - [x] Independently review exact eligibility and unchanged original coverage.
-- [ ] Compare one sequential fresh complete four/four baseline/candidate pair,
-  including core/static/plugins, all browser/terminal groups and real deployment;
-  record identities, failure evidence, preparation/execution/wall and pool/E work.
-- [ ] Record adopted files/holds, observed limits and reviewed local feature commits;
-  retain branch/worktree unintegrated and stop before another opportunity.
+- [ ] **Blocked:** complete four/four comparison/acceptance. Baseline passes all
+  levels; candidate Move assertion fails, closes browser admission, drains started
+  groups and aborts core. Deployment is not admitted. Preserve failure evidence;
+  no unchanged retry, browser fix or unmatched core-only substitute is performed.
+- [x] Record adopted files/holds, observed limits and reviewed local feature commits;
+  retain branch/worktree unintegrated and stop before another opportunity. Complete
+  acceptance remains blocked above; this is a partial, not accepted, finish.
 
 Stop rather than expand if safety work becomes disproportionate to modest savings.
 Source/path evidence alone does not qualify execution; separate processes do not
@@ -856,6 +859,110 @@ two refined retained holds and this plan; all existing reviewed entries, applica
 original tests/helpers/runner and dependencies are unchanged. Evidence:
 `/tmp/pi-web-p3-cohort.1RK3PZ/source-conservation.json`.
 
+### Complete comparison attempt and bounded stop
+
+Implementation commit: `6a5c60b80defb89070af248ba8b2b0beffdf508b`.
+One sequential pair used the same command, physical worktree and orchestration:
+
+```sh
+nix run .#test -- all --workers 4 --jobs 4
+```
+
+Both selected native x86_64 Linux/Node24.21.0, four core workers/four browser
+sandboxes and overlapping core/browser→deployment. Outer admission observed32 CPUs
+and57,467,002,880 /57,787,777,024 available bytes; combined estimate remains16 CPUs/
+28,991,029,248 bytes, not a reservation. No other task-owned checks overlapped.
+Normal desktop/other task load means neither run is machine-exclusive.
+Dependencies/package/type evidence were warm; baseline reused the P2 lint output,
+candidate reused the changed-manifest lint output from the49.545s focused command.
+No separate prerequisite build was performed. Nix logged an ignored invocation-
+private SQLite eval-cache-busy message during candidate realization; execution
+continued. The subsequent browser assertion, not that message, vetoed acceptance.
+
+| Identity | Fresh baseline | Candidate (failed/incomplete) |
+| --- | --- | --- |
+| Git | `ab6b2fa11e3d38fb4cc65a661f3ef9001e8ae534` | `6a5c60b80defb89070af248ba8b2b0beffdf508b` |
+| Immutable source | `/nix/store/hsi06bi09dykpv1l49iywna81z0zy674-source` | `/nix/store/z6l578k7rlj1hc31c6szy2774n5ab0f8-source` |
+| Content/mode digest | `5e293c8ce501d45ae762a7d2bb59b887f54c4caf5c8fa595b59b39786ad2bb5b` | `44718b0ca74a89e35e37b52c913346710dc8eb4b6deccd40431c19d2b3b9896a` |
+| Export/selection root | `/tmp/pi-web-test-source-Qk9sGl` | `/tmp/pi-web-test-source-ovxz5F` |
+| Core report | `/tmp/pi-web-test-core.QLSme2/run.json` | `/tmp/pi-web-test-core.PKqCBW/run.json` |
+| Browser report | `/tmp/pi-web-test-browser.Syllfr/run.json` | `/tmp/pi-web-test-browser.u1VAQW/run.json` |
+| Deployment report | `/tmp/pwv-LZqdoe/run.json` | Not started: browser failed |
+
+All1,574 exported file paths match; bytes/modes differ only at this plan and live
+`nix/test-lanes.json`. Original test/helper/application/browser/source inputs and
+package `/nix/store/9xqnp83zglbq9ww1fipc3kks8p4f310r-pi-web-0.9.3` are identical.
+Manifest review conserves509 discovered files and4,177 tests/14 suites, with
+316F/101N/92E →316F/103N/90E. These are planned candidate totals, **not** a claim
+that aborted candidate core completed them. Evidence:
+`/tmp/pi-web-p3-cohort.1RK3PZ/export-comparison.json`.
+
+**Baseline passed:**509 files/4,177 tests/14 suites, zero failed/skipped/cancelled,
+uncertain files or observed survivors; all26 browser/terminal groups/59 exact
+receipts and genuine deployment. The VM confirms settled clients, inactive service,
+MainPID0, absent authenticated cgroup and refused port. Core immutable output:
+`/nix/store/s5yizhi5k2dl3xcc89gg7lj95qrb5b0p-pi-web-core-checks`, detailed
+`artifacts/run-giJefl/{summary.json,inventory.json,events.jsonl,*.tap}`.
+
+| Seconds | Baseline (complete) | Candidate (failed/incomplete) |
+| --- | ---: | ---: |
+| Full command including realization/export | 373.800 | 207.021 (failed; **not speedup**) |
+| Outer core | 366.359 | 202.017 (aborted) |
+| Core pre-lifecycle / lifecycle / post-lifecycle | 1.843 /364.189 /0.327 | No complete lifecycle output |
+| Lifecycle to first file / last file to settlement | 0.897 /0.074 | Unavailable |
+| File window / F-N pool / E tail | 363.218 /259.521 /103.697 | Unavailable |
+| Summed F /N /E file work | 499.300 /533.891 /103.646 | Unavailable |
+| Pool occupancy at four workers | 99.529% | No complete pool |
+| Browser support / definition preparation | 3.767 /5.154 | 3.780 /4.939 |
+| Browser client envelope / outer browser | 241.324 /250.248 | 193.105 /201.827 |
+| Deployment outer / guest | 25.628 /19.171 | Not run |
+| Browser-through-deployment branch | 278.021 | Incomplete |
+
+Intervals overlap and are not additive; preparation is mixed realization/export/
+static evidence/setup, not isolated CPU work. With incomplete candidate execution,
+there is **no measured E-tail reduction, whole-feedback gain, cumulative-work delta
+or valid matched speedup**. The baseline itself is not relabelled P2 evidence.
+
+**Blocking failure:** `move/picker-recovery-native-v2@legacy-desktop`, at unchanged
+`e2e/session-move.mjs:369` (`checkWorktreeMoveBridges`). After the selected-uncertain
+native Move/unreadable-response/Close chain, `sourceWorkingReads` was expected to
+be empty but contained actual `/api/models?cwd=…uncertain-source-desktop` and
+`/api/project-trust?cwd=…uncertain-source-desktop` requests. The trace records these
+fetches at12:31:40.943/40.944Z; the assertion fails at12:31:41.579Z. A400 console
+error precedes failure; an incomplete-chunk/SSE error follows requested shutdown.
+Those errors remain fatal/unfiltered. This locates the observed failure, **not**
+its root cause or evidence that an unchanged retry would fix it. No browser
+assertion/wait/deadline, production code, orchestration or lane width was changed.
+
+Failed Move output:
+`/nix/store/4ikszdrmbkkgc57da93vrzc6chkhfvbj-pi-web-browser-move-diagnostics`, with
+`result.json` and `artifacts/{run.json,coverage.json,server.log,events.jsonl,context-1.zip,context-1-failure-0.png}`.
+Its16.216s capsule retained complete diagnostics and confirmed service/pipe/group
+settlement and closed port. Sixteen groups/39 receipts passed, one group failed,
+nine were not run. All17 started capsules settled/collected and closed their ports
+with no observed survivors/uncertainty. Core logs show **both promoted files passed
+in the full pool** before peer abort (`candidate.log:585–637,843–898`), but there is
+no finalized complete core summary. The outer Nix client reports interrupted and
+settled, no observed survivors/uncertainty; this is not a complete inner-core native
+settlement certificate. Nix owns outer builder containment. Deployment never starts.
+
+Raw logs/timestamps/exits, failed diagnostic copies and derived summaries remain
+at `/tmp/pi-web-p3-cohort.1RK3PZ/`, including `baseline-analysis.json`,
+`candidate-failure-analysis.json` and `export-comparison.json`. No resources are
+manually removed. The first coherent candidate is retained as **implemented,
+focused-verified and independently reviewed, not fully accepted or ready to
+integrate**. Resolving this browser blocker requires a separately bounded decision;
+this task stops rather than expands or runs a repeated timing campaign. A final
+evidence/status-only commit leaves all executable inputs at the implementation
+commit; proportional checks review documentation, whitespace, exact changed paths
+and unchanged application/test/manifest/runner inputs, not another full suite.
+Final independent evidence review by the same reviewer found no documentation
+blockers and confirms the incomplete-acceptance/performance/settlement limits.
+Writer's `git diff --check`, exact changed-path/input comparison and unchanged
+reviewed-manifest hash checks pass. Local main remains the starting `ab6b2fa`;
+feature branch/worktree and historical/current diagnostics are retained. No rebase,
+integration, publication, manual resource cleanup or next opportunity is attempted.
+
 ## Completion Checklist
 
 ### This analysis
@@ -874,11 +981,11 @@ original tests/helpers/runner and dependencies are unchanged. Evidence:
 - [x] Existing owning guide and live scheduling metadata match the unchanged advisory semantics.
 
 P1 is complete and integrated at `0d5d914515057c957b47a7b92d9164ddacd98bc7`.
-P2 alone now has separate implementation authority, starting from that checked local
+P2 then had separate implementation authority, starting from that checked local
 main in `/home/robert/projects/3rdparty/pi-desk-worktrees/rpc-fixture-preparation`,
 branch `perf/rpc-fixture-preparation`; CodeGraph was initialized before research.
-Other opportunities remain deferred; this multi-opportunity plan is not fully
-executed or archived.
+P2 is now integrated, and opportunity #3 has its separate bounded section above.
+This multi-opportunity plan is not fully executed or archived.
 
 ### Initial P2 slice (historical stop, subsequently reopened and completed)
 
@@ -914,5 +1021,8 @@ standalone-core, cold-cache, ARM or CI timing evidence. Reopened P2 has one matc
 focused instrumented pair and complete four/four acceptance, not repeated statistical
 or a matched whole-feedback speed comparison. Remaining non-transform import costs are not further
 decomposed, and no general Babel environment-transition guarantee is claimed.
-Other opportunities, native cache/fence compatibility and some pinned SDK
+Opportunity #3 has approved bounded eligibility and focused evidence for two N
+files, but complete acceptance and timing comparison are blocked by the recorded
+Move browser failure; its root cause is unestablished. Native-tools/Pause failure-
+lifetime gates, other opportunities, native cache/fence compatibility and other SDK
 loader/resource closures remain deferred. Simulations are not promises.
