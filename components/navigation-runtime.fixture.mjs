@@ -181,7 +181,7 @@ export async function navigationRuntime(t, route, setup = () => {}, lifecycle = 
       const wrapped = createElement(NavigationWorkContext.Provider, { value: work }, createElement(graph.I18nProvider, null, element));
       if (view) { await view.rerender(wrapped); return view; }
       const owner = { after(dispose) { after.after(() => terminalDispose(dispose)); } };
-      view = await mount(owner, wrapped, { beforeUnmount() {
+      view = await mount(owner, wrapped, { strict: lifecycle.strict ?? true, beforeUnmount() {
         if (!mountReturned || terminal) beforeUnmount();
       }, beforeDispose, setup(window) {
         lifecycle.beforeSetup?.(window);

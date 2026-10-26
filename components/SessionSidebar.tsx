@@ -569,6 +569,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [sessionSearchActive]);
 
   const loadSessions = useCallback((showLoading = false, force = false, summary = false) => work.observe((async () => {
+    // A real detail refresh replaces the deferred initial hydration. Otherwise
+    // that timer can supersede a move-owned refresh and falsely report failure.
+    if (!summary && detailsHydrationTimerRef.current) {
+      clearTimeout(detailsHydrationTimerRef.current);
+      detailsHydrationTimerRef.current = null;
+    }
     const loadId = ++sessionLoadIdRef.current;
     try {
       if (showLoading) setLoading(true);

@@ -1,7 +1,7 @@
 import '../lib/testing/client-native-boundary.fixture.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import { navigationRuntime, exact, session, click, button, inputText } from './navigation-runtime.fixture.mjs';
 import { sidebarRoutes } from './navigation-cases.fixture.mjs';
 const oid = 'a'.repeat(40), tip = 'b'.repeat(40);
@@ -103,4 +103,41 @@ for (const mode of ['create', 'attach']) test(`actual worktree ${mode} requires 
   // This is proposal/wiring proof, not native Git permission or cleanup authority.
   await r.reply(r.latest('/api/worktrees', 'POST'), { error: 'controlled conflict' }, 409); await r.settled();
   assert.match(r.view.container.textContent, /controlled conflict/);
+});
+
+test('a real detail refresh retires pending summary hydration without hiding HTTP refresh failures', async t => {
+  let visible = false, version = 1;
+  const held = [];
+  const r = await navigationRuntime(t, sidebarRoutes([session('a')], request => {
+    if (request.url.pathname === '/api/agent/running') {
+      exact(request, '/api/agent/running', {}, { signal: true, cache: 'no-store' });
+      return { handled: true, data: { sessionListVersion: version, runningSessionIds: [] } };
+    }
+    if (request.url.pathname === '/api/sessions' && !request.url.searchParams.has('summary')) {
+      held.push(request);
+      return { handled: true, data: undefined };
+    }
+  }), undefined, { strict: false }); // Production incarnation: no dev-only effect replay consumes the timer first.
+  const activity = r.graph.createActivityClientController({ visible: () => visible });
+  r.releaseOnClose(() => activity.dispose());
+  await r.render(createElement(r.graph.SessionSidebar, { selectedCwd: '/repo', selectedSessionId: null,
+    onSelectSession() {}, activityController: activity }));
+  await r.settled(); await activity.whenIdle();
+  const initialTimers = r.pendingTimerCount();
+  assert.ok(initialTimers > 0, 'initial summary admitted its deferred detail-hydration timer');
+  visible = true; version = 2;
+  await act(async () => activity.refresh()); // Actual catalogue subscriber starts the detail read.
+  assert.equal(held.length, 1, 'real Sidebar detail refresh entered transport');
+  assert.equal(r.pendingTimerCount(), initialTimers - 1,
+    'full detail refresh cancels redundant pending initial hydration before it can supersede the refresh');
+  await r.reply(held[0], { sessions: [session('refreshed')], sessionListVersion: version, runningSessionIds: [] });
+  await activity.whenIdle(); await r.settled();
+  assert.ok(r.view.container.querySelector('[data-session-id="refreshed"]'));
+  assert.equal(r.view.container.querySelector('[data-session-id="a"]'), null);
+  version = 3;
+  await act(async () => activity.refresh());
+  assert.equal(held.length, 2);
+  await r.reply(held[1], { error: 'actual controlled refresh failure' }, 503);
+  await activity.whenIdle(); await r.settled();
+  assert.match(r.view.container.textContent, /HTTP 503/, 'real refresh errors remain visible');
 });
