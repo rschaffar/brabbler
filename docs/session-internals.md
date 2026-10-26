@@ -113,7 +113,28 @@ Detailed scans use one descriptor, bounded to its initial size. Changed identity
 
 Incomplete trailing records are reread from their start. A parsed unterminated record counts immediately but disables resumption until a full scan, avoiding double-counting when its newline arrives. Byte buffering preserves UTF-8 across chunks and raw U+2028/U+2029 within JSON strings, matching the SDK file loader rather than Node 24 readline's separator behavior. CRLF/lone-CR parsing is retained. Oversized or non-first-line headers scan normally but do not create checkpoints.
 
-Unchanged summaries reuse complete cached rows. Cold/changed summaries still read header/stat **and the whole transcript for archive markers**, so archived sessions never briefly appear active; they do not overwrite complete accumulators with pending rows. This port does not optimize cold archive discovery or make the separate summary header/archive reads transactional against external replacement. Index writes coalesce over a five-second window, capturing their destination and snapshot. The unreferenced timer never keeps a process alive; a lost save merely costs a rescan after restart. Relation/project resolution and catalogue enumeration/stat work remain outside the append-tail saving.
+Unchanged summaries reuse complete cached rows. Cold/changed summaries still read header/stat **and the whole transcript for archive markers**, so archived sessions never briefly appear active; they do not overwrite complete accumulators with pending rows. This port does not optimize cold archive discovery or make the separate summary header/archive reads transactional against external replacement. Index writes coalesce over a five-second window, capturing their destination and snapshot. The unreferenced timer never keeps a process alive; a lost save merely costs a rescan after restart. Catalogue enumeration/stat and project attachment still run outside the append-tail saving.
+
+Relation projection now reuses a process-only reader WeakMap keyed by the exact
+scanned row and an immutable scanner-validated physical/stat fingerprint. Only
+compact subagent parent/profile/description/status (or stable absence) is retained,
+never transcript entries, tasks, results or resources. The private index stays
+version 2 and persists no relation cache. Restored entries become eligible only
+after this process validates their stats. Changed summaries revoke the previous
+complete row's eligibility even though its accumulator remains available; missing,
+unstable, reset and switched-agent-root rows cannot certify reuse.
+
+Warm relation hits add no content reads or per-file stats beyond the scanner's
+existing stat boundary. Misses keep the original first-two-physical-lines/256-KiB
+prefix and conditional 256-KiB tail visibility and `readSubagentRun` semantics,
+using one nonblocking regular-file descriptor. Initial/final descriptor stats,
+pathname identity and current scanner eligibility must agree before memoization;
+read/validation failures never become cached negatives. Header-parent IDs are
+resolved anew against each catalogue, and returned relation objects cannot mutate
+the private cache. This remains best-effort display metadata: a write after the
+scanner's stat observation can wait until the next rebuild, not a transactional
+snapshot, authorization or integrity proof. First reads after restart and changed
+files still perform bounded relation parsing.
 
 Sidebar startup paints a summary before deferred detail hydration. Starting any
 real detail refresh cancels that pending startup timer, so it cannot supersede a
@@ -122,7 +143,7 @@ publication guards and genuine HTTP/JSON failure reporting remain independent.
 
 ### Running state polling + reconciliation
 - The sidebar polls `/api/agent/running` every 2.5 seconds while the tab is visible and pauses polling in background tabs. The session-list response remains the initial fallback.
-- `invalidateSessionListCache()` bumps the generation but **keeps** the previous scan, and the cache is fresh only while its recorded generation matches. Ordinary agent activity invalidates it constantly, and rebuilding costs hundreds of milliseconds because `loadAllSessions()` re-reads every forked and subagent session. Callers that only need metadata — mapping search hits to sidebar rows — pass `listAllSessions({ allowStale: true })` to read the previous scan and let the rebuild happen in the background. A stale scan is a complete catalogue apart from sessions created seconds ago, so those callers accept a brief window where a brand-new session is not yet listed.
+- `invalidateSessionListCache()` bumps the generation but **keeps** the previous scan, and the cache is fresh only while its recorded generation matches. Ordinary agent activity invalidates it frequently. Rebuilds still enumerate/stat the catalogue, attach project state and read changed relations; unchanged relation metadata is reused under scanner-validated fingerprints. Callers that only need metadata — mapping search hits to sidebar rows — pass `listAllSessions({ allowStale: true })` to read the previous scan and let the rebuild happen in the background. A stale scan is a complete catalogue apart from sessions created seconds ago, so those callers accept a brief window where a brand-new session is not yet listed.
 - `useAgentSession` treats per-session SSE as primary for chat events and opens it before each prompt. `prompt_done` completes the current UI stage and notification immediately, but the idle SSE stays open for a 30-second grace window and is reused by the next prompt. `agent_start` cancels that close timer; `agent_settled` finishes extension-injected runs that have no wrapper-level `prompt_done` and starts a fresh grace window. Do not close on the first `agent_end`: retries, compaction, and extension-queued messages can continue the same logical prompt.
 - While a run is active, `useAgentSession` periodically calls `GET /api/agent/[id]` and also reconciles on `visibilitychange`/`online`. This fixes missed terminal events from background tabs or half-open connections.
 - Prompt runs use a monotonic run id; late SSE or slow reconciliation responses from an old run must be ignored so they cannot resurrect stale streaming bubbles.

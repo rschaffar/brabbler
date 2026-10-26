@@ -1,7 +1,15 @@
 # Pi Web production latency — profiling plan
 
-**Status: bounded host-local profiling checkpoint complete; dominant production
-bottleneck identified. No optimization implemented.** The user authorized local
+**Current status: first slice implemented and focused-verified; full acceptance pending.** The
+user subsequently requested thorough planning/review and implementation. The
+current Plan below owns that continuation; the retained profiling sections describe
+the earlier checkpoint, not a continuing prohibition on source edits or sandboxed
+checks. No live deployment, restart, fresh inspector probe or remote publication
+is authorized. Continue in the existing clean dedicated worktree, whose base still
+matches current local main `b9774c017d1617ebf37bd37ceb9852c717096ec8`.
+
+**Earlier profiling checkpoint: complete; dominant production bottleneck identified.
+No optimization had been implemented at that checkpoint.** The user authorized local
 Chrome timing-only capture under normal desktop load, metadata-selected chats,
 authenticated read requests, and then one separately approved 20-second CPU probe
 using the worker's temporary loopback inspector. The inspector is closed and the
@@ -18,8 +26,156 @@ Find where Deep Thought's installed Pi Web loses time during opening/reloading
 and ordinary use, particularly with a large saved-session catalogue. Rank the
 actual foreground critical-path costs and recurring responsiveness costs, rather
 than treating static complexity or acceptance-file elapsed time as attribution.
-Deliver measured findings and a small set of justified next changes, not fixes or
-a permanent profiling framework.
+The measured investigation below supplies the evidence. Now remove repeated
+relation reads/parsing for unchanged files as one bounded implementation slice,
+preserve current bounded parsing/freshness/security contracts, and obtain complete
+sandboxed acceptance. Do not promise a production speedup before separately
+authorized deployment and measurement.
+
+## Plan
+
+This is the sole active implementation control; the original profiling procedure
+below is historical evidence. User authorization covers source/tests/documentation
+and required isolated Nix verification, not changes to the installed service.
+One repository writer; independent read-only review. Reuse this worktree rather
+than creating another. Existing test-optimization and ownership plans remain out
+of scope.
+
+### Package 1 — design and independent review, before source changes
+
+- [x] Inspect the real scanner/reader/parser and owning contracts. Independent
+  design review selected reader-owned compact WeakMap reuse plus a scanner-owned
+  validated-fingerprint seam, not an accumulator rewrite. The current first-two-
+  physical-prefix-lines/256-KiB and conditional-256-KiB-tail behavior stays intact.
+- [x] Independently review the saved implementation plan before source changes.
+  Design/final-plan reviewer found no architectural blockers; clarified explicit
+  negative/race/stat assertions, existing Git permission gates and superseded
+  profiling-only scope. These amendments resolve the review before implementation.
+
+**Architecture:** scanner-private weak evidence binds a returned row to a validated
+immutable `{size, mtimeMs, ctimeMs, dev, ino}` fingerprint. Eligibility requires
+current agent-root/index ownership and exact row identity. Restored index rows are
+not eligible until this process validates them. Invalidate old eligibility on
+mismatch **before** the changed-summary branch, plus deletion/stat failure/reset/
+root changes; retaining a complete accumulator must not certify it as current.
+
+The reader memoizes only `{parentSessionId, profile, description, status}` or a
+stable `null`, keyed by eligible row identity plus evidence. Warm hits need no
+additional relation open/read/stat. Always resolve header-parent IDs against the
+fresh catalogue map; cross-file resolution and authorization are not cached.
+Expose fresh public relation objects so caller mutation cannot poison reuse.
+
+On a miss, retain `readSubagentRun` and existing bounded parsing. Use one owned
+nonblocking regular-file descriptor for prefix and conditional tail, checking its
+initial/final fingerprint against scanner evidence and revalidating the pathname
+and current eligibility before memoizing. Failed/raced validation and I/O exceptions
+must not be cached, including negative results. Pending/unstable rows remain
+uncached best-effort projections. Keep header/latest-entry path wrappers unchanged.
+The weak cache adds no persisted fields, index-version migration, transcript data,
+full SDK opens, timers, eviction framework or new authorization authority.
+
+### Package 2 — regression-first implementation
+
+- [x] Extend existing native scanner/reader test ownership with private generated
+  fixtures and process-local, restored FS observations. Force real catalogue
+  reconstruction so the 30-second outer list cache cannot mask relation work.
+  Demonstrate a meaningful baseline red: unchanged rows reopen relation files,
+  whereas the new assertion requires zero relation opens/reads.
+- [x] Add scanner evidence and compact reader reuse with descriptor-bound misses;
+  preserve full/summary listing, force/TTL/allowStale/generation behavior, archive,
+  ordering, parent identity and existing parser fallback/status semantics.
+- [x] Verify deterministic cases: unchanged subagent/fork/negative reuse; appended
+  lifecycle, same-size/mtime-restored rewrite with changed ctime, truncation,
+  replacement, deletion/recreation; parent-ID rebinding with unchanged children;
+  returned-value mutation; missing/read/validation failure recovery; changed summary
+  eligibility and subsequent hydration; persisted v2 reload/root reset; bounded
+  prefix/tail visibility and malformed/latest lifecycle behavior. Require zero
+  additional per-row synchronous stats on warm hits, line-three-only metadata to
+  stay invisible, no tail read without a prefix marker, and unchanged malformed-
+  first/latest fallback semantics. Descriptor mutation/path replacement before
+  commit must not poison reuse; a changed summary must revoke eligibility of the
+  previous complete row. Use controlled fault/barrier boundaries, not sleeps,
+  timing budgets or copied private chats.
+- [x] Update the owning incremental-scanner/polling sections of
+  `docs/session-internals.md`; re-review the changed native test effects under their
+  existing scheduling rationale. No new test file or lane promotion is planned.
+
+**Focused evidence:** `nix run .#test -- core --file lib/session-list-scanner.test.mjs`,
+plus `lib/session-reader.test.mjs` and any directly affected existing native
+incremental owner discovered during targeted test review. Save source identity,
+commands, real assertion red/green, operation counts, preparation/execution/wall
+intervals and artifact paths. No host npm/test/build or development-server fallback.
+
+### Package 3 — first coherent candidate checkpoint; stop before expansion
+
+- [x] Independently review the settled source/test delta; no material blockers.
+  Source and native dispatch/cleanup review passed. Final focused execution after
+  the last two test assertions passed 60/60 with static evidence.
+- [ ] Pause writers during export and run full acceptance from this worktree:
+  `nix run .#test -- all --workers 4 --jobs 4`, if concrete CPU/memory/concurrent-run
+  admission permits. Keep all core/static/plugin, browser/terminal and genuine
+  deployment VM checks, deadlines and failure/settlement diagnostics. Production
+  builds occur only inside Nix builders; no installed-service changes.
+- [ ] Record actual work removed and complete-command feedback separately from
+  user-visible production latency. Warm unchanged native catalogue reconstruction
+  must show zero relation content I/O; changed inputs must still refresh. A full
+  green or operation-count reduction is not a measured desktop/mobile speedup.
+- [ ] Commit coherent reviewed work only under established Git-lifecycle permission
+  (current own-project commit policy allows it); otherwise report the candidate.
+  Report the verified candidate, evidence,
+  remaining limits and separately gated next measurement. Retain resources unless
+  later integration/cleanup is explicitly authorized under the Git lifecycle.
+
+**Checkpoint/stop conditions:** failure of fingerprint eligibility, bounded parser
+parity or safe native settlement blocks acceptance; preserve evidence and fix the
+specific issue rather than hiding failures or widening deadlines. If the design
+requires a persistent schema change, full transcript retention, security relaxation
+or another service probe, stop for a scope decision. Once this candidate is verified,
+stop before adding optional work. Deployment and another ordinary production timing
+capture need a fresh bounded authorization; another inspector activation is never
+implied by historical collector scripts.
+
+**Later packages (proposed, not current completion obligations):** coalesce the
+summary/ordinary/forced/deferred startup refresh paths while preserving latest-
+generation freshness; then consider compact catalogue DTOs only after auditing
+search/title/preview consumers. Select the next package from the first candidate's
+work-removal/acceptance checkpoint and, when authorized, actual user-journey results.
+Do not bundle these into the relation-cache commit or assume the 85% sample share
+is the attainable latency reduction.
+
+### Implementation completion checklist
+
+- [x] Saved plan independently reviewed before source changes.
+- [x] First-slice source, native regression reds/greens and maintained guide verified.
+- [ ] Complete core/browser/terminal/deployment acceptance passes at recorded inputs;
+  independent source review has no unresolved material findings.
+- [ ] Exact feature state/evidence and unmeasured production gains are reported;
+  optional expansion and installed-service/remote changes have not happened.
+
+### First-slice evidence checkpoint
+
+Evidence root: `/tmp/pi-web-relation-reuse.RnNJNX/`. The baseline regression failed
+on the intended warm-reconstruction assertion: **5 relation opens/reads/fstats
+versus required zero**, with unchanged production code (49s complete focused
+command). `baseline-red.log` and `/tmp/pi-web-test-core.68cO6l/run.json` retain it.
+The first candidate's four later-case failures were fixture-observer preconditions:
+Jiti retained the first builtin namespace. `focused-1.log` retains that 43s failure;
+no unchanged retry or source workaround is claimed. File-lifetime native dispatch
+before imports corrects observation without changing production. Independent review
+confirmed the original positively observed baseline red remains valid.
+
+Final focused command selects scanner, scanner-tail and reader files together.
+`focused-2.log` passed 60/60 in47s; after final closure/unstable-scan assertions,
+`focused-3.log` passed **60/60 in49s**. The latter's fresh driver ran43.662s,
+including realization; `/tmp/pi-web-test-core.zyB9fT/run.json` binds source
+`/nix/store/p9s2yj8xs9n64j9kskx5svaspqfz6pbz-source`, core output
+`/nix/store/b1z4p3g13kdas343sj647v54ylhzsk93-pi-web-core-checks`, settled success
+and no observed survivors. Static checks passed with seven existing unrelated
+lint warnings. The existing native scanner classification remains N: private
+roots, process-local restored mocks, serial cases and joined actual calls. The
+unchanged scanner-tail owner's explicit E hold remains included, not promoted.
+These are operation-count/focused correctness results, not full acceptance or a
+production wall-time gain. Full verification follows once source/review settle.
 
 ## Context
 
@@ -148,7 +304,7 @@ does not cover this second pass. Both summary and detail paths were represented
 in preserved profile ancestry. Hidden native leaves remain unidentified; do not
 label every filesystem/buffer-descended sample as a particular native operation.
 
-**Next proposed implementation slice, requiring new authorization:** first reuse
+**Original proposed slice (subsequently authorized by the current Plan):** first reuse
 relation metadata under current file-identity/fingerprint validation, rather than
 rereading unchanged parents/subagents on every construction. Preserve append,
 rewrite/truncation, status, identity, archive and admission semantics. Then address
@@ -239,19 +395,20 @@ other scenarios are not globally exonerated by this host-local sample.
   it or reuse its historical command menu. Current
   [architecture](../architecture.md), [session](../session-internals.md),
   [feature](../feature-internals.md) and [testing](../testing.md) guides govern.
-- This plan owns interactive production profiling only. It is not another test
+- The original checkpoint owned interactive production profiling only; the current
+  Plan now owns the authorized first relation-reuse slice. It is not another test
   optimization slice, a change to Activity acknowledgement or a Git-cost census.
 
-## Non-Goals
+## Profiling non-goals (earlier checkpoint)
 
-No optimization implementation, broad subsystem audit, new telemetry platform,
+That checkpoint included no optimization implementation, broad subsystem audit, new telemetry platform,
 provider benchmarking, generated load, repeated acceptance campaign, altered
 native timers, cache deletion, forced GC, credential inspection or copying live
 chats into fixtures/builders. Preserve security, trust, freshness, ancestry,
 account/session isolation and durable-write guarantees. Do not declare a safety
 check unnecessary merely because it appears in a hot stack.
 
-## Plan
+## Original profiling procedure (historical checkpoint)
 
 ### 1. Authorize and bind the measurement environment
 

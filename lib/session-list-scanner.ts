@@ -72,6 +72,7 @@ declare global {
 	var __piWebScanIndexDir: string | undefined;
 	var __piWebScanIndexSave: PendingIndexSave | undefined;
 	var __piWebScanQueue: Promise<void> | undefined;
+	var __piWebScanFingerprints: WeakMap<ScannedSessionInfo, Readonly<Fingerprint>> | undefined;
 }
 
 function isRecord(value: unknown): value is RawEntry {
@@ -95,6 +96,26 @@ function fingerprint(stats: Stats): Fingerprint {
 function sameFingerprint(a: Fingerprint, b: Fingerprint): boolean {
 	return a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs
 		&& a.dev === b.dev && a.ino === b.ino;
+}
+
+/** Process-validated metadata evidence, never filesystem/operation authority. */
+export function getValidatedSessionScanFingerprint(info: ScannedSessionInfo): Readonly<Fingerprint> | undefined {
+	if (globalThis.__piWebScanIndexDir !== getAgentDir()
+		|| globalThis.__piWebScanIndex?.get(info.path)?.info !== info) return undefined;
+	return globalThis.__piWebScanFingerprints?.get(info);
+}
+
+export function matchesSessionScanFingerprint(expected: Readonly<Fingerprint>, stats: Stats): boolean {
+	return stats.isFile() && sameFingerprint(expected, fingerprint(stats));
+}
+
+function validateScanEntry(entry: IndexEntry): void {
+	const evidence = globalThis.__piWebScanFingerprints ??= new WeakMap();
+	if (!evidence.has(entry.info)) evidence.set(entry.info, Object.freeze({ ...entry.fp }));
+}
+
+function revokeScanEntry(entry: IndexEntry | undefined): void {
+	if (entry) globalThis.__piWebScanFingerprints?.delete(entry.info);
 }
 
 function hasGrown(cached: IndexEntry | undefined, fp: Fingerprint): cached is IndexEntry {
@@ -405,6 +426,7 @@ function loadPersistedIndex(agentDir: string): void {
 	if (globalThis.__piWebScanIndexDir !== agentDir) {
 		persistIndex();
 		globalThis.__piWebScanIndex = new Map();
+		globalThis.__piWebScanFingerprints = new WeakMap();
 		globalThis.__piWebScanIndexLoaded = undefined;
 		globalThis.__piWebScanIndexDir = agentDir;
 	}
@@ -471,20 +493,22 @@ async function listSessionsInOrder(agentDir: string, deferDetails: boolean): Pro
 	const index = getIndex(), present = new Set(files);
 	let dirty = false;
 	for (const known of index.keys()) {
-		if (!present.has(known)) { index.delete(known); dirty = true; }
+		if (!present.has(known)) { revokeScanEntry(index.get(known)); index.delete(known); dirty = true; }
 	}
 	const fingerprints = await Promise.all(files.map(async (filePath) => {
 		try { return fingerprint(await stat(filePath)); } catch { return null; }
 	}));
 	const results: Array<{ info: ScannedSessionInfo; mtimeMs: number } | null> = new Array(files.length).fill(null);
 	await runPool(files.map((filePath, i) => ({ filePath, i })), async ({ filePath, i }) => {
-		const fp = fingerprints[i];
-		if (!fp) { dirty = index.delete(filePath) || dirty; return; }
-		const cached = index.get(filePath);
+		const fp = fingerprints[i], cached = index.get(filePath);
+		if (!fp) { revokeScanEntry(cached); dirty = index.delete(filePath) || dirty; return; }
 		if (cached && sameFingerprint(cached.fp, fp)) {
+			validateScanEntry(cached);
 			results[i] = { info: cached.info, mtimeMs: fp.mtimeMs };
 			return;
 		}
+		// A pending summary retains the complete accumulator, not its eligibility.
+		revokeScanEntry(cached);
 		if (deferDetails) {
 			try {
 				const info = await deferredSessionInfo(filePath, fp);
@@ -497,7 +521,7 @@ async function listSessionsInOrder(agentDir: string, deferDetails: boolean): Pro
 		const scanned = await scanSessionFile(filePath, hasGrown(cached, fp) ? cached : undefined);
 		dirty = true;
 		if (scanned) {
-			if (scanned.stable) index.set(filePath, scanned.entry);
+			if (scanned.stable) { index.set(filePath, scanned.entry); validateScanEntry(scanned.entry); }
 			else index.delete(filePath); // External writer raced us: do not persist mixed totals/checkpoints.
 			results[i] = { info: scanned.entry.info, mtimeMs: scanned.entry.fp.mtimeMs };
 		} else index.delete(filePath);
@@ -525,6 +549,7 @@ export function flushSessionScanIndexForTests(): void { persistIndex(); }
 export function resetSessionScanIndexForTests(): void {
 	clearTimeout(globalThis.__piWebScanIndexSave?.timer);
 	globalThis.__piWebScanIndex = undefined;
+	globalThis.__piWebScanFingerprints = undefined;
 	globalThis.__piWebScanIndexLoaded = undefined;
 	globalThis.__piWebScanIndexDir = undefined;
 	globalThis.__piWebScanIndexSave = undefined;
