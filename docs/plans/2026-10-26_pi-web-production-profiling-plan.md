@@ -1,6 +1,10 @@
 # Pi Web production latency — profiling plan
 
-**Current status: first slice implemented and focused-verified; full acceptance pending.** The
+**Current status: first relation-reuse slice implemented, independently reviewed,
+and fully sandbox-verified at `ade48c7a9aa6904f0ddeb5dde63afff9bfe12747`.**
+This is the first coherent-candidate checkpoint, not completion of the optional
+refresh/payload work or proof of a deployed production latency improvement.
+Profiling observations below remain the pre-change installed-service baseline. The
 user subsequently requested thorough planning/review and implementation. The
 current Plan below owns that continuation; the retained profiling sections describe
 the earlier checkpoint, not a continuing prohibition on source edits or sandboxed
@@ -111,16 +115,16 @@ intervals and artifact paths. No host npm/test/build or development-server fallb
 - [x] Independently review the settled source/test delta; no material blockers.
   Source and native dispatch/cleanup review passed. Final focused execution after
   the last two test assertions passed 60/60 with static evidence.
-- [ ] Pause writers during export and run full acceptance from this worktree:
+- [x] Pause writers during export and run full acceptance from this worktree:
   `nix run .#test -- all --workers 4 --jobs 4`, if concrete CPU/memory/concurrent-run
   admission permits. Keep all core/static/plugin, browser/terminal and genuine
   deployment VM checks, deadlines and failure/settlement diagnostics. Production
   builds occur only inside Nix builders; no installed-service changes.
-- [ ] Record actual work removed and complete-command feedback separately from
+- [x] Record actual work removed and complete-command feedback separately from
   user-visible production latency. Warm unchanged native catalogue reconstruction
   must show zero relation content I/O; changed inputs must still refresh. A full
   green or operation-count reduction is not a measured desktop/mobile speedup.
-- [ ] Commit coherent reviewed work only under established Git-lifecycle permission
+- [x] Commit coherent reviewed work only under established Git-lifecycle permission
   (current own-project commit policy allows it); otherwise report the candidate.
   Report the verified candidate, evidence,
   remaining limits and separately gated next measurement. Retain resources unless
@@ -147,9 +151,9 @@ is the attainable latency reduction.
 
 - [x] Saved plan independently reviewed before source changes.
 - [x] First-slice source, native regression reds/greens and maintained guide verified.
-- [ ] Complete core/browser/terminal/deployment acceptance passes at recorded inputs;
+- [x] Complete core/browser/terminal/deployment acceptance passes at recorded inputs;
   independent source review has no unresolved material findings.
-- [ ] Exact feature state/evidence and unmeasured production gains are reported;
+- [x] Exact feature state/evidence and unmeasured production gains are reported;
   optional expansion and installed-service/remote changes have not happened.
 
 ### First-slice evidence checkpoint
@@ -165,8 +169,8 @@ before imports corrects observation without changing production. Independent rev
 confirmed the original positively observed baseline red remains valid.
 
 Final focused command selects scanner, scanner-tail and reader files together.
-`focused-2.log` passed 60/60 in47s; after final closure/unstable-scan assertions,
-`focused-3.log` passed **60/60 in49s**. The latter's fresh driver ran43.662s,
+`focused-2.log` passed 60/60 in 47s; after final closure/unstable-scan assertions,
+`focused-3.log` passed **60/60 in 49s**. The latter's fresh driver ran 43.662s,
 including realization; `/tmp/pi-web-test-core.zyB9fT/run.json` binds source
 `/nix/store/p9s2yj8xs9n64j9kskx5svaspqfz6pbz-source`, core output
 `/nix/store/b1z4p3g13kdas343sj647v54ylhzsk93-pi-web-core-checks`, settled success
@@ -174,8 +178,44 @@ and no observed survivors. Static checks passed with seven existing unrelated
 lint warnings. The existing native scanner classification remains N: private
 roots, process-local restored mocks, serial cases and joined actual calls. The
 unchanged scanner-tail owner's explicit E hold remains included, not promoted.
-These are operation-count/focused correctness results, not full acceptance or a
-production wall-time gain. Full verification follows once source/review settle.
+These establish operation-count/focused correctness, not a production wall-time gain.
+
+**Complete acceptance:** at commit `ade48c7a9aa6904f0ddeb5dde63afff9bfe12747`,
+`nix run .#test -- all --workers 4 --jobs 4` passed in **462.423s command wall**,
+including in-command realization, without separate prerequisite prewarming.
+Core/static/plugin coverage: **510 files /4,208 tests /14 suites**, no failures,
+skips, cancellations or unstarted files. All **26 browser/terminal groups /59
+scenario receipts** and the genuine Home Manager deployment/HTTP/PTY/restart/
+shutdown VM checks passed. Source export digest:
+`41c31e46d67a5d9b7ac698d32c5414102a06259966c934f4b4e57c795125c87f`.
+Package: `/nix/store/jbglz2yn9cibcjn4smp6b753w325f97w-pi-web-0.9.3`.
+
+Requested/effective core width was **4/4**, browser width **4**; combined admission
+estimated 16 CPUs/27 GiB, with 32 CPUs/about 42 GiB available. This was an admitted
+normal-load overlapping run, not a machine reservation/exclusivity claim.
+Core driver **408.728s**, actual file-execution envelope **405.386s**. Browser
+prerequisite realization **102.582s**, definition publication **6.554s**, group
+execution envelope **261.250s**, total driver **370.391s**. Deployment driver
+**84.270s**, guest evidence interval **22.380s**; do not label their subtraction an
+isolated preparation measurement. These overlapping envelopes are not additive.
+The new application package was built inside Nix. No matched acceptance speedup
+or application latency gain is inferred from these timings or historical runs.
+
+Authoritative records: `full-command.json`, `full.log`, `acceptance-summary.json`
+in the evidence root; `/tmp/pi-web-test-source-J02AOF/selection.json`,
+`/tmp/pi-web-test-core.XDudTA/run.json`, `/tmp/pi-web-test-browser.QGNj4f/run.json`
+and `/tmp/pwv-gU6xgv/run.json`. Core output:
+`/nix/store/fjx1972khqv31q06k7r1hnssrmzwsmk1-pi-web-core-checks`.
+All exact expected/completed browser receipts and source/run bindings were checked;
+owned clients settled, browser ports closed, and guest service inactive/MainPID0/
+empty-or-absent cgroups/port refused. Existing lint/hold warnings remain visible;
+Nix also printed an ignored evaluation-cache-busy diagnostic, not a failed test.
+No live deployment/restart/probe, remote operation or feature cleanup occurred.
+
+**Next owner/decision:** this active plan retains deferred refresh coalescing and
+payload proposals plus the separately authorized deployment/real-use comparison.
+Stop expansion here. An evidence-only follow-up changes no application/test inputs;
+its documentation checks do not relabel the preceding suite as a new-tip execution.
 
 ## Context
 
@@ -229,8 +269,10 @@ The user logged in manually in that browser. No authentication settings changed.
 
 The running reference is now
 `/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web`.
-All 15 scoped source files match this checkout byte-for-byte; the old package's
-four UI/lifecycle differences no longer represent current deployment drift.
+At capture, all 15 scoped source files matched the profiling checkout byte-for-byte;
+the old package's four UI/lifecycle differences no longer represented deployment
+drift. The later first-slice implementation changes the reader/scanner intentionally
+and has not been deployed to this installed reference.
 Declared SDK is 1.3.0, Next 16.4.2; the actual server executable is Node 24.21.0.
 The owned capture browser is Chrome 155 on Linux x86_64, not Firefox or a real
 mobile device. The host exposes 32 logical CPUs; normal desktop load is present.
@@ -296,10 +338,10 @@ Other bounded observations:
   bytes (55.7%)**. This is data-size attribution, not timing attribution.
 
 The high-confidence production call path is
-[summary/full list construction](../../lib/session-reader.ts#L242-L258) → each
-[relation resolution](../../lib/session-reader.ts#L191-L207) →
-[prefix/tail reads and JSON parsing](../../lib/session-reader.ts#L27-L154).
-The scanner's [unchanged-file shortcut](../../lib/session-list-scanner.ts#L483-L486)
+[summary/full list construction](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-reader.ts#L242-L258) → each
+[relation resolution](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-reader.ts#L191-L207) →
+[prefix/tail reads and JSON parsing](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-reader.ts#L27-L154).
+The scanner's [unchanged-file shortcut](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-list-scanner.ts#L483-L486)
 does not cover this second pass. Both summary and detail paths were represented
 in preserved profile ancestry. Hidden native leaves remain unidentified; do not
 label every filesystem/buffer-descended sample as a particular native operation.
@@ -346,8 +388,8 @@ production owner was established. No speedup is claimed.
    before initial session adoption, then schedules forced detail hydration after
    750 ms. That timer is not an additional awaited chat-opening gate.
    [Summary/detail routing](../../app/api/sessions/route.ts#L19-L38) reaches
-   [enumeration/stat/scanning](../../lib/session-list-scanner.ts#L468-L518), then
-   [synchronous relation prefix/tail reads and project attachment](../../lib/session-reader.ts#L141-L258).
+   [enumeration/stat/scanning](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-list-scanner.ts#L468-L518), then
+   [synchronous relation prefix/tail reads and project attachment](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-reader.ts#L141-L258).
    Relation work is outside the incremental transcript cache. Run completion,
    catalogue-version observation and selected-row hydration can also initiate
    overlapping catalogue requests. Project resolution has stale-while-revalidate
@@ -363,7 +405,7 @@ production owner was established. No speedup is claimed.
 3. **Selected-chat history and SDK startup.** The
    [history route](../../app/api/sessions/[id]/route.ts#L63-L89) builds the full
    tree and all-entry statistics despite returning a bounded message window.
-   A [manager cache miss](../../lib/session-reader.ts#L468-L547) opens/parses the
+   A [manager cache miss](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-reader.ts#L468-L547) opens/parses the
    file synchronously; files above 64 MiB are not retained in that cache. A live
    wrapper can avoid that open. Installed `hooks/useAgentSession.ts:1067–1094`
    maintains the selected chat's SSE connection, whose
@@ -371,7 +413,7 @@ production owner was established. No speedup is claimed.
    Installed `lib/rpc-manager.ts:3002–3297` constructs session-bound resources.
    This warm-up runs alongside history loading; do not add them as serial costs.
 4. **Periodic synchronous persistence.** A dirty scan queues a five-second
-   coalesced [full index serialization/write](../../lib/session-list-scanner.ts#L448-L465)
+   coalesced [full index serialization/write](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-list-scanner.ts#L448-L465)
    through the [synchronously flushed atomic writer](../../lib/atomic-file.ts#L9-L21).
    Background scheduling does not make that work nonblocking. It is conditional
    on dirty scans, not a guaranteed write on every idle poll.
@@ -621,7 +663,8 @@ measured journey is not a demonstrated user bottleneck. No fixes execute here.
 - [x] Next fixes are recommendations only; no unauthorized implementation, tests,
   service changes, publication or cleanup occur.
 
-**Known gaps:** one bounded, non-machine-exclusive host-local Chrome dataset, not
+**Profiling-checkpoint known gaps (historical; post-change production comparison
+still pending):** one bounded, non-machine-exclusive host-local Chrome dataset, not
 statistical, cold-service, real Firefox/mobile/PWA or successful SPA pointer proof.
 Composer timestamps are observed enabled-state upper bounds, not exact first paint
 or INP. Other clients' counts and exact request initiators were not tracked; weighted
