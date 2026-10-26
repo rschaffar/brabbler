@@ -2,7 +2,7 @@ import {
   SessionManager,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { closeSync, constants, type Dirent, fstatSync, openSync, readSync, statSync } from "fs";
+import { closeSync, constants, type Dirent, fstatSync, openSync, readSync, statSync, type Stats } from "fs";
 import { readdir } from "fs/promises";
 import { sessionDirectoryState } from "./session-worktrees-inventory";
 import { isAbsolute, join, normalize as normalizePath, relative, resolve as resolvePath, sep } from "path";
@@ -11,7 +11,7 @@ import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
 import { resolveProject, type ProjectInfo } from "./worktree";
 import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
-import { listSessionsIncremental, type ScannedSessionInfo } from "./session-list-scanner";
+import { getValidatedSessionScanFingerprint, listSessionsIncremental, matchesSessionScanFingerprint, type ScannedSessionInfo } from "./session-list-scanner";
 
 export { getAgentDir };
 export { buildSessionContext, getLatestModelChange, sliceActiveBranch } from "./session-context";
@@ -24,8 +24,8 @@ const SESSION_RESULT_MAX_BYTES = 256 * 1024;
 // Bounded probe for the newest entry id; never reads a whole session file.
 const SESSION_TAIL_PROBE_MAX_BYTES = 64 * 1024;
 
-function readBoundedLines(filePath: string, maxBytes: number, maxLines: number): string[] {
-  const fd = openSync(filePath, constants.O_RDONLY | constants.O_NONBLOCK);
+function readBoundedLines(filePath: string, maxBytes: number, maxLines: number, descriptor?: number): string[] {
+  const fd = descriptor ?? openSync(filePath, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
     if (!fstatSync(fd).isFile()) return [];
     const chunks: Buffer[] = [];
@@ -60,12 +60,12 @@ function readBoundedLines(filePath: string, maxBytes: number, maxLines: number):
     if (lines.at(-1) === "") lines.pop();
     return lines.map((line) => line.endsWith("\r") ? line.slice(0, -1) : line);
   } finally {
-    closeSync(fd);
+    if (descriptor === undefined) closeSync(fd);
   }
 }
 
-function readBoundedTailLines(filePath: string, maxBytes: number): string[] {
-  const fd = openSync(filePath, "r");
+function readBoundedTailLines(filePath: string, maxBytes: number, descriptor?: number): string[] {
+  const fd = descriptor ?? openSync(filePath, "r");
   try {
     const fileSize = fstatSync(fd).size;
     const start = Math.max(0, fileSize - maxBytes);
@@ -82,7 +82,7 @@ function readBoundedTailLines(filePath: string, maxBytes: number): string[] {
     if (lines.at(-1) === "") lines.pop();
     return lines.map((line) => line.endsWith("\r") ? line.slice(0, -1) : line);
   } finally {
-    closeSync(fd);
+    if (descriptor === undefined) closeSync(fd);
   }
 }
 
@@ -138,19 +138,27 @@ export function readLatestSessionEntryId(filePath: string | undefined): string |
   return undefined;
 }
 
-function readSessionRelationEntries(filePath: string): SessionEntry[] {
-  const prefixEntries = parseSessionEntries(
-    readBoundedLines(filePath, SESSION_RELATION_MAX_BYTES, SESSION_RELATION_MAX_LINES).slice(1),
-  );
-  const isSubagent = prefixEntries.some((entry) => (
-    entry.type === "custom" && entry.customType === SUBAGENT_META_TYPE
-  ));
-  if (!isSubagent) return prefixEntries;
+function readSessionRelationEntries(filePath: string, observe: (stats: Stats) => void): SessionEntry[] {
+  const fd = openSync(filePath, constants.O_RDONLY | constants.O_NONBLOCK);
+  try {
+    const initial = fstatSync(fd);
+    observe(initial);
+    if (!initial.isFile()) return [];
+    const prefixEntries = parseSessionEntries(
+      readBoundedLines(filePath, SESSION_RELATION_MAX_BYTES, SESSION_RELATION_MAX_LINES, fd).slice(1),
+    );
+    const isSubagent = prefixEntries.some((entry) => (
+      entry.type === "custom" && entry.customType === SUBAGENT_META_TYPE
+    ));
+    if (!isSubagent) return prefixEntries;
 
-  return [
-    ...prefixEntries,
-    ...parseSessionEntries(readBoundedTailLines(filePath, SESSION_RESULT_MAX_BYTES)),
-  ];
+    return [
+      ...prefixEntries,
+      ...parseSessionEntries(readBoundedTailLines(filePath, SESSION_RESULT_MAX_BYTES, fd)),
+    ];
+  } finally {
+    try { observe(fstatSync(fd)); } finally { closeSync(fd); }
+  }
 }
 
 export async function attachSessionProjectInfo(sessions: SessionInfo[]): Promise<SessionInfo[]> {
@@ -186,7 +194,40 @@ export function mergeSessionLists(
   return [...byId.values()].sort((a, b) => b.modified.localeCompare(a.modified));
 }
 
-type ScannedSubagent = NonNullable<ReturnType<typeof readSubagentRun>>;
+type ScannedSubagent = Readonly<Pick<NonNullable<ReturnType<typeof readSubagentRun>>,
+  "parentSessionId" | "profile" | "description" | "status">>;
+type ScanFingerprint = NonNullable<ReturnType<typeof getValidatedSessionScanFingerprint>>;
+
+declare global {
+  var __piSessionRelationCache: WeakMap<ScannedSessionInfo, { fingerprint: ScanFingerprint; subagent: ScannedSubagent | null }> | undefined;
+}
+
+function readScannedSubagent(scanned: ScannedSessionInfo): ScannedSubagent | null {
+  const fingerprint = getValidatedSessionScanFingerprint(scanned);
+  const cache = globalThis.__piSessionRelationCache ??= new WeakMap();
+  const cached = cache.get(scanned);
+  if (fingerprint && cached?.fingerprint === fingerprint) return cached.subagent;
+
+  let stable = fingerprint !== undefined;
+  const entries = readSessionRelationEntries(scanned.path, (stats) => {
+    stable = stable && fingerprint !== undefined && matchesSessionScanFingerprint(fingerprint, stats);
+  });
+  const run = readSubagentRun(entries, scanned.id, scanned.path);
+  // Never retain transcripts, task/result text or resource snapshots in this cache.
+  const subagent = run ? Object.freeze({
+    parentSessionId: run.parentSessionId, profile: run.profile,
+    description: run.description, status: run.status,
+  }) : null;
+  if (stable && fingerprint) {
+    try {
+      if (matchesSessionScanFingerprint(fingerprint, statSync(scanned.path))
+        && getValidatedSessionScanFingerprint(scanned) === fingerprint) {
+        cache.set(scanned, { fingerprint, subagent });
+      }
+    } catch { /* Best-effort projection, but failed validation must never be cached. */ }
+  }
+  return subagent;
+}
 
 function resolveScannedSessionRelation(
   scanned: ScannedSessionInfo,
@@ -198,7 +239,7 @@ function resolveScannedSessionRelation(
   if (!scanned.parentSessionPath) return { originSessionId, subagent: null };
 
   try {
-    const subagent = readSubagentRun(readSessionRelationEntries(scanned.path), scanned.id, scanned.path);
+    const subagent = readScannedSubagent(scanned);
     return { originSessionId, subagent };
   } catch {
     // Malformed or concurrently removed session.
@@ -271,9 +312,9 @@ export async function listAllSessions(options: { force?: boolean; allowStale?: b
 
   // Callers that only need session metadata — mapping search hits onto sidebar
   // rows, for example — can take the previous scan and let the rebuild happen in
-  // the background. A rebuild costs hundreds of milliseconds because it re-reads
-  // every forked and subagent session, and it is triggered by ordinary agent
-  // activity rather than by anything the caller did.
+  // the background. Rebuilds still enumerate/stat the catalogue, attach project
+  // state and read changed relations. Ordinary agent activity invalidates them;
+  // unchanged relation metadata is reused under the scanner's fingerprint.
   if (options.allowStale && cache) {
     void listAllSessions().catch(() => undefined);
     return cache.data;
