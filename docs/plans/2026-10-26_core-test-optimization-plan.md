@@ -1,7 +1,7 @@
 # Core test optimization — investigation and proposed execution
 
-**Status: P1–P3 complete and integrated; opportunity #4's bounded non-RPC
-investigation is complete with a measured stop and no cache adopted.** P3 and its
+**Status: P1–P3 and opportunity #4 are integrated; #4 stopped without a cache.
+Opportunity #6 is explicitly authorized and in progress; #5 remains deferred.** P3 and its
 Move correction were merged into local main at `666a75ef71ae6ae5057fa4e5b1b2124c6ebf3b19`; the five prior
 feature worktrees/branches were subsequently cleaned up by explicit request.
 Their retained-state narratives below are historical, not current resource claims.
@@ -16,8 +16,10 @@ into local main at `0d5d914515057c957b47a7b92d9164ddacd98bc7`. A subsequent expl
 request authorized P2 only: measure repeated RPC fixture preparation, adopt only a
 demonstrated simple reduction, preserve isolation, verify and retain local feature
 commits. P2 integration was separately authorized afterwards. Opportunity #3 now
-has its historical bounded authority below; the current #4 scope follows.
-Opportunities #5–6 and the separate Node compile-cache candidate remain deferred.
+has its historical bounded authority below; #4 and the current #6 scope have
+separate explicit dispositions below.
+Opportunity #5 and the separate Node compile-cache candidate remain deferred.
+The current #6 authority and bounded execution are recorded below.
 Historical investigation and P1/P2 evidence retain their original identities.
 
 ## Goal
@@ -1327,6 +1329,148 @@ publication, feature/historical cleanup or next opportunity is attempted.
 - [x] Remove instrumentation and retain feature resources unintegrated; stop before
   another opportunity. The final feature tip is reported in the handoff.
 
+## Opportunity #6 — bounded Git setup/probe investigation
+
+The user explicitly selected #6 now, independently of deferred #5. Checked clean
+local main is `e8a0ba6be95dcd25882ebdb2146d2d464663dccf`. Dedicated branch
+`perf/git-probe-amplification`, linked worktree
+`/home/robert/projects/3rdparty/pi-desk-worktrees/git-probe-amplification`;
+CodeGraph initialized before code research. One writer owns source and checks.
+Implementation, independent review, existing Nix checks and local feature commits
+are authorized; rebase/integration/publication/resource cleanup/session launch are not.
+
+- [x] Measure the actual cleanup receiver and its existing 25-root case, separating
+  fixture/settings/import preparation from native Git and child launch envelopes.
+- [x] Test one coherent ordered private-setup batching candidate, retaining every
+  real native Git command and all production capture/revalidation checkpoints.
+- [ ] Independently review exact source and verify actual changed semantics;
+  diagnostics are removed; complete normal four/four acceptance at this first coherent candidate.
+- [ ] Record exact source/dependency/command/timing evidence, failures and limits;
+  retain feature resources unintegrated and stop without starting #5 or another slice.
+
+Initial diagnostic: `nix run .#test -- core --jobs 4 --file
+plugins/git-workflow/cleanup.test.mjs` passes all113 tests. Only temporary inline
+scalar/process diagnostics are present. File envelope73.069s;92 fixture calls
+spend5.950s in Git setup and0.810s in initial settings, with1.204s imports. The real
+25-root case is8.531s and launches2,015 native Git commands (including setup and
+settings). Summed dispatch-to-close/synchronous-return envelopes are8.523s versus
+1.248s of Git Trace2 elapsed. Producer/consumer intervals overlap, and Trace2
+includes waits: their difference is not isolated fork/CPU time. It nonetheless
+attributes the dominant interval to launch/probe amplification, not large fixture
+bytes or expensive graph computation. No epoch can be cached away.
+
+`checkout` is a narrow production checkpoint with fresh identity, registration,
+root, idle/index, graft and filter observations. The existing operation-marker
+lookup already batches six paths. Combining more observations would move reads
+across existing validation/error ordering; ref-format, commit and direct-ref
+checks likewise have different native meanings. This task first tests the simpler
+fixture-only reduction instead of changing those production semantics. Real initial
+settings writers stay intact (only0.810s measured), including all revocation,
+durability, origin, caller and later-update coverage. No seeds or fixture shrinking.
+
+### Adopted candidate and matched focused evidence
+
+Only `cleanup.test.mjs`'s initial repository constructor delegates to new private
+`cleanup-setup.fixture.mjs`. Eleven unchanged native commands and their interleaved
+file writes run serially through one fixed POSIX shell dispatch. All paths are
+quoted positional argv, not interpolated program text; only two full OIDs cross
+the output frame. First failure stops later work. Windows retains the original
+individual dispatches. No seed, copied administration, mock mutation, settings
+materialization, result/identity cache, production rewrite or worker/lane change.
+`docs/testing.md` owns this narrow fixture mechanism. Server/discard are not helper
+consumers and were not additional optimization slices.
+
+Sequential baseline/candidate commands were identical:
+
+```sh
+nix run .#test -- core --jobs 4 --file plugins/git-workflow/cleanup.test.mjs
+```
+
+Both pass113 original tests,29 exporter contracts and mandatory static evidence.
+Original body tail is byte-identical; all original outcomes and order match.
+Inline diagnostics match exactly, including Trace2 attribution for the25-root
+case. Native x86_64 Linux/Node24.21.0,32 observed CPUs, requested/effective four
+core slots, one selected N file, no browser/service overlap. Admission observed
+53,109,923,840 /52,959,440,896 available bytes, not machine reservations.
+
+| Seconds / identity | Baseline | Setup-batched diagnostic candidate |
+| --- | --- | --- |
+| Command wall including realization/export |111.674|108.650|
+| Outer preparation before lifecycle |32.482|32.601|
+| Core lifecycle / post-lifecycle |74.043 /0.106|71.107 /0.095|
+| Lifecycle preparation / final settlement |0.794 /0.046|0.801 /0.049|
+| Selected-file / pool / summed work |73.203|70.258|
+| Initial Git setup,92 fixtures |5.950|3.878|
+| Initial settings / imports |0.810 /1.204|0.827 /1.210|
+|25-root body |8.531|9.063|
+|25-root production-body dispatches |2,002|2,002|
+| Immutable source |`/nix/store/1alvs061mr0qh08ax62q6cnkcq9yb8j9-source`|`/nix/store/2hc1n62hya6grq4sii1rxr4b4ziqp4wl-source`|
+| Core report |`/tmp/pi-web-test-core.cdsAni/run.json`|`/tmp/pi-web-test-core.DnUBw4/run.json`|
+| Core output |`/nix/store/apa5ifin5w46p377lxbs4jvj37fahzm0-pi-web-core-checks`|`/nix/store/k48ci17cav6bpzfmidx02k4v4a6269di-pi-web-core-checks`|
+| Detailed directory within output |`artifacts/run-kIlM1U/`|`artifacts/run-3GlFLD/`|
+
+`focused-evidence.json` retains source/content-mode digests, static sources and
+toolchain identities.
+Both use runtime modules `/nix/store/28vpp6bpxj0algr4b4xigfca399flcmi-pi-web-node-modules-0.9.3`
+and private support `/nix/store/1gps3kh9225x4axd5j4b119i9dhchlln-pi-web-test-support-1.0.0`.
+Baseline executes lint and reuses main's type evidence; candidate executes changed
+fixture typegen/tsc and lint. Their32.5s outer preparation envelopes include mixed
+realization/static/export costs, not isolated compilation or Git CPU.
+No separate preparation command was used. E is empty; pool and summed-file work
+coincide because only one file executes despite four admitted slots.
+
+**Measured work reduction:** initial setup saves2.072s /34.82% over92 constructions.
+Node dispatches for that setup fall1,012 native launches →92 shell launches, while
+all1,012 native Git commands remain. File execution falls2.946s in this one pair;
+not all of that delta is attributable to setup. Production25-root body gets slower,
+not faster. Its observations are intentionally unchanged. The dominant remaining
+production probe overhead is not removed, and no interactive-app, whole-suite,
+cold-cache, statistical, ARM or CI speedup is claimed. P3 totals are not a baseline.
+
+### Controls, review and final-source boundary
+
+Two additive native controls preserve literal metacharacter/Unicode paths (plus
+POSIX quotes/newlines), exact file/config bytes, actual linked administration,
+returned OIDs and two-parent merge history; and force real `worktree add` failure,
+requiring original blocked-file bytes, native nonzero status, Base-only history
+and one registration. Original113 bodies/inputs/assertions/deadlines remain exact.
+A Windows-legal path variant preserves portability without skipping a test.
+
+The omitted-`-e` fault fails precisely `failed setup cannot dispatch the later
+feature write`: actual `feature\\n` versus `untouched\\n`, not a compile/import/setup
+admission failure.114 other cases pass, no skips/cancellations or uncertain files
+or observed survivors. Command110.051s, report `/tmp/pi-web-test-core.ZShi15/run.json`,
+source `/nix/store/8l5fp1dkqlcqiiv01240ych10r759kc9-source`; exact failed derivation
+and retained build root are in `failure-stop-red.log`. No unchanged retry is used.
+
+Independent review `01a1789a-361d-7402-ad52-00aaab1bcfc6` found two small hardening
+issues: retain setup stdout in a captured pipe rather than `/dev/null`, and require
+full OID-output consumption. Both are corrected. The shell waits every foreground
+native child in order and final captured-pipe EOF; unlike individual dispatches,
+EOF is joined at shell completion, not after each command. Review accepts that
+bounded initial-fixture change, not arbitrary escaped-descendant certification.
+Production child/process ownership and all approval/capture epochs are untouched.
+The timed pair precedes this pipe/framing hardening and the new controls; do not
+relabel it as exact final-source timing.
+
+Restored/hardened, diagnostic-free focused green passes115 tests,29 exporter
+contracts and fresh changed-input typegen/tsc/lint: command114.887s, outer preparation
+36.905s, lifecycle73.014s, file72.083s, report `/tmp/pi-web-test-core.qi1sAB/run.json`,
+source `/nix/store/z4y2pwb5nb60ikgrh83a29gj8sb1k192-source`, output
+`/nix/store/disb1d385rlbv99q9y6hk4hyxzq5cj2v-pi-web-core-checks`.
+A subsequent review corrected only the new test's Windows path variant; Linux
+runtime inputs are identical. Final exact-source review approves helper SHA256
+`b1821582b928269df2e9b6529cf4a8f6485485bbf7c54256d9e3cc2710c9032f`, receiver
+`70b772ee6ffefc776a90bf626c248532c39ddd662b65dc2659457998e84673b5` and guide
+`72bbc69fae45375eb8310015d51e45bd3ffbc397c62d6f0bdfee72b99927d55b`, with no
+remaining blockers. Complete acceptance must execute that final source.
+
+Raw patches/logs/timestamps, scalar extraction, exact source/outcome/dependency
+comparisons and analysis scripts remain in `/tmp/pi-web-p6-git.nBG7cY/`, especially
+`focused-evidence.json`, `baseline-profile.json`, `candidate-profile.json` and
+`source-conservation.json`. Diagnostics are absent from adopted code. This is the
+first coherent candidate; no optional expansion or full-suite timing campaign.
+
 ## Completion Checklist
 
 ### This analysis
@@ -1390,6 +1534,7 @@ its single pair shows no meaningful whole-feedback speedup and has the recorded
 deployment-realization/contention limits. Opportunity #4 measures one navigation
 receiver under its existing default module caching, not all fixtures, browser-lower
 execution or module-cache-disabled/environment-transition behavior; no speedup is
-claimed. Native-tools/Pause failure-lifetime gates, opportunities #5–6, native
-cache/fence compatibility and other SDK loader/resource
-closures remain deferred. Simulations are not promises.
+claimed. #6 has one focused instrumented pair for initial setup and unchanged
+production probes; final complete acceptance is pending. Native-tools/Pause
+failure-lifetime gates, opportunity #5, native cache/fence compatibility and other
+SDK loader/resource closures remain deferred. Simulations are not promises.

@@ -6,6 +6,7 @@ import { finished } from "node:stream/promises";
 import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { nativeCleanupAccess } from "./cleanup-access.fixture.mjs";
+import { setupCleanupRepository } from "./cleanup-setup.fixture.mjs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,14 +26,7 @@ function fixture(t) {
   const old = process.env.PI_CODING_AGENT_DIR; process.env.PI_CODING_AGENT_DIR = join(root, "agent");
   t.after(() => { if (old === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = old; rmSync(root, { recursive: true, force: true }); });
   const repo = join(root, "repo"), path = join(root, "feature");
-  git(root, "init", "-qb", "main", repo); git(repo, "config", "user.name", "Fixture"); git(repo, "config", "user.email", "fixture@example.invalid");
-  writeFileSync(join(repo, ".gitignore"), "node_modules/\n.codegraph/\n.next/\ntest-results/\nnext-env.d.ts\nunknown/\n");
-  writeFileSync(join(repo, "source"), "base\n"); git(repo, "add", "."); git(repo, "commit", "-qm", "Base");
-  git(repo, "worktree", "add", "-b", "feature", path);
-  writeFileSync(join(path, "source"), "feature\n"); git(path, "add", "."); git(path, "commit", "-qm", "Feature");
-  const featureTip = git(path, "rev-parse", "HEAD");
-  git(repo, "merge", "--no-ff", "--no-edit", "feature");
-  const integrationCommit = git(repo, "rev-parse", "HEAD");
+  const { featureTip, integrationCommit } = setupCleanupRepository(root, repo, path);
   const set = (values) => updatePluginSettings(manifest, "project", repo, values, []);
   updatePluginSettings(manifest, "global", repo, { enabled: true }, []);
   set({ targetBranch: "main", targetSelection: "configured", cleanupFeature: "ask", approvedArtifactRoots: "node_modules, .codegraph, .next" });
@@ -737,4 +731,45 @@ test("more than sixteen generated roots remain a single exact approved cleanup",
   assert.equal(f.receipts[0].card.sections[0].fields.length, 24);
   assert.match(f.receipts[0].card.sections[0].text, /24 of 25/);
   assert.ok(f.receipts[0].card.review);
+});
+
+test("cleanup setup preserves literal shell metacharacters and embedded newlines in native repository paths", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "pi-cleanup-argv-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  // Windows keeps its native dispatch path and accepts neither quotes nor LF.
+  const unusual = process.platform === "win32" ? " ' $(printf escaped) ; λ" : " ' \" $(printf escaped) ; λ\n";
+  const repo = join(root, `repo${unusual}main`), path = join(root, `feature${unusual}linked`);
+  const { featureTip, integrationCommit } = setupCleanupRepository(root, repo, path);
+  assert.equal(git(path, "rev-parse", "HEAD"), featureTip);
+  assert.equal(git(repo, "rev-parse", "HEAD"), integrationCommit);
+  assert.equal(git(repo, "rev-parse", "feature"), featureTip);
+  const parents = git(repo, "rev-list", "--parents", "-1", integrationCommit).split(" ");
+  assert.equal(parents.length, 3); assert.equal(parents[2], featureTip);
+  assert.equal(git(repo, "show", "-s", "--format=%s", parents[1]), "Base");
+  assert.equal(git(repo, "show", "-s", "--format=%s", featureTip), "Feature");
+  assert.equal(git(repo, "config", "user.name"), "Fixture");
+  assert.equal(git(path, "config", "user.email"), "fixture@example.invalid");
+  assert.equal(lstatSync(join(path, ".git")).isFile(), true, "native linked-worktree administration");
+  const registrations = git(repo, "worktree", "list", "--porcelain", "-z").split("\0");
+  const registeredPath = process.platform === "win32" ? path.replaceAll("\\", "/") : path;
+  assert.equal(registrations.includes(`worktree ${registeredPath}`), true);
+  for (const cwd of [repo, path]) {
+    assert.equal(readFileSync(join(cwd, "source"), "utf8"), "feature\n");
+    assert.equal(readFileSync(join(cwd, ".gitignore"), "utf8"), "node_modules/\n.codegraph/\n.next/\ntest-results/\nnext-env.d.ts\nunknown/\n");
+    assert.equal(git(cwd, "status", "--porcelain"), "");
+  }
+});
+
+test("cleanup setup stops at a native worktree-add failure before later writes, commits or merge", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "pi-cleanup-setup-failure-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const repo = join(root, "repo"), path = join(root, "blocked-feature");
+  mkdirSync(path); writeFileSync(join(path, "source"), "untouched\n");
+  let failure;
+  assert.throws(() => setupCleanupRepository(root, repo, path), error => { failure = error; return true; });
+  assert.equal(readFileSync(join(path, "source"), "utf8"), "untouched\n", "failed setup cannot dispatch the later feature write");
+  assert.equal(Number.isInteger(failure.status) && failure.status > 0, true, "native setup failure propagates");
+  assert.equal(readFileSync(join(repo, "source"), "utf8"), "base\n");
+  assert.equal(git(repo, "log", "--format=%s"), "Base", "no later commit or merge");
+  assert.equal(git(repo, "worktree", "list", "--porcelain", "-z").split("\0").filter(value => value.startsWith("worktree ")).length, 1);
 });
