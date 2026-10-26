@@ -5,7 +5,10 @@ Opportunity #6's fixture-only reduction is reviewed and fully accepted, retained
 unintegrated at the user's direction. A subsequent explicit request authorizes
 production identity/checkpoint optimization without a Git-library migration;
 that follow-up is now independently reviewed and fully accepted below, retained
-unintegrated. #5 remains deferred.** P3 and its
+unintegrated. A subsequent explicit request authorizes an internal application
+presentation parameter, replacement of the combined 25-root native boundary case,
+and bounded investigation of other tests sized by presentation limits. That new
+slice is in progress below; #5 remains deferred.** P3 and its
 Move correction were merged into local main at `666a75ef71ae6ae5057fa4e5b1b2124c6ebf3b19`; the five prior
 feature worktrees/branches were subsequently cleaned up by explicit request.
 Their retained-state narratives below are historical, not current resource claims.
@@ -1804,6 +1807,183 @@ follow-up checks are evidence/documentation review, link-target/source conservat
 and whitespace, not another full application suite. Retain the branch/worktree
 unintegrated; no rebase, merge, publication, installed-service action or manual
 feature/historical resource cleanup is included.
+
+## Authorized presentation-budget and test-cost follow-up
+
+### Goal and authority
+
+The user explicitly requests an application-configured presentation parameter,
+not a user-facing Git policy, and investigation of other expensive tests whose
+fixture sizes are driven by display limits. Continue from clean feature tip
+`a7f7c6289166483c791a0fe527c83e3566d804aa` in the existing linked worktree;
+checked local main remains `e8a0ba6be95dcd25882ebdb2146d2d464663dccf`.
+This specifically supersedes the earlier requirement to preserve the combined
+25-root native test unchanged. It does not authorize broad scenario retirement,
+Git-library/caching/checkpoint changes, #4/#5 work, lane promotion, service access,
+rebase/integration/publication, another ordinary session or resource cleanup.
+
+The former 16-root validator restriction was removed by `87c81ed`; no legacy
+execution mode needs support. Current `compactGitCard` displays 24 fields per
+section after the exact unabridged review has been saved. The old native case
+combined no artificial root-count cap, compact-preview truncation, complete review,
+one approval and successful real cleanup. The new design separates these owners:
+cheap production validation/default-presentation tests retain the 25-item inputs;
+a small native operation crosses an explicit lower presentation budget through
+the same executor and durable-review path. No approval/capture/effect checkpoint
+is removed or reused.
+
+### Plan
+
+- [x] Add an explicit trusted presentation parameter with unchanged application
+  defaults; keep essential top-level operation metadata and policy/schema intact.
+- [x] Replace only the historical combined boundary case with budget 2 / 3 native
+  artifact roots. Preserve one approval, complete saved scope, exact effects and
+  settlement; cheaply retain default 24/25 and larger-root validator obligations.
+- [x] Verify the actual affected owners and meaningful budget-wiring, saved-scope
+  and artificial-count-limit faults; measure matched focused dispatch/work cost
+  without turning diagnostic instrumentation into application inputs.
+- [x] Independently investigate other expensive Git/non-Git display-sized cases,
+  distinguish real byte/stream/native/geometry boundaries, and record only bounded
+  evidence-backed recommendations. Do not implement other slices automatically.
+- [ ] Independently review exact candidate, remove diagnostics, complete ordinary
+  `all --workers 4 --jobs 4` acceptance, record evidence/local commits and retain
+  the feature resources unintegrated.
+
+**Initial choice:** two visible section entries plus a third hidden entry exercises
+multi-item display and first/intermediate/final native deletion. One/two would
+cross the display boundary but lose those combined premises; four/five buys no
+additional assertion in this case. This is a selected test budget, not a universal
+minimum or measured speed claim. Application default remains 24.
+
+**Risks / stop:** presentation must not trim the captured operation or exact saved
+review, hide essential top-level metadata, change permissions or become model JSON
+input. Every native revalidation/error/Stop/reservation/closure contract remains.
+If smaller-fixture coverage cannot expose the old count cap and real truncation/
+review-ordering faults at their actual owners, retain the larger case and report
+the blocker. All other source/test bodies and scheduling remain outside this slice.
+
+### Implemented candidate and assertion disposition
+
+`review.ts` exposes frozen `DEFAULT_GIT_CARD_PRESENTATION` and a typed explicit
+section-field argument; `executeGitOperation` forwards it through trusted options.
+Only repeated section lists can be lowered to 1–24 entries. Top-level metadata,
+all other display defaults, operation JSON, policy, schemas and native capture/
+effect checkpoints are unchanged. `docs/git-workflow-plugin.md` owns the contract.
+
+Original `cleanup.test.mjs:725–735` at `a7f7c628` combined 25 generated directories,
+one approval, successful receipt, 24 preview rows, a 24-of-25 notice and a review
+reference. Its replacement, `compact cleanup preview keeps the complete approved
+review and native effects`, uses three directories/budget two and strengthens the
+persisted-operation/full-review/all-artifact-effects/worktree/ref assertions.
+`review-presentation.test.mjs` owns actual default 24/25 compaction, explicit lower
+budgets, immutable inputs, invalid budgets and complete 25-item metadata serialization
+with an awaited external memory writer. The new `resource-rules.test.mjs` case runs
+the real validator/unabridged card at 25/100 entries, retaining the old generated
+path sequence without native setup. Source checks independently confirm every
+other cleanup body is byte-identical, except optional fixture options forwarding;
+existing lane rows/hints/holds are unchanged. The new pure file has an explicit F
+reason; this does not clear other dependency/resource holds.
+
+**Intentional retirement:** 25-root runtime capture/effect cardinality is no longer
+executed by that native case. Real validator/default-presentation owners plus a
+small default-native executor/storage bridge replace the compound witness. This
+is not identical runtime-cardinality coverage, restart/browser proof or a universal
+ref census. Existing native race/permission/closure cases remain unchanged.
+
+### Measured focused cost and qualification
+
+One sequential source-bound diagnostic pair, native x86_64 Linux/Node24.21.0:
+
+```sh
+nix run .#test -- core --jobs 4 --file plugins/git-workflow/cleanup.test.mjs
+```
+
+Both execute129 cases; one case is intentionally replaced, not claimed input-
+identical. Identical temporary builtin wrappers count explicit Node-to-Git dispatches
+only during that operation, excluding setup and later assertion probes. They add
+no clock/work bypass and are removed before final verification/acceptance.
+
+| Seconds / count | Original 25-root case | Budget2 /3-root replacement |
+| --- | ---: | ---: |
+| Scoped spawn /async identity /sync dispatches |1687 /220 /95|345 /44 /18|
+| Total scoped explicit Git dispatches |2002|407|
+| Scoped operation |8.600|1.637|
+| Whole selected file |73.822|66.080|
+| Core lifecycle |74.712|66.953|
+| Pre-lifecycle /lifecycle preparation |33.253 /0.846|33.848 /0.830|
+| Complete command including realization/export |113.526|105.880|
+
+This removes1595 measured dispatches from that test operation. Fewer roots mean
+fewer existing capture epochs; no production checkpoint is skipped, and elapsed
+inventory-policy sampling also fires fewer times in the shorter fixture. Exact
+counts therefore are observed, not an immutable per-root formula. The single pair
+is not statistical, cold-cache, CI/ARM or whole-feedback evidence. Final unprofiled
+three-file green has a69.851s execution window, illustrating run variation rather
+than relabelling66.080s as final-source timing. Application behavior for a real
+25-root cleanup still does the same native work.
+
+| Identity | Original diagnostic | Replacement diagnostic |
+| --- | --- | --- |
+| Immutable source |`/nix/store/cxdfmdnvmpq1i6jp830azjr7zvsz8zvc-source`|`/nix/store/y9f8h9v4bj9viqsrqn0p3hfz20x3vnkr-source`|
+| Core report |`/tmp/pi-web-test-core.TaVw6D/run.json`|`/tmp/pi-web-test-core.k83rqW/run.json`|
+
+Requested/effective core width is four, one selected native file, no browser/
+service overlap; admission observes32 CPUs and50,191,347,712 /50,866,651,136 available
+bytes, not machine-wide reservations. Both realize changed lint inputs; the second
+also executes changed-input typegen/tsc. Pinned application/private dependencies
+are unchanged. `focused-evidence.json` records exact static and phase identities.
+
+Final diagnostic-free qualification uses the same entry point with three `--file`
+selections: cleanup, resource-rules and review-presentation. All143 tests and29
+exporter contracts pass, no skips/cancellations or uncertain/observed survivors:
+`/tmp/pi-web-test-core.RKJ8YX/run.json`, command75.825s, pre-lifecycle1.648s,
+lifecycle70.732s, preparation0.831s, execution window69.851s. Exact prior changed-
+input typegen/tsc/lint evidence is reused; effectful tests execute fresh.
+
+Deliberate faults are removed; their failures/logs remain, not retried unchanged:
+
+- Dropping trusted presentation forwarding and restoring the old `>16` validator
+  cap produces exactly two intended assertions: `compact preview obeys the
+  application section budget` (3 vs2) and `valid root counts have no artificial
+  ceiling`.143 tests,141 pass/2 fail; command107.065s,
+  `/tmp/pi-web-test-core.mAY8La/run.json`.
+- Saving the already-compacted card through the real review writer fails exactly
+  `exact review is saved before preview compaction`, with `generated-2` missing.
+  143 tests,142 pass/1 fail; command109.602s,
+  `/tmp/pi-web-test-core.anO3Mb/run.json`.
+
+Both faults complete coverage and join started work, with zero skips/cancellations,
+uncertain files or observed survivors. Independent source review
+`01a1793c-c26c-7402-ad52-00c756708ea3` approves all seven implementation/test/guide/
+manifest files with no blockers/nits, subject to restored green (now passed) and
+full acceptance. Exact source SHA table, raw patches/commands/logs, conservation
+and timing/static evidence are retained at `/tmp/pi-web-git-preview.gvHMvd/`.
+
+### Bounded investigation of other display-sized tests
+
+Independent read-only audits `01a1793c-c26c-7402-ad52-00c756708ea3` and
+`01a1793c-c26f-7402-ad52-00c9fce6347f` inspect unchanged source at `a7f7c628` using
+pinned paths and existing `run-sJCXOr` TAP/summary. These are historical case/file
+envelopes, not isolated fixture costs or newly measured savings. No other code is
+changed and no additional slice is started.
+
+| Case /input | Historical cost | Finding /disposition |
+| --- | ---: | --- |
+| `ReviewAttachment.pagination.test.mjs`:45 patch entries +metadata,2000 repeated content units per patch, both original inputs |1.924 /2.402s cases|Strongest lead: constructs unrequested bodies merely for byte counts. Controlled metadata can describe those entries; preserve actual selected new/modified bodies,46-entry paging witness, and mobile >2500-hunk raw fallback. Benefit remains unmeasured.|
+| `large-operations.test.mjs`:257-file commit,70,000-char message, one3MiB-output check |0.987s case /6.431s file|Mixed modest candidate: section-text display budget might separate from exact committed message, but retain actual65,536-char writer flush and3MiB child drain. Do not shrink257 native files until an actual operation-count restriction would still fail another owner.|
+| `review-store.test.mjs`:shared45-entry bundle used by unrelated scope/copy cases |0.098s paging /0.013s copied-receipt cases|Allow a smaller fixture for unrelated subjects; retain real40→45 boundary and persisted stream/integrity/no-follow/closure proof. Low measured payoff.|
+| `session-reader.pagination.test.mjs`:1001 entries crossing tail cap300 |0.002s case|301 could cross the same boundary; not a useful optimization priority.|
+| Real1.48/3MiB merge patches,3MiB child output, UTF-8 chunk/native context limits |Subsecond individual Git cases|Actual byte/framing/stream/native-authority boundaries, not mere preview cardinality. Keep sized witnesses.|
+| `PluginCard.preview-cleanup.test.mjs`:5000-line renderer/state tuples |9.026 /9.545s cases|Expensive but no verified display-budget justification for shrinking: distant navigation and real renderer/state lifetime are the obligation.|
+
+Other heavy server/discard/project-management cases use small fixtures for native
+ref/identity/race/reservation/persistence distinctions, not huge display lists.
+No additional clear high-cost Git presentation-cardinality case emerged. This
+retracts any inference that most remaining native cost can be removed by lowering
+preview budgets; the investigation supports only the bounded leads above.
+
+Full coherent-candidate acceptance is the remaining gate, not another benchmark
+campaign or automatic expansion. Feature resources stay unintegrated.
 
 ## Completion Checklist
 

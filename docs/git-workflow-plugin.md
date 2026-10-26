@@ -287,7 +287,14 @@ project commands before approval. Preview uses an ephemeral index and may add
 unreachable Git objects, but never stages working files. The supplied rebase/merge
 patch shows feature changes since the merge base, **not** a predicted result.
 Exact review material is saved once before the prepared receipt, independently of
-card size. Small reviews use the [shared diff-review controls](worktrees.md#full-file-diff-review)
+card size. `DEFAULT_GIT_CARD_PRESENTATION` configures the application default of 24
+fields per repeated-list section. The trusted executor's optional
+`presentation.sectionFieldLimit` can lower that budget (1–24) without changing
+top-level operation metadata, the complete saved review or selected resources.
+It is an explicit application presentation argument, never operation JSON,
+user-facing Git policy or an environment/test-mode switch. Smaller native boundary
+tests use the same executor with a lower budget; cheap production-owner tests retain
+the default 24/25 boundary and larger resource lists. Small reviews use the [shared diff-review controls](worktrees.md#full-file-diff-review)
 with one selected file: a searchable file sidebar where space permits, otherwise a
 **Files (N)** drawer. Selecting a file closes the drawer; **Previous/Next file**
 move within the displayed inventory. One sticky split/unified/raw and wrap toolbar

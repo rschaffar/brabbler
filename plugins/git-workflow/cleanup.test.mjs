@@ -35,7 +35,7 @@ function fixture(t) {
   const ui = { prepareReview: preparePluginReview, isDirectoryInUse: () => false, reserveDirectory: () => () => {}, operationReceipt: (id, value) => { snapshotOperationReceipt(id, value, receipts.length + 1); receipts.push(structuredClone(value)); }, pluginCard: async (_id, card) => { validatePluginCard(card); approvals++; cards.push(structuredClone(card)); return "approve"; } };
   const op = { action: "cleanupFeature", checkout: repo, featureBranch: "feature", featureTip, integrationCommit, worktreePath: path, removeWorktree: true, deleteBranch: true, artifactRoots: [] };
   const artifact = (name, content = "generated") => { mkdirSync(join(path, name), { recursive: true }); writeFileSync(join(path, name, "cache"), content); };
-  const call = (extra = {}, custom = {}) => executeGitOperation(repo, { ...op, ...extra }, { ...ui, ...custom }, undefined, undefined, "cleanup-call");
+  const call = (extra = {}, custom = {}, options) => executeGitOperation(repo, { ...op, ...extra }, { ...ui, ...custom }, undefined, undefined, "cleanup-call", undefined, options);
   const settingsBytes = () => readFileSync(pluginSettingsPath(manifest), "utf8");
   return { root, repo, path, op, ui, receipts, cards, set, artifact, call, settingsBytes, approvals: () => approvals };
 }
@@ -722,16 +722,29 @@ test("receipt persistence failure blocks effects; branch-only cleanup needs no r
   passed(await f.call({ worktreePath: undefined, removeWorktree: false }));
   assert.equal(git(f.repo, "branch", "--list", "feature"), "");
 });
-test("more than sixteen generated roots remain a single exact approved cleanup", async (t) => {
+test("compact cleanup preview keeps the complete approved review and native effects", async (t) => {
   const f = fixture(t);
-  const roots = Array.from({ length: 25 }, (_, i) => `generated-${i}`);
+  const presentation = Object.freeze({ sectionFieldLimit: 2 });
+  const roots = Array.from({ length: presentation.sectionFieldLimit + 1 }, (_, i) => `generated-${i}`);
   for (const root of roots) f.artifact(root);
-  passed(await f.call({ artifactRoots: roots }));
+  const result = await f.call({ artifactRoots: roots }, {}, { presentation });
+  passed(result);
   assert.equal(f.approvals(), 1);
   assert.equal(f.receipts.at(-1).phase, "succeeded");
-  assert.equal(f.receipts[0].card.sections[0].fields.length, 24);
-  assert.match(f.receipts[0].card.sections[0].text, /24 of 25/);
-  assert.ok(f.receipts[0].card.review);
+  const card = f.receipts[0].card;
+  assert.equal(card.sections[0].fields.length, presentation.sectionFieldLimit, "compact preview obeys the application section budget");
+  assert.match(card.sections[0].text, /Showing 2 of 3 items/);
+  assert.deepEqual(card.fields.map(field => field.label), ["Repository checkout", "Integrated feature", "Verified integration", "Worktree", "Local branch"], "essential operation fields are not list-budgeted");
+  assert.ok(card.review);
+  const { reviewEntry, reviewPreview } = await jiti.import("../../lib/plugins/review-store.ts");
+  const saved = await reviewPreview(card.review, await reviewEntry(card.review, 0));
+  assert.equal(saved.complete, true);
+  const exact = JSON.parse(saved.text);
+  assert.deepEqual(exact.operation.artifactRoots, roots, "approval retains the complete selected operation");
+  assert.deepEqual(exact.presentation.sections[0].fields.map(field => field.label), roots, "exact review is saved before preview compaction");
+  assert.deepEqual(result.details.effects.filter(effect => effect.startsWith("Removed generated artifact:")), roots.map(root => `Removed generated artifact: ${root}`));
+  assert.equal(existsSync(f.path), false);
+  assert.equal(git(f.repo, "branch", "--list", "feature"), "");
 });
 
 test("cleanup setup preserves literal shell metacharacters and embedded newlines in native repository paths", (t) => {

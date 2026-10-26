@@ -1,7 +1,7 @@
 import { idle } from "./operation-idle";
 import { gitText as git, gitOutput, gitEnvironment, records, outputDigest, run, withPreparationSignal } from "./process";
 import { spawn } from "node:child_process";
-import { buildGitReview, compactGitCard } from "./review";
+import { buildGitReview, compactGitCard, type GitCardPresentation } from "./review";
 import { createReadStream } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -27,6 +27,7 @@ export type GitOperation =
   | CleanupOperation;
 /** Internal exact-review union; browser discard is deliberately absent from GitOperation. */
 export type ReviewedGitOperation = GitOperation | BrowserDiscardOperation;
+interface GitExecutionOptions { readonly browserConfirmation?: true; readonly presentation?: GitCardPresentation }
 interface Snapshot { fingerprint: string; card: PluginCard; checks: RequiredCheck[]; args: string[]; cwd: string; comparison?: { before: string; after: string }; cleanup?: CleanupSnapshot }
 async function branchTip(cwd: string, branch: string): Promise<string> {
   if (!branch || branch.startsWith("-") || branch === "HEAD") throw new Error("Select an explicit local branch");
@@ -254,7 +255,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
         label: { commit: "Approve commit", rebase: "Approve rebase", merge: "Approve merge", createWorktree: "Create worktree", attachWorktree: "Attach worktree", removeWorktree: "Remove worktree" }[op.action] }] } };
 }
 /** Agent entry point: browser-only actions cannot acquire authority here, even via untyped callers. */
-export async function executeGitOperation(callerCwd: string, operation: GitOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, session?: PluginSession, toolCallId?: string, onProgress?: (text: string) => void, options?: { browserConfirmation: true }) {
+export async function executeGitOperation(callerCwd: string, operation: GitOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, session?: PluginSession, toolCallId?: string, onProgress?: (text: string) => void, options?: GitExecutionOptions) {
   if (!actions.includes(operation.action as GitAction)) throw new Error("Unsupported agent Git action; manual discard requires the browser project adapter");
   return executeOperation(callerCwd, operation, ui, signal, session, toolCallId, onProgress, options);
 }
@@ -303,7 +304,7 @@ async function runPreparedRefTransaction(args: string[], cwd: string, transactio
 export async function executeBrowserDiscard(callerCwd: string, operation: BrowserDiscardOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, onProgress?: (text: string) => void) {
   return executeOperation(callerCwd, validateBrowserDiscardOperation(operation), ui, signal, undefined, undefined, onProgress, { browserConfirmation: true });
 }
-async function executeOperation(callerCwd: string, operation: ReviewedGitOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, session?: PluginSession, toolCallId?: string, onProgress?: (text: string) => void, options?: { browserConfirmation: true }) {
+async function executeOperation(callerCwd: string, operation: ReviewedGitOperation, ui: Partial<PluginUiContext>, signal?: AbortSignal, session?: PluginSession, toolCallId?: string, onProgress?: (text: string) => void, options?: GitExecutionOptions) {
   const op = structuredClone(operation);
   const resourceOperation = op.action === "cleanupFeature" || op.action === "discardResources";
   const currentSettings = () => settings(op.checkout, session, op, options?.browserConfirmation);
@@ -340,7 +341,7 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     snapshot.card.operationId = operationId;
     if (!ui.prepareReview) throw new Error("Git operations require durable Pi Web review attachments");
     const review = await ui.prepareReview(gitWorkflowManifest.id, operationId, (writer) => buildGitReview(writer, op, snapshot, signal, onProgress));
-    snapshot.card = { ...compactGitCard(snapshot.card), review };
+    snapshot.card = { ...compactGitCard(snapshot.card, options?.presentation), review };
     const artifactApproval = !!snapshot.cleanup?.unapprovedArtifacts.length;
     const { subtitle, ...authorization } = operationAuthorization(policy[op.action], origin.sources[op.action], artifactApproval, !!options?.browserConfirmation);
     const { mode } = authorization;

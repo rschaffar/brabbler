@@ -2388,6 +2388,12 @@
       "estimatedMs": 1000
     },
     {
+      "path": "plugins/git-workflow/review-presentation.test.mjs",
+      "lane": "F",
+      "reason": "Real card compaction and metadata serialization with synthetic cards and a joined in-memory writer. No comparison is supplied, so native patch/context methods are not invoked; imported context/process modules only define functions and allocate process-local maps/AsyncLocalStorage. No repository, settings, filesystem fixture, child, timer or shared-source writes.",
+      "estimatedMs": 1000
+    },
+    {
       "path": "plugins/git-workflow/runtime.test.mjs",
       "lane": "N",
       "estimatedMs": 10000,
