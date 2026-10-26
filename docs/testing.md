@@ -20,8 +20,8 @@ From the physical Linux working-tree root:
 # Complete cacheable acceptance; bound independent Nix builders explicitly:
 nix flake check --max-jobs 1 --cores 4 -L
 
-# Normal fresh complete acceptance, if resources admit four/four:
-nix run .#test -- all --workers 4 --jobs 4
+# Normal fresh complete acceptance, if resources admit twelve/four overlap:
+nix run .#test -- all --workers 4 --jobs 12
 # Or execute the three levels separately:
 nix run .#test -- core
 nix run .#test -- e2e
@@ -419,21 +419,25 @@ fallback, dependency-marker rewrite or cross-checkout dependency symlink.
 ## Coverage and resource admission
 
 For fresh complete acceptance, normally select explicit **four browser sandboxes /
-four core workers** with `nix run .#test -- all --workers 4 --jobs 4`, matching the
-measured budget below. Confirm available CPU/memory headroom and coordinate other
-resource-consuming runs first; admission estimates are not machine-wide reservations.
-If constrained by resources or concurrent work, select a smaller supported budget
-and state the concrete reason before launch. Record requested/effective widths and
-admission from `selection.json` and the level reports. A read-only reviewer alone
-does not justify reducing concurrency; a focused `core --jobs 2` example is not the
-full-acceptance recommendation. Never bypass admission or increase deadlines.
+twelve core workers** with `nix run .#test -- all --workers 4 --jobs 12`, following
+the measured overlapping comparison below and [ADR 0035](adr/0035-twelve-core-acceptance-experiment.md).
+Overlap currently requires an estimated **32 effective CPUs / 43 GiB available RAM**.
+Confirm headroom and coordinate other resource-consuming runs first; admission
+estimates are not machine-wide reservations. If twelve/four would serialize levels,
+use `all --workers 4 --jobs 4` (estimated 16 CPUs / 27 GiB for overlap), or a smaller
+supported budget if necessary, and state the concrete resource/concurrency reason.
+Record requested/effective widths and admission from `selection.json` and level
+reports. A read-only reviewer alone does not justify reducing concurrency; a focused
+`core --jobs 2` example is not the full-acceptance recommendation. Never bypass
+admission or increase deadlines.
 
 This is invocation guidance, not a change to runner defaults: bare `all` uses two
 core workers when overlapping (four when serialized), while browser width is
-resource-admitted. Pass both flags explicitly for the measured four/four profile.
+resource-admitted. Pass both flags explicitly for the measured twelve/four profile.
+The Acceptance editor template and existing user-owned profiles are not migrated.
 Nix `--max-jobs` / `--cores` control realization; the original builder's
 `NIX_BUILD_CORES` also caps effective core file workers. Fresh core selections
-with an explicit `--jobs` above four now request up to eight Nix cores per build;
+with an explicit `--jobs` above four request up to twelve Nix cores per build;
 without that selection the four-core allocation is unchanged.
 
 Explicit `all --workers 8 --jobs 8` is an opt-in scaling experiment, not a new
@@ -531,6 +535,45 @@ execute from the verified snapshot. Keep deliberate contention separate.
 Plugin, session-launch, Activity, trust, bulk and all other previously focused-only
 browser scenarios remain in the full browser inventory. Owning guides describe
 assertions, not alternative acceptance environments.
+
+### Measured twelve-core / four-browser profile
+
+On 2026-10-26, source-identical warm fresh runs on native x86_64 Linux passed all
+**510 core files / 4,208 tests / 14 suites**, **26 browser/terminal groups** and
+the genuine deployment VM, with no skipped/cancelled core tests. Both overlapped
+core with browser then deployment. Twelve requested/effective core workers reached
+twelve simultaneous files; the control requested/effectively used four. Browser
+width remained four and the application package was identical.
+
+| Interval | Four core / four browser | Twelve core / four browser |
+| --- | ---: | ---: |
+| Complete command, including in-run realization | 374.251s | **293.271s** |
+| Core invocation | 370.970s | 265.373s |
+| Before core lifecycle (setup/static/realization envelope) | 1.641s | 1.570s |
+| Core test-file execution window | 368.140s | 262.625s |
+| Browser invocation | 256.954s | 267.250s |
+| Browser support / definition-manifest preparation | 2.757s / 4.952s | 2.775s / 6.186s |
+| Browser group-client execution window | 249.241s | 258.284s |
+| Deployment invocation | 26.082s | 22.598s |
+
+Complete feedback fell **80.980s / 21.64%**. Overlapping phase envelopes are not
+additive, and group-client windows include per-group realization/validation, not
+only browser assertion bodies. No separate deliberate prerequisite prewarming was
+performed. The first twelve/four run prepared static outputs and passed serialized
+levels in **517.175s**, with 42.556s before core lifecycle, 228.131s core-file window,
+211.947s browser and 23.487s deployment. It is not part of the warm overlapping
+speed comparison; it demonstrates why insufficient overlap headroom retains the
+four/four fallback.
+
+All three runs used immutable source
+`/nix/store/llj7xmamq43q5683d258c1ypzk0l22xp-source`, outer content/mode digest
+`faff73cfe4d63d3b3e428bbd92fa53ea5878d5b28b8055b10d1bd5f5cd345f14`, and package
+`jbglz2yn9cibcjn4smp6b753w325f97w-pi-web-0.9.3`. Evidence and exact commands are
+retained in `/tmp/pi-web-12core-benchmark.i_aozju8/comparison.json`; linked reports
+retain distinct execution UUIDs, full diagnostics and settlement. This is a single
+warm pair on a non-exclusive 32-logical-CPU host, not a cold-cache, statistically
+repeated, ARM or CI guarantee. Subsequent recommendation/evidence-only documentation
+changes do not relabel these runs as fresh execution at a newer source digest.
 
 ### Current overhaul evidence boundary
 

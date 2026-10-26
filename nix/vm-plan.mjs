@@ -20,7 +20,7 @@ export function workerBudget({ requested, resources = availableResources() } = {
 
 export function coreBuildBudget(coreJobs = 4) {
   if (!Number.isInteger(coreJobs) || coreJobs < 1 || coreJobs > 32) throw new Error('jobs must be 1..32');
-  return { maxJobs: 2, coresPerBuild: Math.max(4, Math.min(coreJobs, 8)) };
+  return { maxJobs: 2, coresPerBuild: Math.max(4, Math.min(coreJobs, 12)) };
 }
 
 export function combinedBudget(resources, vm, coreJobs) {

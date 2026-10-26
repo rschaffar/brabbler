@@ -32,7 +32,7 @@ nix develop                         # prepares checkout-local writable dependenc
 npm run dev                         # manual development, port 30141; see lifecycle below
 # Automated checks require no shell/dependency preparation or manual server:
 nix flake check --max-jobs 1 --cores 4 -L
-nix run .#test -- all --workers 4 --jobs 4  # normal fresh full acceptance, if admitted
+nix run .#test -- all --workers 4 --jobs 12 # normal fresh full acceptance, if overlap admitted
 nix run .#test -- core --file lib/worktree.test.mjs
 nix run .#test -- e2e --group markdown
 nix run .#test -- service
@@ -56,10 +56,12 @@ One owner coordinates dependency preparation, source export and acceptance budge
 Pause source writers during export; snapshot-based runs then use immutable input
 identities, not subsequent edits. Independent invocations may share a worktree,
 but their worker limits are not machine-wide reservations. For fresh full acceptance,
-use explicit `all --workers 4 --jobs 4` when available resources and coordinated
-concurrent work permit; do not carry a focused run's two-worker budget into full
-acceptance by habit. Before using fewer workers, state the concrete resource or
-concurrent-work reason and record requested/effective widths with the evidence.
+use explicit `all --workers 4 --jobs 12` when available resources and coordinated
+concurrent work admit overlap (currently estimated at 32 CPUs / 43 GiB available).
+Use `all --workers 4 --jobs 4` if twelve core workers would serialize the levels;
+do not carry a focused run's two-worker budget into full acceptance by habit.
+Before using fewer workers, state the concrete resource or concurrent-work reason
+and record requested/effective widths with the evidence.
 Read-only review alone is not a reason to halve acceptance concurrency. Follow
 [Testing](docs/testing.md#coverage-and-resource-admission) for admission and runner
 defaults. Keep ordinary browser/SDK acceptance separate from deliberate concurrency
