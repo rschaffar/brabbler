@@ -1,7 +1,10 @@
 # Core test optimization — investigation and proposed execution
 
-**Status: P1 complete and integrated; bounded P2 stopped after measurement, with
-no optimization adopted.** P1 was merged
+**Status: P1 complete and integrated; P2 implemented and focused-verified,
+complete acceptance pending.** The first stop at `d532fedb44cc819b18085331168d9d78157a01b7`
+was premature: it disposed only of the small owner-compilation slice, not the dominant
+retained-import cost. The user explicitly requested thorough continuation in the
+same retained worktree. P1 was merged
 into local main at `0d5d914515057c957b47a7b92d9164ddacd98bc7`. A subsequent explicit
 request authorizes P2 only: measure repeated RPC fixture preparation, adopt only a
 demonstrated simple reduction, preserve isolation, verify and retain local feature
@@ -16,13 +19,14 @@ assertions, error/settlement checks or native authority established by the compl
 browser-retirement work. Distinguish less work, better scheduling, faster focused
 feedback and faster complete acceptance; none implies the others.
 
-**Current bounded result: P2 stop path.** Measurement found only about 2.971s
-of repeated owner compilation/parsing potentially removable across 27 startups,
-against 79.645s in retained dependency imports. That is too little to justify a new
-reuse boundary and its controls in this slice; no reduction was implemented or
-claimed. Dominant retained-import cost is not established as safely shareable
-immutable work. No generic cache, dependency-evaluation reuse, Git/timer/
-classification, browser-retirement or worker-scaling work was started.
+**Current bounded execution: P2 retained-import preparation.** Attribute the
+79.645s retained-import interval before deciding materiality. Separate pure Jiti
+transformation from resolution/evaluation, then adopt only a demonstrated small
+immutable-preparation reduction with source/configuration controls and unchanged
+fresh dependency/owner evaluation. One coherent candidate receives focused matched
+measurement, independent review and complete acceptance before expansion. No generic
+cache, initialized-graph sharing, Git/timer/classification, browser-retirement,
+worker scaling, rebase/integration/publication or cleanup is authorized.
 
 Start with the existing four-core-worker budget. There is no promised percentage
 or hard 351.05-second gate: the user made the old performance targets informational.
@@ -292,7 +296,7 @@ Do not build immutable repository seeds: the existing seven-sample pilot in
 per fixture plus seed construction. Never copy linked-worktree administration,
 hardlink mutable indexes/config/refs, reuse approvals or shrink actual fixtures.
 
-## Execution scope — P1 complete; P2 bounded stop; other opportunities deferred
+## Execution scope — P1 complete; P2 reopened; other opportunities deferred
 
 Keep one writer, one active change and normal four-worker admission. Independent
 review remains useful; packet counts and universal lifetime theorems are not gates.
@@ -300,11 +304,12 @@ review remains useful; packet counts and universal lifetime theorems are not gat
 - [x] **P1: cheap scheduling candidate.** Update only trust's missing estimate;
   verify runner/manifest contracts. Separate implementation commit and matched
   measurement are recorded below. P1-only completion does not authorize P2–P5.
-- [x] **P2: targeted RPC preparation — bounded stop.** Measured existing phases;
-  repeated owner compilation/parsing offers only an estimated 2.971s across 27
-  startups. No reuse candidate adopted; instrumentation removed byte-for-byte.
-  The immutable-owner caching recommendation is retracted for this bounded slice,
-  rather than expanded into retained-graph sharing or a cache framework.
+- [ ] **P2: targeted RPC preparation — reopened.** Owner-only compilation is small;
+  attribute dominant retained imports, adopt only demonstrated immutable reuse and
+  preserve fresh initialization. Verify source/configuration changes, current
+  aliases/capabilities, fresh side effects and old callbacks retaining original
+  roots/errors. Stop only on evidence about the relevant recoverable work, not by
+  conflating owner compilation with all preparation.
 - [ ] **P3: first coherent checkpoint and possible finish.** Review and measure
   the adopted P1/P2 candidate before expanding. P1 alone is a valid finish if RPC
   preparation savings prove immaterial; do not build a cache merely to complete P2.
@@ -460,7 +465,13 @@ historical resources were retained at that stage; rebase, integration, publicati
 and cleanup then awaited separate user authority. P1's subsequent integration at
 `0d5d914515057c957b47a7b92d9164ddacd98bc7` does not change these measurement identities.
 
-## P2 measurement and stop disposition — 2026-10-26
+## P2 initial measurement and superseded stop — 2026-10-26
+
+**Retraction:** the phase measurements remain valid for their identified inputs;
+closing P2 on that basis did not. The stop considered only top-level owner compilation,
+leaving 79.645s of retained imports unattributed. It did not establish immaterial
+recoverable preparation overall. The user requested continuation; current work
+below owns that unresolved boundary, without discarding the original evidence.
 
 ### Command, inputs and validation
 
@@ -566,6 +577,65 @@ required for the final evidence-only delta. Earlier P1 acceptance retains its
 original identities; it is not relabelled as P2 acceptance. No other opportunity,
 rebase, integration, publication, session launch or cleanup was attempted.
 
+## Reopened P2 candidate checkpoint
+
+The deeper probe measured **11,799** Jiti transform requests for **130** distinct
+actual source/configuration inputs across27 startups: **74.953s** of the **81.899s**
+retained-import interval was inside the pinned transformer. This establishes a
+substantial repeated pure-preparation target, unlike the small owner-only slice.
+
+The receiving candidate adds only a fixture-local bounded memory store for pinned
+successful transformation text. Each dependency still resolves/reads/evaluates as
+before; owner transpilation/initialization, globals, capabilities and native paths
+are unchanged. Only `rpcStartup` opts its fresh retained loader into this boundary.
+`docs/testing.md` owns the maintained mechanism and limitations.
+
+One sequential diagnostic pair used the same `core --jobs 4 --file
+lib/rpc-manager.test.mjs` command and identical scalar instrumentation. All69 cases
+and11,799 requests remain; source inventory differences are exactly the loader
+opt-in seam, new preparation helper and RPC opt-in. Dependencies are identical.
+
+| Seconds | Instrumented baseline | Instrumented candidate |
+| --- | ---: | ---: |
+| Command wall including realization/export | 127.859 | 51.261 |
+| Outer preparation before lifecycle | 32.945 | 33.552 |
+| Core lifecycle | 89.453 | 12.623 |
+| Selected RPC file | 88.604 | 11.745 |
+| Retained-import interval | 81.899 | 6.765 |
+| Transform callback interval | 74.953 | 1.289 |
+
+This is a focused observed reduction, not complete-command/core-wide savings or
+isolated CPU time. Only one file executes despite four requested/effective slots;
+neither run overlaps browser/service work. The130 inputs are measured unique
+callback inputs, not an independently counted cache-hit total. The final candidate
+also rejects non-enumerable options/proxies; ordinary measured inputs are unchanged.
+Full comparisons, exact sources/digests/static/dependency identities, raw rows and
+commands are retained at `/tmp/pi-web-p2-retained.9zEye4/{profile.json,profile-comparison.json,profile.log,candidate-profile.log}`.
+
+Focused5-receiver verification passed **101 tests**, including the native model-
+config and closure counterparts, report `/tmp/pi-web-test-core.UVBi9y/run.json`.
+Controls cover same-filename/mtime original→mutant→restored bytes, fresh owner and
+dependency state/classes/effects, current aliases/missing reads/capabilities,
+original work/Error/root identities including earlier real registry callbacks,
+default option parity, failure/result non-retention and unsupported configurations.
+
+The deliberate omitted-source-key fault failed the named mutant-byte runtime
+assertion and exposed suppressed parse failure; it was restored exactly. Independent
+review then found a genuine non-enumerable-input key collision. A regression failed
+specifically at that collision before the descriptor guard was corrected; it also
+checks warmed-cache diagnostic failures and throwing getter Error identity. The
+corrected port run passes8 tests, report `/tmp/pi-web-test-core.piWIRv/run.json`.
+Failed evidence is retained at `/tmp/pi-web-test-core.{mW7bkM,9v0OyW}/run.json` and
+`/tmp/pi-web-p2-retained.9zEye4/{source-key-fault.log,nonenumerable-red.log}`; no
+unchanged-failure retry or assertion/deadline relaxation occurred.
+
+Independent pinned-loader/design and final implementation review by
+`01a177da-9860-7402-ad52-001546539dca` found no remaining blockers after that correction.
+This is bounded source review, not general environment-transition certification.
+Diagnostic instrumentation is removed. The first coherent reviewed candidate is
+ready for the required complete four/four checkpoint; no optional expansion is
+started while that is pending.
+
 ## Completion Checklist
 
 ### This analysis
@@ -590,7 +660,7 @@ branch `perf/rpc-fixture-preparation`; CodeGraph was initialized before research
 Other opportunities remain deferred; this multi-opportunity plan is not fully
 executed or archived.
 
-### Authorized P2 bounded result
+### Initial P2 slice (historical; overall P2 remains open)
 
 - [x] Measure existing owner compilation/parsing, retained imports and fresh initialization.
 - [x] Decide whether simple immutable reuse is justified; stop with quantified finding.
@@ -603,6 +673,15 @@ executed or archived.
   and exact changed-path/helper comparisons passed. Reviewer had file-reading tools
   only, so repository-wide equality is writer verification, not independent Git evidence.
 
+### Reopened P2 completion
+
+- [x] Attribute retained-import transformation and repeated actual inputs with the existing fixture.
+- [x] Adopt only a demonstrated bounded reduction; retain fresh owner/dependency evaluation.
+- [x] Verify affected consumers and source/configuration/capability/state/callback counterexamples.
+- [x] Measure comparable focused baseline/candidate and record preparation/execution/wall identities.
+- [ ] Independently review and complete core/static/plugin, browser/terminal and genuine deployment acceptance.
+- [ ] Record final evidence, local feature tip and retained resources; do not integrate or expand scope.
+
 ## Investigation provenance and known gaps
 
 Six independent read-only sessions covered RPC (`01a1774e-fdd4`), native timers
@@ -611,8 +690,9 @@ Six independent read-only sessions covered RPC (`01a1774e-fdd4`), native timers
 inspectable; the findings above distinguish source facts from future experiments.
 
 **Known gaps:** P1 has one matched fresh four/four pair, not repeated statistical,
-standalone-core, cold-cache, ARM or CI timing evidence. P2 has one focused instrumented
-phase profile, no adopted optimization or measured speedup, and does not separate
-transitive dependency transformation from evaluation within retained imports.
+standalone-core, cold-cache, ARM or CI timing evidence. Reopened P2 has one matched
+focused instrumented pair, not repeated statistical or whole-feedback speed evidence;
+complete acceptance is pending. Remaining non-transform import costs are not further
+decomposed, and no general Babel environment-transition guarantee is claimed.
 Other opportunities, native cache/fence compatibility and some pinned SDK
 loader/resource closures remain deferred. Simulations are not promises.
