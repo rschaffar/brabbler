@@ -1,16 +1,20 @@
 # Core test optimization — investigation and proposed execution
 
-**Status: P1 complete and integrated; P2 implemented, independently reviewed and
-fully accepted; retained unintegrated.** The first stop at `d532fedb44cc819b18085331168d9d78157a01b7`
+**Status: P1 and P2 complete and integrated; opportunity #3 and its Move blocker
+correction are independently reviewed and fully accepted, retained unintegrated.**
+The renewed source-matched pair passes all levels. E tail shortens, but total
+feedback is essentially unchanged; no meaningful whole-feedback speedup is established. P2 was subsequently merged into local main at
+`ab6b2fa11e3d38fb4cc65a661f3ef9001e8ae534`; its earlier retained-state evidence below
+remains historical. The first stop at `d532fedb44cc819b18085331168d9d78157a01b7`
 was premature: it disposed only of the small owner-compilation slice, not the dominant
 retained-import cost. The user explicitly requested thorough continuation in the
 same retained worktree. P1 was merged
 into local main at `0d5d914515057c957b47a7b92d9164ddacd98bc7`. A subsequent explicit
-request authorizes P2 only: measure repeated RPC fixture preparation, adopt only a
+request authorized P2 only: measure repeated RPC fixture preparation, adopt only a
 demonstrated simple reduction, preserve isolation, verify and retain local feature
-commits. No rebase/integration/publication/cleanup is authorized for P2. Other
-opportunities remain deferred. Historical investigation and P1 evidence below
-retain their original identities.
+commits. P2 integration was separately authorized afterwards. Opportunity #3 now
+has its own bounded authority below; opportunities #4–6 remain deferred.
+Historical investigation and P1/P2 evidence retain their original identities.
 
 ## Goal
 
@@ -19,14 +23,17 @@ assertions, error/settlement checks or native authority established by the compl
 browser-retirement work. Distinguish less work, better scheduling, faster focused
 feedback and faster complete acceptance; none implies the others.
 
-**Current bounded execution: P2 retained-import preparation.** Attribute the
-79.645s retained-import interval before deciding materiality. Separate pure Jiti
-transformation from resolution/evaluation, then adopt only a demonstrated small
-immutable-preparation reduction with source/configuration controls and unchanged
-fresh dependency/owner evaluation. One coherent candidate receives focused matched
-measurement, independent review and complete acceptance before expansion. No generic
-cache, initialized-graph sharing, Git/timer/classification, browser-retirement,
-worker scaling, rebase/integration/publication or cleanup is authorized.
+**Current bounded execution: opportunity #3, shorten the exclusive tail.** Review
+only `lib/acceptance/coordinator.test.mjs` (first),
+`app/api/native-tools/route.test.mjs`, `app/api/skills/content/route.test.mjs` and
+`lib/session-pause.test.mjs`. Promote only source/helper/pinned-import/native and
+success/failure-cleanup-qualified files; private native effects belong in N, not F.
+Retain precise unresolved holds rather than expanding lifetime infrastructure.
+Preserve every original body/input/assertion/deadline, native/SDK authority,
+discovery/count and settlement gate. One sequential matched baseline/candidate uses
+unchanged complete orchestration and four core/four browser workers, followed by
+bounded evidence review. No other optimization, rebase, integration, publication,
+ordinary session launch or resource cleanup is authorized for this task.
 
 Start with the existing four-core-worker budget. There is no promised percentage
 or hard 351.05-second gate: the user made the old performance targets informational.
@@ -296,7 +303,7 @@ Do not build immutable repository seeds: the existing seven-sample pilot in
 per fixture plus seed construction. Never copy linked-worktree administration,
 hardlink mutable indexes/config/refs, reuse approvals or shrink actual fixtures.
 
-## Execution scope — P1 complete; P2 reopened; other opportunities deferred
+## Historical P1/P2 execution scope — completed; other opportunities separately authorized
 
 Keep one writer, one active change and normal four-worker admission. Independent
 review remains useful; packet counts and universal lifetime theorems are not gates.
@@ -723,6 +730,473 @@ stage and stale-heading nits were corrected. Writer checks confirm that only thi
 plan differs from accepted implementation inputs, relative link targets exist
 and `git diff --check` passes. These are source checks, not browser-link verification.
 
+## Authorized Move blocker continuation
+
+The user subsequently requested investigation/correction of the retained Move
+failure, then completion of acceptance, with any performance control/candidate
+receiving the same correction. Continue in the existing clean feature worktree
+from `7f2b8a6d9531af3889c9e97b62c924cad664bdb4`; local main was rechecked and remains
+`ab6b2fa11e3d38fb4cc65a661f3ef9001e8ae534`. Keep the two reviewed scheduling entries
+fixed. This is not authority for another optimization, integration, publication,
+cleanup or ordinary session launch.
+
+- [x] Attribute the exact retained post-Move source reads using trace ordering and
+  the actual navigation/Sidebar owners; distinguish product behavior from observer scope.
+- [x] Correct only the responsible owner and add a deterministic red/green regression
+  preserving missing/uncertain history and explicit checkout/navigation semantics.
+- [x] Independently review the bounded fix, run focused real Move acceptance, then
+  complete four/four core/static/plugin/browser/deployment acceptance. The
+  same fix is present in both members of the renewed scheduling comparison.
+- [x] Record identities, failures, measured limits and local commits; retain resources
+  unintegrated and stop without expanding to opportunities #4–6.
+
+### Move diagnosis and minimal correction
+
+Independent retained-trace review `01a17841-e7be-7402-ad52-006fd15a07da` places the
+failure **after** execute/reconcile, not in initial-page request observation:
+execute12:31:40.781Z, reconcile40.873Z; destination-model reads with the selected ID
+at40.900/.922Z; source account-selection at40.942Z returns400 `Valid cwd required`,
+then source model/trust reads without session ID at40.943/.944Z; destination-session
+reads resume40.955Z. RSC navigation to `/` begins40.956Z, before Close41.525Z.
+This is consistent with an unbound source-composer interval, not merely an overly
+broad initial-load observer. The actual product-owner reproduction below closes
+causal attribution; the trace has no callback-level initiator stack.
+
+`SessionBulkMoveDialog.execute` retains dispatch-time `onSettled` across awaited
+execute/reconcile. That Sidebar callback retains the dispatch-time navigation
+`handleSessionDeleted`, which formerly spread its captured source `selectedSession`
+back into state when uncertainty settled. Canonical destination metadata can
+arrive **before** that settlement. Restoring the old row then makes the real
+Sidebar switch back to source, clear selection and expose a fresh source composer.
+
+Only `hooks/useSessionNavigation.ts` changes production: settlement reads the latest
+selected-session ref for both affected-ID guards and deletion's fallback cwd;
+uncertainty functionally updates the current same-ID row to `unavailable`. It keeps
+canonical path/cwd/project metadata and never clears an already-committed peer
+selection. The intentional history-only remount, conservative unknown outcome,
+confirmed-destination behavior and explicit project-switch semantics are retained.
+No Sidebar synchronization rewrite, browser wait/assertion/deadline, SDK/native
+mutation, scheduling entry or runner/orchestration change is included. The owning
+session guide now documents settlement-time selection ownership.
+
+The additive case in existing `components/AppShell.tab-session.test.mjs` captures
+the actual production callback before real Sidebar catalogue refresh, verifies
+canonical destination adoption, then invokes delayed uncertainty. It records all
+primitive commit states, requiring no restored source row/composer, retained
+current ID/destination/unavailable state, exactly the intentional remount and no
+URL clearing/source working reads. Late undefined/null/confirmed settlement after
+explicit peer selection cannot change peer identity/key/router. This mounted owner
+is not full models/trust runtime proof; the unchanged installed Move group supplies
+that receiving boundary. Existing original bodies and509-file discovery remain;
+one new case makes expected complete coverage4,178 tests/14 suites.
+
+Evidence, commands and counterexamples:
+
+- First `core --jobs 4 --file components/AppShell.tab-session.test.mjs` failed at a
+  **fixture precondition**: destination File/Git reads were undeclared. Report
+  `/tmp/pi-web-test-core.NJgju9/run.json`, command39.315s; no production fix was in
+  place. Declare the actual destination capabilities rather than filter failures.
+- The corrected **invalidation-before-canonical** ordering passes unchanged product
+  code:8 tests, `/tmp/pi-web-test-core.UmqRua/run.json`,40.639s. It does not reproduce
+  the failed schedule and does not justify the initially suspected broader Sidebar
+  rewrite; that proposal is not adopted.
+- **Canonical-before-late-settlement red:** same focused command, source
+  `/nix/store/b2yjapyxj94cwd2qfb2y683l668q73pq-source`, digest
+  `f0980222d98eee6514eed2beb7f579bd6776ea3a4b5004917f0bbc61b47bbc6e`,
+  report `/tmp/pi-web-test-core.ircFYw/run.json`,39.822s. The named runtime assertion
+  fails with a restored source row followed by two unbound-source composer commits.
+  Seven original cases pass; no cancelled/skipped/uncertain files or observed
+  survivors. This is the original production behavior, not an import/setup red.
+- Interim ref-snapshot correction passes4 files/29 tests,43.808s,
+  `/tmp/pi-web-test-core.cbl14O/run.json`. Final code additionally applies the
+  functional same-ID update recommended by independent review; do not relabel the
+  interim run as final-code execution.
+
+Final core iteration:
+
+```sh
+nix run .#test -- core --jobs 4 \
+  --file components/AppShell.tab-session.test.mjs \
+  --file components/AppShell.workspace-memory.test.mjs \
+  --file components/SessionNavigation.cross-bridges.test.mjs \
+  --file components/SessionNavigation.workspace-bridge.test.mjs \
+  --file components/SessionBulkMoveDialog.behavior.test.mjs \
+  --file components/session-catalog-helpers.test.mjs
+nix run .#test -- e2e --group move
+```
+
+The core command passes6 files/44 tests plus29 exporter contracts and mandatory
+static evidence, requested/effective four workers, no cancelled/skipped/uncertain
+files or observed survivors. Command47.586s; outer core42.515s includes36.519s
+pre-lifecycle static/realization and5.902s lifecycle. Report
+`/tmp/pi-web-test-core.G10V8I/run.json`, source
+`/nix/store/322wvbnh37gk7ha8di3fq5mpmp8j66gk-source`, digest
+`8eaa7ba901a347aeaa630740e0937068a9603f8f14fc454b26544e513598b6d4`.
+Typegen/tsc and lint executed for the final changed application, producing
+`/nix/store/4g8znq0sjjgj7blcbiizf3hagafr0azr-pi-web-types` and
+`/nix/store/qpv376hl2a50vk6baf4h7djwygn3pbr2-pi-web-lint`.
+Raw logs/timestamps/source identities and phase evidence for all iterations remain
+under `/tmp/pi-web-move-scope.BHLibi/`, including `focused-evidence.json`.
+Independent exact-source review approves the minimal callback correction and
+regression, with no blockers; no new F-lane native effect or helper cleanup
+obligation was added.
+
+Focused installed `e2e --group move` passes both unchanged desktop/mobile receipts,
+with no harness errors, complete resources/pipe/group settlement and closed port:
+`/tmp/pi-web-test-browser.psSxAv/run.json`, source/digest identical to final focused
+core above. Output `/nix/store/q8nkgrnch1agk1wk20gcjr0aniv61hkb-pi-web-browser-move-diagnostics`.
+Command113.472s includes87.019s support/package realization and4.898s definition
+preparation; actual capsule17.259s. New package
+`/nix/store/8a1h30ifi4xad0lph3rawqh4mxvrdvi9-pi-web-0.9.3` was built only by Nix in
+an isolated builder. The unchanged browser assertion now passes with the current
+selection correction, not a wait, retry, error filter or relaxed denial.
+
+Renew the one complete four/four pair with this same hook/regression/package on
+both sides. The control differs only by intentionally serializing the two reviewed
+native entries (N→E in live metadata), not reverting the product fix. Warm each
+manifest's declared static evidence before its full command; report that preparation
+separately. Keep every original browser group/deadline and complete settlement gate.
+The earlier373.800s/failed207.021s attempt remains historical, not the new baseline.
+
+### Renewed complete acceptance and measured limit
+
+Implementation: `6477aac61bbcf42be2caf39e937dd0219f912a69` on the retained feature
+branch. Writers were paused; the existing fresh `core --jobs 4 --inventory-only`
+export supplied the matched control copy (not execution/static evidence). Its
+only change is E instead of N for the coordinator and skills-content entries;
+reasons, estimates, holds, every original/new case, app fix, browser inputs and
+orchestration are identical. Control preparation ran
+`core --jobs 4 --file components/AppShell.tab-session.test.mjs`:8 passes,
+40.885s, `/tmp/pi-web-test-core.lax8BD/run.json`, realizing control lint evidence.
+This and the recorded candidate focused/Move preparation precede the measured
+commands; none is hidden in a full-command speedup.
+
+Sequential control then candidate, no other task-owned checks:
+
+```sh
+nix run .#test -- all --workers 4 --jobs 4
+```
+
+**Both pass:**509 files/4,178 tests/14 suites, zero failed/skipped/cancelled/todo,
+uncertain files or observed survivors; all26 browser/terminal groups/59 exact
+ordered receipts, no harness errors, complete collection/settlement and closed
+ports; genuine Home Manager deployment with settled clients, inactive service,
+MainPID0, authenticated absent cgroup and refused port. Peak/requested/effective
+core width is four, E waits for full pool drain. Control316F/101N/92E becomes
+candidate316F/103N/90E. Both promoted files run with three active peers in the
+candidate; all78 original four-cohort cases remain unchanged.
+
+| Identity | Matched serial control | Pooled candidate |
+| --- | --- | --- |
+| Immutable source | `/nix/store/vbwna4i873npx4zalyz23p9p0hsdxp1m-source` | `/nix/store/jllyqw19927nyq4cl4qgwby8bcln06dc-source` |
+| Content/mode digest | `6d89fdf945391728d6cbc182f900c922c4e891b95b97fd50feccaf8b3ce11609` | `37fea9216bae99f229a8fdb713c530ba548f9f53bd2240e8bf39c104b305d93c` |
+| Export/selection | `/tmp/pi-web-test-source-V1KBN8` | `/tmp/pi-web-test-source-2pGxVD` |
+| Core report | `/tmp/pi-web-test-core.oFgkzf/run.json` | `/tmp/pi-web-test-core.L1xphv/run.json` |
+| Core output | `/nix/store/8cwcrzfdamsx4qym35hw6ggnxxx0qxkn-pi-web-core-checks` | `/nix/store/7177z0gvk0k8khyfawhkqbsl7gsnjh6i-pi-web-core-checks` |
+| Detailed directory within output | `artifacts/run-S9H09z` | `artifacts/run-mZDSb6` |
+| Browser report | `/tmp/pi-web-test-browser.r2q4Kl/run.json` | `/tmp/pi-web-test-browser.9MhqaD/run.json` |
+| Deployment report | `/tmp/pwv-csqB4R/run.json` | `/tmp/pwv-4iPoUp/run.json` |
+
+All1,574 canonical file paths/modes match; only the two live JSON lane values
+differ. All509 test-body hashes and paired registered/completed outcomes/counts
+are identical. Compared with the original baseline, all4,177 original outcomes
+remain in original relative order and only the one callback regression is added.
+Both use application package `8a1h30ifi4xad0lph3rawqh4mxvrdvi9`, unchanged pinned
+Node24.21.0/runtime/private dependencies, typing source `3z64ndjsgnhbhrqh3ls0w9l25sqbvk2z`
+and type evidence `4g8znq0sjjgj7blcbiizf3hagafr0azr`. Full commands reuse their
+prepared static outputs: control lint `dr54q6y0m32yjlzj3adb9qzzzi5xalc2`, candidate
+lint `qpv376hl2a50vk6baf4h7djwygn3pbr2`; exporter contracts/effectful tests are fresh.
+Every store identifier in this paragraph is under `/nix/store/` with the descriptive
+suffix bound in `static-inputs.json`/reports, not a new freshness claim.
+
+| Seconds | Serial control | Pooled candidate |
+| --- | ---: | ---: |
+| Full command including in-command realization/export | 349.302 | 348.897 |
+| Outer core | 346.140 | 345.661 |
+| Core pre-lifecycle / lifecycle / post-lifecycle | 1.599 /344.193 /0.348 | 1.596 /343.743 /0.322 |
+| Lifecycle to first file / last file to settlement | 0.828 /0.071 | 0.828 /0.073 |
+| File window | 343.294 | 342.842 |
+| Shared F/N pool / E tail | 240.745 /102.549 | 246.967 /95.875 |
+| Summed F /N /E file work | 481.232 /477.345 /102.504 | 478.589 /504.853 /95.832 |
+| Summed all-file work | 1061.080 | 1079.273 |
+| Pool occupancy, four workers | 99.543% | 99.552% |
+| Browser support / definition preparation | 3.696 /4.774 | 3.650 /4.798 |
+| Browser group-client envelope / outer | 222.107 /230.581 | 226.256 /234.707 |
+| Deployment outer / guest | 73.362 /17.526 | 25.203 /19.396 |
+| Browser-through-deployment branch | 305.953 | 262.023 |
+
+The tail is6.674s shorter, while the pool is6.222s longer; the file window improves
+only0.452s and command wall only0.405s. Summed file work **increases18.193s**, rather
+than demonstrating work removed. Coordinator is4076.533→3978.282ms; skills is
+1984.550→2968.714ms under contention. Native-tools remains E at3290.865→3240.653ms;
+Pause remains E at2636.616→2684.330ms. These actual durations do not refresh other
+hints or turn ideal `S-S/4` arithmetic into a scheduling bound.
+
+**Measurement limit:** this is one source-matched fresh four/four pair, not a
+statistical or machine-exclusive experiment. Outer admission observed32 CPUs and
+58,381,451,264 /57,398,493,184 available bytes; core-local observations were
+57,784,803,328 /56,713,695,232 bytes. An independently owned2-vCPU VM and normal
+host load were observed; headroom admitted unchanged four/four, not a reservation.
+Both core/static/browser/package prerequisites were warm. Control additionally
+realized the new shared deployment closure/driver inside its command; candidate
+reused the exact same `qbp39raxz8m8z204d53qq94rcf003dhl-pi-web-service-driver`.
+Thus the full envelopes are **not a matched warm-prerequisite whole-feedback
+benchmark**, and the roughly48s service-outer difference is not scheduling savings.
+Core remains critical in both, but preparation/contention differences still preclude
+a causal interpretation of a0.405s wall delta. Do not subtract overlapping branches
+or compare this corrected-package pair directly with the earlier373.800s baseline.
+No meaningful overall speedup, CPU savings, cold-cache/ARM/CI or escaped-descendant
+claim is made; no extra timing campaign is justified by this noise-sized result.
+
+Exact source/outcome/static/settlement assertions, raw command logs/timestamps and
+reports are retained in `/tmp/pi-web-move-scope.BHLibi/`, particularly
+`complete-comparison.json`, `pair-inputs.json`, `control-all-analysis.json`,
+`candidate-all-analysis.json`, `control-preparation.json` and `run-pair.sh`.
+The first coherent corrected candidate is fully accepted. The final evidence-only
+plan commit leaves app/test/manifest/runner inputs at `6477aac`; proportional checks
+are documentation review, whitespace and exact unchanged-input verification, not
+another full suite. Feature branch/worktree and historical/current diagnostics
+remain; no rebase, integration, publication, manual cleanup or further opportunity.
+Final independent evidence review approves the acceptance/coverage/measurement
+statements; its lane-only wording nit is clarified below. Writer checks confirm
+only this plan differs from accepted inputs, the reviewed manifest hash and local
+main are unchanged, and `git diff --check` passes.
+
+## Opportunity #3 — bounded execution plan
+
+Checked starting local main: `ab6b2fa11e3d38fb4cc65a661f3ef9001e8ae534` (clean).
+Dedicated branch `perf/core-exclusive-cohort`, worktree
+`/home/robert/projects/3rdparty/pi-desk-worktrees/core-exclusive-cohort`.
+CodeGraph initialized before source research. One writer coordinates checks;
+independent read-only pinned-effect/eligibility review is bounded to this cohort.
+The original P2 acceptance is a reference, not this task's baseline.
+
+- [x] Review the four actual receivers, helpers, pinned eager imports, native effects
+  and success/failure settlement; adopt only justified lanes and precise holds.
+- [x] Verify adopted receivers and existing manifest/discovery/settlement contracts;
+  no helper changes require new regressions.
+- [x] Independently review exact eligibility and unchanged original coverage.
+- [x] Complete four/four comparison/acceptance after the separately authorized Move
+  correction. The initial failed checkpoint is retained below; both corrected
+  complete runs pass, without another unchanged retry or unmatched core substitute.
+- [x] Record adopted files/holds, observed limits and reviewed local feature commits;
+  retain branch/worktree unintegrated and stop before another opportunity. The
+  shorter tail does not establish meaningful whole-feedback improvement.
+
+Stop rather than expand if safety work becomes disproportionate to modest savings.
+Source/path evidence alone does not qualify execution; separate processes do not
+prove source-write confinement or arbitrary descendant closure. E does not fix leaks.
+
+### Exact cohort disposition
+
+For the **lane-only cohort change**, only live `nix/test-lanes.json` changes
+executable scheduling. That change preserves original tests/helpers/production
+code, discovery, existing pool estimates, workers, resource admission, browser
+queues, deadlines and settlement gates. The separately authorized Move correction
+and additive regression are common to both corrected comparison members above.
+The immutable historical audit is untouched. No failure-cleanup fix is shipped.
+
+| File | Adopted disposition | Source/native and failure-lifetime basis |
+| --- | --- | --- |
+| `lib/acceptance/coordinator.test.mjs` | **N**, advisory 3000ms | Real snapshots/settings/ledgers, synchronous Git probes and awaited `flock --no-fork` recovery are native despite the synthetic executor. Unique fixture project/agent roots contain writes. Disposal closes admission before fixture releases gates, joins serial tails/pumps and submissions, clears its timer, restores env and retains roots after drain failure. Actual held capture/verification/executor, rejection, uncertain settlement and persistence-failure cases remain. Default executor is imported but never invoked by the second denied coordinator. |
+| `app/api/skills/content/route.test.mjs` | **N**, advisory 2000ms | Real FIFO/symlink/descriptor/path/permission operations remain. Exact pinned loader creates settings/package managers and resolves packages before filtering extensions: `noExtensions` alone is insufficient. Here private agent has no packages/settings; shared source has no `.pi/settings.json`; package-source lists and extension paths are empty. Project-trust lock/store is private, other resource/context/install annotations are reads, and no session binds `resources_discover`. Allowed-root catalogue awaits an empty private session scan (no dirty index/save timer). Requests finish before root removal. Re-review if source settings/packages or composition change; no actual source-write repair is justified. |
+| `app/api/native-tools/route.test.mjs` | **Retain E** | Codemode registration/listing never executes a script; no QuickJS-worker hold is inherited. Ordinary replacement awaits retired-wrapper shutdown. Startup still constructs runtime/session owners before registry publication without a construction-failure disposal scope; fixture tracks IDs after successful status/body handling and sees current wrappers only. Failure/unpublished retirement ownership is not closed by this task. |
+| `lib/session-pause.test.mjs` | **Retain E**, replace stale rationale | Existing cleanup already releases gates and awaits model refresh, abort, tracked work, SDK idle and wrapper shutdown. Suite root removal still lacks catalogue/scanner/background failure/timeout completion ownership. Catalogue and scanner barriers differ; captured-path index saves are distinct. Current transcripts are outside the default scanner directory, so no claim that every success leaves a dirty writer is made. Genuine10s deadlines remain real, not controlled clocks. |
+
+New advisory hints round this task's baseline coordinator3152.243ms and
+skills2212.857ms, not the historical opportunity table. The four baseline files
+sum11.354s (native-tools3338.474ms; Pause2650.545ms). No ideal `S-S/4` arithmetic is
+a scheduling bound or measured speedup.
+
+Pinned runtime modules remain
+`/nix/store/28vpp6bpxj0algr4b4xigfca399flcmi-pi-web-node-modules-0.9.3`.
+Independent review found bounded eager SDK effects: package metadata reads,
+`TOOLS_DIR` environment snapshot and process-local stream/provider registration;
+barrel import does not run CLI `main()` or construct sessions. Plain pinned Jiti
+retains ordinary module/native-import caching; runner `JITI_FS_CACHE=0` disables
+disk transformations. Proper-lockfile's synchronous release clears its heartbeat
+before returning. File processes isolate these globals, not the shared source cwd.
+Pinned file hashes are retained in
+`/tmp/pi-web-p3-cohort.1RK3PZ/pinned-imports.json`.
+
+### Failure-path qualification (disposable diagnostic, not feature code)
+
+After the baseline settled, a private copy of its exported source ran:
+
+```sh
+nix run .#test -- core --jobs 4 --file lib/acceptance/coordinator.test.mjs
+```
+
+The original held-capture case deliberately fails before normal gate release and
+adds one rejecting peer disposal owner. The real fixture must still stop/drain the
+actual coordinator, release the gate, reject both original tracked submissions as
+`disposed`, clear pumps/timer, restore env and retain its root before its original
+AggregateError. A bounded in-hook observer asserts each fact and emits
+`P3_FAILURE_CLEANUP`. Other29 original cases pass; the one intentional failure is
+not filtered, skipped or retried into a pass. Runner reports no uncertain files or
+observed survivors. This diagnoses fixture failure ownership, not arbitrary native
+descendants or a production supervisor's settlement from a synthetic result.
+
+- First diagnostic: `/tmp/pi-web-test-core.YHnmel/run.json`, source
+  `/nix/store/45453gxp4s8wyil9nkk8k99rprkjci9y-source`, digest
+  `3adb268a19e766a7da92baac18a269892019d1a745ccbe3afe2ed576c1955168`,
+  command43.623s. It reached the intentional body failure, but a later `t.after`
+  observer did not run after the first hook rejected. That observation precondition
+  did **not** qualify retained-root cleanup and is retained, not hidden.
+- Corrected observation: `/tmp/pi-web-test-core.834Ibw/run.json`, source
+  `/nix/store/1aadjnamljah7wj1b11nfrrb7x0zjap8-source`, digest
+  `d2fe3f2ae853bf1193e2163282d1f9eb210eb451430033b224862442a92ee9bd`,
+  command42.824s. Observer moved inside the original cleanup hook before its throw;
+  all named predicates and the marker execute. This is a changed diagnostic, not
+  an unchanged retry or helper fix. Both commands exit1 as intended, with30 tests,
+  29 passes/1 controlled failure, zero cancelled/skipped and settled outer clients.
+- Exact source copies, patches, logs/timestamps and exits remain under
+  `/tmp/pi-web-p3-cohort.1RK3PZ/`; failed Nix derivations retain logs/build roots.
+  No diagnostic/test/helper change enters the feature. Relevant original failure
+  cases also run unchanged in focused and complete acceptance.
+
+Independent read-only review `01a17820-c3ed-7402-ad52-005a5f017ed7` approves the
+exact two N promotions and refined E holds, with no blocking finding. It confirms
+receiver/helper bytes match baseline, original coverage is conserved and the
+corrected failure observer runs before the original cleanup throw. Reviewed live
+manifest SHA256: `ae712f5bb99a7fc9573e6a70af21a64b9045205253d6071d86138bc351f2e170`.
+This is bounded pinned Linux composition eligibility, not general native lifetime,
+escaped-descendant or speedup proof.
+
+### Focused candidate verification
+
+```sh
+nix run .#test -- core --jobs 4 \
+  --file lib/acceptance/coordinator.test.mjs \
+  --file app/api/skills/content/route.test.mjs \
+  --file app/api/native-tools/route.test.mjs \
+  --file lib/session-pause.test.mjs \
+  --file lib/test-runner.test.mjs --file lib/test-design.test.mjs \
+  --file lib/test-lanes-audit.test.mjs
+```
+
+Passed7 files/127 tests plus29 exporter contracts and mandatory static evidence,
+zero skipped/cancelled/uncertain files or observed survivors. Report
+`/tmp/pi-web-test-core.8Pz7uz/run.json`, immutable source
+`/nix/store/25z94ryr31i2bj2m9whi46aikvipnas2-source`, digest
+`c5d78ffa713177c5378053044511e59a5384d88cb1206c6130862b92699eaab8`,
+output `/nix/store/gqqkxr8alk6csmgp8832grg7pfg9x8dm-pi-web-core-checks`.
+Requested/effective four workers; cases remain serial per file. Command49.545s,
+outer core44.538s, pre-lifecycle32.499s, lifecycle11.949s, post-lifecycle0.090s.
+Lint executed for the new manifest and produced
+`/nix/store/grjzvkwmcyp0zmvrjgqgc8i8i6i74kp8-pi-web-lint`;
+typegen/tsc evidence `/nix/store/qh06kmg2dbj3a3bpk8ypgflavl9w7bwk-pi-web-types`
+and type source `/nix/store/majsir19c2dywnj7fvrfb3sii6wwb4cv-source` are reused.
+This focused/static prewarming is separate from the complete comparison commands.
+Exact Git diff assertions confirm only two new N entries, their two removed holds,
+two refined retained holds and this plan; all existing reviewed entries, application,
+original tests/helpers/runner and dependencies are unchanged. Evidence:
+`/tmp/pi-web-p3-cohort.1RK3PZ/source-conservation.json`.
+
+### First complete comparison attempt and bounded stop (historical)
+
+Implementation commit: `6a5c60b80defb89070af248ba8b2b0beffdf508b`.
+One sequential pair used the same command, physical worktree and orchestration:
+
+```sh
+nix run .#test -- all --workers 4 --jobs 4
+```
+
+Both selected native x86_64 Linux/Node24.21.0, four core workers/four browser
+sandboxes and overlapping core/browser→deployment. Outer admission observed32 CPUs
+and57,467,002,880 /57,787,777,024 available bytes; combined estimate remains16 CPUs/
+28,991,029,248 bytes, not a reservation. No other task-owned checks overlapped.
+Normal desktop/other task load means neither run is machine-exclusive.
+Dependencies/package/type evidence were warm; baseline reused the P2 lint output,
+candidate reused the changed-manifest lint output from the49.545s focused command.
+No separate prerequisite build was performed. Nix logged an ignored invocation-
+private SQLite eval-cache-busy message during candidate realization; execution
+continued. The subsequent browser assertion, not that message, vetoed acceptance.
+
+| Identity | Fresh baseline | Candidate (failed/incomplete) |
+| --- | --- | --- |
+| Git | `ab6b2fa11e3d38fb4cc65a661f3ef9001e8ae534` | `6a5c60b80defb89070af248ba8b2b0beffdf508b` |
+| Immutable source | `/nix/store/hsi06bi09dykpv1l49iywna81z0zy674-source` | `/nix/store/z6l578k7rlj1hc31c6szy2774n5ab0f8-source` |
+| Content/mode digest | `5e293c8ce501d45ae762a7d2bb59b887f54c4caf5c8fa595b59b39786ad2bb5b` | `44718b0ca74a89e35e37b52c913346710dc8eb4b6deccd40431c19d2b3b9896a` |
+| Export/selection root | `/tmp/pi-web-test-source-Qk9sGl` | `/tmp/pi-web-test-source-ovxz5F` |
+| Core report | `/tmp/pi-web-test-core.QLSme2/run.json` | `/tmp/pi-web-test-core.PKqCBW/run.json` |
+| Browser report | `/tmp/pi-web-test-browser.Syllfr/run.json` | `/tmp/pi-web-test-browser.u1VAQW/run.json` |
+| Deployment report | `/tmp/pwv-LZqdoe/run.json` | Not started: browser failed |
+
+All1,574 exported file paths match; bytes/modes differ only at this plan and live
+`nix/test-lanes.json`. Original test/helper/application/browser/source inputs and
+package `/nix/store/9xqnp83zglbq9ww1fipc3kks8p4f310r-pi-web-0.9.3` are identical.
+Manifest review conserves509 discovered files and4,177 tests/14 suites, with
+316F/101N/92E →316F/103N/90E. These are planned candidate totals, **not** a claim
+that aborted candidate core completed them. Evidence:
+`/tmp/pi-web-p3-cohort.1RK3PZ/export-comparison.json`.
+
+**Baseline passed:**509 files/4,177 tests/14 suites, zero failed/skipped/cancelled,
+uncertain files or observed survivors; all26 browser/terminal groups/59 exact
+receipts and genuine deployment. The VM confirms settled clients, inactive service,
+MainPID0, absent authenticated cgroup and refused port. Core immutable output:
+`/nix/store/s5yizhi5k2dl3xcc89gg7lj95qrb5b0p-pi-web-core-checks`, detailed
+`artifacts/run-giJefl/{summary.json,inventory.json,events.jsonl,*.tap}`.
+
+| Seconds | Baseline (complete) | Candidate (failed/incomplete) |
+| --- | ---: | ---: |
+| Full command including realization/export | 373.800 | 207.021 (failed; **not speedup**) |
+| Outer core | 366.359 | 202.017 (aborted) |
+| Core pre-lifecycle / lifecycle / post-lifecycle | 1.843 /364.189 /0.327 | No complete lifecycle output |
+| Lifecycle to first file / last file to settlement | 0.897 /0.074 | Unavailable |
+| File window / F-N pool / E tail | 363.218 /259.521 /103.697 | Unavailable |
+| Summed F /N /E file work | 499.300 /533.891 /103.646 | Unavailable |
+| Pool occupancy at four workers | 99.529% | No complete pool |
+| Browser support / definition preparation | 3.767 /5.154 | 3.780 /4.939 |
+| Browser client envelope / outer browser | 241.324 /250.248 | 193.105 /201.827 |
+| Deployment outer / guest | 25.628 /19.171 | Not run |
+| Browser-through-deployment branch | 278.021 | Incomplete |
+
+Intervals overlap and are not additive; preparation is mixed realization/export/
+static evidence/setup, not isolated CPU work. With incomplete candidate execution,
+there is **no measured E-tail reduction, whole-feedback gain, cumulative-work delta
+or valid matched speedup**. The baseline itself is not relabelled P2 evidence.
+
+**Blocking failure:** `move/picker-recovery-native-v2@legacy-desktop`, at unchanged
+`e2e/session-move.mjs:369` (`checkWorktreeMoveBridges`). After the selected-uncertain
+native Move/unreadable-response/Close chain, `sourceWorkingReads` was expected to
+be empty but contained actual `/api/models?cwd=…uncertain-source-desktop` and
+`/api/project-trust?cwd=…uncertain-source-desktop` requests. The trace records these
+fetches at12:31:40.943/40.944Z; the assertion fails at12:31:41.579Z. A400 console
+error precedes failure; an incomplete-chunk/SSE error follows requested shutdown.
+Those errors remain fatal/unfiltered. This locates the observed failure, **not**
+its root cause or evidence that an unchanged retry would fix it. No browser
+assertion/wait/deadline, production code, orchestration or lane width was changed.
+
+Failed Move output:
+`/nix/store/4ikszdrmbkkgc57da93vrzc6chkhfvbj-pi-web-browser-move-diagnostics`, with
+`result.json` and `artifacts/{run.json,coverage.json,server.log,events.jsonl,context-1.zip,context-1-failure-0.png}`.
+Its16.216s capsule retained complete diagnostics and confirmed service/pipe/group
+settlement and closed port. Sixteen groups/39 receipts passed, one group failed,
+nine were not run. All17 started capsules settled/collected and closed their ports
+with no observed survivors/uncertainty. Core logs show **both promoted files passed
+in the full pool** before peer abort (`candidate.log:585–637,843–898`), but there is
+no finalized complete core summary. The outer Nix client reports interrupted and
+settled, no observed survivors/uncertainty; this is not a complete inner-core native
+settlement certificate. Nix owns outer builder containment. Deployment never starts.
+
+Raw logs/timestamps/exits, failed diagnostic copies and derived summaries remain
+at `/tmp/pi-web-p3-cohort.1RK3PZ/`, including `baseline-analysis.json`,
+`candidate-failure-analysis.json` and `export-comparison.json`. No resources are
+manually removed. The first coherent candidate is retained as **implemented,
+focused-verified and independently reviewed, not fully accepted or ready to
+integrate**. Resolving this browser blocker requires a separately bounded decision;
+this task stops rather than expands or runs a repeated timing campaign. A final
+evidence/status-only commit leaves all executable inputs at the implementation
+commit; proportional checks review documentation, whitespace, exact changed paths
+and unchanged application/test/manifest/runner inputs, not another full suite.
+Final independent evidence review by the same reviewer found no documentation
+blockers and confirms the incomplete-acceptance/performance/settlement limits.
+Writer's `git diff --check`, exact changed-path/input comparison and unchanged
+reviewed-manifest hash checks pass. Local main remains the starting `ab6b2fa`;
+feature branch/worktree and historical/current diagnostics are retained. No rebase,
+integration, publication, manual resource cleanup or next opportunity is attempted.
+
 ## Completion Checklist
 
 ### This analysis
@@ -741,11 +1215,11 @@ and `git diff --check` passes. These are source checks, not browser-link verific
 - [x] Existing owning guide and live scheduling metadata match the unchanged advisory semantics.
 
 P1 is complete and integrated at `0d5d914515057c957b47a7b92d9164ddacd98bc7`.
-P2 alone now has separate implementation authority, starting from that checked local
+P2 then had separate implementation authority, starting from that checked local
 main in `/home/robert/projects/3rdparty/pi-desk-worktrees/rpc-fixture-preparation`,
 branch `perf/rpc-fixture-preparation`; CodeGraph was initialized before research.
-Other opportunities remain deferred; this multi-opportunity plan is not fully
-executed or archived.
+P2 is now integrated, and opportunity #3 has its separate bounded section above.
+This multi-opportunity plan is not fully executed or archived.
 
 ### Initial P2 slice (historical stop, subsequently reopened and completed)
 
@@ -781,5 +1255,8 @@ standalone-core, cold-cache, ARM or CI timing evidence. Reopened P2 has one matc
 focused instrumented pair and complete four/four acceptance, not repeated statistical
 or a matched whole-feedback speed comparison. Remaining non-transform import costs are not further
 decomposed, and no general Babel environment-transition guarantee is claimed.
-Other opportunities, native cache/fence compatibility and some pinned SDK
-loader/resource closures remain deferred. Simulations are not promises.
+Opportunity #3's two N files and minimal Move correction now pass full acceptance;
+its single pair shows no meaningful whole-feedback speedup and has the recorded
+deployment-realization/contention limits. Native-tools/Pause failure-lifetime gates,
+other opportunities, native cache/fence compatibility and other SDK loader/resource
+closures remain deferred. Simulations are not promises.
