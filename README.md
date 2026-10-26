@@ -163,13 +163,15 @@ There are three acceptance levels: sandboxed core/static/plugin checks, the comp
 
 ```bash
 nix flake check --max-jobs 1 --cores 4 -L   # complete cacheable checks
-nix run .#test -- all --workers 4 --jobs 4 # normal fresh complete acceptance, if admitted
+nix run .#test -- all --workers 4 --jobs 12 # normal fresh complete acceptance, if overlap admitted
 nix run .#test -- core                     # fresh core/static/plugin execution separately
 nix run .#test -- e2e                      # full browser/terminal inventory separately
 nix run .#test -- service                  # genuine Home Manager deployment separately
 nix run .#test -- core --jobs 2 --file lib/worktree.test.mjs
 nix run .#test -- e2e --group markdown      # selected-only iteration
 ```
+
+The standard fresh profile uses twelve core workers and four browser sandboxes when overlap is admitted; use `all --workers 4 --jobs 4` if headroom would otherwise serialize the levels. See [testing](./docs/testing.md#coverage-and-resource-admission) for the measured comparison and admission budget.
 
 Nix realizes prerequisites automatically; no preparation ceremony, checkout dependencies or Playwright download is needed. The fresh entry point exports/verifies current source, including untracked helpers. Core uses immutable shared modules. Every browser/terminal group gets its own ordinary Nix sandbox, pinned Chromium/fonts, synthetic fixtures/providers and installed production launcher. Up to four resource-admitted sandboxes run concurrently; `--workers 1..4` fixes the width, not a VM size. Browser acceptance needs no KVM, nspawn or experimental daemon features. The separate small KVM guest proves real Home Manager startup, environment/permissions, restart/persistence, HTTP PTY and service/cgroup shutdown. The combined `all` command exports once, runs browser then deployment, and overlaps core only with sufficient CPU/memory headroom. No level contacts the installed host service. Full acceptance requires all three levels; focused passes are not full acceptance.
 
