@@ -70,6 +70,8 @@ export function useSessionNavigation(state: ReturnType<typeof useNavigationState
   const { initialNavigation, setInitialNavigation, selectedSession, setSelectedSession, sessionCatalog, setSessionCatalog, newSessionCwd, setNewSessionCwd, newSessionDraftId, setNewSessionDraftId, setPersistentNewSessionDraftId, persistNewSession, activeNewSessionDraftKeyRef, setInitialCwdStatus, setInitialCwdError, setRefreshKey, setSessionKey, setSearchTarget, initialSessionId, activeCwd, setActiveCwd, activeProjectKeyRef } = state;
   const { router, isMobile, closeOverview, activeFileTabId, chatInputRef, branchLeafChangeFnRef, setChatHidden, setBranchTree, setBranchActiveLeafId, setSystemPrompt, setSystemTools, setSystemInfoLoading, setActiveTopPanel, setSidebarOpen, setRightPanelOpen, setActiveFileTabId, setOverviewMobileList } = ui;
   const work = useNavigationWork();
+  const selectedSessionRef = useRef(selectedSession);
+  selectedSessionRef.current = selectedSession;
   const handleSessionsChange = useCallback((sessions: SessionInfo[]) => {
     setSessionCatalog(sessions);
     // The sidebar hydrates metadata after the selected session has already
@@ -480,17 +482,21 @@ export function useSessionNavigation(state: ReturnType<typeof useNavigationState
   const handleSessionDeleted = useCallback((sessionId: string, replacementCwd?: string | null, refreshCatalogue = true) => {
     invalidateWorkspaceRestore();
     if (refreshCatalogue) setRefreshKey((k) => k + 1);
-    if (selectedSession?.id === sessionId && replacementCwd === null) {
+    // Move/delete settlement can outlive the render that dispatched it. Canonical
+    // metadata (or explicit navigation) may already have replaced that selection;
+    // never restore the callback's captured source row or clear a newer session.
+    const currentSession = selectedSessionRef.current;
+    if (currentSession?.id === sessionId && replacementCwd === null) {
       // An uncertain move is not a deletion or a confirmed destination. Keep
       // history mounted read-only until canonical metadata/reselection rebinds
       // it; never create a working composer in a possibly vanished source.
-      setSelectedSession({ ...selectedSession, cwdState: "unavailable" });
+      setSelectedSession((current) => current?.id === sessionId ? { ...current, cwdState: "unavailable" } : current);
       setSessionKey((k) => k + 1);
       return;
     }
-    if (selectedSession?.id === sessionId) {
+    if (currentSession?.id === sessionId) {
       clearTabOpenSession(sessionId);
-      const cwd = replacementCwd ?? selectedSession.cwd;
+      const cwd = replacementCwd ?? currentSession.cwd;
       // A confirmed relocation must not create the replacement composer or
       // Files view in a vanished source directory.
       if (replacementCwd) {
@@ -513,7 +519,7 @@ export function useSessionNavigation(state: ReturnType<typeof useNavigationState
       setActiveTopPanel(null);
       router.replace(cwd ? `?cwd=${encodeURIComponent(cwd)}` : (typeof window !== "undefined" ? window.location.pathname : "/"), { scroll: false });
     }
-  }, [invalidateWorkspaceRestore, selectedSession, router, setSelectedSession, setNewSessionCwd, setNewSessionDraftId, setSessionKey, setBranchTree, setBranchActiveLeafId, setSystemPrompt, setSystemTools, setSystemInfoLoading, setActiveTopPanel, activeNewSessionDraftKeyRef, setRefreshKey, setActiveCwd, activeProjectKeyRef]);
+  }, [invalidateWorkspaceRestore, selectedSessionRef, router, setSelectedSession, setNewSessionCwd, setNewSessionDraftId, setSessionKey, setBranchTree, setBranchActiveLeafId, setSystemPrompt, setSystemTools, setSystemInfoLoading, setActiveTopPanel, activeNewSessionDraftKeyRef, setRefreshKey, setActiveCwd, activeProjectKeyRef]);
 
   const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
   const newSessionDraftKey = selectedSession === null && effectiveNewSessionCwd

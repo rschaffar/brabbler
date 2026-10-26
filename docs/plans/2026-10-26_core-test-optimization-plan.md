@@ -1,8 +1,8 @@
 # Core test optimization — investigation and proposed execution
 
-**Status: P1 and P2 complete and integrated; opportunity #3 implemented and
-focused-verified, but complete acceptance is BLOCKED by the Move browser failure
-below. No valid complete performance comparison is available.** P2 was subsequently merged into local main at
+**Status: P1 and P2 complete and integrated; opportunity #3's Move blocker has a
+minimal production correction and deterministic red/green evidence. Focused core
+and both installed Move inputs pass; renewed complete acceptance/comparison is pending.** P2 was subsequently merged into local main at
 `ab6b2fa11e3d38fb4cc65a661f3ef9001e8ae534`; its earlier retained-state evidence below
 remains historical. The first stop at `d532fedb44cc819b18085331168d9d78157a01b7`
 was premature: it disposed only of the small owner-compilation slice, not the dominant
@@ -728,6 +728,134 @@ Final independent evidence review found no substantive blockers; its admission-
 stage and stale-heading nits were corrected. Writer checks confirm that only this
 plan differs from accepted implementation inputs, relative link targets exist
 and `git diff --check` passes. These are source checks, not browser-link verification.
+
+## Authorized Move blocker continuation
+
+The user subsequently requested investigation/correction of the retained Move
+failure, then completion of acceptance, with any performance control/candidate
+receiving the same correction. Continue in the existing clean feature worktree
+from `7f2b8a6d9531af3889c9e97b62c924cad664bdb4`; local main was rechecked and remains
+`ab6b2fa11e3d38fb4cc65a661f3ef9001e8ae534`. Keep the two reviewed scheduling entries
+fixed. This is not authority for another optimization, integration, publication,
+cleanup or ordinary session launch.
+
+- [x] Attribute the exact retained post-Move source reads using trace ordering and
+  the actual navigation/Sidebar owners; distinguish product behavior from observer scope.
+- [x] Correct only the responsible owner and add a deterministic red/green regression
+  preserving missing/uncertain history and explicit checkout/navigation semantics.
+- [ ] Independently review the bounded fix, run focused real Move acceptance, then
+  complete four/four core/static/plugin/browser/deployment acceptance. Apply the
+  same fix to both members of any renewed scheduling comparison.
+- [ ] Record identities, failures, measured limits and local commits; retain resources
+  unintegrated and stop without expanding to opportunities #4–6.
+
+### Move diagnosis and minimal correction
+
+Independent retained-trace review `01a17841-e7be-7402-ad52-006fd15a07da` places the
+failure **after** execute/reconcile, not in initial-page request observation:
+execute12:31:40.781Z, reconcile40.873Z; destination-model reads with the selected ID
+at40.900/.922Z; source account-selection at40.942Z returns400 `Valid cwd required`,
+then source model/trust reads without session ID at40.943/.944Z; destination-session
+reads resume40.955Z. RSC navigation to `/` begins40.956Z, before Close41.525Z.
+This is consistent with an unbound source-composer interval, not merely an overly
+broad initial-load observer. The actual product-owner reproduction below closes
+causal attribution; the trace has no callback-level initiator stack.
+
+`SessionBulkMoveDialog.execute` retains dispatch-time `onSettled` across awaited
+execute/reconcile. That Sidebar callback retains the dispatch-time navigation
+`handleSessionDeleted`, which formerly spread its captured source `selectedSession`
+back into state when uncertainty settled. Canonical destination metadata can
+arrive **before** that settlement. Restoring the old row then makes the real
+Sidebar switch back to source, clear selection and expose a fresh source composer.
+
+Only `hooks/useSessionNavigation.ts` changes production: settlement reads the latest
+selected-session ref for both affected-ID guards and deletion's fallback cwd;
+uncertainty functionally updates the current same-ID row to `unavailable`. It keeps
+canonical path/cwd/project metadata and never clears an already-committed peer
+selection. The intentional history-only remount, conservative unknown outcome,
+confirmed-destination behavior and explicit project-switch semantics are retained.
+No Sidebar synchronization rewrite, browser wait/assertion/deadline, SDK/native
+mutation, scheduling entry or runner/orchestration change is included. The owning
+session guide now documents settlement-time selection ownership.
+
+The additive case in existing `components/AppShell.tab-session.test.mjs` captures
+the actual production callback before real Sidebar catalogue refresh, verifies
+canonical destination adoption, then invokes delayed uncertainty. It records all
+primitive commit states, requiring no restored source row/composer, retained
+current ID/destination/unavailable state, exactly the intentional remount and no
+URL clearing/source working reads. Late undefined/null/confirmed settlement after
+explicit peer selection cannot change peer identity/key/router. This mounted owner
+is not full models/trust runtime proof; the unchanged installed Move group supplies
+that receiving boundary. Existing original bodies and509-file discovery remain;
+one new case makes expected complete coverage4,178 tests/14 suites.
+
+Evidence, commands and counterexamples:
+
+- First `core --jobs 4 --file components/AppShell.tab-session.test.mjs` failed at a
+  **fixture precondition**: destination File/Git reads were undeclared. Report
+  `/tmp/pi-web-test-core.NJgju9/run.json`, command39.315s; no production fix was in
+  place. Declare the actual destination capabilities rather than filter failures.
+- The corrected **invalidation-before-canonical** ordering passes unchanged product
+  code:8 tests, `/tmp/pi-web-test-core.UmqRua/run.json`,40.639s. It does not reproduce
+  the failed schedule and does not justify the initially suspected broader Sidebar
+  rewrite; that proposal is not adopted.
+- **Canonical-before-late-settlement red:** same focused command, source
+  `/nix/store/b2yjapyxj94cwd2qfb2y683l668q73pq-source`, digest
+  `f0980222d98eee6514eed2beb7f579bd6776ea3a4b5004917f0bbc61b47bbc6e`,
+  report `/tmp/pi-web-test-core.ircFYw/run.json`,39.822s. The named runtime assertion
+  fails with a restored source row followed by two unbound-source composer commits.
+  Seven original cases pass; no cancelled/skipped/uncertain files or observed
+  survivors. This is the original production behavior, not an import/setup red.
+- Interim ref-snapshot correction passes4 files/29 tests,43.808s,
+  `/tmp/pi-web-test-core.cbl14O/run.json`. Final code additionally applies the
+  functional same-ID update recommended by independent review; do not relabel the
+  interim run as final-code execution.
+
+Final core iteration:
+
+```sh
+nix run .#test -- core --jobs 4 \
+  --file components/AppShell.tab-session.test.mjs \
+  --file components/AppShell.workspace-memory.test.mjs \
+  --file components/SessionNavigation.cross-bridges.test.mjs \
+  --file components/SessionNavigation.workspace-bridge.test.mjs \
+  --file components/SessionBulkMoveDialog.behavior.test.mjs \
+  --file components/session-catalog-helpers.test.mjs
+nix run .#test -- e2e --group move
+```
+
+The core command passes6 files/44 tests plus29 exporter contracts and mandatory
+static evidence, requested/effective four workers, no cancelled/skipped/uncertain
+files or observed survivors. Command47.586s; outer core42.515s includes36.519s
+pre-lifecycle static/realization and5.902s lifecycle. Report
+`/tmp/pi-web-test-core.G10V8I/run.json`, source
+`/nix/store/322wvbnh37gk7ha8di3fq5mpmp8j66gk-source`, digest
+`8eaa7ba901a347aeaa630740e0937068a9603f8f14fc454b26544e513598b6d4`.
+Typegen/tsc and lint executed for the final changed application, producing
+`/nix/store/4g8znq0sjjgj7blcbiizf3hagafr0azr-pi-web-types` and
+`/nix/store/qpv376hl2a50vk6baf4h7djwygn3pbr2-pi-web-lint`.
+Raw logs/timestamps/source identities and phase evidence for all iterations remain
+under `/tmp/pi-web-move-scope.BHLibi/`, including `focused-evidence.json`.
+Independent exact-source review approves the minimal callback correction and
+regression, with no blockers; no new F-lane native effect or helper cleanup
+obligation was added.
+
+Focused installed `e2e --group move` passes both unchanged desktop/mobile receipts,
+with no harness errors, complete resources/pipe/group settlement and closed port:
+`/tmp/pi-web-test-browser.psSxAv/run.json`, source/digest identical to final focused
+core above. Output `/nix/store/q8nkgrnch1agk1wk20gcjr0aniv61hkb-pi-web-browser-move-diagnostics`.
+Command113.472s includes87.019s support/package realization and4.898s definition
+preparation; actual capsule17.259s. New package
+`/nix/store/8a1h30ifi4xad0lph3rawqh4mxvrdvi9-pi-web-0.9.3` was built only by Nix in
+an isolated builder. The unchanged browser assertion now passes with the current
+selection correction, not a wait, retry, error filter or relaxed denial.
+
+Renew the one complete four/four pair with this same hook/regression/package on
+both sides. The control differs only by intentionally serializing the two reviewed
+native entries (N→E in live metadata), not reverting the product fix. Warm each
+manifest's declared static evidence before its full command; report that preparation
+separately. Keep every original browser group/deadline and complete settlement gate.
+The earlier373.800s/failed207.021s attempt remains historical, not the new baseline.
 
 ## Opportunity #3 — bounded execution plan
 
