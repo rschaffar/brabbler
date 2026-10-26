@@ -362,13 +362,14 @@ Markdown being misdiagnosed as an oversized notebook: negative marker admission
 avoids a redundant parse; possible markers still use the strict AST validator.
 Its actual regression fails without the guard and passes with it restored.
 
-**Finite remaining Increment 1 gates:**
+**Verified reader candidate:** `dcc4150b1e78f583026a753feaf7d51b803b3c77`,
+rebased onto local main `29bfc3a8f2798c10d7feed968d833da48472cff3`, passes complete
+core/browser/terminal/service acceptance. Evidence below binds that exact candidate;
+subsequent plan-only status text does not constitute a new runtime execution.
 
-1. Fresh complete core/browser/service acceptance on the current-main composition.
-   The earlier 1280/390 focused Markdown bridge (comparison/context and image/PDF
-   transport) does not establish full acceptance of subsequent source changes.
-2. User validation of the usable reader. No PDF selection-anchor or cross-browser
-   native-plugin guarantee; more-than-32-model eviction is an explicit bound.
+**Remaining Increment 1 gate:** user validation of the usable reader. No PDF
+selection-anchor or cross-browser native-plugin guarantee; more-than-32-model
+eviction is an explicit bound.
 
 Increment 2 sidecars/forms/handoff remains a separate implementation package;
 parked authoring packaging/prompt work remains with its existing owner.
@@ -402,21 +403,22 @@ parked authoring packaging/prompt work remains with its existing owner.
   validation of chapter order, duplicate/missing IDs and bounded references;
   focused actual-parser, native missing-chapter and unchanged v1 tests pass.
   Full acceptance remains separate.
-- [ ] Add explicit Guided entry, chapter/step outline, Back/Next across files,
-  synchronized primary evidence, optional comparison evidence and Return to step;
-  verify keyboard/touch/narrow layouts, focus and rapid/reordered navigation.
-- [ ] Add authorized immutable feature-range evidence and pinned multi-repository
-  targets, retaining per-commit first-parent behavior; verify endpoint/context
-  identity, unchanged-source context, authorization loss and no working fallback.
-- [ ] Integrate the selected Markdown, diagrams/images, table/data and PDF evidence
-  types under declared limits/provenance, with external references as links;
-  verify safe fallbacks, changed/missing assets and absence of automatic networking.
-- [ ] Extend the coordinated agent authoring guidance with contextual `ask_user`
-  briefing and a complete folder example; verify agents can validate generated
-  references without source reverse engineering or expanding exact prompt modes.
-- [ ] Run focused reader/parser/security checks, independent boundary review and
-  complete Nix acceptance; record candidate, commands, results, timings and
-  artifacts, then obtain user acceptance of this usable reader increment.
+- [x] Add explicit Guided entry, chapter/step outline, cross-file Back/Next,
+  synchronized primary/second evidence and Return; actual mounted currentness/focus
+  tests and installed 1280/390 keyboard/touch geometry bridges pass in full acceptance.
+- [x] Add independently authorized immutable feature-range and per-repository
+  targets without changing first-parent operations; actual native endpoint,
+  reachability/incarnation/path tests and mounted/shared-reader context tests pass.
+- [x] Integrate Markdown, Mermaid/raster images, table/data and native PDF evidence
+  with explicit mutable-asset limits and web links only; native admission, owned
+  snapshot lifecycle and installed comparison/image/PDF transport bridges pass.
+- [x] Document contextual `ask_user` author briefing and a complete folder format
+  in the maintained guide; production parser/native reference validators cover its
+  contracts. No parked prompt/packaging work or exact-mode behavior was changed.
+- [x] Run focused checks, meaningful defect controls, independent boundary review
+  and full Nix acceptance; exact candidate, command, results and artifacts below.
+- [ ] Obtain user validation of the usable reader before calling Increment 1 fully
+  accepted. Increment 2 remains pending and the overall plan stays active.
 
 ### 2. Usable interactive review loop
 
@@ -445,72 +447,60 @@ This is an active implementation plan, not a planning-only handoff. Keep the
 current slice and finite blockers above truthful. Documentation/link review and
 `git diff --check` never establish application acceptance.
 
-Focused evidence (dirty candidate, no commit created):
+### Complete reader acceptance
 
-- Failure artifacts retained: `/tmp/guided-reader-focused-{1,2,3}.log` for the
-  parser type error, missing-file diagnostic mismatch and missing fixture
-  `matchMedia` capability, respectively. Corrected source/fixture, not unchanged
-  retries or timeout/error suppression.
-- Navigation defect evidence: `/tmp/guided-reader-navigation-red.log`,
-  `/tmp/pi-web-test-core.UPFflt/run.json`. Actual mounted heading/focus assertion
-  fails; no compile/import/setup error counted as the meaningful red.
-- Preliminary mounted green: `/tmp/pi-web-test-core.keEaZY/run.json`, source
-  export digest `6a2bac9af1272e246b37db367c7d0072ec716572b0b91bde5c0fde64900fdaa5`.
-  Two cases, focused only; not relabelled as final/full acceptance.
-- Prior slice combined focused green: `/tmp/pi-web-test-core.bSqYu2/run.json`,
-  `/tmp/guided-reader-focused-final.log`, export digest
-  `7483316dfd50cc7c13adf3abb018f84942037f861e928e914409c4110f24f41b`:
-  8 files / 57 tests, 17s command wall time. This is the parent-reviewed prior
-  snapshot, not relabelled as current-candidate execution.
-- Current real comparison-owner green: `/tmp/pi-web-test-core.tJK0cp/run.json`.
-  Retention runtime red: `/tmp/guided-reader-retention-runtime-red.log`,
-  `/tmp/pi-web-test-core.GhTT5A/run.json`; the actual retained-Before assertion fails.
-  `/tmp/guided-reader-retention-red.log` is only a type-failing control precondition.
-- Current failures retained at `/tmp/guided-reader-continuation-1.log` and
-  `/tmp/guided-reader-continuation-diff-2.log`: diagnosed fixture teardown order
-  closed frame admission before Pierre's documented unmount notification. The
-  new owner now closes transport/releases peers, independently unmounts, then joins
-  Cards' terminal domain; errors are retained, not suppressed or retried unchanged.
-- Prior coherent reader core: `/tmp/guided-reader-continuation-final.log`,
-  `/tmp/pi-web-test-core.mIJ2gN/run.json`: 14 files / 95 tests, 85s command wall time,
-  four requested/effective workers, export digest
-  `0ecd46c2c9d774f1a3ea2ad59de7067b1d7ef82e762891405e9585aa4c5bf0f5`.
-- **Parent-owned** `nix run .#test -- e2e --group markdown` passed the same prior
-  export: `/tmp/guided-reader-markdown.KQ2mIy.log`,
-  `/tmp/pi-web-test-browser.OXCXrr/run.json`. Both desktop/touch scenario chains,
-  1280/390 guided source/range/context/image/PDF transport and unchanged old checks.
-  Parent reports 245s total command / 123.031s inner test; recorded support
-  preparation 110.979s, definition publication 4.618s. One focused browser sandbox,
-  not full acceptance; no source mutation by parent and no writer e2e invocation.
-- Presenter forwarding runtime control: `/tmp/guided-presenter-forwarding-red.log`,
-  `/tmp/pi-web-test-core.Vqrc2y/run.json`. Omitting CodeBlock observer forwarding
-  fails the real `md asset forwards newly admitted presenter work` assertion; restored.
-  Initial presenter fixture failures remain in `/tmp/guided-presenter-focused-{1,2}.log`:
-  missing `CSSStyleSheet` realm binding, diagnosed and fixed without error suppression
-  or longer deadlines. New fixture remains E-held.
-- Restored presenter/consumer check passed: `/tmp/guided-presenter-focused-final.log`,
-  `/tmp/pi-web-test-core.TvYgAh/run.json`, immutable export
-  `/tmp/pi-web-test-source-7Svmq4/source`, digest
-  `9190e1d9016a39cadd1cb65b29bb59b53d2db71291e05f5bc10954980147d13e`.
-  `nix run .#test -- core --jobs 4` with the 14 exact `--file` selections recorded
-  in that run JSON (presenter, Mermaid, both guided owners, Files/media/diff-parity,
-  Markdown links, highlighting lifetime/failure/behavior, Prism, test-design and v1
-  parser): **14 files / 74 tests**, no failures/skips/cancellations, requested/effective
-  workers 4/4. Command wall **58s**; core driver pre-file preparation/static/realization
-  envelope **32.538s**, selected file window **21.005s**. These are scoped mixed
-  intervals, not summed worker time or cold-cache benchmarks. Typegen/typecheck used
-  matching declared-input evidence; lint ran freshly (0 errors / 7 unchanged-owner
-  warnings). No independent prewarming or full acceptance. After this check, only
-  this plan's evidence/status text changed; application/test inputs remain the
-  frozen checked snapshot. Parent owns the fresh final full-acceptance run.
+- Tested commit: `dcc4150b1e78f583026a753feaf7d51b803b3c77`, on main
+  `29bfc3a8f2798c10d7feed968d833da48472cff3`; immutable source digest
+  `1e30f361fc877d3f785a586887be005295b9b6b12269c6e8cc10bb5b79de5dfa`,
+  export `/tmp/pi-web-test-source-4ZNZEH/source`.
+- `nix run .#test -- all --workers 4 --jobs 4`: **passed**, exit 0,
+  **388s end-to-end command**, including in-run realization, excluding model work
+  and coordination. All **515 core files / 4,225 tests / 14 suites**, **26 complete
+  browser/terminal groups / 59 scenario receipts**, and genuine Home Manager VM
+  deployment/settlement passed. No skipped/cancelled tests or retired assertions.
+- Explicit 4 browser / 4 core requested and effective, overlapping levels. The
+  rebased repository recommends 12 core / 4 browser only with 43 GiB available;
+  pre-launch availability was about 41 GiB, so its documented 4/4 fallback retained
+  overlap. Exact admission: `/tmp/pi-web-test-source-4ZNZEH/selection.json`.
+- Core: **383.609s** outer envelope, **34.867s** realization/static/setup before the
+  first file, **348.361s** selected file execution window. Browser: **307.523s**
+  outer envelope, **80.865s** support preparation, **4.939s** definition publication,
+  **221.224s** capsule execution envelope (**767.450s** summed group work). Service:
+  **63.211s** outer envelope, **20.16s** guest test script. Overlapping intervals
+  are not additive; no cold-cache or speedup claim. Earlier focused work warmed
+  shared prerequisites; the final changed application package was built in-run.
+- Evidence: `/tmp/guided-reader-all.1UFHJJ.log`,
+  `/tmp/pi-web-test-core.GLucsc/run.json`,
+  `/tmp/pi-web-test-browser.QsgQO6/run.json`, `/tmp/pwv-MK9odT/run.json`.
+  Core/static artifacts are retained at
+  `/nix/store/qgkwg0i5sbgny4h9ldpa0r0gz7lm54ym-pi-web-core-checks`.
+- Independent native/reader/presenter reviews found no remaining material issues.
+  New mounted files retain their explicit conservative E holds; no scheduling
+  promotion, universal closure claim or error suppression was used.
+
+### Focused controls and retained history
+
+Actual production defects meaningfully failed and were restored: Next no-op
+(`/tmp/guided-reader-navigation-red.log`), lost retained comparison model
+(`/tmp/guided-reader-retention-runtime-red.log`), missing presenter forwarding
+(`/tmp/guided-presenter-forwarding-red.log`), and ordinary large-file misdiagnosis
+(`/tmp/guided-reader-ordinary-red.rGBMJv.log`). Setup/type failures are not counted
+as these runtime witnesses. Final focused guard/presenter/comparison green:
+`/tmp/guided-reader-final-focused.e0SiJ5.log`,
+`/tmp/pi-web-test-core.U9CUUf/run.json` (3 files / 8 cases, 43s command).
+The earlier installed Markdown bridge passed at 1280/390 in **245s** total /
+**123.031s** execution (`/tmp/guided-reader-markdown.KQ2mIy.log`); its evidence is
+not relabelled as the final source run. Detailed earlier focused/failure chronology
+remains in the preceding plan commit and retained logs, not a second work queue.
 
 Implementation follows `docs/testing.md` and `e2e/README.md`: focused core files
 and Markdown/file-workspace browser scenarios during editing, then complete core,
 full browser/terminal inventory and genuine Home Manager deployment acceptance for
-each settled runtime increment. Normal fresh command, when resource-admitted:
+each settled runtime increment. Current preferred command when 12/4 overlap is
+resource-admitted; use the documented 4/4 fallback otherwise:
 
 ```sh
-nix run .#test -- all --workers 4 --jobs 4
+nix run .#test -- all --workers 4 --jobs 12
 ```
 
 Coordinate resource admission and immutable source export; use only isolated Nix
@@ -540,8 +530,10 @@ These boxes describe feature completion, not completion of this planning session
 
 - [ ] User-accepted sample folder and desktop/narrow interaction define the agreed
   reader and feedback workflow; remaining schema/transport decisions are resolved.
-- [ ] Reader increment handles feature ranges, architecture and multiple repos,
-  all selected evidence formats, comparisons and free chapter/step navigation.
+- [x] Reader implementation handles feature ranges, pinned architecture and
+  independently authorized repository targets, selected evidence formats and free
+  chapter/step navigation; complete automated acceptance passes. User validation
+  remains separately open above.
 - [ ] Interactive increment preserves answers, explicit progress, anchored
   feedback, selected batch context, item replies and reviewer-owned resolution.
 - [ ] Re-review accounting distinguishes content changes, lost authorization and
