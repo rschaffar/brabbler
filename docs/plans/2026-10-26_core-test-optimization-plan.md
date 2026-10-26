@@ -1,8 +1,9 @@
 # Core test optimization — investigation and proposed execution
 
-**Status: P1 and P2 complete and integrated; opportunity #3's Move blocker has a
-minimal production correction and deterministic red/green evidence. Focused core
-and both installed Move inputs pass; renewed complete acceptance/comparison is pending.** P2 was subsequently merged into local main at
+**Status: P1 and P2 complete and integrated; opportunity #3 and its Move blocker
+correction are independently reviewed and fully accepted, retained unintegrated.**
+The renewed source-matched pair passes all levels. E tail shortens, but total
+feedback is essentially unchanged; no meaningful whole-feedback speedup is established. P2 was subsequently merged into local main at
 `ab6b2fa11e3d38fb4cc65a661f3ef9001e8ae534`; its earlier retained-state evidence below
 remains historical. The first stop at `d532fedb44cc819b18085331168d9d78157a01b7`
 was premature: it disposed only of the small owner-compilation slice, not the dominant
@@ -743,10 +744,10 @@ cleanup or ordinary session launch.
   the actual navigation/Sidebar owners; distinguish product behavior from observer scope.
 - [x] Correct only the responsible owner and add a deterministic red/green regression
   preserving missing/uncertain history and explicit checkout/navigation semantics.
-- [ ] Independently review the bounded fix, run focused real Move acceptance, then
-  complete four/four core/static/plugin/browser/deployment acceptance. Apply the
-  same fix to both members of any renewed scheduling comparison.
-- [ ] Record identities, failures, measured limits and local commits; retain resources
+- [x] Independently review the bounded fix, run focused real Move acceptance, then
+  complete four/four core/static/plugin/browser/deployment acceptance. The
+  same fix is present in both members of the renewed scheduling comparison.
+- [x] Record identities, failures, measured limits and local commits; retain resources
   unintegrated and stop without expanding to opportunities #4–6.
 
 ### Move diagnosis and minimal correction
@@ -857,6 +858,110 @@ manifest's declared static evidence before its full command; report that prepara
 separately. Keep every original browser group/deadline and complete settlement gate.
 The earlier373.800s/failed207.021s attempt remains historical, not the new baseline.
 
+### Renewed complete acceptance and measured limit
+
+Implementation: `6477aac61bbcf42be2caf39e937dd0219f912a69` on the retained feature
+branch. Writers were paused; the existing fresh `core --jobs 4 --inventory-only`
+export supplied the matched control copy (not execution/static evidence). Its
+only change is E instead of N for the coordinator and skills-content entries;
+reasons, estimates, holds, every original/new case, app fix, browser inputs and
+orchestration are identical. Control preparation ran
+`core --jobs 4 --file components/AppShell.tab-session.test.mjs`:8 passes,
+40.885s, `/tmp/pi-web-test-core.lax8BD/run.json`, realizing control lint evidence.
+This and the recorded candidate focused/Move preparation precede the measured
+commands; none is hidden in a full-command speedup.
+
+Sequential control then candidate, no other task-owned checks:
+
+```sh
+nix run .#test -- all --workers 4 --jobs 4
+```
+
+**Both pass:**509 files/4,178 tests/14 suites, zero failed/skipped/cancelled/todo,
+uncertain files or observed survivors; all26 browser/terminal groups/59 exact
+ordered receipts, no harness errors, complete collection/settlement and closed
+ports; genuine Home Manager deployment with settled clients, inactive service,
+MainPID0, authenticated absent cgroup and refused port. Peak/requested/effective
+core width is four, E waits for full pool drain. Control316F/101N/92E becomes
+candidate316F/103N/90E. Both promoted files run with three active peers in the
+candidate; all78 original four-cohort cases remain unchanged.
+
+| Identity | Matched serial control | Pooled candidate |
+| --- | --- | --- |
+| Immutable source | `/nix/store/vbwna4i873npx4zalyz23p9p0hsdxp1m-source` | `/nix/store/jllyqw19927nyq4cl4qgwby8bcln06dc-source` |
+| Content/mode digest | `6d89fdf945391728d6cbc182f900c922c4e891b95b97fd50feccaf8b3ce11609` | `37fea9216bae99f229a8fdb713c530ba548f9f53bd2240e8bf39c104b305d93c` |
+| Export/selection | `/tmp/pi-web-test-source-V1KBN8` | `/tmp/pi-web-test-source-2pGxVD` |
+| Core report | `/tmp/pi-web-test-core.oFgkzf/run.json` | `/tmp/pi-web-test-core.L1xphv/run.json` |
+| Core output | `/nix/store/8cwcrzfdamsx4qym35hw6ggnxxx0qxkn-pi-web-core-checks` | `/nix/store/7177z0gvk0k8khyfawhkqbsl7gsnjh6i-pi-web-core-checks` |
+| Detailed directory within output | `artifacts/run-S9H09z` | `artifacts/run-mZDSb6` |
+| Browser report | `/tmp/pi-web-test-browser.r2q4Kl/run.json` | `/tmp/pi-web-test-browser.9MhqaD/run.json` |
+| Deployment report | `/tmp/pwv-csqB4R/run.json` | `/tmp/pwv-4iPoUp/run.json` |
+
+All1,574 canonical file paths/modes match; only the two live JSON lane values
+differ. All509 test-body hashes and paired registered/completed outcomes/counts
+are identical. Compared with the original baseline, all4,177 original outcomes
+remain in original relative order and only the one callback regression is added.
+Both use application package `8a1h30ifi4xad0lph3rawqh4mxvrdvi9`, unchanged pinned
+Node24.21.0/runtime/private dependencies, typing source `3z64ndjsgnhbhrqh3ls0w9l25sqbvk2z`
+and type evidence `4g8znq0sjjgj7blcbiizf3hagafr0azr`. Full commands reuse their
+prepared static outputs: control lint `dr54q6y0m32yjlzj3adb9qzzzi5xalc2`, candidate
+lint `qpv376hl2a50vk6baf4h7djwygn3pbr2`; exporter contracts/effectful tests are fresh.
+Every store identifier in this paragraph is under `/nix/store/` with the descriptive
+suffix bound in `static-inputs.json`/reports, not a new freshness claim.
+
+| Seconds | Serial control | Pooled candidate |
+| --- | ---: | ---: |
+| Full command including in-command realization/export | 349.302 | 348.897 |
+| Outer core | 346.140 | 345.661 |
+| Core pre-lifecycle / lifecycle / post-lifecycle | 1.599 /344.193 /0.348 | 1.596 /343.743 /0.322 |
+| Lifecycle to first file / last file to settlement | 0.828 /0.071 | 0.828 /0.073 |
+| File window | 343.294 | 342.842 |
+| Shared F/N pool / E tail | 240.745 /102.549 | 246.967 /95.875 |
+| Summed F /N /E file work | 481.232 /477.345 /102.504 | 478.589 /504.853 /95.832 |
+| Summed all-file work | 1061.080 | 1079.273 |
+| Pool occupancy, four workers | 99.543% | 99.552% |
+| Browser support / definition preparation | 3.696 /4.774 | 3.650 /4.798 |
+| Browser group-client envelope / outer | 222.107 /230.581 | 226.256 /234.707 |
+| Deployment outer / guest | 73.362 /17.526 | 25.203 /19.396 |
+| Browser-through-deployment branch | 305.953 | 262.023 |
+
+The tail is6.674s shorter, while the pool is6.222s longer; the file window improves
+only0.452s and command wall only0.405s. Summed file work **increases18.193s**, rather
+than demonstrating work removed. Coordinator is4076.533→3978.282ms; skills is
+1984.550→2968.714ms under contention. Native-tools remains E at3290.865→3240.653ms;
+Pause remains E at2636.616→2684.330ms. These actual durations do not refresh other
+hints or turn ideal `S-S/4` arithmetic into a scheduling bound.
+
+**Measurement limit:** this is one source-matched fresh four/four pair, not a
+statistical or machine-exclusive experiment. Outer admission observed32 CPUs and
+58,381,451,264 /57,398,493,184 available bytes; core-local observations were
+57,784,803,328 /56,713,695,232 bytes. An independently owned2-vCPU VM and normal
+host load were observed; headroom admitted unchanged four/four, not a reservation.
+Both core/static/browser/package prerequisites were warm. Control additionally
+realized the new shared deployment closure/driver inside its command; candidate
+reused the exact same `qbp39raxz8m8z204d53qq94rcf003dhl-pi-web-service-driver`.
+Thus the full envelopes are **not a matched warm-prerequisite whole-feedback
+benchmark**, and the roughly48s service-outer difference is not scheduling savings.
+Core remains critical in both, but preparation/contention differences still preclude
+a causal interpretation of a0.405s wall delta. Do not subtract overlapping branches
+or compare this corrected-package pair directly with the earlier373.800s baseline.
+No meaningful overall speedup, CPU savings, cold-cache/ARM/CI or escaped-descendant
+claim is made; no extra timing campaign is justified by this noise-sized result.
+
+Exact source/outcome/static/settlement assertions, raw command logs/timestamps and
+reports are retained in `/tmp/pi-web-move-scope.BHLibi/`, particularly
+`complete-comparison.json`, `pair-inputs.json`, `control-all-analysis.json`,
+`candidate-all-analysis.json`, `control-preparation.json` and `run-pair.sh`.
+The first coherent corrected candidate is fully accepted. The final evidence-only
+plan commit leaves app/test/manifest/runner inputs at `6477aac`; proportional checks
+are documentation review, whitespace and exact unchanged-input verification, not
+another full suite. Feature branch/worktree and historical/current diagnostics
+remain; no rebase, integration, publication, manual cleanup or further opportunity.
+Final independent evidence review approves the acceptance/coverage/measurement
+statements; its lane-only wording nit is clarified below. Writer checks confirm
+only this plan differs from accepted inputs, the reviewed manifest hash and local
+main are unchanged, and `git diff --check` passes.
+
 ## Opportunity #3 — bounded execution plan
 
 Checked starting local main: `ab6b2fa11e3d38fb4cc65a661f3ef9001e8ae534` (clean).
@@ -871,13 +976,12 @@ The original P2 acceptance is a reference, not this task's baseline.
 - [x] Verify adopted receivers and existing manifest/discovery/settlement contracts;
   no helper changes require new regressions.
 - [x] Independently review exact eligibility and unchanged original coverage.
-- [ ] **Blocked:** complete four/four comparison/acceptance. Baseline passes all
-  levels; candidate Move assertion fails, closes browser admission, drains started
-  groups and aborts core. Deployment is not admitted. Preserve failure evidence;
-  no unchanged retry, browser fix or unmatched core-only substitute is performed.
+- [x] Complete four/four comparison/acceptance after the separately authorized Move
+  correction. The initial failed checkpoint is retained below; both corrected
+  complete runs pass, without another unchanged retry or unmatched core substitute.
 - [x] Record adopted files/holds, observed limits and reviewed local feature commits;
-  retain branch/worktree unintegrated and stop before another opportunity. Complete
-  acceptance remains blocked above; this is a partial, not accepted, finish.
+  retain branch/worktree unintegrated and stop before another opportunity. The
+  shorter tail does not establish meaningful whole-feedback improvement.
 
 Stop rather than expand if safety work becomes disproportionate to modest savings.
 Source/path evidence alone does not qualify execution; separate processes do not
@@ -885,9 +989,11 @@ prove source-write confinement or arbitrary descendant closure. E does not fix l
 
 ### Exact cohort disposition
 
-Only live `nix/test-lanes.json` changes executable scheduling. Original tests,
-helpers, production code, discovery, estimates of existing pooled files, workers,
-resource admission, browser queues, deadlines and settlement gates are unchanged.
+For the **lane-only cohort change**, only live `nix/test-lanes.json` changes
+executable scheduling. That change preserves original tests/helpers/production
+code, discovery, existing pool estimates, workers, resource admission, browser
+queues, deadlines and settlement gates. The separately authorized Move correction
+and additive regression are common to both corrected comparison members above.
 The immutable historical audit is untouched. No failure-cleanup fix is shipped.
 
 | File | Adopted disposition | Source/native and failure-lifetime basis |
@@ -987,7 +1093,7 @@ two refined retained holds and this plan; all existing reviewed entries, applica
 original tests/helpers/runner and dependencies are unchanged. Evidence:
 `/tmp/pi-web-p3-cohort.1RK3PZ/source-conservation.json`.
 
-### Complete comparison attempt and bounded stop
+### First complete comparison attempt and bounded stop (historical)
 
 Implementation commit: `6a5c60b80defb89070af248ba8b2b0beffdf508b`.
 One sequential pair used the same command, physical worktree and orchestration:
@@ -1149,8 +1255,8 @@ standalone-core, cold-cache, ARM or CI timing evidence. Reopened P2 has one matc
 focused instrumented pair and complete four/four acceptance, not repeated statistical
 or a matched whole-feedback speed comparison. Remaining non-transform import costs are not further
 decomposed, and no general Babel environment-transition guarantee is claimed.
-Opportunity #3 has approved bounded eligibility and focused evidence for two N
-files, but complete acceptance and timing comparison are blocked by the recorded
-Move browser failure; its root cause is unestablished. Native-tools/Pause failure-
-lifetime gates, other opportunities, native cache/fence compatibility and other SDK
-loader/resource closures remain deferred. Simulations are not promises.
+Opportunity #3's two N files and minimal Move correction now pass full acceptance;
+its single pair shows no meaningful whole-feedback speedup and has the recorded
+deployment-realization/contention limits. Native-tools/Pause failure-lifetime gates,
+other opportunities, native cache/fence compatibility and other SDK loader/resource
+closures remain deferred. Simulations are not promises.
