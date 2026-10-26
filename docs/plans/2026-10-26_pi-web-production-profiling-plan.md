@@ -105,7 +105,20 @@ Nix static +3files **35/35** passed in40s; evidence
 A private exported-source defect (`complete=false`) passed static and failed the
 actual deferred-opportunity assertion, **2 requests versus expected1**, in39s:
 `fault-warm-hydration.log`, `/tmp/pi-web-test-core.ivO1In/run.json`. The receiving
-worktree never contained that fault. Complete acceptance remains pending.
+worktree never contained that fault.
+
+First complete run at rebased `6ca2264d78db7b95864b25ab6ccf7cf307c149f3`
+failed in277.115s: adjacent `SessionSidebar.bulk-behavior.test.mjs` still expected
+parallel post-archive admission before releasing oldJSON. The optimistic partial
+archive had already passed; keep that assertion and require stale-body suppression,
+then canonical freshness after draining the oldbody. This is the same intentional
+serialization adaptation as the earlier single-archive test, not a deadline/error
+waiver. Original `full.log`, `full-command.json`,
+`/tmp/pi-web-test-core.pgTt2t/run.json` and browser-peer cancellation remain retained;
+core stopped277passed/1failed/233notstarted, so no full pass is claimed. Independent
+review found the adapted409/200/retry/restore/delete obligations intact. New focused
+four-owner execution passed **37/37 in40s**: `focused-4.log`,
+`/tmp/pi-web-test-core.qWjdBg/run.json`. Complete acceptance remains pending.
 
 **Package-4 completion:** loader/hook and mutation wiring reviewed; focused and
 complete acceptance pass; fewer redundant admissions demonstrated without weakening
