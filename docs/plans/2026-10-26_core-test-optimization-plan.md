@@ -1982,8 +1982,61 @@ No additional clear high-cost Git presentation-cardinality case emerged. This
 retracts any inference that most remaining native cost can be removed by lowering
 preview budgets; the investigation supports only the bounded leads above.
 
-Full coherent-candidate acceptance is the remaining gate, not another benchmark
-campaign or automatic expansion. Feature resources stay unintegrated.
+### Initial complete attempt and bounded acceptance-blocker repair
+
+The coherent candidate is committed at
+`85a7838007a7da0266c2fef2387442d9ac305c99`. Its first full four/four command
+exits1 after241.890s, not complete acceptance or performance evidence. Immutable
+source is `/nix/store/cr5l74xcj702lf2sr15dids5svv0jljl-source`, digest
+`4a5ce7a378f3dba4f2d97d877d807ef2be4d5dd2782f174ab9c1c8495443535a`.
+The Activity desktop overview and native subagent assertions complete, then its
+unchanged successful teardown `page.request.delete` at
+`e2e/subagent-lifecycle.mjs:215` receives `ECONNRESET`. Activity's whole-chain
+receipt therefore fails; no partial chain is counted as complete. Git-plugin,
+worktrees, SSH and Markdown groups pass, admission closes and started browser
+peers drain. Core is interrupted by the outer peer-failure path, not certified
+complete; deployment is not admitted. No unchanged retry is performed.
+
+Reports are `/tmp/pi-web-test-browser.Wh3IRb/run.json` and
+`/tmp/pi-web-test-core.CXwmfh/run.json`. The failed Activity diagnostic is
+`/nix/store/3l30l0y3r12ksmwz1kr5qkdgrpjzglnf-pi-web-browser-activity-diagnostics/`.
+It retains traces, screenshots, server/events and errors; server closure/port and
+owned clients settle with no unexpected service exit, uncertain observations or
+survivors. The exact reset cause is not established, nor attributed to the Git
+presentation delta. Browser preparation includes82.376s package/support realization
+and4.656s definition publication; the failed Activity capsule is44.150s.
+
+After inspecting these artifacts/source, `ask_user` explicitly authorizes one
+fixture-only repair: use existing `readBrowserResponse` for this successful native
+subagent-family DELETE, preserving URL, method, any-2xx/text-body assertion,
+navigation-before-delete, error aggregation, abort path, native work, inputs and
+scenario IDs. No retry/fallback, console/HTTP suppression, deadline increase,
+production change or broader request migration is authorized. The helper's existing
+body-gate/method/status/error tests remain the lower owner; actual Chromium must
+verify this receiving wire. `e2e/README.md` records the additional caller. Focused
+Activity and then complete four/four acceptance remain required. Feature resources
+stay unintegrated.
+
+The separately approved transport delta passes independent review in the same
+review session, with no blockers/nits. Its native helper SHA256 is
+`3b2950e4cb4482d2a35bc958e21fcc273697cff314ff764f19da89963c835039`;
+all seven previously reviewed presentation inputs and the shared HTTP helper/tests
+remain exact. Focused `nix run .#test -- e2e --group activity` passes all three
+original scenario/input chains with empty errors and complete resource/service/
+port settlement. Command109.155s includes3.569s support and4.846s definitions;
+capsule95.303s. Source `/nix/store/wmyf89k6028vc7a6fc7k3wv3xqq67sds-source`,
+report `/tmp/pi-web-test-browser.ZbbvBw/run.json`, diagnostic
+`/nix/store/ckdg392ca0v7lklkm9vwg6kaim09lsn0-pi-web-browser-activity-diagnostics/`.
+It reuses the exact failed attempt's production package
+`/nix/store/6a1ba6pn13wxkzn1w42jhnfs8vilbl6s-pi-web-0.9.3`.
+
+The actual Chromium trace records the new completed-only family DELETE and both
+existing Pause DELETEs as fetches, HTTP200, with complete11-byte `{"ok":true}`
+bodies. `activity-wire-evidence.json` binds those exact requests/responses; the
+initial unsupported trace-field extraction is retained separately, not verification
+evidence. This establishes the receiving wire, not the original reset's cause or
+a general socket-reset fix. Complete acceptance on the repaired candidate remains
+the final gate.
 
 ## Completion Checklist
 
