@@ -704,8 +704,12 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   await exactReview.getByRole("region", { name: width > 600 ? "Side-by-side diff" : "Raw patch", exact: true }).waitFor();
   assert.equal(await exactReview.getByText("Binary changes are summarized; file contents are not shown.", { exact: true }).count(), 0,
     "A binary-marker phrase inside ordinary added text remains an interactive text patch");
-  await exactReview.getByRole("button", { name: "Next files", exact: true }).click();
-  await exactReview.getByText(/Showing entries 41–46 of 46/).waitFor();
+  if (retainNativeMatrices) {
+    await exactReview.getByRole("button", { name: "Next files", exact: true }).click();
+    await exactReview.getByText(/Showing entries 41–46 of 46/).waitFor();
+  }
+  // Only page switching moves lower. Native cold 46-entry review, original
+  // file/body/fullscreen/approval and the real 45-file commit remain above/below.
   await restore(card);
   await card.getByRole("button", { name: "Approve commit", exact: true }).click();
   await finish("large", "completed");

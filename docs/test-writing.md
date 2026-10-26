@@ -278,6 +278,12 @@ retire old tests or constitute full candidate acceptance.
   release all domain peers before joins, and keep unknown failures fatal. Check
   actual callback adoption before success-dependent readiness; a stream that a
   broken callback cannot admit must not become an unbounded test waiter.
+- Large-review pagination uses the real public Card/review/picker with the
+  original 46-entry boundary and new-versus-modified content rows. Declare only
+  required page/entry capabilities; join the actual selected-entry continuation.
+  Retiring page switching does not retire native cold bodies, fullscreen,
+  approvals or 45-file effects. Keep Allow reloads as native persisted-default-UI
+  evidence rather than constructing another migration merely to remove them.
 - Historical Decision and Operation outcome wrappers forward the existing passive
   `onReadWork` observer unchanged to their actual child. Absent adds no handlers,
   requests, timers or policy. Test the real wrapper, its lazy/serialized source,

@@ -12,7 +12,7 @@ import { ignoredAbortFetch } from '../lib/testing/ignored-abort-fetch.fixture.mj
 
 // Local capability fixture, not a React implementation or a feature state machine.
 // Guards precede every production import. No server, filesystem, SDK or Git effects.
-export async function packet(t, { git = false, review = false, readDomain, setup: setupCapability, beforeUnmount: beforeUnmountCapability, traceFrames = false, cardDescendants = false } = {}) {
+export async function packet(t, { git = false, review = false, readDomain, setup: setupCapability, beforeUnmount: beforeUnmountCapability, traceFrames = false, cardDescendants = false, reviewStarts = [0], reviewEntryIds = [0, 1] } = {}) {
   const failures = [], work = [], expected = new Set();
   let closed = false, view, disposal, domainDisposal;
   // Register the optional HTTP domain before dependency loading or realm setup.
@@ -65,9 +65,9 @@ export async function packet(t, { git = false, review = false, readDomain, setup
         assert.equal(url.searchParams.get('file'), '0');
       } else assert.equal(['start', 'patch', 'entry,offset'].includes(keys.join(',')), true);
       if (url.searchParams.has('patch')) assert.equal(url.searchParams.get('patch'), '1');
-      if (url.searchParams.has('start')) assert.equal(url.searchParams.get('start'), '0');
+      if (url.searchParams.has('start')) assert.equal(reviewStarts.map(String).includes(url.searchParams.get('start')), true, 'declared review page only');
       if (url.searchParams.has('entry')) {
-        assert.equal(['0', '1'].includes(url.searchParams.get('entry')), true);
+        assert.equal(reviewEntryIds.map(String).includes(url.searchParams.get('entry')), true, 'declared review entry only');
         assert.equal(url.searchParams.get('offset'), '0');
       }
       assert.equal(init.body, undefined);

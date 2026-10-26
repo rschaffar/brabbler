@@ -5,13 +5,15 @@
 > commits only. No rebase, merge, resource cleanup, publication or ordinary-session
 > launch is authorized. The handoff's historical default pause was superseded for
 > this session only. **Bounded decision: finish WP2 browser retirement first.**
-> Continue its finite slices serially; keep the core ceiling blocker explicit and
-> core/RPC/cache work deferred. Do not repeat unchanged full timing. All correctness
-> and performance requirements remain.
+> **Latest user decision:** stop optional proof expansion and finish browser
+> retirement. Performance targets are informational, NOT a hard completion gate;
+> core/RPC/cache optimization remains a separate later task. Complete correctness
+> acceptance remains required. No matched timing rerun or performance tuning here.
 
 ## Goal
 
-Deliver all three outcomes, separately evidenced:
+Deliver ownership and browser retirement with complete correctness evidence.
+Track the original performance targets separately, without blocking this finish:
 
 1. Finish original 68 and named added obligations using the lowest sufficient **real
    production** owner, not copied algorithms, fake React or detached cleanup claims.
@@ -19,7 +21,8 @@ Deliver all three outcomes, separately evidenced:
    reloads and waits. Retain only justified physical/native/thin installed bridges.
 3. Demonstrate faster **complete feedback**, not just focused speed or more tests:
    matched sequential 4-browser/4-core runs, NET improvement, complete command
-   ≤351.05s and Panel median ≤20.5s, with complete correctness acceptance.
+   ≤351.05s and Panel median ≤20.5s. These original targets are now deferred,
+   informational measurements, not acceptance gates for this bounded task.
 
 **Decision:** materially replan execution, preserving the architecture and safety
 contracts. See [reflection](2026-10-23_complete-test-ownership-reflection.md) and
@@ -101,14 +104,14 @@ contracts. See [reflection](2026-10-23_complete-test-ownership-reflection.md) an
 
 | ID | Remaining blocker | Decisive closure evidence |
 | --- | --- | --- |
-| B1 | Receiving divergence/composition resolved; final surviving-browser disposition remains WP2 | Coherent source commit `c694c014`, exact guarded adoption and original-input map index in `docs/test-ownership.md`; both Thinking/Copy lanes, Settings18, inherited work/guidance preserved. Current508/all-native acceptance supplies shared receiving impact. Final B3–B7 per-step dispositions remain open, not another68 census. |
+| B1 | Receiving composition and finite surviving-browser dispositions closed | Coherent source commit `c694c014`, exact guarded adoption and original-input map index in `docs/test-ownership.md`; both Thinking/Copy lanes, Settings18, inherited work/guidance preserved. Final509/4171/14-suites, all26 browser/terminal groups and real deployment VM supply coherent current acceptance. Final B3–B7 cuts and named native bridges are closed; no new68 census. |
 | B2 | Receiving lifetime residues and finite smaller upload cut closed | Original Save200/409, eight-descriptor/partial-install/HOST lifetime evidence remains. Eleven actual producer controls now reach intended scalar/matcher/callback primitives; current common diagnostic support passes existing82-file/940 shared union. Five strict v2 native continuations independently join native body/work/ACK and real page/trace/context/fixture closure before SAME-root throw; late v1 shutdown errors remain uncredited, not filtered. Current7/144 normal and both v4 native restorations pass. Actual Changed/Search callers, external writer, all six M16 native/same-node watcher inputs and P1 remain. Successful native closure around finite continuations is not failed-IO/close or universal-idle proof. |
 | B3 | Thinking, Tool and Web finite gates closed | Current normal, meaningful original-work failures, restoration, independent review and actual installed work retirement qualify these named slices. Tool's false-green catch/font masking and composer's concrete native removal-order bug were corrected without product-policy changes. Existing Web authored schedule executes strict actual P/E/full-work/cleanup/phase/next-mount vector; no stopped delegate restarted or new source-only packet. Exact native version port reused and LM duplicate removed under fresh v7 receipts. SAME errors, work/ACK/native settlement and unforced limits remain distinct. |
 | B4 | Finite native composer remedy/composite03 deletion closed | Exact guards/lower68/312/six semantic defects reused, not rediscovered. Initial native failure retained and concrete Playwright auto-continue ordering fixed; source-only review was not native admission. Current normal and restored BOTH profiles pass; original native V1/V2 pass strict SAME-reference phase/cause-tree assertions then rethrow intended failures, with private owning metadata and zero normal completions. Current normal rejects private/superseded IDs before callbacks. P1/e32/imported native helper/overflow preserved; no failed-native-phase or universal-idle claim. |
 | B5 | Finite Navigation optional-port/lower/native branch cut closed | Current26 normal, all3 meaningful actual producer faults, exact reused60/814 restored impact, current149 protocol and original native body/UI+raw/UI strict controls/normal/restoration qualify this slice. Original current11-case prefix including held Copy remains exact. Desktop context-gate replay removed; AppShell saved-key native caller remains. SDK context read versus inert controlled agent reply, native body/ACK versus lower full hook promise, and after-success versus actual native-failure limits remain explicit. |
-| B6 | Both live-reader data tuples, selected-policy/own Cancel and finite historical reader/409 transfers closed; Allow/45-file remainder open | Prior ED/mobile reader and B-P evidence remain unchanged. Own Cancel adds original selected-file/mode/native live-null/builtin-Ask own-session/full-origin/no-effect rows, actual inline public Card→real hook SAME callback promise, and actual normal RPC cancelled-response→null receiver (not abort default). Nine meaningful producer controls plus two controlled FETCH failures after real root unmount qualify both input replays; first wrong abort-default mutant survived and first JSON/hook-catch oracle failed, both retained/uncredited with concrete phase corrections. Current64/859/2suites and both fresh v6 native receipts pass on the same eight runtime bytes. Only ownCancel prompt/card/keyboard/finish/dirty-write replay retires; original Ask/Decline/reconnect, Stop, Allow/Large commits/current subjects/history/order remain. Native fixture branch/OID/session are not installed authority; compositional native bridges remain independent. Historical transfer now uses USER-authorized strictly passive forwarding through the two existing receipt wrappers, actual historical/source/complete-work rows, eight producer controls and four held-JSON handled-finally/closure controls. Current67/890/2suites, final4/130 protocol and both fresh v7 native receipts qualify version replay and synthetic historical-409 route/remount retirement, retaining original cold native immutable identity/body/Download/Raw/inert/collapse/HEAD/current-file boundaries. Outcome support is deliberately minimal, NOT Allow execution credit. Strict queue-rejects-E probe was false and remains uncredited: actual original JSON rejects SAME E while the handled worker/finally fulfills after public Abort A. Native45/default46-entry picker/session additions remain unexecuted/unadopted. `R/resumed-implementation/git-own-cancel-{controls-qualified,browser-binding,browser-result}.json` and `git-historical-browser-result.json`. No new SDK/platform/policy or blanket KEEP; only those two passive forwards were authorized. |
-| B7 | Finite Toolbar and New/public-caller restoration transfers qualified; final coherent acceptance remains WP3 | Toolbar checkpoint above plus adopted four-way actual navigation/Sidebar/chat binding and a SINGLE same-realm real default ChatWindow public eager-persistence→ensure→hook-created row→real navigation→ChatInput receiver. Five actual producer primitives qualify; initial unadmitted-stream control was stopped/retained/uncredited and oracle repaired before a complete 8/1 semantic RED. Current63/833/2suites GREEN and all3 native receipts GREEN on the same pinned source qualify ONLY duplicate mobile Starred→New ceremony retirement. First original Activity→New native source/destination/returned ID/empty context/non-inert input/backdrop/source restoration and all3 held initial-URL receivers remain. Full helper preserves both ceremonies; no fake created row, source-chat lower mount, input-triggered creation, Version-continuation/global-idle/native-IO-failure or NET claim. `R/resumed-implementation/activity-restore-{controls-qualified,browser-binding,browser-result}.json`. |
-| B8 | Current early whole correctness passes; core execution alone blocks ceiling | Fresh all4/4 **398.058s**; core file execution **388.662s**, excluding2.513s pre-file setup and0.367s afterward. No browser-only cut removes that floor. Final settled acceptance, matched NET and Panel median remain open. User selected finishing WP2 first; no deferred core/RPC/cache work is authorized. |
+| B6 | Finite Git retirements and final full correctness qualified | Prior ED/mobile reader and B-P evidence remain unchanged. Own Cancel adds original selected-file/mode/native live-null/builtin-Ask own-session/full-origin/no-effect rows, actual inline public Card→real hook SAME callback promise, and actual normal RPC cancelled-response→null receiver (not abort default). Nine meaningful producer controls plus two controlled FETCH failures after real root unmount qualify both input replays; first wrong abort-default mutant survived and first JSON/hook-catch oracle failed, both retained/uncredited with concrete phase corrections. Current64/859/2suites and both fresh v6 native receipts pass on the same eight runtime bytes. Only ownCancel prompt/card/keyboard/finish/dirty-write replay retires; original Ask/Decline/reconnect, Stop, Allow/Large commits/current subjects/history/order remain. Native fixture branch/OID/session are not installed authority; compositional native bridges remain independent. Historical transfer now uses USER-authorized strictly passive forwarding through the two existing receipt wrappers, actual historical/source/complete-work rows, eight producer controls and four held-JSON handled-finally/closure controls. Current67/890/2suites, final4/130 protocol and both fresh v7 native receipts qualify version replay and synthetic historical-409 route/remount retirement, retaining original cold native immutable identity/body/Download/Raw/inert/collapse/HEAD/current-file boundaries. Outcome support is deliberately minimal, NOT Allow execution credit. Strict queue-rejects-E probe was false and remains uncredited: actual original JSON rejects SAME E while the handled worker/finally fulfills after public Abort A. Final pagination-only transfer uses the actual 46-entry Card/picker, both new/modified original content rows, original selected-entry continuation and one actual page-boundary producer fault. Only Next-files/page-40 replay retires; native cold 46-entry review and both real 45-file commits stay. Allow's two reloads stay as the unique persisted default-UI/native-ID bridge. Unexecuted Native45/Allow expansion proposals are NOT required or credited: their native authority was not transferred. `R/resumed-implementation/git-own-cancel-{controls-qualified,browser-binding,browser-result}.json` and `git-historical-browser-result.json`. No new SDK/platform/policy or blanket KEEP; only those two passive forwards were authorized. |
+| B7 | Finite Toolbar/New transfers and final coherent acceptance qualified | Toolbar checkpoint above plus adopted four-way actual navigation/Sidebar/chat binding and a SINGLE same-realm real default ChatWindow public eager-persistence→ensure→hook-created row→real navigation→ChatInput receiver. Five actual producer primitives qualify; initial unadmitted-stream control was stopped/retained/uncredited and oracle repaired before a complete 8/1 semantic RED. Current63/833/2suites GREEN and all3 native receipts GREEN on the same pinned source qualify ONLY duplicate mobile Starred→New ceremony retirement. First original Activity→New native source/destination/returned ID/empty context/non-inert input/backdrop/source restoration and all3 held initial-URL receivers remain. Full helper preserves both ceremonies; no fake created row, source-chat lower mount, input-triggered creation, Version-continuation/global-idle/native-IO-failure or NET claim. `R/resumed-implementation/activity-restore-{controls-qualified,browser-binding,browser-result}.json`. |
+| B8 | Final whole correctness passed; performance remains informational | Final fresh all4/4 **386s recorded wall**, **509 files/4171 tests/14 suites**, all26 browser/terminal groups and genuine deployment VM pass on source `s7i5y24h0llqrqmxjhlxkk7r20flysgc-source`. Core lifecycle378.804s,1.701s before/.302s after. Browser234.292s includes3.634s support+4.843s definitions; VM74.681s includes17.426s guest evidence. Overlapping intervals are not additive. Earlier398.058s and failed matched421.959→430.232s remain historical evidence; no new matched NET or Panel claim. User made performance informational and deferred optimization. |
 
 New findings must bind to a blocker or identify the specific original obligation
 that requires changing this list. Speculative universal idle/escaped-work theorems
@@ -117,8 +120,9 @@ failure; if reproduced, diagnose exact identity changes without relaxing guards.
 
 ## Plan
 
-**Current execution:** one repository writer, WP2 active, one coordinated export/
-check budget. Qualified Thinking/Tool Second (including Sixth, excluding Navigation
+**Current execution:** browser retirement and full correctness complete; only
+proportional status review and final feature commits remain. One repository writer
+coordinated every export/check budget. Qualified Thinking/Tool Second (including Sixth, excluding Navigation
 Fourth and experimental LM retirement) was reconciled through 343 guarded source
 file deltas, including the two explicitly mapped extracted-callback retirements.
 Current instructions/guides were not replaced. The common-only Files remedy and
@@ -161,7 +165,7 @@ Use independent review for changed risk, not an automatic second packet pipeline
   diff/map, original held-Save schedules, actual capability restoration and known
   affected owners pass; meaningful controls cover changed boundaries. **Stop** for
   semantic conflict, lost inputs or a needed new product-policy decision.
-- [ ] **WP2 — finish actual browser retirement (B3–B7).** Work serially through the
+- [x] **WP2 — bounded browser retirement implemented (B3–B7); full execution qualification is WP3.** Work serially through the
   coupled Reading/Thinking/Tool/version/navigation slice, then caller-preserving
   Files, Git and Activity gaps, reusing delivered source/maps/reviews. Pair each
   lower-owner change with its actual browser deletion; record removed setup,
@@ -286,39 +290,80 @@ Use independent review for changed risk, not an automatic second packet pipeline
     `R/resumed-implementation/activity-restore-browser-result.json`;
     `/tmp/pi-web-test-core.ItexJK/run.json`, `/tmp/pi-web-test-browser.1sfBM1/run.json`;
     pinned `/nix/store/sk7gkc2qgnbvvyyhh2m1qvgy1nld0ly1-source`.
-  - [ ] **Next active slice — remaining Git (B6):** reuse delivered
-    Allow/large maps/reviews, close only named remaining gates,
-    and retire corresponding browser work. No new census, stopped author restart
-    or core/RPC/cache optimization tangent.
-- [ ] **WP3 — whole feedback and closure (B8).** **Early checkpoint executed; correctness passed, ceiling failed; user selected WP2 first.** At the first coherent candidate,
-  take a whole-feedback checkpoint before optional expansion, even if remaining
-  unadopted proposals keep completion open. Once source/review settle, run fresh
-  matched reference/candidate `nix run .#test -- all --workers 4 --jobs 4`
-  sequentially, without competing resource checks. Both roots share all non-cut
-  code, owners, seams, guides, runner and prerequisites; only declared retirement
-  inputs differ. Obtain Panel median with the existing focused recipe. Record
-  source/command/selection, preparation, execution, summed browser work, critical
-  path and full command separately; reuse unaffected input-bound evidence, not
-  merely old commit IDs. **Stop** if NET/ceiling fails: report the dominating branch
-  and request a bounded decision before reopening deferred core/RPC work. Browser
-  retirement remains required; core optimization cannot substitute for it. Do not
-  claim completion or propose integration from subset success.
+  - [x] **Final bounded Git pagination:** one existing capability realm, actual
+    public Card→review→picker→selected reader, both original 45-file content rows;
+    page 0/40 and entry 0/1/40 only. The actual Next-files producer fault fails at
+    the named page-40 admission primitive; no success-dependent hanging wait.
+    Normal1 wrong English selector is unqualified/retained, normal2 and restored
+    current7/145 pass. Source review admits ONLY removing Next-files click/wait
+    at both inputs; final native execution is part of WP3. Both native cold46
+    page/body/fullscreen/approval/45-file commits and cross-profile history remain.
+    Allow reloads deliberately retain native persisted-default-UI/current-ID
+    authority, not a blanket whole-journey KEEP. The unexecuted Allow expansion
+    was removed exactly; no new SDK setup, backend45 migration or lifetime audit.
+    `R/resumed-implementation/finish-large-pagination-control-{binding,result}.json`.
+  - [x] **Concrete final-acceptance blocker repaired:** first full run failed in
+    unchanged Move's selected-uncertain bridge after196s; core was peer-cancelled
+    and deployment did not start. Trace showed two valid200 catalogue replies,
+    not an HTTP error. A pending initial hydration can supersede the move-owned
+    load and turn its undefined result into a false refresh warning. Six lines
+    cancel that redundant timer before a real detail refresh; stale guards and
+    actual error reporting stay unchanged. Deterministic production-incarnation
+    regression reaches the named timer failure before the fix, then current3/13
+    GREEN40s including genuine503 visibility; unchanged native Move inputs pass
+    97s/capsule16.483s (includes new application realization). The first regression
+    fixture accidentally held Strict replay startup, timed out, and is retained
+    unqualified; exact owned Nix client was stopped. Existing mount strict option
+    now forwards through the fixture; defaults remain true. No Native assertion,
+    error filter, sleep, deadline or source policy weakened. Independent review
+    admits this finite fix, not a unique historical timer-stack theorem.
+    `/tmp/pi-web-test-browser.giaebD/run.json` (failed),
+    `/tmp/pi-web-test-core.kSgWLu/run.json`,
+    `/tmp/pi-web-test-browser.blOBaq/run.json` (focused repair).
+- [x] **WP3 — final correctness and closure (B8).** Completed the fresh
+  `nix run .#test -- all --workers 4 --jobs 4` on the reviewed frozen candidate:
+  static/core/plugins, full browser/terminal inventory and genuine deployment VM.
+  Record source, selection, command wall time, preparation and execution separately.
+  Diagnose actual failures without unchanged retries or weaker assertions. No new
+  migration scope. Performance/NET/Panel targets are informational by explicit
+  user decision; their earlier failures remain visible, but do NOT reopen tuning
+  or require a matched timing campaign. Finish with reviewed feature commits;
+  no integration, publication or cleanup is authorized.
+
+## Final acceptance
+
+`R/finish-correctness-all-2.log` passes the final frozen candidate, source digest
+`f59b90e6cca74fc87312f41c9ea456891998c122583caebb78d2015964906139` at
+`/nix/store/s7i5y24h0llqrqmxjhlxkk7r20flysgc-source`:
+
+- Core/static/plugins: `/tmp/pi-web-test-core.17IFHZ/run.json`, 509 files,
+  4171 tests/14 suites, no cancellations/uncertain files; declared-input static
+  evidence is retained separately from fresh effectful execution.
+- All26 browser/terminal groups: `/tmp/pi-web-test-browser.V6qaaX/run.json`.
+  Both final Git v8 receipts complete; all original Move inputs pass unchanged.
+- Genuine Home Manager deployment: `/tmp/pwv-0CjZyF/run.json`, all five guest
+  checks pass, original clients settle, service stops, port refuses connections.
+- Requested/effective4-browser/4-core overlap; 32 CPUs/~28.2GiB available at
+  admission. Command386s includes in-run preparation, not model/review time.
+- `R/resumed-implementation/finish-acceptance-result.json` binds runtime bytes,
+  intervals, retained first failure, finite remedy and artifact paths. Subsequent
+  plan-checkbox/status changes are prose-only, not a relabelled new-tip execution.
 
 ## Completion Checklist
 
-- [ ] Original 68 and named added obligations have final reviewed owner/bridge/
+- [x] Original 68 and named added obligations have final reviewed owner/bridge/
   obsolete dispositions; no silent deferral or blanket whole-journey KEEP.
-- [ ] Duplicate browser execution/setup/transactions/waits are actually removed;
+- [x] Duplicate browser execution/setup/transactions/waits are actually removed;
   every retained step/input has concrete incremental value and truthful fresh IDs.
-- [ ] B1–B7 are closed on one adopted, reviewable feature candidate, with original
+- [x] B1–B7 are closed on one adopted, reviewable feature candidate, with original
   input/lifetime premises and complete failure/native ownership preserved.
-- [ ] B8 passes on relevant current inputs; earlier failures and preparation costs
+- [x] B8 correctness passes on relevant current inputs; earlier failures and preparation costs
   remain visible. No focused result is relabelled full acceptance or NET success.
-- [ ] Guides/guards/classification/package inputs match the candidate. Only after
+- [x] Guides/guards/classification/package inputs match the candidate. Only after
   whole-task completion and separate authorization: rebase onto current local main,
   reassess relevant inputs, exact-state unsigned non-FF integration approval and
   separate bounded cleanup. No remote authorization exists.
 
-**Known gaps:** Final surviving-browser B1/B3–B7 dispositions, final settled
-acceptance and matched NET/Panel gates remain open. Current early full correctness
-does not supersede the failed authoritative matched pair or establish completion.
+**Known gaps:** Original matched NET/ceiling miss and unmeasured Panel median
+remain deferred performance work, explicitly not completion gates. Work remains
+unintegrated; no remote publication, rebase, merge or cleanup was authorized.

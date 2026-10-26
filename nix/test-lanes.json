@@ -569,6 +569,11 @@
       "estimatedMs": 1944
     },
     {
+      "path": "components/ReviewAttachment.pagination.test.mjs",
+      "lane": "F",
+      "reason": "Reviewed one file-private Cards capability realm and serial 1280/390 data rows: actual Card/review/picker/entry readers, finite page 0/40 and entry 0/1/40 transport, original continuations joined before descriptor/realm cleanup. No SDK, native Git, child, listener, external provider or source-relative write. Native cold review, geometry and actual 45-file effects remain independent browser authority."
+    },
+    {
       "path": "components/PluginCard.preview-cleanup.test.mjs",
       "lane": "F",
       "reason": "Actual card/review/patch-stack and strict opt-in context tuple; original body/publication/catch/action and queue-slot finally observations. Genuine ESM preload adapter independently joins every actual native original and already-captured production handler after unmount/release, without awaiting call.promise or manufacturing parent business forwarding. Missing handler and original errors remain failures. Parent current-source/input binding and fresh combined four-job gate required; AST ownership is independent of isolation, and E never repairs a leak."
