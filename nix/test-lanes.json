@@ -1695,6 +1695,7 @@
     {
       "path": "lib/project-trust.test.mjs",
       "lane": "N",
+      "estimatedMs": 24000,
       "reason": "Exact thirteen generated private-root/trust/discovery inputs bind closed SDK/Jiti/schema/import gates and actual read-only ancestor discovery, synchronous lock/marker plus direct native Git/resource work. Full current selected native completion; not arbitrary extension factories, remote packages or hostile physical aliases. Parent current-source/input binding and fresh combined four-job gate required; AST ownership is independent of isolation, and E never repairs a leak."
     },
     {
