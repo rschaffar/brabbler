@@ -1,16 +1,18 @@
 # Core test optimization — investigation and proposed execution
 
-**Status: P1 complete and integrated; P2 implemented, independently reviewed and
-fully accepted; retained unintegrated.** The first stop at `d532fedb44cc819b18085331168d9d78157a01b7`
+**Status: P1 and P2 complete and integrated; opportunity #3 bounded cohort review
+in progress.** P2 was subsequently merged into local main at
+`ab6b2fa11e3d38fb4cc65a661f3ef9001e8ae534`; its earlier retained-state evidence below
+remains historical. The first stop at `d532fedb44cc819b18085331168d9d78157a01b7`
 was premature: it disposed only of the small owner-compilation slice, not the dominant
 retained-import cost. The user explicitly requested thorough continuation in the
 same retained worktree. P1 was merged
 into local main at `0d5d914515057c957b47a7b92d9164ddacd98bc7`. A subsequent explicit
-request authorizes P2 only: measure repeated RPC fixture preparation, adopt only a
+request authorized P2 only: measure repeated RPC fixture preparation, adopt only a
 demonstrated simple reduction, preserve isolation, verify and retain local feature
-commits. No rebase/integration/publication/cleanup is authorized for P2. Other
-opportunities remain deferred. Historical investigation and P1 evidence below
-retain their original identities.
+commits. P2 integration was separately authorized afterwards. Opportunity #3 now
+has its own bounded authority below; opportunities #4–6 remain deferred.
+Historical investigation and P1/P2 evidence retain their original identities.
 
 ## Goal
 
@@ -19,14 +21,17 @@ assertions, error/settlement checks or native authority established by the compl
 browser-retirement work. Distinguish less work, better scheduling, faster focused
 feedback and faster complete acceptance; none implies the others.
 
-**Current bounded execution: P2 retained-import preparation.** Attribute the
-79.645s retained-import interval before deciding materiality. Separate pure Jiti
-transformation from resolution/evaluation, then adopt only a demonstrated small
-immutable-preparation reduction with source/configuration controls and unchanged
-fresh dependency/owner evaluation. One coherent candidate receives focused matched
-measurement, independent review and complete acceptance before expansion. No generic
-cache, initialized-graph sharing, Git/timer/classification, browser-retirement,
-worker scaling, rebase/integration/publication or cleanup is authorized.
+**Current bounded execution: opportunity #3, shorten the exclusive tail.** Review
+only `lib/acceptance/coordinator.test.mjs` (first),
+`app/api/native-tools/route.test.mjs`, `app/api/skills/content/route.test.mjs` and
+`lib/session-pause.test.mjs`. Promote only source/helper/pinned-import/native and
+success/failure-cleanup-qualified files; private native effects belong in N, not F.
+Retain precise unresolved holds rather than expanding lifetime infrastructure.
+Preserve every original body/input/assertion/deadline, native/SDK authority,
+discovery/count and settlement gate. One sequential matched baseline/candidate uses
+unchanged complete orchestration and four core/four browser workers, followed by
+bounded evidence review. No other optimization, rebase, integration, publication,
+ordinary session launch or resource cleanup is authorized for this task.
 
 Start with the existing four-core-worker budget. There is no promised percentage
 or hard 351.05-second gate: the user made the old performance targets informational.
@@ -296,7 +301,7 @@ Do not build immutable repository seeds: the existing seven-sample pilot in
 per fixture plus seed construction. Never copy linked-worktree administration,
 hardlink mutable indexes/config/refs, reuse approvals or shrink actual fixtures.
 
-## Execution scope — P1 complete; P2 reopened; other opportunities deferred
+## Historical P1/P2 execution scope — completed; other opportunities separately authorized
 
 Keep one writer, one active change and normal four-worker admission. Independent
 review remains useful; packet counts and universal lifetime theorems are not gates.
@@ -722,6 +727,134 @@ Final independent evidence review found no substantive blockers; its admission-
 stage and stale-heading nits were corrected. Writer checks confirm that only this
 plan differs from accepted implementation inputs, relative link targets exist
 and `git diff --check` passes. These are source checks, not browser-link verification.
+
+## Opportunity #3 — bounded execution plan
+
+Checked starting local main: `ab6b2fa11e3d38fb4cc65a661f3ef9001e8ae534` (clean).
+Dedicated branch `perf/core-exclusive-cohort`, worktree
+`/home/robert/projects/3rdparty/pi-desk-worktrees/core-exclusive-cohort`.
+CodeGraph initialized before source research. One writer coordinates checks;
+independent read-only pinned-effect/eligibility review is bounded to this cohort.
+The original P2 acceptance is a reference, not this task's baseline.
+
+- [x] Review the four actual receivers, helpers, pinned eager imports, native effects
+  and success/failure settlement; adopt only justified lanes and precise holds.
+- [x] Verify adopted receivers and existing manifest/discovery/settlement contracts;
+  no helper changes require new regressions.
+- [x] Independently review exact eligibility and unchanged original coverage.
+- [ ] Compare one sequential fresh complete four/four baseline/candidate pair,
+  including core/static/plugins, all browser/terminal groups and real deployment;
+  record identities, failure evidence, preparation/execution/wall and pool/E work.
+- [ ] Record adopted files/holds, observed limits and reviewed local feature commits;
+  retain branch/worktree unintegrated and stop before another opportunity.
+
+Stop rather than expand if safety work becomes disproportionate to modest savings.
+Source/path evidence alone does not qualify execution; separate processes do not
+prove source-write confinement or arbitrary descendant closure. E does not fix leaks.
+
+### Exact cohort disposition
+
+Only live `nix/test-lanes.json` changes executable scheduling. Original tests,
+helpers, production code, discovery, estimates of existing pooled files, workers,
+resource admission, browser queues, deadlines and settlement gates are unchanged.
+The immutable historical audit is untouched. No failure-cleanup fix is shipped.
+
+| File | Adopted disposition | Source/native and failure-lifetime basis |
+| --- | --- | --- |
+| `lib/acceptance/coordinator.test.mjs` | **N**, advisory 3000ms | Real snapshots/settings/ledgers, synchronous Git probes and awaited `flock --no-fork` recovery are native despite the synthetic executor. Unique fixture project/agent roots contain writes. Disposal closes admission before fixture releases gates, joins serial tails/pumps and submissions, clears its timer, restores env and retains roots after drain failure. Actual held capture/verification/executor, rejection, uncertain settlement and persistence-failure cases remain. Default executor is imported but never invoked by the second denied coordinator. |
+| `app/api/skills/content/route.test.mjs` | **N**, advisory 2000ms | Real FIFO/symlink/descriptor/path/permission operations remain. Exact pinned loader creates settings/package managers and resolves packages before filtering extensions: `noExtensions` alone is insufficient. Here private agent has no packages/settings; shared source has no `.pi/settings.json`; package-source lists and extension paths are empty. Project-trust lock/store is private, other resource/context/install annotations are reads, and no session binds `resources_discover`. Allowed-root catalogue awaits an empty private session scan (no dirty index/save timer). Requests finish before root removal. Re-review if source settings/packages or composition change; no actual source-write repair is justified. |
+| `app/api/native-tools/route.test.mjs` | **Retain E** | Codemode registration/listing never executes a script; no QuickJS-worker hold is inherited. Ordinary replacement awaits retired-wrapper shutdown. Startup still constructs runtime/session owners before registry publication without a construction-failure disposal scope; fixture tracks IDs after successful status/body handling and sees current wrappers only. Failure/unpublished retirement ownership is not closed by this task. |
+| `lib/session-pause.test.mjs` | **Retain E**, replace stale rationale | Existing cleanup already releases gates and awaits model refresh, abort, tracked work, SDK idle and wrapper shutdown. Suite root removal still lacks catalogue/scanner/background failure/timeout completion ownership. Catalogue and scanner barriers differ; captured-path index saves are distinct. Current transcripts are outside the default scanner directory, so no claim that every success leaves a dirty writer is made. Genuine10s deadlines remain real, not controlled clocks. |
+
+New advisory hints round this task's baseline coordinator3152.243ms and
+skills2212.857ms, not the historical opportunity table. The four baseline files
+sum11.354s (native-tools3338.474ms; Pause2650.545ms). No ideal `S-S/4` arithmetic is
+a scheduling bound or measured speedup.
+
+Pinned runtime modules remain
+`/nix/store/28vpp6bpxj0algr4b4xigfca399flcmi-pi-web-node-modules-0.9.3`.
+Independent review found bounded eager SDK effects: package metadata reads,
+`TOOLS_DIR` environment snapshot and process-local stream/provider registration;
+barrel import does not run CLI `main()` or construct sessions. Plain pinned Jiti
+retains ordinary module/native-import caching; runner `JITI_FS_CACHE=0` disables
+disk transformations. Proper-lockfile's synchronous release clears its heartbeat
+before returning. File processes isolate these globals, not the shared source cwd.
+Pinned file hashes are retained in
+`/tmp/pi-web-p3-cohort.1RK3PZ/pinned-imports.json`.
+
+### Failure-path qualification (disposable diagnostic, not feature code)
+
+After the baseline settled, a private copy of its exported source ran:
+
+```sh
+nix run .#test -- core --jobs 4 --file lib/acceptance/coordinator.test.mjs
+```
+
+The original held-capture case deliberately fails before normal gate release and
+adds one rejecting peer disposal owner. The real fixture must still stop/drain the
+actual coordinator, release the gate, reject both original tracked submissions as
+`disposed`, clear pumps/timer, restore env and retain its root before its original
+AggregateError. A bounded in-hook observer asserts each fact and emits
+`P3_FAILURE_CLEANUP`. Other29 original cases pass; the one intentional failure is
+not filtered, skipped or retried into a pass. Runner reports no uncertain files or
+observed survivors. This diagnoses fixture failure ownership, not arbitrary native
+descendants or a production supervisor's settlement from a synthetic result.
+
+- First diagnostic: `/tmp/pi-web-test-core.YHnmel/run.json`, source
+  `/nix/store/45453gxp4s8wyil9nkk8k99rprkjci9y-source`, digest
+  `3adb268a19e766a7da92baac18a269892019d1a745ccbe3afe2ed576c1955168`,
+  command43.623s. It reached the intentional body failure, but a later `t.after`
+  observer did not run after the first hook rejected. That observation precondition
+  did **not** qualify retained-root cleanup and is retained, not hidden.
+- Corrected observation: `/tmp/pi-web-test-core.834Ibw/run.json`, source
+  `/nix/store/1aadjnamljah7wj1b11nfrrb7x0zjap8-source`, digest
+  `d2fe3f2ae853bf1193e2163282d1f9eb210eb451430033b224862442a92ee9bd`,
+  command42.824s. Observer moved inside the original cleanup hook before its throw;
+  all named predicates and the marker execute. This is a changed diagnostic, not
+  an unchanged retry or helper fix. Both commands exit1 as intended, with30 tests,
+  29 passes/1 controlled failure, zero cancelled/skipped and settled outer clients.
+- Exact source copies, patches, logs/timestamps and exits remain under
+  `/tmp/pi-web-p3-cohort.1RK3PZ/`; failed Nix derivations retain logs/build roots.
+  No diagnostic/test/helper change enters the feature. Relevant original failure
+  cases also run unchanged in focused and complete acceptance.
+
+Independent read-only review `01a17820-c3ed-7402-ad52-005a5f017ed7` approves the
+exact two N promotions and refined E holds, with no blocking finding. It confirms
+receiver/helper bytes match baseline, original coverage is conserved and the
+corrected failure observer runs before the original cleanup throw. Reviewed live
+manifest SHA256: `ae712f5bb99a7fc9573e6a70af21a64b9045205253d6071d86138bc351f2e170`.
+This is bounded pinned Linux composition eligibility, not general native lifetime,
+escaped-descendant or speedup proof.
+
+### Focused candidate verification
+
+```sh
+nix run .#test -- core --jobs 4 \
+  --file lib/acceptance/coordinator.test.mjs \
+  --file app/api/skills/content/route.test.mjs \
+  --file app/api/native-tools/route.test.mjs \
+  --file lib/session-pause.test.mjs \
+  --file lib/test-runner.test.mjs --file lib/test-design.test.mjs \
+  --file lib/test-lanes-audit.test.mjs
+```
+
+Passed7 files/127 tests plus29 exporter contracts and mandatory static evidence,
+zero skipped/cancelled/uncertain files or observed survivors. Report
+`/tmp/pi-web-test-core.8Pz7uz/run.json`, immutable source
+`/nix/store/25z94ryr31i2bj2m9whi46aikvipnas2-source`, digest
+`c5d78ffa713177c5378053044511e59a5384d88cb1206c6130862b92699eaab8`,
+output `/nix/store/gqqkxr8alk6csmgp8832grg7pfg9x8dm-pi-web-core-checks`.
+Requested/effective four workers; cases remain serial per file. Command49.545s,
+outer core44.538s, pre-lifecycle32.499s, lifecycle11.949s, post-lifecycle0.090s.
+Lint executed for the new manifest and produced
+`/nix/store/grjzvkwmcyp0zmvrjgqgc8i8i6i74kp8-pi-web-lint`;
+typegen/tsc evidence `/nix/store/qh06kmg2dbj3a3bpk8ypgflavl9w7bwk-pi-web-types`
+and type source `/nix/store/majsir19c2dywnj7fvrfb3sii6wwb4cv-source` are reused.
+This focused/static prewarming is separate from the complete comparison commands.
+Exact Git diff assertions confirm only two new N entries, their two removed holds,
+two refined retained holds and this plan; all existing reviewed entries, application,
+original tests/helpers/runner and dependencies are unchanged. Evidence:
+`/tmp/pi-web-p3-cohort.1RK3PZ/source-conservation.json`.
 
 ## Completion Checklist
 
