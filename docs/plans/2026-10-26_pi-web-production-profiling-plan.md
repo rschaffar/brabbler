@@ -1,6 +1,7 @@
 # Pi Web production latency — profiling plan
 
-**Current status: refresh-coalescing implementation authorized and underway.**
+**Current status: refresh coalescing implemented, independently reviewed and fully
+sandbox-verified at `3bdd333651ed908a8ea07d47d67212d9bab32327`.**
 Current writer uses `perf/catalogue-refresh-coalescing` in
 `/home/robert/projects/3rdparty/pi-desk-worktrees/catalogue-refresh-coalescing`,
 starting at local main `3650d2e857f18c7dbcef412f44e435c0f5d363b3`. The original
@@ -85,13 +86,13 @@ These are three ordinary observations, not statistical/mobile/INP/cold-start pro
   overlap, opaque A/B/A/restart tokens, mutations during initial/follow-up reads,
   actual mounted publication/error/Strict/unmount behavior and existing native/UI
   bridges. Update `docs/session-internals.md`; independently review settled delta.
-- [ ] Once source/review settle, rebase onto current main and run full sandboxed
+- [x] Once source/review settle, rebase onto current main and run full sandboxed
   acceptance with `nix run .#test -- all --workers 4 --jobs 12` when32CPUs/43GiB
   admits overlap, otherwise documented4/4fallback. The peer acceptance experiment
   integrated as `29bfc3a8f2798c10d7feed968d833da48472cff3` during this work; adopt
   its ADR0035budget guidance without changing this slice's application design.
   Coordinate actual concurrent runs; keep all existing deadlines/checks.
-- [ ] Record actual request work removed, exact source/evidence, preparation versus
+- [x] Record actual request work removed, exact source/evidence, preparation versus
   execution and full command runtime. Integrate only through exact Git approval;
   deployed speed gain needs a separately authorized rebuild/comparison.
 
@@ -118,7 +119,45 @@ waiver. Original `full.log`, `full-command.json`,
 core stopped277passed/1failed/233notstarted, so no full pass is claimed. Independent
 review found the adapted409/200/retry/restore/delete obligations intact. New focused
 four-owner execution passed **37/37 in40s**: `focused-4.log`,
-`/tmp/pi-web-test-core.qWjdBg/run.json`. Complete acceptance remains pending.
+`/tmp/pi-web-test-core.qWjdBg/run.json`.
+
+**Package-4 complete acceptance:** candidate
+`3bdd333651ed908a8ea07d47d67212d9bab32327` (rebasedonto29bfc3a) passed
+`nix run .#test -- all --workers 4 --jobs 4` in **368.130s**, including realization.
+Four/four was the documented ADR0035fallback:32CPUs but only **35.706GiB available**,
+not the43GiB required for12/4overlap. Requested/effective core **4/4**, browser **4**;
+all **511files /4,226tests /14suites**, **26groups /59receipts** and genuine deployed
+Home Manager/HTTP/PTY/restart/shutdown guest checks passed, with no skipped,
+cancelled or unstarted core cases. All browser expected/completed lists and
+source/run bindings match; owned clients settled, browser ports closed, guest
+MainPID0/cgroups absent-or-empty/port refused. Scope is the ordinary Nix containment
+and bounded owned observations, not unobserved escaped-descendant certification.
+
+Core driver **363.072s**, file execution envelope **360.084s**. Browser support
+**3.680s**, definition publication **5.175s**, group-client execution envelope
+**233.050s**, total driver **241.908s**. Guest driver **77.718s**, guest proof interval
+**20.053s**; do not claim their subtraction is isolated realization. These overlapping
+envelopes are not additive. No deliberate separate prewarming: the changed-fixture
+rerun could reuse prerequisites realized during the retained failed firstfull.
+No matched acceptance or deployed application speedup is inferred from these times.
+
+Evidence root `/tmp/pi-web-catalogue-coalescing.7ODs3F/`: `full-2-command.json`,
+`full-2.log`, `acceptance-summary.json`. Authoritative reports:
+`/tmp/pi-web-test-core.xbrhCL/run.json`, `/tmp/pi-web-test-browser.E3bBfH/run.json`,
+`/tmp/pwv-Cfuc8c/run.json`; core output
+`/nix/store/xp3k4pi6d34wp27wpjyaxfbvfx380d5k-pi-web-core-checks`.
+Snapshot `/nix/store/r9wkg4m4pwa66qi2j82gxgm1m1wrcsaf-source`, outer digest
+`0da3e2f4be531b1fed55a3f90b8baf10b30498fab54656d4b8706c5701df55d0`, package
+`/nix/store/83pv7gd90fxlfnng8c1ri7q8ivhi71jy-pi-web-0.9.3`.
+
+Measured work-removal evidence is controlled actual-owner admission: one warm
+complete bootstrap, two requests for overlapping summary/version/forced startup,
+no duplicate Strict bootstrap and no obsolete hydration. The fault proves an extra
+forced response is detected. The real deployed4–5responses baseline has not yet
+been remeasured with this code. Payloads, Activity receipt/cadence and backend
+relations are unchanged. Stop before DTO expansion. A documentation-only evidence
+follow-up uses source/link checks and confirms application/test inputs unchanged;
+these checks do not relabel the suite as a new-tip run.
 
 **Package-4 completion:** loader/hook and mutation wiring reviewed; focused and
 complete acceptance pass; fewer redundant admissions demonstrated without weakening
