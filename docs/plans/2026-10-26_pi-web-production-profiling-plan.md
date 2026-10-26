@@ -1,15 +1,16 @@
 # Pi Web production latency — profiling plan
 
-**Status: proposed; profiling has not started.** The user authorized saving this
-plan in a separate linked worktree, not executing it. No instrumentation,
-application/test/configuration/dependency changes, profiling, browser automation,
-application/API probes, tests, benchmarks, builds, service actions or model calls
-are authorized by this document. Retain the planning worktree. The user subsequently
-authorized a documentation-only commit and rebase onto current local main; that
-Git-only request does not authorize integration, publication, cleanup or profiling.
-Execution needs a new explicit user request. Conditional service/configuration
-changes need their own exact authorization rather than being inferred from that
-request.
+**Status: bounded host-local profiling checkpoint complete; dominant production
+bottleneck identified. No optimization implemented.** The user authorized local
+Chrome timing-only capture under normal desktop load, metadata-selected chats,
+authenticated read requests, and then one separately approved 20-second CPU probe
+using the worker's temporary loopback inspector. The inspector is closed and the
+service identity/listener are unchanged. No chat prompt was sent by the profiling
+driver; no test, build, deployment, service restart, persistent app/service
+configuration or dependency change, or credential export was performed. Retain the
+worktree. Integration, publication, cleanup and fixes are not authorized by this
+report. Real-device/Firefox and successful SPA pointer
+measurements remain outside this completed checkpoint.
 
 ## Goal
 
@@ -33,7 +34,7 @@ clean local main `e8a0ba6be95dcd25882ebdb2146d2d464663dccf`:
 
 - Branch: `plan/pi-web-production-profiling`.
 - Worktree: `/home/robert/projects/3rdparty/pi-desk-worktrees/pi-web-production-profiling-plan`.
-- Installed reference reported by `pi_web_source`: Pi Web 0.9.3 at
+- Original static-analysis reference reported by `pi_web_source`: Pi Web 0.9.3 at
   `/nix/store/v7m9pjsf7qhn25rkrfxwg1bmayb591a4-pi-web-0.9.3/lib/node_modules/@agegr/pi-web`.
 - Catalogue reader/scanner, Activity helpers, atomic writer and the cited session
   history/SSE routes were compared byte-for-byte with that reference. Several UI
@@ -59,7 +60,130 @@ Archived/subagent composition and browser-tab/live-wrapper counts were not read.
 The existing scanner reuses unchanged metadata and validated append-tail scans;
 ordinary refreshes must not be described as rereading the entire 7.12 GiB.
 
-### Source-grounded hypotheses, not measured causes
+### Execution entry — 2026-10-26
+
+The user approved `http://127.0.0.1:30141`, automatic selection using file metadata,
+timing-only diagnostics, and proceeding now under normal desktop load. Reading
+transcripts is also permitted if useful. Only session headers were opened; the
+cache's first-message strings were parsed locally for aggregate byte counts, with
+no text retained. Cookie-based direct reads are permitted; the method keeps
+authentication inside the dedicated browser rather than extracting cookies into
+arguments/files.
+The user logged in manually in that browser. No authentication settings changed.
+
+The running reference is now
+`/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web`.
+All 15 scoped source files match this checkout byte-for-byte; the old package's
+four UI/lifecycle differences no longer represent current deployment drift.
+Declared SDK is 1.3.0, Next 16.4.2; the actual server executable is Node 24.21.0.
+The owned capture browser is Chrome 155 on Linux x86_64, not Firefox or a real
+mobile device. The host exposes 32 logical CPUs; normal desktop load is present.
+No active acceptance/build runner was apparent in the process-name check, which
+is not a proof of machine exclusivity. The active service and its listening worker
+were identified without reading environment/authentication files or application logs.
+
+Private timing-only artifacts and task-local collection helpers live in
+`/tmp/pi-web-production-profile.Gbcf7r/`. No raw HAR, DevTools trace, screenshots,
+DOM snapshots, credential exports or message-body artifacts are collected.
+A browser preflight initially landed on a different blank/headless configuration;
+consistent explicit launch flags corrected that before measurement. This was a
+capture-setup issue, not an application-latency sample.
+
+### Measured checkpoint and next decision
+
+**Main finding:** catalogue reconstruction repeats synchronous fork/subagent
+metadata reads and parsing *after* the incremental scanner returns cached rows.
+In one approved 20-second server sample, `buildSessionList` occupied **17.62 of
+20.25 seconds of weighted V8 stack samples (87.0%)**; its relation-resolution
+subtree occupied **17.23 seconds (85.1%)**. These inclusive subtrees overlap.
+They are sampled main-thread stack residency, **not exclusive CPU-clock time,
+whole-application CPU percentages or percentages of acceptance execution**.
+Whole-worker CPU was 21.71 seconds over the 20.26-second observation, including
+other threads/clients. Source correspondence was independently checked against
+public compiled bodies, not inferred from minified names or a version string.
+
+| Normal root reload | HTML load | First observed enabled composer, upper bound | Catalogue responses in first 20 seconds |
+| --- | ---: | ---: | ---: |
+| 1 | 169.5 ms | 10,908.5 ms | 5 |
+| 2 | 33.7 ms | 7,260.2 ms | 5 |
+| 3 | 31.0 ms | 7,253.9 ms | 5 |
+
+Each response carried about **9.65 MB decoded JSON**; the five responses totalled
+about **48.25 MB decoded / 12.5 MB transferred per reload**. Requests overlapped:
+never add their durations as user elapsed time. Their delay also appeared after
+headers on loopback, so apparent body-transfer time is not proof of network or
+compression cost; shared-server blocking can delay response progress.
+
+Other bounded observations:
+
+- Two sequential ordinary, non-forced catalogue GETs returned the same version
+  and counts: **4,447.8 ms then 450.0 ms**; browser JSON parsing was **12.5 /12.2 ms**.
+  Whole-worker CPU windows were **4.35 /0.34 seconds**. This is consistent with
+  rebuild/cache-wait versus warm-response cost, not an observed cache-hit counter
+  or an isolated per-request CPU measurement.
+- In two distinct 15-second quiet windows, six activity polls each had medians
+  **6.30 /6.45 ms**, no observed long tasks, and **0.10 /0.27 seconds** of worker CPU.
+  A third 15-second window naturally included two completed catalogue responses,
+  **15.32 seconds** of worker CPU, and a **247 ms** maximum browser timer delay.
+  The cause of that catalogue invalidation was not recorded. Quiet polling alone
+  was not the dominant desktop cost in this capture.
+- Valid short/long opening cases used explicit deep links, not a successful SPA
+  row-click comparison. The **358,511-byte** chat requested history at **14,434 ms**;
+  that request took **74 ms**. The **27,576,703-byte** chat requested history at
+  **9,561 ms**; that request took **476 ms**. Most observed opening delay preceded
+  history fetching. Both pre-open state reads reported no live wrapper; separate
+  SSE readiness/SDK phase durations were not measured.
+- A catalogue snapshot contained **5,305 sessions**, including **1,986 subagents**,
+  **1,482 forks** and **2,215 archived rows** across 237 cwds. These categories
+  overlap; snapshots changed during observation. An index snapshot had 5,304 rows
+  and 10,866,884 bytes. Serialized `firstMessage` values accounted for **6,051,896
+  bytes (55.7%)**. This is data-size attribution, not timing attribution.
+
+The high-confidence production call path is
+[summary/full list construction](../../lib/session-reader.ts#L242-L258) → each
+[relation resolution](../../lib/session-reader.ts#L191-L207) →
+[prefix/tail reads and JSON parsing](../../lib/session-reader.ts#L27-L154).
+The scanner's [unchanged-file shortcut](../../lib/session-list-scanner.ts#L483-L486)
+does not cover this second pass. Both summary and detail paths were represented
+in preserved profile ancestry. Hidden native leaves remain unidentified; do not
+label every filesystem/buffer-descended sample as a particular native operation.
+
+**Next proposed implementation slice, requiring new authorization:** first reuse
+relation metadata under current file-identity/fingerprint validation, rather than
+rereading unchanged parents/subagents on every construction. Preserve append,
+rewrite/truncation, status, identity, archive and admission semantics. Then address
+bootstrap refresh amplification: retain freshness/invalidation but coalesce the
+early summary/ordinary/forced/deferred refresh races. Compact preview/list payloads
+are a further candidate only after consumer review; simply truncating stored first
+messages is not a justified substitute for removing the dominant repeated work.
+Do not start a general cache framework or change polling/security for this result.
+
+Evidence is retained under `/tmp/pi-web-production-profile.Gbcf7r/`:
+`findings-summary.json`, `reload-{1,2,3}.json`, `quiet-{1,2,3}.json`,
+`catalogue-read-{1,2}.json`, `session-{short,long}.json`,
+`index-size-attribution.json`, `cpu-probe-aggregates.json`,
+`cpu-derived-summary.json`, `cpu-source-correspondence.json`,
+`cpu-probe-settlement.json` and `post-probe-health.json`. These contain approved
+numeric/aggregate/public-source data, not raw profiles, bodies or credentials.
+The source-agent mapping and aggregation are independently interpretable from
+these records. Temporary inspector PID/start/listener checks and cleanup were
+reviewed before activation; actual settlement confirms closed TCP9229, joined
+collector, unchanged worker/main PID and TCP30141 listener. A subsequent
+authenticated application read returned **200 in 7.8 ms**. The task-owned browser
+was then closed successfully; no personal browser profile was borrowed.
+
+Two unsuccessful capture attempts are retained, not hidden as passing retries:
+`quiet-attempt-1.json` records an unsuccessful uninterrupted 45-second browser
+observation whose original transport detail was discarded by the privacy filter;
+the three later 15-second windows are separate observations. A row-click-path
+attempt failed target-adoption validation with a full resource buffer and did not
+retain its in-memory timing record before the assertion. `session-open-attempt-1.json`
+records that limitation; subsequent explicit deep links do not prove that pointer
+path works or establish an application navigation defect. No further pointer,
+mobile, cold-service or absent-index campaign was started once the leading
+production owner was established. No speedup is claimed.
+
+### Original source hypotheses and measured disposition
 
 1. **Catalogue startup and refresh amplification.** Installed
    `components/SessionSidebar.tsx:569–632,754–775` waits for the summary catalogue
@@ -96,10 +220,12 @@ ordinary refreshes must not be described as rereading the entire 7.12 GiB.
    Background scheduling does not make that work nonblocking. It is conditional
    on dirty scans, not a guaranteed write on every idle poll.
 
-The investigation has not measured the impact of any of these paths. Asset
-loading, hydration, network delay and service-worker/PWA effects remain possible
-contributors to the same journey and must be visible in the first trace rather
-than excluded by the shortlist.
+The measured disposition is now: catalogue relation reconstruction and refresh
+amplification are the leading production costs; quiet Activity polling was small
+in the observed desktop windows; selected-history work was smaller than its
+preceding catalogue gate. SDK readiness and individual index-write/flush stalls
+were not independently timed. Asset load, real-device/PWA/network behavior and
+other scenarios are not globally exonerated by this host-local sample.
 
 ## Plan Relationship
 
@@ -129,15 +255,15 @@ check unnecessary merely because it appears in a hot stack.
 
 ### 1. Authorize and bind the measurement environment
 
-- [ ] Obtain explicit execution authorization specifying permitted ordinary user
+- [x] Obtain explicit execution authorization specifying permitted ordinary user
   actions, diagnostic outputs and privacy boundaries; confirm a capture window
   without competing acceptance/build/profile work. Record any unavoidable normal
   load separately, rather than stopping someone else's work or calling it idle.
-- [ ] Re-identify the installed package/source, actual runtime, browser/device,
+- [x] Re-identify the installed package/source, actual runtime, browser/device,
   access path, cache/service-worker state and selected landing view. Record the
   relevant source differences from the profiling checkout. Do not silently
   substitute current main or a development build for the installed application.
-- [ ] With the user's selection, name a short chat and a long/tool-heavy chat by
+- [x] With the user's selection, name a short chat and a long/tool-heavy chat by
   local opaque aliases; collect only approved sizes/counts, not message contents.
   Record visible-client/live-wrapper counts if the authorization permits them.
   Ordinary chat viewing can initialize SDK resources and perform normal cache or
@@ -149,27 +275,32 @@ configuration change or instrumented deployment is a separate stop-and-ask point
 
 ### 2. Capture the real user journey before adding instrumentation
 
-- [ ] Capture a desktop normal reload with the existing browser cache and warm
-  service, followed by a small repeat sample. Start with three comparable reloads;
-  report individual values, median and range, not p95 or a statistical guarantee.
-  Record navigation start, shell availability, catalogue/adoption, visible history,
-  usable composer and SSE/agent readiness as distinct milestones. Identify which
-  readiness milestones are actually awaited by the user's action.
-- [ ] Capture a short visible, quiet interval (initial budget: 45 seconds) and one
-  normal short/long-chat switch. Attribute main-thread tasks, parse/render work,
-  request frequency and recurring pauses even if no catalogue version changes.
-- [ ] If an already-authorized agent is naturally running, capture one user-selected
+- [x] Capture three desktop normal reloads with the dedicated browser's cache and
+  warm service. Report individual values and range; enabled-composer median is
+  7,260.2 ms, not p95 or a statistical guarantee. Navigation/resources and first
+  observed enabled composer were recorded. Exact adoption/history paint and SSE
+  readiness remain unknown. No focus/input-response measurement was performed;
+  do not claim the original table's stronger composer-usability milestone.
+- [x] Capture bounded visible quiet observations and short/long chat openings.
+  The achieved scope is three distinct 15-second quiet windows and two deep-link
+  openings; the failed continuous/row-click attempts above are retained. Resource,
+  long-task and timer observations are not full browser CPU or exact paint metrics.
+- [ ] Deferred: a successful normal SPA row-click/switch measurement. Do not relabel
+  deep-link navigation as this scenario; the identified server bottleneck does not
+  require extending this checkpoint into a navigation-correctness investigation.
+- [x] If an already-authorized agent is naturally running, capture one user-selected
   sluggish action during that activity and compare with the quiet observation.
   Reuse the reload/switch action if it matches the symptom; do not add a broad
   scenario matrix or start an agent to create load. If unavailable, explicitly
   leave responsiveness-during-agent-activity attribution open.
-- [ ] If an already-authorized agent naturally completes during the window,
-  capture that transition's catalogue requests and initiators. Do not send a new
-  prompt, start tools or run acceptance merely to create a completion. Mark the
-  scenario unavailable if none occurs in the bounded window.
-- [ ] Capture one comparable real mobile/PWA journey if device access is approved;
-  separate browser execution from network transfer and compare cache/SW state.
-  Desktop viewport emulation is not evidence of real-device CPU/network behavior.
+  Global running snapshots showed 3 and 4 managed runs around the later probes;
+  exact per-action membership and an isolated busy/idle A/B were not collected.
+  Independent source-review subagents were research, not generated timing load.
+- [x] Not available as an attributed event: a natural completion-to-refresh capture.
+  Background catalogue requests were observed, but their exact invalidating event
+  was not recorded. No prompt/tool/acceptance run was started to manufacture one.
+- [x] Not applicable to the approved host-local capture: real mobile/PWA device
+  comparison. No real-device access was supplied; no emulation is claimed as one.
 
 Define each endpoint before capture, using allowlisted event types/counts and
 relative timestamps, never displayed text or transcript payloads:
@@ -206,12 +337,13 @@ indiscriminately.
 
 ### 3. Attribute only the leading costs with bounded probes
 
-- [ ] Reuse existing `Server-Timing` from [lib/perf.ts](../../lib/perf.ts#L21-L67)
-  only if already enabled. Its environment switch is read at module load;
+- [x] Check existing `Server-Timing` from [lib/perf.ts](../../lib/perf.ts#L21-L67):
+  it was not enabled, so no reuse is claimed and no configuration was changed.
+  Its environment switch is read at module load;
   enabling it is not permission to restart/change the installed service.
   Handler timings do not include complete streamed compression/body delivery or
   browser parsing/paint. Correlate those boundaries separately.
-- [ ] If existing evidence cannot explain the leading delay, propose the smallest
+- [x] If existing evidence cannot explain the leading delay, propose the smallest
   additional phase counters/spans or short CPU sample for the exact owner/process.
   Obtain authorization before implementing instrumentation, enabling an inspector
   or changing the measured deployment. A diagnostic production-mode artifact must
@@ -238,31 +370,39 @@ async/thread-pool/disk/network wait and overlapping background work. A CPU profi
 alone cannot charge blocked disk time. Never sum inclusive spans or concurrent
 requests as if they were serial contributions to user latency.
 
-- [ ] Bound each targeted capture to the affected action/short interval; compare
-  against the baseline and estimate instrumentation overhead. At most a small
-  targeted repeat should resolve an ambiguity; otherwise document the limitation
-  and request a revised scope rather than starting an open-ended benchmark loop.
+- [x] Bound the single authorized CPU capture to 20 seconds at 100 Hz and one
+  ordinary reload. Compare ownership with the baseline observations, not as a
+  controlled timing A/B. Instrumentation overhead was not independently isolated;
+  no overhead estimate or timing improvement is claimed. No repeated probe was
+  needed. Any further probe requires a bounded reason and renewed authority,
+  not reuse of historical collector scripts as permission.
 
 ### 4. Rank measured culprits and stop before fixes
 
-- [ ] Produce one findings table: symptom/milestone, source revision/call path,
+- [x] Produce one findings table: symptom/milestone, source revision/call path,
   measured wall contribution, CPU/blocking evidence where available, trigger
   frequency, cache/client/session scale, confidence and remaining uncertainty.
   Report both one-off startup cost and recurring per-poll/per-completion/client
   amplification. Preserve unexplained time instead of assigning it by subtraction.
-- [ ] For each leading owner, distinguish directly measured work, a plausible but
+- [x] For each leading owner, distinguish directly measured work, a plausible but
   unproven causal explanation, and a hypothesis not supported by the capture.
   Correlate an expensive owner with the actual foreground delay/recurring stall;
   operation counts, static complexity and one flamegraph alone do not prove the
   cause of every reported symptom. Any controlled causal experiment is proposed
   separately; do not disable correctness/safety in the live app to create an A/B.
-- [ ] Map only the identified hot owners to existing retained test evidence/source.
+- [x] Map only the identified hot owners to existing retained test evidence/source.
+  The [existing bounded relation test](../../lib/session-reader.test.mjs#L576)
+  exercises one private child, stubs scanner rows and prohibits full SDK manager
+  opens. It protects bounded reading/status semantics, not this 5,305-row production
+  scale or a latency budget. The production hot pass is compiled catalogue work,
+  not P2's repeated fixture transformations. No fraction of historical acceptance
+  elapsed time can be inferred from this interactive profile.
   Keep fixture transformation/setup, deliberate timeout/failure proofs and repeated
   native production operations separate. Existing P2's 88.604→11.745-second file
   result is fixture preparation; P3's 348.897-second complete command is acceptance
   elapsed time. Neither measures interactive latency or production CPU share.
   Do not rerun tests or restart the full census to produce this mapping.
-- [ ] Recommend at most a few bounded fixes, ranked by observed user impact and
+- [x] Recommend at most a few bounded fixes, ranked by observed user impact and
   confidence, with preserved contracts and a smallest confirming measurement.
   Examples such as fingerprint-keyed relation reuse, linear child ordering or a
   badge-only projection remain options, not preselected implementations or promised
@@ -290,8 +430,10 @@ measured journey is not a demonstrated user bottleneck. No fixes execute here.
   can perturb timing. Keep one capture owner, note normal activity and profiler
   overhead, and separate cold/warm and real-device differences. No task cancellation,
   load generation, deadline inflation or error suppression to obtain tidy results.
-- **Operational changes:** this plan changes none. Any later instrumented artifact,
-  service action, configuration or temporary profiler must have an exact owner,
+- **Operational changes:** no restart, deployment or persistent service
+  configuration change occurred; the single explicitly approved temporary
+  inspector was closed and its service restoration verified. Any further
+  instrumented artifact, service action, configuration or profiler needs an exact owner,
   bounded lifetime and approved restoration path. Restore only owned changes;
   never overwrite another task, clear live caches/chats or delete existing evidence.
   Restoration/diagnostic cleanup is not permission for unrelated Git/resource cleanup.
@@ -309,19 +451,24 @@ measured journey is not a demonstrated user bottleneck. No fixes execute here.
   file/source-line target checks pass; these are source checks, not browser-link
   verification or application acceptance.
 
-### Future profiling — not authorized or executed
+### Bounded profiling checkpoint — measured, not an optimization
 
-- [ ] Explicit execution scope, privacy approval and a coordinated capture window
+- [x] Explicit execution scope, privacy approval and a coordinated capture window
   are recorded; any additional instrumentation/deployment authority is separate.
-- [ ] Ordinary opening and recurring-work captures identify user-visible milestones,
+- [x] Ordinary opening and recurring-work captures identify user-visible milestones,
   request waterfalls and browser/server boundaries on the actual deployed source.
-- [ ] The leading delays have bounded attribution evidence; uncertainty, unavailable
+- [x] The leading delays have bounded attribution evidence; uncertainty, unavailable
   scenarios and profiler overhead remain explicit rather than invented percentages.
-- [ ] Production costs, test machinery, intentional timing proofs and historical test
+- [x] Production costs, test machinery, intentional timing proofs and historical test
   elapsed times are distinguished, with a concise ranked findings report.
-- [ ] Next fixes are recommendations only; no unauthorized implementation, tests,
+- [x] Next fixes are recommendations only; no unauthorized implementation, tests,
   service changes, publication or cleanup occur.
 
-**Known gaps:** no interactive latency/CPU/event-loop measurements exist yet; live
-wrapper/tab counts, catalogue composition, device/access details and the availability
-of safe existing timing collection remain to be established at execution entry.
+**Known gaps:** one bounded, non-machine-exclusive host-local Chrome dataset, not
+statistical, cold-service, real Firefox/mobile/PWA or successful SPA pointer proof.
+Composer timestamps are observed enabled-state upper bounds, not exact first paint
+or INP. Other clients' counts and exact request initiators were not tracked; weighted
+V8 samples are not per-request CPU-clock accounting and redacted native operations
+remain unidentified. SDK readiness, individual index flush latency and profiling
+overhead were not independently isolated. Further capture needs a bounded reason;
+no optimization, application acceptance or speedup is claimed.
