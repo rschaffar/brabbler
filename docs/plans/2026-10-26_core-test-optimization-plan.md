@@ -2038,6 +2038,48 @@ evidence. This establishes the receiving wire, not the original reset's cause or
 a general socket-reset fix. Complete acceptance on the repaired candidate remains
 the final gate.
 
+The fixture repair is committed at `705b1b2280f0927b0fb732806a6e32f7bb31cec6`.
+Its second four/four all command exits1 after326.024s: **all26 browser/terminal
+groups and59 unique receipts pass**, then core fails the existing source-order
+coverage guard that still requires the removed Node `page.request.delete` spelling.
+The writer missed this guard in the transport correction. This is not an Activity
+runtime failure or a reason to remove the guard. Core reports328 passed files,
+one failed,181 not started;2801/2802 executed tests pass. VM prerequisite realization
+is interrupted by the peer failure and supplies no deployment evidence.
+
+Complete browser report `/tmp/pi-web-test-browser.C1Gh2y/run.json` binds source
+`/nix/store/nhglnl6mbpzyligf8hy7n00l4nz264ym-source`, digest
+`c197769da6d0895f279c5568a293f100ae6a35216047a6ff9b9607cce7a7217b` and the
+unchanged6a1ba6 production package. All browser errors are empty; complete coverage,
+service/children/port settlement and no observed survivors are verified. Failed
+core/VM reports are `/tmp/pi-web-test-core.NqTmuL/run.json` and
+`/tmp/pwv-iTr3f2/run.json`; raw `all-repaired.log` is retained.
+
+Only the guard's final ordering needle is corrected to the exact browser-helper
+call, including the same parent URL, DELETE and `expectedStatus: "2xx"`; every
+preceding obligation stays byte-identical. Focused coverage/helper checks pass50
+tests, command39.935s (`guard-green.log`). Independent review approves this literal
+correction, SHA256`a49f6125f33e63564e50477ed5a28388bd40c846403b2b3ec0ede2d570833f10`,
+and compares1383 scoped source files against the successful browser snapshot:
+only this Node guard differs, executable bits unchanged. Application, e2e, Nix
+recipes, dependencies and all earlier reviewed candidate bytes remain exact.
+
+**Proportional completion:** retain the full browser execution explicitly at
+705b1b2, never relabel it a new-tip run. Browser support's broader source identity
+can change with a Node test, but this guard is neither shipped nor imported by
+browser execution; all runtime/browser inputs are unchanged. Independent review
+confirms no additional all campaign is needed solely to repeat that passed work.
+Complete fresh core/jobs4 and genuine VM at the guard-corrected candidate are the
+remaining gates. Report eventual acceptance as composed source-bound evidence,
+not a single fresh all-pass or new whole-command timing. Reassess this reuse if
+anything beyond this guard and plan-status prose changes.
+
+Package graph verification confirms exactly two application-source changes since
+the accepted async candidate (review/server), identical dependency derivations and
+absence of the new Node test from filtered/shipped application files. The exact
+Nix version4 derivation query and corrected wrapper parsing are retained separately
+from `package-inputs.json`; initial schema assumptions are not verification.
+
 ## Completion Checklist
 
 ### This analysis
