@@ -10,10 +10,12 @@ import { MarkdownBody } from "./MarkdownBody";
 import { QuestionSetReview } from "./QuestionSetReview";
 
 type Request = Extract<ExtensionUiRequest, { method: "ask_user_batch" }>;
-export function QuestionSetDialog({ request, sessionId, onRespond }: {
+export function QuestionSetDialog({ request, sessionId, onRespond, onSubmissionWork }: {
   request: Request;
   sessionId: string;
   onRespond: (request: Request, response: { answers: SetAnswer[] } | { cancelled: true }) => Promise<void>;
+  /** Passive complete send/catch/finally observation; absent in default UI. */
+  onSubmissionWork?: (work: Promise<void>) => void;
 }) {
   const { t } = useI18n();
   const [initial] = useState(() => loadQuestionDrafts(sessionId, request.id, request));
@@ -76,7 +78,12 @@ export function QuestionSetDialog({ request, sessionId, onRespond }: {
       setSubmitting(false);
     }
   };
-  const cancel = () => { if (dirty) setConfirmCancel(true); else void send(true); };
+  const submit = (cancelled = false) => {
+    const work = send(cancelled);
+    onSubmissionWork?.(work);
+    return work;
+  };
+  const cancel = () => { if (dirty) setConfirmCancel(true); else void submit(true); };
   const status = (index: number) => answers[index]?.kind === "skipped" ? t("chat.questionsSkipped")
     : answers[index] ? t("chat.questionsAnswered") : t("chat.questionsUnanswered");
 
@@ -92,14 +99,14 @@ export function QuestionSetDialog({ request, sessionId, onRespond }: {
       footer={confirmCancel ? <>
         <span className="mr-auto text-xs text-text-muted">{t("chat.questionsDiscard")}</span>
         <button type="button" disabled={submitting} onClick={() => setConfirmCancel(false)}>{t("chat.questionsKeep")}</button>
-        <button type="button" disabled={submitting} onClick={() => void send(true)}>{t("chat.questionsCancelSet")}</button>
+        <button type="button" disabled={submitting} onClick={() => void submit(true)}>{t("chat.questionsCancelSet")}</button>
       </> : <>
         <button type="button" disabled={submitting} onClick={cancel}>{t("chat.cancel")}</button>
         <button type="button" disabled={submitting || page === 0} onClick={() => setPage(page - 1)}>{t("chat.questionsBack")}</button>
         {!review && <button type="button" disabled={submitting} onClick={() => setPage(page + 1)}>
           {page === request.questions.length - 1 ? t("chat.questionsReview") : t("chat.questionsNext")}
         </button>}
-        {(valid || review) && <button type="button" data-primary disabled={submitting || !valid || remaining === 0} onClick={() => void send()}>
+        {(valid || review) && <button type="button" data-primary disabled={submitting || !valid || remaining === 0} onClick={() => void submit()}>
           {submitting ? t("chat.questionsSubmitting") : error ? t("chat.questionsRetry") : t("chat.questionsSubmit")}
         </button>}
       </>}>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useNavigationWork } from "@/lib/navigation-work";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { validHiddenProjectsData } from "@/lib/hidden-projects";
 
@@ -23,11 +24,12 @@ async function request(body?: { key: string; hidden: boolean }): Promise<Set<str
 
 /** One AppShell owner shares state between Settings and Activity; reveal is never stored here. */
 export function useHiddenProjects(): ProjectPrivacy {
+  const work = useNavigationWork();
   const [state, setState] = useState<{ keys: Set<string> | null; error: boolean; pendingKey: string | null }>({ keys: null, error: false, pendingKey: null });
   const generation = useRef(0);
   const busy = useRef(false);
   const mounted = useRef(false);
-  const reload = useCallback(async (background = false) => {
+  const reload = useCallback((background = false) => work.observe((async () => {
     if (busy.current) return;
     const token = ++generation.current;
     if (!background) setState((previous) => ({ ...previous, keys: null, error: false }));
@@ -37,7 +39,7 @@ export function useHiddenProjects(): ProjectPrivacy {
     } catch {
       if (mounted.current && generation.current === token) setState({ keys: null, error: true, pendingKey: null });
     }
-  }, []);
+  })()), [work]);
   const refresh = useCallback(() => { void reload(); }, [reload]);
   const setHidden = useCallback((key: string, hidden: boolean) => {
     if (busy.current) return;
@@ -48,12 +50,12 @@ export function useHiddenProjects(): ProjectPrivacy {
       keys: hidden && previous.keys ? new Set([...previous.keys, key]) : previous.keys,
       error: false, pendingKey: key,
     }));
-    void request({ key, hidden }).then((keys) => {
+    work.observe(request({ key, hidden }).then((keys) => {
       if (mounted.current && generation.current === token) setState({ keys, error: false, pendingKey: null });
     }).catch(() => {
       if (mounted.current && generation.current === token) setState({ keys: null, error: true, pendingKey: null });
-    }).finally(() => { busy.current = false; });
-  }, []);
+    }).finally(() => { busy.current = false; }));
+  }, [work]);
 
   useEffect(() => {
     mounted.current = true;

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { finished } from "node:stream/promises";
+import { lstatSync } from "node:fs";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +16,7 @@ after(() => { if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_
 const jiti = createJiti(import.meta.url);
 const { executeGitOperation: executeWithReceipts } = await jiti.import("./server.ts");
 const { OPERATION_MARKERS } = await jiti.import("./operation-paths.ts");
-const { preparePluginReview, reviewEntry, reviewPreview } = await jiti.import("../../lib/plugins/review-store.ts");
+const { preparePluginReview, reviewEntry, reviewPreview, reviewManifest, reviewStream } = await jiti.import("../../lib/plugins/review-store.ts");
 const { snapshotOperationReceipt } = await jiti.import("../../lib/operation-receipts.ts");
 const { validatePluginCard } = await jiti.import("../../lib/plugins/ui.ts");
 const executeGitOperation = (cwd, op, ui, ...rest) => executeWithReceipts(cwd, op, {
@@ -171,6 +174,93 @@ function feature(repo, branch = "feature") {
   git(repo, "worktree", "add", "-b", branch, path);
   return path;
 }
+test("five browser preview/reject tuples preserve selected native resources and exact read-only cards", async () => {
+  // Native storage download API, not HTTP/browser historical-download proof.
+  const download = async (ref, entry) => {
+    const stream = await reviewStream(ref, entry);
+    if (!stream) return Buffer.alloc(0);
+    const closed = finished(stream, { cleanup: true }); void closed.catch(() => {});
+    const chunks = [];
+    try { for await (const chunk of stream) chunks.push(Buffer.from(chunk)); }
+    finally { stream.destroy(); await closed; }
+    assert.equal(stream.closed, true); assert.equal(stream.fd, null);
+    return Buffer.concat(chunks);
+  };
+  // Frozen command resources, in the original order; one shared native history.
+  const repo = fixture(); git(repo, "branch", "comparison-base");
+  git(repo, "branch", "target"); git(repo, "switch", "-c", "feature");
+  change(repo); git(repo, "add", "a"); git(repo, "commit", "-m", "Feature");
+  const target = join(`${repo}-worktrees`, "target");
+  git(repo, "worktree", "add", target, "target");
+  writeFileSync(join(target, "b"), "target b\n"); git(target, "add", "b"); git(target, "commit", "-m", "Target");
+  set(repo, { targetBranch: "target" });
+  const destination = join(`${repo}-worktrees`, "preview-new");
+  const identity = path => { const s = lstatSync(path); return [s.dev, s.ino, s.mode]; };
+  const state = () => ({ refs: git(repo, "show-ref"), registrations: git(repo, "worktree", "list", "--porcelain"),
+    checkouts: [repo, target].map(path => ({ path, identity: identity(path), head: git(path, "rev-parse", "HEAD"),
+      status: git(path, "status", "--porcelain"), index: readFileSync(git(path, "rev-parse", "--path-format=absolute", "--git-path", "index")).toString("hex"),
+      files: ["a", "b"].map(name => [name, identity(join(path, name)), readFileSync(join(path, name)).toString("hex")]) })),
+    destination: existsSync(destination) });
+  for (const [action, title] of [["rebase", "Git rebase"], ["merge", "Git merge"], ["createWorktree", "Create Git worktree"],
+    ["attachWorktree", "Attach Git worktree"], ["removeWorktree", "Remove Git worktree"]]) {
+    const op = action === "rebase" || action === "merge" ? { action, checkout: action === "merge" ? target : repo, featureBranch: "feature" }
+      : action === "removeWorktree" ? { action, checkout: repo, path: target }
+      : { action, checkout: repo, branch: action === "attachWorktree" ? "comparison-base" : "preview-new",
+        baseBranch: action === "attachWorktree" ? "comparison-base" : "target", path: destination };
+    const before = state(); let cards = 0;
+    const result = await call(repo, op, { pluginCard: async (_id, card) => {
+      cards++; assert.equal(card.title, title); assert.equal(card.patch, undefined, "reference-only review");
+      assert.equal(card.fields.find(f => f.label === "Checkout").value, op.checkout);
+      assert.equal(card.fields.find(f => f.label === "Branch").value, action === "merge" ? "target" : "feature");
+      const fields = Object.fromEntries(card.fields.map(f => [f.label, f.value]));
+      const notes = card.sections.find(s => s.title === "Operation notes").text;
+      assert.match(notes, /unsigned and hook-free/); assert.match(card.scope, /entire selected operation/);
+      if (action === "rebase" || action === "merge") {
+        assert.equal(fields["Feature → target"], "feature → target");
+        assert.match(notes, /not a predicted rebase\/merge result/);
+      } else if (action === "removeWorktree") {
+        assert.equal(fields["Remove worktree"], target); assert.match(notes, /Branch and session history remain/);
+      } else {
+        assert.equal(fields["Base branch"], op.baseBranch); assert.equal(fields["Worktree branch"], op.branch);
+        assert.equal(fields.Destination, destination);
+      }
+      // Bundle identity includes data, entry metadata AND offsets. Validate it
+      // through the public owner API; it is not SHA256(downloaded data alone).
+      assert.deepEqual(await reviewManifest(card.review, "git-workflow"), {
+        version: 1, pluginId: "git-workflow", operationId: card.operationId,
+        entries: card.review.entries, bytes: card.review.bytes, sha256: card.review.sha256,
+      });
+      const entries = []; let offset = 0;
+      for (let id = 0; id < card.review.entries; id++) {
+        const entry = await reviewEntry(card.review, id), body = await reviewPreview(card.review, entry);
+        assert.equal(body.complete, true);
+        const bytes = Buffer.from(body.text);
+        assert.equal(entry.start, offset); assert.equal(bytes.length, entry.bytes); offset += entry.bytes;
+        assert.equal(createHash("sha256").update(bytes).digest("hex"), entry.sha256);
+        assert.deepEqual(await download(card.review, entry), bytes);
+        entries.push({ entry, text: body.text });
+      }
+      const exact = JSON.parse(entries[0].text);
+      assert.deepEqual(exact.operation, op); assert.equal(exact.presentation.operationId, card.operationId);
+      assert.deepEqual(exact.presentation.fields, card.fields);
+      const bytes = Buffer.from(entries.map(e => e.text).join(""));
+      assert.equal(bytes.length, card.review.bytes);
+      assert.deepEqual(await download(card.review), bytes, "complete native download preserves all exact entry bytes");
+      const patch = entries.filter(e => e.entry.kind === "patch").map(e => e.text).join("");
+      if (action === "merge" || action === "rebase") {
+        const base = git(repo, "merge-base", "target", "feature"), tip = git(repo, "rev-parse", "feature");
+        assert.deepEqual(exact.comparison, { before: base, after: tip });
+        const expected = execFileSync("git", ["-C", repo, "diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", base, tip, "--"], { encoding: "utf8" });
+        assert.equal(patch, expected); assert.notEqual(patch, "");
+      } else { assert.equal(patch, ""); assert.equal(exact.comparison, undefined); }
+      return "reject";
+    } });
+    failed(result, /not approved/); assert.equal(cards, 1);
+    assert.equal(result.details.effectStarted, false); assert.equal(result.details.checksStarted, false);
+    assert.deepEqual(state(), before, `${action}: rejection has no native effect`);
+  }
+});
+
 test("create/attach/remove use exact local resources and never automatic cleanup", async () => {
   const repo = fixture(); const path = join(`${repo}-worktrees`, "selected");
   success(await call(repo, { action: "createWorktree", checkout: repo, branch: "selected", baseBranch: "main", path }));
@@ -520,4 +610,267 @@ test("FF-only refuses divergence without fallback; conflicts remain explicit", a
     failed(result, /conflict/i); assert.equal(result.details.effectStarted, true); assert.match(git(checkout, "status", "--porcelain"), /UU a/);
     failed(await call(repo, { action, checkout, featureBranch: "feature" }), /Conflicting Git operation/);
   }
+});
+
+// Original cross-approve/cross-cancel conjunction in the EXISTING native repo
+// fixture. No SDK session/model startup and no new fixture/seed implementation.
+test("original foreign Ask/PWD approval and selected Deny cancellation preserve caller, source and both candidate files", async () => {
+  const { readPluginSettings } = await jiti.import('../../lib/plugins/settings.ts');
+  const caller = fixture(), selected = fixture('-foreign');
+  git(selected, 'branch', '-m', 'delivery');
+  const session = { id: '55555555-5555-4555-8555-555555555555', cwd: caller };
+  updatePluginSettings(gitWorkflowManifest, 'session', caller,
+    gitWorkflowManifest.presets['always-ask'].values, [], undefined, session);
+  updatePluginSettings(gitWorkflowManifest, 'global', caller, { targetBranch: 'target' }, [], undefined, session);
+  const checks = [{ name: 'Selected checkout check', command: `test "$PWD" = '${selected}'` }];
+  const callerCheck = [{ name: 'Caller check must not run', command: 'exit 7' }];
+  const errors = [], receipts = [], cards = [];
+  const remember = error => { if (!errors.includes(error)) errors.push(error); };
+  const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const callerState = () => ({ head: git(caller, 'rev-parse', 'HEAD'), index: git(caller, 'write-tree'),
+    status: git(caller, 'status', '--porcelain'), a: readFileSync(join(caller, 'a'), 'utf8'),
+    draft: readFileSync(join(caller, 'draft.txt'), 'utf8'), second: readFileSync(join(caller, 'second-draft.txt'), 'utf8') });
+  // These are operation inputs copied from the existing browser command, NOT
+  // changes to fixture() or to its tracked base/history seeds.
+  const writeCandidate = (checkout, mode) => {
+    const lines = Array.from({ length: 5000 }, (_, index) => `Plugin context ${index + 1}\n`);
+    lines[49] = `Plugin whole-file candidate ${mode}\n`;
+    lines[4499] = `Plugin distant candidate ${mode}\n`;
+    writeFileSync(join(checkout, 'draft.txt'), lines.join(''));
+    writeFileSync(join(checkout, 'second-draft.txt'), `Second plugin candidate ${mode}\n`);
+    return { action: 'commit', checkout, mode: 'files', files: ['draft.txt', 'second-draft.txt'], message: `Plugin browser commit ${mode}` };
+  };
+  let pending;
+  try {
+    for (const width of [1280, 390]) {
+      // Preserve original dirty caller premise and exact candidate write order.
+      change(caller); git(caller, 'add', 'a');
+      writeCandidate(caller, `cancel-${width}`);
+      set(caller, { commit: 'deny', commitChecks: callerCheck });
+      set(selected, { commit: 'ask', commitChecks: checks });
+      const beforeCaller = callerState(), beforeSelected = git(selected, 'rev-parse', 'HEAD');
+      const op = writeCandidate(selected, `cross-approve-${width}`);
+      const origin = readPluginSettings(gitWorkflowManifest, selected, undefined, session);
+      assert.equal(origin.sessionApplicable, false);
+      assert.deepEqual(origin.sessionOverrides, {});
+      assert.equal(origin.effective.commit, 'ask'); assert.equal(origin.sources.commit, 'project');
+      assert.deepEqual(origin.effective.commitChecks, checks);
+      assert.equal(origin.global.targetBranch, 'target');
+      const own = readPluginSettings(gitWorkflowManifest, caller, undefined, session);
+      assert.equal(own.effective.commit, 'deny'); assert.deepEqual(own.effective.commitChecks, callerCheck);
+      const from = receipts.length, cardFrom = cards.length;
+      const ui = {
+        operationReceipt(id, receipt) { receipts.push(snapshotOperationReceipt(id, receipt, receipts.length + 1)); },
+        async pluginCard(id, card, signal) {
+          try {
+            cards.push(card);
+            assert.equal(id, 'git-workflow'); assert.equal(signal.aborted, false);
+            assert.equal(card.fields.find(field => field.label === 'Checkout').value, selected);
+            assert.equal(card.fields.find(field => field.label === 'Branch').value, 'delivery');
+            assert.deepEqual(card.sections.find(section => section.title === 'Required checks').fields,
+              [{ label: checks[0].name, value: checks[0].command, code: true }]);
+            assert.equal(card.sections.find(section => section.title === 'Commit message').text, op.message);
+            assert.equal(card.review.operationId, card.operationId);
+            const entry = await reviewEntry(card.review, 0);
+            const exact = JSON.parse((await reviewPreview(card.review, entry)).text);
+            assert.deepEqual(exact.operation, op);
+            assert.equal(exact.presentation.operationId, card.operationId);
+            assert.equal(exact.comparison.before, beforeSelected);
+            assert.equal(receipts[from].authorization.revision, digest(origin));
+            return 'approve';
+          } catch (error) { remember(error); throw error; }
+        },
+      };
+      pending = executeGitOperation(caller, op, ui, undefined, session);
+      const approvedResult = await pending; pending = undefined;
+      if (errors.length) throw errors[0];
+      success(approvedResult);
+      assert.equal(cards.length, cardFrom + 1);
+      assert.deepEqual(callerState(), beforeCaller);
+      assert.notEqual(git(selected, 'rev-parse', 'HEAD'), beforeSelected);
+      assert.equal(git(selected, 'show', 'HEAD:draft.txt'), readFileSync(join(selected, 'draft.txt'), 'utf8').trimEnd());
+      assert.equal(git(selected, 'show', 'HEAD:second-draft.txt'), `Second plugin candidate cross-approve-${width}`);
+      const terminal = receipts.at(-1), nativeCard = cards.at(-1);
+      assert.equal(terminal.phase, 'succeeded');
+      assert.equal(terminal.operationId, nativeCard.operationId);
+      assert.equal(terminal.card.review.id, nativeCard.review.id);
+      assert.equal(terminal.authorization.mode, 'ask'); assert.equal(terminal.authorization.source, 'project');
+      assert.equal(terminal.authorization.decision, 'user-approved');
+      assert.equal(terminal.authorization.revision, digest(origin));
+
+      const committed = git(selected, 'rev-parse', 'HEAD');
+      const cancelOp = writeCandidate(selected, `cross-cancel-${width}`);
+      const cancelOrigin = readPluginSettings(gitWorkflowManifest, selected, undefined, session);
+      let cancelledCard;
+      pending = executeGitOperation(caller, cancelOp, {
+        operationReceipt(id, receipt) { receipts.push(snapshotOperationReceipt(id, receipt, receipts.length + 1)); },
+        async pluginCard(id, card, signal) {
+          try {
+            cancelledCard = card;
+            assert.equal(id, 'git-workflow'); assert.equal(signal.aborted, false);
+            assert.equal(card.fields.find(field => field.label === 'Checkout').value, selected);
+            assert.deepEqual(card.sections.find(section => section.title === 'Required checks').fields,
+              [{ label: checks[0].name, value: checks[0].command, code: true }]);
+            assert.equal(card.sections.find(section => section.title === 'Commit message').text, cancelOp.message);
+            set(caller, { commit: 'allow' });
+            assert.equal(signal.aborted, false, 'caller Allow does not cancel selected Ask');
+            assert.equal(digest(readPluginSettings(gitWorkflowManifest, selected, undefined, session)), digest(cancelOrigin));
+            set(selected, { commit: 'deny' });
+            assert.equal(signal.aborted, true, 'selected project Deny cancels the ORIGINAL pending request');
+            return null;
+          } catch (error) { remember(error); throw error; }
+        },
+      }, undefined, session);
+      const refused = await pending; pending = undefined;
+      if (errors.length) throw errors[0];
+      failed(refused, /not approved/);
+      assert.equal(refused.details.effectStarted, false); assert.equal(refused.details.checksStarted, false);
+      assert.equal(git(selected, 'rev-parse', 'HEAD'), committed);
+      assert.deepEqual(callerState(), beforeCaller);
+      assert.equal(readFileSync(join(selected, 'second-draft.txt'), 'utf8'), `Second plugin candidate cross-cancel-${width}\n`);
+      assert.equal(receipts.at(-1).operationId, cancelledCard.operationId);
+      assert.equal(receipts.at(-1).card.review.id, cancelledCard.review.id);
+      assert.equal(receipts.at(-1).authorization.revision, digest(cancelOrigin));
+      updatePluginSettings(gitWorkflowManifest, 'project', caller, {}, ['commit', 'commitChecks'], undefined, session);
+      assert.equal(readPluginSettings(gitWorkflowManifest, selected, undefined, session).effective.commit, 'deny');
+    }
+  } catch (error) { remember(error); }
+  finally {
+    // No manually held peers exist here. Await the admitted ORIGINAL executor,
+    // which includes selected checks/native child/reporting and callback work.
+    if (pending) { try { await pending; } catch (error) { remember(error); } }
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length) throw new AggregateError(errors, 'Original selected Ask/check/cancellation conjunction failed');
+});
+
+// Own Cancel is a null UI result with a LIVE signal, not Reject, policy abort
+// or Stop. Exact selected-file inputs are native operations in the existing
+// fixture; its OIDs/session IDs never substitute for installed SDK authority.
+test('original own Cancel keeps its live signal, builtin Ask session origin and complete native state', async () => {
+  const { readPluginSettings } = await jiti.import('../../lib/plugins/settings.ts');
+  const repo = fixture('-own-cancel');
+  const errors = [], receipts = [];
+  const remember = error => { if (!errors.includes(error)) errors.push(error); };
+  const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const files = ['draft.txt', 'second-draft.txt'];
+  const writeCandidate = mode => {
+    const lines = Array.from({ length: 5000 }, (_, index) => `Plugin context ${index + 1}\n`);
+    lines[49] = `Plugin whole-file candidate ${mode}\n`;
+    lines[4499] = `Plugin distant candidate ${mode}\n`;
+    writeFileSync(join(repo, files[0]), lines.join(''));
+    writeFileSync(join(repo, files[1]), `Second plugin candidate ${mode}\n`);
+    return { action: 'commit', checkout: repo, mode: 'files', files, message: `Plugin browser commit ${mode}` };
+  };
+  const state = () => {
+    // Complete our own status refresh BEFORE reading the raw index snapshot.
+    const status = git(repo, 'status', '--porcelain');
+    return { head: git(repo, 'rev-parse', 'HEAD'), status,
+      index: readFileSync(git(repo, 'rev-parse', '--path-format=absolute', '--git-path', 'index')),
+      files: files.map(file => readFileSync(join(repo, file))),
+      unrelated: ['a', 'b'].map(file => readFileSync(join(repo, file))) };
+  };
+  let pending;
+  try {
+    for (const width of [1280, 390]) {
+      const session = { id: `own-cancel-${width}`, cwd: repo };
+      // Explicit selected-file preimage setup, not a rewrite of fixture() or
+      // the installed cross-profile HEAD/tree/Allow/Large history.
+      writeCandidate(`reconnect-${width}`);
+      git(repo, 'add', '--', ...files);
+      git(repo, 'commit', '-m', `Native own Cancel preimage ${width}`);
+      const mode = `cancel-${width}`, op = writeCandidate(mode);
+      const global = readPluginSettings(gitWorkflowManifest, repo).global;
+      updatePluginSettings(gitWorkflowManifest, 'global', repo,
+        { enabled: true, targetBranch: 'target' }, Object.keys(global).filter(key => !['enabled', 'targetBranch'].includes(key)), undefined, session);
+      updatePluginSettings(gitWorkflowManifest, 'session', repo,
+        gitWorkflowManifest.presets['always-ask'].values, [], undefined, session);
+      updatePluginSettings(gitWorkflowManifest, 'session', repo, {}, ['commit'], undefined, session);
+      const origin = readPluginSettings(gitWorkflowManifest, repo, undefined, session);
+      const sessionValues = { ...gitWorkflowManifest.presets['always-ask'].values };
+      delete sessionValues.commit;
+      assert.equal(origin.sessionId, session.id);
+      assert.equal(origin.sessionProject, git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
+      assert.equal(origin.project, origin.sessionProject);
+      assert.equal(origin.sessionApplicable, true, 'own Cancel carries the actual own session project');
+      assert.deepEqual(origin.global, { enabled: true, targetBranch: 'target' });
+      assert.deepEqual(origin.overrides, {});
+      assert.deepEqual(origin.sessionOverrides, sessionValues);
+      assert.equal(origin.effective.commit, 'ask');
+      assert.equal(origin.sources.commit, 'builtin', 'original UI resets session commit to builtin, not fixture-global Ask');
+      assert.deepEqual(origin.effective.commitChecks, []);
+      assert.equal(origin.sources.commitChecks, 'builtin');
+      assert.equal(origin.sources.mergeChecks, 'builtin');
+      assert.equal(origin.sources.enabled, 'global');
+      assert.equal(origin.sources.targetBranch, 'global');
+      for (const key of Object.keys(sessionValues)) assert.equal(origin.sources[key], 'session');
+      const before = state(), from = receipts.length;
+      let suppliedCard, suppliedSignal, callbacks = 0;
+      pending = executeGitOperation(repo, op, {
+        operationReceipt(id, receipt) {
+          try { assert.equal(id, 'git-workflow'); receipts.push(snapshotOperationReceipt(id, receipt, receipts.length + 1)); }
+          catch (error) { remember(error); throw error; }
+        },
+        async pluginCard(id, card, signal) {
+          try {
+            callbacks++; suppliedCard = card; suppliedSignal = signal;
+            assert.equal(id, 'git-workflow');
+            assert.equal(signal.aborted, false, 'manual own Cancel begins with a live policy signal');
+            assert.equal(card.fields.find(field => field.label === 'Checkout').value, repo);
+            assert.equal(card.fields.find(field => field.label === 'Branch').value, 'main');
+            assert.equal(card.sections.find(section => section.title === 'Commit message').text, op.message);
+            assert.equal(card.sections.some(section => section.title === 'Required checks'), false);
+            assert.equal(card.review.operationId, card.operationId);
+            assert.equal(card.review.entries, 3);
+            const exact = JSON.parse((await reviewPreview(card.review, await reviewEntry(card.review, 0))).text);
+            assert.deepEqual(exact.operation, op);
+            assert.equal(exact.presentation.operationId, card.operationId);
+            assert.deepEqual(exact.presentation.fields, card.fields);
+            assert.equal(exact.comparison.before, before.head);
+            assert.equal(receipts[from].authorization.revision, digest(origin), 'own Cancel receipt retains the complete own-session origin');
+            const draftPatch = (await reviewPreview(card.review, await reviewEntry(card.review, 1))).text;
+            const secondPatch = (await reviewPreview(card.review, await reviewEntry(card.review, 2))).text;
+            assert.equal(draftPatch.includes(`-Plugin whole-file candidate reconnect-${width}\n`), true);
+            assert.equal(draftPatch.includes(`+Plugin whole-file candidate ${mode}\n`), true);
+            assert.equal(draftPatch.includes(`-Plugin distant candidate reconnect-${width}\n`), true);
+            assert.equal(draftPatch.includes(`+Plugin distant candidate ${mode}\n`), true);
+            assert.equal(secondPatch.includes(`+Second plugin candidate ${mode}\n`), true);
+            assert.equal(git(repo, 'show', `${before.head}:draft.txt`).split('\n').length, 5000);
+            assert.equal(signal.aborted, false, 'no settings write or outer Stop fabricates Cancel');
+            return null;
+          } catch (error) { remember(error); throw error; }
+        },
+      }, undefined, session);
+      const result = await pending; pending = undefined;
+      if (errors.length) throw errors[0];
+      assert.equal(callbacks, 1);
+      assert.equal(suppliedSignal.aborted, false, 'manual own Cancel settles without aborting its signal');
+      failed(result, /not approved/);
+      assert.equal(result.details.completed, false);
+      assert.equal(result.details.checksStarted, false);
+      assert.equal(result.details.effectStarted, false);
+      assert.deepEqual(result.details.effects, []);
+      assert.deepEqual(state(), before, 'manual own Cancel preserves HEAD, RAW index, both candidate files and unrelated files');
+      const current = receipts.slice(from);
+      assert.deepEqual(current.map(receipt => receipt.phase), ['prepared', 'cancelled']);
+      assert.equal(result.details.operationId, suppliedCard.operationId);
+      assert.equal(current.at(-1).authorization.mode, 'ask');
+      assert.equal(current.at(-1).authorization.source, 'builtin');
+      assert.equal(current.at(-1).authorization.decision, 'not-approved');
+      for (const receipt of current) {
+        assert.equal(receipt.operationId, suppliedCard.operationId);
+        assert.equal(receipt.card.review.id, suppliedCard.review.id);
+        assert.equal(receipt.card.review.operationId, suppliedCard.operationId);
+        assert.equal(receipt.authorization.revision, digest(origin));
+        assert.equal(receipt.effectStarted, false);
+      }
+    }
+  } catch (error) { remember(error); }
+  finally {
+    // Join the actual executor after EVERY callback/body/receipt failure before
+    // retaining SAME original errors; no ACK/null result as a native idle probe.
+    if (pending) { try { await pending; } catch (error) { remember(error); } }
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length) throw new AggregateError(errors, 'Original own Cancel/native origin and settlement failed');
 });

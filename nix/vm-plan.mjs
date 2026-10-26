@@ -6,7 +6,7 @@ import { availableResources } from './resources.mjs';
 
 const GiB = 1024 ** 3;
 export const MAX_BROWSER_WORKERS = 8;
-export const coverageIds = group => group === 'terminal' ? ['terminal/full@production-pty'] : [...scenarios[group]];
+export const coverageIds = group => group === 'terminal' ? ['terminal/native-fonts-pty-touch-bounded-held-create-v3@production-pty'] : [...scenarios[group]];
 
 export function workerBudget({ requested, resources = availableResources() } = {}) {
   if (requested !== undefined && (!Number.isInteger(requested) || requested < 1 || requested > MAX_BROWSER_WORKERS)) throw new Error('workers must be 1..8');

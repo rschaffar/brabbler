@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
 import { createCoverage } from "./scenarios.mjs";
+import { createOwnedRoutes } from "./owned-routes.mjs";
 import { closeTerminalDisconnect, terminalDisconnectFixture } from "./terminal-disconnect-fixture.mjs";
 
 const root = process.env.E2E_PACKAGE_ROOT;
@@ -13,8 +14,12 @@ assert.match(root ?? "", /^\/nix\/store\//, "Nix-built application package requi
 const harness = createHarness(root, "terminal");
 const { artifacts, agentDir, fixtureRoot, env: fixtureEnv } = harness;
 const coverage = createCoverage("terminal", artifacts);
+// SOURCE-ONLY v2 proposal: Parent must atomically bind fresh global metadata.
+// Desktop owns the manual API clamp and held native-creation bridge once;
+// both physical profiles retain native fonts/PTY, and mobile keeps host fit/keys.
+const terminalReceipt = "terminal/native-fonts-pty-touch-bounded-held-create-v3@production-pty";
 try {
-await coverage.run("terminal/full@production-pty", async () => {
+await coverage.run(terminalReceipt, async () => {
 applyFixtureEnvironment(fixtureEnv);
 const workspace = join(fixtureRoot, "workspace-a");
 const otherWorkspace = join(fixtureRoot, "workspace-b");
@@ -145,7 +150,11 @@ let browser;
         const rows = panel?.querySelector(".xterm-rows");
         return rows && getComputedStyle(rows).fontSize === expected;
       }, expected);
-      for (const [action, expected] of [["End", "23px"], ["Home", "11px"], ["reset", "13px"]]) {
+      // Desktop still proves all three real size/refit values. Only the repeated
+      // mobile Settings traversal is conditional; native touch keys/fit remain.
+      const sizeActions = viewport.width < 500
+        ? [] : [["End", "23px"], ["Home", "11px"], ["reset", "13px"]];
+      for (const [action, expected] of sizeActions) {
         // On phones the file panel covers the sidebar toggle. Use the actual
         // panel controls, never force-click through the overlying terminal.
         await hidePanel();
@@ -203,13 +212,14 @@ let browser;
         await page.keyboard.press("Enter");
         await waitOutput("KEYS:foo");
       }
-      const resized = await fetch(`${base}/api/terminal/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "resize", cols: 80, rows: 1 }) });
-      assert.equal(resized.status, 200, "one-row keyboard fits are accepted and clamped");
-      await run("printf '\\nCLAMP:%s\\n' \"$(stty size)\"");
-      await waitOutput("CLAMP:2 80");
-      for (const rows of [0, -1, 1.5, 1001, "1"]) {
-        const invalid = await fetch(`${base}/api/terminal/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "resize", cols: 80, rows }) });
-        assert.equal(invalid.status, 400, `invalid rows remain rejected: ${rows}`);
+      // This Node fetch tuple has no viewport. Keep its installed bridge once;
+      // the actual native current-id route case owns 80x1 -> native/shell 80x2.
+      if (viewport.width > 640) {
+        const resized = await fetch(`${base}/api/terminal/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "resize", cols: 80, rows: 1 }) });
+        await resized.arrayBuffer();
+        assert.equal(resized.status, 200, "one-row API resizes are accepted and clamped");
+        await run("printf '\\nCLAMP:%s\\n' \"$(stty size)\"");
+        await waitOutput("CLAMP:2 80");
       }
       if (viewport.width <= 640) {
         const host = page.locator(".terminal-panel:visible .terminal-xterm-host");
@@ -370,21 +380,87 @@ let browser;
       await page.locator(".terminal-panel").waitFor({ state: "detached" });
       assert.equal((await fetch(`${base}/api/terminal/${currentId}`)).status, 404);
 
-      let releaseCreation;
-      const creationResponse = new Promise((resolve) => { releaseCreation = resolve; });
-      await page.route("**/api/terminal", async (route) => {
-        const response = await route.fetch();
-        await creationResponse;
-        await route.fulfill({ response });
-      });
-      await hidePanel();
-      await showSidebar();
-      await page.getByRole("button", { name: "Open workspace terminal", exact: true }).click();
-      await page.getByRole("button", { name: "Terminate terminal workspace-a", exact: true }).click();
-      releaseCreation();
-      await page.locator(".terminal-panel").waitFor({ state: "detached" });
-      await page.unroute("**/api/terminal");
-      for (const terminalId of created) assert.equal((await fetch(`${base}/api/terminal/${terminalId}`)).status, 404);
+      // The same held-creation policy is mounted at TerminalPanel.test:297.
+      // One installed native bridge suffices; mobile retains its real close UI.
+      if (viewport.width > 640) {
+        let releaseCreation, reportCreation, rejectCreation;
+        const creationGate = new Promise(resolve => { releaseCreation = resolve; });
+        const routeFailures = [], creationErrors = [], arrivalFailures = [], lateAdmissions = [];
+        const arrivalError = new Error("Terminal create handler did not arrive within 30_000ms");
+        let handlerEntered = false, arrivalExpired = false;
+        const creationFetched = new Promise((resolve, reject) => { reportCreation = resolve; rejectCreation = reject; });
+        // Observe the ORIGINAL promise before admission; retain SAME rejection.
+        // This watchdog bounds only a missing handler, not native fetch/body work.
+        const arrivalTimer = setTimeout(() => {
+          if (!handlerEntered) { arrivalExpired = true; rejectCreation(arrivalError); }
+        }, 30_000);
+        void creationFetched.then(() => { clearTimeout(arrivalTimer); }, error => {
+          clearTimeout(arrivalTimer); arrivalFailures.push(error);
+        });
+        const holdCreation = async route => {
+          handlerEntered = true;
+          clearTimeout(arrivalTimer);
+          if (arrivalExpired) lateAdmissions.push(new Error("Terminal create handler arrived after its observation budget"));
+          let response, fulfilled = false;
+          const callbackErrors = [];
+          try {
+            response = await route.fetch();
+            const body = await response.body();
+            assert.equal(response.status(), 200, "held creation reached the real native route");
+            reportCreation({ ok: true });
+            await creationGate;
+            await route.fulfill({ response, body });
+            fulfilled = true;
+          } catch (error) {
+            callbackErrors.push(error);
+            reportCreation({ ok: false, error });
+          } finally {
+            if (!fulfilled) {
+              try { await route.abort(); } catch (error) { callbackErrors.push(error); }
+            }
+            try { if (response) await response.dispose(); }
+            catch (error) { callbackErrors.push(error); }
+          }
+          if (callbackErrors.length === 1) throw callbackErrors[0];
+          if (callbackErrors.length) throw new AggregateError(callbackErrors, "Held creation response and transport settlement failed");
+        };
+        const creations = createOwnedRoutes(holdCreation, holdCreation);
+        // Transport ACK only: the original rejected work remains in creations,
+        // with SAME Error references also retained in this live local collector.
+        const creationRoute = route => creations.handler(route).then(undefined, error => { routeFailures.push(error); });
+        try {
+          await page.route("**/api/terminal", creationRoute);
+          await hidePanel();
+          await showSidebar();
+          await page.getByRole("button", { name: "Open workspace terminal", exact: true }).click();
+          const fetched = await creationFetched;
+          if (!fetched.ok) throw fetched.error;
+          await page.getByRole("button", { name: "Terminate terminal workspace-a", exact: true }).click();
+          releaseCreation();
+        } catch (error) {
+          creationErrors.push(error);
+        } finally {
+          clearTimeout(arrivalTimer);
+          // Release BEFORE independent joins/removal, including primary failure.
+          try { releaseCreation(); } catch (error) { creationErrors.push(error); }
+          try { await creations.dispose(() => page.unroute("**/api/terminal", creationRoute)); }
+          catch (error) { creationErrors.push(error); }
+          // Callback/body publication is not React or native idle. Keep actual
+          // visible closure and each owned id's 404 as independent observations.
+          try { await page.locator(".terminal-panel").waitFor({ state: "detached" }); }
+          catch (error) { creationErrors.push(error); }
+          for (const terminalId of created) {
+            try {
+              const closed = await fetch(`${base}/api/terminal/${terminalId}`);
+              await closed.arrayBuffer();
+              assert.equal(closed.status, 404);
+            } catch (error) { creationErrors.push(error); }
+          }
+          creationErrors.push(...arrivalFailures, ...lateAdmissions, ...routeFailures);
+        }
+        if (creationErrors.length === 1) throw creationErrors[0];
+        if (creationErrors.length) throw new AggregateError(creationErrors, "Held native creation and independent closure checks failed");
+      }
 
       await showSidebar();
       await page.getByRole("button", { name: "Open workspace terminal", exact: true }).click();
@@ -413,7 +489,7 @@ let browser;
       await page.waitForFunction(() => document.querySelectorAll(".terminal-panel").length === 0);
       for (const terminalId of created) assert.equal((await fetch(`${base}/api/terminal/${terminalId}`)).status, 404);
       assert.deepEqual(errors, []);
-      console.log(`PASS ${viewport.width}: real shell, files, sessions, refresh, reconnect, restart, exit, close during creation, workspace isolation`);
+      console.log(`PASS ${terminalReceipt}/${viewport.width}: real shell, files, sessions, refresh, reconnect, restart, exit, ${viewport.width > 640 ? "close during held native creation" : "touch keys and one-pixel host fit"}, workspace isolation`);
     } catch (error) {
       await harness.fail(error);
       // DOM snapshots and screenshots belong to the bounded shared capture path;

@@ -21,6 +21,12 @@ bridges, and what the test cannot prove. Choose the lowest sufficient owner:
 | Layout, scrolling, capture, decoding, browser transport, user connection | Installed-package Chromium | DOM geometry/media doubles cannot replace this |
 | User-service activation, restart, PTY/cgroup and deployment | Genuine Home Manager/systemd NixOS VM | Browser process backend is not deployment proof |
 
+Mounted production components/hooks execute real **client-side** code: event
+handlers, state, effects and subscriptions. Most functional permutations belong
+there, not in Chromium merely because the feature is client-side. Establishing
+that ownership and retiring duplicate browser execution are separate tasks; adding
+middle-layer tests while keeping the duplicate flows does not finish a migration.
+
 A mocked React hook, extracted component body or copied algorithm cannot establish
 React subscriptions, dependencies, state transitions or cleanup. Prefer a small
 existing production leaf/composition rather than mounting the entire application
@@ -73,12 +79,15 @@ A result, complete work settlement and durable publication are distinct. Registe
 cleanup before import/admission. On success **and failure**:
 
 1. Close the operation's own admission; request only cancellation it owns.
-2. Unmount the observer and release/reject every accepted gate, including peers
-   when a release or assertion fails.
+2. On terminal or failed-setup teardown, release/reject all known peers before
+   the first teardown join, then await observer unmount as required. If observer
+   unmount is itself a behavioral input, preserve its deliberately held work until
+   that premise is asserted; emergency release must not change cancellation policy.
 3. Independently attempt all real work/native joins, even if release/React fails.
 4. Keep runtime-error and unexpected-admission collectors live through those joins.
-5. Dispose the realm, restore globals and only then remove owned private roots.
-   Preserve the primary and cleanup failures together.
+5. Restore realm-owned descriptors before destroying the realm; restore host
+   globals afterward. Remove private roots only after certain native completion
+   and restoration. Preserve the primary and cleanup failures together.
 
 Use [named async owners](testing.md#three-small-core-patterns), complete promises
 including body/catch/finally/nested continuations, and actual native closure.
@@ -98,7 +107,19 @@ or React defects. A late-consumption tracking failure must enter the collector.
 Do not broadly suppress console/5xx errors, retry unchanged failures, add sleeps
 as joins, inflate deadlines or call repeated microtask flushing settlement.
 
+Owning a callback's original promise does not automatically own new rejecting
+promises created by its external dispatcher. If that boundary needs an adapter,
+keep the original work and same Error references in live owners; distinguish the
+transport acknowledgement from the operation result, and rethrow failures after
+independent settlement. Unregister the exact registered adapter. A no-op catch or
+global unhandled-rejection suppression is not ownership. For an admitted response,
+join its body before status assertions that could bypass the join, including on
+non-200 paths. A failed body join remains an error, not proof of native completion.
+
 Preserve file/session/cwd/source/account/incarnation identities independently.
+Host-request, native-operation and saved-review UUIDs can be independently
+allocated; compare each with its actual owner, not another field with the same
+syntax. Keep the endpoint's host/review identity separate from a native receipt.
 Exercise A/B/A reuse, obsolete success/error/catch/finally after ignored abort,
 current callbacks, current loading/error, Strict Effects and teardown when relevant.
 A redundant generation fence can make an isolated mutation green: disclose that
@@ -127,6 +148,17 @@ omitted line forwarding, broken active-and-visible gating, an ignored stale body
 missing direct dormant visibility/instructions, or unnecessary streaming commits.
 Do not count a source guard, compile/import error, fixture admission bug or unrelated
 exception as the intended red. Fault variants never become application inputs.
+Reuse existing fault/restoration evidence when relevant inputs and the contract
+are unchanged. Add a control for a named uncovered changed obligation, not to meet
+a count or repeat an unchanged review. Shared support needs its actual receiving
+users and failure schedules, not a generic marker claimed to certify all cleanup.
+Confirm selectors, translations and fixture policy from source before costly runs.
+
+For sequential multi-item operations, fixture-array or checkbox-click order is not
+necessarily request order. Bind the actual family/admission order independently
+before choosing the last peer to hold. A timeout caused by holding the first
+request cannot prove the intended final-peer barrier; preserve it as a failed
+control precondition, without forcing DOM changes or extending deadlines.
 
 For a real streaming store, distinguish publications, state/reply identities,
 selected values and React commits. A thousand synchronous publications need not
@@ -151,11 +183,40 @@ file policy, real Pause ledger or browser restoration. A dormant row in querySel
 is not accessible if hidden by an ancestor; programmatic dispatch bypasses that.
 A loop over zero content requests does not prove a real instructions child ran.
 
-Keep original browser IDs, tuples, order and whole-chain receipts unless separately
-reviewed. Retire repeated browser work only after every unique assertion has a
-named replacement and genuine default/native bridge. Preserve keyboard/touch,
-responsive geometry, persistence, current identities and real transport/media.
-Synthetic statuses prove geometry only, never authorize native operations.
+### Retire browser work step by step
+
+For **each retained step/input**, answer:
+
+> What concrete failure can this browser step catch that its verified lower owner
+> plus a thin installed-app bridge cannot catch?
+
+Chromium primarily owns actual rendering/layout/responsiveness/overflow/scroll,
+fonts/media, native focus/selection/pointer/keyboard/IME/clipboard/uploads/downloads,
+and representative installed interaction→server→visible-result/restoration wiring.
+The last category needs thin real connections, not every policy/state/retry/model/
+settings/currentness permutation. One browser-dependent step does **not** retain
+its surrounding functional journey. Split out that ceremony; delete redundant
+execution, setup, navigation, transactions and waits, not merely assertions.
+
+Record original receipt/step/input → actual lower test and meaningful proof →
+smallest remaining native/default/browser bridge → concrete incremental failure →
+delete/split/retain decision. Reuse already verified owners instead of discovering
+fixtures again. Unknown ownership is a finite gap to resolve, not a blanket
+whole-journey retain. Deduplication needs evidence that the removed input's relevant
+state/identity is represented; do not normalize distinct physical/touch/locale/
+height/preference or authority inputs merely because widths or labels match.
+
+Preserve unretired IDs, inputs and dependent ordering. After exact review, bodies,
+journeys and groups may be thinned, split, replaced or removed: historical counts
+are not quotas. Changed bodies need truthful fresh IDs, atomic dispatch/inventory/
+definition/validator updates and pre-callback retirement negatives. Never run a
+shorter body under its old complete-chain ID or reconstruct expectations from
+successes. Source/package/nonce freshness is not execution or retirement authority.
+
+Keep genuine physical/native/security/service proof real and full failure/cleanup
+ownership intact. Synthetic statuses prove geometry only, never authorize native
+operations. A representative bridge does not certify unreturned/escaped work or
+replace materially different native input/authority obligations.
 
 The [Activity recipe](testing.md#activity-client-pilot-recipe) and
 [Activity ledger](activity-testing.md) remain Activity-only. The
@@ -169,11 +230,108 @@ retire old tests or constitute full candidate acceptance.
 - `components/MarkdownBody.behavior.test.mjs` mounts actual local/blocked/reader
   links and scoped anchors; `MarkdownMedia.behavior.test.mjs` owns activation,
   visibility and effect/source lifetime, not browser decoding or native popovers.
+- `components/ChatWindow.process-details.test.mjs` owns all three original deferred
+  Thinking reads, complete cached loader/effect-tail work, current observer, cache,
+  chronology and no-duplication policy. History retains one installed Process →
+  Thinking → actual body at each original LD/LM profile; controlled effects do not
+  replace native rendering, Clipboard, selection or the wider default connection.
+- `components/ChatWindow.default-mounted.test.mjs` owns actual hook/Source partial-
+  input, current Copy/refusal/canonical/message-end and full literal Tool corpus.
+  Original Clipboard promises differ from complete Copy handlers; the real catch
+  fulfills its handler, even across observer unmount. History retains native flat
+  Clipboard/raw-keyboard/scroll/fonts at both original profiles and one installed
+  dynamic write/edit path/Copy/result bridge, not another synthetic streaming page.
+  Retained font overrides independently preserve primary and restoration errors.
+- `e2e/upstream-easy-wins.mjs` keeps native undo/redo, selection replacement,
+  profile-specific newline, filter/keyboard geometry and the unchanged Fresh/P1
+  bridge; original list/false-exec/synthetic-composition policy stays in the two
+  real ChatInput tuples and pure planner. Release peers and join captured original
+  callbacks before exact last-interceptor removal: Playwright can otherwise resume
+  the pending request ahead of its original fulfill. ACK is not raw/body success;
+  native/API disposal, removal, close and original error identities stay distinct.
+- The two Navigation cases in `ChatWindow.default-mounted.test.mjs` own actual
+  hook/input/store saved return and actual default obsolete-body/locate generation.
+  The sparse fixture's optional `composerDraftKey` is explicit external input,
+  never a copied caller-key algorithm. Keep the installed AppShell saved-key bridge.
+  `e2e/history-branch.mjs` retains actual branch controls/SDK context plus exact
+  native body/finished/raw/e32/ACK/removal ownership; the inert agent reply remains
+  controlled, not native SDK-write authority. Node body/ACK settlement is not the
+  browser hook's hidden promise or a universal idle signal.
+- `PluginCard.preview-cleanup.test.mjs` drives the actual default card/attachment/
+  stack/Pierre chain for both original reader data tuples: retained per-file model,
+  real renderer destruction/recreation, version/query/position, collapse and lazy
+  serialized-parent remount/409/current response. Deliver the application's two
+  navigation frames and Pierre's admitted render frame; jsdom's scroll shim also
+  needs the actual post-render DOM scroll notification, not a copied anchor.
+  A held transport/loader-finally is not an already-admitted JSON body. Abort and
+  action ACKs can settle before that loader; observe an actual future JSON error
+  before its catch only if consumption really occurs. Both cold installed readers,
+  opaque/native subjects, mobile/history and physical Download remain distinct.
+  Mobile's controlled before-image is desktop's Allow1280 payload, not baseline
+  text; keep its actual shared native HEAD/tree and both original inline drawer
+  selection/close ceremonies. Shared Pierre is warm; content/state rows are not
+  viewport geometry or a new mobile exceptional-work execution.
+- The opt-in default-chat/navigation composition reuses ONE guarded Jiti graph,
+  DOM, transport and complete existing default owners. Pass the actual navigation
+  binding and numeric key; never copy a creation/key policy or replay a supplied
+  created-session row as public caller proof. Import under the admission fence,
+  release all domain peers before joins, and keep unknown failures fatal. Check
+  actual callback adoption before success-dependent readiness; a stream that a
+  broken callback cannot admit must not become an unbounded test waiter.
+- Large-review pagination uses the real public Card/review/picker with the
+  original 46-entry boundary and new-versus-modified content rows. Declare only
+  required page/entry capabilities; join the actual selected-entry continuation.
+  Retiring page switching does not retire native cold bodies, fullscreen,
+  approvals or 45-file effects. Keep Allow reloads as native persisted-default-UI
+  evidence rather than constructing another migration merely to remove them.
+- Historical Decision and Operation outcome wrappers forward the existing passive
+  `onReadWork` observer unchanged to their actual child. Absent adds no handlers,
+  requests, timers or policy. Test the real wrapper, its lazy/serialized source,
+  complete original reads and read-only controls, not a copied live parent. Observe
+  JSON-body Error E independently: after public Abort A, the real queue's handled
+  worker/finally can fulfill. Never fabricate a SAME-E queue rejection from its
+  body error. Keep Outcome support proportionate when no Allow replay retires;
+  immutable native identity/body/download and current-file/HEAD boundaries remain
+  installed even when synthetic historical 409 policy moves lower.
+- Ordinary Git Cancel is not Reject, Stop or settings abort. Compose the actual
+  inline public Card→real hook response (existing Probe/`ownControl`, same original
+  promise) with the actual RPC cancelled-response→null receiver while the signal
+  stays live, and the native exact tuple/full-origin/no-effect owner. Declared
+  plain-response IDs admit only cancelled:true with no batch signal; existing
+  batch/ordinary guards remain. This is not a mounted default Window or native
+  geometry claim. Retain each original installed Ask/default-wire bridge and
+  Allow/Large history. Failed FETCH E can reach the hook catch; JSON E is instead
+  caught by `sendAgentCommand` decoding, so never invent a hook-catch witness.
+- Selected Git policy belongs to the existing native server owner: caller/session
+  policy is not the selected checkout's policy. The existing RPC UI case separately
+  drives an external signal through actual `pluginCard`, original settlement,
+  aborted receipt, pending-map/attention removal and no replay. Mounted receipt
+  tests drive both matching `extension_ui_closed` and aborted-plugin-receipt paths
+  without manufacturing responses. Preserve the original confirm/Stop inputs and
+  both installed selected-checkout approval subjects. This is composed owner/wire
+  evidence, not a new end-to-end SDK cancellation or per-policy-row startup claim.
 - `lib/file-line-navigation.test.mjs` uses real isolated DOM trees; the actual
   FileViewer text/media mounts own request/body identities, watcher lifetimes,
   current links and Save races. Workspace mounts add stable hosts and independent
   active/presented admission. Native saves/security/scroll, grammar and incomplete
   supported-Diff/mode/queued-writer contracts keep their existing bridges.
+- The literal Workspace/Explorer/upload-route owners preserve entered external
+  revisions, actual tab/draft/Save wiring, both original upload tuples and sentinel
+  authority. Observe the actual request matcher before an unadmitted ticket can
+  replace its diagnostic; join admitted loads before failed-test assertions and
+  use scalar DOM predicates rather than dumping React/Window graphs. Navigation's
+  existing synchronous `check` guard retains the SAME callback error in its local
+  diagnostic lane; this is not asynchronous-rejection observation.
+  `e2e/explorer-uploads.mjs` retains real changed-row and search callers, external
+  writer, native file-row/mention/picker/mixed-entry and one overwrite/watch/draft/
+  discard/mobile-reconnect bridge. Preserve all six M16 same-node/native Save
+  watcher inputs; a lower upload policy owner does not replace them.
+  For intentional private terminal controls, close the actual outer-owned page
+  and context with collectors live before rethrowing: suite failure starts backend
+  shutdown before later context cleanup. Native trace/context-close originals,
+  the fixture-close promise, helper originals/ACKs and final artifact errors are
+  separate evidence. A clean pre-close collector or fulfilled fixture ACK cannot
+  replace them; never filter late transport errors to manufacture acceptance.
 - Archive/Tools/Agent Content/Skills mounted files and
   `hooks/useStreamingSelector.behavior.test.mjs` own their real controls/store
   transitions. Keep archive shell wiring, toolbar/narrow layout, usage SSR/default
@@ -182,21 +340,19 @@ retire old tests or constitute full candidate acceptance.
   through the existing external-capability loader. Its controlled stat/watch/path/
   authority and heartbeat sentinels are not native filesystem/security proof.
 
-The model/session mounted prototype was **not adopted**: unexpected asynchronous
-React ownership diagnostics remain unresolved. Its exact failed source/reviews are
-retained with the rollout evidence, and original production/test bytes restored.
-Do not infer a product defect, suppress diagnostics or treat that proposed named
-maintenance join as shipped machinery. This batch adds no production seam and
-leaves all browser matrices unchanged. The plan records exact original-coordinate
-retirements and deliberately retained behavioral gaps, not an all-family rewrite.
+The completed batched rollout **did not adopt** its model/session prototype:
+unexpected asynchronous React ownership diagnostics remained unresolved, failed
+source/reviews were retained and original bytes restored. That historical outcome
+is not current status for the unfinished complete-ownership feature; its
+[active plan](plans/2026-10-23_complete-test-ownership-plan.md) owns verified private
+replacements and remaining gaps. Neither private passes nor this guide establish
+shipping/adoption. Do not suppress the old diagnostics or infer a product defect.
 
-Follow-up owners remain explicit here: model/session work must first establish
-honest actual-work/React boundaries and rerun guarded startup/selection/event
-proof before retirement; preserve the failed prototype rather than treating its
-assertions as accepted machinery. Files mode/supported-Diff/grammar, parked/queued
-workspace and menu connections retain the existing mixed/browser owners until
-exact runtime replacements exist. Four broad-import E holds need actual dependency/
-effect/settlement review, not promotion from a focused green or a faster schedule.
+Model/session, Files mode/Diff/grammar, parked/queued workspace and menu obligations
+retain their mixed/native/browser owners until exact replacements qualify. Broad-
+import holds require actual dependency/effect/settlement review, not promotion from
+a focused green or faster schedule. Reconcile existing maps rather than treating
+historical pending language as a request to repeat completed discovery.
 
 ## Guards, classification and acceptance
 
@@ -217,6 +373,11 @@ Iterate with exact existing core-file/browser-group selections, then follow
 [Testing](testing.md#nix-native-acceptance) for complete static/core/browser/service
 acceptance. Bind commands, source/candidate, outcomes and retained artifacts.
 Separate preparation, test execution, overlapping envelopes and total command wall
-time. Measure rather than assume savings; fewer browser repetitions need not move
-the whole-suite critical path. Do not infer causal, cold-cache, CI/ARM, statistical,
-GC-stress or escaped-descendant guarantees from a bounded local pass.
+time. Report actual retired browser work (including reloads/setup/transactions/
+waits), summed group work, browser critical path/elapsed time and complete feedback
+separately. Faster core, improved packing, added middle coverage or unchanged/fewer
+receipts alone do not prove browser retirement. Match shared non-reduction changes,
+prerequisites and worker widths between references; a cold/preparing command is not
+a warm benchmark. Fewer repetitions need not move the whole-suite critical path.
+Do not infer causal, cold-cache, CI/ARM, statistical, GC-stress or escaped-descendant
+guarantees from a bounded local pass.

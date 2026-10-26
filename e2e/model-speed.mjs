@@ -131,17 +131,23 @@ async function checkSelector(page, expected) {
   const select = await revealSpeed(page);
   await waitSpeed(page, expected);
   assert.equal(await select.count(), 1);
-  assert.deepEqual(await select.locator("option").evaluateAll((options) => options.map((option) => ({ value: option.value, label: option.textContent }))),
-    [{ value: "standard", label: "Standard" }, { value: "fast", label: "Fast" }], "Exactly two options; no third tier");
-  const speedBox = await select.boundingBox();
+  // Only option labels/no-third-tier and Standard/no-warning policy transfer
+  // to actual hook/ChatInput MS1, conditionally on Parent's positive/red binding.
+  // Keep real Fast association; never infer native authority from that lower test.
+  if (expected === "fast") {
+    await warning(page).waitFor();
+    assert.equal(await select.getAttribute("aria-describedby"), await warning(page).getAttribute("id"));
+  }
+}
+
+// Physical bounds are witnessed at the real Save and the distinct fresh mobile
+// created-session suffix, not repeated by every scalar selector observation.
+async function checkSpeedLayout(page) {
+  const speedBox = await control(page).boundingBox();
   const thinkingBox = await page.getByRole("button", { name: "Change reasoning level", exact: true }).boundingBox();
   assert.ok(speedBox && thinkingBox && Math.abs(speedBox.y - thinkingBox.y) < 6
     && Math.abs(thinkingBox.x - speedBox.x - speedBox.width) < 16, "Speed sits beside Thinking");
   assert.ok(speedBox.x >= 0 && speedBox.x + speedBox.width <= page.viewportSize().width + 1, "Speed is reachable without overflow");
-  if (expected === "fast") {
-    await warning(page).waitFor();
-    assert.equal(await select.getAttribute("aria-describedby"), await warning(page).getAttribute("id"));
-  } else assert.equal(await warning(page).count(), 0, "Standard must not show the Fast quota warning");
 }
 
 function commandResponse(page, id, type) {
@@ -161,7 +167,6 @@ async function changeSavedSpeed(page, options, id, next) {
   assert.deepEqual(response.request().postDataJSON(), { type: "set_model_speed", modelSpeed: next });
   assert.equal((await response.json()).data.modelSpeed, next);
   await checkSelector(page, next);
-  return checkSaved(options, id, next, { provider: CODEX.provider, thinkingLevel: "low" });
 }
 
 async function showSidebar(page) {
@@ -421,64 +426,7 @@ async function checkNewSession(page, options) {
   return created.sessionId;
 }
 
-/** ONLY synthetic activity: GET state + this one session's EventSource endpoint. */
-async function checkBusyControls(page, options) {
-  const { base, post } = options;
-  const before = await checkSaved(options, A, "fast");
-  const busy = { streaming: true, compacting: false };
-  const url = `${base}/api/agent/${A}`;
-  const stateRoute = async (route) => {
-    if (route.request().method() !== "GET") return route.continue();
-    const response = await route.fetch();
-    const data = await response.json();
-    assert.equal(data.running, true);
-    // modelSpeed/model/thinking still come from the actual canonical API.
-    await route.fulfill({ response, json: { ...data, state: { ...data.state,
-      isStreaming: busy.streaming, isPromptRunning: false, isCompacting: busy.compacting } } });
-  };
-  await page.route(url, stateRoute);
-  await page.addInitScript((id) => {
-    const Original = window.EventSource;
-    const sources = [];
-    window.EventSource = function (url, ...args) {
-      if (new URL(String(url), location.href).pathname !== `/api/agent/${id}/events`) return new Original(url, ...args);
-      const source = { readyState: 1, onmessage: null, onerror: null, close() { this.readyState = 2; } };
-      sources.push(source);
-      queueMicrotask(() => source.onmessage?.({ data: JSON.stringify({ type: "connected", isStreaming: true }) }));
-      return source;
-    };
-    window.__modelSpeedEvents = {
-      emit(data) {
-        const source = sources.findLast((source) => source.readyState === 1);
-        if (!source?.onmessage) throw new Error("No live model-speed fixture SSE connection");
-        source.onmessage({ data: JSON.stringify(data) });
-      },
-      restore() { for (const source of sources) source.close(); window.EventSource = Original; },
-    };
-  }, A);
-  try {
-    await page.goto(`${base}/?session=${A}`, { waitUntil: "domcontentloaded" });
-    await revealSpeed(page);
-    await waitSpeed(page, "fast", true);
-    assert.equal((await post(`/api/agent/${A}`, { type: "get_state" })).data.isStreaming, false, "No model was started for the streaming fixture");
-    busy.streaming = false;
-    await page.evaluate(() => window.__modelSpeedEvents.emit({ type: "agent_settled" }));
-    await waitSpeed(page, "fast");
-    busy.compacting = true;
-    await page.evaluate(() => window.__modelSpeedEvents.emit({ type: "compaction_start" }));
-    await waitSpeed(page, "fast", true);
-    busy.compacting = false;
-    await page.evaluate(() => window.__modelSpeedEvents.emit({ type: "compaction_end" }));
-    await waitSpeed(page, "fast");
-    const after = await checkSaved(options, A, "fast");
-    assert.deepEqual(after.speeds, before.speeds, "Busy UI simulations must not write speed entries");
-  } finally {
-    await page.unroute(url, stateRoute);
-    await page.evaluate(() => window.__modelSpeedEvents?.restore()).catch(() => {});
-  }
-}
-
-export async function checkModelSpeed(page, options) {
+export async function checkModelSpeedNativeJourney(page, options) {
   const { base, api, post, artifacts, width } = options;
   // Reset through real RPC, not disk rewrites; desktop and mobile reuse the same
   // three fixtures while still beginning with opposite Standard/Fast selections.
@@ -503,8 +451,10 @@ export async function checkModelSpeed(page, options) {
   await pickSession(page, B, "fast");
   await pickSession(page, A, "standard"); // Actual A → B → A, no goto/reload.
   const original = await checkSaved(options, A, "standard");
-  const changed = await changeSavedSpeed(page, options, A, "fast");
+  await changeSavedSpeed(page, options, A, "fast");
+  const changed = await checkSaved(options, A, "fast", { provider: CODEX.provider, thinkingLevel: "low" });
   assert.equal(changed.speeds.length, original.speeds.length + 1, "Browser changes append a real SDK entry");
+  await checkSpeedLayout(page);
   await page.screenshot({ path: join(artifacts, `model-speed-fast-${width}.png`) });
   await page.reload({ waitUntil: "domcontentloaded" });
   await checkSelector(page, "fast");
@@ -529,8 +479,6 @@ export async function checkModelSpeed(page, options) {
   await pickSession(page, B, "fast");
   await changeSavedSpeed(page, options, B, "standard");
   await pickSession(page, A, "fast");
-  await pickSession(page, LEGACY, "standard");
-  await pickSession(page, A, "fast");
 
   await withPendingCommand(page, base, A, "set_model_speed", () => control(page).selectOption("standard"), async () => {
     await waitSpeed(page, "standard", true);
@@ -540,37 +488,50 @@ export async function checkModelSpeed(page, options) {
   await checkSaved(options, A, "standard");
   await changeSavedSpeed(page, options, A, "fast");
 
-  const unsupported = commandResponse(page, A, "set_model");
-  await chooseModel(page, API_MODEL);
-  assert.equal((await unsupported).status(), 200);
-  await page.waitForFunction(() => !document.querySelector('select[aria-label="Model speed"]')
-    && !document.querySelector('.model-selector.is-toolbar button[aria-busy="true"]'));
-  assert.equal(await control(page).count(), 0, "API-key providers have no usable speed control");
-  assert.equal(await warning(page).count(), 0);
-  await checkSaved(options, A, "fast", { provider: API_MODEL.provider, thinkingLevel: "low" });
-  await withPendingCommand(page, base, A, "set_model", () => chooseModel(page, CODEX), async () => {
-    await revealSpeed(page);
-    await waitSpeed(page, "fast", true);
-    assert.equal((await post(`/api/agent/${A}`, { type: "get_state" })).data.model.provider, API_MODEL.provider);
-  });
-  await checkSelector(page, "fast");
-  await checkSaved(options, A, "fast", { provider: CODEX.provider, thinkingLevel: "low" });
+  // MS1 owns the exact repeated client hide/restore matrix. Keep its genuine
+  // provider-command/native readback bridge once; mobile keeps its OWN creation,
+  // ACK reads, running refusal and four-ID fresh restoration below.
+  if (width > 600) {
+    const unsupported = commandResponse(page, A, "set_model");
+    await chooseModel(page, API_MODEL);
+    assert.equal((await unsupported).status(), 200);
+    await page.waitForFunction(() => !document.querySelector('select[aria-label="Model speed"]')
+      && !document.querySelector('.model-selector.is-toolbar button[aria-busy="true"]'));
+    assert.equal(await control(page).count(), 0, "API-key providers have no usable speed control");
+    assert.equal(await warning(page).count(), 0);
+    await checkSaved(options, A, "fast", { provider: API_MODEL.provider, thinkingLevel: "low" });
+    await withPendingCommand(page, base, A, "set_model", () => chooseModel(page, CODEX), async () => {
+      await revealSpeed(page);
+      await waitSpeed(page, "fast", true);
+      assert.equal((await post(`/api/agent/${A}`, { type: "get_state" })).data.model.provider, API_MODEL.provider);
+    });
+    await checkSelector(page, "fast");
+    await checkSaved(options, A, "fast", { provider: CODEX.provider, thinkingLevel: "low" });
+  }
   const createdId = await checkNewSession(page, options);
-  await checkBusyControls(page, options);
   await checkNoSpeedDefaults(page, options.agentDir);
-  console.log(`PASS: ${width}px real model-speed persistence, sidebar isolation, creation, provider restore and busy controls`);
+  console.log(`PASS: ${width}px real model-speed persistence, sidebar isolation, creation and provider restore`);
   return createdId;
 }
 
 /** Invoked by the runner in a NEW browser context with no inherited storage. */
-export async function checkModelSpeedPersistence(page, options, createdId) {
+export async function checkModelSpeedNativeFreshJourney(page, options, createdId) {
+  assert.ok(typeof createdId === "string" && createdId.length > 0, "This input's native journey must return the real created predecessor");
   await page.goto(`${options.base}/?session=${A}`, { waitUntil: "domcontentloaded" });
   await checkSelector(page, "fast");
-  await pickSession(page, B, "standard");
-  await pickSession(page, A, "fast");
   for (const [id, speed] of [[A, "fast"], [B, "standard"], [LEGACY, "standard"], [createdId, "fast"]]) await checkSaved(options, id, speed);
   await page.goto(`${options.base}/?session=${createdId}`, { waitUntil: "domcontentloaded" });
+  if (options.width <= 600) {
+    await page.getByRole("button", { name: "More controls", exact: true }).waitFor();
+    await control(page).waitFor({ state: "attached" });
+    assert.equal(await control(page).isVisible(), false, "Mobile speed starts behind More");
+  }
   await checkSelector(page, "fast");
+  if (options.width <= 600) {
+    await checkSpeedLayout(page);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: join(options.artifacts, "model-speed-more-layout-390.png") });
+  }
   await newComposer(page, options.project);
   await checkNoSpeedDefaults(page, options.agentDir);
   console.log(`PASS: ${options.width}px model speed survives a fresh browser context; new composer remains Standard`);

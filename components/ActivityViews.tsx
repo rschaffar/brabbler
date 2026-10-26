@@ -17,6 +17,7 @@ interface Props {
   onClose: () => void;
   hidden?: boolean;
   recoveryRefreshKey?: number;
+  onRecoveryWork?: (work: Promise<void>) => void;
   privacy: ProjectPrivacy;
 }
 
@@ -33,6 +34,6 @@ export function ActivityViews({ controller, view, ...props }: Props) {
     ? <ActivityOverview {...shared} pauses={snapshot.pauses} available={snapshot.available}
         laterIds={snapshot.laterIds} laterAttentionIds={snapshot.laterAttentionIds}
         onMarkRead={markRead} onMarkLater={markLater}
-        recoveryRefreshKey={props.recoveryRefreshKey} privacy={props.privacy} />
+        recoveryRefreshKey={props.recoveryRefreshKey} privacy={props.privacy} onRecoveryWork={props.onRecoveryWork} />
     : <StarredOverview {...shared} />;
 }

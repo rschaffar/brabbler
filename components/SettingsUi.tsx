@@ -1,6 +1,27 @@
 "use client";
 
-import type { ButtonHTMLAttributes, CSSProperties, HTMLAttributes, ReactNode } from "react";
+import { createContext, useCallback, useContext, type ButtonHTMLAttributes, type CSSProperties, type HTMLAttributes, type ReactNode } from "react";
+
+/** Passive, instance-scoped diagnostics of already admitted settings work.
+ * The promise includes the operation's body, callbacks, catch and finally.
+ * This is not cancellation, admission control, or a global idle primitive.
+ * With no observer, neither promise identity nor rejection handling changes.
+ */
+export const SettingsWorkContext = createContext<((label: string, work: Promise<unknown>) => void) | null>(null);
+export function useSettingsWork() {
+  const observer = useContext(SettingsWorkContext);
+  return useCallback(<T,>(label: string, work: Promise<T>): Promise<T> => {
+    observer?.(label, work);
+    return work;
+  }, [observer]);
+}
+
+/** Wrap a complete async entry point, not a fetch or body fragment. */
+export function useSettingsTask() {
+  const observe = useSettingsWork();
+  return useCallback(<A extends unknown[], R,>(label: string, callback: (...args: A) => Promise<R>) =>
+    (...args: A): Promise<R> => observe(label, callback(...args)), [observe]);
+}
 
 type ConfigButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 type ConfigButtonSize = "small" | "default";

@@ -1,5 +1,7 @@
 "use client";
 
+import { useSettingsWork } from "./SettingsUi";
+
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SkillInfo } from "@/lib/api-types";
 import { resolveSkillLink, skillInstructionsBody } from "@/lib/skill-instructions";
@@ -9,6 +11,7 @@ import { MarkdownBody } from "./MarkdownBody";
 import { ConfigButton, ConfigDetailHeader, ConfigDetailHeaderInfo, ConfigField } from "./SettingsUi";
 
 export function SkillInstructions({ skill, cwd }: { skill: SkillInfo; cwd: string }) {
+  const observe = useSettingsWork();
   const { t } = useI18n();
   const rootDocument = skill.filePath.split(/[\\/]/).pop()!;
   const [documents, setDocuments] = useState<string[]>([]);
@@ -45,7 +48,7 @@ export function SkillInstructions({ skill, cwd }: { skill: SkillInfo; cwd: strin
     const controller = new AbortController();
     setContent(null);
     setError(null);
-    void (async () => {
+    void observe("skills.instructions", (async () => {
       try {
         const params = new URLSearchParams({ cwd, filePath: skill.filePath });
         if (documentPath !== rootDocument) params.set("document", documentPath);
@@ -56,9 +59,9 @@ export function SkillInstructions({ skill, cwd }: { skill: SkillInfo; cwd: strin
       } catch (cause) {
         if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
       }
-    })();
+    })());
     return () => controller.abort();
-  }, [cwd, skill.filePath, documentPath, rootDocument]);
+  }, [cwd, skill.filePath, documentPath, rootDocument, observe]);
   return <div ref={root} role="region" aria-label={t("skills.instructions")} style={{ minWidth: 0 }}><ConfigField label={t("skills.instructions")}>
     {documents.length > 0 && <ConfigDetailHeader><ConfigDetailHeaderInfo>
       <ConfigButton size="small" onClick={() => { pendingAnchor.current = ""; setDocuments(stack => stack.slice(0, -1)); }}>{t("skills.documentBack")}</ConfigButton>

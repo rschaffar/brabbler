@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReviewFileBrowser } from "../ReviewFileBrowser";
 import { CommittedPatchDiff } from "../CommittedPatchDiff";
 import { createDiffReview, type DiffReviewModel } from "@/lib/git-diff-review";
@@ -13,10 +13,15 @@ interface Page { entries: Entry[]; total: number; next: number | null }
 interface Preview { text: string; offset: number; next: number | null; complete: boolean }
 // Retain navigation, never parsed patches or file contents, across large-review pages.
 type ReviewPosition = Pick<DiffReviewModel, "full" | "reading" | "changeIndex" | "expansions" | "anchors" | "scrollLeft" | "query">;
-function EntryContent({ entry, url, before, after, preferences, reviews, offsets }: {
+function EntryContent({ entry, url, before, after, preferences, reviews, offsets, onReadWork }: {
   entry: Entry; url: string; before: string; after: string; preferences?: GitDiffPreferences;
   reviews?: Map<number, ReviewPosition>; offsets?: Map<number, number>;
+  onReadWork?: (work: Promise<void>) => void;
 }) {
+  const readObserver = useRef(onReadWork);
+  readObserver.current = onReadWork;
+  // The observer joins work, never consumes its result or replaces its promise.
+  const observeRead = useCallback((work: Promise<unknown>) => { readObserver.current?.(work as Promise<void>); }, []);
   const [offset, updateOffset] = useState(offsets?.get(entry.id) ?? 0);
   const setOffset = (value: number) => { offsets?.set(entry.id, value); updateOffset(value); };
   const [value, setValue] = useState<(Preview & { url: string }) | null>(null);
@@ -24,11 +29,12 @@ function EntryContent({ entry, url, before, after, preferences, reviews, offsets
   const [error, setError] = useState("");
   useEffect(() => {
     const controller = new AbortController();
-    void fetch(`${url}?entry=${entry.id}&offset=${offset}`, { signal: controller.signal, cache: "no-store" })
+    const work = fetch(`${url}?entry=${entry.id}&offset=${offset}`, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error); return body as Preview; })
       .then((body) => { if (!controller.signal.aborted) { setValue({ ...body, url }); setError(""); } }, (cause) => { if (!controller.signal.aborted) setError(String(cause)); });
+    observeRead(work);
     return () => controller.abort();
-  }, [url, entry.id, offset, retry]);
+  }, [url, entry.id, offset, retry, observeRead]);
   const current = value?.offset === offset && value.url === url ? value : null;
   const model = useMemo(() => {
     if (!current?.complete || entry.kind !== "patch") return undefined;
@@ -46,7 +52,7 @@ function EntryContent({ entry, url, before, after, preferences, reviews, offsets
     {!current && !error && <p role="status">Loading review…</p>}
     {current && (current.complete && entry.kind === "patch"
       ? <CommittedPatchDiff patch={current.text} hasBinaryChanges={/^(?:GIT binary patch|Binary files .+ differ)$/m.test(current.text)}
-          before={before} after={after} {...preferences} reviewModel={model} />
+          before={before} after={after} {...preferences} reviewModel={model} onReadWork={observeRead} />
       : <><p className="text-text-muted">{current.complete ? "Exact details" : `Raw preview at byte ${current.offset.toLocaleString()}. Display is paged; download contains every byte.`}</p>
         <pre className="max-h-[44vh] overflow-auto whitespace-pre font-mono text-xs">{current.text}</pre>
       </>)}
@@ -56,7 +62,7 @@ function EntryContent({ entry, url, before, after, preferences, reviews, offsets
     </div>
   </div>;
 }
-function EntryRow(props: { entry: Entry; url: string; before: string; after: string }) {
+function EntryRow(props: { entry: Entry; url: string; before: string; after: string; onReadWork?: (work: Promise<void>) => void }) {
   const [expanded, setExpanded] = useState(false);
   return <details className="min-w-0 rounded border border-border" onToggle={(event) => setExpanded(event.currentTarget.open)}>
     <summary className="cursor-pointer break-all p-2">{props.entry.label} · {props.entry.bytes.toLocaleString()} bytes</summary>
@@ -64,11 +70,16 @@ function EntryRow(props: { entry: Entry; url: string; before: string; after: str
   </details>;
 }
 /** Small bounded pages; review failures never replace a live card's action footer. */
-export function ReviewAttachment({ review, sessionId, before = "Before", after = "After", contextHandle, pluginId, reviewBaseUrl }: {
+export function ReviewAttachment({ review, sessionId, before = "Before", after = "After", contextHandle, pluginId, reviewBaseUrl, onReadWork }: {
   review: PluginReviewReference; sessionId?: string; before?: string; after?: string; contextHandle?: string; pluginId?: string;
   /** Host-authorized operation review endpoint, never an arbitrary resource URL. */
   reviewBaseUrl?: string;
+  /** Includes JSON/text decoding and the publication/error continuation. */
+  onReadWork?: (work: Promise<void>) => void;
 }) {
+  const readObserver = useRef(onReadWork);
+  readObserver.current = onReadWork;
+  const observeRead = useCallback((work: Promise<void>) => { readObserver.current?.(work); }, []);
   const [start, setStart] = useState(0), [retry, setRetry] = useState(0);
   const reviews = useRef(new Map<number, ReviewPosition>()), offsets = useRef(new Map<number, number>());
   const [loadedPage, setPage] = useState<(Page & { start: number; url: string }) | null>(null), [error, setError] = useState("");
@@ -82,31 +93,33 @@ export function ReviewAttachment({ review, sessionId, before = "Before", after =
   useEffect(() => {
     if (!available) return;
     const controller = new AbortController();
-    void fetch(`${url}?start=${start}`, { signal: controller.signal, cache: "no-store" })
+    const work = fetch(`${url}?start=${start}`, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error); return body as Page; })
       .then((body) => { if (!controller.signal.aborted) { setPage({ ...body, start, url }); setError(""); } }, (cause) => { if (!controller.signal.aborted) setError(String(cause)); });
+    observeRead(work);
     return () => controller.abort();
-  }, [url, available, start, retry]);
+  }, [url, available, start, retry, observeRead]);
   useEffect(() => {
     if (!available || !inline) return;
     const controller = new AbortController();
-    void fetch(`${url}?patch=1`, { signal: controller.signal, cache: "no-store" }).then(async (response) => {
+    const work = fetch(`${url}?patch=1`, { signal: controller.signal, cache: "no-store" }).then(async (response) => {
       if (!response.ok) throw new Error("Exact patch unavailable");
       return response.text();
     }).then((text) => { if (!controller.signal.aborted) { setPatch({ url, text }); setPatchError(""); } }, (cause) => { if (!controller.signal.aborted) setPatchError(String(cause)); });
+    observeRead(work);
     return () => controller.abort();
-  }, [url, available, inline, retry]);
+  }, [url, available, inline, retry, observeRead]);
   return <section aria-label="Exact operation review" className="min-w-0 space-y-2 text-xs">
     <h3 className="blocking-card-section-title">Exact operation review</h3>
     <p>{review.entries.toLocaleString()} review entries · {review.bytes.toLocaleString()} bytes. Approval covers the entire operation, not just this page.</p>
     {available ? <div className="flex flex-wrap gap-3"><a className="text-accent underline" href={`${url}?download=1`}>Download complete exact review</a>
       <a className="text-accent underline" href={`${url}?patch=1&download=1`}>Download complete exact patch</a></div> : <p>Open the saved session to read its review attachments.</p>}
-    {patch && <SuppliedPatchStack navigation patch={patch} before={before} after={after} contextHandle={contextHandle} pluginId={pluginId} />}
+    {patch && <SuppliedPatchStack navigation patch={patch} before={before} after={after} contextHandle={contextHandle} pluginId={pluginId} onReadWork={onReadWork} />}
     {(error || patchError) && <div role="alert"><p className="break-words">{error || patchError}</p><button type="button" onClick={() => setRetry((value) => value + 1)}>Retry review</button></div>}
     {available && !page && !error && <p role="status">Loading review…</p>}
     {page && <><p>Showing entries {start + 1}–{start + page.entries.length} of {page.total}.</p>
       {(inline && (patch || !patchError)) || !page.entries.some((entry) => entry.kind === "patch") ? <>
-        {page.entries.filter((entry) => entry.kind !== "patch").map((entry) => <EntryRow key={`${review.id}:${entry.id}`} entry={entry} url={url} before={before} after={after} />)}
+        {page.entries.filter((entry) => entry.kind !== "patch").map((entry) => <EntryRow key={`${review.id}:${entry.id}`} entry={entry} url={url} before={before} after={after} onReadWork={onReadWork} />)}
         <div className="flex gap-3">
           {start > 0 && <button type="button" onClick={() => setStart(Math.max(0, start - 40))}>Previous files</button>}
           {page.next !== null && <button type="button" onClick={() => setStart(page.next!)}>Next files</button>}
@@ -118,7 +131,7 @@ export function ReviewAttachment({ review, sessionId, before = "Before", after =
           {page.next !== null && <button type="button" onClick={() => setStart(page.next!)}>Next files</button>}
         </>}>
         {(selected, preferences) => <EntryContent key={`${review.id}:${selected.id}`} entry={page.entries.find((entry) => String(entry.id) === selected.id)!}
-          url={url} before={before} after={after} preferences={preferences} reviews={reviews.current} offsets={offsets.current} />}
+          url={url} before={before} after={after} preferences={preferences} reviews={reviews.current} offsets={offsets.current} onReadWork={onReadWork} />}
       </ReviewFileBrowser>}</>}
   </section>;
 }

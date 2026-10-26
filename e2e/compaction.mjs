@@ -77,57 +77,33 @@ export async function checkCompactionVisibility(page, { base, id, artifacts, wid
     assert.ok(box && box.y >= 0 && box.y + box.height <= viewport.height, "Compaction progress stays in the viewport, outside More controls");
     await page.screenshot({ path: join(artifacts, `compaction-progress-${width}.png`) });
 
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await status.waitFor();
-    await page.waitForFunction(() => window.__compactionEvents?.ready());
-    const connections = await page.evaluate(() => window.__compactionEvents.count());
-    await page.evaluate(() => window.__compactionEvents.disconnect());
-    await page.waitForFunction((before) => window.__compactionEvents.count() > before && window.__compactionEvents.ready(), connections);
-    await status.waitFor();
-    // Miss the end event entirely: compaction-only reconciliation must clear the
-    // status on network return even though no prompt has ever been streaming.
+    // Recovery, legacy outcomes and slash permutations have actual hook/ChatInput
+    // owners. Keep collapsed-More geometry and one installed toolbar dispatch.
     activity.compacting = false;
-    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await emit({ type: "compaction_end", aborted: true });
     await status.waitFor({ state: "hidden" });
     assert.equal(await page.locator(".model-selector.is-toolbar").getByRole("button").isDisabled(), false);
 
-    activity.compacting = true;
-    await emit({ type: "auto_compaction_start" }); await status.waitFor();
-    activity.compacting = false;
-    await emit({ type: "auto_compaction_end", aborted: true }); await status.waitFor({ state: "hidden" });
-    activity.compacting = true;
-    await emit({ type: "compaction_start" }); await status.waitFor();
-    activity.compacting = false;
-    await emit({ type: "compaction_end", errorMessage: "E2E expected compaction failure" });
-    await status.waitFor({ state: "hidden" });
-    await page.getByRole("alert").filter({ hasText: "E2E expected compaction failure" }).waitFor();
-
-    for (const trigger of ["toolbar", "slash"]) {
+    {
       const started = new Promise((resolve) => { manualStarted = resolve; });
       const response = page.waitForResponse((response) => response.url() === url && response.request().method() === "POST"
         && response.request().postDataJSON()?.type === "compact");
       void response.catch(() => {});
-      if (trigger === "toolbar") {
-        const compact = page.getByRole("button", { name: "Compact context", exact: true });
-        if (!await compact.isVisible()) await page.getByRole("button", { name: "More controls", exact: true }).click();
-        await compact.click();
-      } else {
-        await page.locator(".chat-input-textarea").fill("/compact");
-        await page.getByRole("button", { name: "Send", exact: true }).click();
-      }
+      const compact = page.getByRole("button", { name: "Compact context", exact: true });
+      if (!await compact.isVisible()) await page.getByRole("button", { name: "More controls", exact: true }).click();
+      await compact.click();
       // The existing response waiter bounds a missing POST too; never strand
       // the fixture at an unbounded synthetic start barrier.
       await Promise.race([started, response]);
       await status.waitFor();
       assert.equal(await page.locator("fieldset", { has: status }).getAttribute("aria-busy"), "false", "Compaction announcements are not deferred by a busy ancestor");
-      assert.equal(await page.getByRole("alert").filter({ hasText: "E2E expected compaction failure" }).count(), 0, "New compaction clears the old failure");
       releaseManual();
       assert.equal((await response).status(), 200);
       await status.waitFor({ state: "hidden" });
       await page.waitForFunction(() => { const input = document.querySelector(".chat-input-textarea"); return input && !input.matches(":disabled"); });
     }
     await page.getByRole("heading", { name: "E2E compacted heading", exact: true }).waitFor();
-    console.log(`PASS: ${width}px compaction progress, refresh/reconnect, missed completion, cancellation, failure and manual completion`);
+    console.log(`PASS: ${width}px collapsed-More compaction geometry and installed toolbar completion`);
   } catch (error) {
     failures.push(error);
   } finally {

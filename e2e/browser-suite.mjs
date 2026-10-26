@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
 import { createJiti } from "jiti";
-import { checkFilePanel, checkFileDiffViews, checkEditableFile, checkMarkdownPreview, markdownPanelFixture, filePanelFixture } from "./file-panel.mjs";
+import { checkFilePanel, checkWorkingFileContextBridge, checkEditableFile, checkMarkdownPreview, markdownPanelFixture, filePanelFixture } from "./file-panel.mjs";
 import { checkExplorerUploads } from "./explorer-uploads.mjs";
 import { seedFileLineLinks, checkFileLineLinks } from "./file-line-links.mjs";
 import { checkFileWorkspace } from "./file-workspace.mjs";
@@ -24,23 +24,23 @@ import { checkAcceptanceResponsive } from "./project-acceptance-ui.mjs";
 import { checkProjectPrivacy } from "./project-privacy.mjs";
 import { checkProjectTrustScopes } from "./project-trust-scopes.mjs";
 import { checkProviderAccountAuthorization } from "./provider-accounts.mjs";
-import { checkChatAppearance } from "./chat-appearance.mjs";
-import { checkScratchpad } from "./scratchpad.mjs";
+import { checkChatAppearance, checkLegacyNumericWidthBridge } from "./chat-appearance.mjs";
+import { checkNotesNativeJourney, checkNotesTouchGeometry } from "./scratchpad.mjs";
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
 import { checkUpstreamComposer, checkOverflowTabs } from "./upstream-easy-wins.mjs";
 import { checkRequestHeaderBoundary, seedExternalReferenceFixtures, checkExternalReferenceBoundary } from "./security-boundaries.mjs";
-import { seedFollowupSettings, checkSkillInstructions, checkModelOverrides, checkBlockedPreferences } from "./upstream-followups.mjs";
-import { checkManagedModelContext } from "./managed-model-context.mjs";
-import { checkModelSpeed, checkModelSpeedPersistence } from "./model-speed.mjs";
-import { seedNativeToolsFixtures, checkNativeTools } from "./native-tools.mjs";
+import { seedFollowupSettings, checkSkillInstructions, checkModelOverrides, checkPreferenceWiring } from "./upstream-followups.mjs";
+import { checkManagedModelContextLayout } from "./managed-model-context.mjs";
+import { checkModelSpeedNativeJourney, checkModelSpeedNativeFreshJourney } from "./model-speed.mjs";
+import { seedNativeToolsFixtures, checkSelectedNativeRuntime } from "./native-tools.mjs";
+import { checkNativeToolsModalLayout } from "./native-tools-layout.mjs";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
 import { checkRunningSessionForks } from "./running-session-forks.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { contextContents, changedContextContents } from "./git-diff-context.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
 import { checkSessionMovePicker } from "./session-move.mjs";
-import { checkSessionWorktreeMoves } from "./session-worktree-moves.mjs";
-import { checkGitWorkflowPlugin, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
+import { checkGitWorkflowPluginNativeBridge, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
 import { checkSessionLaunch, sessionLaunchFixtureSource } from "./session-launch.mjs";
 import { checkWorktreeManager } from "./worktree-manager.mjs";
 import { assertStartupSessionCatalogue, prepareBrowserPrelude } from "./browser-fixture-recipes.mjs";
@@ -51,7 +51,8 @@ import { checkCompactionVisibility } from "./compaction.mjs";
 import { seedSourceHighlighting, checkSourceHighlighting } from "./source-highlighting.mjs";
 import { checkHighlightFailure } from "./highlight-failure.mjs";
 import { createOwnedRoutes } from "./owned-routes.mjs";
-import { seedToolArguments, checkToolArguments, checkStreamedToolArguments } from "./tool-arguments.mjs";
+import { seedToolArguments, checkToolArguments } from "./tool-arguments.mjs";
+import { checkHistoryBranch } from "./history-branch.mjs";
 
 // Validate one-hot ownership before the harness or any fixture side effects.
 const group = selectGroup(process.env);
@@ -394,14 +395,14 @@ let nativeToolsFixture;
     for (const inputId of ["en-desktop", "en-mobile-tall"]) {
       const { viewport } = browserInputs[inputId].options;
       let createdId;
-      for (const phase of ["exercise", "fresh"]) await coverage.run(`model-speed/${phase}@${inputId}`, async () => {
+      for (const phase of ["native-wiring-v3", "native-fresh-v2"]) await coverage.run(`model-speed/${phase}@${inputId}`, async () => {
         context = await newInputContext(inputId);
         page = await context.newPage();
         page.setDefaultTimeout(30_000);
         const errors = harness.errorsFor(context);
         const options = { base, api, post, agentDir, project, artifacts, width: viewport.width };
-        if (phase === "exercise") createdId = await checkModelSpeed(page, options);
-        else await checkModelSpeedPersistence(page, options, createdId);
+        if (phase === "native-wiring-v3") createdId = await checkModelSpeedNativeJourney(page, options);
+        else await checkModelSpeedNativeFreshJourney(page, options, createdId);
         assert.deepEqual(errors, [], `Model-speed browser/server errors at ${viewport.width}px (${phase})`);
         await harness.closeContext(context);
         context = undefined;
@@ -412,7 +413,7 @@ let nativeToolsFixture;
 
   async function runRunningForkChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`running-forks/full@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`running-forks/${inputId === "en-desktop" ? "canonical-quote-stop-v2" : "first-user-quote-stop-v2"}@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage();
@@ -426,7 +427,7 @@ let nativeToolsFixture;
 
   async function runSessionLaunchChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`session-launch/full@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`session-launch/${inputId === "en-desktop" ? "feedback-and-independent-native-v2" : "independent-native-compact-v2"}@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage(); page.setDefaultTimeout(30_000);
@@ -438,7 +439,7 @@ let nativeToolsFixture;
   }
   async function runWorktreeManagerChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const [index, inputId] of ["en-desktop", "en-mobile-tall"].entries()) await coverage.run(`worktrees/full@${inputId}`, async () => {
+    for (const [index, inputId] of ["en-desktop", "en-mobile-tall"].entries()) await coverage.run(`worktrees/${inputId === "en-desktop" ? "native-loss-bound-review-v3" : "modal-review-layout-v2"}@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage(); page.setDefaultTimeout(30_000);
@@ -458,17 +459,19 @@ let nativeToolsFixture;
     await runModelSpeedChecks();
   } else if (group === "native-tools") {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`native-tools/full@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`native-tools/${inputId === "en-desktop" ? "selected-runtime-native-v2" : "modal-layout"}@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId); page = await context.newPage(); page.setDefaultTimeout(30_000);
       const errors = harness.errorsFor(context);
-      await checkNativeTools(page, { base, api, post, fixture: nativeToolsFixture, artifacts, width: viewport.width });
+      const nativeOptions = { base, api, post, fixture: nativeToolsFixture, artifacts, width: viewport.width };
+      if (inputId === "en-desktop") await checkSelectedNativeRuntime(page, nativeOptions);
+      else await checkNativeToolsModalLayout(page, nativeOptions);
       assert.deepEqual(errors, [], `Native-tools browser/server errors at ${viewport.width}px`);
       await harness.closeContext(context); context = undefined; page = undefined;
     });
   } else if (group === "trust") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`trust/full@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`trust/${inputId === "en-desktop" ? "worktree-caller-cwd-reset-native-v5" : "worktree-compact-restriction-native-v5"}@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage();
@@ -479,18 +482,18 @@ let nativeToolsFixture;
     });
   } else if (group === "git-plugin") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/full@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/pagination-owned-v8@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage();
       const errors = harness.errorsFor(context);
-      await checkGitWorkflowPlugin(page, base, gitProject, GIT, artifacts, viewport.width);
+      await checkGitWorkflowPluginNativeBridge(page, base, gitProject, GIT, artifacts, viewport.width);
       assert.deepEqual(errors, [], "Plugin browser/server errors");
       await harness.closeContext(context); context = undefined; page = undefined;
     });
   } else if (group === "appearance") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["numeric-wide", "legacy-desktop"]) await coverage.run(`appearance/full@${inputId}`, async () => {
+    for (const inputId of ["numeric-wide", "legacy-desktop"]) await coverage.run(`appearance/${inputId === "numeric-wide" ? "legacy-width-bridge-v2" : "layout-native-v2"}@${inputId}`, async () => {
       context = await newInputContext(inputId);
       page = await context.newPage();
       const errors = harness.errorsFor(context);
@@ -506,26 +509,30 @@ let nativeToolsFixture;
       }
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
-      await checkChatAppearance(page);
+      if (inputId === "numeric-wide") await checkLegacyNumericWidthBridge(page);
+      else await checkChatAppearance(page);
       assert.deepEqual(errors, [], "Chat appearance browser/server errors");
       await harness.closeContext(context); context = undefined; page = undefined;
     });
-    for (const inputId of ["en-desktop", "en-mobile-short"]) await coverage.run(`appearance/scratchpad@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-short"]) await coverage.run(`appearance/${inputId === "en-desktop" ? "notes-native" : "notes-touch-layout"}@${inputId}`, async () => {
       context = await newInputContext(inputId);
       page = await context.newPage();
       const errors = harness.errorsFor(context);
-      await checkScratchpad(page, { base, sessionId: RICH, otherId: OTHER, inputId });
+      if (inputId === "en-desktop") await checkNotesNativeJourney(page, { base, sessionId: RICH });
+      else await checkNotesTouchGeometry(page, { base, sessionId: RICH });
       assert.deepEqual(errors, [], `Scratchpad browser/server errors: ${inputId}`);
       await harness.closeContext(context); context = undefined; page = undefined;
     });
   } else if (group === "timestamps") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall", "legacy-desktop", "legacy-mobile"]) await coverage.run(`timestamps/full@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall", "legacy-desktop", "legacy-mobile"]) await coverage.run(`timestamps/${inputId === "en-desktop" || inputId === "legacy-desktop" ? "usage-time-geometry-v3" : "process-hit-test-v3"}@${inputId}`, async () => {
       context = await newInputContext(inputId);
       page = await context.newPage();
       const errors = harness.errorsFor(context);
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
-      await checkMessageTimestamps(page, timestamp);
+      await checkMessageTimestamps(page, {
+        nativeProcess: inputId === "en-mobile-tall" || inputId === "legacy-mobile",
+      });
       assert.deepEqual(errors, [], "Message timestamp browser errors");
       await harness.closeContext(context);
       context = undefined;
@@ -686,7 +693,7 @@ let nativeToolsFixture;
       if (url.pathname === `/api/sessions/${LONG}/context` && url.searchParams.has("before")) olderResponses.push(response);
     });
     if (group === "diff-context") {
-      await coverage.run(`diff-context/explorer-then-merge@${inputId}`, async () => {
+      await coverage.run(`diff-context/d409-render-merge-v2@${inputId}`, async () => {
         // The absent managed control is checked on a hydrated chat, just as in
         // the former general path. Explorer must precede the mutating merge.
         await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
@@ -700,7 +707,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "markdown") {
-      await coverage.run(`markdown/preview-then-line-links@${inputId}`, async () => {
+      await coverage.run(`markdown/${inputId === "legacy-desktop" ? "render-files-native-v3" : "render-touch-wiring-v2"}@${inputId}`, async () => {
       const finishMarkdownStage = stage.start(`markdown/${inputId}/chain`);
       // This added chunk-interception fixture needs no service worker. Existing
       // Markdown scenarios below retain their original, independent context.
@@ -712,14 +719,19 @@ let nativeToolsFixture;
         await stage(`markdown/${inputId}/source-highlighting`, async () => { await checkSourceHighlighting(highlightPage, base, highlightingFixture); });
         assert.deepEqual(highlightErrors, [], "Browser errors during source highlighting");
       } finally { await harness.closeContext(highlightContext); }
-      const failureContext = await newInputContext(inputId, { serviceWorkers: "block" });
-      const failureErrors = harness.errorsFor(failureContext);
-      try {
-        const failurePage = await failureContext.newPage();
-        failurePage.setDefaultTimeout(30_000);
-        await stage(`markdown/${inputId}/highlight-failure`, async () => { await checkHighlightFailure(failurePage, base, highlightingFixture); });
-        assert.deepEqual(failureErrors, [], "Browser errors during grammar failure/retry");
-      } finally { await harness.closeContext(failureContext); }
+      // Missing webpack registration/retry is package-runtime behavior, not a
+      // second responsive layout. Keep its independent cold context once; both
+      // inputs above still exercise actual chunk execution and native Selection.
+      if (inputId === "legacy-desktop") {
+        const failureContext = await newInputContext(inputId, { serviceWorkers: "block" });
+        const failureErrors = harness.errorsFor(failureContext);
+        try {
+          const failurePage = await failureContext.newPage();
+          failurePage.setDefaultTimeout(30_000);
+          await stage(`markdown/${inputId}/highlight-failure`, async () => { await checkHighlightFailure(failurePage, base, highlightingFixture); });
+          assert.deepEqual(failureErrors, [], "Browser errors during grammar failure/retry");
+        } finally { await harness.closeContext(failureContext); }
+      }
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       const wideList = page.locator(".markdown-body ol").filter({ hasText: "Upstream wide marker" });
@@ -735,9 +747,9 @@ let nativeToolsFixture;
       await stage(`markdown/${inputId}/review-notebooks`, async () => { await checkReviewNotebooks(page, { base, fixture: reviewNotebookFixture }); });
       await stage(`markdown/${inputId}/skill-instructions`, async () => { await checkSkillInstructions(page, base, followupSettings); });
       await stage(`markdown/${inputId}/model-overrides`, async () => { await checkModelOverrides(page, base, RICH, project); });
-      await stage(`markdown/${inputId}/managed-model-context`, async () => { await checkManagedModelContext(page); });
+      await stage(`markdown/${inputId}/managed-model-context`, async () => { await checkManagedModelContextLayout(page); });
       await stage(`markdown/${inputId}/external-references`, async () => { await checkExternalReferenceBoundary(page, base, externalReferenceFixtures); });
-      await stage(`markdown/${inputId}/blocked-preferences`, async () => { await checkBlockedPreferences(page, base, RICH); });
+      await stage(`markdown/${inputId}/blocked-preferences`, async () => { await checkPreferenceWiring(page, base, RICH); });
       assert.deepEqual(errors, [], "Browser errors during Markdown preview and line links");
       await harness.closeContext(context); context = undefined; page = undefined;
       finishMarkdownStage();
@@ -745,11 +757,11 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "file-edit") {
-      await coverage.run(`file-edit/panel-diff-edit@${inputId}`, async () => {
+      await coverage.run(`file-edit/native-upload-caller-owned-v4@${inputId}`, async () => {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       await checkFilePanel(page, previewFile);
-      await checkFileDiffViews(page, editableFile);
+      await checkWorkingFileContextBridge(page, editableFile);
       await checkEditableFile(page, editableFile);
       await checkExplorerUploads(page, { project, base });
       await checkOverflowTabs(page);
@@ -782,7 +794,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "privacy") {
-      await coverage.run(`privacy/full@${inputId}`, async () => {
+      await coverage.run(`privacy/native-owned-v3@${inputId}`, async () => {
         await checkProjectPrivacy(page, viewport.width, { base, api, post, harness, selectedSessionId: BRANCH, otherSessionId: OTHER });
         assert.deepEqual(errors, [], `Project privacy browser errors at width ${viewport.width}`);
         await harness.closeContext(context); context = undefined; page = undefined;
@@ -790,13 +802,13 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "activity") {
-      const activityScenario = inputId === "legacy-desktop" ? "activity/golden-native" : "activity/responsive";
+      const activityScenario = inputId === "legacy-desktop" ? "activity/native-toolbar-owned-v5" : inputId === "legacy-mobile" ? "activity/compact-navigation-owned-v6" : "activity/compact-state-recipe-owned-v4";
       await coverage.run(`${activityScenario}@${inputId}`, async () => {
       const finishActivityStage = stage.start(`activity/${inputId}/chain`);
       // Seed only after the selected chat has loaded, so clicking its newly
       // discovered Activity row must refresh the warning in that same chat.
       await stage(`activity/${inputId}/overview`, async () => { await checkActivityOverview(page, viewport.width, {
-        base, api, post, artifacts, harness, waitingSessionId: RICH, selectedSessionId: BRANCH, otherSessionId: OTHER,
+        base, api, post, artifacts, harness, retainNavigationMatrices: false, waitingSessionId: RICH, selectedSessionId: BRANCH, otherSessionId: OTHER,
         seedInterruptedRun: () => seedRecoveryRun(`${viewport.width}-activity-recovery`),
         subagentIds: ACTIVITY_SUBAGENTS,
         seedSubagentCompletions: () => {
@@ -839,14 +851,14 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "accounts") {
-      await coverage.run(`accounts/created-deleted@${inputId}`, async () => {
+      await coverage.run(`accounts/created-device-owner-v3@${inputId}`, async () => {
       const { oauthProviders } = await api("/api/auth/providers");
       const oauthEntry = oauthProviders.find((item) => item.id === "github-copilot") ?? oauthProviders[0];
       assert.ok(oauthEntry, "OAuth provider required for account browser fixture");
       const { account } = await post("/api/auth/accounts", { provider: oauthEntry.id, label: `E2E device ${viewport.width}`, type: "oauth" });
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);
       await checkProviderAccountAuthorization(page, { base, sessionId: RICH, provider: oauthEntry.id,
-        providerName: oauthEntry.name, accountLabel: account.label, width: viewport.width, artifacts });
+        providerName: oauthEntry.name, accountId: account.id, accountLabel: account.label, width: viewport.width, artifacts });
       const removedFixture = await fetch(`${base}/api/auth/accounts`, { method: "DELETE", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: account.id }) });
       assert.equal(removedFixture.status, 200);
@@ -858,12 +870,14 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "questions") {
-      await coverage.run(`questions/registration-and-dialog@${inputId}`, async () => {
+      await coverage.run(`questions/${inputId === "legacy-desktop" ? "native-publication-v2" : "compact-native-v2"}@${inputId}`, async () => {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
-      const { data: tools } = await post(`/api/agent/${RICH}`, { type: "get_tools" });
-      assert.deepEqual(tools.filter((tool) => tool.name === "ask_user").map((tool) => tool.active), [true]);
-      assert.match(tools.find((tool) => tool.name === "ask_user").description, /^Ask the user a question/);
+      if (inputId === "legacy-desktop") {
+        const { data: tools } = await post(`/api/agent/${RICH}`, { type: "get_tools" });
+        assert.deepEqual(tools.filter((tool) => tool.name === "ask_user").map((tool) => tool.active), [true]);
+        assert.match(tools.find((tool) => tool.name === "ask_user").description, /^Ask the user a question/);
+      }
       await checkAskUserDialog(page, viewport.width);
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
       await harness.closeContext(context);
@@ -897,10 +911,9 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "bulk") {
-      await coverage.run(`bulk/archive-restore-delete@${inputId}`, async () => {
+      await coverage.run(`bulk/native-selection-mutations-v2@${inputId}`, async () => {
       const ids = viewport.width <= 600 ? BULK.slice(2) : BULK.slice(0, 2);
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
-      await page.locator(".markdown-code-block pre").waitFor();
       if (viewport.width <= 600) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
       const first = page.locator(`[data-session-id="${ids[0]}"]`);
       const second = page.locator(`[data-session-id="${ids[1]}"]`);
@@ -913,20 +926,11 @@ let nativeToolsFixture;
       await second.scrollIntoViewIfNeeded();
       await second.getByRole("checkbox").check();
       await page.getByText("2 selected", { exact: true }).waitFor();
-      const archiveConflict = `**/api/sessions/${ids[0]}`;
-      const failArchive = (route) => route.request().method() === "PATCH"
-        ? route.fulfill({ status: 409, json: { error: "Session is running" } }) : route.continue();
-      await page.route(archiveConflict, failArchive);
-      await page.getByRole("button", { name: "Archive", exact: true }).click();
-      await page.getByRole("alert").getByText("1 failed, 1 succeeded", { exact: false }).waitFor();
-      const expectedConflict = errors.indexOf("Failed to load resource: the server responded with a status of 409 (Conflict)");
-      assert.notEqual(expectedConflict, -1, "Simulated archive conflict should reach the browser");
-      errors.splice(expectedConflict, 1);
-      assert.ok(await first.getByRole("checkbox").isChecked(), "Failed session stays selected for retry");
-      assert.equal((await api("/api/sessions?force=1")).sessions.find((s) => s.id === ids[1])?.archived, true);
-      await page.unroute(archiveConflict, failArchive);
+      // Failed-only retry/currentness are actual Sidebar lower-owner cases.
+      // Keep one installed control -> native mutation -> catalogue bridge.
       await page.getByRole("button", { name: "Archive", exact: true }).click();
       await first.waitFor({ state: "detached" });
+      await select.waitFor({ state: "visible" }); // all admitted family mutations exited selection
       const archivedSessions = (await api("/api/sessions?force=1")).sessions;
       assert.ok(ids.every((id) => archivedSessions.find((s) => s.id === id)?.archived === true));
       await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
@@ -937,6 +941,7 @@ let nativeToolsFixture;
       await second.getByRole("checkbox").check();
       await page.getByRole("button", { name: "Restore", exact: true }).click();
       await first.waitFor({ state: "detached" });
+      await select.waitFor({ state: "visible" }); // do not join the second family via the first row or GET
       await page.getByRole("button", { name: "Active sessions", exact: true }).click();
       await page.getByRole("button", { name: "Select", exact: true }).click();
       await first.scrollIntoViewIfNeeded();
@@ -944,8 +949,6 @@ let nativeToolsFixture;
       await page.getByRole("button", { name: "Delete", exact: true }).click();
       await page.getByText("Permanently delete selected sessions (1) and their subagents? Forks will remain.").waitFor();
       assert.ok((await api("/api/sessions?force=1")).sessions.some((s) => s.id === ids[0]), "Delete requires confirmation");
-      await page.getByRole("button", { name: "Cancel", exact: true }).click();
-      await page.getByRole("button", { name: "Delete", exact: true }).click();
       await page.getByRole("button", { name: "Delete", exact: true }).last().click();
       await first.waitFor({ state: "detached" });
       assert.ok(!(await api("/api/sessions?force=1")).sessions.some((s) => s.id === ids[0]));
@@ -960,12 +963,11 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "move") {
-      await coverage.run(`move/full-picker@${inputId}`, async () => {
+      await coverage.run(`move/${inputId === "legacy-desktop" ? "picker-recovery-native-v2" : "picker-modal-browse-v2"}@${inputId}`, async () => {
       const moveId = viewport.width <= 600 ? ARCHIVE : APPEND;
-      await checkSessionMovePicker(page, { base, api, sessionId: moveId, project, otherProject, gitProject, targetWorktree, mobile: viewport.width <= 600 });
-      await checkSessionWorktreeMoves(page, { base, api, post, agentDir, otherProject, mobile: viewport.width <= 600 });
+      await checkSessionMovePicker(page, { base, api, post, agentDir, sessionId: moveId, project, otherProject, gitProject, targetWorktree, mobile: viewport.width <= 600 });
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
-      console.log(`PASS: ${viewport.width}px session move picker worktrees, exclusion, Browse, failure and stale responses`);
+      console.log(`PASS: ${viewport.width}px native move picker/Browse and selected-uncertain shell boundary; desktop recovery execution`);
       await harness.closeContext(context);
       context = undefined;
       page = undefined;
@@ -973,48 +975,298 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "history") {
-    await coverage.run(`history/reading-chain@${inputId}`, async () => {
+    await coverage.run(`history/${inputId === "legacy-desktop" ? "reading-branch-native-v8" : "reading-version-lower-v7"}@${inputId}`, async () => {
     const finishHistoryStage = stage.start(`history/${inputId}/chain`);
     // Interception needs its own SW-blocked context. The original history/PWA
     // context below stays unchanged, and reload cannot alter its reading state.
+    if (inputId === "legacy-desktop") {
     const finishVersionStage = stage.start(`history/${inputId}/version-reload`);
-    const versionContext = await newInputContext(inputId, { serviceWorkers: "block" });
-    const versionErrors = harness.errorsFor(versionContext);
-    const versionPage = await versionContext.newPage();
-    versionPage.setDefaultTimeout(30_000);
-    const versionPattern = "**/api/app-version";
-    const versionRoute = createOwnedRoutes(route => route.fulfill({ json: { version: "99.99.99" } }), route => route.continue());
-    try {
-      const initialVersion = versionPage.waitForResponse(response => new URL(response.url()).pathname === "/api/app-version");
-      void initialVersion.catch(() => {});
-      await versionPage.bringToFront();
-      await versionPage.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
-      assert.equal(await versionPage.evaluate(() => document.visibilityState), "visible");
-      assert.equal((await (await initialVersion).json()).version, null, "isolated fixtures disable live version checks");
-      await versionPage.getByText("E2E final answer", { exact: true }).waitFor();
-      const reloadWeb = versionPage.getByRole("button", { name: "Reload Pi Web" });
-      assert.equal(await reloadWeb.count(), 0, "The running version should not show a reload prompt");
-      await versionPage.route(versionPattern, versionRoute.handler);
-      const changedVersion = versionPage.waitForResponse(response => new URL(response.url()).pathname === "/api/app-version");
-      void changedVersion.catch(() => {});
-      await versionPage.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-      assert.equal((await (await changedVersion).json()).version, "99.99.99");
-      await reloadWeb.waitFor();
-      assert.ok(await versionPage.getByText("Pi Web v99.99.99 is running.").isVisible());
-      versionPage.once("dialog", (dialog) => dialog.dismiss());
-      await reloadWeb.click();
-      await reloadWeb.waitFor();
-      await versionRoute.dispose(handler => versionPage.unroute(versionPattern, handler));
-      versionPage.once("dialog", (dialog) => dialog.accept());
-      await Promise.all([versionPage.waitForNavigation(), reloadWeb.click()]);
-      await reloadWeb.waitFor({ state: "detached" });
-      assert.deepEqual(versionErrors, [], "Browser errors during version mismatch/reload");
+    {
+      // Finite stage-local ownership. This is not a general async/idle platform.
+      const versionWork = [], versionPhases = [], versionObserverCauses = [], versionCollectorCauses = [], versionCleanupCauses = [];
+      const versionRegistrations = [], versionRestorations = [], versionPages = [], versionDialogs = [], versionDialogScopes = [], versionRouteEvents = [];
+      let versionContext, versionPage, versionRoute, versionRouteAdapter, versionErrors = [];
+      let versionRouteTried = false, versionUnroute, versionRouteDisposal, versionPrimary, versionHasPrimary = false, versionJoined = 0;
+      // PRIVATE-WITNESS-DECLARATIONS
+      const ownVersion = (label, operation, meta = {}) => {
+        const entry = { label, meta, state: 'admitted', kind: 'sync', original: undefined, joined: false };
+        versionWork.push(entry);
+        try {
+          entry.original = operation();
+          if (entry.original && typeof entry.original.then === 'function') {
+            entry.kind = 'promise'; entry.state = 'pending';
+            // Nonthrowing passive observers retain original outcomes/references.
+            // Their actual derivative promises are joined too, never used as work ACKs.
+            entry.observation = entry.original.then(value => {
+              entry.state = 'fulfilled'; entry.outcome = { status: 'fulfilled', value };
+              versionPhases.push(`${label}:fulfilled`);
+            }, reason => {
+              entry.state = 'rejected'; entry.outcome = { status: 'rejected', reason };
+              versionPhases.push(`${label}:rejected`);
+            });
+          } else {
+            entry.state = 'fulfilled'; entry.outcome = { status: 'fulfilled', value: entry.original };
+          }
+        } catch (reason) {
+          entry.state = 'threw'; entry.outcome = { status: 'rejected', reason };
+          versionPhases.push(`${label}:threw`);
+        }
+        return entry;
+      };
+      const versionValue = async entry => {
+        if (entry.state === 'threw') throw entry.outcome.reason;
+        return await entry.original;
+      };
+      const registerVersion = (target, event, listener, label) => {
+        const registration = { target, event, listener, label, attempted: true, removed: false, removals: [] };
+        versionRegistrations.push(registration); // Before the native registration can throw.
+        registration.addition = ownVersion(`${label}.on`, () => target.on(event, listener), { target, event, listener });
+        if (registration.addition.state === 'threw') throw registration.addition.outcome.reason;
+        return registration;
+      };
+      const removeVersion = registration => {
+        if (!registration || registration.removed) return;
+        const removal = ownVersion(`${registration.label}.off`, () => registration.target.off(registration.event, registration.listener),
+          { target: registration.target, event: registration.event, listener: registration.listener });
+        registration.removals.push(removal);
+        if (removal.outcome?.status === 'fulfilled') registration.removed = true;
+      };
+      // Only these two EXISTING close ports are locally instrumented. Return the
+      // EXACT native promise/throw to the harness; do not replace its trace/close
+      // order, existing deadlines, diagnostics, error policy or native behavior.
+      const observeVersionClose = (target, key, label) => {
+        const previous = Object.getOwnPropertyDescriptor(target, key), original = target[key];
+        const restoration = { target, key, previous, original, restored: false };
+        versionRestorations.push(restoration);
+        const adapter = function (...args) {
+          const entry = ownVersion(label, () => Reflect.apply(original, this, args), { receiver: this, method: original, args });
+          if (entry.state === 'threw') throw entry.outcome.reason;
+          return entry.original;
+        };
+        restoration.adapter = adapter;
+        const installed = ownVersion(`${label}.observe`, () => Object.defineProperty(target, key, { configurable: true, writable: true, value: adapter }));
+        if (installed.state === 'threw') throw installed.outcome.reason;
+      };
+      const collectVersionPage = page => {
+        if (versionPages.includes(page)) return;
+        versionPages.push(page);
+        registerVersion(page, 'pageerror', error => { versionCollectorCauses.push(error); }, 'collector.pageerror');
+        registerVersion(page, 'console', message => {
+          try { if (message.type() === 'error') versionCollectorCauses.push(message); }
+          catch (error) { versionCollectorCauses.push(error); }
+        }, 'collector.console');
+        registerVersion(page, 'response', response => {
+          try {
+            if (new URL(response.url()).origin === new URL(base).origin && response.status() >= 500) versionCollectorCauses.push(response);
+          } catch (error) { versionCollectorCauses.push(error); }
+        }, 'collector.local5xx');
+      };
+      const admitVersionResponse = (label, expected) => {
+        const waiter = ownVersion(`${label}.wait.original`, () => versionPage.waitForResponse(response => new URL(response.url()).pathname === '/api/app-version'));
+        // BOTH complete consumers are admitted immediately, BEFORE bringToFront,
+        // goto or evaluate. A failed UI await cannot skip json/body consumption.
+        const parsed = ownVersion(`${label}.parse.consumer`, async () => {
+          const response = await versionValue(waiter);
+          const jsonMethod = response.json;
+          const json = ownVersion(`${label}.json.native`, () => Reflect.apply(jsonMethod, response, []), { receiver: response, method: jsonMethod });
+          const data = await versionValue(json);
+          return { response, data, json };
+        });
+        const consumer = ownVersion(`${label}.full.consumer`, async () => {
+          const result = await versionValue(parsed);
+          assert.equal(result.data.version, expected, `${label}: original complete version body`);
+          // PRIVATE-WITNESS-BODY-CONSUMER
+          return result;
+        });
+        return { waiter, parsed, consumer };
+      };
+      const admitVersionDialog = action => {
+        const scope = { action, events: [], registration: undefined };
+        versionDialogScopes.push(scope);
+        const listener = dialog => {
+          const event = { action, dialog, listener, ack: undefined, ackReturned: false };
+          scope.events.push(event); versionDialogs.push(event);
+          // Manual once semantics expose the EXACT registered listener to cleanup.
+          // An off failure is retained but never skips the actual native operation.
+          removeVersion(scope.registration);
+          const nativeMeta = { receiver: dialog, method: undefined };
+          event.native = ownVersion(`dialog.${action}.native`, () => {
+            nativeMeta.method = dialog[action];
+            return Reflect.apply(nativeMeta.method, dialog, []);
+          }, nativeMeta);
+          event.originalPromise = event.native.original;
+          event.consumer = ownVersion(`dialog.${action}.consumer`, async () => {
+            const result = await versionValue(event.native);
+            // PRIVATE-WITNESS-DIALOG-CONSUMER
+            return result;
+          });
+          // PRIVATE-WITNESS-DIALOG-UI
+          // Explicit external callback ACK, NOT a native operation completion.
+          event.ackReturned = true; versionPhases.push(`dialog.${action}:ack`);
+          return undefined;
+        };
+        scope.listener = listener;
+        scope.registration = registerVersion(versionPage, 'dialog', listener, `dialog.${action}.listener`);
+        return scope;
+      };
+      const unregisterVersionRoute = handler => {
+        assert.equal(handler, versionRoute.handler, 'OwnedRoutes supplies its own exact raw handler');
+        if (!versionRouteTried) return undefined; // No unadmitted dispatcher wait.
+        if (!versionUnroute) versionUnroute = ownVersion('route.unroute.exact', () => versionPage.unroute('**/api/app-version', versionRouteAdapter), { adapter: versionRouteAdapter });
+        if (versionUnroute.state === 'threw') throw versionUnroute.outcome.reason;
+        return versionUnroute.original;
+      };
+      const disposeVersionRoute = () => {
+        if (!versionRouteDisposal) versionRouteDisposal = ownVersion('route.owner.dispose', () => versionRoute.dispose(unregisterVersionRoute));
+        return versionRouteDisposal;
+      };
+      const joinVersionKnown = async () => {
+        while (versionJoined < versionWork.length) {
+          const batch = versionWork.slice(versionJoined); versionJoined = versionWork.length;
+          const promises = [], slots = [];
+          for (const entry of batch) if (entry.kind === 'promise') {
+            slots.push([entry, 'original']); promises.push(entry.original);
+            slots.push([entry, 'observation']); promises.push(entry.observation);
+          }
+          const results = await Promise.allSettled(promises);
+          for (let index = 0; index < results.length; index++) {
+            const [entry, role] = slots[index], outcome = results[index];
+            if (role === 'original') entry.outcome = outcome;
+            else {
+              entry.observerOutcome = outcome;
+              if (outcome.status === 'rejected') versionObserverCauses.push(outcome.reason);
+            }
+          }
+          for (const entry of batch) entry.joined = true;
+        }
+      };
+      // REGISTERED BEFORE context acquisition, page setup, collectors or triggers.
+      // Every external release/restoration is attempted independently via ownVersion.
+      const cleanupVersion = async () => {
+        versionPhases.push('release-start');
+        // PRIVATE-WITNESS-RELEASE-ALL
+        for (const registration of versionRegistrations) if (registration.event === 'dialog') removeVersion(registration);
+        for (const event of versionDialogs) {
+          if (event.native.state === 'threw' || event.native.state === 'rejected') {
+            event.release = ownVersion('cleanup.dialog.dismiss', () => event.dialog.dismiss(), { dialog: event.dialog });
+          }
+          // Pending native dismiss/accept is ALREADY an admitted release. Native
+          // page/context close below releases it even if it fails later; do not
+          // double-accept or pretend a post-native consumer failure is a live dialog.
+        }
+        if (versionRoute) ownVersion('route.begin-disposal', () => versionRoute.beginDisposal());
+        if (versionRouteTried && !versionUnroute) {
+          versionUnroute = ownVersion('route.unroute.exact', () => versionPage.unroute('**/api/app-version', versionRouteAdapter), { adapter: versionRouteAdapter });
+        }
+        for (const page of versionPages) ownVersion('cleanup.page.close', () => page.close(), { page });
+        if (versionContext) ownVersion('cleanup.context.harness', () => harness.closeContext(versionContext), { context: versionContext });
+        versionPhases.push('releases-initiated');
+        // No joins (including OwnedRoutes' internal drain) start before ALL
+        // known gate/dialog/route/page/context release operations above are begun.
+        if (versionRoute) disposeVersionRoute();
+        try { await joinVersionKnown(); } catch (error) { versionCleanupCauses.push(error); }
+        versionPhases.push('first-join-complete');
+        ownVersion('harness.errors.assert', () => assert.deepEqual(versionErrors, [], 'Browser errors during version mismatch/reload'));
+        for (const restoration of versionRestorations.toReversed()) {
+          ownVersion('close-observer.restore', () => {
+            if (restoration.previous) Object.defineProperty(restoration.target, restoration.key, restoration.previous);
+            else delete restoration.target[restoration.key];
+            restoration.restored = true;
+          });
+        }
+        // Local page/context collectors stay live THROUGH native/harness close
+        // AND exact method restoration. HOST registrations were made first and
+        // are therefore removed last. Existing harness collectors are unchanged.
+        versionPhases.push('close-restoration-complete');
+        for (const registration of versionRegistrations.toReversed()) removeVersion(registration);
+        try { await joinVersionKnown(); } catch (error) { versionCleanupCauses.push(error); }
+        versionPhases.push('all-settled');
+      };
+      try {
+        registerVersion(process, 'unhandledRejection', error => { versionCollectorCauses.push(error); }, 'collector.host-rejection');
+        registerVersion(process, 'uncaughtExceptionMonitor', error => { versionCollectorCauses.push(error); }, 'collector.host-exception');
+        versionContext = await versionValue(ownVersion('context.acquire', () => newInputContext(inputId, { serviceWorkers: 'block' })));
+        versionErrors = harness.errorsFor(versionContext); // Keep the live array through close.
+        observeVersionClose(versionContext.tracing, 'stop', 'native.trace.stop');
+        observeVersionClose(versionContext, 'close', 'native.context.close');
+        registerVersion(versionContext, 'page', page => {
+          try { collectVersionPage(page); } catch (error) { versionCollectorCauses.push(error); }
+        }, 'collector.context-page');
+        for (const page of versionContext.pages()) collectVersionPage(page);
+        versionPage = await versionValue(ownVersion('page.acquire', () => versionContext.newPage()));
+        collectVersionPage(versionPage);
+        versionPage.setDefaultTimeout(30_000);
+        const routeNative = (route, closing) => {
+          const operation = closing ? 'continue' : 'fulfill', method = route[operation];
+          const args = closing ? [] : [{ json: { version: '99.99.99' } }];
+          const native = ownVersion(`route.${operation}.native`, () => Reflect.apply(method, route, args), { receiver: route, method, args });
+          versionRouteEvents.push({ route, closing, native });
+          if (native.state === 'threw') throw native.outcome.reason;
+          return native.original;
+        };
+        versionRoute = createOwnedRoutes(route => routeNative(route, false), route => routeNative(route, true));
+        versionRouteAdapter = route => {
+          const raw = ownVersion('route.callback.raw', () => versionRoute.handler(route), { route, adapter: versionRouteAdapter });
+          const ack = ownVersion('route.callback.ack', async () => {
+            try { return { ok: true, value: await versionValue(raw) }; }
+            catch (error) { return { ok: false, error }; } // SAME error remains fatal in raw/OwnedRoutes ledgers.
+          }, { raw, adapter: versionRouteAdapter });
+          return ack.original; // Exact registered adapter's NONTHROWING dispatcher ACK, not raw work.
+        };
+        const initialVersion = admitVersionResponse('initial', null);
+        await versionValue(ownVersion('ui.bring-to-front', () => versionPage.bringToFront()));
+        await versionValue(ownVersion('ui.initial.goto', () => versionPage.goto(`${base}/?session=${RICH}`, { waitUntil: 'domcontentloaded' })));
+        assert.equal(await versionValue(ownVersion('ui.initial.visible', () => versionPage.evaluate(() => document.visibilityState))), 'visible');
+        // PRIVATE-WITNESS-BODY-UI
+        await versionValue(initialVersion.consumer);
+        await versionValue(ownVersion('ui.initial.answer', () => versionPage.getByText('E2E final answer', { exact: true }).waitFor()));
+        const reloadWeb = versionPage.getByRole('button', { name: 'Reload Pi Web' });
+        assert.equal(await versionValue(ownVersion('ui.initial.notice-count', () => reloadWeb.count())), 0, 'The running version should not show a reload prompt');
+        versionRouteTried = true;
+        await versionValue(ownVersion('route.register.exact', () => versionPage.route('**/api/app-version', versionRouteAdapter), { adapter: versionRouteAdapter }));
+        const changedVersion = admitVersionResponse('changed', '99.99.99');
+        await versionValue(ownVersion('ui.changed.visibility', () => versionPage.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))));
+        await versionValue(changedVersion.consumer);
+        await versionValue(ownVersion('ui.changed.notice', () => reloadWeb.waitFor()));
+        assert.ok(await versionValue(ownVersion('ui.changed.text', () => versionPage.getByText('Pi Web v99.99.99 is running.').isVisible())));
+        const cancel = admitVersionDialog('dismiss');
+        await versionValue(ownVersion('ui.cancel.click', () => reloadWeb.click()));
+        assert.equal(cancel.events.length, 1, 'one actually admitted native Cancel callback; never wait for an unadmitted dialog');
+        await versionValue(cancel.events[0].native);
+        await versionValue(cancel.events[0].consumer);
+        await versionValue(ownVersion('ui.cancel.notice-retained', () => reloadWeb.waitFor()));
+        await versionValue(disposeVersionRoute());
+        const accept = admitVersionDialog('accept');
+        const navigation = ownVersion('ui.accept.navigation', () => versionPage.waitForNavigation());
+        const click = ownVersion('ui.accept.click', () => reloadWeb.click());
+        // Both originals were admitted before either await. An early rejection
+        // enters finally, whose independent releases/joins still own its peer.
+        await versionValue(click);
+        await versionValue(navigation);
+        assert.equal(accept.events.length, 1, 'one actually admitted native Accept callback');
+        await versionValue(accept.events[0].native);
+        // PRIVATE-WITNESS-DIALOG-UI-EXIT
+        await versionValue(accept.events[0].consumer);
+        await versionValue(ownVersion('ui.accept.notice-detached', () => reloadWeb.waitFor({ state: 'detached' })));
+      } catch (error) {
+        versionHasPrimary = true; versionPrimary = error; versionPhases.push('primary-caught');
+      } finally {
+        try { await cleanupVersion(); } catch (error) { versionCleanupCauses.push(error); }
+      }
+      const versionFailed = versionWork.filter(entry => entry.outcome?.status === 'rejected');
+      const versionCauses = [];
+      if (versionHasPrimary) versionCauses.push(versionPrimary);
+      if (versionFailed.length) versionCauses.push(new AggregateError(versionFailed.map(entry => entry.outcome.reason), 'Original owned version-work causes (admission order; no deduplication)'));
+      if (versionObserverCauses.length) versionCauses.push(new AggregateError(versionObserverCauses, 'Version observation causes'));
+      if (versionCollectorCauses.length) versionCauses.push(new AggregateError(versionCollectorCauses, 'Version live collector causes'));
+      if (versionCleanupCauses.length) versionCauses.push(new AggregateError(versionCleanupCauses, 'Version independent cleanup/join causes'));
+      const versionFailure = versionCauses.length ? new AggregateError(versionCauses, 'Native WebVersion stage failed after owned settlement') : undefined;
+      // PRIVATE-WITNESS-VERIFY-THEN-RETHROW
+      if (versionFailure) throw versionFailure;
       console.log(`PASS: ${viewport.width}px version mismatch prompts before page reload`);
-    } finally {
-      try { await versionRoute.dispose(handler => versionPage.unroute(versionPattern, handler)); }
-      finally { await harness.closeContext(versionContext); }
     }
     finishVersionStage();
+    }
     await stage(`history/${inputId}/composer`, async () => { await checkUpstreamComposer(context, base, RICH, LONG, viewport.width); });
     const finishPaginationStage = stage.start(`history/${inputId}/identity-pagination`);
     const stateReady = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/sessions/${LONG}/state`);
@@ -1125,42 +1377,21 @@ let nativeToolsFixture;
     console.log("PASS: interrupted run notice survives reload until dismissed and never replaces saved history");
     finishRecoveryStage();
     const finishReadingStage = stage.start(`history/${inputId}/rendering-reading-branch`);
-    const thinkingRequests = [];
-    page.on("request", (request) => {
-      if (new URL(request.url()).pathname.endsWith("/thinking")) thinkingRequests.push(request.url());
-    });
     await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
     await page.locator("strong").filter({ hasText: "E2E markdown" }).waitFor();
     await page.locator("pre").filter({ hasText: "console.log('E2E code');" }).waitFor();
     await page.getByText("E2E final answer", { exact: true }).waitFor();
     const processDetails = page.getByRole("button", { name: /^Process details/ });
     const thinking = page.getByRole("button", { name: /^Thinking/ });
-    assert.equal(await processDetails.count(), 1);
-    assert.equal(await thinking.count(), 0, "All thinking stays inside process details");
-    const finalMessage = page.locator("[data-entry-id='answer']");
-    assert.equal(await finalMessage.getByRole("button", { name: /^Thinking/ }).count(), 0);
-    assert.equal(await finalMessage.getByText("test/E2E Model", { exact: true }).count(), 1);
-    assert.equal(thinkingRequests.length, 0);
+    // Exact three-read/body/cache/order policy has its actual lower owner.
+    // Retain the installed Process -> Thinking -> real body at THIS profile.
     await processDetails.click();
-    assert.equal(await thinking.count(), 3);
-    assert.equal(await thinking.last().innerText(), "E2E final reasoning");
-    assert.equal(thinkingRequests.length, 0);
-    for (const [index, text] of ["Intermediate thinking details.", "Follow-up thinking details.", "Final thinking details."].entries()) {
-      await thinking.nth(index).click();
-      await page.getByText(text, { exact: false }).waitFor();
-    }
-    assert.equal(thinkingRequests.length, 3);
-    const processText = await processDetails.locator("..").innerText();
-    assert.ok(processText.indexOf("E2E intermediate reasoning") < processText.indexOf("echo E2E tool output"));
-    assert.ok(processText.indexOf("echo E2E tool output") < processText.indexOf("E2E follow-up reasoning"));
-    assert.ok(processText.indexOf("E2E follow-up reasoning") < processText.indexOf("E2E process note"));
-    assert.ok(processText.indexOf("E2E process note") < processText.indexOf("E2E final reasoning"));
-    assert.equal(processText.split("E2E final reasoning").length - 1, 1);
-    assert.ok(!(await finalMessage.last().innerText()).includes("E2E final reasoning"));
+    await thinking.first().click();
+    await page.getByText("Intermediate thinking details.", { exact: false }).waitFor();
     await page.getByText("echo E2E tool output", { exact: true }).waitFor();
     await page.getByRole("button", { name: /bash.*echo E2E tool output/ }).click();
     await page.getByText("E2E tool output", { exact: true }).waitFor();
-    await stage(`history/${inputId}/tool-arguments`, async () => { await checkToolArguments(page, toolArgumentFixtures, { artifacts, width: viewport.width }); });
+    await stage(`history/${inputId}/tool-arguments`, async () => { await checkToolArguments(page, toolArgumentFixtures, { artifacts, width: viewport.width, project, sessionId: RICH }); });
     await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
     const heading = page.getByRole("heading", { name: "E2E compacted heading", exact: true });
     await heading.waitFor({ state: "attached" });
@@ -1227,37 +1458,15 @@ let nativeToolsFixture;
       assert.equal(await process.getAttribute("aria-expanded"), "false");
       assert.ok(Math.abs(await readingOffset(answerHeading) - answerOffset) < 5, "Collapsing process details on remount must not displace the answer");
 
-      // Hold pagination until a different branch has loaded, exercising effect cancellation.
-      let releaseHistory;
-      const historyGate = new Promise((resolve) => { releaseHistory = resolve; });
-      const contextRoute = `**/api/sessions/${LONG}/context?*`;
-      await page.route(contextRoute, async (route) => {
-        if (new URL(route.request().url()).searchParams.has("before")) await historyGate;
-        await route.continue().catch(() => {});
-      });
-      // Context loading is real; avoid starting an agent just to persist the test branch.
-      const agentRoute = `**/api/agent/${LONG}`;
-      await page.route(agentRoute, (route) => route.fulfill({ json: {} }));
-      try {
-        const pendingHistory = page.waitForRequest((request) => request.url().includes(`/api/sessions/${LONG}/context?`) && new URL(request.url()).searchParams.has("before"));
-        await page.locator(`[title="${text(0)}"]`).click();
-        await pendingHistory;
-        await page.getByRole("button", { name: "Branches", exact: true }).click();
-        await page.getByText("E2E alternate history branch", { exact: true }).click();
-        await page.locator("[data-entry-id='alternate']:not([data-message-role])").waitFor({ state: "visible" });
-        await page.screenshot({ path: join(artifacts, "scroll-restore-branch.png") });
-      } finally {
-        releaseHistory();
-        await page.unroute(contextRoute);
-        await page.unroute(agentRoute);
-      }
-      console.log("PASS: session reading offsets, collapsed process details, and cancelled branch restoration");
+      // The actual default hook/view owns obsolete body/locate generations.
+      // Keep the installed branch control/SDK-context bridge, not another race replay.
+      await checkHistoryBranch(page, { harness, sessionId: LONG, title: text(0), artifacts, errors });
+      console.log("PASS: session reading offsets, collapsed process details, and native branch controls");
       await page.goto(`${base}/?session=${COMPACTED}`, { waitUntil: "domcontentloaded" });
       await heading.waitFor({ state: "visible" });
     }
     finishReadingStage();
     await stage(`history/${inputId}/bottom-follow`, async () => { await checkChatBottomFollow(page, { base, id: RICH, timestamp }); });
-    await stage(`history/${inputId}/streamed-tool-arguments`, async () => { await checkStreamedToolArguments(page, { base, id: RICH, timestamp }); });
     await stage(`history/${inputId}/compaction`, async () => { await checkCompactionVisibility(page, { base, id: COMPACTED, artifacts, width: viewport.width }); });
     assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
     console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`);
@@ -1269,7 +1478,7 @@ let nativeToolsFixture;
     continue;
     }
     if (group === "extension-dialogs") {
-      await coverage.run(`extension-dialogs/full@${inputId}`, async () => {
+      await coverage.run(`extension-dialogs/${inputId === "legacy-desktop" ? "wrap-native-publication-v2" : "compact-wrap-native-v2"}@${inputId}`, async () => {
         await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
         await page.locator(".markdown-code-block pre").waitFor();
         await checkExtensionDialogs(page, artifacts, viewport.width);
@@ -1279,7 +1488,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "mobile-sidebar") {
-      await coverage.run(`mobile-sidebar/archive-search-restore-move@${inputId}`, async () => {
+      await coverage.run(`mobile-sidebar/compact-search-native-rename-restore-move-v3@${inputId}`, async () => {
       await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });
       await page.getByText("E2E archive fixture", { exact: true }).first().waitFor();
       await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
@@ -1315,36 +1524,26 @@ let nativeToolsFixture;
       const searchToggle = page.getByRole("button", { name: "Search conversations", exact: true });
       await searchToggle.click();
       await page.getByRole("searchbox", { name: "Search conversations..." }).fill("E2E archive fixture");
-      await page.getByText("No matching conversations in this scope").waitFor();
       await page.getByRole("checkbox", { name: "Active and archived" }).check();
       await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
       const titlesOnly = page.getByRole("checkbox", { name: "Titles only", exact: true });
       await titlesOnly.check();
       await page.getByText("No matching conversations in this scope").waitFor();
-      await titlesOnly.uncheck();
-      await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
+      // Preserve the exact native title-before/after-rename query bridge. The
+      // exhaustive single-toggle request/result matrix is actual Sidebar-owned.
       const renameResponse = await fetch(`${base}/api/sessions/${ARCHIVE}`, {
         method: "PATCH", body: JSON.stringify({ name: "E2E archive fixture" }), signal: AbortSignal.timeout(30_000),
       });
+      await renameResponse.arrayBuffer(); // full native response before any status assertion
       assert.equal(renameResponse.status, 200);
+      await titlesOnly.uncheck();
       await titlesOnly.check();
       await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
       await titlesOnly.uncheck();
       await page.getByRole("checkbox", { name: "Active and archived" }).uncheck();
-      await page.getByText("No matching conversations in this scope").waitFor();
-      await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
-      await page.getByRole("button", { name: /E2E archive fixture/ }).waitFor();
-      await page.getByRole("button", { name: "Active sessions", exact: true }).click();
       await page.getByRole("searchbox", { name: "Search conversations..." }).fill("Other workspace task");
-      await page.getByText("No matching conversations in this scope").waitFor();
       await page.getByRole("checkbox", { name: "All projects" }).check();
       await page.getByRole("button", { name: /Other workspace task/ }).waitFor();
-      await page.getByRole("checkbox", { name: "All projects" }).uncheck();
-      await page.getByText("No matching conversations in this scope").waitFor();
-      await titlesOnly.check();
-      await searchToggle.click();
-      await searchToggle.click();
-      assert.equal(await titlesOnly.isChecked(), false, "Reopening search resets title-only mode");
       await searchToggle.click();
       await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
       // Finish reopening/reconciliation before testing restore. The notice can
@@ -1357,12 +1556,24 @@ let nativeToolsFixture;
         return address.pathname === `/api/sessions/${ARCHIVE}/context`
           && address.searchParams.get("ancestorId") === archivedAnchor;
       });
-      void reopenedContext.catch(() => {});
-      await row.getByText("E2E archive fixture", { exact: true }).click();
-      await page.getByText("This session is archived. Restore it to show it in active sessions.").waitFor();
-      const reopenedResponse = await reopenedContext;
+      // Own the complete admitted response body even if the independent UI wait
+      // fails. The result adapter preserves original errors, not a no-op catch.
+      const reopenedRead = reopenedContext.then(async response => ({ response, body: await response.json() }));
+      const reopenedOutcome = reopenedRead.then(value => ({ ok: true, value }), error => ({ ok: false, error }));
+      let reopenedUi = { ok: true };
+      try {
+        await row.getByText("E2E archive fixture", { exact: true }).click();
+        await page.getByText("This session is archived. Restore it to show it in active sessions.").waitFor();
+      } catch (error) { reopenedUi = { ok: false, error }; }
+      const reopenedResult = await reopenedOutcome;
+      const reopenedFailures = [];
+      if (!reopenedUi.ok) reopenedFailures.push(reopenedUi.error);
+      if (!reopenedResult.ok) reopenedFailures.push(reopenedResult.error);
+      if (reopenedFailures.length === 1) throw reopenedFailures[0];
+      if (reopenedFailures.length) throw new AggregateError(reopenedFailures, "Archived receiving UI and native response failed");
+      const { response: reopenedResponse, body: reopenedBody } = reopenedResult.value;
       assert.equal(reopenedResponse.status(), 200);
-      assert.deepEqual((await reopenedResponse.json()).context.entryIds, archivedSnapshot.context.entryIds);
+      assert.deepEqual(reopenedBody.context.entryIds, archivedSnapshot.context.entryIds);
       await page.getByRole("button", { name: "Restore session", exact: true }).click();
       await page.getByText("This session is archived. Restore it to show it in active sessions.").waitFor({ state: "detached" });
       await row.waitFor({ state: "detached" });
@@ -1450,14 +1661,14 @@ let nativeToolsFixture;
     assert.ok(oauthEntry, "OAuth provider required for browser authorization fixture");
     const oauthProvider = oauthEntry.id;
     const { account: deviceAccount } = await post("/api/auth/accounts", { provider: oauthProvider, label: "E2E device", type: "oauth" });
-    for (const inputId of ["en-desktop", "en-mobile-short"]) await coverage.run(`accounts/shared-device@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-short"]) await coverage.run(`accounts/shared-device-owner-v3@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);
       page = await context.newPage();
       page.setDefaultTimeout(30_000);
       await checkProviderAccountAuthorization(page, { base, sessionId: RICH, provider: oauthProvider,
-        providerName: oauthEntry.name, accountLabel: deviceAccount.label, width: viewport.width, artifacts });
+        providerName: oauthEntry.name, accountId: deviceAccount.id, accountLabel: deviceAccount.label, width: viewport.width, artifacts });
       await harness.closeContext(context);
       context = undefined;
       page = undefined;

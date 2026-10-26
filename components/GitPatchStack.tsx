@@ -11,11 +11,16 @@ import type { DiffContext } from "@/lib/diff-context";
 import type { GitDiffPreferences } from "@/lib/git-diff-preferences";
 
 type ContextLoader = (id: string, signal: AbortSignal) => Promise<DiffContext>;
-function ExpandedPatch({ file, load, loadContext, reviews, before, after, view, wrap, immediate }: GitDiffPreferences & {
+function ExpandedPatch({ file, load, loadContext, reviews, before, after, view, wrap, immediate, onReadWork }: GitDiffPreferences & {
   file: DisplayFile; load?: (id: string, signal: AbortSignal) => Promise<DisplayPatch>;
   loadContext?: ContextLoader; reviews: Map<string, DiffReviewModel>;
   before: string; after: string; immediate: boolean;
+  onReadWork?: (work: Promise<void>) => void;
 }) {
+  // Observation only: forward the original promise; its result is not consumed.
+  const readObserver = useRef(onReadWork);
+  readObserver.current = onReadWork;
+  const observeRead = useCallback((work: Promise<unknown>) => { readObserver.current?.(work as Promise<void>); }, []);
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(immediate);
   const [value, setValue] = useState(file.value);
@@ -32,11 +37,12 @@ function ExpandedPatch({ file, load, loadContext, reviews, before, after, view, 
   useEffect(() => {
     if (!visible || file.value || !load) return;
     const controller = new AbortController(); setError(null);
-    void load(file.id, controller.signal).then((patch) => {
+    const work = load(file.id, controller.signal).then((patch) => {
       if (!controller.signal.aborted) setValue(patch);
     }, (cause) => {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Patch unavailable");
     });
+    readObserver.current?.(work);
     return () => controller.abort();
   }, [file, load, visible, retry]);
   const review = useMemo(() => {
@@ -50,21 +56,24 @@ function ExpandedPatch({ file, load, loadContext, reviews, before, after, view, 
     {!visible ? <p className="py-3 text-xs text-text-muted">Diff renders when scrolled into view.</p>
       : error ? <div role="alert" className="py-2 text-xs text-text-muted">{error} <button type="button" className="text-accent underline" onClick={() => setRetry((value) => value + 1)}>Retry</button></div>
         : !value ? <p role="status" className="py-3 text-xs text-text-muted">Loading patch…</p>
-          : <CommittedPatchDiff {...value} before={before} after={after} view={view} wrap={wrap} reviewModel={review} loadContext={loadContext ? context : undefined} />}
+          : <CommittedPatchDiff {...value} before={before} after={after} view={view} wrap={wrap} reviewModel={review} loadContext={loadContext ? context : undefined} onReadWork={observeRead} />}
   </div>;
 }
 
 /** Expanding or reading a file never changes the operation's approval scope. */
-export function GitPatchStack({ files, before, after, loadPatch, loadContext, completePatch, navigation = false }: {
+export function GitPatchStack({ files, before, after, loadPatch, loadContext, completePatch, navigation = false, onReadWork }: {
   files: DisplayFile[]; before: string; after: string; navigation?: boolean;
   loadPatch?: (id: string, signal: AbortSignal) => Promise<DisplayPatch>;
   loadContext?: ContextLoader; completePatch?: string;
+  onReadWork?: (work: Promise<void>) => void;
 }) {
   const [expanded, setExpanded] = useState(() => new Set(files[0] ? [files[0].id] : []));
   const { view, wrap, setPreferences } = useGitDiffPreferences();
   const reviews = useRef(new Map<string, DiffReviewModel>());
-  const load = useMemo(() => loadPatch ? createPatchLoader(loadPatch) : undefined, [loadPatch]);
-  const context = useMemo(() => loadContext ? createPatchLoader(loadContext) : undefined, [loadContext]);
+  const readObserver = useRef(onReadWork);
+  readObserver.current = onReadWork;
+  const load = useMemo(() => loadPatch ? createPatchLoader(loadPatch, 3, work => readObserver.current?.(work)) : undefined, [loadPatch]);
+  const context = useMemo(() => loadContext ? createPatchLoader(loadContext, 3, work => readObserver.current?.(work)) : undefined, [loadContext]);
   const totals = files.every((file) => file.additions !== undefined && file.deletions !== undefined)
     ? files.reduce((sum, file) => ({ additions: sum.additions + file.additions!, deletions: sum.deletions + file.deletions! }), { additions: 0, deletions: 0 }) : null;
   if (navigation) return <><ReviewFileBrowser files={files.map((file) => ({ id: file.id,
@@ -75,7 +84,7 @@ export function GitPatchStack({ files, before, after, loadPatch, loadContext, co
       return <section aria-label={`File changes: ${file.path}`}>
         <p className="text-xs text-text-muted">{file.status}</p>
         <ExpandedPatch key={selected.id} file={file} load={load} loadContext={context} reviews={reviews.current}
-          before={before} after={after} {...preferences} immediate />
+          before={before} after={after} {...preferences} immediate onReadWork={onReadWork} />
       </section>;
     }}
   </ReviewFileBrowser>
@@ -103,7 +112,7 @@ export function GitPatchStack({ files, before, after, loadPatch, loadContext, co
           {file.additions !== undefined && <span className="shrink-0 text-text-muted">+{file.additions} −{file.deletions}</span>}
         </button>
         {expanded.has(file.id) && <ExpandedPatch file={file} load={load} loadContext={context} reviews={reviews.current}
-          before={before} after={after} view={view} wrap={wrap} immediate={index === 0} />}
+          before={before} after={after} view={view} wrap={wrap} immediate={index === 0} onReadWork={onReadWork} />}
       </section>)}
     </div>
     {completePatch !== undefined && <details className="mt-3 text-xs text-text-muted">
@@ -113,8 +122,9 @@ export function GitPatchStack({ files, before, after, loadPatch, loadContext, co
   </section>;
 }
 
-export function SuppliedPatchStack({ patch, before, after, contextHandle, pluginId, navigation = false }: {
+export function SuppliedPatchStack({ patch, before, after, contextHandle, pluginId, navigation = false, onReadWork }: {
   patch: string; before: string; after: string; contextHandle?: string; pluginId?: string; navigation?: boolean;
+  onReadWork?: (work: Promise<void>) => void;
 }) {
   const files = useMemo(() => { try { return splitGitPatch(patch); } catch { return null; } }, [patch]);
   const loadContext = useCallback(async (id: string, signal: AbortSignal): Promise<DiffContext> => {
@@ -124,7 +134,7 @@ export function SuppliedPatchStack({ patch, before, after, contextHandle, plugin
     return body;
   }, [contextHandle, pluginId]);
   return files ? <GitPatchStack key={`${contextHandle ?? "patch"}:${patch}`} files={files} before={before} after={after} completePatch={patch} navigation={navigation}
-    loadContext={contextHandle && pluginId ? loadContext : undefined} />
+    loadContext={contextHandle && pluginId ? loadContext : undefined} onReadWork={onReadWork} />
     : <div className="min-w-0 text-xs">
       <p className="mb-2 text-text-muted">The patch could not be separated into files; showing the complete raw patch.</p>
       <pre role="region" aria-label="Raw patch" className="overflow-x-auto font-mono">{patch}</pre>

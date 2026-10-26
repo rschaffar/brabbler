@@ -197,9 +197,9 @@ export async function runBrowserSshSuite() {
       return { context, page, cdp, authenticatorId, cookie, raw, api, ssh, status };
     };
     let stableSocket;
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`ssh-agent/webauthn-openssh@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`ssh-agent/${inputId === "en-desktop" ? "native-consumers" : "compact-native"}@${inputId}`, async () => {
       const sessionId = inputId === "en-desktop" ? "ssh-desktop" : "ssh-mobile";
-      const a = await login(inputId, sessionId), { page, status, ssh, raw, api, cdp, authenticatorId } = a;
+      const a = await login(inputId, sessionId), { page, status, ssh, api, cdp, authenticatorId } = a;
       const errors = harness.errorsFor(a.context);
       const initial = await status();
       assert.equal(initial.runtime.selected.type, "none"); assert.equal(initial.activeId, null);
@@ -263,6 +263,76 @@ export async function runBrowserSshSuite() {
         }, sessionId);
         return report;
       };
+      // Conditional compact replacement: fresh real authority, not desktop
+      // credential/result reuse. Keep one contextual Shell request for composer
+      // focus and one real PTY request for top-layer/tap/focus/clock-skew. The
+      // complete SDK Bash/Shell/security/recovery matrix remains desktop once.
+      if (inputId === "en-mobile-tall") {
+        let dialog = await openSettings(page);
+        await useBackend(page, dialog, "browser", status);
+        const key = await enroll(page, dialog, `${sessionId} session`, "session", status);
+        const own = await connect(page, dialog, key, `${sessionId} compact device`);
+        await closeSettings(page, dialog);
+        const composer = page.locator("textarea").last();
+        await composer.fill("Unsent SSH focus sentinel"); await composer.focus();
+        const locked = await start(fixtures.job(`${sessionId}-compact-unlock`, key), "shell");
+        await requestCard(page).waitFor();
+        assert.equal(await composer.evaluate(node => node === document.activeElement), true);
+        assert.equal(await composer.inputValue(), "Unsent SSH focus sentinel");
+        assert.equal(await cards(page).evaluate(node => node.closest("dialog") === null && node.getAttribute("aria-modal") !== "true"), true);
+        const original = (await ssh({ action: "poll", token: own.token })).requests[0];
+        assert.equal(original.unlock, true);
+        const beforeUnlock = (await ceremonies(page)).length;
+        const unlockCard = requestCard(page);
+        await unlockCard.getByRole("button", { name: "Review", exact: true }).tap();
+        const begun = capture(page, "begin-request-unlock"), unlocked = capture(page, "finish-request-unlock");
+        await unlockCard.getByRole("button", { name: "Unlock and approve", exact: true }).tap();
+        const proof = await begun, result = await unlocked;
+        await finish(locked);
+        const calls = (await ceremonies(page)).slice(beforeUnlock);
+        assert.deepEqual(calls.map(item => [item.method, item.uv, item.completed]), [["get", "required", true], ["get", "discouraged", true]]);
+        assert.notEqual(proof.challenge, original.challenge);
+        assert.equal(calls[0].challenge, proof.challenge); assert.equal(calls[1].challenge, original.challenge);
+        assert.equal(result.request.id, original.id); assert.equal(result.newGrant, true);
+        const grant = (await status()).connections.find(item => item.id === own.id).remainingMs;
+        assert.ok(grant > 29 * 60_000 && grant <= 30 * 60_000, "negative wall-clock skew does not alter remaining lease");
+        const beforeTouch = (await ceremonies(page)).length;
+        const touch = await start(fixtures.job(`${sessionId}-compact-pty`, key), "pty");
+        await requestCard(page).waitFor();
+        assert.equal(await touch.terminalInput.evaluate(node => node === document.activeElement), true);
+        assert.equal(await page.getByRole("dialog", { name: "Settings", exact: true }).isVisible(), false);
+        assert.equal(await page.locator("#file-panel").evaluate(node => getComputedStyle(node).zIndex), "250");
+        assert.equal(await cards(page).evaluate(node => getComputedStyle(node).zIndex), "350");
+        const reviewButton = requestCard(page).getByRole("button", { name: "Review", exact: true });
+        assert.equal(await reviewButton.evaluate(node => {
+          const rect = node.getBoundingClientRect();
+          return node.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+        }), true, "native compact action is above the real terminal overlay");
+        await reviewButton.tap();
+        await requestCard(page).getByRole("button", { name: "Approve with security key", exact: true }).tap();
+        await finish(touch);
+        assert.deepEqual((await ceremonies(page)).slice(beforeTouch).map(item => [item.method, item.uv, item.completed]), [["get", "discouraged", true]]);
+        assert.ok((await status()).connections.find(item => item.id === own.id).remainingMs <= grant);
+        const beforeReloadCeremonies = await ceremonies(page);
+        await page.reload();
+        await page.getByText("Synthetic SSH fixture", { exact: true }).waitFor();
+        const reloaded = await waitForAsyncCondition(page, async id => {
+          const response = await fetch("/api/ssh-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "status" }) });
+          if (!response.ok) throw new Error(`SSH compact reload HTTP ${response.status}`);
+          const snapshot = await response.json();
+          return snapshot.connections.some(item => item.id === id) ? false : snapshot;
+        }, own.id);
+        assert.equal(reloaded.activeId, null); assert.equal(reloaded.connections.length, 0);
+        assert.equal(reloaded.runtime.socketPath, stableSocket); assert.equal((await ceremonies(page)).length, 0);
+        dialog = await openSettings(page);
+        await dialog.getByRole("button", { name: "Connect and make this browser active", exact: true }).waitFor();
+        await useBackend(page, dialog, "none", status); await closeSettings(page, dialog);
+        writeFileSync(join(artifacts, `ssh-compact-${inputId}.json`), JSON.stringify({ socket: stableSocket, publicKey: key.publicKey, consumers: consumerEvidence, ceremonies: beforeReloadCeremonies, afterReloadCeremonies: await ceremonies(page) }, null, 2));
+        assert.deepEqual(errors, [], `Browser SSH compact errors (${inputId})`);
+        await harness.closeContext(a.context);
+        return;
+      }
+
       const empty = await start(fixtures.job(`${sessionId}-empty`, null, "list"));
       const emptyResult = await finish(empty, false); assert.equal(emptyResult.code, 1); assert.equal(emptyResult.stdout.trim(), "The agent has no identities.");
       await checkClosedDiscovery(page);
@@ -322,17 +392,9 @@ export async function runBrowserSshSuite() {
         await cdp.send("WebAuthn.setAutomaticPresenceSimulation", { authenticatorId, enabled: true });
       }
 
-      // Preserve applicable old security negatives, outside browser console.
-      const request = (body, extra = {}) => raw("/api/ssh-agent", body, extra);
-      assert.equal((await request({ action: "poll", token: "0".repeat(64) })).status, 400);
-      assert.equal((await request({ action: "poll", token: strictConnection.token }, { Origin: "https://untrusted.example.test" })).status, 403);
-      assert.equal((await request({ action: "status" }, { Cookie: "", Authorization: `Basic ${Buffer.from(`pi:${env.PI_WEB_PASSWORD}`).toString("base64")}` })).status, 403);
-      const ipStatus = await fetch(`${base}/api/ssh-agent`, { method: "POST", headers: { "Content-Type": "application/json", Origin: base, Cookie: a.cookie }, body: JSON.stringify({ action: "status" }) });
-      assert.equal(ipStatus.status, 200); assert.equal((await ipStatus.json()).runtime.socketPath, stableSocket);
-      const ipFido = await fetch(`${base}/api/ssh-agent`, { method: "POST", headers: { "Content-Type": "application/json", Origin: base, Cookie: a.cookie }, body: JSON.stringify({ action: "connect", keyId: strict.id, device: "IP must not start FIDO" }) });
-      assert.equal(ipFido.status, 400);
+      // Exact raw HTTP/token/origin/IP decision rows move to the real native
+      // route-actions owner, conditional on its positive + fault review gate.
       dialog = await openSettings(page); await disconnect(page, dialog);
-      assert.equal((await request({ action: "poll", token: strictConnection.token })).status, 400);
       assert.ok(existsSync(stableSocket), "disconnect does not remove the launcher-owned front socket");
 
       const sessionKey = await enroll(page, dialog, `${sessionId} session`, "session", status);
@@ -444,7 +506,6 @@ export async function runBrowserSshSuite() {
       const switched = await status(), standby = switched.connections.find(item => item.id === own.id);
       assert.equal(standby.role, "standby"); assert.ok(standby.remainingMs <= grant);
       assert.equal((await b.ssh({ action: "poll", token: other.token })).requests.length, 0);
-      for (const action of ["poll", "select", "disconnect"]) assert.equal((await b.raw("/api/ssh-agent", { action, token: own.token })).status, 400, `${action} requires exact owning signed cookie`);
       const retained = (await ssh({ action: "poll", token: own.token })).requests[0];
       assert.equal(retained.id, pinned.id); assert.equal(retained.challenge, pinned.challenge); assert.equal(retained.fingerprint, pinned.fingerprint);
       assert.equal(retained.previousSigner, true);

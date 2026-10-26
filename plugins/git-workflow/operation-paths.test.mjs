@@ -1,9 +1,10 @@
+import "../../lib/testing/client-native-boundary.fixture.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFile } from "node:fs/promises";
-import ts from "typescript";
 import { createJiti } from "jiti";
-const { operationMarkerPaths, OPERATION_MARKERS } = await createJiti(import.meta.url).import("./operation-paths.ts");
+const jiti = createJiti(import.meta.url, { fsCache: false });
+const { operationMarkerPaths, OPERATION_MARKERS } = await jiti.import("./operation-paths.ts");
+const { idle: validateIdle } = await jiti.import("./operation-idle.ts");
 
 for (const [name, prefix, ending] of [
   ["POSIX", "/fixture/repo/.git/", "\n"],
@@ -56,17 +57,14 @@ test("each checkpoint resolves fresh paths instead of caching a prior administra
 });
 
 async function productionIdle(git, index = ["H ordinary"]) {
-  const source = await readFile(new URL("./server.ts", import.meta.url), "utf8");
-  const begin = source.indexOf("async function assertIdle(");
-  const end = source.indexOf("async function worktrees(", begin);
-  assert.ok(begin >= 0 && end > begin);
-  const js = ts.transpileModule(source.slice(begin, end) + "\nreturn idle;",
-    { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   let indexReads = 0;
-  const idle = new Function("git", "existsSync", "toNativePath", "operationMarkerPaths", "OPERATION_MARKERS", "gitOutput", "records", js)(
-    git, () => false, (path) => path, (cwd) => operationMarkerPaths(cwd, git), OPERATION_MARKERS,
-    (_cwd, args) => { assert.deepEqual(args, ["ls-files", "-v", "-z"]); indexReads++; return index; },
-    async function* (entries) { yield* entries; });
+  const capabilities = {
+    git, existsSync: () => false, toNativePath: (path) => path,
+    operationMarkerPaths: (cwd) => operationMarkerPaths(cwd, git),
+    gitOutput: (_cwd, args) => { assert.deepEqual(args, ["ls-files", "-v", "-z"]); indexReads++; return index; },
+    records: async function* (entries) { yield* entries; },
+  };
+  const idle = cwd => validateIdle(cwd, capabilities);
   return { idle, indexReads: () => indexReads };
 }
 
@@ -148,3 +146,19 @@ for (const flag of ["a", "S"]) {
     assert.equal(indexReads(), 1);
   });
 }
+
+
+for (const marker of OPERATION_MARKERS) test(`production idle checks fresh native marker identity for ${marker} before config or index`, async () => {
+  const calls = [], inspected = [];
+  const capabilities = {
+    git: async (_cwd, args) => { calls.push(args); return markerOutput(args); },
+    operationMarkerPaths: cwd => operationMarkerPaths(cwd, capabilities.git),
+    toNativePath: path => { inspected.push(path); return path; },
+    existsSync: path => path === `/fixture/.git/${marker}`,
+    gitOutput: () => { throw new Error('index must not be read during a conflicting operation'); },
+    records: async function* () { throw new Error('index must not be decoded during a conflicting operation'); },
+  };
+  await assert.rejects(validateIdle('checkout', capabilities), new RegExp(`Conflicting Git operation: ${marker}`));
+  assert.equal(calls.length, 1); assert.equal(calls[0][0], 'rev-parse');
+  assert.deepEqual(inspected, OPERATION_MARKERS.slice(0, OPERATION_MARKERS.indexOf(marker) + 1).map(name => `/fixture/.git/${name}`));
+});

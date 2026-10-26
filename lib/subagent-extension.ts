@@ -66,6 +66,8 @@ export interface ResumeSubagentRequest {
 export interface SubagentExecution {
   run: SubagentRunInfo;
   completion: Promise<SubagentRunInfo>;
+  /** Complete queue/recovery work, distinct from durable result publication. */
+  readonly settled?: Promise<void>;
 }
 
 export interface SubagentExtensionRuntime {

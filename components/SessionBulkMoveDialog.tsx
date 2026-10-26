@@ -1,5 +1,6 @@
 "use client";
 
+import { useNavigationWork } from "@/lib/navigation-work";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { SessionMovePlan, SessionMovePreviewResponse } from "@/lib/session-worktrees-types";
@@ -18,6 +19,7 @@ export function SessionBulkMoveDialog({ request, projects, currentCwd, sourceUna
   onClose: () => void;
   onSettled: (movedIds: string[], failedIds: string[] | null, invalidatedIds: string[], destinationCwd: string) => Promise<void>;
 }) {
+  const work = useNavigationWork();
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -49,7 +51,7 @@ export function SessionBulkMoveDialog({ request, projects, currentCwd, sourceUna
     if (!request.missingOnly && !destination) return;
     const controller = new AbortController();
     setPlan(null); setError(null); setAlreadyThere(0);
-    void (async () => {
+    work.observe((async () => {
       try {
         const response = await fetch("/api/sessions/move", { method: "POST", signal: controller.signal,
           headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "preview", ...request,
@@ -59,10 +61,10 @@ export function SessionBulkMoveDialog({ request, projects, currentCwd, sourceUna
       } catch (cause) {
         if (!controller.signal.aborted) setError(describeError(cause));
       }
-    })();
+    })());
     return () => controller.abort();
-  }, [request, destination, attempt, describeError]);
-  const execute = async () => {
+  }, [request, destination, attempt, describeError, work]);
+  const execute = () => work.observe((async () => {
     if (!plan || operation.current) return;
     operation.current = true; setBusy(true); setError(null);
     let movedIds: string[] = [];
@@ -84,7 +86,7 @@ export function SessionBulkMoveDialog({ request, projects, currentCwd, sourceUna
       catch { setError(previous => [previous, t("sessionWorktrees.refreshFailed")].filter(Boolean).join(" ")); }
       operation.current = false; setBusy(false);
     }
-  };
+  })());
   return <dialog ref={dialog} aria-labelledby="bulk-move-title" className="w-[min(560px,calc(100vw-24px))] rounded-xl border border-border bg-bg p-0 text-text shadow-xl backdrop:bg-black/40"
     onCancel={event => { event.preventDefault(); if (!operation.current) onClose(); }}
     onKeyDown={event => event.stopPropagation()}>

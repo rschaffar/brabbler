@@ -2573,7 +2573,7 @@ function getRegistry(): Map<string, AgentSessionWrapper> {
   return globalThis.__piSessions;
 }
 
-function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
+export function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
   const registry = getRegistry();
   const sessionId = wrapper.sessionId;
   if (wrapper.sessionFile) cacheSessionPath(sessionId, wrapper.sessionFile);
@@ -2586,18 +2586,23 @@ function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
   if (!wrapper.isChatOnly()) wrapper.beginExtensionBinding();
 }
 
+export function registerSubagentSession(
+  inner: AgentSessionLike,
+  options?: { exactSystemPrompt?: string; chatOnly?: boolean },
+): void {
+  const wrapper = new AgentSessionWrapper(inner, {
+    ...(options?.exactSystemPrompt !== undefined
+      ? { exactSystemPrompt: () => options.exactSystemPrompt! }
+      : {}),
+    chatOnly: options?.chatOnly,
+    suppressCompletionNotifications: true,
+  });
+  registerRpcWrapper(wrapper);
+}
+
 const SUBAGENT_CONTROLLER = createSubagentController({
   getSession: (sessionId) => getRegistry().get(sessionId),
-  registerSession: (inner, options) => {
-    const wrapper = new AgentSessionWrapper(inner, {
-      ...(options?.exactSystemPrompt !== undefined
-        ? { exactSystemPrompt: () => options.exactSystemPrompt! }
-        : {}),
-      chatOnly: options?.chatOnly,
-      suppressCompletionNotifications: true,
-    });
-    registerRpcWrapper(wrapper);
-  },
+  registerSession: registerSubagentSession,
   reopenSession: async (sessionId, sessionFile) =>
     (await startRpcSession(sessionId, sessionFile, undefined)).session,
   resolveSessionPath,

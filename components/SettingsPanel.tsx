@@ -33,7 +33,7 @@ import { setupPushSubscription } from "@/lib/push-client";
 import { SkillsConfig } from "./SkillsConfig";
 import { AgentsConfig } from "./AgentsConfig";
 import { PluginsConfig } from "./PluginsConfig";
-import { ConfigButton, ConfigSwitch } from "./SettingsUi";
+import { ConfigButton, ConfigSwitch, useSettingsTask, useSettingsWork } from "./SettingsUi";
 import { ProjectPrivacySettings } from "./ProjectPrivacySettings";
 import type { ProjectPrivacy } from "@/hooks/useHiddenProjects";
 import type { SessionInfo } from "@/lib/types";
@@ -76,7 +76,9 @@ export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: {
   return <svg {...common}><path d="M9 7V2M15 7V2M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0ZM12 19v3" /></svg>;
 }
 
-function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onManageTrust, quoteSelectionEnabled, onQuoteSelectionChange, sessions, privacy }: Pick<Props, "cwd" | "sessionId" | "onSessionReloaded" | "trustStatus" | "onManageTrust" | "quoteSelectionEnabled" | "onQuoteSelectionChange" | "sessions" | "privacy">) {
+export function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onManageTrust, quoteSelectionEnabled, onQuoteSelectionChange, sessions, privacy }: Pick<Props, "cwd" | "sessionId" | "onSessionReloaded" | "trustStatus" | "onManageTrust" | "quoteSelectionEnabled" | "onQuoteSelectionChange" | "sessions" | "privacy">) {
+  const task = useSettingsTask();
+  const observe = useSettingsWork();
   const { locale, t } = useI18n();
   const { preference, setThemePreference } = useTheme();
   const { width: chatContentWidth, setWidth: setChatContentWidth, fullWidth, setFullWidth, fontSize, setFontSize } = useChatAppearance();
@@ -99,13 +101,13 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
 
   useEffect(() => {
     setThinkingExpanded(isThinkingExpandedByDefault());
-    void fetch("/api/web-auth")
+    void observe("general.webAuth", fetch("/api/web-auth")
       .then((response) => response.ok ? response.json() : null)
       .then((data: { enabled?: boolean } | null) => setWebAuthEnabled(data?.enabled === true))
-      .catch(() => {});
-  }, []);
+      .catch(() => {}));
+  }, [observe]);
 
-  const logOut = async () => {
+  const logOut = task("general.logOut", async () => {
     setLoggingOut(true);
     setLogoutError("");
     try {
@@ -117,11 +119,11 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
     } finally {
       setLoggingOut(false);
     }
-  };
+  });
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/tools/settings")
+    void observe("general.shell", fetch("/api/tools/settings")
       .then(async (response) => {
         const data = await response.json() as ShellToolSettingsResponse & { error?: string };
         if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
@@ -129,13 +131,13 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
       })
       .catch((cause) => {
         if (!cancelled) setShellError(cause instanceof Error ? cause.message : String(cause));
-      });
+      }));
     return () => { cancelled = true; };
-  }, []);
+  }, [observe]);
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/sessions/title-language")
+    void observe("general.titleLanguage", fetch("/api/sessions/title-language")
       .then(async (response) => {
         const data = await response.json() as { language?: TitleLanguage; error?: string };
         if (!response.ok || !data.language || !TITLE_LANGUAGES.includes(data.language)) {
@@ -145,13 +147,13 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
       })
       .catch((cause) => {
         if (!cancelled) setTitleLanguageError(cause instanceof Error ? cause.message : String(cause));
-      });
+      }));
     return () => { cancelled = true; };
-  }, []);
+  }, [observe]);
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.allSettled([
+    void observe("general.titleModels", Promise.allSettled([
       fetch("/api/sessions/title-model").then(async (response) => {
         const data = await response.json() as { model?: TitleModelSelection | null; error?: string };
         if (!response.ok || data.model === undefined) throw new Error(data.error ?? `HTTP ${response.status}`);
@@ -169,11 +171,11 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
       if (catalog.status === "fulfilled") setTitleModels(catalog.value);
       const cause = setting.status === "rejected" ? setting.reason : catalog.status === "rejected" ? catalog.reason : null;
       setTitleModelError(cause ? cause instanceof Error ? cause.message : String(cause) : null);
-    });
+    }));
     return () => { cancelled = true; };
-  }, [cwd, sessionId]);
+  }, [cwd, sessionId, observe]);
 
-  const updateTitleModel = async (model: TitleModelSelection | null) => {
+  const updateTitleModel = task("general.updateTitleModel", async (model: TitleModelSelection | null) => {
     if (titleModelSaving) return;
     setTitleModelSaving(true);
     setTitleModelError(null);
@@ -191,9 +193,9 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
     } finally {
       setTitleModelSaving(false);
     }
-  };
+  });
 
-  const updateTitleLanguage = async (language: TitleLanguage) => {
+  const updateTitleLanguage = task("general.updateTitleLanguage", async (language: TitleLanguage) => {
     if (titleLanguageSaving) return;
     setTitleLanguageSaving(true);
     setTitleLanguageError(null);
@@ -211,9 +213,9 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
     } finally {
       setTitleLanguageSaving(false);
     }
-  };
+  });
 
-  const togglePowerShell = async (enabled: boolean) => {
+  const togglePowerShell = task("general.togglePowerShell", async (enabled: boolean) => {
     setShellSaving(true);
     setShellError(null);
     try {
@@ -234,9 +236,9 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
     } finally {
       setShellSaving(false);
     }
-  };
+  });
 
-  const registerPush = async () => {
+  const registerPush = task("general.registerPush", async () => {
     if (pushRegistering) return;
     setPushRegistering(true);
     setPushStatus(null);
@@ -256,7 +258,7 @@ function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus, onMan
     } finally {
       setPushRegistering(false);
     }
-  };
+  });
 
   return (
     <div className="settings-general">

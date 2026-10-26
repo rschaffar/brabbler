@@ -150,6 +150,8 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   const code = panel.getByRole("tabpanel", { name: "Pane 2 — split-source-1.ts", exact: true });
   await code.getByRole("button", { name: "Edit", exact: true }).click();
   await code.getByRole("textbox", { name: "Edit", exact: true }).fill("// a retained workspace draft\n");
+  const dirtyCodeHost = await code.elementHandle();
+  const dirtyEditor = await code.getByRole("textbox", { name: "Edit", exact: true }).elementHandle();
   await guide.getByRole("link", { name: "Source 1", exact: true }).click({ button: "right" });
   await menu.getByRole("button", { name: /^Open in Pane 3/ }).click();
   const duplicate = panel.getByRole("tabpanel", { name: "Pane 3 — split-source-1.ts", exact: true });
@@ -175,6 +177,10 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   await panel.getByText(/^Parked Files ·/).waitFor();
   assert.equal(new URL(page.url()).searchParams.get("session"), fixture.peerSessionId, "Go to editor must not switch chat");
   assert.equal(await code.getByRole("textbox", { name: "Edit", exact: true }).inputValue(), "// a retained workspace draft\n");
+  assert.equal(await code.evaluate((node, retained) => node.isConnected && node === retained, dirtyCodeHost), true,
+    "parked Files retains the original dirty code host");
+  assert.equal(await code.getByRole("textbox", { name: "Edit", exact: true }).evaluate((node, retained) => node.isConnected && node === retained, dirtyEditor), true,
+    "parked Files retains the original dirty editor");
   await panel.getByRole("button", { name: "Return to current session Files", exact: true }).click();
   await panel.getByRole("tabpanel", { name: "Pane 1 — split-source-1.ts", exact: true }).getByRole("button", { name: "Go to editor", exact: true }).waitFor();
   assert.equal(new URL(page.url()).searchParams.get("session"), fixture.peerSessionId);
@@ -182,6 +188,10 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   await panel.getByText(/^Parked Files ·/).waitFor();
   assert.equal(new URL(page.url()).searchParams.get("session"), fixture.peerSessionId, "direct parked-editor recovery also leaves chat unchanged");
   assert.equal(await code.getByRole("textbox", { name: "Edit", exact: true }).inputValue(), "// a retained workspace draft\n");
+  assert.equal(await code.evaluate((node, retained) => node.isConnected && node === retained, dirtyCodeHost), true,
+    "Unsaved editors recovery retains the original dirty code host");
+  assert.equal(await code.getByRole("textbox", { name: "Edit", exact: true }).evaluate((node, retained) => node.isConnected && node === retained, dirtyEditor), true,
+    "Unsaved editors recovery retains the original dirty editor");
   await panel.getByRole("button", { name: "Return to current session Files", exact: true }).click();
   await panel.getByRole("button", { name: "Go to editor", exact: true }).waitFor();
   await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
@@ -195,6 +205,10 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   // Clean parked readers may unmount; compare live identity only across subsequent layout changes.
   guideNode = await guide.elementHandle();
   assert.equal(await code.getByRole("textbox", { name: "Edit", exact: true }).inputValue(), "// a retained workspace draft\n");
+  assert.equal(await code.evaluate((node, retained) => node.isConnected && node === retained, dirtyCodeHost), true,
+    "returning to the owner session retains the original dirty code host");
+  assert.equal(await code.getByRole("textbox", { name: "Edit", exact: true }).evaluate((node, retained) => node.isConnected && node === retained, dirtyEditor), true,
+    "returning to the owner session retains the original dirty editor");
   const sourceFile = join(dirname(fixture.code), "split-source-1.ts"), original = readFileSync(sourceFile, "utf8");
   let releaseSave, saveStarted;
   const gate = new Promise(resolve => { releaseSave = resolve; });

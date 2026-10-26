@@ -1,158 +1,168 @@
+import '../lib/testing/client-native-boundary.fixture.mjs';
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { Script } from "node:vm";
-import ts from "typescript";
-
-const source = ts.createSourceFile(
-  "useAgentSession.ts",
-  await readFile(new URL("./useAgentSession.ts", import.meta.url), "utf8"),
-  ts.ScriptTarget.Latest,
-  true,
-);
-const nodes = [];
-function visit(node) {
-  nodes.push(node);
-  ts.forEachChild(node, visit);
-}
-visit(source);
-const loader = nodes.find((node) => ts.isVariableDeclaration(node) && node.name.getText(source) === "loadModels");
-const schedule = nodes.find((node) => ts.isVariableDeclaration(node) && node.name.getText(source) === "MODELS_RETRY_DELAYS_MS");
-const effect = nodes.find((node) => ts.isCallExpression(node)
-  && node.expression.getText(source) === "useEffect"
-  && node.arguments[1]?.getText(source) === "[loadModels, modelsRefreshKey]");
-const retry = effect.arguments[0].body.statements.find(ts.isExpressionStatement).expression;
-function script(text) {
-  return new Script(ts.transpileModule(text, { compilerOptions: { target: ts.ScriptTarget.ESNext } }).outputText);
-}
-const loadScript = script(`(${loader.initializer.arguments[0].getText(source)})`);
-const retryScript = script(retry.getText(source));
-
-function setup(fetchImpl) {
-  const writes = [];
-  const delays = [];
-  const context = {
-    Error, DOMException, URLSearchParams,
-    controller: new AbortController(),
-    newSessionCwd: "/project", session: null, isNew: true, historyOnly: false,
-    sessionIdRef: { current: null }, newSessionAccountsRef: { current: null }, thinkingLevelOverrideRef: { current: null },
-    thinkingLevelPinsRef: { current: {} }, defaultThinkingLevelRef: { current: null },
-    modelsRequestVersionRef: { current: 0 }, modelSelectionVersionRef: { current: 0 }, sessionHookMountedRef: { current: true },
-    asConcreteThinkingLevel: (value) => (!value || value === "auto" ? null : value),
-    fetch: fetchImpl,
-    MODELS_RETRY_DELAYS_MS: script(schedule.initializer.getText(source)).runInNewContext(),
-    delay: async (ms) => { delays.push(ms); },
-  };
-  for (const name of ["ModelError", "ModelNames", "ModelScopeWarnings", "ModelThinkingLevels", "ModelThinkingLevelMaps", "ModelList", "NewSessionDefaultModel", "NewSessionDefaultThinkingLevel"]) {
-    context[`set${name}`] = (value) => writes.push([name, value]);
-  }
-  context.loadModels = loadScript.runInNewContext(context);
-  return { context, writes, delays, run: () => retryScript.runInNewContext(context) };
+import { act } from "react";
+import { sessionFixture, models, command, provider, selected } from "./agent-session-mounted.fixture.mjs";
+import { policyClockFixture } from "./agent-session-clock.fixture.mjs";
+const options = { timeout: 10000 };
+const reads = f => f.requests.filter(models);
+const failureKinds = [
+  ["transport", 200, "Failed to fetch"], ["HTTP JSON", 403, "Access denied"],
+  ["HTTP non-JSON", 503, "Failed to load models (HTTP 503)"], ["invalid JSON", 200, "Invalid JSON"],
+];
+function fail(rule, kind) {
+  if (kind === "HTTP JSON") rule.resolve({ error: "Access denied" });
+  else rule.reject(kind === "transport" ? new TypeError("Failed to fetch") : new SyntaxError(kind === "invalid JSON" ? "Invalid JSON" : "not JSON"));
 }
 
-test("model-load failures stay visible through bounded retries and clear on recovery", async () => {
-  for (const [fetchImpl, expected] of [
-    [async () => { throw new TypeError("Failed to fetch"); }, "Failed to fetch"],
-    [async () => Response.json({ error: "Access denied" }, { status: 403 }), "Access denied"],
-    [async () => new Response("Unavailable", { status: 503 }), "Failed to load models (HTTP 503)"],
-    [async () => ({ ok: true, json: async () => { throw new SyntaxError("Invalid JSON"); } }), "Invalid JSON"],
-  ]) {
-    const state = setup(fetchImpl);
-    await state.run();
-    assert.deepEqual(state.delays, [2_000, 5_000, 10_000]);
-    assert.deepEqual(state.writes, Array.from({ length: 4 }, () => ["ModelError", expected]));
+for (const [kind, status, message] of failureKinds) test(`mounted metadata: ${kind} stays visible through exactly four bounded effect attempts`, options, async t => {
+  const time = policyClockFixture(), f = await sessionFixture(t, { policyTime: time });
+  await f.mountReady();
+  const before = reads(f).length;
+  const attempts = Array.from({ length: 4 }, () => f.hold(models, { stage: kind === "transport" ? "headers" : "body", status }));
+  await f.rerender({ ...f.mountedOptions, modelsRefreshKey: 1 });
+  for (let index = 0; index < 4; index++) {
+    await attempts[index].entered.promise;
+    const waiting = index < 3 ? time.nextDelay() : null;
+    await act(async () => { fail(attempts[index], kind); if (waiting) await waiting; else await f.maintenanceHandle(); });
+    assert.equal(f.current.modelError, message);
+    assert.equal(reads(f).length, before + index + 1);
+    if (index < 3) {
+      const ms = [2000, 5000, 10000][index];
+      assert.equal(time.delays[index].ms, ms);
+      await act(async () => { time.advance(ms - 1); });
+      assert.equal(reads(f).length, before + index + 1, "no early retry");
+      await act(async () => { time.advance(1); await attempts[index + 1].entered.promise; });
+    }
   }
-
-  let attempts = 0;
-  const recovered = setup(async () => {
-    if (++attempts === 1) throw new TypeError("Failed to fetch");
-    return Response.json({
-      models: { "custom:test": "Test" },
-      modelList: [{ provider: "custom", id: "test", name: "Test" }],
-      defaultModel: { provider: "custom", modelId: "test" },
-      thinkingLevelPins: { "custom/test": "high" },
-    });
-  });
-  await recovered.run();
-  assert.equal(attempts, 2);
-  assert.deepEqual(recovered.delays, [2_000]);
-  assert.deepEqual(recovered.writes.filter(([name]) => name === "ModelError"), [["ModelError", "Failed to fetch"], ["ModelError", null]]);
-  assert.ok(recovered.writes.some(([name, value]) => name === "ModelList" && value[0].id === "test"));
-  assert.ok(recovered.writes.some(([name, value]) => name === "NewSessionDefaultModel" && value.modelId === "test"));
-  assert.ok(recovered.writes.some(([name, value]) => name === "NewSessionDefaultThinkingLevel" && value === "high"));
+  assert.deepEqual(time.delays.map(item => item.ms), [2000, 5000, 10000]);
 });
 
-test("late model lists cannot overwrite newer thinking capabilities and mappings", async () => {
-  const old = Promise.withResolvers(); let count = 0;
-  const state = setup(async () => {
-    const request = ++count;
-    if (request === 1) await old.promise;
-    return Response.json(request === 1 ? { models: { old: "Old" }, thinkingLevels: { old: ["high"] } }
-      : { models: { fresh: "Fresh" }, thinkingLevels: { fresh: ["off"] }, thinkingLevelMaps: { fresh: { high: "low" } } });
-  });
-  const stale = state.context.loadModels(state.context.controller.signal);
-  await state.context.loadModels(state.context.controller.signal);
-  const writesBefore = state.writes.length; old.resolve(); await stale;
-  assert.equal(state.writes.length, writesBefore);
-  assert.ok(state.writes.some(([name, value]) => name === "ModelThinkingLevels" && value.fresh[0] === "off"));
-  assert.ok(state.writes.some(([name, value]) => name === "ModelThinkingLevelMaps" && value.fresh.high === "low"));
+test("mounted metadata: successful bounded retry clears error and installs actual model/default/pin projection", options, async t => {
+  const time = policyClockFixture(), f = await sessionFixture(t, { policyTime: time });
+  await f.mountReady();
+  const first = f.hold(models, { stage: "headers" }), second = f.hold(models);
+  await f.rerender({ ...f.mountedOptions, modelsRefreshKey: 1 });
+  const waiting = time.nextDelay();
+  await act(async () => { first.reject(new TypeError("Failed to fetch")); await waiting; });
+  assert.equal(f.current.modelError, "Failed to fetch");
+  await act(async () => { time.advance(2000); await second.entered.promise; });
+  const payload = { ...f.metadata(), defaultModel: selected("A"), thinkingLevelPins: { [`${provider}/A`]: "high" } };
+  await f.deliver(second, payload);
+  await f.settleMaintenance();
+  assert.equal(f.current.modelError, null);
+  assert.deepEqual(f.current.displayModel, selected("A"));
+  assert.equal(f.current.thinkingLevel, "high");
+  assert.equal(time.delays.length, 1);
 });
 
-test("model-selection, account/session changes and unmount invalidate pending model metadata reads", async () => {
-  for (const invalidate of [
-    context => { context.modelSelectionVersionRef.current++; },
-    context => { context.newSessionAccountsRef.current = { fixture: "another-account" }; },
-    context => { context.sessionIdRef.current = "another-session"; },
-    context => { context.sessionHookMountedRef.current = false; },
-  ]) {
-    const held = Promise.withResolvers();
-    const state = setup(async () => { await held.promise; return Response.json({ models: { stale: "Stale" } }); });
-    const reading = state.context.loadModels(state.context.controller.signal);
-    invalidate(state.context); held.resolve(); await reading;
-    assert.deepEqual(state.writes, []);
+for (const outcome of ["success", "error"]) test(`mounted metadata: old ${outcome} cannot overwrite newer capability/maps/error`, options, async t => {
+  const f = await sessionFixture(t);
+  await f.mountReady();
+  const old = f.hold(models, { status: outcome === "error" ? 403 : 200 });
+  const stale = await f.start("old metadata full handler", value => value.loadModels());
+  await old.entered.promise;
+  const fresh = f.hold(models), newer = await f.start("new metadata full handler", value => value.loadModels());
+  const payload = { ...f.metadata(), models: { fresh: "Fresh" }, thinkingLevels: { fresh: ["off"] }, thinkingLevelMaps: { fresh: { high: "low" } } };
+  await f.finish(newer, () => fresh.resolve(payload));
+  await f.finish(stale, () => old.resolve(outcome === "error" ? { error: "stale failure" } : { models: { old: "Old" } }));
+  assert.deepEqual(f.current.modelNames, { fresh: "Fresh" });
+  assert.deepEqual(f.current.modelThinkingLevels, { fresh: ["off"] });
+  assert.deepEqual(f.current.modelThinkingLevelMaps, { fresh: { high: "low" } });
+  assert.equal(f.current.modelError, null);
+});
+
+for (const identity of ["selection", "account A/B/A", "session recreation", "keyed unmount A/B/A"]) test(`mounted metadata: ${identity} invalidates a pending read without substituting private refs`, options, async t => {
+  const f = await sessionFixture(t);
+  await f.mountReady();
+  if (identity === "session recreation") {
+    await f.run("initialize lazy composer", value => value.loadSlashCommands());
+    await f.settleMaintenance();
   }
-});
-
-test("cancelling model loads prevents state writes and further retries", { timeout: 5_000 }, async () => {
-  for (const status of [200, 403]) {
-    const reading = Promise.withResolvers();
-    const state = setup(async (_url, { signal }) => ({
-      ok: status === 200, status,
-      json: () => new Promise((_resolve, reject) => {
-        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-        reading.resolve();
-      }),
-    }));
-    const completed = state.run();
-    await reading.promise;
-    state.context.controller.abort();
-    await completed;
-    assert.deepEqual(state.writes, []);
-    assert.deepEqual(state.delays, []);
+  if (identity === "account A/B/A") await f.run("initial account", value => value.handleSessionAccountChange(provider, "A", { [provider]: "A" }));
+  const priorNames = { ...f.current.modelNames }, priorMaps = { ...f.current.modelThinkingLevelMaps };
+  const old = f.hold(models), pending = await f.start("metadata bound to old identity", value => value.loadModels());
+  await old.entered.promise;
+  const outgoing = f.maintenanceHandle;
+  if (identity === "selection") await f.run("select while anonymous read pending", value => value.handleModelChange(provider, "A"));
+  if (identity === "account A/B/A") {
+    assert.deepEqual(JSON.parse(old.request.query.get("accounts")), { [provider]: "A" });
+    await f.run("account B", value => value.handleSessionAccountChange(provider, "B", { [provider]: "B" }));
+    await f.run("account A again", value => value.handleSessionAccountChange(provider, "A", { [provider]: "A" }));
   }
-
-  const late = setup(async (_url, { signal }) => ({
-    ok: true,
-    json: async () => {
-      late.context.controller.abort();
-      assert.equal(signal.aborted, true);
-      return { models: {}, modelList: [] };
-    },
-  }));
-  await late.run();
-  assert.deepEqual(late.writes, []);
-
-  let attempts = 0;
-  const waiting = setup(async () => { attempts++; throw new TypeError("Failed to fetch"); });
-  waiting.context.delay = async () => waiting.context.controller.abort();
-  await waiting.run();
-  assert.equal(attempts, 1);
+  if (identity === "session recreation") {
+    const sid = `${f.savedId}-replacement`; f.declareSession(sid);
+    const tools = f.hold(command("set_tools"));
+    const changing = await f.start("actual same-hook Tools recreation", value => value.handleToolPresetChange("none"));
+    await f.finish(changing, () => tools.resolve({ success: true, data: { sessionId: sid, recreated: true } }));
+    assert.equal(f.current.sessionIdRef.current, sid);
+    assert.equal(f.maintenanceHandle, outgoing);
+  }
+  if (identity === "keyed unmount A/B/A") {
+    await f.mountReady(f.newOptions({ newSessionDraftKey: `${f.draftKey}:B` }));
+    await f.mountReady(f.newOptions());
+  }
+  await f.finish(pending, () => old.resolve({ models: { stale: "Stale" }, thinkingLevelMaps: { stale: { high: "off" } } }));
+  await f.settleMaintenance(outgoing);
+  assert.deepEqual(f.current.modelNames, priorNames);
+  assert.deepEqual(f.current.modelThinkingLevelMaps, priorMaps);
 });
 
-test("history-only model loading performs no request, state writes or retries", async () => {
-  const state = setup(async () => assert.fail("history-only sessions must not probe models"));
-  state.context.historyOnly = true;
-  await state.run();
-  assert.deepEqual(state.writes, []);
-  assert.deepEqual(state.delays, []);
+for (const status of [200, 403]) test(`mounted metadata: effect abort at ${status} JSON stops publication and retries even when body ignores abort`, options, async t => {
+  const time = policyClockFixture(), f = await sessionFixture(t, { policyTime: time });
+  await f.mountReady();
+  const old = f.hold(models, { status });
+  await f.rerender({ ...f.mountedOptions, modelsRefreshKey: 1 });
+  await old.entered.promise;
+  const outgoing = f.maintenanceHandle, prior = { ...f.current.modelNames }, count = reads(f).length;
+  await f.unmount();
+  assert.equal(old.request.signal.aborted, true);
+  await f.deliver(old, status === 200 ? { models: { stale: "Stale" } } : { error: "Access denied" });
+  await f.settleMaintenance(outgoing);
+  assert.deepEqual(f.current.modelNames, prior);
+  assert.equal(time.delays.length, 0);
+  assert.equal(reads(f).length, count);
+});
+
+for (const status of [200, 403]) test(`mounted metadata: caller abort at ${status} body preserves mounted state/error`, options, async t => {
+  const time = policyClockFixture(), f = await sessionFixture(t, { policyTime: time }); await f.mountReady();
+  const controller = new AbortController(), prior = { ...f.current.modelNames };
+  const body = f.hold(models, { status, abort: "reject" });
+  const reading = await f.start("real caller-aborted metadata body", value => value.loadModels(controller.signal), { rejects: error => error.name === "AbortError" });
+  await body.entered.promise;
+  await f.finish(reading, () => controller.abort());
+  assert.equal(f.current.modelError, null); assert.deepEqual(f.current.modelNames, prior);
+  assert.equal(time.delays.length, 0);
+});
+
+test("mounted metadata: abort delivered during successful JSON is checked before installation", options, async t => {
+  const f = await sessionFixture(t); await f.mountReady();
+  const controller = new AbortController(), prior = { ...f.current.modelNames };
+  const body = f.hold(models, { beforeJson: () => controller.abort() });
+  const read = await f.start("caller-owned abort including loader catch", value => value.loadModels(controller.signal), { rejects: error => error.name === "AbortError" });
+  await f.finish(read, () => body.resolve({ models: { stale: "Stale" } }));
+  assert.equal(controller.signal.aborted, true);
+  assert.deepEqual(f.current.modelNames, prior);
+});
+
+test("mounted metadata: abort while actual retry delay is held prevents the next admission", options, async t => {
+  const time = policyClockFixture(), f = await sessionFixture(t, { policyTime: time });
+  await f.mountReady(); const body = f.hold(models, { stage: "headers" });
+  await f.rerender({ ...f.mountedOptions, modelsRefreshKey: 1 });
+  const waiting = time.nextDelay();
+  await act(async () => { body.reject(new TypeError("Failed to fetch")); await waiting; });
+  const count = reads(f).length, outgoing = f.maintenanceHandle;
+  await f.unmount();
+  await act(async () => { time.advance(2000); await outgoing(); });
+  assert.equal(reads(f).length, count);
+});
+
+test("mounted metadata: history-only session performs no model request, state writes or retry", options, async t => {
+  const time = policyClockFixture(), f = await sessionFixture(t, { policyTime: time });
+  const existing = f.existingOptions(); existing.session = { ...existing.session, cwdState: "missing" };
+  await f.mount(existing); await f.settleMaintenance();
+  const names = { ...f.current.modelNames };
+  await f.run("history-only public metadata", value => value.loadModels());
+  assert.equal(reads(f).length, 0); assert.equal(time.delays.length, 0);
+  assert.deepEqual(f.current.modelNames, names);
 });

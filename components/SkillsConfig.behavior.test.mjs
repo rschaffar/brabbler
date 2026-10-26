@@ -1,16 +1,18 @@
+import '../lib/testing/client-native-boundary.fixture.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { createJiti } from 'jiti';
-import { mount } from '../lib/testing/react.fixture.mjs';
-import { controlledLeafFetch, exactQuery, exactHeaders, buttonWithText, click } from '../lib/testing/leaf-controls.fixture.mjs';
+import { skillsLifetime } from './skills-lifetime.fixture.mjs';
+import { exactQuery, exactHeaders, buttonWithText, click } from '../lib/testing/leaf-controls.fixture.mjs';
 
 const jiti = createJiti(import.meta.url, { jsx: { runtime: 'automatic' }, tsconfigPaths: true, fsCache: false });
-async function production() {
+async function production(onWork) {
   const { SkillsConfig } = await jiti.import('./SkillsConfig.tsx');
   const { I18nProvider } = await jiti.import('../hooks/useI18n.tsx');
+  const { SettingsWorkContext } = await jiti.import('./SettingsUi.tsx');
   return function renderSkills() {
-    return createElement(I18nProvider, null, createElement(SkillsConfig, { cwd: '/fixture', embedded: true, onClose() {} }));
+    return createElement(I18nProvider, null, createElement(SettingsWorkContext.Provider, { value: onWork }, createElement(SkillsConfig, { cwd: '/fixture', embedded: true, onClose() {} })));
   };
 }
 const skill = (name, dormant) => ({ name, description: `${name} description`,
@@ -70,7 +72,7 @@ function assertInstructions(http, view, selectedSkill) {
 
 async function fixture(t) {
   let selectedFile = skills[1].filePath;
-  const http = controlledLeafFetch(t, request => {
+  const lifetime = skillsLifetime(t, request => {
     const method = request.options.method ?? 'GET';
     if (request.url.pathname === '/api/skills' && method === 'GET') {
       exactQuery(request, { cwd: '/fixture' });
@@ -98,12 +100,16 @@ async function fixture(t) {
     assert.deepEqual(Object.keys(body).sort(), ['disableModelInvocation', 'filePath']);
     // PATCH held so the actual component's pending state is observable.
   });
-  const render = await production(); // Host guards are already active for imports.
-  const view = http.bind(await mount(t, render(), { setup: http.setup }));
+  const { http } = lifetime;
+  const render = await production(lifetime.onWork); // Guards and independent cleanup precede imports.
+  const view = await lifetime.mount(render());
+  assert.equal(lifetime.works.some(work => work.label === 'skills.loadSkills' && work.settled), true, 'actual catalogue full callback observed');
+  assert.equal(lifetime.works.some(work => work.label === 'skills.instructions' && work.settled), true, 'actual instructions full callback observed');
   assertInstructions(http, view, skills[1]);
-  return { http, view, async select(item) {
+  return { http, view, lifetime, async select(item) {
     selectedFile = item.filePath; // Declare exact next-click identity before dispatch.
     await click(view, buttonWithText(list(view), item.name));
+    await lifetime.join('skills.instructions');
     assertInstructions(http, view, item);
   } };
 }
@@ -159,4 +165,52 @@ test('enable commits only on PATCH success, rejects repeated pending clicks, and
   assertInstructions(http, view, skills[0]);
   for (const request of http.requests) assert.equal(request.jsonCalls, 1);
   http.assertHealthy();
+});
+
+
+test('actual held Skills PATCH drains original catch/finally after observer unmount', async t => {
+  const { http, view, select, lifetime } = await fixture(t);
+  await select(skills[0]);
+  await click(view, toggle(view));
+  const write = patches(http)[0];
+  assert.equal(write.answered, false, 'actual PATCH response is held');
+  assert.equal(lifetime.works.findLast(work => work.label === 'skills.toggle').settled, false);
+  await lifetime.dispose();
+  assert.equal(write.replyStatus, 503, 'unanswered operation is not fabricated as successful');
+  assert.equal(write.jsonCalls, 1, 'actual PATCH handler consumes its response body');
+  assert.equal(lifetime.works.every(work => work.settled), true, 'original handlers including catch/finally joined before realm/port disposal');
+  assert.equal(view.container.childNodes.length, 0, 'observer unmounted');
+});
+
+test('failed setup joins a real client body/catch/finally before realm closure without a bound view', async t => {
+  // Fixture fault contract only, not a substitute for the real Skills cases above.
+  let caught = false, finalized = false;
+  const lifetime = skillsLifetime(t, request => {
+    assert.equal(request.url.pathname, '/api/agent/skills-setup-fault');
+    assert.equal(request.options.method, 'POST');
+    exactQuery(request, {});
+    exactHeaders(request, { 'Content-Type': 'application/json' });
+    assert.deepEqual(JSON.parse(request.options.body), { type: 'reload' });
+    // Held response: beforeDispose must release it, then join the actual parser.
+  });
+  const { sendAgentCommand } = await jiti.import('../lib/agent-client.ts');
+  const setupError = new Error('controlled Skills setup failure');
+  await assert.rejects(lifetime.mount(createElement('div'), { setup() {
+    const work = sendAgentCommand('skills-setup-fault', { type: 'reload' }).then(
+      () => assert.fail('held failed-setup request cannot succeed'),
+      error => {
+        assert.equal(error.name, 'AgentCommandError');
+        assert.equal(error.status, 503);
+        assert.equal(error.message, 'fixture teardown');
+        caught = true;
+      },
+    ).finally(() => { finalized = true; });
+    lifetime.onWork('fixture.setup.actualAgentCommand', work);
+    throw setupError;
+  } }), error => error === setupError);
+  assert.equal(caught, true, 'actual response JSON/error callback joined before failed mount returns');
+  assert.equal(finalized, true, 'complete original callback chain joined, not only transport');
+  assert.equal(lifetime.works.length, 1);
+  assert.equal(lifetime.works[0].settled, true);
+  await lifetime.dispose();
 });

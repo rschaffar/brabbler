@@ -75,7 +75,11 @@ deliverable. Check that the selected profile can produce that deliverable; a
 read-only researcher cannot write patches or run checks. Reuse findings instead
 of delegating fixture discovery again. Preserve one repository writer and useful
 independent safety review; do not require delegation or a durable plan for a small,
-obvious change.
+obvious change. Keep one receiving candidate and a small work-in-progress limit;
+plans own current blockers/decisions, not per-run chronology. Distinguish verified,
+implemented-but-unverified, proposed and abandoned work. Reuse unchanged evidence
+and review findings; agent-selected packet/control/report conventions are not new
+requirements. The planning skill owns package gates and stop conditions.
 
 ## Browser and dev-server lifecycle
 

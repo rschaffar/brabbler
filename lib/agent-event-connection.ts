@@ -40,6 +40,8 @@ export interface AgentEventConnectionOptions {
   readinessTimeoutMs: number;
   reconnectDelayMs: number;
   onUnexpectedError?(error: unknown): void;
+  /** Observe the already-started complete caught maintenance attempt, including retries. */
+  onMaintenanceWork?(work: Promise<void>): void;
 }
 
 const EVENT_SOURCE_OPEN = 1;
@@ -57,10 +59,10 @@ export class AgentEventConnection {
     if (this.current) this.discard(this.current, new AgentEventConnectionError("closed"));
   }
 
-  maintain(sessionId: string): void {
-    if (!this.options.shouldMaintain(sessionId)) return;
+  maintain(sessionId: string): Promise<void> {
+    if (!this.options.shouldMaintain(sessionId)) return Promise.resolve();
     const retryGeneration = this.retryGeneration;
-    void this.ensureConnected(sessionId).catch((error) => {
+    const work = this.ensureConnected(sessionId).catch((error) => {
       if (retryGeneration !== this.retryGeneration) return;
       if (error instanceof AgentEventConnectionError) {
         if (error.status === "startup_error") this.stopRetrying();
@@ -69,6 +71,8 @@ export class AgentEventConnection {
         this.options.onUnexpectedError?.(error);
       }
     });
+    this.options.onMaintenanceWork?.(work);
+    return work;
   }
 
   async ensureConnected(sessionId: string): Promise<void> {
@@ -185,7 +189,7 @@ export class AgentEventConnection {
     const timer = setTimeout(() => {
       if (this.retry?.timer !== timer) return;
       this.retry = null;
-      this.maintain(sessionId);
+      void this.maintain(sessionId);
     }, this.options.reconnectDelayMs);
     this.retry = { sessionId, timer };
   }

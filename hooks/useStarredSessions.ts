@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigationWork } from "@/lib/navigation-work";
 import { parseStarredSessionIds, STARRED_SESSIONS_STORAGE_KEY } from "@/lib/starred-sessions";
 
 const URL = "/api/starred-sessions";
@@ -97,14 +98,15 @@ async function toggle(id: string, project = false) {
 }
 
 export function useStarredSessions() {
+  const work = useNavigationWork();
   const [starState, setStarState] = useState(() => ({ ids: new Set(ids), projectKeys: new Set(projectKeys) }));
 
   useEffect(() => {
     listeners.add(setStarState);
     setStarState({ ids: new Set(ids), projectKeys: new Set(projectKeys) });
-    void refresh();
-    const onFocus = () => { void refresh(); };
-    const onVisibility = () => { if (document.visibilityState === "visible") void refresh(); };
+    void work.observe(refresh());
+    const onFocus = () => { void work.observe(refresh()); };
+    const onVisibility = () => { if (document.visibilityState === "visible") void work.observe(refresh()); };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
@@ -112,9 +114,9 @@ export function useStarredSessions() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, []);
+  }, [work]);
 
-  const toggleStarred = useCallback((id: string) => { void toggle(id); }, []);
-  const toggleStarredProject = useCallback((key: string) => { void toggle(key, true); }, []);
+  const toggleStarred = useCallback((id: string) => { void work.observe(toggle(id)); }, [work]);
+  const toggleStarredProject = useCallback((key: string) => { void work.observe(toggle(key, true)); }, [work]);
   return { starredIds: starState.ids, starredProjectKeys: starState.projectKeys, toggleStarred, toggleStarredProject };
 }

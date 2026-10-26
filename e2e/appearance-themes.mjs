@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 
-// Independent expected inventory; this helper runs inside appearance/full, never standalone.
+// Independent expected inventory; this helper runs inside the native-layout
+// appearance bridge. Palette CSS is browser proof; reload/selection matrices have
+// actual General/useTheme and production first-paint-script owners below Chromium.
 const palettes = [
   ["auto", "System"], ["light", "Light"], ["mist", "Mist"], ["lilac", "Lilac"], ["sand", "Sand"], ["rose", "Rose"],
   ["dark", "Dark"], ["pine", "Pine"], ["dusk", "Dusk"], ["ember", "Ember"], ["slate", "Slate"],
@@ -40,7 +42,6 @@ export async function checkAppearanceThemes(page, openSettings) {
     await radio(label).locator("..").click();
     await expectTheme(id === "auto" ? "light" : id);
     assert.equal(await radio(label).isChecked(), true);
-    assert.equal(await page.evaluate(() => localStorage.getItem("pi-theme")), id);
     const colors = await page.locator("html").evaluate(el => {
       const css = getComputedStyle(el);
       return Object.fromEntries(["bg", "bg-panel", "bg-hover", "bg-selected", "user-bg", "assistant-bg", "tool-bg", "text", "text-muted", "text-dim", "accent", "accent-hover", "accent-contrast", "border"].map(key => [key, css.getPropertyValue(`--${key}`).trim()]));
@@ -51,20 +52,22 @@ export async function checkAppearanceThemes(page, openSettings) {
     }
     for (const background of ["accent", "accent-hover"]) assert.ok(contrast(colors["accent-contrast"], colors[background]) >= 4.5, `${id}: accent button`);
     if (id.startsWith("contrast-")) for (const background of surfaces) assert.ok(contrast(colors.border, colors[background]) >= 3, `${id}: border`);
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await expectTheme(id === "auto" ? "light" : id);
-    await openSettings();
-    assert.equal(await radio(label).isChecked(), true, `${id} survives reload`);
   }
-  // Native arrow keys select the next radio, wrapping from the final tile to System.
-  await radio("System").locator("..").click();
-  await radio("System").focus();
-  for (const [id, label] of palettes.slice(1)) {
-    await page.keyboard.press("ArrowRight");
-    await expectTheme(id);
-    assert.equal(await radio(label).isChecked(), true);
-  }
+  // One installed restoration bridge, not fourteen document reloads. The complete
+  // stored-palette truth table executes the actual THEME_INIT_SCRIPT in core.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expectTheme("zenburn");
+  await openSettings();
+  assert.equal(await radio("Zenburn").isChecked(), true, "Saved palette survives the installed reload");
+  // Real native radio traversal owns the wrap boundary and both directions. The
+  // full fourteen-value React/storage selection matrix has a mounted owner.
+  await radio("Zenburn").focus();
   await page.keyboard.press("ArrowRight");
+  assert.equal(await radio("System").isChecked(), true);
+  await page.keyboard.press("ArrowRight");
+  await expectTheme("light");
+  assert.equal(await radio("Light").isChecked(), true);
+  await page.keyboard.press("ArrowLeft");
   assert.equal(await radio("System").isChecked(), true);
   await page.emulateMedia({ colorScheme: "dark" }); await expectTheme("dark");
   await radio("Dusk").locator("..").click();

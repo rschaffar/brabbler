@@ -1,5 +1,6 @@
 "use client";
 
+import { useNavigationWork } from "@/lib/navigation-work";
 import { forwardRef, useState, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import { getFileIcon, FolderIcon } from "./FileIcons";
 import {
@@ -197,6 +198,7 @@ function TreeNode({
   projection?: boolean;
   t: Translate;
 }) {
+  const work = useNavigationWork();
   const rowRef = useRef<HTMLDivElement>(null);
   const revealed = Boolean(revealSelection && explorerPathKey(revealSelection.path) === explorerPathKey(node.fullPath));
   useEffect(() => {
@@ -226,7 +228,7 @@ function TreeNode({
   const childRequest = useRef(0);
   const destination = uploadDirectoryForNode(node, cwd);
 
-  const loadChildren = useCallback(async () => {
+  const loadChildren = useCallback(() => work.observe((async () => {
     const request = ++childRequest.current;
     setLoading(true);
     setLoadError(null);
@@ -240,7 +242,7 @@ function TreeNode({
     } finally {
       if (request === childRequest.current) setLoading(false);
     }
-  }, [node.fullPath]);
+  })()), [node.fullPath, work]);
 
   useEffect(() => {
     // Search nodes are a filtered projection, never an invitation to list all
@@ -615,6 +617,12 @@ function ChangeRow({
   );
 }
 
+/** Selected checkout AND chat own Explorer's callbacks, picker and upload batch.
+ * A project/history key must not keep a previous context's owner alive. */
+export const SessionFileExplorer = forwardRef<FileExplorerHandle, Props & { contextSessionId: string | null }>(function SessionFileExplorer({ contextSessionId, ...props }, ref) {
+  return <FileExplorer key={JSON.stringify([props.cwd, contextSessionId])} {...props} ref={ref} />;
+});
+
 export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileExplorer({
   cwd,
   onOpenFile,
@@ -629,6 +637,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   revealRequest,
   onRevealSettled,
 }, ref) {
+  const work = useNavigationWork();
   const { t } = useI18n();
   const [browseRoot, setBrowseRoot] = useState(cwd);
   const browseRootRef = useRef(browseRoot);
@@ -680,7 +689,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     setSearchLoading(true);
     setSearchError(false);
     const timer = setTimeout(() => {
-      fetch(`/api/file-index?cwd=${encodeURIComponent(cwd)}&q=${encodeURIComponent(query)}${searchedRefresh.current !== refreshToken ? "&refresh=1" : ""}`, { signal: controller.signal })
+      work.observe(fetch(`/api/file-index?cwd=${encodeURIComponent(cwd)}&q=${encodeURIComponent(query)}${searchedRefresh.current !== refreshToken ? "&refresh=1" : ""}`, { signal: controller.signal })
         .then((response) => response.ok ? response.json() as Promise<{ matches?: FileIndexEntry[] }> : Promise.reject(new Error("Search failed")))
         .then((data) => {
           if (controller.signal.aborted) return;
@@ -693,10 +702,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             setSearchError(true);
           }
         })
-        .finally(() => { if (!controller.signal.aborted) setSearchLoading(false); });
+        .finally(() => { if (!controller.signal.aborted) setSearchLoading(false); }));
     }, 150);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [cwd, fileSearchOpen, searchQuery, refreshToken]);
+  }, [cwd, fileSearchOpen, searchQuery, refreshToken, work]);
 
   // Focus the search input whenever the search panel opens.
   useEffect(() => {
@@ -781,8 +790,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const prepareUpload = useCallback((files: File[], directory: string) => {
     if (uploadOwner.current?.locked || !files.length) return;
     setHighlightedPaths(new Set());
-    void uploadOwner.current?.start(directory, files);
-  }, []);
+    if (uploadOwner.current) work.observe(uploadOwner.current.start(directory, files));
+  }, [work]);
 
   const openUploadHere = useCallback((directory: string) => {
     if (uploadOwner.current?.locked) return;
@@ -835,12 +844,12 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     setLoading(cwdChanged);
     setError(null);
     let cancelled = false;
-    fetchEntries(browseRoot)
+    work.observe(fetchEntries(browseRoot)
       .then((entries) => { if (!cancelled) setRoots(entries); })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .finally(() => { if (!cancelled) setLoading(false); }));
     return () => { cancelled = true; };
-  }, [browseRoot, refreshKey, treeRefreshKey]);
+  }, [browseRoot, refreshKey, treeRefreshKey, work]);
 
   useEffect(() => {
     if (!revealRequest || fileSearchOpen) return;
@@ -851,7 +860,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     setBrowseRoot(root);
     setRevealSelection(undefined);
     setRevealNotice(t("files.locating"));
-    void (async () => {
+    work.observe((async () => {
       let directory = root;
       const ancestors: string[] = [];
       while (isCurrent()) {
@@ -874,9 +883,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       if (!isCurrent()) return;
       setRevealNotice(t("files.revealUnavailable"));
       onRevealSettled?.(revealRequest.id);
-    });
+    }));
     return () => { cancelled = true; };
-  }, [revealRequest, cwd, fileSearchOpen, onRevealSettled, t]);
+  }, [revealRequest, cwd, fileSearchOpen, onRevealSettled, t, work]);
 
   useEffect(() => {
     if (fileSearchOpen) {
@@ -889,7 +898,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
 
   useEffect(() => {
     let cancelled = false;
-    fetchGitStatus(cwd)
+    work.observe(fetchGitStatus(cwd)
       .then((status) => {
         if (!cancelled) {
           setGitFiles(status.isGitRepository ? status.files : []);
@@ -903,9 +912,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           setGitFiles([]);
           setGitLineStats({ additions: 0, deletions: 0 });
         }
-      });
+      }));
     return () => { cancelled = true; };
-  }, [cwd, refreshKey, treeRefreshKey]);
+  }, [cwd, refreshKey, treeRefreshKey, work]);
 
   useEffect(() => {
     onChangesCountChange?.(gitFiles.length);
@@ -976,10 +985,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               </div>
             )}
             <div style={{ display: "flex", gap: 5, marginTop: 7 }}>
-              <button type="button" onClick={() => void uploadOwner.current?.resolve("overwrite")} style={{ height: 22, padding: "0 7px", border: "1px solid #ef4444", borderRadius: 4, background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: 10 }}>
+              <button type="button" onClick={() => { if (uploadOwner.current) work.observe(uploadOwner.current.resolve("overwrite")); }} style={{ height: 22, padding: "0 7px", border: "1px solid #ef4444", borderRadius: 4, background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: 10 }}>
                 {t("files.replace")}
               </button>
-              <button type="button" onClick={() => void uploadOwner.current?.resolve("skip")} style={{ height: 22, padding: "0 7px", border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: 10 }}>
+              <button type="button" onClick={() => { if (uploadOwner.current) work.observe(uploadOwner.current.resolve("skip")); }} style={{ height: 22, padding: "0 7px", border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: 10 }}>
                 {t("files.skipExisting")}
               </button>
               <button type="button" onClick={() => uploadOwner.current?.cancelConflict()} style={{ height: 22, padding: "0 7px", border: "none", borderRadius: 4, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 10 }}>

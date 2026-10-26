@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
 import { safeAuthorizationUrl } from "@/lib/oauth-url";
+import { useSettingsWork } from "./SettingsUi";
 
 /** Shared device-code instructions for Pi default and additional accounts. */
 export function DeviceAuthorization({ verificationUri, userCode, expiresInSeconds }: {
@@ -12,6 +13,7 @@ export function DeviceAuthorization({ verificationUri, userCode, expiresInSecond
   expiresInSeconds?: number | null;
 }) {
   const { t } = useI18n();
+  const observe = useSettingsWork();
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const url = safeAuthorizationUrl(verificationUri);
@@ -23,10 +25,10 @@ export function DeviceAuthorization({ verificationUri, userCode, expiresInSecond
       <span>{t("auth.deviceCodeInstruction")}</span>
       <div className="flex flex-wrap items-center gap-2">
         <code className="select-all rounded border border-border bg-bg-panel px-3 py-2 text-base font-bold text-text">{userCode}</code>
-        <button type="button" className="rounded border border-border bg-bg-panel px-3 py-2 text-text" onClick={async () => {
+        <button type="button" className="rounded border border-border bg-bg-panel px-3 py-2 text-text" onClick={() => observe("accounts.copyCode", (async () => {
           try { await copyText(userCode); setCopied(true); setCopyFailed(false); }
           catch { setCopied(false); setCopyFailed(true); }
-        }} aria-label={t("auth.copyCode")}>{copied ? t("i18n.copied") : t("auth.copyCode")}</button>
+        })())} aria-label={t("auth.copyCode")}>{copied ? t("i18n.copied") : t("auth.copyCode")}</button>
       </div>
       {copyFailed && <span role="alert" className="text-red-400">{t("auth.copyFailed")}</span>}
       {url

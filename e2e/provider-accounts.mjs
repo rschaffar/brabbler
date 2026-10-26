@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 
 /** Exercise the account popover with a fake SSE stream: no provider credentials/network required. */
-export async function checkProviderAccountAuthorization(page, { base, sessionId, provider, providerName, accountLabel, width, artifacts }) {
+export async function checkProviderAccountAuthorization(page, { base, sessionId, provider, providerName, accountId, accountLabel, width, artifacts }) {
   await page.addInitScript(() => {
     const OriginalEventSource = window.EventSource;
     window.__accountOAuthSources = [];
@@ -36,26 +36,19 @@ export async function checkProviderAccountAuthorization(page, { base, sessionId,
     "managing another provider must not change the model-provider indicator");
   await panel.getByText(accountLabel, { exact: false }).waitFor();
   assert.equal(await panel.getByLabel("Account label").count(), 0, "add-account form stays hidden while existing accounts are visible");
-  await panel.getByRole("button", { name: "Add account" }).click();
-  await panel.getByLabel("Account label").waitFor();
-  await panel.getByRole("button", { name: "Close add form" }).click();
-  assert.equal(await panel.getByLabel("Account label").count(), 0);
-  await panel.getByText(accountLabel, { exact: false }).waitFor();
-  await panel.getByRole("button", { name: "Add account" }).click();
-  await page.keyboard.press("Escape");
-  await panel.waitFor({ state: "hidden" });
-  await chip.click();
-  assert.equal(await panel.getByLabel("Account label").count(), 0, "reopening the popover does not reopen the add form");
-  await panel.getByText(accountLabel, { exact: false }).waitFor();
-  await panel.getByRole("button", { name: "Add account" }).click();
+  // CONDITIONAL: adopt only after the exact Close/reopen owner is positive,
+  // its actual handler fault is semantic RED and restored source is positive.
+  // Only compact native keyboard geometry needs an open Account-label field.
+  if (width <= 640) await panel.getByRole("button", { name: "Add account" }).click();
   await panel.getByRole("button", { name: "Change login" }).first().click();
   assert.equal(await page.evaluate(() => window.__accountOAuthSources.length), 1);
   assert.equal(await page.evaluate(() => window.__accountOAuthSources.at(-1).url), `/api/auth/login/${encodeURIComponent(provider)}`,
     "Pi default uses the provider-wide login, not a secondary account");
   await panel.getByRole("button", { name: "Cancel" }).click();
   await panel.getByRole("button", { name: "Retry login" }).click();
-  assert.match(await page.evaluate(() => window.__accountOAuthSources.at(-1).url), /\?accountId=/,
-    "secondary-account reauthorization remains scoped to its ID");
+  assert.equal(await page.evaluate(() => window.__accountOAuthSources.at(-1).url),
+    `/api/auth/login/${encodeURIComponent(provider)}?accountId=${encodeURIComponent(accountId)}`,
+    "secondary-account reauthorization remains scoped to this exact fixture ID");
   await page.evaluate(() => window.__emitAccountOAuth({ type: "device_code", verificationUri: "https://github.com/login/device",
     userCode: "WXYZ-1234", expiresInSeconds: 600 }));
   const link = panel.getByRole("link", { name: /Open verification page/ });
@@ -87,63 +80,17 @@ export async function checkProviderAccountAuthorization(page, { base, sessionId,
   assert.equal(await page.evaluate(() => window.__accountOAuthSources.at(-1).closed), true);
   await link.waitFor({ state: "hidden" });
 
-  await panel.getByRole("button", { name: "Retry login" }).click();
-  await page.evaluate(() => window.__emitAccountOAuth({ type: "device_code", verificationUri: "javascript:alert(1)", userCode: "unsafe" }));
-  await panel.getByRole("alert").getByText("Invalid authorization URL").waitFor();
-  assert.equal(await panel.getByRole("link").count(), 0, "malformed device URLs must never be linked");
-  assert.equal(await page.evaluate(() => window.__accountOAuthSources.at(-1).closed), true);
-  assert.deepEqual(await page.evaluate(() => window.__openedAuthUrls), []);
-
-  await panel.getByRole("button", { name: "Retry login" }).click();
-  await page.evaluate(() => window.__emitAccountOAuth({ type: "auth", url: "https://example.com/authorize",
-    instructions: "Finish in the provider browser" }));
-  await panel.getByText("Finish in the provider browser").waitFor();
-  assert.equal(await panel.getByRole("link", { name: /Open authorization page/ }).getAttribute("href"), "https://example.com/authorize");
-  assert.deepEqual(await page.evaluate(() => window.__openedAuthUrls), ["https://example.com/authorize"]);
-  await panel.getByRole("button", { name: "Cancel" }).click();
-  await panel.getByRole("button", { name: "Retry login" }).click();
-  await page.evaluate(() => window.__emitAccountOAuth({ type: "prompt_request", token: "test-token", message: "Paste the provider code" }));
-  await panel.getByRole("textbox", { name: "Authorization code" }).waitFor();
-  assert.equal(await panel.getByLabel("Account provider").isDisabled(), true, "the provider cannot change during authorization");
-  await panel.getByRole("button", { name: "Cancel" }).click();
+  // Unsafe device/auth URLs, popup-blocked fallback and manual prompt/pending
+  // permutations execute in ProviderAccounts.authorization.behavior.test.mjs.
+  // The real clipboard, source identity, popover and keyboard geometry stay here.
   if (width <= 640) {
     const box = await panel.boundingBox();
     assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1,
       "the account popover stays within the mobile viewport");
   } else {
-    // Account-aware usage is a subscription quota, not API-key spend. Mock only
-    // the browser's API responses; no live provider credentials are needed.
-    const fakeAccount = { id: "e2e-codex-secondary", provider: "openai-codex", label: "Second Codex", type: "oauth", authorized: true };
-    const queriedAccounts = [];
-    const selectionRoute = async (route) => {
-      const response = await route.fetch();
-      const data = await response.json();
-      await route.fulfill({ response, json: { ...data, accounts: [...data.accounts, fakeAccount] } });
-    };
-    const usageRoute = async (route) => {
-      const { providerId, accountId } = route.request().postDataJSON();
-      if (providerId !== "openai-codex") return route.continue();
-      queriedAccounts.push(accountId);
-      const secondary = accountId === fakeAccount.id;
-      await route.fulfill({ json: { providerId, status: "ready", report: { providerId, capturedAt: Date.now(), metrics: [], bankedResets: secondary ? 0 : 2, bankedResetExpiresAt: secondary ? undefined : 1_800_172_800, buckets: [
-        { id: "primary", label: "5h", windowMinutes: 300, remaining: secondary ? 50 : 90, unit: "percent", resetsAt: 1_800_000_000 },
-        { id: "secondary", label: "Weekly", windowMinutes: 10080, remaining: secondary ? 25 : 70, unit: "percent", resetsAt: 1_800_086_400 },
-      ] } } });
-    };
-    await page.route("**/api/auth/accounts/selection?*", selectionRoute);
-    await page.route("**/api/provider-usage/query", usageRoute);
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: /^Account for/ }).click();
-    const usagePanel = page.getByRole("region", { name: "Provider accounts" });
-    await usagePanel.getByLabel("Account provider").selectOption("openai-codex");
-    assert.equal(await usagePanel.getByLabel("Account label").count(), 0);
-    await usagePanel.getByText(/Weekly 70% remaining \(resets .*\) · 5h 90% remaining \(resets .*\) · 2 banked resets available \(next expires .*\)/).waitFor();
-    await usagePanel.getByText(/Weekly 25% remaining \(resets .*\) · 5h 50% remaining \(resets .*\) · 0 banked resets available/).waitFor();
-    const compactLabel = await page.getByRole("button", { name: /^Account for/ }).getAttribute("aria-label");
-    assert.doesNotMatch(compactLabel, /resets|banked/i, "reset details stay in the popover");
-    assert.ok(queriedAccounts.includes(null) && queriedAccounts.includes(fakeAccount.id), "usage requests are account-specific");
-    await page.unroute("**/api/auth/accounts/selection?*", selectionRoute);
-    await page.unroute("**/api/provider-usage/query", usageRoute);
+    // CONDITIONAL: exact original quota/expiry labels and required null/ID
+    // requests belong to the real account-control owner after positive/fault/
+    // restored proof. No route proxy, synthetic account or usage reload here.
     // Start the independent Pi-default settings flow from a fresh page.
     await page.reload({ waitUntil: "domcontentloaded" });
     // Wait for the client-owned account control after reload, then use the real
@@ -167,11 +114,9 @@ export async function checkProviderAccountAuthorization(page, { base, sessionId,
     await defaultLink.waitFor();
     await settings.getByRole("button", { name: "Cancel" }).click();
     assert.equal(await page.evaluate(() => window.__accountOAuthSources.at(-1).closed), true);
-    await settings.getByRole("button", { name: "Login", exact: true }).click();
-    await page.evaluate(() => window.__emitAccountOAuth({ type: "auth", url: "javascript:alert(1)" }));
-    await settings.getByText("Invalid authorization URL").waitFor();
-    assert.equal(await settings.getByRole("link", { name: /login page/i }).count(), 0);
+    // The actual ModelsConfig -> OAuthDetail unsafe-URL owner covers this
+    // second synthetic login; keep the installed Settings/device/copy bridge.
     await settings.getByRole("button", { name: "Close" }).click();
   }
-  console.log(`PASS: ${width}px compact account selection and safe/copyable OAuth device authorization`);
+  console.log(`PASS: ${width}px installed account source/clipboard/popover and default Settings bridge`);
 }

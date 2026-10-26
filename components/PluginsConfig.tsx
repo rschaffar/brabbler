@@ -1,5 +1,7 @@
 "use client";
 
+import { useSettingsWork } from "./SettingsUi";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { PluginPackageInfo, PluginStandaloneExtensionInfo, PluginUpdateResult, PluginsResponse } from "@/lib/api-types";
@@ -675,6 +677,7 @@ export function PluginsConfig({
   onReloaded?: () => void;
   embedded?: boolean;
 }) {
+  const observe = useSettingsWork();
   const { t } = useI18n();
   const [data, setData] = useState<PluginsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -704,7 +707,7 @@ export function PluginsConfig({
       .filter((group) => group.packages.length > 0);
   }, [packages]);
 
-  const loadPlugins = useCallback(async () => {
+  const loadPlugins = useCallback(() => observe("plugins.loadPlugins", (async () => {
     setLoading(true);
     setError(null);
     try {
@@ -729,7 +732,7 @@ export function PluginsConfig({
     } finally {
       setLoading(false);
     }
-  }, [cwd]);
+  })()), [cwd, observe]);
 
   useEffect(() => {
     setUpdateStatuses({});
@@ -741,7 +744,7 @@ export function PluginsConfig({
     if (selected) setLastSettingsSelection("plugins", selected, cwd);
   }, [cwd, selected]);
 
-  const checkForUpdates = useCallback(async (pkg?: PluginPackageInfo) => {
+  const checkForUpdates = useCallback((pkg?: PluginPackageInfo) => observe("plugins.checkForUpdates", (async () => {
     const targets = pkg ? [pkg] : packages.filter((item) => item.canCheckForUpdates);
     const keys = targets.map(packageKey);
     if (keys.length === 0) return;
@@ -781,9 +784,9 @@ export function PluginsConfig({
       });
       if (!pkg) setCheckingAll(false);
     }
-  }, [cwd, packages]);
+  })()), [cwd, packages, observe]);
 
-  const updateAllPluginsAction = useCallback(async () => {
+  const updateAllPluginsAction = useCallback(() => observe("plugins.updateAllPluginsAction", (async () => {
     setUpdatingAll(true);
     setActionError(null);
     setActionMessage(null);
@@ -807,9 +810,9 @@ export function PluginsConfig({
     } finally {
       setUpdatingAll(false);
     }
-  }, [cwd, sessionId, t]);
+  })()), [cwd, sessionId, t, observe]);
 
-  const runAction = useCallback(async (action: PluginAction, pkg: PluginPackageInfo) => {
+  const runAction = useCallback((action: PluginAction, pkg: PluginPackageInfo) => observe("plugins.runAction", (async () => {
     const key = packageKey(pkg);
     setBusyKey(`${action}:${key}`);
     setActionError(null);
@@ -857,9 +860,9 @@ export function PluginsConfig({
     } finally {
       setBusyKey(null);
     }
-  }, [cwd]);
+  })()), [cwd, observe]);
 
-  const installPlugin = useCallback(async () => {
+  const installPlugin = useCallback(() => observe("plugins.installPlugin", (async () => {
     const source = normalizePluginSourceInput(installSource).trim();
     if (!source) return;
     setInstallSource(source);
@@ -886,9 +889,9 @@ export function PluginsConfig({
     } finally {
       setBusyKey(null);
     }
-  }, [cwd, installScope, installSource]);
+  })()), [cwd, installScope, installSource, observe]);
 
-  const reloadSession = useCallback(async () => {
+  const reloadSession = useCallback(() => observe("plugins.reloadSession", (async () => {
     if (!sessionId) return;
     setBusyKey("reload");
     setActionError(null);
@@ -903,7 +906,7 @@ export function PluginsConfig({
     } finally {
       setBusyKey(null);
     }
-  }, [loadPlugins, onReloaded, sessionId]);
+  })()), [loadPlugins, onReloaded, sessionId, observe]);
 
   const addBusy = busyKey?.startsWith("install:") ?? false;
   const availableUpdateCount = Object.values(updateStatuses).filter(

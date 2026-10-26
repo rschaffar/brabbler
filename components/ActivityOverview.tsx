@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { activityProjectName, activitySessionName, getActivitySections, hiddenActivitySessionIds, type ActivityItem, type ActivityStatus } from "@/lib/activity";
 import type { SessionAttention, SessionInfo } from "@/lib/types";
@@ -29,13 +29,15 @@ interface Props {
   onClose: () => void;
   hidden?: boolean;
   recoveryRefreshKey?: number;
+  /** Passive lifetime observer; receives the original complete recovery continuation. */
+  onRecoveryWork?: (work: Promise<void>) => void;
   privacy: ProjectPrivacy;
 }
 
 const STATUS_ORDER: ActivityStatus[] = ["needs-you", "working", "pausing", "paused", "queued", "interrupted", "ready", "later"];
 const NO_PAUSES: SessionPauseSnapshot[] = [];
 
-export function ActivityOverview({ sessions, runningIds, queuedIds, attention, pauses = NO_PAUSES, reviewIds, laterIds, laterAttentionIds, available, selectedId, onSelect, onMarkRead, onMarkLater, onClose, hidden = false, recoveryRefreshKey = 0, privacy }: Props) {
+export function ActivityOverview({ sessions, runningIds, queuedIds, attention, pauses = NO_PAUSES, reviewIds, laterIds, laterAttentionIds, available, selectedId, onSelect, onMarkRead, onMarkLater, onClose, hidden = false, recoveryRefreshKey = 0, onRecoveryWork, privacy }: Props) {
   const { t, locale } = useI18n();
   const [projectFilter, setProjectFilter] = useState("");
   const [pausePending, setPausePending] = useState(false);
@@ -72,6 +74,8 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, p
   const [interruptedIds, setInterruptedIds] = useState<Set<string>>(() => new Set());
   const [recoveryAvailable, setRecoveryAvailable] = useState(true);
   const [recoveryLoading, setRecoveryLoading] = useState(true);
+  const recoveryObserver = useRef(onRecoveryWork);
+  recoveryObserver.current = onRecoveryWork;
 
   // Do not add journal scans to the sidebar's frequent running-state poll.
   // Only an open, visible Activity panel needs this read-only snapshot.
@@ -83,7 +87,7 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, p
       controller?.abort();
       const request = new AbortController();
       controller = request;
-      void fetch("/api/sessions/interrupted", { cache: "no-store", signal: request.signal })
+      const recoveryWork = fetch("/api/sessions/interrupted", { cache: "no-store", signal: request.signal })
         .then(async (response) => {
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           return response.json() as Promise<{ interruptedSessionIds: string[] }>;
@@ -102,6 +106,8 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, p
             setRecoveryLoading(false);
           }
         });
+      recoveryObserver.current?.(recoveryWork);
+      void recoveryWork;
     };
     refresh();
     const timer = window.setInterval(refresh, 15_000);

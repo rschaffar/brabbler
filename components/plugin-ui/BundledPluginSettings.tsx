@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useSettingsWork } from "../SettingsUi";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigationWork } from "@/lib/navigation-work";
 import type { Overrides, PluginManifest, PluginSettings, SettingValue } from "@/lib/plugins/types";
 import { ConfigSidebarGroupLabel, ConfigSidebarItem, ConfigSidebarText, ConfigStatusDot } from "../SettingsUi";
 interface Entry { manifest: PluginManifest; settings: PluginSettings }
@@ -14,15 +16,16 @@ async function load(cwd: string, sessionId?: string | null): Promise<Entry[]> {
   return data.plugins;
 }
 export function BundledPluginSidebar({ cwd, sessionId, selected, onSelect }: { cwd: string; sessionId?: string | null; selected: string | null; onSelect: (key: string) => void }) {
+  const observe = useSettingsWork();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
-    const refresh = () => { void load(cwd, sessionId).then((entries) => { if (active) { setEntries(entries); setError(""); } }, (error) => { if (active) setError(String(error)); }); };
+    const refresh = () => { void observe("plugins.bundledSidebar", load(cwd, sessionId).then((entries) => { if (active) { setEntries(entries); setError(""); } }, (error) => { if (active) setError(String(error)); })); };
     refresh();
     window.addEventListener("pi-web:bundled-plugin-settings", refresh);
     return () => { active = false; window.removeEventListener("pi-web:bundled-plugin-settings", refresh); };
-  }, [cwd, sessionId]);
+  }, [cwd, sessionId, observe]);
   return <div className="config-sidebar-group">
     <ConfigSidebarGroupLabel>Bundled plugins</ConfigSidebarGroupLabel>
     {error && <p role="alert">{error}</p>}
@@ -31,12 +34,29 @@ export function BundledPluginSidebar({ cwd, sessionId, selected, onSelect }: { c
     </ConfigSidebarItem>)}
   </div>;
 }
-interface Props { cwd: string; id: string; sessionId?: string | null; initialScope?: Scope; initialField?: string }
+interface Props {
+  cwd: string; id: string; sessionId?: string | null; initialScope?: Scope; initialField?: string;
+  /** Passive observation of the original complete inner load/save promise. */
+  onWork?: (work: Promise<unknown>) => void;
+}
 export function BundledPluginSettings(props: Props) {
   // A response or unsaved editor draft for one session must never enter another.
   return <Settings key={`${props.cwd}:${props.id}:${props.sessionId ?? ""}`} {...props} />;
 }
-function Settings({ cwd, id, sessionId, initialScope = "global", initialField }: Props) {
+function Settings({ cwd, id, sessionId, initialScope = "global", initialField, onWork }: Props) {
+  const settingsWork = useSettingsWork();
+  const navigationWork = useNavigationWork();
+  const observers = useRef({ settingsWork, navigationWork, onWork });
+  observers.current = { settingsWork, navigationWork, onWork };
+  const observe = useCallback(<T,>(label: string, work: Promise<T>): Promise<T> => {
+    const current = observers.current;
+    current.settingsWork(label, work);
+    // Explicit parent observation replaces the navigation fallback, not the
+    // Settings observer. Both receive this same original complete promise.
+    if (current.onWork) current.onWork(work);
+    else current.navigationWork.observe(work);
+    return work;
+  }, []);
   const [entry, setEntry] = useState<Entry | null>(null);
   const [scope, setScope] = useState<Scope>(initialScope);
   const [preset, setPreset] = useState("");
@@ -44,13 +64,13 @@ function Settings({ cwd, id, sessionId, initialScope = "global", initialField }:
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
-    void load(cwd, sessionId).then((entries) => {
+    void observe("plugins.bundledSettings.load", load(cwd, sessionId).then((entries) => {
       const found = entries.find((entry) => entry.manifest.id === id);
       if (!found) throw new Error("Unknown plugin");
       if (active) setEntry(found);
-    }).catch((error) => { if (active) setError(String(error)); });
+    }).catch((error) => { if (active) setError(String(error)); }));
     return () => { active = false; };
-  }, [cwd, id, sessionId]);
+  }, [cwd, id, sessionId, observe]);
   const focusedField = useRef<string | null>(null);
   useEffect(() => {
     if (!entry || !initialField || focusedField.current === initialField) return;
@@ -59,7 +79,7 @@ function Settings({ cwd, id, sessionId, initialScope = "global", initialField }:
     field?.focus({ preventScroll: true });
     field?.scrollIntoView({ block: "center" });
   }, [entry, initialField]);
-  const save = async (set: Overrides, reset: string[] = [], saveScope = scope) => {
+  const save = (set: Overrides, reset: string[] = [], saveScope = scope) => observe("plugins.bundledSettings.save", (async () => {
     if (!entry || busy) return;
     setBusy(true); setError("");
     const optimistic = structuredClone(entry.settings);
@@ -82,7 +102,7 @@ function Settings({ cwd, id, sessionId, initialScope = "global", initialField }:
       setEntry({ ...entry, settings: data.settings });
       window.dispatchEvent(new Event("pi-web:bundled-plugin-settings"));
     } catch (error) { setEntry(entry); setError(String(error)); } finally { setBusy(false); }
-  };
+  })());
   if (!entry) return <p role={error ? "alert" : "status"}>{error || "Loading bundled plugin settings…"}</p>;
   const { manifest, settings } = entry;
   const ownProject = settings.sessionApplicable === true;

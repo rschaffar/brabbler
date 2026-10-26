@@ -81,15 +81,16 @@ function errorMessage(error: unknown): string {
  * Open the SSE transport immediately, then publish the session snapshot only
  * after the agent is ready and its event listener has been installed.
  */
-export function createAgentEventStream(
+export function createAgentEventStreamConnection(
   req: Request,
   sessionId: string,
   sessionPromise: Promise<AgentEventStreamSession>,
-): ReadableStream<Uint8Array> {
+): { stream: ReadableStream<Uint8Array>; startupSettled: Promise<void> } {
+  let startupSettled = Promise.resolve();
   let cancelStream: (closeController: boolean | "error") => void = () => {};
   let releaseLease: () => void = () => {};
 
-  return new ReadableStream<Uint8Array>({
+  const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const encoder = new TextEncoder();
       let closed = false;
@@ -217,7 +218,7 @@ export function createAgentEventStream(
 
       // Attach the rejection handler before checking the request signal. The
       // route may already have started a shared cold-start promise.
-      void publishSession();
+      startupSettled = publishSession();
 
       abortHandler = () => cleanup(true);
       if (req.signal.aborted) {
@@ -239,4 +240,13 @@ export function createAgentEventStream(
     highWaterMark: STREAM_HIGH_WATER_MARK_BYTES,
     size: (chunk) => chunk.byteLength,
   });
+  return { stream, startupSettled };
+}
+
+export function createAgentEventStream(
+  req: Request,
+  sessionId: string,
+  sessionPromise: Promise<AgentEventStreamSession>,
+): ReadableStream<Uint8Array> {
+  return createAgentEventStreamConnection(req, sessionId, sessionPromise).stream;
 }

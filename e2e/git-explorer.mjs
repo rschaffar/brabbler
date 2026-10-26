@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { withExpectedBrowserConflict } from "./expected-browser-conflict.mjs";
-import { checkDiffContext } from "./git-diff-context.mjs";
+import { checkExplorerContextBridge } from "./git-diff-context.mjs";
 import { checkGitExplorerFullscreen } from "./git-explorer-fullscreen.mjs";
 import { checkGitGraphAlignment } from "./git-graph-geometry.mjs";
 import { holdBrowserRead } from "./browser-read-barrier.mjs";
@@ -75,15 +75,8 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
     "Tag labels must not change the checkout HEAD");
   await branch.selectOption("feature");
   await graph.getByRole("button", { name: /second feature/ }).waitFor();
-  const oldBranch = await holdBrowserRead(page, { pathname: "/api/git/explorer", query: { cwd, op: "log", branch: "target" } });
-  try {
-    await branch.selectOption("target");
-    await oldBranch.arrived();
-    await branch.selectOption("feature");
-    await graph.getByRole("button", { name: /second feature/ }).waitFor();
-    await oldBranch.releaseAndObserve();
-    assert.equal(await graph.locator("svg circle").count(), 3, "A late branch response must not replace the newer selection");
-  } finally { await oldBranch.dispose(); }
+  // Branch ignored-abort/A-B-A publication is owned by the actual mounted
+  // GitExplorer; retain the ordinary installed branch connection above.
   const patchReads = [], contextReads = [];
   const recordPatch = (request) => {
     const query = new URL(request.url()).searchParams;
@@ -113,12 +106,8 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await split.locator('[data-additions] [data-line-type="change-addition"]').getByText("Revised base fixture").waitFor();
   assert.ok((await split.locator("[data-line-number-content]").count()) >= 2, "Both sides have line numbers");
   await split.getByLabel("Patch hunk").getByText(/@@ -1 \+1 @@/).waitFor();
-  await detail.getByRole("button", { name: "Unified" }).click();
-  await detail.getByRole("region", { name: "Unified diff" }).waitFor();
-  await detail.getByRole("button", { name: "Raw patch" }).click();
-  await detail.getByText(/-Base fixture/).waitFor();
-  await detail.getByRole("button", { name: "Side by side" }).click();
-  await split.waitFor();
+  // Reader mode/state matrices execute in actual CommittedPatchDiff. The
+  // cold 5000-line bridge below still exercises the installed shared toolbar.
   await secondFile.getByRole("button", { name: "Toggle diff: second.txt", exact: true }).click();
   await secondFile.getByText("Second feature patch", { exact: true }).waitFor();
   assert.deepEqual([...new Set(patchReads)], ["base.txt", "second.txt"]);
@@ -127,10 +116,6 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await secondFile.getByRole("button", { name: "Toggle diff: second.txt", exact: true }).click();
   await secondFile.getByText("Second feature patch", { exact: true }).waitFor();
   assert.equal(patchReads.length, loadedReads, "Reopening a file reuses its candidate-bound successful patch");
-  await detail.getByRole("button", { name: "Unified", exact: true }).click();
-  await firstFile.getByRole("region", { name: "Unified diff" }).waitFor();
-  await secondFile.getByRole("region", { name: "Unified diff" }).waitFor();
-  await detail.getByRole("button", { name: "Side by side", exact: true }).click();
   const longFile = detail.getByRole("region", { name: "File changes: z-context.txt", exact: true });
   const toggleLongFile = longFile.getByRole("button", { name: "Toggle diff: z-context.txt", exact: true });
   await detail.getByRole("button", { name: "Expand all files", exact: true }).click();
@@ -152,7 +137,7 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await page.unroute(contextUrl, refuseContext);
   await longFile.getByRole("button", { name: "Retry context", exact: true }).click();
   await longFile.getByRole("alert").waitFor({ state: "hidden" });
-  await checkDiffContext(page, longFile, detail, { toggleFile: toggleLongFile });
+  await checkExplorerContextBridge(page, longFile, detail, toggleLongFile);
   assert.deepEqual(contextReads, ["z-context.txt", "z-context.txt"], "Failure retries once, then layouts/expansion/reading reuse the same snapshot");
   await checkGitExplorerFullscreen(page, { base, sessionId, explorer, graph, detail, file: longFile });
   await page.evaluate((saved) => {

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { useSettingsWork } from "./SettingsUi";
 import { NO_NATIVE_RESOURCES, validateNativeResourceSelection, type NativeResourceSelection } from "@/lib/session-native-resources";
 import type { McpConfigurationListing } from "@/lib/native-mcp-configuration";
 import type { NativeMcpStatus } from "@/lib/native-session-tools";
@@ -23,6 +24,9 @@ const checked = (value: unknown) => { try { return validateNativeResourceSelecti
  * only Apply may initialize/recreate this selected ordinary session. */
 export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly, onApply }: Props) {
   const { t } = useI18n();
+  const observe = useSettingsWork();
+  const work = useRef(observe);
+  work.current = observe;
   const dialog = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false), [metadata, setMetadata] = useState<Metadata | null>(null);
   const [draft, setDraft] = useState<NativeResourceSelection>(NO_NATIVE_RESOURCES);
@@ -40,7 +44,7 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
     const abort = new AbortController();
     setLoading(true);
     const params = new URLSearchParams({ cwd, ...(sessionId ? { sessionId } : {}) });
-    void fetch(`/api/native-tools?${params}`, { cache: "no-store", signal: abort.signal }).then(async response => {
+    void work.current("native.metadata", fetch(`/api/native-tools?${params}`, { cache: "no-store", signal: abort.signal }).then(async response => {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? t("nativeTools.unavailable"));
       if (abort.signal.aborted) return;
@@ -52,14 +56,14 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
       }
     }).catch(reason => {
       if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : t("nativeTools.unavailable"));
-    }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
+    }).finally(() => { if (!abort.signal.aborted) setLoading(false); }));
     return () => abort.abort();
   }, [open, cwd, sessionId, read, t]);
 
   const rows = [...(metadata?.configuration.servers ?? [])];
   for (const server of draft.mcpServers) if (!rows.some(row => key(row) === key(server))) rows.push({ ...server,
     enabled: false, projectOverride: false, eligible: false, transport: "stdio", limitation: "disabled" });
-  const apply = async () => {
+  const apply = () => work.current("native.apply", (async () => {
     if (pending || savingDefault || busy || loading || uncertain) return;
     reconcile.current = false;
     setPending(true); setError(null);
@@ -71,8 +75,8 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
       if (!mounted.current) return;
       setError(reason instanceof Error ? reason.message : t("nativeTools.unavailable")); setUncertain(true);
     } finally { if (mounted.current) setPending(false); }
-  };
-  const saveDefault = async (selection: NativeResourceSelection | null) => {
+  })());
+  const saveDefault = (selection: NativeResourceSelection | null) => work.current("native.default", (async () => {
     const project = metadata?.projectDefault;
     if (!project?.supported || !project.revision || pending || savingDefault || loading || defaultUncertain) return;
     const capturedContext = context;
@@ -101,7 +105,7 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
     } finally {
       if (mounted.current) setSavingDefault(false);
     }
-  };
+  })());
   return <>
     <button type="button" aria-haspopup="dialog" onClick={() => {
       reconcile.current = true; setMetadata(null); setError(null); setUncertain(false); setDefaultUncertain(false); setDefaultNotice(null);

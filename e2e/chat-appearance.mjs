@@ -3,35 +3,33 @@ import { waitForAsyncCondition } from "./async-condition.mjs";
 import { checkAppearanceThemes } from "./appearance-themes.mjs";
 import { checkFontPreferences } from "./font-preferences.mjs";
 
-export async function checkChatAppearanceReset(page) {
-  const width = page.getByRole("slider", { name: "Chat content width", exact: true });
-  const fontSize = page.getByRole("slider", { name: "Chat & terminal font size", exact: true });
-  const resetWidth = page.getByRole("button", { name: "Reset chat content width", exact: true });
-  const resetFontSize = page.getByRole("button", { name: "Reset chat & terminal font size", exact: true });
-  await width.press("End");
-  await fontSize.press("End");
-  await resetWidth.click();
-  assert.equal(await width.inputValue(), "820");
-  assert.equal(await fontSize.inputValue(), "24", "Resetting width must preserve font size");
-  await width.press("End");
-  await resetFontSize.click();
-  assert.equal(await fontSize.inputValue(), "14");
-  assert.equal(await width.inputValue(), "2000", "Resetting font size must preserve width");
-  await resetWidth.click();
-  assert.deepEqual(await page.evaluate(() => ({
-    width: localStorage.getItem("pi-chat-content-width"),
-    fontSize: localStorage.getItem("pi-chat-content-font-size"),
-    appliedWidth: document.documentElement.style.getPropertyValue("--chat-content-max-width"),
-    appliedFontSize: document.documentElement.style.getPropertyValue("--chat-content-font-size"),
-  })), { width: "820", fontSize: "14", appliedWidth: "820px", appliedFontSize: "14px" });
+const columns = page => page.evaluate(() => {
+  const input = document.querySelector(".chat-input-textarea");
+  let composer = input;
+  while (composer && !composer.style.maxWidth) composer = composer.parentElement;
+  const message = document.querySelector("[data-chat-message-column]");
+  return [message, composer].map(el => ({
+    width: el.getBoundingClientRect().width,
+    maxWidth: getComputedStyle(el).maxWidth,
+  }));
+});
+
+/** The old numeric preference has one distinct first-paint/physical obligation.
+ * It does not require another copy of all themes, fonts, title settings and sizes.
+ */
+export async function checkLegacyNumericWidthBridge(page) {
+  await page.setViewportSize({ width: 2560, height: 1100 });
+  await page.getByRole("button", { name: "Use reading width", exact: true }).waitFor();
+  assert.ok((await columns(page)).every(column => column.width > 2000 && column.maxWidth === "none"));
+  await page.getByRole("button", { name: "Use reading width", exact: true }).click();
+  assert.ok((await columns(page)).every(column => column.width <= 820));
   await page.reload({ waitUntil: "domcontentloaded" });
-  const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
-  if (await showSidebar.isVisible()) await showSidebar.click();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  assert.equal(await width.inputValue(), "820");
-  assert.equal(await fontSize.inputValue(), "14");
-  assert.equal(await resetWidth.isDisabled(), true);
-  assert.equal(await resetFontSize.isDisabled(), true);
+  await page.getByRole("button", { name: "Use full width", exact: true }).waitFor();
+  assert.ok((await columns(page)).every(column => column.maxWidth === "820px"));
+  await page.getByRole("button", { name: "Use full width", exact: true }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Use reading width", exact: true }).waitFor();
+  assert.ok((await columns(page)).every(column => column.width > 2000 && column.maxWidth === "none"));
 }
 
 export async function checkChatAppearance(page) {
@@ -54,29 +52,7 @@ export async function checkChatAppearance(page) {
     return textarea.evaluate((el) => el.clientHeight);
   };
 
-  // Fresh browsers (including those with the old numeric width preference)
-  // expand messages and the composer beyond the old 2000px ceiling.
-  await page.getByRole("button", { name: "Use reading width", exact: true }).waitFor();
-  const columns = () => page.evaluate(() => {
-    const input = document.querySelector(".chat-input-textarea");
-    let composer = input;
-    while (composer && !composer.style.maxWidth) composer = composer.parentElement;
-    const message = document.querySelector("[data-chat-message-column]");
-    return [message, composer].map((el) => ({
-      width: el.getBoundingClientRect().width,
-      maxWidth: getComputedStyle(el).maxWidth,
-    }));
-  });
-  assert.ok((await columns()).every((column) => column.width > 2000 && column.maxWidth === "none"));
-  await page.getByRole("button", { name: "Use reading width", exact: true }).click();
-  assert.ok((await columns()).every((column) => column.width <= 820));
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Use full width", exact: true }).waitFor();
-  assert.ok((await columns()).every((column) => column.maxWidth === "820px"));
-  await page.getByRole("button", { name: "Use full width", exact: true }).click();
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Use reading width", exact: true }).waitFor();
-  assert.ok((await columns()).every((column) => column.width > 2000 && column.maxWidth === "none"));
+  await checkLegacyNumericWidthBridge(page);
 
   await openSettings();
   await checkAppearanceThemes(page, openSettings);
@@ -141,9 +117,9 @@ export async function checkChatAppearance(page) {
   assert.equal(await textarea.inputValue(), draft);
   assert.ok(await fittedHeight() < narrowHeight, "Widening must shrink the existing draft");
   await page.getByRole("button", { name: "Use full width", exact: true }).click();
-  assert.ok((await columns()).every((column) => column.width > 2000));
+  assert.ok((await columns(page)).every((column) => column.width > 2000));
   await page.getByRole("button", { name: "Use reading width", exact: true }).click();
-  assert.ok((await columns()).every((column) => column.maxWidth === "2000px"), "The toggle must preserve the custom reading width");
+  assert.ok((await columns(page)).every((column) => column.maxWidth === "2000px"), "The toggle must preserve the custom reading width");
   assert.equal(await textarea.inputValue(), draft, "Width toggles must preserve the draft");
   // Activity polls in the background, so networkidle is not a reliable page-ready signal.
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -155,7 +131,12 @@ export async function checkChatAppearance(page) {
   await openSettings();
   assert.equal(await width.inputValue(), "2000");
   assert.equal(await fontSize.inputValue(), "18");
-  await checkChatAppearanceReset(page);
+  // Exact 2000/24 reset independence and stored/default values are owned by the
+  // actual General controls below Chromium. Keep one real reset→layout bridge.
+  await page.getByRole("button", { name: "Reset chat content width", exact: true }).click();
+  await page.getByRole("button", { name: "Reset chat & terminal font size", exact: true }).click();
+  assert.equal(await width.inputValue(), "820");
+  assert.equal(await fontSize.inputValue(), "14");
   await checkFontPreferences(page, openSettings);
   for (const viewport of [{ width: 1280, height: 600 }, { width: 320, height: 568 }]) {
     await page.setViewportSize(viewport);

@@ -87,15 +87,19 @@ export async function checkSourceHighlighting(page, base, fixture) {
     await page.getByRole("link", { name: "Typed source", exact: true }).waitFor();
     await page.waitForFunction(() => window.__highlightFixture.ready());
     await page.route(pattern, owned.handler);
-    await open("Large source");
-    await pane.locator('.is-lightweight [data-line-number="1050"]').waitFor();
-    assert.equal(chunks.length, 0, "large fallback does not demand all grammars");
-    await open("Plain source");
-    await pane.getByText("Plain highlighting sentinel", { exact: true }).waitFor();
-    assert.equal(chunks.length, 0, "plain source does not demand all grammars");
-    await open("CSV preview");
-    await pane.getByRole("table").waitFor();
-    assert.equal(chunks.length, 0, "table preview does not demand source grammars");
+    // Excluded grammar-demand policies have actual FileViewer owners. Keep the
+    // exact installed large/plain/CSV inputs once, not another compact traversal.
+    if (page.viewportSize().width > 640) {
+      await open("Large source");
+      await pane.locator('.is-lightweight [data-line-number="1050"]').waitFor();
+      assert.equal(chunks.length, 0, "large fallback does not demand all grammars");
+      await open("Plain source");
+      await pane.getByText("Plain highlighting sentinel", { exact: true }).waitFor();
+      assert.equal(chunks.length, 0, "plain source does not demand all grammars");
+      await open("CSV preview");
+      await pane.getByRole("table").waitFor();
+      assert.equal(chunks.length, 0, "table preview does not demand source grammars");
+    }
     // Wait for actual deferred JavaScript demand without depending on a hashed chunk name.
     await open("Typed source");
     await page.waitForFunction(() => window.__highlightChunkRequested === true);
@@ -144,14 +148,18 @@ export async function checkSourceHighlighting(page, base, fixture) {
     await page.waitForFunction(() => window.__highlightFixture.pending() === 1);
     assert.equal(await blocks.locator(".token.attr-equals").count(), 0);
     const heights = await blocks.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
-    await page.evaluate(() => window.__highlightFixture.release());
-    await blocks.nth(9).locator(".token.attr-equals").first().waitFor();
-    assert.equal(await blocks.filter({ has: page.locator(".token.attr-equals") }).count(), 1, "one completed fence per slice");
-    await select(fixture.sessionId);
-    await page.getByRole("link", { name: "Typed source", exact: true }).waitFor();
-    assert.equal(await page.evaluate(() => window.__highlightFixture.pending()), 0, "unmount cancels the owned idle handle");
-    await select(fixture.fencesId);
-    await blocks.nth(9).waitFor();
+    // Keep exact ten-fence cancellation/default composition once. Both inputs
+    // still color all ten actual fences and compare their physical heights.
+    if (page.viewportSize().width > 640) {
+      await page.evaluate(() => window.__highlightFixture.release());
+      await blocks.nth(9).locator(".token.attr-equals").first().waitFor();
+      assert.equal(await blocks.filter({ has: page.locator(".token.attr-equals") }).count(), 1, "one completed fence per slice");
+      await select(fixture.sessionId);
+      await page.getByRole("link", { name: "Typed source", exact: true }).waitFor();
+      assert.equal(await page.evaluate(() => window.__highlightFixture.pending()), 0, "unmount cancels the owned idle handle");
+      await select(fixture.fencesId);
+      await blocks.nth(9).waitFor();
+    }
     for (let i = 0; i < 10; i++) {
       await page.waitForFunction(() => window.__highlightFixture.pending() === 1);
       await page.evaluate(() => window.__highlightFixture.release());
@@ -160,27 +168,31 @@ export async function checkSourceHighlighting(page, base, fixture) {
     assert.deepEqual(await blocks.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height)), heights);
     assert.equal(await page.evaluate(() => window.__highlightFixture.pending()), 0);
 
-    await select(fixture.sessionId);
-    await page.waitForFunction(() => window.__highlightFixture.ready());
-    const emit = event => page.evaluate(event => window.__highlightFixture.emit(event), event);
-    await emit({ type: "agent_start" });
-    await emit({ type: "message_start", message: { role: "assistant", content: [] } });
-    await emit({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
-    const streamed = '```tsx\nconst streamed = <b>Stream highlight sentinel</b>;\n```';
-    await emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: streamed } });
-    const live = blocks.filter({ hasText: "Stream highlight sentinel" });
-    await live.waitFor(); assert.equal(await live.locator(".token").count(), 0);
-    assert.equal(await page.evaluate(() => window.__highlightFixture.pending()), 0, "live streaming never queues tokenization");
-    // Exercise message_end's actual rendering owner before agent settlement
-    // reconciles canonical history. This is synthetic UI streaming, not a saved
-    // provider turn: never invent a durable entry ID or rewrite an SDK-owned file.
-    await emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: streamed }] } });
-    await page.waitForFunction(() => window.__highlightFixture.pending() === 1);
-    assert.equal(await live.locator(".token").count(), 0);
-    await page.evaluate(() => window.__highlightFixture.release());
-    await live.locator(".token").first().waitFor();
-    await emit({ type: "agent_settled" });
-    console.log(`PASS: ${page.viewportSize().width}px lazy source grammars, selection/coordinates/layout and owned deferred/streaming fences`);
+    // Synthetic streaming tokenization is a functional handoff, not another
+    // geometry input. Preserve its exact installed sequence once at desktop.
+    if (page.viewportSize().width > 640) {
+      await select(fixture.sessionId);
+      await page.waitForFunction(() => window.__highlightFixture.ready());
+      const emit = event => page.evaluate(event => window.__highlightFixture.emit(event), event);
+      await emit({ type: "agent_start" });
+      await emit({ type: "message_start", message: { role: "assistant", content: [] } });
+      await emit({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
+      const streamed = '```tsx\nconst streamed = <b>Stream highlight sentinel</b>;\n```';
+      await emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: streamed } });
+      const live = blocks.filter({ hasText: "Stream highlight sentinel" });
+      await live.waitFor(); assert.equal(await live.locator(".token").count(), 0);
+      assert.equal(await page.evaluate(() => window.__highlightFixture.pending()), 0, "live streaming never queues tokenization");
+      // Exercise message_end's actual rendering owner before agent settlement
+      // reconciles canonical history. This is synthetic UI streaming, not a saved
+      // provider turn: never invent a durable entry ID or rewrite an SDK-owned file.
+      await emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: streamed }] } });
+      await page.waitForFunction(() => window.__highlightFixture.pending() === 1);
+      assert.equal(await live.locator(".token").count(), 0);
+      await page.evaluate(() => window.__highlightFixture.release());
+      await live.locator(".token").first().waitFor();
+      await emit({ type: "agent_settled" });
+    }
+    console.log(`PASS: ${page.viewportSize().width}px lazy source grammars, selection/coordinates/layout and ten deferred fences${page.viewportSize().width > 640 ? ", cancellation/streaming handoff" : ""}`);
   } catch (error) { failures.push(error); }
   finally {
     owned.beginDisposal(); release();

@@ -1,19 +1,17 @@
+import "./runtime-search-native-observer.fixture.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import test from "node:test";
 import { createJiti } from "jiti";
 
-const listRoute = await readFile(new URL("./route.ts", import.meta.url), "utf8");
-const detailRoute = await readFile(new URL("./[id]/route.ts", import.meta.url), "utf8");
-const contextRoute = await readFile(new URL("./[id]/context/route.ts", import.meta.url), "utf8");
-const stateRoute = await readFile(new URL("./[id]/state/route.ts", import.meta.url), "utf8");
 const jiti = createJiti(import.meta.url, {
   alias: { "@": process.cwd() },
   interopDefault: true,
   moduleCache: false,
+  fsCache: false,
 });
 const {
   deleteSession,
@@ -34,22 +32,27 @@ const {
   invalidateSessionListCache,
   SessionManager,
 } = await jiti.import("./runtime-route.fixture.ts");
+import { createNativeRouteOwner } from "./runtime-native-owner.fixture.mjs";
+const { flushSessionScanIndexForTests } = await jiti.import("../../../lib/session-list-scanner.ts");
+const nativeRouteCapabilities = { deleteSession, getSessionDetail, renameSession, getSessionList, searchSessions, getRunningSessions, getSessionState, dismissRecovery, listInterrupted };
 
 test("list versions expose idle session creation, rename and deletion to other windows", async (t) => {
+  const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
   const dir = await mkdtemp(join(tmpdir(), "pi-web-list-sync-"));
+  native.root(dir);
+  native.remove(() => rm(dir, { recursive: true, force: true }));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = dir;
   invalidateSessionListCache();
   let sessionId;
-  t.after(async () => {
+  native.final(async () => {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     if (sessionId) invalidateSessionPathCache(sessionId);
     invalidateSessionListCache();
-    await rm(dir, { recursive: true, force: true });
   });
   const list = async () => {
-    const response = await getSessionList(new Request("http://localhost/api/sessions"));
+    const response = await native.routes.getSessionList(new Request("http://localhost/api/sessions"));
     assert.equal(response.status, 200);
     return response.json();
   };
@@ -68,9 +71,9 @@ test("list versions expose idle session creation, rename and deletion to other w
 
   const context = { params: Promise.resolve({ id: sessionId }) };
   const url = `http://localhost/api/sessions/${sessionId}`;
-  const renamed = await renameSession(new Request(url, { method: "PATCH", body: JSON.stringify({ name: "Renamed elsewhere" }) }), context);
+  const renamed = await native.routes.renameSession(new Request(url, { method: "PATCH", body: JSON.stringify({ name: "Renamed elsewhere" }) }), context);
   assert.equal(renamed.status, 200);
-  const poll = await (await getRunningSessions()).json();
+  const poll = await (await native.routes.getRunningSessions()).json();
   assert.deepEqual(poll.runningSessionIds, []);
   assert.deepEqual(poll.attention, [], "on-disk sessions are not assumed to need input");
   assert.ok(poll.sessionListVersion > created.sessionListVersion);
@@ -79,24 +82,26 @@ test("list versions expose idle session creation, rename and deletion to other w
   assert.equal(updated.sessions[0].name, "Renamed elsewhere");
   assert.equal((await list()).sessionListVersion, poll.sessionListVersion, "reads must not create a refresh loop");
 
-  assert.equal((await deleteSession(new Request(url, { method: "DELETE" }), context)).status, 200);
+  assert.equal((await native.routes.deleteSession(new Request(url, { method: "DELETE" }), context)).status, 200);
   const deleted = await list();
   assert.ok(deleted.sessionListVersion > updated.sessionListVersion);
   assert.deepEqual(deleted.sessions, []);
-  assert.equal((await (await getRunningSessions()).json()).sessionListVersion, deleted.sessionListVersion);
+  assert.equal((await (await native.routes.getRunningSessions()).json()).sessionListVersion, deleted.sessionListVersion);
 });
 
 test("session detail reports a possible interrupted run without reopening it; dismissal and deletion persist", async (t) => {
+  const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
   const dir = await mkdtemp(join(tmpdir(), "pi-web-restart-recovery-"));
+  native.root(dir);
+  native.remove(() => rm(dir, { recursive: true, force: true }));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = dir;
   let id;
-  t.after(async () => {
+  native.final(async () => {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     if (id) invalidateSessionPathCache(id);
     invalidateSessionListCache();
-    await rm(dir, { recursive: true, force: true });
   });
   const manager = SessionManager.create(dir);
   manager.appendMessage({ role: "user", content: "Saved prompt", timestamp: Date.now() });
@@ -106,42 +111,44 @@ test("session detail reports a possible interrupted run without reopening it; di
   const runId = recordRunStart(id);
   const root = join(dir, "pi-web", "run-journal", "v1");
   const startFile = join(root, id, `${runId}.start.json`);
-  assert.deepEqual((await (await listInterrupted()).json()).interruptedSessionIds, [], "live owner must not appear in Activity");
+  assert.deepEqual((await (await native.routes.listInterrupted()).json()).interruptedSessionIds, [], "live owner must not appear in Activity");
   const start = JSON.parse(await readFile(startFile, "utf8"));
   await writeFile(startFile, JSON.stringify({ ...start, ownerPid: 99999999 }));
   const context = { params: Promise.resolve({ id }) };
   const url = `http://localhost/api/sessions/${id}`;
-  const detail = await getSessionDetail(new Request(`${url}?force=1`), context);
+  const detail = await native.routes.getSessionDetail(new Request(`${url}?force=1`), context);
   assert.equal(detail.status, 200);
   assert.equal((await detail.json()).possibleInterruptedRun.runId, runId);
-  assert.deepEqual((await (await listInterrupted()).json()).interruptedSessionIds, [id]);
-  const wrongRun = await dismissRecovery(new Request(`${url}/recovery`, { method: "POST", body: JSON.stringify({ runId: "wrong" }) }), context);
+  assert.deepEqual((await (await native.routes.listInterrupted()).json()).interruptedSessionIds, [id]);
+  const wrongRun = await native.routes.dismissRecovery(new Request(`${url}/recovery`, { method: "POST", body: JSON.stringify({ runId: "wrong" }) }), context);
   assert.equal(wrongRun.status, 409);
   const secondRun = recordRunStart(id);
   const secondStartFile = join(root, id, `${secondRun}.start.json`);
   const secondStart = JSON.parse(await readFile(secondStartFile, "utf8"));
   await writeFile(secondStartFile, JSON.stringify({ ...secondStart, ownerPid: 99999999,
     startedAt: new Date(Date.parse(start.startedAt) - 60_000).toISOString() }));
-  const dismiss = await dismissRecovery(new Request(`${url}/recovery`, { method: "POST", body: JSON.stringify({ runId }) }), context);
+  const dismiss = await native.routes.dismissRecovery(new Request(`${url}/recovery`, { method: "POST", body: JSON.stringify({ runId }) }), context);
   assert.equal(dismiss.status, 200);
   assert.equal((await dismiss.json()).possibleInterruptedRun.runId, secondRun);
-  const dismissSecond = await dismissRecovery(new Request(`${url}/recovery`, { method: "POST", body: JSON.stringify({ runId: secondRun }) }), context);
+  const dismissSecond = await native.routes.dismissRecovery(new Request(`${url}/recovery`, { method: "POST", body: JSON.stringify({ runId: secondRun }) }), context);
   assert.equal(dismissSecond.status, 200);
   assert.equal((await dismissSecond.json()).possibleInterruptedRun, null);
-  assert.deepEqual((await (await listInterrupted()).json()).interruptedSessionIds, []);
-  assert.equal((await (await getSessionDetail(new Request(url), context)).json()).possibleInterruptedRun, null);
-  assert.equal((await deleteSession(new Request(url, { method: "DELETE" }), context)).status, 200);
+  assert.deepEqual((await (await native.routes.listInterrupted()).json()).interruptedSessionIds, []);
+  assert.equal((await (await native.routes.getSessionDetail(new Request(url), context)).json()).possibleInterruptedRun, null);
+  assert.equal((await native.routes.deleteSession(new Request(url, { method: "DELETE" }), context)).status, 200);
   assert.equal(readPossibleInterruptedRun(id, root, () => false), null);
 });
 
 test("running snapshot exposes only live wrapper attention without opening sessions", async (t) => {
+  const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
   const dir = await mkdtemp(join(tmpdir(), "pi-web-activity-snapshot-"));
+  native.root(dir);
+  native.remove(() => rm(dir, { recursive: true, force: true }));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = dir;
-  t.after(async () => {
+  native.final(async () => {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-    await rm(dir, { recursive: true, force: true });
   });
   const previous = globalThis.__piSessions;
   const previousSubagents = globalThis.__piSubagentRuns;
@@ -151,7 +158,7 @@ test("running snapshot exposes only live wrapper attention without opening sessi
     getPendingAttention: () => ({ sessionId: "waiting", method: "ask_user", summary: "Choose?", since: 42 }) };
   globalThis.__piSessions = new Map([["waiting", waiting]]);
   try {
-    const snapshot = await (await getRunningSessions()).json();
+    const snapshot = await (await native.routes.getRunningSessions()).json();
     assert.deepEqual(snapshot.runningSessionIds, ["waiting"]);
     assert.deepEqual(snapshot.queuedSessionIds, ["queued"]);
     assert.deepEqual(snapshot.attention, [{ sessionId: "waiting", method: "ask_user", summary: "Choose?", since: 42 }]);
@@ -165,17 +172,19 @@ test("running snapshot exposes only live wrapper attention without opening sessi
 });
 
 test("archive and restore preserve the session file and refresh the catalogue", async (t) => {
+  const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
   const dir = await mkdtemp(join(tmpdir(), "pi-web-archive-"));
+  native.root(dir);
+  native.remove(() => rm(dir, { recursive: true, force: true }));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = dir;
   invalidateSessionListCache();
   let id;
-  t.after(async () => {
+  native.final(async () => {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     if (id) invalidateSessionPathCache(id);
     invalidateSessionListCache();
-    await rm(dir, { recursive: true, force: true });
   });
   const manager = SessionManager.create(dir);
   manager.appendMessage({ role: "user", content: "Archive fixture", timestamp: Date.now() });
@@ -186,8 +195,8 @@ test("archive and restore preserve the session file and refresh the catalogue", 
   invalidateSessionListCache();
   const context = { params: Promise.resolve({ id }) };
   const url = `http://localhost/api/sessions/${id}`;
-  const patch = (body) => renameSession(new Request(url, { method: "PATCH", body: JSON.stringify(body) }), context);
-  const list = async (summary = false) => (await getSessionList(new Request(`http://localhost/api/sessions${summary ? "?summary=1" : ""}`))).json();
+  const patch = (body) => native.routes.renameSession(new Request(url, { method: "PATCH", body: JSON.stringify(body) }), context);
+  const list = async (summary = false) => (await native.routes.getSessionList(new Request(`http://localhost/api/sessions${summary ? "?summary=1" : ""}`))).json();
   const before = await list();
   assert.equal((await patch({ archived: true })).status, 200);
   const archived = await list();
@@ -203,13 +212,13 @@ test("archive and restore preserve the session file and refresh the catalogue", 
   other.appendMessage({ role: "assistant", content: [{ type: "text", text: "Done" }], timestamp: Date.now() });
   const otherId = other.getSessionId();
   cacheSessionPath(otherId, other.getSessionFile());
-  t.after(() => invalidateSessionPathCache(otherId));
+  native.final(() => invalidateSessionPathCache(otherId));
   invalidateSessionListCache();
   const otherKey = (await list()).sessions.find((session) => session.id === otherId).projectKey;
   assert.notEqual(projectKey, otherKey);
   const search = async (status = "active", scope = { projectKey }) => {
     const params = new URLSearchParams({ q: "Archive fixture", status, ...scope });
-    const response = await searchSessions(new Request(`http://localhost/api/sessions/search?${params}`));
+    const response = await native.routes.searchSessions(new Request(`http://localhost/api/sessions/search?${params}`));
     assert.equal(response.status, 200);
     return (await response.json()).results.map((result) => result.session.id);
   };
@@ -230,7 +239,7 @@ test("archive and restore preserve the session file and refresh the catalogue", 
     new URLSearchParams({ q: "Archive fixture", scope: "all", status: "active", field: "body" }),
     new URLSearchParams({ q: "Archive fixture", scope: "all", status: "active", field: "" }),
     new URLSearchParams({ q: "Archive fixture", projectKey, status: "active", includeArchived: "1" })]) {
-    assert.equal((await searchSessions(new Request(`http://localhost/api/sessions/search?${invalid}`))).status, 400);
+    assert.equal((await native.routes.searchSessions(new Request(`http://localhost/api/sessions/search?${invalid}`))).status, 400);
   }
   assert.deepEqual(await search("active", { projectKey: "unknown" }), []);
   assert.match(await readFile(path, "utf8"), /pi-web:archive/);
@@ -241,7 +250,7 @@ test("archive and restore preserve the session file and refresh the catalogue", 
   assert.equal((await patch({ name: "x", archived: true })).status, 400);
   const transient = SessionManager.create(dir);
   cacheSessionPath(transient.getSessionId(), transient.getSessionFile());
-  assert.equal((await renameSession(
+  assert.equal((await native.routes.renameSession(
     new Request(`http://localhost/api/sessions/${transient.getSessionId()}`, { method: "PATCH", body: JSON.stringify({ archived: true }) }),
     { params: Promise.resolve({ id: transient.getSessionId() }) },
   )).status, 409);
@@ -257,15 +266,17 @@ test("archive and restore preserve the session file and refresh the catalogue", 
 });
 
 test("session listing returns a gzip-compressed response when the client accepts it", async (t) => {
+  const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
   const dir = await mkdtemp(join(tmpdir(), "pi-web-list-gzip-"));
+  native.root(dir);
+  native.remove(() => rm(dir, { recursive: true, force: true }));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = dir;
   invalidateSessionListCache();
-  t.after(async () => {
+  native.final(async () => {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     invalidateSessionListCache();
-    await rm(dir, { recursive: true, force: true });
   });
 
   const firstMessage = "compressible session content ".repeat(500);
@@ -274,7 +285,7 @@ test("session listing returns a gzip-compressed response when the client accepts
   manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "done" }], timestamp: Date.now() });
   invalidateSessionListCache();
 
-  const response = await getSessionList(new Request("http://localhost/api/sessions", {
+  const response = await native.routes.getSessionList(new Request("http://localhost/api/sessions", {
     headers: { "Accept-Encoding": "gzip" },
   }));
 
@@ -286,15 +297,17 @@ test("session listing returns a gzip-compressed response when the client accepts
 });
 
 test("deleting an unpersisted session shuts down its runtime and invalidates caches", async (t) => {
+  const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
   const dir = await mkdtemp(join(tmpdir(), "pi-web-delete-empty-"));
+  native.root(dir);
+  native.remove(() => rm(dir, { recursive: true, force: true }));
   const previousRegistry = globalThis.__piSessions;
   const ids = [];
   globalThis.__piSessions = new Map();
-  t.after(async () => {
+  native.final(async () => {
     globalThis.__piSessions = previousRegistry;
     for (const id of ids) invalidateSessionPathCache(id);
     invalidateSessionListCache();
-    await rm(dir, { recursive: true, force: true });
   });
 
   for (const persistOnShutdown of [false, true]) {
@@ -313,8 +326,8 @@ test("deleting an unpersisted session shuts down its runtime and invalidates cac
         globalThis.__piSessions.delete(id);
       },
     });
-    const before = (await (await getRunningSessions()).json()).sessionListVersion;
-    const response = await deleteSession(
+    const before = (await (await native.routes.getRunningSessions()).json()).sessionListVersion;
+    const response = await native.routes.deleteSession(
       new Request(`http://localhost/api/sessions/${id}`, { method: "DELETE" }),
       { params: Promise.resolve({ id }) },
     );
@@ -325,52 +338,16 @@ test("deleting an unpersisted session shuts down its runtime and invalidates cac
     assert.equal(globalThis.__piSessions.has(id), false);
     assert.equal(globalThis.__piSessionPathCache.has(id), false);
     assert.equal([...globalThis.__piPathToSessionIdCache.values()].includes(id), false);
-    assert.ok((await (await getRunningSessions()).json()).sessionListVersion > before);
+    assert.ok((await (await native.routes.getRunningSessions()).json()).sessionListVersion > before);
     await assert.rejects(readFile(filePath), { code: "ENOENT" });
   }
 });
 
-test("session listing supports cheap summaries and honors force refresh", () => {
-  assert.match(listRoute, /searchParams\.get\("summary"\) === "1"/);
-  assert.match(listRoute, /summary\s*\n?\s*\? listSessionSummaries\(\)/);
-  assert.match(listRoute, /searchParams\.get\("force"\) === "1"/);
-  assert.match(listRoute, /listAllSessions\(\{ force \}\)/);
-  assert.match(listRoute, /attachSessionProjectInfo\(getRpcSessionInfos\(\)\)/);
-  assert.match(listRoute, /mergeSessionLists\(persistedSessions, runtimeSessions\)/);
-  assert.match(listRoute, /"Cache-Control": "no-store"/);
-});
-
-test("session reads use the live SessionManager before requiring a JSONL path", () => {
-  for (const source of [detailRoute, contextRoute]) {
-    const liveLookup = source.indexOf("getRpcSession(id)");
-    const pathLookup = source.indexOf("resolveSessionPath(id)");
-    assert.ok(liveLookup >= 0);
-    assert.ok(pathLookup > liveLookup);
-    // openSessionManager is the cached read-only opener; the live wrapper's
-    // manager must still win over any disk read, cached or not.
-    assert.match(source, /liveRpc\?\.inner\.sessionManager \?\? openSessionManager\(/);
-  }
-});
-
-test("detail reads probe disk only on force/mount and evict a stale idle wrapper", () => {
-  assert.match(detailRoute, /searchParams\.get\("force"\) === "1"/);
-  assert.match(detailRoute, /force && liveWrapper\?\.evictIfDiskAhead\(\)/);
-  // Anchored reconnect may recover a restore marker missed by idle startup;
-  // ordinary context reads and known sibling anchors retain the live snapshot.
-  assert.match(contextRoute, /ancestorId && liveRpc && !sm\.getEntry\(ancestorId\) && liveRpc\.evictIfDiskAhead\(\)/);
-  assert.doesNotMatch(contextRoute, /readLatestSessionEntryId/);
-});
-
-test("live agent state is available before the session file is persisted", () => {
-  const liveLookup = stateRoute.indexOf("getRpcSession(id)");
-  const pathLookup = stateRoute.indexOf("resolveSessionPath(id)");
-  assert.ok(liveLookup >= 0);
-  assert.ok(pathLookup > liveLookup);
-  assert.match(stateRoute, /if \(rpc\?\.isAlive\(\)\)/);
-});
-
 test("deleting a session removes all persisted subagent descendants", async (t) => {
+  const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
   const dir = await mkdtemp(join(tmpdir(), "pi-web-delete-reparent-"));
+  native.root(dir);
+  native.remove(() => rm(dir, { recursive: true, force: true }));
   const grandparentPath = join(dir, "grandparent.jsonl");
   const parentPath = join(dir, "parent.jsonl");
   const childPath = join(dir, "child.jsonl");
@@ -425,12 +402,11 @@ test("deleting a session removes all persisted subagent descendants", async (t) 
     "",
   ].join("\n"));
   cacheSessionPath(parentId, parentPath);
-  t.after(async () => {
+  native.final(async () => {
     invalidateSessionPathCache(parentId);
-    await rm(dir, { recursive: true, force: true });
   });
 
-  const response = await deleteSession(
+  const response = await native.routes.deleteSession(
     new Request(`http://localhost/api/sessions/${parentId}`, { method: "DELETE" }),
     { params: Promise.resolve({ id: parentId }) },
   );
@@ -442,6 +418,7 @@ test("deleting a session removes all persisted subagent descendants", async (t) 
 });
 
 test("live detail and state routes work without a persisted JSONL file", async (t) => {
+  const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
   const previousRegistry = globalThis.__piSessions;
   const id = "live-route-test";
   const timestamp = "2026-08-12T01:02:03.000Z";
@@ -469,16 +446,16 @@ test("live detail and state routes work without a persisted JSONL file", async (
     cwd: "/tmp",
     send: async () => ({ isStreaming: true }),
   }]]);
-  t.after(() => {
+  native.final(() => {
     globalThis.__piSessions = previousRegistry;
   });
 
   const routeContext = { params: Promise.resolve({ id }) };
-  const detailResponse = await getSessionDetail(
+  const detailResponse = await native.routes.getSessionDetail(
     new Request(`http://localhost/api/sessions/${id}`),
     routeContext,
   );
-  const stateResponse = await getSessionState(
+  const stateResponse = await native.routes.getSessionState(
     new Request(`http://localhost/api/sessions/${id}/state`),
     routeContext,
   );
@@ -497,6 +474,7 @@ test("live detail and state routes work without a persisted JSONL file", async (
 });
 
 test("session detail returns a gzip-compressed response when the client accepts it", async (t) => {
+  const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
   const previousRegistry = globalThis.__piSessions;
   const id = "live-route-gzip-test";
   const timestamp = "2026-09-05T00:00:00.000Z";
@@ -524,11 +502,11 @@ test("session detail returns a gzip-compressed response when the client accepts 
     sessionId: id,
     cwd: "/tmp",
   }]]);
-  t.after(() => {
+  native.final(() => {
     globalThis.__piSessions = previousRegistry;
   });
 
-  const response = await getSessionDetail(
+  const response = await native.routes.getSessionDetail(
     new Request(`http://localhost/api/sessions/${id}`, {
       headers: { "Accept-Encoding": "gzip" },
     }),
@@ -539,4 +517,131 @@ test("session detail returns a gzip-compressed response when the client accepts 
   assert.equal(response.headers.get("Content-Encoding"), "gzip");
   const payload = JSON.parse(gunzipSync(Buffer.from(await response.arrayBuffer())).toString("utf8"));
   assert.equal(payload.info.firstMessage, firstMessage);
+});
+
+
+import { loadBackend, next, backendCase } from "../../../lib/backend-ownership.fixture.mjs";
+import { contextHandler } from "./context-handler.fixture.mjs";
+const { mergeSessionLists } = await jiti.import("../../../lib/session-reader.ts");
+
+test("list GET selects summary or forced scan, joins runtime projection, and is never cacheable", async t => {
+  const owner = backendCase(t);
+  for (const query of ["", "?force=1", "?summary=1", "?summary=1&force=1", "?summary=true&force=true"]) {
+    const calls = [], persisted = [{ id: "saved", path: "/fixture/saved.jsonl", cwd: "/fixture",
+      created: "2026-01-01T00:00:00.000Z", modified: "2026-01-01T00:00:00.000Z",
+      messageCount: 1, firstMessage: "Saved fixture", transient: false }];
+    const runtime = [{ id: "transient", path: "", cwd: "/fixture",
+      created: "2026-01-02T00:00:00.000Z", modified: "2026-01-02T00:00:00.000Z",
+      messageCount: 1, firstMessage: "Runtime fixture", transient: true }];
+    const { GET } = await loadBackend(new URL("./route.ts", import.meta.url), {
+      "next/server": next, "@/lib/perf": { startServerPerf: () => undefined },
+      "@/lib/json-response": { jsonResponse: (_req, data, init) => Response.json(data, init) },
+      "@/lib/rpc-manager": { getRpcSessionInfos: () => runtime, getRunningRpcSessionIds: () => ["transient"], getCompletionNotificationSuppressedRpcSessionIds: () => ["transient"] },
+      "@/lib/session-reader": {
+        listSessionSummaries: async () => { calls.push(["summary"]); return persisted; },
+        listAllSessions: async options => { calls.push(["full", options]); return persisted; },
+        getSessionListVersion: () => 42,
+        attachSessionProjectInfo: async infos => { assert.equal(infos, runtime); calls.push(["projects"]); return infos; },
+        mergeSessionLists,
+      },
+    });
+    const response = await owner.response(GET(new Request(`http://localhost/api/sessions${query}`)));
+    const body = await response.json();
+    assert.equal(response.status, 200, `list query ${query || "(default)"}: ${JSON.stringify(body).slice(0, 2000)}`);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual(body.sessions.map(s => s.id).sort(), ["saved", "transient"]);
+    assert.deepEqual(body.sessions.map(s => s.id), ["transient", "saved"], "real merge orders complete metadata by modification time");
+    assert.equal(body.sessionListVersion, 42); assert.deepEqual(body.runningSessionIds, ["transient"]);
+    assert.deepEqual(body.completionNotificationSuppressedSessionIds, ["transient"]);
+    assert.deepEqual(calls[0], query.includes("summary=1") ? ["summary"] : ["full", { force: query.includes("force=1") }]);
+    assert.deepEqual(calls[1], ["projects"]);
+  }
+});
+
+test("detail GET uses live manager before path, probes only force, and opens after idle eviction", async t => {
+  const owner = backendCase(t);
+  for (const [force, evict] of [[false, false], [true, false], [true, true]]) {
+    const calls = [];
+    const manager = { getHeader: () => ({ id: "session", cwd: "/fixture", timestamp: "2026-01-01T00:00:00Z" }),
+      getEntries: () => [], getLeafId: () => null, getTree: () => [], getSessionName: () => undefined, getSessionFile: () => "/fixture/session.jsonl" };
+    const wrapper = { sessionFile: "/fixture/session.jsonl", inner: { sessionManager: manager, sessionId: "session" }, isAlive: () => true,
+      evictIfDiskAhead: () => { calls.push("evict"); return evict; } };
+    const { GET } = await loadBackend(new URL("./[id]/route.ts", import.meta.url), {
+      "next/server": next, "fs": { existsSync: () => false, statSync: () => { throw new Error("not persisted"); } },
+      "@/lib/perf": { startServerPerf: () => undefined },
+      "@/lib/rpc-manager": { getRpcSession: () => { calls.push("live"); return wrapper; } },
+      "@/lib/session-reader": {
+        resolveSessionPath: async () => { calls.push("path"); return "/fixture/session.jsonl"; },
+        openSessionManager: () => { calls.push("open"); return manager; },
+        buildSessionContext: () => ({ messages: [], entryIds: [] }),
+        attachSessionProjectInfo: async infos => infos,
+      },
+      "@/lib/session-run-recovery": { readPossibleInterruptedRun: () => null },
+      "@/lib/session-revision": { computeSessionRevision: () => null },
+    }, { actual: true });
+    const response = await owner.response(GET(new Request(`http://localhost/api/sessions/session${force ? "?force=1" : ""}`), { params: Promise.resolve({ id: "session" }) }));
+    assert.equal(response.status, 200); const body = await response.json();
+    assert.equal(Boolean(body.wrapperRebuilt), force && evict);
+    assert.deepEqual(calls, !force ? ["live"] : evict ? ["live", "evict", "path", "open"] : ["live", "evict"]);
+  }
+  // Context's independent missing-anchor/sibling/disk rules exercise its full GET.
+  const context = await contextHandler(t); assert.equal((await context.get("")).status, 200);
+  assert.equal(context.calls.some(([name]) => name === "path" || name === "open"), false);
+});
+
+test("state GET alive path wins even without disk; dead, missing and command failure stay distinct", async t => {
+  const owner = backendCase(t);
+  for (const mode of ["alive", "dead", "missing", "error"]) {
+    const calls = [];
+    const { GET } = await loadBackend(new URL("./[id]/state/route.ts", import.meta.url), {
+      "next/server": next,
+      "@/lib/rpc-manager": { getRpcSession: () => { calls.push("live"); return { isAlive: () => mode === "alive" || mode === "error", send: async command => {
+        assert.deepEqual(command, { type: "get_state" }); if (mode === "error") throw new Error("state failed"); return { isStreaming: true };
+      } }; } },
+      "@/lib/session-reader": { resolveSessionPath: async () => { calls.push("path"); return mode === "missing" ? null : "/fixture/session.jsonl"; } },
+    });
+    const response = await owner.response(GET(new Request("http://localhost/api/sessions/session/state"), { params: Promise.resolve({ id: "session" }) }));
+    const body = await response.json(); assert.equal(response.status, mode === "error" ? 500 : mode === "missing" ? 404 : 200);
+    assert.deepEqual(calls, ["alive", "error"].includes(mode) ? ["live"] : ["live", "path"]);
+    if (mode === "alive") assert.deepEqual(body, { running: true, state: { isStreaming: true } });
+    if (mode === "dead") assert.deepEqual(body, { running: false });
+  }
+});
+
+
+test("native catalogue scope joins real scans and commits its named index writer before root removal", async t => {
+  const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
+  const dir = await mkdtemp(join(tmpdir(), "pi-web-native-catalogue-close-"));
+  native.root(dir);
+  native.remove(() => rm(dir, { recursive: true, force: true }));
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = dir;
+  native.final(() => { if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous; invalidateSessionListCache(); });
+  invalidateSessionListCache();
+  const manager = SessionManager.create(dir);
+  manager.appendMessage({ role: "user", content: "Owned catalogue", timestamp: Date.now() });
+  const response = await native.routes.getSessionList(new Request("http://localhost/api/sessions?force=1"));
+  assert.equal(response.status, 200); await response.json();
+  await native.close();
+  assert.equal(globalThis.__piWebScanIndexSave, undefined, "specific writer committed and timer removed");
+  await assert.rejects(stat(dir), { code: "ENOENT" });
+});
+
+test("native route owner releases and joins a held peer despite another handler failing", async () => {
+  // Ownership-helper probe only; the preceding native case uses real handlers,
+  // SDK files and scanner persistence. No synthetic response grants authority.
+  const { deferred } = await import("../../../lib/backend-ownership.fixture.mjs");
+  const entered = deferred(), release = deferred(), hooks = [], events = [];
+  const failure = new Error("controlled handler failure");
+  const native = createNativeRouteOwner({ after: fn => hooks.push(fn) }, {
+    held: async () => { entered.resolve(); await release.promise; events.push("peer complete"); return Response.json({ ok: true }); },
+    failed: async () => { throw failure; },
+  }, () => { throw new Error("no scanner writer was admitted in this helper probe"); });
+  native.release(() => release.resolve()); native.final(() => events.push("restore"));
+  native.remove(() => events.push("remove must remain withheld after failure"));
+  const peer = native.body(native.routes.held().then(response => response.json())); await entered.promise;
+  await assert.rejects(native.routes.failed(), error => error === failure);
+  await assert.rejects(native.close(), error => error instanceof AggregateError && error.errors.includes(failure));
+  assert.deepEqual(events, ["peer complete", "restore"]); assert.deepEqual(await peer, { ok: true });
+  assert.equal(hooks.length, 1);
 });

@@ -86,22 +86,35 @@ export async function checkSessionLaunch(page, { base, api, post, project, agent
     await waitForAsyncCondition(page, sessionLaunchIdle, parentId);
     return JSON.parse(content.slice(content.indexOf(": ") + 2));
   };
-  const sessionsBefore = (await api("/api/sessions?includeArchived=1")).sessions.map((session) => session.id);
-  await start("changes");
-  let card = page.getByRole("group", { name: "Start a new session", exact: true }).filter({ has: page.getByRole("button", { name: "Approve & start", exact: true }) });
-  await card.waitFor(); await checkBlockingCard(card);
-  await card.getByLabel("Additional details", { exact: true }).fill("Please change the task before launching.");
-  await card.getByRole("button", { name: "Collapse", exact: true }).click();
-  await page.getByRole("button", { name: /Awaiting response.*Start a new session/ }).click();
-  assert.equal(await card.getByLabel("Additional details", { exact: true }).inputValue(), "Please change the task before launching.");
-  await card.getByRole("button", { name: "Request changes", exact: true }).click();
-  const changes = await finish("changes"); assert.equal(changes.requestChanges, true); assert.equal(changes.feedback, "Please change the task before launching.");
-  assert.deepEqual((await api("/api/sessions?includeArchived=1")).sessions.map((session) => session.id).sort(), sessionsBefore.sort(), "feedback never creates a session");
+  const card = page.getByRole("group", { name: "Start a new session", exact: true }).filter({ has: page.getByRole("button", { name: "Approve & start", exact: true }) });
+  // Feedback/reject policy is owned below; keep one installed button/receipt bridge.
+  if (width > 600) {
+    const sessionsBefore = (await api("/api/sessions?includeArchived=1")).sessions.map((session) => session.id);
+    await start("changes");
+    await card.waitFor(); await checkBlockingCard(card);
+    await card.getByLabel("Additional details", { exact: true }).fill("Please change the task before launching.");
+    await card.getByRole("button", { name: "Collapse", exact: true }).click();
+    await page.getByRole("button", { name: /Awaiting response.*Start a new session/ }).click();
+    assert.equal(await card.getByLabel("Additional details", { exact: true }).inputValue(), "Please change the task before launching.");
+    await card.getByRole("button", { name: "Request changes", exact: true }).click();
+    const changes = await finish("changes"); assert.equal(changes.requestChanges, true); assert.equal(changes.feedback, "Please change the task before launching.");
+    assert.deepEqual((await api("/api/sessions?includeArchived=1")).sessions.map((session) => session.id).sort(), sessionsBefore.sort(), "feedback never creates a session");
 
-  await start("reject"); await card.waitFor(); await card.getByRole("button", { name: "Reject", exact: true }).click();
-  assert.equal((await finish("reject")).accepted, false);
+    await start("reject"); await card.waitFor(); await card.getByRole("button", { name: "Reject", exact: true }).click();
+    assert.equal((await finish("reject")).accepted, false);
+  }
 
   await start("ask"); await card.waitFor();
+  if (width <= 600) {
+    // The original compact draft/collapse geometry rides the real Ask card;
+    // it no longer needs a separate non-creating SDK command and idle wait.
+    await checkBlockingCard(card);
+    await card.getByLabel("Additional details", { exact: true }).fill("Please change the task before launching.");
+    await card.getByRole("button", { name: "Collapse", exact: true }).click();
+    await page.getByRole("button", { name: /Awaiting response.*Start a new session/ }).click();
+    assert.equal(await card.getByLabel("Additional details", { exact: true }).inputValue(), "Please change the task before launching.");
+    await card.getByLabel("Additional details", { exact: true }).fill("");
+  }
   await page.reload({ waitUntil: "domcontentloaded" }); await card.waitFor();
   await card.getByText("Do the independent child task", { exact: true }).waitFor(); await checkBlockingCard(card);
   await page.screenshot({ path: join(artifacts, `session-launch-approval-${width}.png`) });
@@ -136,5 +149,5 @@ export async function checkSessionLaunch(page, { base, api, post, project, agent
   await patch({ launch: "ask" }, "project", [], destination);
   await post(`/api/agent/${allowed.sessionId}`, { type: "abort" });
   await patch({}, "session", ["launch"]);
-  console.log(`PASS: ${width}px session launch settings, exact Ask, feedback/reject, Allow, durable links/reload and independent child input`);
+  console.log(`PASS: ${width}px session launch settings, exact Ask, ${width > 600 ? "feedback/reject, " : "compact details/collapse, "}Allow, durable links/reload and independent child input`);
 }

@@ -32,6 +32,7 @@ import { useFontPreferences } from "@/hooks/useFontPreferences";
 import type { ToolPreset } from "@/lib/tool-presets";
 import type { ModelSpeed } from "@/lib/model-speed";
 import { ModelSelector, type ModelSelectorOption } from "./ModelSelector";
+import { createComposerWork, type ComposerWork } from "@/lib/client-completion";
 
 export { filterModelOptions } from "./ModelSelector";
 
@@ -42,6 +43,8 @@ export interface AttachedImage {
 }
 
 interface Props {
+  /** Optional shared completion observation; never admission/cancellation authority. */
+  work?: ComposerWork;
   onSend: (message: string, images?: AttachedImage[]) => void;
   onAbort: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => void;
@@ -95,6 +98,8 @@ interface Props {
 }
 
 export interface ChatInputHandle {
+  /** Joins admitted local async actions, not server persistence or native media. */
+  whenSettled?: () => Promise<void>;
   focus: () => void;
   insertText: (text: string) => void;
   insertIfEmpty: (text: string) => void;
@@ -595,6 +600,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   draftKey,
   cwd,
   compact = false,
+  work: suppliedWork,
 }: Props, ref) {
   const { t } = useI18n();
   const { fontSize, fullWidth, setFullWidth } = useChatAppearance();
@@ -630,6 +636,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     cwd: string;
     values: Record<string, boolean>;
   } | null>(null);
+  const localWork = React.useMemo(() => createComposerWork(), []);
+  const work = suppliedWork ?? localWork;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
@@ -653,7 +661,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   valueRef.current = value;
   attachedImagesRef.current = attachedImages;
 
-  const processImageFiles = useCallback(async (files: File[]) => {
+  const processImageFiles = useCallback((files: File[]) => work.run(async () => {
     if (compact) return;
     const remaining = Math.max(
       0,
@@ -681,9 +689,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     } finally {
       pendingImageCountRef.current -= imageFiles.length;
     }
-  }, [compact]);
+  }), [compact, work]);
 
   useImperativeHandle(ref, () => ({
+    whenSettled: work.whenSettled,
     focus() {
       const ta = textareaRef.current;
       if (!ta || ta.disabled || ta.closest("[inert], [hidden]") || !ta.getClientRects().length || isComposingRef.current) return;
@@ -1005,7 +1014,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     }
   }, [attachedImages.length, clearInput, onBuiltinCommand]);
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(() => work.run(async () => {
     if (modelSpeedChanging) return;
     const msg = value.trim();
     if (!msg && !attachedImages.length) return;
@@ -1014,8 +1023,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     if (builtinAllowed && await runBuiltinCommand(msg)) return;
     if (isStreaming) return;
     clearInput();
-    onSend(msg, attachedImages.length ? attachedImages : undefined);
-  }, [value, attachedImages, isStreaming, modelSpeedChanging, runBuiltinCommand, onSend, clearInput, onAudioUnlock]);
+    return onSend(msg, attachedImages.length ? attachedImages : undefined);
+  }), [work, value, attachedImages, isStreaming, modelSpeedChanging, runBuiltinCommand, onSend, clearInput, onAudioUnlock]);
 
   const {
     skillDormancy,
@@ -1104,7 +1113,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const fetchCwd = cwd;
     const query = atQueryText;
     const timer = setTimeout(() => {
-      fetch(`/api/file-index?cwd=${encodeURIComponent(fetchCwd)}&q=${encodeURIComponent(query)}`)
+      void work.run(() => fetch(`/api/file-index?cwd=${encodeURIComponent(fetchCwd)}&q=${encodeURIComponent(query)}`)
         .then((res) => {
           if (!res.ok) throw new Error(`file search failed: ${res.status}`);
           return res.json() as Promise<{ matches?: FileIndexEntry[] }>;
@@ -1112,10 +1121,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
         .then((data) => setAtServerResult({ cwd: fetchCwd, query, matches: data.matches ?? [] }))
         .catch(() => {
           // Keep showing local matches; the next keystroke retries.
-        });
+        }));
     }, 150);
     return () => clearTimeout(timer);
-  }, [needsServerSearch, atQueryText, cwd]);
+  }, [work, needsServerSearch, atQueryText, cwd]);
 
   const serverResultInUse = needsServerSearch
     && atServerResult !== null
@@ -1147,7 +1156,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     fileIndexFetchingRef.current = cwd;
     const fetchCwd = cwd;
     setFileIndexLoading(true);
-    fetch(`/api/file-index?cwd=${encodeURIComponent(fetchCwd)}`)
+    void work.run(() => fetch(`/api/file-index?cwd=${encodeURIComponent(fetchCwd)}`)
       .then((res) => {
         if (!res.ok) throw new Error(`file index failed: ${res.status}`);
         return res.json() as Promise<{ files?: string[]; truncated?: boolean }>;
@@ -1163,8 +1172,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       .finally(() => {
         fileIndexFetchingRef.current = null;
         setFileIndexLoading(false);
-      });
-  }, [atTokenActive, cwd]);
+      }));
+  }, [work, atTokenActive, cwd]);
 
   const applyAtCompletion = useCallback((entry: FileIndexEntry) => {
     if (!atQuery) return;
@@ -1256,27 +1265,26 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     });
   }, []);
 
-  const sendQueued = useCallback((mode: "steer" | "followup") => {
+  const sendQueued = useCallback((mode: "steer" | "followup") => work.run(async () => {
     const msg = value.trim();
     if (!msg && !attachedImages.length) return;
     onAudioUnlock?.();
     if (!attachedImages.length && onBuiltinCommand && canRunBuiltinSlashCommandWhileStreaming(msg)) {
-      void runBuiltinCommand(msg);
+      await runBuiltinCommand(msg);
       return;
     }
     const streamingBehavior = mode === "steer" ? "steer" : "followUp";
     if (msg.startsWith("/") && onPromptWithStreamingBehavior) {
       clearInput();
-      onPromptWithStreamingBehavior(msg, streamingBehavior, attachedImages.length ? attachedImages : undefined);
-      return;
+      return onPromptWithStreamingBehavior(msg, streamingBehavior, attachedImages.length ? attachedImages : undefined);
     }
     clearInput();
     if (mode === "steer" && onSteer) {
-      onSteer(msg, attachedImages.length ? attachedImages : undefined);
+      return onSteer(msg, attachedImages.length ? attachedImages : undefined);
     } else if (mode === "followup" && onFollowUp) {
-      onFollowUp(msg, attachedImages.length ? attachedImages : undefined);
+      return onFollowUp(msg, attachedImages.length ? attachedImages : undefined);
     }
-  }, [value, attachedImages, onBuiltinCommand, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, onAudioUnlock, runBuiltinCommand]);
+  }), [work, value, attachedImages, onBuiltinCommand, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, onAudioUnlock, runBuiltinCommand]);
 
   const getNextSlashIndex = useCallback((direction: "up" | "down" | "left" | "right") => {
     const lastIndex = displayedSlashCommands.length - 1;
@@ -1518,11 +1526,11 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     setSlashActiveIndex(0);
     if (!slashCommandsRequestedRef.current && onLoadSlashCommands) {
       slashCommandsRequestedRef.current = true;
-      Promise.resolve(onLoadSlashCommands()).catch(() => {
+      void work.run(() => Promise.resolve(onLoadSlashCommands()).catch(() => {
         slashCommandsRequestedRef.current = false;
-      });
+      }));
     }
-  }, [slashQuery, onLoadSlashCommands]);
+  }, [work, slashQuery, onLoadSlashCommands]);
 
   // Lazy-load skill dormancy (disable-model-invocation) each time the slash
   // palette opens, so toggles made in the skills panel are reflected on the
@@ -1532,7 +1540,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const requestCwd = cwd;
     let cancelled = false;
     setSkillDormancyState({ cwd: requestCwd, values: {} });
-    fetch(`/api/skills?cwd=${encodeURIComponent(requestCwd)}`)
+    void work.run(() => fetch(`/api/skills?cwd=${encodeURIComponent(requestCwd)}`)
       .then((res) => {
         if (!res.ok) throw new Error(`skills fetch failed: ${res.status}`);
         return res.json() as Promise<Partial<SkillsResponse>>;
@@ -1545,11 +1553,11 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       })
       .catch(() => {
         if (!cancelled) setSkillDormancyState({ cwd: requestCwd, values: {} });
-      });
+      }));
     return () => {
       cancelled = true;
     };
-  }, [slashMenuOpen, cwd]);
+  }, [work, slashMenuOpen, cwd]);
 
   useEffect(() => {
     if (slashActiveIndex >= displayedSlashCommands.length) {

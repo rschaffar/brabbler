@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { createJiti } from "jiti";
 import { loadTsModule } from "../../../lib/sse-stream.fixture.mjs";
+import { fileBodyModuleFixture } from "./file-body-module.fixture.mjs";
 
 const jiti = createJiti(import.meta.url);
 const { isFilePathReferencedByEntries, isValidSessionId } = await jiti.import("../../../lib/session-file-references-core.ts");
@@ -17,7 +18,17 @@ const sessionId = "550e8400-e29b-41d4-a716-446655440000";
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-reference-policy-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  let fileBody;
+  t.after(async () => {
+    const { closed, errors } = fileBody ? await fileBody.finish() : { closed: true, errors: [] };
+    if (closed) {
+      try { fs.rmSync(root, { recursive: true, force: true }); }
+      catch (failure) { errors.push(failure); }
+    } else {
+      errors.push(new Error("reference fixture retained root: native file-body closure is uncertain"));
+    }
+    if (errors.length) throw new AggregateError(errors, "reference file-body runtime/cleanup failures");
+  });
   const allowed = path.join(root, "allowed"), outside = path.join(root, "outside.txt");
   fs.mkdirSync(allowed);
   fs.writeFileSync(outside, "SAFE_REFERENCE_SENTINEL\n");
@@ -35,6 +46,8 @@ function fixture(t) {
     "@/lib/paths": { filePathFromApiSegments }, "@/lib/text-preview": { readTextPreviewChunk },
     "@/lib/sse-stream": { createSseStream: () => assert.fail("unauthorized watch acquired a stream") },
   };
+  fileBody = fileBodyModuleFixture(mocks.fs);
+  mocks["@/lib/file-body-stream"] = fileBody.load();
   const { GET } = loadTsModule(new URL("./[...path]/route.ts", import.meta.url), mocks).exports;
   return {
     outside, allowed, get stats() { return stats; }, set entries(value) { entries = value; },

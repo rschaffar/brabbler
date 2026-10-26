@@ -1,6 +1,6 @@
-// Reviewed execution units: a chain is deliberately indivisible when later
-// assertions depend on its earlier writes. Input IDs include browser defaults,
-// legacy storage preferences and viewport *height*, not just the width.
+// Reviewed current steps keep dependent native/browser actions ordered. That
+// dependence does not retain their lower-owned functional neighbors. Changed
+// bodies get fresh IDs. Inputs include defaults, legacy storage and height.
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -20,31 +20,31 @@ export const browserInputs = {
 // Order is part of ownership: history desktop dismisses the recovery marker
 // before fresh mobile reads it; state and shared-account chains retain writes.
 export const scenarios = {
-  "ssh-agent": ["ssh-agent/webauthn-openssh@en-desktop", "ssh-agent/webauthn-openssh@en-mobile-tall"],
+  "ssh-agent": ["ssh-agent/native-consumers@en-desktop", "ssh-agent/compact-native@en-mobile-tall"],
   "state": ["state/api-append-accounts@service", "state/agents-reload@default", "state/durable-account@default"],
-  "history": ["history/reading-chain@legacy-desktop", "history/reading-chain@legacy-mobile"],
-  "extension-dialogs": ["extension-dialogs/full@legacy-desktop", "extension-dialogs/full@legacy-mobile"],
-  "mobile-sidebar": ["mobile-sidebar/archive-search-restore-move@legacy-mobile"],
-  "worktrees": ["worktrees/full@en-desktop", "worktrees/full@en-mobile-tall"],
-  "session-launch": ["session-launch/full@en-desktop", "session-launch/full@en-mobile-tall"],
-  "running-forks": ["running-forks/full@en-desktop", "running-forks/full@en-mobile-tall"],
-  "model-speed": ["model-speed/exercise@en-desktop", "model-speed/fresh@en-desktop", "model-speed/exercise@en-mobile-tall", "model-speed/fresh@en-mobile-tall"],
-  "native-tools": ["native-tools/full@en-desktop", "native-tools/full@en-mobile-tall"],
-  "trust": ["trust/full@en-desktop", "trust/full@en-mobile-tall"],
-  "git-plugin": ["git-plugin/full@en-desktop", "git-plugin/full@en-mobile-tall"],
-  "appearance": ["appearance/full@numeric-wide", "appearance/full@legacy-desktop", "appearance/scratchpad@en-desktop", "appearance/scratchpad@en-mobile-short"],
-  "timestamps": ["timestamps/full@en-desktop", "timestamps/full@en-mobile-tall", "timestamps/full@legacy-desktop", "timestamps/full@legacy-mobile"],
-  "diff-context": ["diff-context/explorer-then-merge@legacy-desktop"],
-  "markdown": ["markdown/preview-then-line-links@legacy-desktop", "markdown/preview-then-line-links@legacy-mobile"],
-  "file-edit": ["file-edit/panel-diff-edit@legacy-desktop", "file-edit/panel-diff-edit@legacy-mobile"],
+  "history": ["history/reading-branch-native-v8@legacy-desktop", "history/reading-version-lower-v7@legacy-mobile"],
+  "extension-dialogs": ["extension-dialogs/wrap-native-publication-v2@legacy-desktop", "extension-dialogs/compact-wrap-native-v2@legacy-mobile"],
+  "mobile-sidebar": ["mobile-sidebar/compact-search-native-rename-restore-move-v3@legacy-mobile"],
+  "worktrees": ["worktrees/native-loss-bound-review-v3@en-desktop", "worktrees/modal-review-layout-v2@en-mobile-tall"],
+  "session-launch": ["session-launch/feedback-and-independent-native-v2@en-desktop", "session-launch/independent-native-compact-v2@en-mobile-tall"],
+  "running-forks": ["running-forks/canonical-quote-stop-v2@en-desktop", "running-forks/first-user-quote-stop-v2@en-mobile-tall"],
+  "model-speed": ["model-speed/native-wiring-v3@en-desktop", "model-speed/native-fresh-v2@en-desktop", "model-speed/native-wiring-v3@en-mobile-tall", "model-speed/native-fresh-v2@en-mobile-tall"],
+  "native-tools": ["native-tools/selected-runtime-native-v2@en-desktop", "native-tools/modal-layout@en-mobile-tall"],
+  "trust": ["trust/worktree-caller-cwd-reset-native-v5@en-desktop", "trust/worktree-compact-restriction-native-v5@en-mobile-tall"],
+  "git-plugin": ["git-plugin/pagination-owned-v8@en-desktop", "git-plugin/pagination-owned-v8@en-mobile-tall"],
+  "appearance": ["appearance/legacy-width-bridge-v2@numeric-wide", "appearance/layout-native-v2@legacy-desktop", "appearance/notes-native@en-desktop", "appearance/notes-touch-layout@en-mobile-short"],
+  "timestamps": ["timestamps/usage-time-geometry-v3@en-desktop", "timestamps/process-hit-test-v3@en-mobile-tall", "timestamps/usage-time-geometry-v3@legacy-desktop", "timestamps/process-hit-test-v3@legacy-mobile"],
+  "diff-context": ["diff-context/d409-render-merge-v2@legacy-desktop"],
+  "markdown": ["markdown/render-files-native-v3@legacy-desktop", "markdown/render-touch-wiring-v2@legacy-mobile"],
+  "file-edit": ["file-edit/native-upload-caller-owned-v4@legacy-desktop", "file-edit/native-upload-caller-owned-v4@legacy-mobile"],
   "archive": ["archive/inline-restore@legacy-mobile"],
-  "privacy": ["privacy/full@legacy-desktop", "privacy/full@legacy-tablet", "privacy/full@legacy-mobile"],
-  "activity": ["activity/golden-native@legacy-desktop", "activity/responsive@legacy-tablet", "activity/responsive@legacy-mobile"],
-  "accounts": ["accounts/created-deleted@legacy-desktop", "accounts/created-deleted@legacy-mobile", "accounts/shared-device@en-desktop", "accounts/shared-device@en-mobile-short"],
-  "questions": ["questions/registration-and-dialog@legacy-desktop", "questions/registration-and-dialog@legacy-mobile"],
+  "privacy": ["privacy/native-owned-v3@legacy-desktop", "privacy/native-owned-v3@legacy-tablet", "privacy/native-owned-v3@legacy-mobile"],
+  "activity": ["activity/native-toolbar-owned-v5@legacy-desktop", "activity/compact-state-recipe-owned-v4@legacy-tablet", "activity/compact-navigation-owned-v6@legacy-mobile"],
+  "accounts": ["accounts/created-device-owner-v3@legacy-desktop", "accounts/created-device-owner-v3@legacy-mobile", "accounts/shared-device-owner-v3@en-desktop", "accounts/shared-device-owner-v3@en-mobile-short"],
+  "questions": ["questions/native-publication-v2@legacy-desktop", "questions/compact-native-v2@legacy-mobile"],
   "session-links": ["session-links/copy-follow@legacy-desktop", "session-links/copy-follow@legacy-mobile"],
-  "bulk": ["bulk/archive-restore-delete@legacy-desktop", "bulk/archive-restore-delete@legacy-mobile"],
-  "move": ["move/full-picker@legacy-desktop", "move/full-picker@legacy-mobile"],
+  "bulk": ["bulk/native-selection-mutations-v2@legacy-desktop", "bulk/native-selection-mutations-v2@legacy-mobile"],
+  "move": ["move/picker-recovery-native-v2@legacy-desktop", "move/picker-modal-browse-v2@legacy-mobile"],
 };
 for (const entries of Object.values(scenarios)) Object.freeze(entries);
 Object.freeze(scenarios);
@@ -86,7 +86,7 @@ export function selectGroup(env) {
 // An attempted ID cannot be retried, and success is recorded only after return.
 export function createCoverage(group, artifacts) {
   assert.ok(group === "terminal" || Object.hasOwn(scenarios, group), `Unknown scenario owner: ${group}`);
-  const expected = group === "terminal" ? ["terminal/full@production-pty"] : [...scenarios[group]];
+  const expected = group === "terminal" ? ["terminal/native-fonts-pty-touch-bounded-held-create-v3@production-pty"] : [...scenarios[group]];
   const attempted = new Set(), completed = [];
   const receipt = { version: 1, group, expected, completed, status: "running", active: null };
   const save = () => writeFileSync(join(artifacts, "coverage.json"), JSON.stringify(receipt, null, 2) + "\n", { mode: 0o600 });

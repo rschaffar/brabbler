@@ -98,6 +98,61 @@ test("worktree-only removal never fabricates branch-loss acknowledgment; branch-
   });
 });
 
+test("branchless unique detached removal binds full HEAD and removes only its physical worktree and registration", async (t) => {
+  const f = fixture(t, "detached");
+  f.set({ discardResources: "allow", cleanupWorktree: "keep", cleanupBranch: "keep", cleanupArtifacts: "keep" });
+  // The existing fixture detaches at feature's reachable tip. Commit HERE, not
+  // on a branch: capture/staleness or reachable-detached positives are not this
+  // original browser input's unique, branchless native removal conjunction.
+  writeFileSync(join(f.path, "unique-detached.txt"), "unique detached disposable work\n");
+  git(f.path, "add", "unique-detached.txt");
+  git(f.path, "commit", "-qm", "Unique branchless detached removal fixture");
+  const uniqueHead = git(f.path, "rev-parse", "HEAD");
+  assert.match(uniqueHead, /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
+  assert.notEqual(uniqueHead, f.tip);
+  assert.equal(git(f.path, "branch", "--show-current"), "");
+  assert.equal(git(f.path, "status", "--porcelain"), "");
+  const refsBefore = git(f.cwd, "for-each-ref", "--format=%(refname) %(objectname)");
+  assert.equal(git(f.cwd, "for-each-ref", "--format=%(refname)", "--points-at", uniqueHead), "", "no ref names the unique HEAD");
+  assert.equal(git(f.cwd, "for-each-ref", "--format=%(refname)", "--contains", uniqueHead), "", "no ref reaches the unique HEAD");
+  const registeredBefore = git(f.cwd, "worktree", "list", "--porcelain");
+  // The shared git helper trims stdout, including the final record's newline.
+  // Restore that delimiter only; keep exact physical path/full HEAD/field values.
+  assert.equal(`${registeredBefore}\n`.includes(`worktree ${f.path}\nHEAD ${uniqueHead}\ndetached\n`), true);
+
+  // Same actual remove adapter/native executor and trusted UI entry as the
+  // existing native cases. This does NOT claim host digest/nonce or browser
+  // checkbox proof. Await the complete original call before reading effects.
+  passed(await f.call({ subject: { kind: "detached", head: uniqueHead },
+    worktreePath: f.path, removeWorktree: true, deleteBranch: false, comparisonTarget: undefined,
+  }, { pluginCard: async (...args) => {
+    assert.equal(existsSync(f.path), true, "review publication has no removal effects");
+    assert.equal(git(f.path, "rev-parse", "HEAD"), uniqueHead);
+    assert.equal(git(f.cwd, "for-each-ref", "--format=%(refname) %(objectname)"), refsBefore);
+    return f.ui.pluginCard(...args);
+  } }));
+  assert.equal(f.cards.length, 1);
+  const card = f.cards[0];
+  assert.equal(card.fields.find(field => field.label === "Exact subject")?.value, `Detached HEAD at ${uniqueHead}`);
+  assert.equal(card.fields.find(field => field.label === "Worktree")?.value, `Remove: ${f.path}`);
+  assert.equal(card.fields.find(field => field.label === "Local branch")?.value, "Keep (no branch deletion)");
+  assert.equal(card.requiredAcknowledgment, undefined);
+  assert.equal(card.sections.some(section => section.title === "Detached commit warning"), true);
+  const completed = f.receipts.at(-1);
+  assert.equal(f.receipts[0].phase, "prepared");
+  assert.equal(completed.phase, "succeeded");
+  assert.equal(completed.authorization.decision, "user-approved");
+  assert.equal(completed.card.requiredAcknowledgment, undefined);
+  assert.deepEqual(completed.completedEffects, [`Removed worktree: ${f.path}`], "no artifact or branch effect is invented");
+  assert.equal(existsSync(f.path), false);
+  const registeredAfter = git(f.cwd, "worktree", "list", "--porcelain");
+  assert.equal(registeredAfter.includes(`worktree ${f.path}\n`), false);
+  assert.equal(registeredAfter.includes(`worktree ${f.cwd}\n`), true, "main checkout remains registered");
+  assert.equal(git(f.cwd, "for-each-ref", "--format=%(refname) %(objectname)"), refsBefore, "every ref is unchanged");
+  assert.equal(git(f.cwd, "rev-parse", "feature"), f.tip);
+  assert.equal(f.releases(), 1, "the original native directory reservation is released");
+});
+
 test("valid clean detached worktree removal binds HEAD and warns without a branch-loss checkbox", async (t) => {
   const f = fixture(t, "detached"); f.artifact(); f.set({ cleanupWorktree: "keep", cleanupBranch: "keep", cleanupArtifacts: "keep" });
   passed(await f.call({ comparisonTarget: undefined }));

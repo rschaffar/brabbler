@@ -10,7 +10,7 @@ import {
   findProviderView,
   isLastEnabledModel,
 } from "./enabled-models-helpers";
-import { ConfigButton, ConfigSwitch } from "./SettingsUi";
+import { ConfigButton, ConfigSwitch, useSettingsTask, useSettingsWork } from "./SettingsUi";
 import { ModelContextWindow, type ModelContextSettings } from "./ModelContextWindow";
 
 /**
@@ -75,6 +75,8 @@ const FAILURE_KEYS: Record<string, string> = {
 };
 
 export function useEnabledModels(cwd?: string | null): EnabledModelsController {
+  const observe = useSettingsWork();
+  const task = useSettingsTask();
   const [view, setView] = useState<EnabledModelsView | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<string | null>(null);
@@ -89,7 +91,7 @@ export function useEnabledModels(cwd?: string | null): EnabledModelsController {
     const controller = new AbortController();
     setLoading(true);
     const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
-    fetch(`/api/models/enabled${query}`, { signal: controller.signal })
+    void observe("enabled.read", fetch(`/api/models/enabled${query}`, { signal: controller.signal })
       .then(async (res) => {
         const data = await res.json() as EnabledModelsView & { error?: string };
         if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -102,9 +104,9 @@ export function useEnabledModels(cwd?: string | null): EnabledModelsController {
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
-      });
+      }));
     return () => controller.abort();
-  }, [cwd, reloadKey]);
+  }, [cwd, reloadKey, observe]);
 
   const mutate = useCallback((key: string, body: MutationBody) => {
     // A save can land while a switch is still in flight; queue it rather than
@@ -116,7 +118,7 @@ export function useEnabledModels(cwd?: string | null): EnabledModelsController {
     pendingRef.current = key;
     setPending(key);
     setFailure(null);
-    void (async () => {
+    void task("enabled.mutate", async () => {
       try {
         const res = await fetch("/api/models/enabled", {
           method: "PUT",
@@ -140,7 +142,7 @@ export function useEnabledModels(cwd?: string | null): EnabledModelsController {
         if (queued) mutateRef.current?.(queued.key, queued.body);
       }
     })();
-  }, [cwd]);
+  }, [cwd, task]);
 
   mutateRef.current = mutate;
 
@@ -293,6 +295,7 @@ export function EnabledModelsProviderSwitch({
  * The button is the whole feature: nothing refreshes catalogs on its own.
  */
 function useCatalogRefresh(providerId: string, onChanged: () => void) {
+  const task = useSettingsTask();
   const [refreshing, setRefreshing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -302,7 +305,7 @@ function useCatalogRefresh(providerId: string, onChanged: () => void) {
   const refresh = useCallback(() => {
     setRefreshing(true);
     setNote(null);
-    void (async () => {
+    void task("enabled.catalog", async () => {
       try {
         const res = await fetch("/api/models/refresh", {
           method: "POST",
@@ -323,7 +326,7 @@ function useCatalogRefresh(providerId: string, onChanged: () => void) {
         setRefreshing(false);
       }
     })();
-  }, [providerId, onChanged]);
+  }, [providerId, onChanged, task]);
 
   return { refreshing, note, refresh };
 }

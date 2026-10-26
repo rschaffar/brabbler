@@ -30,7 +30,8 @@ export function splitGitPatch(patch: string): DisplayFile[] {
 }
 
 /** Per-stack queue and successful-response cache. Only bounded, read-only patch loads. */
-export function createPatchLoader<T = DisplayPatch>(load: (id: string, signal: AbortSignal) => Promise<T>, limit = 3) {
+export function createPatchLoader<T = DisplayPatch>(load: (id: string, signal: AbortSignal) => Promise<T>, limit = 3,
+  onReadWork?: (work: Promise<void>) => void) {
   let active = 0;
   const cache = new Map<string, T>();
   const queue: Array<() => void> = [];
@@ -50,12 +51,15 @@ export function createPatchLoader<T = DisplayPatch>(load: (id: string, signal: A
         active++;
         // Strict Mode can synchronously unmount/replay effects. Do not start a
         // read for an already-cancelled mount, and settle synchronous loader errors.
-        void Promise.resolve().then(() => {
+        const work = Promise.resolve().then(() => {
           if (signal.aborted) throw new DOMException("Aborted", "AbortError");
           return load(id, signal);
         }).then((value) => {
           if (!signal.aborted) { cache.set(id, value); resolve(value); }
         }, reject).finally(() => { active--; signal.removeEventListener("abort", abort); pump(); });
+        // Abort may already have rejected the returned request promise. Its real
+        // admitted loader and slot-release finally still belong to this owner.
+        onReadWork?.(work);
       };
       signal.addEventListener("abort", abort, { once: true });
       queue.push(start);

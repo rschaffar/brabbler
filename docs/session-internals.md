@@ -115,6 +115,11 @@ Incomplete trailing records are reread from their start. A parsed unterminated r
 
 Unchanged summaries reuse complete cached rows. Cold/changed summaries still read header/stat **and the whole transcript for archive markers**, so archived sessions never briefly appear active; they do not overwrite complete accumulators with pending rows. This port does not optimize cold archive discovery or make the separate summary header/archive reads transactional against external replacement. Index writes coalesce over a five-second window, capturing their destination and snapshot. The unreferenced timer never keeps a process alive; a lost save merely costs a rescan after restart. Relation/project resolution and catalogue enumeration/stat work remain outside the append-tail saving.
 
+Sidebar startup paints a summary before deferred detail hydration. Starting any
+real detail refresh cancels that pending startup timer, so it cannot supersede a
+move-owned refresh and produce a false refresh-failure warning. Stale-response
+publication guards and genuine HTTP/JSON failure reporting remain independent.
+
 ### Running state polling + reconciliation
 - The sidebar polls `/api/agent/running` every 2.5 seconds while the tab is visible and pauses polling in background tabs. The session-list response remains the initial fallback.
 - `invalidateSessionListCache()` bumps the generation but **keeps** the previous scan, and the cache is fresh only while its recorded generation matches. Ordinary agent activity invalidates it constantly, and rebuilding costs hundreds of milliseconds because `loadAllSessions()` re-reads every forked and subagent session. Callers that only need metadata — mapping search hits to sidebar rows — pass `listAllSessions({ allowStale: true })` to read the previous scan and let the rebuild happen in the background. A stale scan is a complete catalogue apart from sessions created seconds ago, so those callers accept a brief window where a brand-new session is not yet listed.

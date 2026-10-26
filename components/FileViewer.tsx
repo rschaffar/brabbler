@@ -71,6 +71,8 @@ interface Props {
   onDraftChange?: (draft: FileEditDraft | undefined) => void;
   onSavingChange?: (saving: boolean) => void;
   watchEnabled?: boolean;
+  /** Observe complete admitted work without cancelling it when a reader is hidden or removed. */
+  onWork?: (work: Promise<unknown>, kind?: "grammar" | "diff-highlighter") => void;
 }
 
 interface FileData {
@@ -123,7 +125,46 @@ const markdownCodeComponents: Components = {
   },
 };
 
-const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
+export const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
+
+/** Source presentation policy, shared by rendering and grammar admission. */
+export function fileViewerContent(data: FileData | null, dirty: boolean, draft: FileEditDraft | undefined,
+  initialLineTarget: FileLineTarget | undefined, editing: boolean): string {
+  return dirty && (!initialLineTarget || editing) ? draft!.content : data?.content ?? "";
+}
+
+export function fileSourceView({ data, displayMode, hasGitDiff = false, isDeletedDiff = false,
+  sourceLines, editing = false, filePath, autoPreview = false }: {
+  data: FileData | null; displayMode: DisplayMode; hasGitDiff?: boolean; isDeletedDiff?: boolean;
+  sourceLines: readonly string[]; editing?: boolean; filePath: string; autoPreview?: boolean;
+}) {
+  const language = data?.language ?? "text";
+  const isHtml = language === "html", isMarkdown = language === "markdown";
+  const isDelimitedTable = isDelimitedTablePath(filePath);
+  const hasPreview = isDelimitedTable || (!data?.truncated && (isHtml || isMarkdown));
+  const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
+  const useLightweightSource = sourceLines.length > SOURCE_HIGHLIGHT_MAX_LINES
+    && !(effectiveDisplayMode === "diff" && hasGitDiff)
+    && !(effectiveDisplayMode === "preview" && hasPreview);
+  const demandGrammar = Boolean(data) && !editing && !useLightweightSource
+    && !(autoPreview && !data?.truncated && (isHtml || isMarkdown))
+    && !(effectiveDisplayMode === "diff" && hasGitDiff)
+    && !(effectiveDisplayMode === "preview" && hasPreview)
+    && needsPrismLanguage(language);
+  return { language, isHtml, isMarkdown, isDelimitedTable,
+    hasPreview, effectiveDisplayMode, useLightweightSource, demandGrammar };
+}
+
+// A lifecycle observer sees the original terminal promise, including catch/finally.
+// It grants no cancellation/admission authority; in particular unmount is not Save cancellation.
+function useFileWork(onWork: Props["onWork"]) {
+  const observer = useRef(onWork);
+  observer.current = onWork;
+  return useCallback(<T,>(work: Promise<T>, kind?: "grammar" | "diff-highlighter"): Promise<T> => {
+    observer.current?.(work, kind);
+    return work;
+  }, []);
+}
 const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
   source: "Source",
   preview: "Preview",
@@ -315,7 +356,8 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Props) {
+function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true, onWork }: Props) {
+  const observeWork = useFileWork(onWork);
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -348,7 +390,7 @@ function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
     let active = true;
     const synchronize = () => {
       const requestId = ++syncRequestRef.current;
-      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      observeWork(fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
         .then((response) => response.json())
         .then((next: { size?: number; error?: string }) => {
           if (!active || requestId !== syncRequestRef.current) return;
@@ -363,7 +405,7 @@ function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
         })
         .catch((nextError) => {
           if (active && requestId === syncRequestRef.current) setError(String(nextError));
-        });
+        }));
     };
 
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
@@ -394,7 +436,7 @@ function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
       es.close();
       if (esRef.current === es) esRef.current = null;
     };
-  }, [filePath, sourceSessionId, watchEnabled]);
+  }, [filePath, sourceSessionId, watchEnabled, observeWork]);
 
   const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
 
@@ -487,7 +529,8 @@ function formatDuration(seconds: number): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Props) {
+function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true, onWork }: Props) {
+  const observeWork = useFileWork(onWork);
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -520,7 +563,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
     let active = true;
     const synchronize = () => {
       const requestId = ++syncRequestRef.current;
-      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      observeWork(fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
         .then((response) => response.json())
         .then((next: { size?: number; error?: string }) => {
           if (!active || requestId !== syncRequestRef.current) return;
@@ -535,7 +578,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
         })
         .catch((nextError) => {
           if (active && requestId === syncRequestRef.current) setError(String(nextError));
-        });
+        }));
     };
 
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
@@ -566,7 +609,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
       es.close();
       if (esRef.current === es) esRef.current = null;
     };
-  }, [filePath, sourceSessionId, watchEnabled]);
+  }, [filePath, sourceSessionId, watchEnabled, observeWork]);
 
   const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
 
@@ -640,7 +683,8 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
   );
 }
 
-function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Props) {
+function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true, onWork }: Props) {
+  const observeWork = useFileWork(onWork);
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -673,7 +717,7 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
     let active = true;
     const synchronize = () => {
       const requestId = ++syncRequestRef.current;
-      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      observeWork(fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
         .then((response) => response.json())
         .then((next: { size?: number; error?: string }) => {
           if (!active || requestId !== syncRequestRef.current) return;
@@ -688,7 +732,7 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
         })
         .catch((nextError) => {
           if (active && requestId === syncRequestRef.current) setError(String(nextError));
-        });
+        }));
     };
 
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
@@ -719,7 +763,7 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
       es.close();
       if (esRef.current === es) esRef.current = null;
     };
-  }, [filePath, sourceSessionId, watchEnabled]);
+  }, [filePath, sourceSessionId, watchEnabled, observeWork]);
 
   const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
 
@@ -795,7 +839,8 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
   );
 }
 
-function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, navigationId, watchEnabled = true }: Props) {
+function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, navigationId, watchEnabled = true, onWork }: Props) {
+  const observeWork = useFileWork(onWork);
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -822,7 +867,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, navigatio
 
     let active = true;
     const requestId = ++syncRequestRef.current;
-    fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+    observeWork(fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
       .then((r) => r.json())
       .then((d: { size?: number; error?: string }) => {
         if (!active || requestId !== syncRequestRef.current) return;
@@ -836,12 +881,12 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, navigatio
       })
       .catch((nextError) => {
         if (active && requestId === syncRequestRef.current) setError(String(nextError));
-      });
+      }));
 
     return () => {
       active = false;
     };
-  }, [filePath, isPdf, sourceSessionId]);
+  }, [filePath, isPdf, sourceSessionId, observeWork]);
 
   useEffect(() => {
     setWatching(false);
@@ -856,7 +901,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, navigatio
     let active = true;
     const synchronize = () => {
       const requestId = ++syncRequestRef.current;
-      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      observeWork(fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
         .then((r) => r.json())
         .then((d: { size?: number; error?: string }) => {
           if (!active || requestId !== syncRequestRef.current) return;
@@ -876,7 +921,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, navigatio
         })
         .catch((nextError) => {
           if (active && requestId === syncRequestRef.current) setError(String(nextError));
-        });
+        }));
     };
 
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
@@ -912,7 +957,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, navigatio
       es.close();
       if (esRef.current === es) esRef.current = null;
     };
-  }, [filePath, isPdf, sourceSessionId, watchEnabled]);
+  }, [filePath, isPdf, sourceSessionId, watchEnabled, observeWork]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -992,18 +1037,19 @@ export function FileViewer({
   onDraftChange,
   onSavingChange,
   watchEnabled = true,
+  onWork,
 }: Props) {
   if (isImagePath(filePath)) {
-    return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
+    return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} onWork={onWork} />;
   }
   if (isAudioPath(filePath)) {
-    return <AudioViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
+    return <AudioViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} onWork={onWork} />;
   }
   if (isVideoPath(filePath)) {
-    return <VideoViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
+    return <VideoViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} onWork={onWork} />;
   }
   if (isDocumentPreviewPath(filePath)) {
-    return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} initialPage={initialPage} navigationId={navigationId} watchEnabled={watchEnabled} />;
+    return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} initialPage={initialPage} navigationId={navigationId} watchEnabled={watchEnabled} onWork={onWork} />;
   }
   return (
     <TextFileViewer
@@ -1026,6 +1072,7 @@ export function FileViewer({
       onDraftChange={onDraftChange}
       onSavingChange={onSavingChange}
       watchEnabled={watchEnabled}
+      onWork={onWork}
     />
   );
 }
@@ -1050,7 +1097,11 @@ function TextFileViewer({
   onDraftChange,
   onSavingChange,
   watchEnabled = true,
+  onWork,
 }: Props) {
+  const observeWork = useFileWork(onWork);
+  const observeGrammarWork = useCallback((work: Promise<void>) => observeWork(work, "grammar"), [observeWork]);
+  const observeDiffWork = useCallback((work: Promise<void>) => observeWork(work, "diff-highlighter"), [observeWork]);
   // These are restoration inputs, not a controlled viewer state. Later reports
   // must not reset the live viewer while preserving preferences for a new link.
   const initialState = useRef(restoredState).current;
@@ -1196,7 +1247,7 @@ function TextFileViewer({
 
   const fetchContent = useCallback((filePath: string, offset = 0) => {
     const requestId = ++contentRequestRef.current;
-    return fetch(getFileApiUrl(filePath, "read", sourceSessionId, { offset: offset || undefined, viewerCwd: cwd }))
+    return observeWork(fetch(getFileApiUrl(filePath, "read", sourceSessionId, { offset: offset || undefined, viewerCwd: cwd }))
       .then((r) => r.json())
       .then((d: FileData & { error?: string }) => {
         if (requestId !== contentRequestRef.current) return null;
@@ -1217,10 +1268,10 @@ function TextFileViewer({
         probeEligibilityRef.current = { path: filePath, cwd, sessionId: sourceSessionId, edit: false, gitDiff: false };
         setError(String(e));
         return null;
-      });
-  }, [sourceSessionId, cwd]);
+      }));
+  }, [sourceSessionId, cwd, observeWork]);
 
-  const fetchEditable = useCallback(async (targetPath: string) => {
+  const fetchEditable = useCallback((targetPath: string) => observeWork((async () => {
     if (savingRef.current) return;
     const eligible = probeEligibilityRef.current;
     if (!eligible || eligible.path !== targetPath || eligible.cwd !== cwd || eligible.sessionId !== sourceSessionId) return;
@@ -1259,9 +1310,9 @@ function TextFileViewer({
         else setEditSnapshot(null);
       }
     }
-  }, [sourceSessionId, cwd, setFileDraft, bindEditIdentity]);
+  })()), [sourceSessionId, cwd, setFileDraft, bindEditIdentity, observeWork]);
 
-  const fetchGitDiff = useCallback(async (targetPath: string) => {
+  const fetchGitDiff = useCallback((targetPath: string) => observeWork((async () => {
     const eligible = probeEligibilityRef.current;
     if (!eligible || eligible.path !== targetPath || eligible.cwd !== cwd || eligible.sessionId !== sourceSessionId) return;
     const requestId = ++gitDiffRequestRef.current;
@@ -1287,9 +1338,9 @@ function TextFileViewer({
         setGitDiffResolved(true);
       }
     }
-  }, [cwd, sourceSessionId]);
+  })()), [cwd, sourceSessionId, observeWork]);
 
-  const saveDraft = useCallback(async () => {
+  const saveDraft = useCallback(() => observeWork((async () => {
     const current = draftRef.current;
     const eligible = probeEligibilityRef.current;
     if (!current || current.content === current.baseline || saving || savingElsewhere || !eligible?.edit
@@ -1328,7 +1379,7 @@ function TextFileViewer({
       setSaving(false);
       onSavingChangeRef.current?.(false);
     }
-  }, [filePath, cwd, sourceSessionId, saving, savingElsewhere, editIdentity, setSaving, setFileDraft, fetchContent, fetchGitDiff]);
+  })()), [filePath, cwd, sourceSessionId, saving, savingElsewhere, editIdentity, setSaving, setFileDraft, fetchContent, fetchGitDiff, observeWork]);
 
   // Reset and load the file itself when its identity changes. Live watching is
   // managed separately so pausing it never clears the displayed content.
@@ -1341,9 +1392,9 @@ function TextFileViewer({
     setGitDiffResolved(false);
     setWatching(false);
     probeEligibilityRef.current = null;
-    fetchContent(filePath).then(() => {
+    observeWork(fetchContent(filePath).then(() => {
       if (active) { void fetchEditable(filePath); void fetchGitDiff(filePath); }
-    }).finally(() => { if (active) setLoading(false); });
+    }).finally(() => { if (active) setLoading(false); }));
 
     return () => {
       active = false;
@@ -1352,7 +1403,7 @@ function TextFileViewer({
       gitDiffRequestRef.current += 1;
       probeEligibilityRef.current = null;
     };
-  }, [filePath, fetchContent, fetchEditable, fetchGitDiff, sourceSessionId]);
+  }, [filePath, fetchContent, fetchEditable, fetchGitDiff, sourceSessionId, observeWork]);
 
   useEffect(() => {
     setWatching(false);
@@ -1364,13 +1415,13 @@ function TextFileViewer({
 
     if (!watchEnabled) return;
     let disposed = false;
-    const synchronize = async () => {
+    const synchronize = () => observeWork((async () => {
       if (disposed) return;
       if (!draftRef.current || draftRef.current.content === draftRef.current.baseline) await fetchContent(filePath);
       if (disposed) return;
       void fetchEditable(filePath);
       void fetchGitDiff(filePath);
-    };
+    })());
 
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
@@ -1389,7 +1440,7 @@ function TextFileViewer({
       es.close();
       if (esRef.current === es) esRef.current = null;
     };
-  }, [filePath, fetchContent, fetchEditable, fetchGitDiff, sourceSessionId, watchEnabled]);
+  }, [filePath, fetchContent, fetchEditable, fetchGitDiff, sourceSessionId, watchEnabled, observeWork]);
 
   useEffect(() => {
     void fetchGitDiff(filePath);
@@ -1433,7 +1484,13 @@ function TextFileViewer({
     }
   }, [initialLineTarget, requestedInitialDisplayMode, hasGitDiff, updateDisplayMode]);
 
-  const viewerContent = dirty && (!initialLineTarget || editing) ? draft!.content : data?.content ?? "";
+  const viewerContent = fileViewerContent(data, dirty, draft, initialLineTarget, editing);
+  const sourceLines = useMemo(() => viewerContent.split("\n"), [viewerContent]);
+  const { language, isHtml, isMarkdown, isDelimitedTable, hasPreview,
+    effectiveDisplayMode, useLightweightSource, demandGrammar } = fileSourceView({
+      data, displayMode, hasGitDiff, isDeletedDiff, sourceLines, editing, filePath,
+      autoPreview: defaultPreviewEligibleRef.current,
+    });
   const markdownPreview = useMemo(
     () => normalizeDisplayMathWithSourceMap(data?.language === "markdown" ? viewerContent : ""),
     [data?.language, viewerContent],
@@ -1451,21 +1508,7 @@ function TextFileViewer({
     [data?.language, viewerContent],
   );
 
-  const sourceLines = useMemo(() => viewerContent.split("\n"), [viewerContent]);
-  const language = data?.language ?? "text";
-  const isHtml = language === "html";
-  const isMarkdown = language === "markdown";
-  const isDelimitedTable = isDelimitedTablePath(filePath);
-  const hasPreview = isDelimitedTable || (!data?.truncated && (isHtml || isMarkdown));
-  const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
-  const useLightweightSource = sourceLines.length > SOURCE_HIGHLIGHT_MAX_LINES
-    && !(effectiveDisplayMode === "diff" && hasGitDiff)
-    && !(effectiveDisplayMode === "preview" && hasPreview);
-  const prismReady = usePrismLanguages(Boolean(data) && !editing && !useLightweightSource
-    && !(defaultPreviewEligibleRef.current && !data?.truncated && (isHtml || isMarkdown))
-    && !(effectiveDisplayMode === "diff" && hasGitDiff)
-    && !(effectiveDisplayMode === "preview" && hasPreview)
-    && needsPrismLanguage(language), contentRef);
+  const prismReady = usePrismLanguages(demandGrammar, contentRef, observeGrammarWork);
   // react-syntax-highlighter rebuilds every token element on each render, which
   // costs hundreds of milliseconds on large files. Cache the rendered trees so
   // unrelated re-renders (panel open/close, selection changes) reuse them as-is.
@@ -1631,10 +1674,10 @@ function TextFileViewer({
       if (!loadingMore && targetLoadOffsetRef.current !== data.nextOffset) {
         targetLoadOffsetRef.current = data.nextOffset;
         setLoadingMore(true);
-        void fetchContent(filePath, data.nextOffset).finally(() => {
+        void observeWork(fetchContent(filePath, data.nextOffset).finally(() => {
           targetLoadOffsetRef.current = undefined;
           setLoadingMore(false);
-        });
+        }));
       }
       return;
     }
@@ -1660,7 +1703,7 @@ function TextFileViewer({
       // A document containing only hidden markup has no rendered block to target.
       updateDisplayMode("source");
     }
-  }, [viewportEpoch, navigationId, initialLineTarget, loading, error, editing, data, isDeletedDiff, effectiveDisplayMode, isMarkdown, hasPreview, initialState, initialDisplayMode, sourceLines.length, loadingMore, fetchContent, filePath, updateDisplayMode]);
+  }, [viewportEpoch, navigationId, initialLineTarget, loading, error, editing, data, isDeletedDiff, effectiveDisplayMode, isMarkdown, hasPreview, initialState, initialDisplayMode, sourceLines.length, loadingMore, fetchContent, filePath, updateDisplayMode, observeWork]);
 
   if (loading || (requestedInitialDisplayMode === "diff" && gitDiffLoading && !data)) {
     return (
@@ -1854,7 +1897,7 @@ function TextFileViewer({
             disabled={loadingMore}
             onClick={() => {
               setLoadingMore(true);
-              void fetchContent(filePath, data.nextOffset).finally(() => setLoadingMore(false));
+              void observeWork(fetchContent(filePath, data.nextOffset).finally(() => setLoadingMore(false)));
             }}
           >
             {loadingMore ? t("i18n.loading") : t("i18n.loadMore")}
@@ -1915,7 +1958,7 @@ function TextFileViewer({
             style={{ boxSizing: "border-box", width: "100%", minHeight: "100%", padding: "12px 16px", resize: "none", border: "none", outline: "none", background: "var(--bg)", color: "var(--text)", ...FILE_CODE_STYLE, tabSize: 2 }}
           />
         ) : effectiveDisplayMode === "diff" && hasGitDiff ? (
-          <CommittedPatchDiff key={`${filePath}:${gitDiff.revision ?? gitDiff.patch}`} patch={gitDiff.patch!} hasBinaryChanges={false}
+          <CommittedPatchDiff key={`${filePath}:${gitDiff.revision ?? gitDiff.patch}`} patch={gitDiff.patch!} hasBinaryChanges={false} onWork={observeDiffWork} onReadWork={observeWork}
             before="HEAD" after="Working tree" reviewModel={diffReview} loadContext={gitDiff.revision ? loadWorkingContext : undefined}
             onRefresh={() => void fetchGitDiff(filePath)} />
         ) : isHtml && effectiveDisplayMode === "preview" ? (
