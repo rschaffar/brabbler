@@ -8,7 +8,8 @@ that follow-up is now independently reviewed and fully accepted below, retained
 unintegrated. A subsequent explicit request authorizes an internal application
 presentation parameter, replacement of the combined 25-root native boundary case,
 and bounded investigation of other tests sized by presentation limits. That new
-slice is in progress below; #5 remains deferred.** P3 and its
+slice is now reviewed and passes the composed source-bound acceptance below,
+retained unintegrated; #5 remains deferred.** P3 and its
 Move correction were merged into local main at `666a75ef71ae6ae5057fa4e5b1b2124c6ebf3b19`; the five prior
 feature worktrees/branches were subsequently cleaned up by explicit request.
 Their retained-state narratives below are historical, not current resource claims.
@@ -1845,9 +1846,10 @@ is removed or reused.
 - [x] Independently investigate other expensive Git/non-Git display-sized cases,
   distinguish real byte/stream/native/geometry boundaries, and record only bounded
   evidence-backed recommendations. Do not implement other slices automatically.
-- [ ] Independently review exact candidate, remove diagnostics, complete ordinary
-  `all --workers 4 --jobs 4` acceptance, record evidence/local commits and retain
-  the feature resources unintegrated.
+- [x] Independently review exact candidate, remove diagnostics, complete full
+  core/browser/deployment acceptance at normal budgets with documented unchanged-
+  input browser reuse, record evidence/local commits and retain resources
+  unintegrated. This is not a successful single all invocation.
 
 **Initial choice:** two visible section entries plus a third hidden entry exercises
 multi-item display and first/intermediate/final native deletion. One/two would
@@ -2080,6 +2082,66 @@ absence of the new Node test from filtered/shipped application files. The exact
 Nix version4 derivation query and corrected wrapper parsing are retained separately
 from `package-inputs.json`; initial schema assumptions are not verification.
 
+### Final composed acceptance
+
+Guard-corrected implementation `12b61359d0ce021aac4570d6c2feaa65bf27ada7` is clean,
+reviewed and verified. Source writers remain paused through both concurrent exports:
+
+```sh
+nix run .#test -- core --jobs 4
+nix run .#test -- service
+```
+
+**Complete acceptance passes as explicitly composed evidence:** fresh510 core
+files /4203 tests /14 suites and genuine Home Manager VM at12b6135; all26 browser/
+terminal groups /59 exact receipts at705b1b2 with independently verified unchanged
+runtime/browser inputs. One native compound case is explicitly replaced and five
+cheap controls are added; every other prior outcome/order matches, with no skipped/
+cancelled/todo tests, uncertain files or observed survivors. The corrected coverage
+and unchanged HTTP-helper contracts execute in the full core run. VM confirms
+activation, permissions, durable write/restart, PTY and final inactive MainPID0,
+absent authenticated cgroup/refused port, complete clients/artifacts and no errors.
+Nix owns outer containment; inner observations are not escaped-descendant proof.
+
+| Evidence | Binding |
+| --- | --- |
+| Final core +VM immutable source |`/nix/store/s46lnj20ys0462hmm3mvl4ny9d6w8wb1-source`|
+| Complete core report |`/tmp/pi-web-test-core.13KYrF/run.json`|
+| Core detail directory |`/nix/store/gdbdlmc9y523zzw5j0l2i16sh50wqx3y-pi-web-core-checks/artifacts/run-dzrPh0/`|
+| Complete browser report at705b1b2 |`/tmp/pi-web-test-browser.C1Gh2y/run.json`|
+| Genuine deployment report |`/tmp/pwv-PIBBHj/run.json`|
+| Shared installed package |`/nix/store/6a1ba6pn13wxkzn1w42jhnfs8vilbl6s-pi-web-0.9.3`|
+
+| Interval, seconds | Measured |
+| --- | ---: |
+| Fresh complete-core command including export/realization |331.935|
+| Core outer /pre-lifecycle /lifecycle |326.593 /1.773 /324.533|
+| Lifecycle preparation /file execution /final settlement |0.911 /323.544 /0.078|
+| F-N pool /E tail /summed overlapping file work |223.804 /99.740 /990.490|
+| Earlier complete-browser outer /support /definitions |270.447 /3.846 /5.307|
+| Summed browser capsules (overlapping) |904.468|
+| Fresh deployment command /outer /guest |70.793 /65.656 /25.924|
+
+Both final commands overlap under one owner; core requests/effectively uses four
+workers, service retains1vCPU/1536MiB. Admission observes32 CPUs/about45GiB available;
+core reports47,302,393,856 available bytes, estimates not reservations. Current
+input-bound typegen/tsc/lint evidence is reused from focused qualification. The
+production package is already realized by the retained earlier attempts; deployment
+still includes prerequisite-driver realization. No intervals are summed as CPU
+cost or relabelled as one fresh complete-all command. This is not a matched whole-
+feedback performance comparison to390.492s, nor a claim that lowering preview
+budgets improves actual25-root application execution.
+
+`/tmp/pi-web-git-preview.gvHMvd/acceptance-summary.json` binds source/package/static/
+resource/outcome conservation and all reports; raw commands, both incomplete all
+attempts, deliberate reds and reviews remain retained. This completes only the
+requested presentation-budget replacement and bounded investigation. Other leads
+remain proposed. Final follow-up changes only plan evidence/status, leaving tested
+executable inputs unchanged; proportional review/source/link/whitespace checks,
+not another application acceptance run, close that documentation-only delta.
+Branch/worktree stay unintegrated; no rebase, merge, remote publication, installed
+host-service action, ordinary session or manual historical/resource cleanup occurs.
+
 ## Completion Checklist
 
 ### This analysis
@@ -2150,4 +2212,8 @@ failure-lifetime gates, opportunity #5, native cache/fence compatibility and oth
 SDK loader/resource closures remain deferred. The production identity follow-up
 has synthetic native liveness/closure/revalidation proof and complete acceptance,
 not installed-service/browser latency, statistical or native-Windows evidence;
-95 measured policy/other identity reads remain synchronous. Simulations are not promises.
+95 measured policy/other identity reads remain synchronous. The presentation-budget
+follow-up has one focused before/after pair and composed full acceptance, not a
+matched whole-feedback benchmark;25-root native runtime cardinality is intentionally
+retired in favor of cheaper actual owners plus a small native bridge. Other
+identified display-cost leads remain unimplemented. Simulations are not promises.
