@@ -1,7 +1,15 @@
 # Core test optimization — investigation and proposed execution
 
-**Status: P1–P3 complete and integrated; opportunity #4's bounded non-RPC
-investigation is complete with a measured stop and no cache adopted.** P3 and its
+**Status: P1–P3 and opportunity #4 are integrated; #4 stopped without a cache.
+Opportunity #6's fixture-only reduction is reviewed and fully accepted, retained
+unintegrated at the user's direction. A subsequent explicit request authorizes
+production identity/checkpoint optimization without a Git-library migration;
+that follow-up is now independently reviewed and fully accepted below, retained
+unintegrated. A subsequent explicit request authorizes an internal application
+presentation parameter, replacement of the combined 25-root native boundary case,
+and bounded investigation of other tests sized by presentation limits. That new
+slice is now reviewed and passes the composed source-bound acceptance below,
+retained unintegrated; #5 remains deferred.** P3 and its
 Move correction were merged into local main at `666a75ef71ae6ae5057fa4e5b1b2124c6ebf3b19`; the five prior
 feature worktrees/branches were subsequently cleaned up by explicit request.
 Their retained-state narratives below are historical, not current resource claims.
@@ -16,8 +24,10 @@ into local main at `0d5d914515057c957b47a7b92d9164ddacd98bc7`. A subsequent expl
 request authorized P2 only: measure repeated RPC fixture preparation, adopt only a
 demonstrated simple reduction, preserve isolation, verify and retain local feature
 commits. P2 integration was separately authorized afterwards. Opportunity #3 now
-has its historical bounded authority below; the current #4 scope follows.
-Opportunities #5–6 and the separate Node compile-cache candidate remain deferred.
+has its historical bounded authority below; #4 and the current #6 scope have
+separate explicit dispositions below.
+Opportunity #5 and the separate Node compile-cache candidate remain deferred.
+The current #6 authority and bounded execution are recorded below.
 Historical investigation and P1/P2 evidence retain their original identities.
 
 ## Goal
@@ -1327,6 +1337,811 @@ publication, feature/historical cleanup or next opportunity is attempted.
 - [x] Remove instrumentation and retain feature resources unintegrated; stop before
   another opportunity. The final feature tip is reported in the handoff.
 
+## Opportunity #6 — bounded Git setup/probe investigation
+
+The user explicitly selected #6 now, independently of deferred #5. Checked clean
+local main is `e8a0ba6be95dcd25882ebdb2146d2d464663dccf`. Dedicated branch
+`perf/git-probe-amplification`, linked worktree
+`/home/robert/projects/3rdparty/pi-desk-worktrees/git-probe-amplification`;
+CodeGraph initialized before code research. One writer owns source and checks.
+Implementation, independent review, existing Nix checks and local feature commits
+are authorized; rebase/integration/publication/resource cleanup/session launch are not.
+
+- [x] Measure the actual cleanup receiver and its existing 25-root case, separating
+  fixture/settings/import preparation from native Git and child launch envelopes.
+- [x] Test one coherent ordered private-setup batching candidate, retaining every
+  real native Git command and all production capture/revalidation checkpoints.
+- [x] Independently review exact source and verify actual changed semantics;
+  remove diagnostics and complete normal four/four acceptance at this first coherent candidate.
+- [x] Record exact source/dependency/command/timing evidence, failures and limits;
+  retain feature resources unintegrated and stop without starting #5 or another slice.
+
+Initial diagnostic: `nix run .#test -- core --jobs 4 --file
+plugins/git-workflow/cleanup.test.mjs` passes all113 tests. Only temporary inline
+scalar/process diagnostics were present. Import-to-final-hook envelope73.069s
+(runner file73.203s);92 fixture calls
+spend5.950s in Git setup and0.810s in initial settings, with1.204s imports. The real
+25-root case is8.531s and launches2,015 native Git commands (including setup and
+settings). Summed dispatch-to-close/synchronous-return envelopes are8.523s versus
+1.248s of Git Trace2 elapsed. Producer/consumer intervals overlap, and Trace2
+includes waits: their difference is not isolated fork/CPU time. It nonetheless
+attributes the dominant interval to launch/probe amplification, not large fixture
+bytes or expensive graph computation. No epoch can be cached away.
+
+`checkout` is a narrow production checkpoint with fresh identity, registration,
+root, idle/index, graft and filter observations. The existing operation-marker
+lookup already batches six paths. Combining more observations would move reads
+across existing validation/error ordering; ref-format, commit and direct-ref
+checks likewise have different native meanings. This task first tests the simpler
+fixture-only reduction instead of changing those production semantics. Real initial
+settings writers stay intact (only0.810s measured), including all revocation,
+durability, origin, caller and later-update coverage. No seeds or fixture shrinking.
+
+### Adopted candidate and matched focused evidence
+
+Only `cleanup.test.mjs`'s initial repository constructor delegates to new private
+`cleanup-setup.fixture.mjs`. Eleven unchanged native commands and their interleaved
+file writes run serially through one fixed POSIX shell dispatch. All paths are
+quoted positional argv, not interpolated program text; only two full OIDs cross
+the output frame. First failure stops later work. Windows retains the original
+individual dispatches. No seed, copied administration, mock mutation, settings
+materialization, result/identity cache, production rewrite or worker/lane change.
+`docs/testing.md` owns this narrow fixture mechanism. Server/discard are not helper
+consumers and were not additional optimization slices.
+
+Sequential baseline/candidate commands were identical:
+
+```sh
+nix run .#test -- core --jobs 4 --file plugins/git-workflow/cleanup.test.mjs
+```
+
+Both pass113 original tests,29 exporter contracts and mandatory static evidence.
+Original body tail is byte-identical; all original outcomes and order match.
+Inline diagnostics match exactly, including Trace2 attribution for the25-root
+case. Native x86_64 Linux/Node24.21.0,32 observed CPUs, requested/effective four
+core slots, one selected N file, no browser/service overlap. Admission observed
+53,109,923,840 /52,959,440,896 available bytes, not machine reservations.
+
+| Seconds / identity | Baseline | Setup-batched diagnostic candidate |
+| --- | --- | --- |
+| Command wall including realization/export |111.674|108.650|
+| Outer preparation before lifecycle |32.482|32.601|
+| Core lifecycle / post-lifecycle |74.043 /0.106|71.107 /0.095|
+| Lifecycle preparation / final settlement |0.794 /0.046|0.801 /0.049|
+| Selected-file / pool / summed work |73.203|70.258|
+| Initial Git setup,92 fixtures |5.950|3.878|
+| Initial settings / imports |0.810 /1.204|0.827 /1.210|
+|25-root body |8.531|9.063|
+|25-root production-body dispatches |2,002|2,002|
+| Immutable source |`/nix/store/1alvs061mr0qh08ax62q6cnkcq9yb8j9-source`|`/nix/store/2hc1n62hya6grq4sii1rxr4b4ziqp4wl-source`|
+| Core report |`/tmp/pi-web-test-core.cdsAni/run.json`|`/tmp/pi-web-test-core.DnUBw4/run.json`|
+| Core output |`/nix/store/apa5ifin5w46p377lxbs4jvj37fahzm0-pi-web-core-checks`|`/nix/store/k48ci17cav6bpzfmidx02k4v4a6269di-pi-web-core-checks`|
+| Detailed directory within output |`artifacts/run-kIlM1U/`|`artifacts/run-3GlFLD/`|
+
+`focused-evidence.json` retains source/content-mode digests, static sources and
+toolchain identities.
+Both use runtime modules `/nix/store/28vpp6bpxj0algr4b4xigfca399flcmi-pi-web-node-modules-0.9.3`
+and private support `/nix/store/1gps3kh9225x4axd5j4b119i9dhchlln-pi-web-test-support-1.0.0`.
+Baseline executes lint and reuses main's type evidence; candidate executes changed
+fixture typegen/tsc and lint. Their32.5s outer preparation envelopes include mixed
+realization/static/export costs, not isolated compilation or Git CPU.
+No separate preparation command was used. E is empty; pool and summed-file work
+coincide because only one file executes despite four admitted slots.
+
+**Measured work reduction:** initial setup saves2.072s /34.82% over92 constructions.
+Node dispatches for that setup fall1,012 native launches →92 shell launches, while
+all1,012 native Git commands remain. File execution falls2.946s in this one pair;
+not all of that delta is attributable to setup. Production25-root body gets slower,
+not faster. Its observations are intentionally unchanged. The dominant remaining
+production probe overhead is not removed, and no interactive-app, whole-suite,
+cold-cache, statistical, ARM or CI speedup is claimed. P3 totals are not a baseline.
+
+### Controls, review and final-source boundary
+
+Two additive native controls preserve literal metacharacter/Unicode paths (plus
+POSIX quotes/newlines), exact file/config bytes, actual linked administration,
+returned OIDs and two-parent merge history; and force real `worktree add` failure,
+requiring original blocked-file bytes, native nonzero status, Base-only history
+and one registration. Original113 bodies/inputs/assertions/deadlines remain exact.
+A Windows-legal path variant preserves portability without skipping a test.
+
+The omitted-`-e` fault fails precisely `failed setup cannot dispatch the later
+feature write`: actual `feature\\n` versus `untouched\\n`, not a compile/import/setup
+admission failure.114 other cases pass, no skips/cancellations or uncertain files
+or observed survivors. Command110.051s, report `/tmp/pi-web-test-core.ZShi15/run.json`,
+source `/nix/store/8l5fp1dkqlcqiiv01240ych10r759kc9-source`; exact failed derivation
+and retained build root are in `failure-stop-red.log`. No unchanged retry is used.
+
+Independent review `01a1789a-361d-7402-ad52-00aaab1bcfc6` found two small hardening
+issues: retain setup stdout in a captured pipe rather than `/dev/null`, and require
+full OID-output consumption. Both are corrected. The shell waits every foreground
+native child in order and final captured-pipe EOF; unlike individual dispatches,
+EOF is joined at shell completion, not after each command. Review accepts that
+bounded initial-fixture change, not arbitrary escaped-descendant certification.
+Production child/process ownership and all approval/capture epochs are untouched.
+The timed pair precedes this pipe/framing hardening and the new controls; do not
+relabel it as exact final-source timing.
+
+Restored/hardened, diagnostic-free focused green passes115 tests,29 exporter
+contracts and fresh changed-input typegen/tsc/lint: command114.887s, outer preparation
+36.905s, lifecycle73.014s, file72.083s, report `/tmp/pi-web-test-core.qi1sAB/run.json`,
+source `/nix/store/z4y2pwb5nb60ikgrh83a29gj8sb1k192-source`, output
+`/nix/store/disb1d385rlbv99q9y6hk4hyxzq5cj2v-pi-web-core-checks`.
+A subsequent review corrected only the new test's Windows path variant; Linux
+runtime inputs are identical. Final exact-source review approves helper SHA256
+`b1821582b928269df2e9b6529cf4a8f6485485bbf7c54256d9e3cc2710c9032f`, receiver
+`70b772ee6ffefc776a90bf626c248532c39ddd662b65dc2659457998e84673b5` and guide
+`72bbc69fae45375eb8310015d51e45bd3ffbc397c62d6f0bdfee72b99927d55b`, with no
+remaining blockers. Complete acceptance must execute that final source.
+
+Raw patches/logs/timestamps, scalar extraction, exact source/outcome/dependency
+comparisons and analysis scripts remain in `/tmp/pi-web-p6-git.nBG7cY/`, especially
+`focused-evidence.json`, `baseline-profile.json`, `candidate-profile.json` and
+`source-conservation.json`. Diagnostics are absent from adopted code. This is the
+first coherent candidate; no optional expansion or full-suite timing campaign.
+
+### Complete acceptance and bounded finish
+
+Implementation commit `b0330caaccf73f65b2c9ae4877d614533b097a94`, clean worktree;
+writers paused during source export:
+
+```sh
+nix run .#test -- all --workers 4 --jobs 4
+```
+
+**Passed:**509 files /4,180 tests /14 suites, all26 browser/terminal groups /59
+exact ordered receipts, and genuine Home Manager deployment. Zero failed,
+skipped/cancelled/todo core tests, uncertain files or observed survivors. Every
+browser group has complete expected/completed coverage, collected diagnostics,
+settled resources/child/pipes/original group, no harness errors and a closed port.
+Deployment confirms settled clients, inactive service/MainPID0, authenticated
+absent cgroup and refused port. Nix owns outer containment; these observations
+are not certification of arbitrary escaped descendants.
+
+All509 paths, lanes and estimates and all4,178 original registered/completed
+outcomes match P3 in order; only the two helper controls are added. Canonical source
+diff against that accepted source is exactly this plan, `docs/testing.md`, the
+cleanup constructor/two controls and the new helper. Production/native owners,
+all other tests, manifest, runner, browser orchestration and dependencies are
+unchanged. Realized package `8a1h30ifi4xad0lph3rawqh4mxvrdvi9-pi-web-0.9.3`
+under `/nix/store/` is identical to P3 and excludes the helper/registered test.
+This verifies packaging/source conservation, not a P3 performance comparison.
+
+| Identity | Accepted candidate |
+| --- | --- |
+| Immutable source |`/nix/store/53jh4fq737qjbj37bbw8776jy319mdn7-source`|
+| Outer content/mode digest |`fa05ddf342e35485e964ee481cc3869837b969394a7582dc2505f285c33486aa`|
+| Source export / admission |`/tmp/pi-web-test-source-wShhAr/{source.json,selection.json}`|
+| Core report |`/tmp/pi-web-test-core.ZAYQIq/run.json`|
+| Core detailed output |`/nix/store/bzs99ia69n0y2ikn22f71pxn5an8c91r-pi-web-core-checks/artifacts/run-XYQsbt/`|
+| Browser report |`/tmp/pi-web-test-browser.eysC8f/run.json`|
+| Genuine deployment report |`/tmp/pwv-pfjpUi/run.json`|
+
+Outer admission observes32 CPUs /52,694,880,256 available bytes; core-local
+admission later observes47,551,336,448 bytes. Requested/effective widths remain
+four core/four browser, with ordinary overlap. No competing heavy test invocation
+was observed before launch; this is not a reservation or machine-exclusive claim.
+Runtime/private dependencies remain the focused pair's pinned Node24.21.0 and
+module outputs. Full acceptance executes new lint evidence
+`/nix/store/8ng6pcrjrc96w8h37acdd6911xs1q83d-pi-web-lint`; typegen/tsc reuses the
+exact hardened focused input/evidence `9jlgys9w56wm92fp5zvbax9jbkwzyirh-source` /
+`lssh6hhi088sw844g4ssyp1qj65wwmpw-pi-web-types` under `/nix/store/`.
+Package, dependencies and deployment driver are warm; no separate prerequisite
+command beyond the recorded focused checks preceded acceptance. Exporter contracts
+and all effectful core/browser/guest tests execute fresh. `static-inputs.json`
+and raw logs distinguish reuse from fresh static execution.
+
+| Interval, seconds | Accepted candidate |
+| --- | ---: |
+| Complete command including realization/export |387.937|
+| Outer core |382.955|
+| Core pre-lifecycle / lifecycle / post-lifecycle |46.494 /336.136 /0.325|
+| Lifecycle preparation / final-file settlement |1.101 /0.073|
+| File execution / F-N pool / E tail |334.962 /239.587 /95.375|
+| Summed F /N /E file work |442.006 /511.819 /95.333|
+| Summed all-file work |1049.158|
+| Browser support / definition preparation |3.475 /4.670|
+| Browser client envelope / outer |229.645 /237.794|
+| Summed browser clients / capsules |806.513 /790.886|
+| Deployment outer / guest |26.040 /20.163|
+| Browser-through-deployment branch |265.879|
+
+These are overlapping envelopes, not additive CPU costs or isolated realization
+time. Core is critical. Cleanup's101.778s full-run file includes contention and
+115 cases; it is neither interactive latency nor comparable to focused70.258s or
+P3's100.229s as a speedup. The only measured attribution-supported reduction is
+the focused initial-setup slice. There is no matched whole-feedback control,
+repeatability/statistical, cold-cache, ARM/CI or native-Windows runtime evidence.
+No extra timing campaign is justified by this small bounded change.
+
+`/tmp/pi-web-p6-git.nBG7cY/acceptance-summary.json` and `all-core-evidence.json`
+bind raw reports, exact reviewed hashes, original-outcome comparisons, static
+identities and timings; `all.log` and `all-command.json` retain command evidence.
+The final follow-up edits only this plan's evidence/status. Application, test,
+helper, guide, manifest and runner inputs stay at accepted `b0330ca`; proportional
+checks are documentation/evidence review, link/source checks, whitespace and exact
+unchanged-input verification, not another full acceptance run. Feature branch and
+worktree remain unintegrated; no rebase, merge, publication, manual current or
+historical resource cleanup, ordinary session launch or further opportunity.
+
+## Authorized production identity/checkpoint follow-up
+
+The user subsequently requested optimization of the production identity/checkpoint
+path while retaining native Git, explicitly excluding a Git-library migration.
+Continue in the clean existing `perf/git-probe-amplification` worktree from
+`c3eed7de8e4c81e05044fa5dc1a1f2a92a41edf4`; checked local main remains
+`e8a0ba6be95dcd25882ebdb2146d2d464663dccf`. The accepted fixture change is common
+to the new baseline and candidate. No integration/publication/cleanup or #5 scope
+is added. The separate production-latency profiling plan is proposed, not running;
+this follow-up uses synthetic Nix fixtures, not the installed service/live data.
+
+### Goal and non-goals
+
+Remove synchronous native identity work from the Git Workflow checkout/capture
+path where its API already owns an async lifetime. Keep the same fresh native
+queries at the same ordered checkpoints, selected/caller repository bindings,
+policy/error/ref/registration/HEAD/index/filter distinctions and joined children.
+No repository-result cache, reused approval, skipped revalidation, reordered
+batching, worker increase or shell/library substitution. Synchronous policy
+readers/subscribers/inventory guards are not a blanket async-API migration.
+
+### Plan
+
+- [x] Attribute synchronous identity calls and event-loop progress in the existing
+  25-root production operation, using one fresh four-slot focused baseline.
+- [x] Implement one scoped async identity/checkpoint candidate that preserves
+  authority; compare identical diagnostics and native identity query counts/order.
+- [x] Add actual native identity/liveness/failure and async capture revalidation
+  controls for changed semantics, including meaningful red/green evidence.
+- [x] Independently review exact source, remove diagnostics, verify actual receiving
+  core files and complete normal four/four core/browser/deployment acceptance.
+- [x] Record measured blocking/work/wall limits and local commits, retain resources
+  unintegrated and stop rather than expand into other performance opportunities.
+
+**Risks / recovery:** introducing awaited identity calls permits event-loop work
+while the native query runs. Current observations are already non-atomic; initial
+and final identity/ref/registration checks must remain independently fresh and
+late policy/Stop checks must still prevent undispatched effects. Missing/changed
+repositories must fail closed, and child/pipe closure must precede root disposal.
+If preservation needs a broad policy rewrite or unproved cross-stage reuse, stop
+and narrow rather than silently weakening authority. No service or stored schema
+change is planned; recovery retains the feature and evidence without rollback of
+unrelated resources.
+
+### Scoped implementation and measured limit
+
+`pluginProjectIdentityAsync` is additive beside the unchanged synchronous reader.
+It uses native `execFile` with the same argv, fresh sanitized environment, UTF-8,
+default buffer and error-to-null normalization. No shell, library, timeout, signal
+or result cache is introduced. Stdin receives EOF; errors cannot settle the read
+early. A close-only latch is joined in `finally` before path normalization, also
+on spawn/input failure. `server.checkout` and production `cleanupAccess.project`
+use this helper; initial/final capture identity functions await it at their original
+positions. Other preview readers and synchronous settings/policy/subscriber/budget
+contracts remain unchanged. `docs/git-workflow-plugin.md` documents the behavior.
+
+One sequential, instrumented pair used exactly:
+
+```sh
+nix run .#test -- core --jobs 4 --file plugins/git-workflow/cleanup.test.mjs
+```
+
+Both pass the same115 existing cases/outcomes/order plus29 exporter contracts and
+mandatory fresh typegen/tsc/lint. Inline diagnostics and receiving test bytes match;
+source differs only at the three production owner files. A scalar observer queues
+one `setImmediate` at each identity lookup, recording whether it ran before lookup
+completion. These diagnostics add no performance threshold, artificial load loop
+or profiling platform.
+
+| Seconds / count | Baseline | Instrumented async candidate |
+| --- | ---: | ---: |
+| Native identity queries in the25-root operation |315|315|
+| Synchronous identity queries / summed envelopes |315 /1.288|95 /0.364|
+| Async identity queries / summed envelopes |0 /0|220 /0.847|
+| Observers progressing during synchronous / async reads |0 /0|0 /220|
+|25-root case |8.610|7.978|
+| Selected-file / pool / summed file work |69.734|70.503|
+| Core lifecycle |70.591|71.383|
+| Lifecycle preparation / final settlement |0.812 /0.045|0.835 /0.044|
+| Outer pre-lifecycle / post-lifecycle |32.504 /0.096|36.347 /0.098|
+| Complete command including realization/export |107.846|113.081|
+
+The220 async reads comprise164 checkout and56 capture reads;95 policy/other reads
+remain synchronous. Baseline stack classification identifies56 capture reads but
+leaves259 other contexts combined; it is not retroactively split by proportions.
+This proves event-loop progress during the moved query waits, not absence of all
+blocking: process launch and synchronous filesystem normalization still have costs.
+No native query work is removed. The focused file and command get slower, not
+faster; there is no whole-suite, interactive-browser or installed-service speedup
+claim. Query envelopes are wall scalars, not isolated CPU/fork time or a latency
+percentile. The pair precedes final close-latch hardening and new regressions.
+
+Both runs use native x86_64 Linux/Node24.21.0 and the unchanged runtime/private
+module outputs `28vpp6bpxj0algr4b4xigfca399flcmi-pi-web-node-modules-0.9.3` /
+`1gps3kh9225x4axd5j4b119i9dhchlln-pi-web-test-support-1.0.0` under `/nix/store/`.
+Requested/effective core width is four; only one N file executes, E is empty,
+without browser/service overlap. Admission observes32 CPUs and52,551,729,152 /
+33,482,469,376 available bytes; resources are estimates, not machine reservations.
+Both realize changed static inputs in-command; no separate prerequisite command.
+
+| Identity | Baseline | Instrumented candidate |
+| --- | --- | --- |
+| Immutable source |`/nix/store/dc3nglnkjjp0ld9rb8kx1js9aw0r47pq-source`|`/nix/store/hfwx1x27mplhsjxqrqr7y1rj3fbwmr8s-source`|
+| Core report |`/tmp/pi-web-test-core.xB1Ccq/run.json`|`/tmp/pi-web-test-core.WzOQkZ/run.json`|
+| Core output |`/nix/store/5a1aj7x8bfv6p1mxb72rj2cd4x6m51dr-pi-web-core-checks`|`/nix/store/wgswkfajkmxrddadr0ybcjzn24gpykip-pi-web-core-checks`|
+| Detail directory within output |`artifacts/run-z80mjx/`|`artifacts/run-9zdDj5/`|
+
+### Qualification, failures and exact-source review
+
+Added controls retain actual native Git identity across linked/foreign and A/B/A
+alias bindings, physical Unicode/internal-newline paths, missing repositories,
+sanitized overrides and spawn failure. A transparent private child adapter runs
+the real query, emits native stdout, then holds close at a named gate. Success and
+input failure must permit event-loop progress yet retain the child/pipes through
+settlement. Parent work and native closure are independently joined before adapter
+restoration and root removal. Stop/disable are also delivered during a real query
+under the production directory reservation: no early release or undispatched
+artifact/worktree/ref effect is allowed, and native history/HEAD/resources remain.
+Async capture controls cover success, null/SAME original rejection, initial/final
+missing common directories, final common-directory/checkout replacement and fresh
+recapture after the first real artifact deletion. No Git administration is copied.
+All prior test bodies/inputs/assertions/deadlines stay exact. N lanes and hints stay
+unchanged; only settings' existing N rationale is refined for its new joined child.
+
+Failures are retained, not retried unchanged:
+
+- First sync-fault attempt,60.204s, `/tmp/pi-web-test-core.cQqzDx/run.json`: failed
+  gate-admission preconditions because an earlier Jiti graph held old builtin
+  bindings. It is not the behavioral red. Importing after adapter installation
+  corrects that control boundary.
+- Corrected admission,50.344s, `/tmp/pi-web-test-core.DBPchk/run.json`: the named
+  event-loop assertion fails, but the fixture still has a teardown API bug.
+- First five-receiver candidate run,112.646s,
+  `/tmp/pi-web-test-core.S0Aln9/run.json`: all three server/discard/project-management
+  files pass; new settings/cleanup gate bodies complete, but teardown hooks fail
+  because Node mock functions require `.mock.restore()`, not `.restore()`.
+- Final synchronous-native fault with corrected teardown,48.588s,
+  `/tmp/pi-web-test-core.cJBI5M/run.json`: fails precisely `event-loop work reaches
+  the held identity child before its deadline`, actual `deadline` vs undefined,
+  in both subcases (plus parent failure). Three other cases pass; no hook failures,
+  skips/cancellations, uncertain files or observed survivors. This is the qualifying
+  runtime red. The fault is removed; no failure is filtered or waived.
+
+Final diagnostic-free settings/cleanup verification passes135 tests plus29 exporter
+contracts and fresh changed-input typegen/tsc/lint: command113.171s, preparation
+32.619s, lifecycle75.627s, two-file execution window74.785s, summed work75.799s.
+Report `/tmp/pi-web-test-core.oaCVEy/run.json`, source
+`/nix/store/f8dk9sk3yz8jhy92jn25i8xpcxwbydn2-source`, output
+`/nix/store/05933r29x0s9lgy1i24lmdpzkzz9hm3w-pi-web-core-checks`, details
+`artifacts/run-vqaV8v/`. Requested/effective width remains four; only two selected
+files execute. The three earlier passing receivers are retained: production input
+bytes are identical, and their tests do not import the corrected private gate.
+Complete acceptance will execute every file afresh on the final source.
+
+Independent exact-source review `01a178c2-67a1-7402-ad52-00b33625a432` approves the
+three production files, native gate/two test receivers, owning guide and N-rationale
+with no remaining blockers after confirming the fixture restoration, native path
+input and label corrections. Diagnostics are removed. Raw patches, logs,
+commands/timestamps, rows, source/static/dependency identities and comparisons
+are retained at `/tmp/pi-web-git-identity.5wThYk/`, notably `focused-evidence.json`.
+This is the first coherent reviewed production candidate; its acceptance follows,
+not another optimization or timing campaign.
+
+### Production candidate complete acceptance
+
+Implementation `3cf3b30e0d4203a4c0be1f6b34f60baadeed6941`, clean worktree,
+source writers paused during export:
+
+```sh
+nix run .#test -- all --workers 4 --jobs 4
+```
+
+**Passed:**509 files /4,198 tests /14 suites, all26 browser/terminal groups /59
+exact ordered receipts and genuine Home Manager deployment. All4,180 prior outcomes,
+discovery paths, lanes and estimates are preserved; only18 new settings/capture/
+closure controls are added. Zero failed/skipped/cancelled/todo tests, uncertain
+core files or observed survivors. Browser coverage is exact, resources/children/
+pipes/original groups settle, diagnostics collect, errors are empty and ports
+close. Deployment confirms settled clients, inactive service/MainPID0, authenticated
+absent cgroup and refused port. Nix owns outer containment; inner observations
+are bounded, not certification of arbitrary escaped descendants.
+
+| Identity | Accepted production candidate |
+| --- | --- |
+| Immutable source |`/nix/store/zn3nl74fqmxhljkdqvpryfbzq2w8fwns-source`|
+| Outer content/mode digest |`73eb21b2602797a4b14214af0d1e1307f944041e6cf7885c6569dd1f74126b9b`|
+| Export / admission |`/tmp/pi-web-test-source-aINf0b/{source.json,selection.json}`|
+| Core report |`/tmp/pi-web-test-core.1qoxLA/run.json`|
+| Core output / details |`/nix/store/74hrn4nmcjavzg9kpwb5hr6f74avrcnf-pi-web-core-checks/artifacts/run-sJCXOr/`|
+| Browser report |`/tmp/pi-web-test-browser.rMnbH1/run.json`|
+| Genuine deployment report |`/tmp/pwv-SCbuvy/run.json`|
+
+Native x86_64 Linux/Node24.21.0,32 observed CPUs, requested/effective four core
+workers and four browser sandboxes, ordinary overlap. Outer/core-local admission
+observes53,438,005,248 /53,164,359,680 available bytes, not reservations. No competing
+heavy invocation was observed before launch. Full acceptance reuses the exact final
+focused typegen/tsc/lint evidence (`s2qllxgndwqbhadyimv52f906w1qqa45-pi-web-types` /
+`8g5pdz245qfpn2kjqmph7bwyv3a6izdl-pi-web-lint` under `/nix/store/`); those static
+checks do not execute again. Exporter contracts and all effectful tests are fresh.
+Dependencies remain the matched pair's pinned outputs. No separate preparation
+command beyond the recorded focused checks precedes this full invocation.
+
+New production package `/nix/store/vzpdjrmfw6psawdr7a01r27iax3qlzpp-pi-web-0.9.3`
+is built only in an isolated Nix builder, shared by browser and deployment. Compared
+with the prior package, its filtered application source changes exactly the three
+production owner files; dependency derivations are identical. The private native
+gate is absent from application inputs and packed files. New deployment driver
+`/nix/store/8mv8x9vzjda89dkjphlgahszlmkd3gyb-pi-web-service-driver` is realized
+in-command. `package-inputs.json` binds the actual derivations, filtered sources
+and inventory check, not version-string parity.
+
+| Interval, seconds | Accepted production candidate |
+| --- | ---: |
+| Complete command including realization/export |390.492|
+| Outer core |347.641|
+| Core pre-lifecycle / lifecycle / post-lifecycle |1.632 /345.695 /0.314|
+| Lifecycle preparation / final-file settlement |0.850 /0.077|
+| File execution / F-N pool / E tail |344.768 /242.848 /101.920|
+| Summed F /N /E file work |511.138 /455.422 /101.874|
+| Summed all-file work |1068.434|
+| Browser support (including new package realization) / definitions |86.505 /4.848|
+| Browser client envelope / outer |221.369 /312.724|
+| Summed browser clients / capsules |792.392 /777.460|
+| Deployment outer (including new driver realization) / guest |68.914 /18.776|
+| Browser-through-deployment branch |383.945|
+
+Overlapping intervals are not additive CPU costs. Browser/deployment finishes last
+in this run, with substantial in-command package/driver realization; this is not a
+matched warm-prerequisite whole-feedback benchmark. Do not attribute differences
+from earlier386/348/387-second references or realization costs to async identity.
+The supported improvement is event-loop progress during220 unchanged native query
+waits, not fewer queries, faster complete tests or measured installed-service
+latency. The95 policy/other synchronous identity reads in the measured operation,
+plus synchronous launch/filesystem costs, remain deliberately outside this slice.
+No extra timing campaign, library migration, cache or optimization is started.
+
+`/tmp/pi-web-git-identity.5wThYk/{acceptance-summary.json,all-core-evidence.json,all-command.json,all.log}`
+retains exact source/outcome/static/resource/timing and package bindings. The final
+follow-up changes only this plan's evidence/status: all accepted production, test,
+helper, guide, manifest and dependency inputs remain at `3cf3b30`. Proportional
+follow-up checks are evidence/documentation review, link-target/source conservation
+and whitespace, not another full application suite. Retain the branch/worktree
+unintegrated; no rebase, merge, publication, installed-service action or manual
+feature/historical resource cleanup is included.
+
+## Authorized presentation-budget and test-cost follow-up
+
+### Goal and authority
+
+The user explicitly requests an application-configured presentation parameter,
+not a user-facing Git policy, and investigation of other expensive tests whose
+fixture sizes are driven by display limits. Continue from clean feature tip
+`a7f7c6289166483c791a0fe527c83e3566d804aa` in the existing linked worktree;
+checked local main remains `e8a0ba6be95dcd25882ebdb2146d2d464663dccf`.
+This specifically supersedes the earlier requirement to preserve the combined
+25-root native test unchanged. It does not authorize broad scenario retirement,
+Git-library/caching/checkpoint changes, #4/#5 work, lane promotion, service access,
+rebase/integration/publication, another ordinary session or resource cleanup.
+
+The former 16-root validator restriction was removed by `87c81ed`; no legacy
+execution mode needs support. Current `compactGitCard` displays 24 fields per
+section after the exact unabridged review has been saved. The old native case
+combined no artificial root-count cap, compact-preview truncation, complete review,
+one approval and successful real cleanup. The new design separates these owners:
+cheap production validation/default-presentation tests retain the 25-item inputs;
+a small native operation crosses an explicit lower presentation budget through
+the same executor and durable-review path. No approval/capture/effect checkpoint
+is removed or reused.
+
+### Plan
+
+- [x] Add an explicit trusted presentation parameter with unchanged application
+  defaults; keep essential top-level operation metadata and policy/schema intact.
+- [x] Replace only the historical combined boundary case with budget 2 / 3 native
+  artifact roots. Preserve one approval, complete saved scope, exact effects and
+  settlement; cheaply retain default 24/25 and larger-root validator obligations.
+- [x] Verify the actual affected owners and meaningful budget-wiring, saved-scope
+  and artificial-count-limit faults; measure matched focused dispatch/work cost
+  without turning diagnostic instrumentation into application inputs.
+- [x] Independently investigate other expensive Git/non-Git display-sized cases,
+  distinguish real byte/stream/native/geometry boundaries, and record only bounded
+  evidence-backed recommendations. Do not implement other slices automatically.
+- [x] Independently review exact candidate, remove diagnostics, complete full
+  core/browser/deployment acceptance at normal budgets with documented unchanged-
+  input browser reuse, record evidence/local commits and retain resources
+  unintegrated. This is not a successful single all invocation.
+
+**Initial choice:** two visible section entries plus a third hidden entry exercises
+multi-item display and first/intermediate/final native deletion. One/two would
+cross the display boundary but lose those combined premises; four/five buys no
+additional assertion in this case. This is a selected test budget, not a universal
+minimum or measured speed claim. Application default remains 24.
+
+**Risks / stop:** presentation must not trim the captured operation or exact saved
+review, hide essential top-level metadata, change permissions or become model JSON
+input. Every native revalidation/error/Stop/reservation/closure contract remains.
+If smaller-fixture coverage cannot expose the old count cap and real truncation/
+review-ordering faults at their actual owners, retain the larger case and report
+the blocker. All other source/test bodies and scheduling remain outside this slice.
+
+### Implemented candidate and assertion disposition
+
+`review.ts` exposes frozen `DEFAULT_GIT_CARD_PRESENTATION` and a typed explicit
+section-field argument; `executeGitOperation` forwards it through trusted options.
+Only repeated section lists can be lowered to 1–24 entries. Top-level metadata,
+all other display defaults, operation JSON, policy, schemas and native capture/
+effect checkpoints are unchanged. `docs/git-workflow-plugin.md` owns the contract.
+
+Original `cleanup.test.mjs:725–735` at `a7f7c628` combined 25 generated directories,
+one approval, successful receipt, 24 preview rows, a 24-of-25 notice and a review
+reference. Its replacement, `compact cleanup preview keeps the complete approved
+review and native effects`, uses three directories/budget two and strengthens the
+persisted-operation/full-review/all-artifact-effects/worktree/ref assertions.
+`review-presentation.test.mjs` owns actual default 24/25 compaction, explicit lower
+budgets, immutable inputs, invalid budgets and complete 25-item metadata serialization
+with an awaited external memory writer. The new `resource-rules.test.mjs` case runs
+the real validator/unabridged card at 25/100 entries, retaining the old generated
+path sequence without native setup. Source checks independently confirm every
+other cleanup body is byte-identical, except optional fixture options forwarding;
+existing lane rows/hints/holds are unchanged. The new pure file has an explicit F
+reason; this does not clear other dependency/resource holds.
+
+**Intentional retirement:** 25-root runtime capture/effect cardinality is no longer
+executed by that native case. Real validator/default-presentation owners plus a
+small default-native executor/storage bridge replace the compound witness. This
+is not identical runtime-cardinality coverage, restart/browser proof or a universal
+ref census. Existing native race/permission/closure cases remain unchanged.
+
+### Measured focused cost and qualification
+
+One sequential source-bound diagnostic pair, native x86_64 Linux/Node24.21.0:
+
+```sh
+nix run .#test -- core --jobs 4 --file plugins/git-workflow/cleanup.test.mjs
+```
+
+Both execute129 cases; one case is intentionally replaced, not claimed input-
+identical. Identical temporary builtin wrappers count explicit Node-to-Git dispatches
+only during that operation, excluding setup and later assertion probes. They add
+no clock/work bypass and are removed before final verification/acceptance.
+
+| Seconds / count | Original 25-root case | Budget2 /3-root replacement |
+| --- | ---: | ---: |
+| Scoped spawn /async identity /sync dispatches |1687 /220 /95|345 /44 /18|
+| Total scoped explicit Git dispatches |2002|407|
+| Scoped operation |8.600|1.637|
+| Whole selected file |73.822|66.080|
+| Core lifecycle |74.712|66.953|
+| Pre-lifecycle /lifecycle preparation |33.253 /0.846|33.848 /0.830|
+| Complete command including realization/export |113.526|105.880|
+
+This removes1595 measured dispatches from that test operation. Fewer roots mean
+fewer existing capture epochs; no production checkpoint is skipped, and elapsed
+inventory-policy sampling also fires fewer times in the shorter fixture. Exact
+counts therefore are observed, not an immutable per-root formula. The single pair
+is not statistical, cold-cache, CI/ARM or whole-feedback evidence. Final unprofiled
+three-file green has a69.851s execution window, illustrating run variation rather
+than relabelling66.080s as final-source timing. Application behavior for a real
+25-root cleanup still does the same native work.
+
+| Identity | Original diagnostic | Replacement diagnostic |
+| --- | --- | --- |
+| Immutable source |`/nix/store/cxdfmdnvmpq1i6jp830azjr7zvsz8zvc-source`|`/nix/store/y9f8h9v4bj9viqsrqn0p3hfz20x3vnkr-source`|
+| Core report |`/tmp/pi-web-test-core.TaVw6D/run.json`|`/tmp/pi-web-test-core.k83rqW/run.json`|
+
+Requested/effective core width is four, one selected native file, no browser/
+service overlap; admission observes32 CPUs and50,191,347,712 /50,866,651,136 available
+bytes, not machine-wide reservations. Both realize changed lint inputs; the second
+also executes changed-input typegen/tsc. Pinned application/private dependencies
+are unchanged. `focused-evidence.json` records exact static and phase identities.
+
+Final diagnostic-free qualification uses the same entry point with three `--file`
+selections: cleanup, resource-rules and review-presentation. All143 tests and29
+exporter contracts pass, no skips/cancellations or uncertain/observed survivors:
+`/tmp/pi-web-test-core.RKJ8YX/run.json`, command75.825s, pre-lifecycle1.648s,
+lifecycle70.732s, preparation0.831s, execution window69.851s. Exact prior changed-
+input typegen/tsc/lint evidence is reused; effectful tests execute fresh.
+
+Deliberate faults are removed; their failures/logs remain, not retried unchanged:
+
+- Dropping trusted presentation forwarding and restoring the old `>16` validator
+  cap produces exactly two intended assertions: `compact preview obeys the
+  application section budget` (3 vs2) and `valid root counts have no artificial
+  ceiling`.143 tests,141 pass/2 fail; command107.065s,
+  `/tmp/pi-web-test-core.mAY8La/run.json`.
+- Saving the already-compacted card through the real review writer fails exactly
+  `exact review is saved before preview compaction`, with `generated-2` missing.
+  143 tests,142 pass/1 fail; command109.602s,
+  `/tmp/pi-web-test-core.anO3Mb/run.json`.
+
+Both faults complete coverage and join started work, with zero skips/cancellations,
+uncertain files or observed survivors. Independent source review
+`01a1793c-c26c-7402-ad52-00c756708ea3` approves all seven implementation/test/guide/
+manifest files with no blockers/nits, subject to restored green (now passed) and
+full acceptance. Exact source SHA table, raw patches/commands/logs, conservation
+and timing/static evidence are retained at `/tmp/pi-web-git-preview.gvHMvd/`.
+
+### Bounded investigation of other display-sized tests
+
+Independent read-only audits `01a1793c-c26c-7402-ad52-00c756708ea3` and
+`01a1793c-c26f-7402-ad52-00c9fce6347f` inspect unchanged source at `a7f7c628` using
+pinned paths and existing `run-sJCXOr` TAP/summary. These are historical case/file
+envelopes, not isolated fixture costs or newly measured savings. No other code is
+changed and no additional slice is started.
+
+| Case /input | Historical cost | Finding /disposition |
+| --- | ---: | --- |
+| `ReviewAttachment.pagination.test.mjs`:45 patch entries +metadata,2000 repeated content units per patch, both original inputs |1.924 /2.402s cases|Strongest lead: constructs unrequested bodies merely for byte counts. Controlled metadata can describe those entries; preserve actual selected new/modified bodies,46-entry paging witness, and mobile >2500-hunk raw fallback. Benefit remains unmeasured.|
+| `large-operations.test.mjs`:257-file commit,70,000-char message, one3MiB-output check |0.987s case /6.431s file|Mixed modest candidate: section-text display budget might separate from exact committed message, but retain actual65,536-char writer flush and3MiB child drain. Do not shrink257 native files until an actual operation-count restriction would still fail another owner.|
+| `review-store.test.mjs`:shared45-entry bundle used by unrelated scope/copy cases |0.098s paging /0.013s copied-receipt cases|Allow a smaller fixture for unrelated subjects; retain real40→45 boundary and persisted stream/integrity/no-follow/closure proof. Low measured payoff.|
+| `session-reader.pagination.test.mjs`:1001 entries crossing tail cap300 |0.002s case|301 could cross the same boundary; not a useful optimization priority.|
+| Real1.48/3MiB merge patches,3MiB child output, UTF-8 chunk/native context limits |Subsecond individual Git cases|Actual byte/framing/stream/native-authority boundaries, not mere preview cardinality. Keep sized witnesses.|
+| `PluginCard.preview-cleanup.test.mjs`:5000-line renderer/state tuples |9.026 /9.545s cases|Expensive but no verified display-budget justification for shrinking: distant navigation and real renderer/state lifetime are the obligation.|
+
+Other heavy server/discard/project-management cases use small fixtures for native
+ref/identity/race/reservation/persistence distinctions, not huge display lists.
+No additional clear high-cost Git presentation-cardinality case emerged. This
+retracts any inference that most remaining native cost can be removed by lowering
+preview budgets; the investigation supports only the bounded leads above.
+
+### Initial complete attempt and bounded acceptance-blocker repair
+
+The coherent candidate is committed at
+`85a7838007a7da0266c2fef2387442d9ac305c99`. Its first full four/four command
+exits1 after241.890s, not complete acceptance or performance evidence. Immutable
+source is `/nix/store/cr5l74xcj702lf2sr15dids5svv0jljl-source`, digest
+`4a5ce7a378f3dba4f2d97d877d807ef2be4d5dd2782f174ab9c1c8495443535a`.
+The Activity desktop overview and native subagent assertions complete, then its
+unchanged successful teardown `page.request.delete` at
+`e2e/subagent-lifecycle.mjs:215` receives `ECONNRESET`. Activity's whole-chain
+receipt therefore fails; no partial chain is counted as complete. Git-plugin,
+worktrees, SSH and Markdown groups pass, admission closes and started browser
+peers drain. Core is interrupted by the outer peer-failure path, not certified
+complete; deployment is not admitted. No unchanged retry is performed.
+
+Reports are `/tmp/pi-web-test-browser.Wh3IRb/run.json` and
+`/tmp/pi-web-test-core.CXwmfh/run.json`. The failed Activity diagnostic is
+`/nix/store/3l30l0y3r12ksmwz1kr5qkdgrpjzglnf-pi-web-browser-activity-diagnostics/`.
+It retains traces, screenshots, server/events and errors; server closure/port and
+owned clients settle with no unexpected service exit, uncertain observations or
+survivors. The exact reset cause is not established, nor attributed to the Git
+presentation delta. Browser preparation includes82.376s package/support realization
+and4.656s definition publication; the failed Activity capsule is44.150s.
+
+After inspecting these artifacts/source, `ask_user` explicitly authorizes one
+fixture-only repair: use existing `readBrowserResponse` for this successful native
+subagent-family DELETE, preserving URL, method, any-2xx/text-body assertion,
+navigation-before-delete, error aggregation, abort path, native work, inputs and
+scenario IDs. No retry/fallback, console/HTTP suppression, deadline increase,
+production change or broader request migration is authorized. The helper's existing
+body-gate/method/status/error tests remain the lower owner; actual Chromium must
+verify this receiving wire. `e2e/README.md` records the additional caller. Focused
+Activity and then complete four/four acceptance remain required. Feature resources
+stay unintegrated.
+
+The separately approved transport delta passes independent review in the same
+review session, with no blockers/nits. Its native helper SHA256 is
+`3b2950e4cb4482d2a35bc958e21fcc273697cff314ff764f19da89963c835039`;
+all seven previously reviewed presentation inputs and the shared HTTP helper/tests
+remain exact. Focused `nix run .#test -- e2e --group activity` passes all three
+original scenario/input chains with empty errors and complete resource/service/
+port settlement. Command109.155s includes3.569s support and4.846s definitions;
+capsule95.303s. Source `/nix/store/wmyf89k6028vc7a6fc7k3wv3xqq67sds-source`,
+report `/tmp/pi-web-test-browser.ZbbvBw/run.json`, diagnostic
+`/nix/store/ckdg392ca0v7lklkm9vwg6kaim09lsn0-pi-web-browser-activity-diagnostics/`.
+It reuses the exact failed attempt's production package
+`/nix/store/6a1ba6pn13wxkzn1w42jhnfs8vilbl6s-pi-web-0.9.3`.
+
+The actual Chromium trace records the new completed-only family DELETE and both
+existing Pause DELETEs as fetches, HTTP200, with complete11-byte `{"ok":true}`
+bodies. `activity-wire-evidence.json` binds those exact requests/responses; the
+initial unsupported trace-field extraction is retained separately, not verification
+evidence. This establishes the receiving wire, not the original reset's cause or
+a general socket-reset fix. Complete acceptance on the repaired candidate remains
+the final gate.
+
+The fixture repair is committed at `705b1b2280f0927b0fb732806a6e32f7bb31cec6`.
+Its second four/four all command exits1 after326.024s: **all26 browser/terminal
+groups and59 unique receipts pass**, then core fails the existing source-order
+coverage guard that still requires the removed Node `page.request.delete` spelling.
+The writer missed this guard in the transport correction. This is not an Activity
+runtime failure or a reason to remove the guard. Core reports328 passed files,
+one failed,181 not started;2801/2802 executed tests pass. VM prerequisite realization
+is interrupted by the peer failure and supplies no deployment evidence.
+
+Complete browser report `/tmp/pi-web-test-browser.C1Gh2y/run.json` binds source
+`/nix/store/nhglnl6mbpzyligf8hy7n00l4nz264ym-source`, digest
+`c197769da6d0895f279c5568a293f100ae6a35216047a6ff9b9607cce7a7217b` and the
+unchanged6a1ba6 production package. All browser errors are empty; complete coverage,
+service/children/port settlement and no observed survivors are verified. Failed
+core/VM reports are `/tmp/pi-web-test-core.NqTmuL/run.json` and
+`/tmp/pwv-iTr3f2/run.json`; raw `all-repaired.log` is retained.
+
+Only the guard's final ordering needle is corrected to the exact browser-helper
+call, including the same parent URL, DELETE and `expectedStatus: "2xx"`; every
+preceding obligation stays byte-identical. Focused coverage/helper checks pass50
+tests, command39.935s (`guard-green.log`). Independent review approves this literal
+correction, SHA256`a49f6125f33e63564e50477ed5a28388bd40c846403b2b3ec0ede2d570833f10`,
+and compares1383 scoped source files against the successful browser snapshot:
+only this Node guard differs, executable bits unchanged. Application, e2e, Nix
+recipes, dependencies and all earlier reviewed candidate bytes remain exact.
+
+**Proportional completion:** retain the full browser execution explicitly at
+705b1b2, never relabel it a new-tip run. Browser support's broader source identity
+can change with a Node test, but this guard is neither shipped nor imported by
+browser execution; all runtime/browser inputs are unchanged. Independent review
+confirms no additional all campaign is needed solely to repeat that passed work.
+Complete fresh core/jobs4 and genuine VM at the guard-corrected candidate are the
+remaining gates. Report eventual acceptance as composed source-bound evidence,
+not a single fresh all-pass or new whole-command timing. Reassess this reuse if
+anything beyond this guard and plan-status prose changes.
+
+Package graph verification confirms exactly two application-source changes since
+the accepted async candidate (review/server), identical dependency derivations and
+absence of the new Node test from filtered/shipped application files. The exact
+Nix version4 derivation query and corrected wrapper parsing are retained separately
+from `package-inputs.json`; initial schema assumptions are not verification.
+
+### Final composed acceptance
+
+Guard-corrected implementation `12b61359d0ce021aac4570d6c2feaa65bf27ada7` is clean,
+reviewed and verified. Source writers remain paused through both concurrent exports:
+
+```sh
+nix run .#test -- core --jobs 4
+nix run .#test -- service
+```
+
+**Complete acceptance passes as explicitly composed evidence:** fresh510 core
+files /4203 tests /14 suites and genuine Home Manager VM at12b6135; all26 browser/
+terminal groups /59 exact receipts at705b1b2 with independently verified unchanged
+runtime/browser inputs. One native compound case is explicitly replaced and five
+cheap controls are added; every other prior outcome/order matches, with no skipped/
+cancelled/todo tests, uncertain files or observed survivors. The corrected coverage
+and unchanged HTTP-helper contracts execute in the full core run. VM confirms
+activation, permissions, durable write/restart, PTY and final inactive MainPID0,
+absent authenticated cgroup/refused port, complete clients/artifacts and no errors.
+Nix owns outer containment; inner observations are not escaped-descendant proof.
+
+| Evidence | Binding |
+| --- | --- |
+| Final core +VM immutable source |`/nix/store/s46lnj20ys0462hmm3mvl4ny9d6w8wb1-source`|
+| Complete core report |`/tmp/pi-web-test-core.13KYrF/run.json`|
+| Core detail directory |`/nix/store/gdbdlmc9y523zzw5j0l2i16sh50wqx3y-pi-web-core-checks/artifacts/run-dzrPh0/`|
+| Complete browser report at705b1b2 |`/tmp/pi-web-test-browser.C1Gh2y/run.json`|
+| Genuine deployment report |`/tmp/pwv-PIBBHj/run.json`|
+| Shared installed package |`/nix/store/6a1ba6pn13wxkzn1w42jhnfs8vilbl6s-pi-web-0.9.3`|
+
+| Interval, seconds | Measured |
+| --- | ---: |
+| Fresh complete-core command including export/realization |331.935|
+| Core outer /pre-lifecycle /lifecycle |326.593 /1.773 /324.533|
+| Lifecycle preparation /file execution /final settlement |0.911 /323.544 /0.078|
+| F-N pool /E tail /summed overlapping file work |223.804 /99.740 /990.490|
+| Earlier complete-browser outer /support /definitions |270.447 /3.846 /5.307|
+| Summed browser capsules (overlapping) |904.468|
+| Fresh deployment command /outer /guest |70.793 /65.656 /25.924|
+
+Both final commands overlap under one owner; core requests/effectively uses four
+workers, service retains1vCPU/1536MiB. Admission observes32 CPUs/about45GiB available;
+core reports47,302,393,856 available bytes, estimates not reservations. Current
+input-bound typegen/tsc/lint evidence is reused from focused qualification. The
+production package is already realized by the retained earlier attempts; deployment
+still includes prerequisite-driver realization. No intervals are summed as CPU
+cost or relabelled as one fresh complete-all command. This is not a matched whole-
+feedback performance comparison to390.492s, nor a claim that lowering preview
+budgets improves actual25-root application execution.
+
+`/tmp/pi-web-git-preview.gvHMvd/acceptance-summary.json` binds source/package/static/
+resource/outcome conservation and all reports; raw commands, both incomplete all
+attempts, deliberate reds and reviews remain retained. This completes only the
+requested presentation-budget replacement and bounded investigation. Other leads
+remain proposed. Final follow-up changes only plan evidence/status, leaving tested
+executable inputs unchanged; proportional review/source/link/whitespace checks,
+not another application acceptance run, close that documentation-only delta.
+Branch/worktree stay unintegrated; no rebase, merge, remote publication, installed
+host-service action, ordinary session or manual historical/resource cleanup occurs.
+
 ## Completion Checklist
 
 ### This analysis
@@ -1390,6 +2205,15 @@ its single pair shows no meaningful whole-feedback speedup and has the recorded
 deployment-realization/contention limits. Opportunity #4 measures one navigation
 receiver under its existing default module caching, not all fixtures, browser-lower
 execution or module-cache-disabled/environment-transition behavior; no speedup is
-claimed. Native-tools/Pause failure-lifetime gates, opportunities #5–6, native
-cache/fence compatibility and other SDK loader/resource
-closures remain deferred. Simulations are not promises.
+claimed. #6 has one focused instrumented pair for initial setup and unchanged
+production probes and complete four/four acceptance, not a matched whole-feedback
+speed comparison or native-Windows runtime evidence. Native-tools/Pause
+failure-lifetime gates, opportunity #5, native cache/fence compatibility and other
+SDK loader/resource closures remain deferred. The production identity follow-up
+has synthetic native liveness/closure/revalidation proof and complete acceptance,
+not installed-service/browser latency, statistical or native-Windows evidence;
+95 measured policy/other identity reads remain synchronous. The presentation-budget
+follow-up has one focused before/after pair and composed full acceptance, not a
+matched whole-feedback benchmark;25-root native runtime cardinality is intentionally
+retired in favor of cheaper actual owners plus a small native bridge. Other
+identified display-cost leads remain unimplemented. Simulations are not promises.

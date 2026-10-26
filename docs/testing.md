@@ -336,6 +336,14 @@ independence was checked, but ~5.66ms (~13.4%) per fixture does not justify new 
 infrastructure against dominant capture/execution costs. Adoption stays deferred;
 no approved snapshots are reused.
 
+`plugins/git-workflow/cleanup-setup.fixture.mjs` batches only private initial
+repository setup into one fixed POSIX shell dispatch, with quoted positional paths
+and exact OID-only output. All eleven native Git commands and intervening file
+writes remain ordered; first failure stops setup, foreground children are waited
+and both output streams remain captured through shell completion. Windows retains
+the original individual dispatches. No settings writers, production probes,
+approvals, capture epochs or between-effect revalidation are replaced or cached.
+
 Private source-variant instrumentation measured fewer explicit Git dispatches and
 inventory starts, including zero of either in nine leaf cases. The server's two
 additional dispatches retain a stronger held-HEAD guard. These are source-versioned

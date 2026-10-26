@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -36,6 +36,27 @@ export function pluginProjectIdentity(cwd: string): string | null {
   try {
     return realpathSync(toNativePath(execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"],
       { env: gitExecEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()));
+  } catch { return null; }
+}
+/** Fresh native identity for callers that already own an async checkpoint.
+ * No cache or cancellation: join the command/pipes before subsequent validation. */
+export async function pluginProjectIdentityAsync(cwd: string): Promise<string | null> {
+  try {
+    let closed: Promise<void> | undefined;
+    let stdout: string | null;
+    try {
+      stdout = await new Promise<string | null>((resolve) => {
+        let inputFailed = false;
+        const child = execFile("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+          { env: gitExecEnv(), encoding: "utf8" }, (error, output) => resolve(error || inputFailed ? null : output));
+        closed = new Promise<void>((resolve) => { child.once("close", () => resolve()); });
+        // execFile pipes stdin; supply the same EOF as the synchronous reader's
+        // ignored stdin. A feed error must not settle before the child closes.
+        child.stdin?.on("error", () => { inputFailed = true; });
+        try { child.stdin?.end(); } catch { inputFailed = true; }
+      });
+    } finally { await closed; }
+    return stdout === null ? null : realpathSync(toNativePath(stdout.trim()));
   } catch { return null; }
 }
 export function pluginScopeIdentity(manifest: PluginManifest, cwd: string): string | null {

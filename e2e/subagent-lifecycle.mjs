@@ -5,6 +5,7 @@ import { join, relative, isAbsolute } from "node:path";
 import { createJiti } from "jiti";
 import { waitForAsyncCondition } from "./async-condition.mjs";
 import { checkSubagentModelSettings } from "./subagent-settings-ui.mjs";
+import { readBrowserResponse } from "./browser-http.mjs";
 
 /** Script actual model-issued Agent calls. No host runtime/controller is fabricated. */
 export function subagentLifecycleFixtureSource(root) {
@@ -212,8 +213,7 @@ export async function checkSubagentLifecycle(page, { base, api, post, root, agen
       // Otherwise its still-mounted polling can race deletion during trace export.
       await page.goto(`${base}/?session=${returnSessionId}`, { waitUntil: "domcontentloaded" });
       await page.getByText("Active branch answer", { exact: true }).waitFor();
-      const deletion = await page.request.delete(`${base}/api/sessions/${parentId}`);
-      assert.ok(deletion.ok(), await deletion.text());
+      await readBrowserResponse(page, `${base}/api/sessions/${parentId}`, { method: "DELETE", expectedStatus: "2xx" });
     } else {
       // Settle the owned family but preserve its files for failure diagnostics.
       await post(`/api/agent/${parentId}`, { type: "abort" });

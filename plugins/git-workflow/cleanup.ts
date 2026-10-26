@@ -30,7 +30,7 @@ export interface CleanupAccess {
   branchTip(cwd: string, branch: string): string | Promise<string>;
   /** Context names an existing fresh read; default adapters perform the same native operation. */
   worktrees(cwd: string, checkpoint?: CleanupCaptureCheckpoint): WorktreeRecord[] | Promise<WorktreeRecord[]>;
-  project(cwd: string): string | null;
+  project(cwd: string): string | null | Promise<string | null>;
   inUse(path: string): boolean;
 }
 export interface ArtifactInventory { path: string; entries: number; bytes: number; digest: string }
@@ -76,8 +76,8 @@ function statIdentity(path: string) {
   const stat = lstatSync(path, { bigint: true });
   return [String(stat.dev), String(stat.ino), String(stat.mode)];
 }
-function repositoryIdentityOf(access: CleanupAccess, cwd: string): string {
-  const common = access.project(cwd);
+async function repositoryIdentityOf(access: CleanupAccess, cwd: string): Promise<string> {
+  const common = await access.project(cwd);
   if (!common) throw new Error("Cleanup repository identity is unavailable");
   return digest([cwd, statIdentity(cwd), common, statIdentity(common)]);
 }
@@ -232,7 +232,7 @@ async function captureResources(callerCwd: string, op: ResourceOperation, policy
   // including when the operation's configured permission is Allow.
   const cwd = await access.checkout(op.checkout);
   if (!samePath(cwd, resolve(op.checkout))) throw new Error("Cleanup checkout must be physical, without symlink aliases");
-  const repositoryIdentity = repositoryIdentityOf(access, cwd);
+  const repositoryIdentity = await repositoryIdentityOf(access, cwd);
   const verifySubject = async (checkpoint?: CleanupCaptureCheckpoint) => {
     if (op.subject.kind === "branch" && await directBranch(access, cwd, op.subject.branch) !== op.subject.tip) throw new Error("Feature branch changed; cleanup refused");
     await rules.verify(cwd, checkpoint);
@@ -290,7 +290,7 @@ async function captureResources(callerCwd: string, op: ResourceOperation, policy
   if (op.deleteBranch && registrations.some((entry) => entry.branch === selectedBranch && (!op.removeWorktree || !path || !samePath(entry.path, path)))) throw new Error("Cannot delete a branch retained in a registered worktree");
   // Target tip deliberately excluded: eligibility proves reachability, not an
   // unrelated advancement of a target that this operation never writes.
-  if (!samePath(await access.checkout(op.checkout), cwd) || repositoryIdentity !== repositoryIdentityOf(access, cwd)) throw new Error("Repository changed during inventory");
+  if (!samePath(await access.checkout(op.checkout), cwd) || repositoryIdentity !== await repositoryIdentityOf(access, cwd)) throw new Error("Repository changed during inventory");
   await verifySubject(captureCheckpoint);
   if (path) {
     const finalEntry = (await access.worktrees(cwd)).find((entry) => samePath(entry.path, path!));

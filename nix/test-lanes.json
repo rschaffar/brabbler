@@ -1645,7 +1645,7 @@
     {
       "path": "lib/plugins/settings.test.mjs",
       "lane": "N",
-      "reason": "Real settings and Git/worktree identity effects target per-case mkdtemp repositories and explicit fixture settings paths; native commands and lock release are synchronous and registered teardown removes the root.",
+      "reason": "Real settings and fresh Git/worktree identity effects use private repositories and explicit settings paths. Process-local builtin adapters forward actual native queries; query/gate children are independently joined before adapter restoration and root removal, including failure. No source writes or fixed ports.",
       "estimatedMs": 1000
     },
     {
@@ -2385,6 +2385,12 @@
       "path": "plugins/git-workflow/resource-rules.test.mjs",
       "lane": "F",
       "reason": "Reviewed test plus artifact-rules, operation-rules, discard, resource-cards and manifest runtime imports: synthetic arrays/objects/strings and pure card/policy validation. Other imports are types; no Git history, settings store, filesystem fixture, SDK, child or timer execution.",
+      "estimatedMs": 1000
+    },
+    {
+      "path": "plugins/git-workflow/review-presentation.test.mjs",
+      "lane": "F",
+      "reason": "Real card compaction and metadata serialization with synthetic cards and a joined in-memory writer. No comparison is supplied, so native patch/context methods are not invoked; imported context/process modules only define functions and allocate process-local maps/AsyncLocalStorage. No repository, settings, filesystem fixture, child, timer or shared-source writes.",
       "estimatedMs": 1000
     },
     {
