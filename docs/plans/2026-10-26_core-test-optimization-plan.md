@@ -1,7 +1,8 @@
 # Core test optimization — investigation and proposed execution
 
 **Status: P1–P3 and opportunity #4 are integrated; #4 stopped without a cache.
-Opportunity #6 is explicitly authorized and in progress; #5 remains deferred.** P3 and its
+Opportunity #6's fixture-only reduction is reviewed and fully accepted, retained
+unintegrated at the user's direction; #5 remains deferred.** P3 and its
 Move correction were merged into local main at `666a75ef71ae6ae5057fa4e5b1b2124c6ebf3b19`; the five prior
 feature worktrees/branches were subsequently cleaned up by explicit request.
 Their retained-state narratives below are historical, not current resource claims.
@@ -1343,14 +1344,15 @@ are authorized; rebase/integration/publication/resource cleanup/session launch a
   fixture/settings/import preparation from native Git and child launch envelopes.
 - [x] Test one coherent ordered private-setup batching candidate, retaining every
   real native Git command and all production capture/revalidation checkpoints.
-- [ ] Independently review exact source and verify actual changed semantics;
-  diagnostics are removed; complete normal four/four acceptance at this first coherent candidate.
-- [ ] Record exact source/dependency/command/timing evidence, failures and limits;
+- [x] Independently review exact source and verify actual changed semantics;
+  remove diagnostics and complete normal four/four acceptance at this first coherent candidate.
+- [x] Record exact source/dependency/command/timing evidence, failures and limits;
   retain feature resources unintegrated and stop without starting #5 or another slice.
 
 Initial diagnostic: `nix run .#test -- core --jobs 4 --file
 plugins/git-workflow/cleanup.test.mjs` passes all113 tests. Only temporary inline
-scalar/process diagnostics are present. File envelope73.069s;92 fixture calls
+scalar/process diagnostics were present. Import-to-final-hook envelope73.069s
+(runner file73.203s);92 fixture calls
 spend5.950s in Git setup and0.810s in initial settings, with1.204s imports. The real
 25-root case is8.531s and launches2,015 native Git commands (including setup and
 settings). Summed dispatch-to-close/synchronous-return envelopes are8.523s versus
@@ -1471,6 +1473,90 @@ comparisons and analysis scripts remain in `/tmp/pi-web-p6-git.nBG7cY/`, especia
 `source-conservation.json`. Diagnostics are absent from adopted code. This is the
 first coherent candidate; no optional expansion or full-suite timing campaign.
 
+### Complete acceptance and bounded finish
+
+Implementation commit `b0330caaccf73f65b2c9ae4877d614533b097a94`, clean worktree;
+writers paused during source export:
+
+```sh
+nix run .#test -- all --workers 4 --jobs 4
+```
+
+**Passed:**509 files /4,180 tests /14 suites, all26 browser/terminal groups /59
+exact ordered receipts, and genuine Home Manager deployment. Zero failed,
+skipped/cancelled/todo core tests, uncertain files or observed survivors. Every
+browser group has complete expected/completed coverage, collected diagnostics,
+settled resources/child/pipes/original group, no harness errors and a closed port.
+Deployment confirms settled clients, inactive service/MainPID0, authenticated
+absent cgroup and refused port. Nix owns outer containment; these observations
+are not certification of arbitrary escaped descendants.
+
+All509 paths, lanes and estimates and all4,178 original registered/completed
+outcomes match P3 in order; only the two helper controls are added. Canonical source
+diff against that accepted source is exactly this plan, `docs/testing.md`, the
+cleanup constructor/two controls and the new helper. Production/native owners,
+all other tests, manifest, runner, browser orchestration and dependencies are
+unchanged. Realized package `8a1h30ifi4xad0lph3rawqh4mxvrdvi9-pi-web-0.9.3`
+under `/nix/store/` is identical to P3 and excludes the helper/registered test.
+This verifies packaging/source conservation, not a P3 performance comparison.
+
+| Identity | Accepted candidate |
+| --- | --- |
+| Immutable source |`/nix/store/53jh4fq737qjbj37bbw8776jy319mdn7-source`|
+| Outer content/mode digest |`fa05ddf342e35485e964ee481cc3869837b969394a7582dc2505f285c33486aa`|
+| Source export / admission |`/tmp/pi-web-test-source-wShhAr/{source.json,selection.json}`|
+| Core report |`/tmp/pi-web-test-core.ZAYQIq/run.json`|
+| Core detailed output |`/nix/store/bzs99ia69n0y2ikn22f71pxn5an8c91r-pi-web-core-checks/artifacts/run-XYQsbt/`|
+| Browser report |`/tmp/pi-web-test-browser.eysC8f/run.json`|
+| Genuine deployment report |`/tmp/pwv-pfjpUi/run.json`|
+
+Outer admission observes32 CPUs /52,694,880,256 available bytes; core-local
+admission later observes47,551,336,448 bytes. Requested/effective widths remain
+four core/four browser, with ordinary overlap. No competing heavy test invocation
+was observed before launch; this is not a reservation or machine-exclusive claim.
+Runtime/private dependencies remain the focused pair's pinned Node24.21.0 and
+module outputs. Full acceptance executes new lint evidence
+`/nix/store/8ng6pcrjrc96w8h37acdd6911xs1q83d-pi-web-lint`; typegen/tsc reuses the
+exact hardened focused input/evidence `9jlgys9w56wm92fp5zvbax9jbkwzyirh-source` /
+`lssh6hhi088sw844g4ssyp1qj65wwmpw-pi-web-types` under `/nix/store/`.
+Package, dependencies and deployment driver are warm; no separate prerequisite
+command beyond the recorded focused checks preceded acceptance. Exporter contracts
+and all effectful core/browser/guest tests execute fresh. `static-inputs.json`
+and raw logs distinguish reuse from fresh static execution.
+
+| Interval, seconds | Accepted candidate |
+| --- | ---: |
+| Complete command including realization/export |387.937|
+| Outer core |382.955|
+| Core pre-lifecycle / lifecycle / post-lifecycle |46.494 /336.136 /0.325|
+| Lifecycle preparation / final-file settlement |1.101 /0.073|
+| File execution / F-N pool / E tail |334.962 /239.587 /95.375|
+| Summed F /N /E file work |442.006 /511.819 /95.333|
+| Summed all-file work |1049.158|
+| Browser support / definition preparation |3.475 /4.670|
+| Browser client envelope / outer |229.645 /237.794|
+| Summed browser clients / capsules |806.513 /790.886|
+| Deployment outer / guest |26.040 /20.163|
+| Browser-through-deployment branch |265.879|
+
+These are overlapping envelopes, not additive CPU costs or isolated realization
+time. Core is critical. Cleanup's101.778s full-run file includes contention and
+115 cases; it is neither interactive latency nor comparable to focused70.258s or
+P3's100.229s as a speedup. The only measured attribution-supported reduction is
+the focused initial-setup slice. There is no matched whole-feedback control,
+repeatability/statistical, cold-cache, ARM/CI or native-Windows runtime evidence.
+No extra timing campaign is justified by this small bounded change.
+
+`/tmp/pi-web-p6-git.nBG7cY/acceptance-summary.json` and `all-core-evidence.json`
+bind raw reports, exact reviewed hashes, original-outcome comparisons, static
+identities and timings; `all.log` and `all-command.json` retain command evidence.
+The final follow-up edits only this plan's evidence/status. Application, test,
+helper, guide, manifest and runner inputs stay at accepted `b0330ca`; proportional
+checks are documentation/evidence review, link/source checks, whitespace and exact
+unchanged-input verification, not another full acceptance run. Feature branch and
+worktree remain unintegrated; no rebase, merge, publication, manual current or
+historical resource cleanup, ordinary session launch or further opportunity.
+
 ## Completion Checklist
 
 ### This analysis
@@ -1535,6 +1621,7 @@ deployment-realization/contention limits. Opportunity #4 measures one navigation
 receiver under its existing default module caching, not all fixtures, browser-lower
 execution or module-cache-disabled/environment-transition behavior; no speedup is
 claimed. #6 has one focused instrumented pair for initial setup and unchanged
-production probes; final complete acceptance is pending. Native-tools/Pause
+production probes and complete four/four acceptance, not a matched whole-feedback
+speed comparison or native-Windows runtime evidence. Native-tools/Pause
 failure-lifetime gates, opportunity #5, native cache/fence compatibility and other
 SDK loader/resource closures remain deferred. Simulations are not promises.
