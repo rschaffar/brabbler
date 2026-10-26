@@ -2,7 +2,9 @@
 
 **Status: P1–P3 and opportunity #4 are integrated; #4 stopped without a cache.
 Opportunity #6's fixture-only reduction is reviewed and fully accepted, retained
-unintegrated at the user's direction; #5 remains deferred.** P3 and its
+unintegrated at the user's direction. A subsequent explicit request authorizes
+production identity/checkpoint optimization without a Git-library migration;
+that bounded follow-up is in progress below. #5 remains deferred.** P3 and its
 Move correction were merged into local main at `666a75ef71ae6ae5057fa4e5b1b2124c6ebf3b19`; the five prior
 feature worktrees/branches were subsequently cleaned up by explicit request.
 Their retained-state narratives below are historical, not current resource claims.
@@ -1556,6 +1558,168 @@ checks are documentation/evidence review, link/source checks, whitespace and exa
 unchanged-input verification, not another full acceptance run. Feature branch and
 worktree remain unintegrated; no rebase, merge, publication, manual current or
 historical resource cleanup, ordinary session launch or further opportunity.
+
+## Authorized production identity/checkpoint follow-up
+
+The user subsequently requested optimization of the production identity/checkpoint
+path while retaining native Git, explicitly excluding a Git-library migration.
+Continue in the clean existing `perf/git-probe-amplification` worktree from
+`c3eed7de8e4c81e05044fa5dc1a1f2a92a41edf4`; checked local main remains
+`e8a0ba6be95dcd25882ebdb2146d2d464663dccf`. The accepted fixture change is common
+to the new baseline and candidate. No integration/publication/cleanup or #5 scope
+is added. The separate production-latency profiling plan is proposed, not running;
+this follow-up uses synthetic Nix fixtures, not the installed service/live data.
+
+### Goal and non-goals
+
+Remove synchronous native identity work from the Git Workflow checkout/capture
+path where its API already owns an async lifetime. Keep the same fresh native
+queries at the same ordered checkpoints, selected/caller repository bindings,
+policy/error/ref/registration/HEAD/index/filter distinctions and joined children.
+No repository-result cache, reused approval, skipped revalidation, reordered
+batching, worker increase or shell/library substitution. Synchronous policy
+readers/subscribers/inventory guards are not a blanket async-API migration.
+
+### Plan
+
+- [x] Attribute synchronous identity calls and event-loop progress in the existing
+  25-root production operation, using one fresh four-slot focused baseline.
+- [x] Implement one scoped async identity/checkpoint candidate that preserves
+  authority; compare identical diagnostics and native identity query counts/order.
+- [x] Add actual native identity/liveness/failure and async capture revalidation
+  controls for changed semantics, including meaningful red/green evidence.
+- [ ] Independently review exact source, remove diagnostics, verify actual receiving
+  core files and complete normal four/four core/browser/deployment acceptance.
+- [ ] Record measured blocking/work/wall limits and local commits, retain resources
+  unintegrated and stop rather than expand into other performance opportunities.
+
+**Risks / recovery:** introducing awaited identity calls permits event-loop work
+while the native query runs. Current observations are already non-atomic; initial
+and final identity/ref/registration checks must remain independently fresh and
+late policy/Stop checks must still prevent undispatched effects. Missing/changed
+repositories must fail closed, and child/pipe closure must precede root disposal.
+If preservation needs a broad policy rewrite or unproved cross-stage reuse, stop
+and narrow rather than silently weakening authority. No service or stored schema
+change is planned; recovery retains the feature and evidence without rollback of
+unrelated resources.
+
+### Scoped implementation and measured limit
+
+`pluginProjectIdentityAsync` is additive beside the unchanged synchronous reader.
+It uses native `execFile` with the same argv, fresh sanitized environment, UTF-8,
+default buffer and error-to-null normalization. No shell, library, timeout, signal
+or result cache is introduced. Stdin receives EOF; errors cannot settle the read
+early. A close-only latch is joined in `finally` before path normalization, also
+on spawn/input failure. `server.checkout` and production `cleanupAccess.project`
+use this helper; initial/final capture identity functions await it at their original
+positions. Other preview readers and synchronous settings/policy/subscriber/budget
+contracts remain unchanged. `docs/git-workflow-plugin.md` documents the behavior.
+
+One sequential, instrumented pair used exactly:
+
+```sh
+nix run .#test -- core --jobs 4 --file plugins/git-workflow/cleanup.test.mjs
+```
+
+Both pass the same115 existing cases/outcomes/order plus29 exporter contracts and
+mandatory fresh typegen/tsc/lint. Inline diagnostics and receiving test bytes match;
+source differs only at the three production owner files. A scalar observer queues
+one `setImmediate` at each identity lookup, recording whether it ran before lookup
+completion. No timing gate, artificial load loop or profiling platform is added.
+
+| Seconds / count | Baseline | Instrumented async candidate |
+| --- | ---: | ---: |
+| Native identity queries in the25-root operation |315|315|
+| Synchronous identity queries / summed envelopes |315 /1.288|95 /0.364|
+| Async identity queries / summed envelopes |0 /0|220 /0.847|
+| Observers progressing during synchronous / async reads |0 /0|0 /220|
+|25-root case |8.610|7.978|
+| Selected-file / pool / summed file work |69.734|70.503|
+| Core lifecycle |70.591|71.383|
+| Lifecycle preparation / final settlement |0.812 /0.045|0.835 /0.044|
+| Outer pre-lifecycle / post-lifecycle |32.504 /0.096|36.347 /0.098|
+| Complete command including realization/export |107.846|113.081|
+
+The220 async reads comprise164 checkout and56 capture reads;95 policy/other reads
+remain synchronous. Baseline stack classification identifies56 capture reads but
+leaves259 other contexts combined; it is not retroactively split by proportions.
+This proves event-loop progress during the moved query waits, not absence of all
+blocking: process launch and synchronous filesystem normalization still have costs.
+No native query work is removed. The focused file and command get slower, not
+faster; there is no whole-suite, interactive-browser or installed-service speedup
+claim. Query envelopes are wall scalars, not isolated CPU/fork time or a latency
+percentile. The pair precedes final close-latch hardening and new regressions.
+
+Both runs use native x86_64 Linux/Node24.21.0 and the unchanged runtime/private
+module outputs `28vpp6bpxj0algr4b4xigfca399flcmi-pi-web-node-modules-0.9.3` /
+`1gps3kh9225x4axd5j4b119i9dhchlln-pi-web-test-support-1.0.0` under `/nix/store/`.
+Requested/effective core width is four; only one N file executes, E is empty,
+without browser/service overlap. Admission observes32 CPUs and52,551,729,152 /
+33,482,469,376 available bytes; resources are estimates, not machine reservations.
+Both realize changed static inputs in-command; no separate prerequisite command.
+
+| Identity | Baseline | Instrumented candidate |
+| --- | --- | --- |
+| Immutable source |`/nix/store/dc3nglnkjjp0ld9rb8kx1js9aw0r47pq-source`|`/nix/store/hfwx1x27mplhsjxqrqr7y1rj3fbwmr8s-source`|
+| Core report |`/tmp/pi-web-test-core.xB1Ccq/run.json`|`/tmp/pi-web-test-core.WzOQkZ/run.json`|
+| Core output |`/nix/store/5a1aj7x8bfv6p1mxb72rj2cd4x6m51dr-pi-web-core-checks`|`/nix/store/wgswkfajkmxrddadr0ybcjzn24gpykip-pi-web-core-checks`|
+| Detail directory within output |`artifacts/run-z80mjx/`|`artifacts/run-9zdDj5/`|
+
+### Qualification, failures and exact-source review
+
+Added controls retain actual native Git identity across linked/foreign and A/B/A
+alias bindings, physical Unicode/internal-newline paths, missing repositories,
+sanitized overrides and spawn failure. A transparent private child adapter runs
+the real query, emits native stdout, then holds close at a named gate. Success and
+input failure must permit event-loop progress yet retain the child/pipes through
+settlement. Parent work and native closure are independently joined before adapter
+restoration and root removal. Stop/disable are also delivered during a real query
+under the production directory reservation: no early release or undispatched
+artifact/worktree/ref effect is allowed, and native history/HEAD/resources remain.
+Async capture controls cover success, null/SAME original rejection, initial/final
+missing common directories, final common-directory/checkout replacement and fresh
+recapture after the first real artifact deletion. No Git administration is copied.
+All prior test bodies/inputs/assertions/deadlines stay exact. N lanes and hints stay
+unchanged; only settings' existing N rationale is refined for its new joined child.
+
+Failures are retained, not retried unchanged:
+
+- First sync-fault attempt,60.204s, `/tmp/pi-web-test-core.cQqzDx/run.json`: failed
+  gate-admission preconditions because an earlier Jiti graph held old builtin
+  bindings. It is not the behavioral red. Importing after adapter installation
+  corrects that control boundary.
+- Corrected admission,50.344s, `/tmp/pi-web-test-core.DBPchk/run.json`: the named
+  event-loop assertion fails, but the fixture still has a teardown API bug.
+- First five-receiver candidate run,112.646s,
+  `/tmp/pi-web-test-core.S0Aln9/run.json`: all three server/discard/project-management
+  files pass; new settings/cleanup gate bodies complete, but teardown hooks fail
+  because Node mock functions require `.mock.restore()`, not `.restore()`.
+- Final synchronous-native fault with corrected teardown,48.588s,
+  `/tmp/pi-web-test-core.cJBI5M/run.json`: fails precisely `event-loop work reaches
+  the held identity child before its deadline`, actual `deadline` vs undefined,
+  in both subcases (plus parent failure). Three other cases pass; no hook failures,
+  skips/cancellations, uncertain files or observed survivors. This is the qualifying
+  runtime red. The fault is removed; no failure is filtered or waived.
+
+Final diagnostic-free settings/cleanup verification passes135 tests plus29 exporter
+contracts and fresh changed-input typegen/tsc/lint: command113.171s, preparation
+32.619s, lifecycle75.627s, two-file execution window74.785s, summed work75.799s.
+Report `/tmp/pi-web-test-core.oaCVEy/run.json`, source
+`/nix/store/f8dk9sk3yz8jhy92jn25i8xpcxwbydn2-source`, output
+`/nix/store/05933r29x0s9lgy1i24lmdpzkzz9hm3w-pi-web-core-checks`, details
+`artifacts/run-vqaV8v/`. Requested/effective width remains four; only two selected
+files execute. The three earlier passing receivers are retained: production input
+bytes are identical, and their tests do not import the corrected private gate.
+Complete acceptance will execute every file afresh on the final source.
+
+Independent exact-source review `01a178c2-67a1-7402-ad52-00b33625a432` approves the
+three production files, native gate/two test receivers, owning guide and N-rationale
+with no remaining blockers after confirming the fixture restoration, native path
+input and label corrections. Diagnostics are removed. Raw patches, logs,
+commands/timestamps, rows, source/static/dependency identities and comparisons
+are retained at `/tmp/pi-web-git-identity.5wThYk/`, notably `focused-evidence.json`.
+This is the first coherent reviewed production candidate; full acceptance is next,
+not another optimization or timing campaign.
 
 ## Completion Checklist
 

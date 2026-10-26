@@ -10,7 +10,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 
 import { samePath, toNativePath } from "../../lib/paths";
 import { allowFileRoot } from "../../lib/file-access";
-import { onPluginSettingsChange, pluginProjectIdentity, readPluginSettings } from "../../lib/plugins/settings";
+import { onPluginSettingsChange, pluginProjectIdentity, pluginProjectIdentityAsync, readPluginSettings } from "../../lib/plugins/settings";
 import type { PluginCard, PluginCardField, PluginCardSection, PluginSession, PluginUiContext, PluginOperationReceipt, RequiredCheck } from "../../lib/plugins/types";
 import { actions, gitWorkflowManifest, type GitAction, type GitSettings } from "./manifest";
 import { validateBrowserDiscardOperation, type BrowserDiscardOperation } from "./discard";
@@ -57,8 +57,8 @@ async function worktrees(cwd: string): Promise<WorktreeRecord[]> {
 async function checkout(selected: string, repositoryCwd?: string): Promise<string> {
   if (!isAbsolute(selected)) throw new Error("Select an absolute registered checkout path");
   const physical = realpathSync(selected);
-  const identity = pluginProjectIdentity(physical);
-  if (!identity || (repositoryCwd && identity !== pluginProjectIdentity(repositoryCwd))
+  const identity = await pluginProjectIdentityAsync(physical);
+  if (!identity || (repositoryCwd && identity !== await pluginProjectIdentityAsync(repositoryCwd))
     || !(await worktrees(physical)).some((entry) => samePath(entry.path, physical))) throw new Error("Selected checkout is not registered in the selected repository");
   if (!samePath(toNativePath((await git(physical, ["rev-parse", "--show-toplevel"])).trim()), physical)) throw new Error("Select the checkout root");
   await idle(physical);
@@ -99,7 +99,7 @@ async function refuseFilters(cwd: string, paths: string | AsyncIterable<Uint8Arr
   }
 }
 function cleanupAccess(ui: Partial<PluginUiContext>, rejectUnignoredUntracked = false): CleanupAccess {
-  return { rejectUnignoredUntracked, git, records: (cwd, args) => records(gitOutput(cwd, args)), checkout, branchTip, worktrees, project: pluginProjectIdentity,
+  return { rejectUnignoredUntracked, git, records: (cwd, args) => records(gitOutput(cwd, args)), checkout, branchTip, worktrees, project: pluginProjectIdentityAsync,
     inUse: (path) => { if (!ui.isDirectoryInUse) throw new Error("Cleanup requires live directory-use inspection"); return ui.isDirectoryInUse(path); } };
 }
 async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitSettings, ui: Partial<PluginUiContext> = {}, budget?: CleanupBudget, rejectUnignoredUntracked = false): Promise<Snapshot> {

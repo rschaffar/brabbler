@@ -7,6 +7,7 @@ import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSyn
 import { rm } from "node:fs/promises";
 import { nativeCleanupAccess } from "./cleanup-access.fixture.mjs";
 import { setupCleanupRepository } from "./cleanup-setup.fixture.mjs";
+import { createIdentityGate } from "../../lib/plugins/identity-gate.fixture.mjs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,7 +20,7 @@ const { preparePluginReview } = await jiti.import("../../lib/plugins/review-stor
 const { snapshotOperationReceipt } = await jiti.import("../../lib/operation-receipts.ts");
 const { validatePluginCard } = await jiti.import("../../lib/plugins/ui.ts");
 const { gitWorkflowManifest: manifest } = await jiti.import("./manifest.ts");
-const { pluginSettingsPath, updatePluginSettings, readPluginSettings } = await jiti.import("../../lib/plugins/settings.ts");
+const { pluginSettingsPath, updatePluginSettings, readPluginSettings, pluginProjectIdentityAsync } = await jiti.import("../../lib/plugins/settings.ts");
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "pi-cleanup-test-"));
@@ -772,4 +773,143 @@ test("cleanup setup stops at a native worktree-add failure before later writes, 
   assert.equal(readFileSync(join(repo, "source"), "utf8"), "base\n");
   assert.equal(git(repo, "log", "--format=%s"), "Base", "no later commit or merge");
   assert.equal(git(repo, "worktree", "list", "--porcelain", "-z").split("\0").filter(value => value.startsWith("worktree ")).length, 1);
+});
+
+test("async capture identity preserves fresh initial/final observations, failure identity and replacement refusal", async (t) => {
+  const cases = [["success", 0], ["null", 1], ["null", 2], ["reject", 1], ["reject", 2],
+    ["missing-common", 1], ["missing-common", 2], ["replace-common", 2], ["replace-checkout", 2]];
+  for (const [kind, stage] of cases) await t.test(`${kind} at ${stage}`, async (st) => {
+    const pending = [], cleanups = [], sentinel = new Error("original identity observation failure");
+    let undo = () => {};
+    st.after(async () => {
+      const errors = [], outcomes = await Promise.all(pending);
+      errors.push(...outcomes.filter(value => value.error && value.error !== sentinel).map(value => value.error));
+      for (const finish of [() => undo(), ...cleanups]) { try { await finish(); } catch (error) { errors.push(error); } }
+      if (errors.length) throw new AggregateError(errors, "Async identity capture cleanup failed");
+    });
+    const f = fixture({ after: finish => cleanups.push(finish) });
+    const policy = readPluginSettings(manifest, f.repo).effective;
+    let calls = 0;
+    const access = nativeCleanupAccess(f.repo, { project: cwd => {
+      const work = (async () => {
+        const common = await pluginProjectIdentityAsync(cwd);
+        assert.notEqual(common, null);
+        if (++calls === stage) {
+          if (kind === "null") return null;
+          if (kind === "reject") throw sentinel;
+          if (kind === "missing-common" || kind === "replace-common") {
+            const backup = join(f.root, "held-common"); renameSync(common, backup);
+            if (kind === "replace-common") mkdirSync(common);
+            undo = () => { if (kind === "replace-common") rmSync(common, { recursive: true }); renameSync(backup, common); };
+          } else if (kind === "replace-checkout") {
+            const backup = join(f.root, "held-checkout"); renameSync(cwd, backup); mkdirSync(cwd);
+            symlinkSync(join(backup, ".git"), join(cwd, ".git"), process.platform === "win32" ? "junction" : "dir");
+            undo = () => { rmSync(cwd, { recursive: true }); renameSync(backup, cwd); };
+          }
+        }
+        return common;
+      })();
+      pending.push(work.then(value => ({ value }), error => ({ error })));
+      return work;
+    } });
+    if (kind === "success") {
+      const synchronous = await captureCleanup(f.repo, f.op, policy, nativeCleanupAccess(f.repo));
+      const asynchronous = await captureCleanup(f.repo, f.op, policy, access);
+      assert.equal(asynchronous.repositoryIdentity, synchronous.repositoryIdentity);
+      assert.equal(asynchronous.fingerprint, synchronous.fingerprint);
+    } else {
+      await assert.rejects(captureCleanup(f.repo, f.op, policy, access), error => {
+        if (kind === "reject") return error === sentinel;
+        if (kind === "null") return /repository identity is unavailable/.test(error.message);
+        if (kind === "missing-common") return error.code === "ENOENT";
+        return /Repository changed during inventory/.test(error.message);
+      });
+    }
+    assert.equal(calls, stage || 2, "both identity epochs stay independent and awaited");
+    undo(); undo = () => {};
+    assert.equal(git(f.repo, "rev-parse", "feature"), f.op.featureTip);
+    assert.equal(git(f.repo, "rev-parse", "main"), f.op.integrationCommit);
+    assert.equal(existsSync(f.path), true);
+  });
+});
+
+test("async identity is observed again between real artifact effects after repository replacement", async (t) => {
+  const pending = [], cleanups = [];
+  let undo = () => {};
+  t.after(async () => {
+    const outcomes = await Promise.all(pending), errors = outcomes.filter(value => value.error).map(value => value.error);
+    for (const finish of [() => undo(), ...cleanups]) { try { await finish(); } catch (error) { errors.push(error); } }
+    if (errors.length) throw new AggregateError(errors, "Between-effect identity cleanup failed");
+  });
+  const f = fixture({ after: finish => cleanups.push(finish) });
+  f.artifact("node_modules"); f.artifact(".next");
+  const refs = git(f.repo, "show-ref"), registrations = git(f.repo, "worktree", "list", "--porcelain"), removed = [];
+  const policy = readPluginSettings(manifest, f.repo).effective;
+  const access = nativeCleanupAccess(f.repo, {
+    project: cwd => {
+      const work = pluginProjectIdentityAsync(cwd);
+      pending.push(work.then(value => ({ value }), error => ({ error }))); return work;
+    },
+    removeArtifact: async path => {
+      await rm(path, { recursive: true }); removed.push(path);
+      const common = join(f.repo, ".git"), backup = join(f.root, "held-common");
+      renameSync(common, backup); mkdirSync(common);
+      undo = () => { rmSync(common, { recursive: true }); renameSync(backup, common); };
+    },
+  });
+  const snapshot = await captureCleanup(f.repo, f.op, policy, access), effects = [];
+  const [first, second] = snapshot.artifacts.map(value => value.path);
+  await assert.rejects(performCleanup(f.repo, f.op, policy, access, snapshot, () => {},
+    async args => git(f.repo, ...args), effects, () => {}, createCleanupBudget()), /repository identity is unavailable/);
+  assert.deepEqual(removed, [join(f.path, first)]);
+  assert.deepEqual(effects, [`Removed generated artifact: ${first}`]);
+  assert.equal(existsSync(join(f.path, first)), false);
+  assert.equal(existsSync(join(f.path, second)), true);
+  assert.equal(pending.length, 5, "prepared capture and each effect retain their own fresh identity observations");
+  undo(); undo = () => {};
+  assert.equal(git(f.repo, "show-ref"), refs);
+  assert.equal(git(f.repo, "worktree", "list", "--porcelain"), registrations);
+  assert.equal(git(f.path, "rev-parse", "HEAD"), f.op.featureTip);
+  assert.equal(readFileSync(join(f.path, "source"), "utf8"), "feature\n");
+});
+
+test("Stop and disable during native identity retain the reservation through child close and prevent effects", async (t) => {
+  for (const action of ["stop", "disable"]) await t.test(action, async (st) => {
+    const cleanups = [];
+    let work, gate;
+    st.after(async () => {
+      const errors = [];
+      for (const finish of [() => gate?.release(), () => work, () => gate?.join(), () => gate?.restore(), ...cleanups]) {
+        try { await finish(); } catch (error) { errors.push(error); }
+      }
+      if (errors.length) throw new AggregateError(errors, "Held identity operation cleanup failed");
+    });
+    const f = fixture({ after: finish => cleanups.push(finish) });
+    f.set({ cleanupFeature: "allow" }); f.artifact("node_modules");
+    const refs = git(f.repo, "show-ref"), registrations = git(f.repo, "worktree", "list", "--porcelain"), abort = new AbortController();
+    let reserved = false, releases = 0, settled = false;
+    gate = createIdentityGate(st, f.root, { shouldHold: () => reserved });
+    const fresh = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
+    const { executeGitOperation: execute } = await fresh.import("./server.ts");
+    work = execute(f.repo, f.op, { ...f.ui, reserveDirectory: () => { reserved = true; return () => { releases++; }; } }, abort.signal)
+      .then(value => { settled = true; return value; });
+    await gate.ready();
+    assert.equal(reserved, true); assert.equal(releases, 0); assert.equal(settled, false);
+    if (action === "stop") abort.abort();
+    else updatePluginSettings(manifest, "global", f.repo, { enabled: false }, []);
+    await new Promise(setImmediate); // One observed event-loop opportunity, not a universal drain.
+    assert.equal(gate.outcome(), undefined, "Stop/disable cannot terminate the owned native identity query");
+    assert.equal(settled, false); assert.equal(releases, 0, "reservation stays held during the native query");
+    gate.release();
+    const result = await work;
+    failed(result, action === "stop" ? /aborted|Cancelled/i : /disabled/);
+    assert.equal(gate.outcome(), "released"); assert.equal(gate.child.exitCode, 0);
+    assert.equal(releases, 1); assert.equal(f.receipts.at(-1).effectStarted, false);
+    assert.equal(f.receipts.at(-1).phase, action === "stop" ? "cancelled" : "failed");
+    assert.equal(existsSync(join(f.path, "node_modules/cache")), true);
+    assert.equal(git(f.repo, "show-ref"), refs);
+    assert.equal(git(f.repo, "worktree", "list", "--porcelain"), registrations);
+    assert.equal(git(f.path, "rev-parse", "HEAD"), f.op.featureTip);
+    assert.equal(readFileSync(join(f.path, "source"), "utf8"), "feature\n");
+  });
 });

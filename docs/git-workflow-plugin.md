@@ -268,6 +268,17 @@ Command errors still propagate. This batches path lookup only: policy, refs,
 registration, source/filter/index state, inventories and no-follow/mount checks
 remain fresh at their existing checkpoints, without cross-stage caching.
 
+Checkout validation and cleanup/discard's initial/final repository-identity reads
+use asynchronous native Git queries. Each read independently resolves the physical
+common Git directory; no identity result is cached or borrowed from another stage.
+The query has the same sanitized environment and unavailable-identity behavior as
+the synchronous reader. Its child and pipes are joined before normalization and
+subsequent validation, including input/spawn failures. Stop/disable can be observed
+while the query runs, but do not abandon it or release a held directory reservation
+early; the existing later guards refuse undispatched effects. Synchronous settings,
+policy/subscriber and other preview readers retain their existing contracts. These
+observations remain non-atomic: external writers can still race separate reads.
+
 Effects are unsigned and hook-free, as disclosed in previews. Rebase/merge use
 Git's native conflict behavior; conflict state remains for explicit human/agent
 resolution. Sparse checkouts, hidden index flags and clean/process filter

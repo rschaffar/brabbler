@@ -1645,7 +1645,7 @@
     {
       "path": "lib/plugins/settings.test.mjs",
       "lane": "N",
-      "reason": "Real settings and Git/worktree identity effects target per-case mkdtemp repositories and explicit fixture settings paths; native commands and lock release are synchronous and registered teardown removes the root.",
+      "reason": "Real settings and fresh Git/worktree identity effects use private repositories and explicit settings paths. Process-local builtin adapters forward actual native queries; query/gate children are independently joined before adapter restoration and root removal, including failure. No source writes or fixed ports.",
       "estimatedMs": 1000
     },
     {
