@@ -4,7 +4,8 @@
 Opportunity #6's fixture-only reduction is reviewed and fully accepted, retained
 unintegrated at the user's direction. A subsequent explicit request authorizes
 production identity/checkpoint optimization without a Git-library migration;
-that bounded follow-up is in progress below. #5 remains deferred.** P3 and its
+that follow-up is now independently reviewed and fully accepted below, retained
+unintegrated. #5 remains deferred.** P3 and its
 Move correction were merged into local main at `666a75ef71ae6ae5057fa4e5b1b2124c6ebf3b19`; the five prior
 feature worktrees/branches were subsequently cleaned up by explicit request.
 Their retained-state narratives below are historical, not current resource claims.
@@ -1588,9 +1589,9 @@ readers/subscribers/inventory guards are not a blanket async-API migration.
   authority; compare identical diagnostics and native identity query counts/order.
 - [x] Add actual native identity/liveness/failure and async capture revalidation
   controls for changed semantics, including meaningful red/green evidence.
-- [ ] Independently review exact source, remove diagnostics, verify actual receiving
+- [x] Independently review exact source, remove diagnostics, verify actual receiving
   core files and complete normal four/four core/browser/deployment acceptance.
-- [ ] Record measured blocking/work/wall limits and local commits, retain resources
+- [x] Record measured blocking/work/wall limits and local commits, retain resources
   unintegrated and stop rather than expand into other performance opportunities.
 
 **Risks / recovery:** introducing awaited identity calls permits event-loop work
@@ -1625,7 +1626,8 @@ Both pass the same115 existing cases/outcomes/order plus29 exporter contracts an
 mandatory fresh typegen/tsc/lint. Inline diagnostics and receiving test bytes match;
 source differs only at the three production owner files. A scalar observer queues
 one `setImmediate` at each identity lookup, recording whether it ran before lookup
-completion. No timing gate, artificial load loop or profiling platform is added.
+completion. These diagnostics add no performance threshold, artificial load loop
+or profiling platform.
 
 | Seconds / count | Baseline | Instrumented async candidate |
 | --- | ---: | ---: |
@@ -1718,8 +1720,90 @@ with no remaining blockers after confirming the fixture restoration, native path
 input and label corrections. Diagnostics are removed. Raw patches, logs,
 commands/timestamps, rows, source/static/dependency identities and comparisons
 are retained at `/tmp/pi-web-git-identity.5wThYk/`, notably `focused-evidence.json`.
-This is the first coherent reviewed production candidate; full acceptance is next,
+This is the first coherent reviewed production candidate; its acceptance follows,
 not another optimization or timing campaign.
+
+### Production candidate complete acceptance
+
+Implementation `3cf3b30e0d4203a4c0be1f6b34f60baadeed6941`, clean worktree,
+source writers paused during export:
+
+```sh
+nix run .#test -- all --workers 4 --jobs 4
+```
+
+**Passed:**509 files /4,198 tests /14 suites, all26 browser/terminal groups /59
+exact ordered receipts and genuine Home Manager deployment. All4,180 prior outcomes,
+discovery paths, lanes and estimates are preserved; only18 new settings/capture/
+closure controls are added. Zero failed/skipped/cancelled/todo tests, uncertain
+core files or observed survivors. Browser coverage is exact, resources/children/
+pipes/original groups settle, diagnostics collect, errors are empty and ports
+close. Deployment confirms settled clients, inactive service/MainPID0, authenticated
+absent cgroup and refused port. Nix owns outer containment; inner observations
+are bounded, not certification of arbitrary escaped descendants.
+
+| Identity | Accepted production candidate |
+| --- | --- |
+| Immutable source |`/nix/store/zn3nl74fqmxhljkdqvpryfbzq2w8fwns-source`|
+| Outer content/mode digest |`73eb21b2602797a4b14214af0d1e1307f944041e6cf7885c6569dd1f74126b9b`|
+| Export / admission |`/tmp/pi-web-test-source-aINf0b/{source.json,selection.json}`|
+| Core report |`/tmp/pi-web-test-core.1qoxLA/run.json`|
+| Core output / details |`/nix/store/74hrn4nmcjavzg9kpwb5hr6f74avrcnf-pi-web-core-checks/artifacts/run-sJCXOr/`|
+| Browser report |`/tmp/pi-web-test-browser.rMnbH1/run.json`|
+| Genuine deployment report |`/tmp/pwv-SCbuvy/run.json`|
+
+Native x86_64 Linux/Node24.21.0,32 observed CPUs, requested/effective four core
+workers and four browser sandboxes, ordinary overlap. Outer/core-local admission
+observes53,438,005,248 /53,164,359,680 available bytes, not reservations. No competing
+heavy invocation was observed before launch. Full acceptance reuses the exact final
+focused typegen/tsc/lint evidence (`s2qllxgndwqbhadyimv52f906w1qqa45-pi-web-types` /
+`8g5pdz245qfpn2kjqmph7bwyv3a6izdl-pi-web-lint` under `/nix/store/`); those static
+checks do not execute again. Exporter contracts and all effectful tests are fresh.
+Dependencies remain the matched pair's pinned outputs. No separate preparation
+command beyond the recorded focused checks precedes this full invocation.
+
+New production package `/nix/store/vzpdjrmfw6psawdr7a01r27iax3qlzpp-pi-web-0.9.3`
+is built only in an isolated Nix builder, shared by browser and deployment. Compared
+with the prior package, its filtered application source changes exactly the three
+production owner files; dependency derivations are identical. The private native
+gate is absent from application inputs and packed files. New deployment driver
+`/nix/store/8mv8x9vzjda89dkjphlgahszlmkd3gyb-pi-web-service-driver` is realized
+in-command. `package-inputs.json` binds the actual derivations, filtered sources
+and inventory check, not version-string parity.
+
+| Interval, seconds | Accepted production candidate |
+| --- | ---: |
+| Complete command including realization/export |390.492|
+| Outer core |347.641|
+| Core pre-lifecycle / lifecycle / post-lifecycle |1.632 /345.695 /0.314|
+| Lifecycle preparation / final-file settlement |0.850 /0.077|
+| File execution / F-N pool / E tail |344.768 /242.848 /101.920|
+| Summed F /N /E file work |511.138 /455.422 /101.874|
+| Summed all-file work |1068.434|
+| Browser support (including new package realization) / definitions |86.505 /4.848|
+| Browser client envelope / outer |221.369 /312.724|
+| Summed browser clients / capsules |792.392 /777.460|
+| Deployment outer (including new driver realization) / guest |68.914 /18.776|
+| Browser-through-deployment branch |383.945|
+
+Overlapping intervals are not additive CPU costs. Browser/deployment finishes last
+in this run, with substantial in-command package/driver realization; this is not a
+matched warm-prerequisite whole-feedback benchmark. Do not attribute differences
+from earlier386/348/387-second references or realization costs to async identity.
+The supported improvement is event-loop progress during220 unchanged native query
+waits, not fewer queries, faster complete tests or measured installed-service
+latency. The95 policy/other synchronous identity reads in the measured operation,
+plus synchronous launch/filesystem costs, remain deliberately outside this slice.
+No extra timing campaign, library migration, cache or optimization is started.
+
+`/tmp/pi-web-git-identity.5wThYk/{acceptance-summary.json,all-core-evidence.json,all-command.json,all.log}`
+retains exact source/outcome/static/resource/timing and package bindings. The final
+follow-up changes only this plan's evidence/status: all accepted production, test,
+helper, guide, manifest and dependency inputs remain at `3cf3b30`. Proportional
+follow-up checks are evidence/documentation review, link-target/source conservation
+and whitespace, not another full application suite. Retain the branch/worktree
+unintegrated; no rebase, merge, publication, installed-service action or manual
+feature/historical resource cleanup is included.
 
 ## Completion Checklist
 
@@ -1788,4 +1872,7 @@ claimed. #6 has one focused instrumented pair for initial setup and unchanged
 production probes and complete four/four acceptance, not a matched whole-feedback
 speed comparison or native-Windows runtime evidence. Native-tools/Pause
 failure-lifetime gates, opportunity #5, native cache/fence compatibility and other
-SDK loader/resource closures remain deferred. Simulations are not promises.
+SDK loader/resource closures remain deferred. The production identity follow-up
+has synthetic native liveness/closure/revalidation proof and complete acceptance,
+not installed-service/browser latency, statistical or native-Windows evidence;
+95 measured policy/other identity reads remain synchronous. Simulations are not promises.
