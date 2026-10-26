@@ -423,12 +423,16 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
       assert.equal(contextReads.length, 2);
       assert.equal(contextReads[1].url(), contextUrl);
       await jumpTo(historicalFile, "Side-by-side diff", 2500, "Plugin context 2500");
-      await version(historicalFile, "Before").click();
-      await jumpTo(historicalFile, "Before file", 50, beforeLines[49]);
-      await version(historicalFile, "After").click();
-      await jumpTo(historicalFile, "After file", 50, candidate);
-      await jumpTo(historicalFile, "After file", 4500, distantCandidate);
-      await version(historicalFile, "Changes").click();
+      if (retainNativeMatrices) {
+        await version(historicalFile, "Before").click();
+        await jumpTo(historicalFile, "Before file", 50, beforeLines[49]);
+        await version(historicalFile, "After").click();
+        await jumpTo(historicalFile, "After file", 50, candidate);
+        await jumpTo(historicalFile, "After file", 4500, distantCandidate);
+        await version(historicalFile, "Changes").click();
+      }
+      // Keep the ORIGINAL native saved bytes and final Raw preference. The
+      // actual historical parent owns version policy below, not native UUIDs.
       await group.getByRole("button", { name: "Raw patch", exact: true }).click();
       assert.equal(await historicalFile.getByRole("region", { name: "Raw patch", exact: true }).textContent(), reviewedPatch);
       await group.getByText("Decision only — see the tool result for execution outcome.", { exact: true }).waitFor();
@@ -437,6 +441,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
       assert.equal(await historical.getByRole("region", { name: "Raw patch", exact: true }).count(), 0);
       assert.equal(await historical.locator(".git-diff-code-view").count(), 0, "Collapsed historical diff bodies unmount");
 
+      if (retainNativeMatrices) {
       // Remount so the successful context cache cannot hide the deliberate
       // expired-snapshot response. Only this exact opaque request may fail.
       await historical.getByRole("button", { name: /Answered.*Git commit/ }).click();
@@ -469,6 +474,10 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
         await page.unroute(contextUrl, refuseContext);
       }
       await group.getByRole("button", { name: "Collapse", exact: true }).click();
+      }
+      // Reduced inputs already collapsed the original native body above. The
+      // actual historical wrapper owns synthetic 409/remount/error policy;
+      // no Playwright route/body/expected-conflict adapter is admitted here.
       assert.equal(await historical.getByRole("region", { name: "Raw patch", exact: true }).count(), 0);
       assert.equal(decisions().length, 1);
       assert.equal(tip(), committedTip, "Historical review cannot execute the approval again");
@@ -701,5 +710,5 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   await card.getByRole("button", { name: "Approve commit", exact: true }).click();
   await finish("large", "completed");
   assert.equal(execFileSync("git", ["-C", repo, "show", "--format=", "--name-only", "HEAD"], { encoding: "utf8" }).trim().split("\n").length, 45);
-  console.log(`PASS: ${width}px durable Ask/Allow outcomes; ${retainNativeMatrices ? "full preview and cleanup matrices" : "conditional partial native-review bridge with historical native download"}; Git approval layouts, ${retainNativeMatrices || width !== 1280 ? "live split/unified/Before/After search/navigation/collapse matrix" : "cold native snapshot/virtualization and mounted-owner desktop reader policy"}, wide Escape, exact read-only historical context and expired raw fallback, cross-repository settings, installed enable/default, rejection, reconnect and native Stop`);
+  console.log(`PASS: ${width}px durable Ask/Allow outcomes; ${retainNativeMatrices ? "full preview and cleanup matrices" : "conditional partial native-review bridge with historical native download"}; Git approval layouts, ${retainNativeMatrices ? "live split/unified/Before/After search/navigation/collapse matrix" : "cold native snapshot/virtualization and mounted-owner live reader policy"}, wide Escape, ${retainNativeMatrices ? "exact read-only historical context and expired raw fallback" : "cold immutable historical context/raw bytes and mounted-owner historical/409 policy"}, cross-repository settings, installed enable/default, rejection, reconnect and native Stop`);
 }

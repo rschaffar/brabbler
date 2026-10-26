@@ -278,6 +278,15 @@ retire old tests or constitute full candidate acceptance.
   release all domain peers before joins, and keep unknown failures fatal. Check
   actual callback adoption before success-dependent readiness; a stream that a
   broken callback cannot admit must not become an unbounded test waiter.
+- Historical Decision and Operation outcome wrappers forward the existing passive
+  `onReadWork` observer unchanged to their actual child. Absent adds no handlers,
+  requests, timers or policy. Test the real wrapper, its lazy/serialized source,
+  complete original reads and read-only controls, not a copied live parent. Observe
+  JSON-body Error E independently: after public Abort A, the real queue's handled
+  worker/finally can fulfill. Never fabricate a SAME-E queue rejection from its
+  body error. Keep Outcome support proportionate when no Allow replay retires;
+  immutable native identity/body/download and current-file/HEAD boundaries remain
+  installed even when synthetic historical 409 policy moves lower.
 - Ordinary Git Cancel is not Reject, Stop or settings abort. Compose the actual
   inline public Card→real hook response (existing Probe/`ownControl`, same original
   promise) with the actual RPC cancelled-response→null receiver while the signal

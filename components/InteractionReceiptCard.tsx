@@ -9,7 +9,11 @@ import { PluginCardContent } from "./plugin-ui/PluginCard";
 import { QuestionSetReview } from "./QuestionSetReview";
 
 /** No live request, submit callback, editable draft or timer exists in this component. */
-export function InteractionReceiptCard({ receipt, sessionId }: { receipt: InteractionReceipt; sessionId?: string }) {
+export function InteractionReceiptCard({ receipt, sessionId, onReadWork }: {
+  receipt: InteractionReceipt; sessionId?: string;
+  /** Passive original read-work observation; absent adds no promise handling. */
+  onReadWork?: (work: Promise<void>) => void;
+}) {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(true);
   const { request, response } = receipt;
@@ -35,7 +39,7 @@ export function InteractionReceiptCard({ receipt, sessionId }: { receipt: Intera
       </section>}
       {request.method === "plugin_card" ? <>
         {request.scope && <p className="blocking-card-scope">{request.scope}</p>}
-        <PluginCardContent request={request} sessionId={sessionId} />
+        <PluginCardContent request={request} sessionId={sessionId} onReadWork={onReadWork} />
         {request.operationId && <pre className="blocking-card-code">Operation: {request.operationId}</pre>}
       </>
         : request.method === "ask_user_batch" ? <>

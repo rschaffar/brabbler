@@ -58,6 +58,7 @@ test('seven generic card tuples join original valid descendant work and preserve
   phase('import:cards:begin');
   const { BlockingRequestCard } = await h.load('./BlockingRequestCard.tsx');
   const { OperationReceiptCard } = await h.load('./OperationReceiptCard.tsx');
+  const { InteractionReceiptCard } = await h.load('./InteractionReceiptCard.tsx');
   phase('import:cards:end');
   const currentRead = [], oldRead = [];
   const observe = list => work => { list.push(work); h.onReadWork(work); };
@@ -505,6 +506,102 @@ test('seven generic card tuples join original valid descendant work and preserve
     assert.equal(currentResponses[0][0] === current, true, 'actual response uses current original request, never serialized stale object');
     assert.deepEqual(currentResponses[0][1], { action: 'approve' });
     await unmount(); release(); await join(start);
+
+    // Actual historical/outcome parents, same original data row and real Pierre
+    // graph. User-authorized passive forwarding exposes their original reads;
+    // no copied wrapper/controller or live approval callback is installed.
+    const decision = { version: 1, outcome: 'answered', request: JSON.parse(serialized), response: { action: 'approve' } };
+    const outcome = { version: 1, pluginId: 'git-workflow', sequence: 1, operationId,
+      card: JSON.parse(serialized), phase: 'succeeded', effectStarted: true, checks: [],
+      authorization: { mode: 'ask', source: 'builtin', revision: 'reader-origin', decision: 'user-approved' } };
+    for (const [kind, Component, receipt] of [['decision', InteractionReceiptCard, decision], ['outcome', OperationReceiptCard, outcome]]) {
+      phase(`historical-reader:${width}:${kind}:begin`);
+      const saved = JSON.parse(JSON.stringify(receipt));
+      const readFrom = h.requests.length, ownedFrom = h.work.length;
+      await h.render(createElement(Component, { receipt: saved, sessionId: 'current', onReadWork: currentObserver }));
+      assert.equal(h.requests.length, readFrom, 'collapsed actual historical parent admits no review read');
+      const expandHistorical = async () => {
+        const from = h.requests.length;
+        await click(h.view, h.view.container.querySelector('.blocking-card-collapsed'));
+        const reads = h.requests.slice(from);
+        assert.equal(reads.length, 4, 'actual historical inline page/patch Strict replay');
+        // These scalar original-work witnesses precede any success-dependent
+        // join: dropping either wrapper's forwarding must fail, never hang.
+        for (const read of reads) assert.equal(Boolean(read.readWork), true, `${kind} parent forwards its ORIGINAL complete read`);
+        const page = await replayPair([reads[0], reads[2]], 'start=0', pageData);
+        const aggregate = await replayPair([reads[1], reads[3]], 'patch=1', supplied);
+        await body(page, pageData); await body(aggregate, supplied);
+        release(); await join(ownedFrom); await bindFrames();
+        assert.equal(Boolean(first()), true);
+      };
+      const assertReadOnly = () => {
+        for (const button of h.view.container.querySelectorAll('button'))
+          assert.doesNotMatch(button.textContent, /Approve commit|Reject|Cancel/);
+        assert.equal(responses.length, 0);
+        assert.equal(currentResponses.length, 1, 'historical controls cannot answer the old live request');
+      };
+      await expandHistorical();
+      await click(h.view, textButton(h.view.container, 'Side by side'));
+      const contextsBefore = contextReads().length;
+      const full = textButton(first(), 'Show full file');
+      assert.equal(Boolean(full) && !full.disabled, true, `${kind} actual historical parent preserves its usable opaque context source`);
+      await showFull();
+      if (kind === 'decision') {
+        // This policy matrix pairs with actual historical browser retirement.
+        // Outcome has no adopted Allow replay cut: keep only its forwarding,
+        // complete read, raw/read-only and unmount support below.
+        await jump(2500, 'Plugin context 2500');
+        await click(h.view, textButton(first(), 'Before')); release(); await join(ownedFrom); await bindFrames();
+        await jump(50, oldLines[49].trimEnd());
+        await click(h.view, textButton(first(), 'After')); release(); await join(ownedFrom); await bindFrames();
+        await jump(50, newLines[49].trimEnd()); await jump(4500, newLines[4499].trimEnd());
+        await click(h.view, textButton(first(), 'Changes')); release(); await join(ownedFrom); await bindFrames();
+        assert.equal(h.view.container.textContent.includes('Decision only — see the tool result for execution outcome.'), true);
+      }
+      // Retain actual Raw readability/preference, not a compensating store write.
+      await click(h.view, textButton(h.view.container, 'Raw patch'));
+      assert.equal(first().querySelector('[aria-label="Raw patch"]').textContent, firstPatch);
+      assert.equal(contextReads().length, contextsBefore + 1, 'historical reads reuse the exact requested immutable body');
+      assertReadOnly();
+      await click(h.view, h.view.container.querySelector('[aria-label="Collapse"]'));
+      assert.equal(h.view.container.querySelectorAll('.git-diff-code-view').length, 0, 'actual historical collapse unmounts descendants');
+      assert.equal(h.view.container.querySelector('[aria-label="Raw patch"]') === null, true);
+      if (kind === 'outcome') {
+        await unmount(); release(); await join(ownedFrom);
+        phase(`historical-reader:${width}:${kind}:end`);
+        continue;
+      }
+      await expandHistorical();
+      await click(h.view, textButton(h.view.container, 'Side by side'));
+      assert.equal(contextReads().length, contextsBefore + 1, 'fresh historical body stays lazy');
+      const expiredFrom = h.work.length;
+      await click(h.view, textButton(first(), 'Show full file'));
+      const historicalExpired = contextReads().at(-1);
+      assert.equal(historicalExpired.url.href, contextReads()[0].url.href, 'historical remount preserves the original opaque source');
+      await act(async () => { historicalExpired.reply(expiredBody, { status: 409 }); });
+      release(); await join(expiredFrom); await bindFrames();
+      assert.equal(historicalExpired.status, 409); assert.equal(historicalExpired.bodyCalls, 1);
+      const failures = h.work.slice(expiredFrom).filter(entry => entry.error);
+      assert.equal(failures.length > 0, true, 'actual historical parent owns full original error continuations');
+      const E = failures[0].error;
+      assert.equal(E.message, expiredBody.error);
+      for (const entry of failures) {
+        assert.equal(entry.error, E, 'historical context/action/finally preserve SAME original error');
+        h.expectFailure(entry.error);
+      }
+      assert.equal(first().querySelector('[role="alert"]').textContent.includes(expiredBody.error), true);
+      await click(h.view, textButton(h.view.container, 'Raw patch'));
+      assert.equal(first().querySelector('[aria-label="Raw patch"]').textContent, firstPatch);
+      assert.equal(contextReads().length, contextsBefore + 2, 'expired historical context never retries itself');
+      assertReadOnly();
+      const originalCount = h.work.length, oldCount = oldRead.length;
+      await h.render(createElement(Component, { receipt: saved, sessionId: 'current', onReadWork: oldObserver }));
+      assert.equal(h.work.length, originalCount, 'historical observer replacement never replays accepted work');
+      assert.equal(oldRead.length, oldCount);
+      assertReadOnly();
+      await unmount(); release(); await join(ownedFrom);
+      phase(`historical-reader:${width}:${kind}:end`);
+    }
     phase(`reader-input:${width}:end`);
     }
     phase('reader-parent:end');
