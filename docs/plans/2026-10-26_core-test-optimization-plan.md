@@ -1,8 +1,11 @@
 # Core test optimization — investigation and proposed execution
 
-**Status: P1 and P2 complete and integrated; opportunity #3 and its Move blocker
-correction are independently reviewed and fully accepted, retained unintegrated.**
-The renewed source-matched pair passes all levels. E tail shortens, but total
+**Status: P1–P3 complete and integrated; opportunity #4's bounded non-RPC
+investigation is complete with a measured stop and no cache adopted.** P3 and its
+Move correction were merged into local main at `666a75ef71ae6ae5057fa4e5b1b2124c6ebf3b19`; the five prior
+feature worktrees/branches were subsequently cleaned up by explicit request.
+Their retained-state narratives below are historical, not current resource claims.
+The renewed P3 source-matched pair passes all levels. E tail shortens, but total
 feedback is essentially unchanged; no meaningful whole-feedback speedup is established. P2 was subsequently merged into local main at
 `ab6b2fa11e3d38fb4cc65a661f3ef9001e8ae534`; its earlier retained-state evidence below
 remains historical. The first stop at `d532fedb44cc819b18085331168d9d78157a01b7`
@@ -13,7 +16,8 @@ into local main at `0d5d914515057c957b47a7b92d9164ddacd98bc7`. A subsequent expl
 request authorized P2 only: measure repeated RPC fixture preparation, adopt only a
 demonstrated simple reduction, preserve isolation, verify and retain local feature
 commits. P2 integration was separately authorized afterwards. Opportunity #3 now
-has its own bounded authority below; opportunities #4–6 remain deferred.
+has its historical bounded authority below; the current #4 scope follows.
+Opportunities #5–6 and the separate Node compile-cache candidate remain deferred.
 Historical investigation and P1/P2 evidence retain their original identities.
 
 ## Goal
@@ -23,17 +27,21 @@ assertions, error/settlement checks or native authority established by the compl
 browser-retirement work. Distinguish less work, better scheduling, faster focused
 feedback and faster complete acceptance; none implies the others.
 
-**Current bounded execution: opportunity #3, shorten the exclusive tail.** Review
-only `lib/acceptance/coordinator.test.mjs` (first),
-`app/api/native-tools/route.test.mjs`, `app/api/skills/content/route.test.mjs` and
-`lib/session-pause.test.mjs`. Promote only source/helper/pinned-import/native and
-success/failure-cleanup-qualified files; private native effects belong in N, not F.
-Retain precise unresolved holds rather than expanding lifetime infrastructure.
-Preserve every original body/input/assertion/deadline, native/SDK authority,
-discovery/count and settlement gate. One sequential matched baseline/candidate uses
-unchanged complete orchestration and four core/four browser workers, followed by
-bounded evidence review. No other optimization, rebase, integration, publication,
-ordinary session launch or resource cleanup is authorized for this task.
+**Opportunity #4 disposition: no repeated transformation target in the measured
+navigation receiver.** The bounded scope was to inspect
+`components/navigation-runtime.fixture.mjs` and/or
+`components/browser-lower-runtime.fixture.mjs`, starting with one actual existing
+receiver. Measure repeated actual source/configuration transformations, not loader
+construction counts; inspect pinned module-cache behavior and attribute any dominant
+import interval before stopping. Adopt only a demonstrated small fixture-local
+immutable preparation reduction, preserving resolution/source reads, evaluation,
+module-cache settings, all inputs/assertions/deadlines and lifetime/native fences.
+No generic cache platform, compile-cache rollout, shared disk cache, production
+feature change, lane promotion, wait/Git/browser work or next opportunity is
+included. Independently review findings or a coherent candidate; adopted code
+requires counterexamples, a matched four-slot comparison and complete acceptance.
+Local feature commits are authorized; rebase, integration, publication, ordinary
+session launch and resource cleanup require a separate request/approval.
 
 Start with the existing four-core-worker budget. There is no promised percentage
 or hard 351.05-second gate: the user made the old performance targets informational.
@@ -228,8 +236,9 @@ The installed Jiti implementation was inspected, not merely inferred from option
 - Metadata says Jiti2.7.0 while its bundled diagnostic constant says2.6.1: key any
   design by the actual pinned implementation, not that constant alone.
 
-**Preferred general-cache spike:** a per-file memory cache of successful pure
-transform results in existing repeated fixture construction, initially one of
+**Original non-RPC spike proposal (measured disposition below):** a per-file memory
+cache of successful pure transform results in existing repeated fixture construction,
+initially one of
 `components/navigation-runtime.fixture.mjs` or
 `components/browser-lower-runtime.fixture.mjs`. Preserve existing resolution,
 evaluation, module-cache settings and fences. Bound entries/bytes; key actual
@@ -239,7 +248,8 @@ exports, windows, stores, registries, promises or account/native bindings.
 
 This targets repeated within-file transformation, not the first cold import of
 every E process. It overlaps RPC preparation ideas: do not build both before
-measuring and attributing their distinct contributions.
+measuring and attributing their distinct contributions. The bounded navigation
+receiver below showed no repeated transforms; no preparation store was adopted.
 
 **Separate candidate:** run-private Node24 compile cache outside source, propagated
 explicitly through `privateEnvironment`, not a developer cache. It can target ordinary
@@ -1197,6 +1207,126 @@ reviewed-manifest hash checks pass. Local main remains the starting `ab6b2fa`;
 feature branch/worktree and historical/current diagnostics are retained. No rebase,
 integration, publication, manual resource cleanup or next opportunity is attempted.
 
+## Opportunity #4 — measured non-RPC stop
+
+Checked starting local main: `666a75ef71ae6ae5057fa4e5b1b2124c6ebf3b19` (clean).
+Dedicated branch `perf/non-rpc-fixture-preparation`, worktree
+`/home/robert/projects/3rdparty/pi-desk-worktrees/non-rpc-fixture-preparation`.
+CodeGraph initialized before code research. One writer coordinated source export
+and checks; no other task-owned check overlapped. P2/P3 are historical references.
+
+**Decision: stop without a cache.** The existing eight-case
+`components/AppShell.tab-session.test.mjs` receiver constructs navigationRuntime
+8 times but makes only **65 transformation requests for 65 distinct actual inputs**,
+all in its first construction. There is no measured repeated pure work to remove.
+A process/file-local store would not eliminate the first transforms; cross-file,
+disk or Node compile-cache work is outside this task. This is not an all-fixture
+census or a claim that cold transformations are free.
+
+### Mechanism and attribution
+
+Both named fixtures use `fsCache:false`, automatic JSX and `tsconfigPaths:true`,
+without P2's explicit `moduleCache:false`. Browser-lower additionally supplies its
+CSS aliases; it was inspected, not measured or changed. The pinned implementation
+resolves a request, checks parent/native module caches, and returns loaded exports
+**before** the source read/transform/evaluation path. New loaders use the same native
+require cache; nested loaders inherit options/parent-cache boundaries. Eight new
+Jiti objects therefore do not establish eight new dependency graphs. The probe
+observes `moduleCache:true,fsCache:false` throughout and the same graph-export and
+NavigationWork constructor identities after the first call. It adds no instance
+sharing: each fixture still constructs its own work owner and DOM/root lifetime.
+
+Only temporary scalar diagnostics changed navigationRuntime. The original callback
+receives the same arguments/this and returns its original result or throws its
+original Error; keys describe actual source bytes, effective filename and callback
+options, including JSX/Babel settings. No code/result/module/failure cache is added.
+A terminal root-after observation retains scalar rows across all fixture lifetimes,
+including callbacks captured by an earlier graph. Its final rows exactly equal the
+pre-render snapshots: **no late transforms during cases, render or cleanup**.
+
+| Terminal-observed phase | Measured elapsed |
+| --- | ---: |
+| First construction's two imports | 933.402ms |
+| Transformer callbacks within those imports | 842.791ms |
+| First import residual, including 4.508ms hashing diagnostics | 90.611ms |
+| Next seven constructions' imports combined | 1.047ms |
+| Next seven constructions' loader setup combined | 1.892ms |
+| Repeated transformation callbacks / elapsed | **0 /0ms** |
+| All eight DOM mount/render envelopes / explicit rerender | 283.129 /6.974ms |
+| All eight disposals | 10.274ms |
+
+The first import residual is mixed resolution, source/native loading, VM compilation
+and evaluation, not isolated CPU time; after removing measured hashing it is 86.104ms.
+It is neither dominant nor repeated. Later cached import/resolution work totals only
+1.047ms, so there is no unexplained large repeated import interval analogous to P2's
+premature stop. Transformer time includes lazy pinned Babel initialization. DOM
+phases include setup/effects, not just pure rendering; disposal includes the real
+independent joins/restoration. Original controlled clock actions remain inputs;
+this receiver adds no native sleep/deadline experiment and none was optimized.
+
+### Commands, identities and verification boundary
+
+Both discovery probes used the existing entry point, with unchanged original cases:
+
+```sh
+nix run .#test -- core --jobs 4 --file components/AppShell.tab-session.test.mjs
+```
+
+The first probe reported only import-time callbacks. The changed second probe adds
+terminal observation to close that reporting blind spot; the first is retained, not
+labelled full-lifetime evidence. These are **not a baseline/candidate speed pair**.
+Both pass 8/8 tests, 29 exporter contracts and mandatory static checks, with zero
+skipped/cancelled/uncertain files or observed survivors. Typegen/tsc and lint actually
+execute for each diagnostic input; dependencies are already realized, with no
+separate prerequisite-preparation command. Native x86_64 Linux, Node24.21.0,
+32 observed CPUs and 54,506,127,360 /54,950,961,152 available bytes admit requested/
+effective four core slots. Only one F file executes; there is no browser/service
+overlap or claim of four busy peers. Pool window and summed file work equal the
+selected file duration; E is empty.
+
+| Seconds / identity | Import-time probe | Terminal-observed probe |
+| --- | --- | --- |
+| Complete command including realization/export | 40.988 | 39.553 |
+| Outer preparation before lifecycle | 33.307 | 32.059 |
+| Core lifecycle | 2.624 | 2.700 |
+| Lifecycle preparation / final-file settlement | 0.843 /0.045 | 0.821 /0.049 |
+| Selected file / summed file work | 1.736 | 1.830 |
+| Lifecycle-to-outer-end | 0.089 | 0.089 |
+| Immutable source | `/nix/store/kbqwsdldacyp15ir0yghdig301f0z1ah-source` | `/nix/store/vg5mr5dab0ac74lvhvzr312c41s6kg3b-source` |
+| Outer content/mode digest | `98e347f347c925f7bd3ad5af9d2db536feb50dccdefee830cee70969b55829ef` | `9aadfbdecd828d299740dd9d89f2f5a197673f130121e616fb15164ab2851b57` |
+| Core report | `/tmp/pi-web-test-core.MAW3DO/run.json` | `/tmp/pi-web-test-core.OOxDxH/run.json` |
+| Immutable core output | `/nix/store/hwjhvcg8lixr0ki1knw9rm4winc08pqi-pi-web-core-checks` | `/nix/store/b2030lnd41nidvw87kzx3712klk6qpsj-pi-web-core-checks` |
+| Detailed directory within output | `artifacts/run-g06XOu/` | `artifacts/run-RpPV0P/` |
+
+Pinned runtime/private modules remain `28vpp6bpxj0algr4b4xigfca399flcmi-pi-web-node-modules-0.9.3`
+and `1gps3kh9225x4axd5j4b119i9dhchlln-pi-web-test-support-1.0.0` under `/nix/store/`.
+Each output's `static-inputs.json` binds its distinct diagnostic type/lint evidence.
+Raw logs/timestamps/exits, exact patches, saved originals, pinned-Jiti file hashes,
+analysis script and derived rows are retained at `/tmp/pi-web-p4-navigation.sd9zm6/`.
+`lifetime-profile-analysis.json` owns the terminal numbers above; `profile-analysis.json`
+retains the earlier observation's narrower scope. Preparation/time variation between
+these changed diagnostics is not an optimization, CPU or whole-feedback saving.
+
+All diagnostic edits were removed. Writer comparison confirms every executable
+input equals starting main, including both named fixtures and the original receiver;
+only this plan changes. No maintained guide behavior changes. With no executable
+candidate, new cache counterexample controls, a matched candidate comparison and
+complete core/browser/deployment acceptance are not applicable or claimed. This
+evidence-only delta receives documentation/source-conservation checks instead.
+Independent source/method/evidence review (`01a1787e-5b6d-7402-ad52-009e5e8e32c2`)
+found no blockers and independently confirmed the plan-only diff. Writer checks
+pass `git diff --check`, saved-original/base equality and relative link-target
+existence (`source-conservation.json`); these are source checks, not browser-link
+verification. Main remains at the checked starting tip. No rebase, integration,
+publication, feature/historical cleanup or next opportunity is attempted.
+
+- [x] Inspect pinned construction/cache behavior and measure the actual receiver,
+  including full-lifetime callback observation and the import residual.
+- [x] Record the bounded negative finding without adding reuse or changing semantics.
+- [x] Independently review exact source, measurements and stop disposition.
+- [x] Remove instrumentation and retain feature resources unintegrated; stop before
+  another opportunity. The final feature tip is reported in the handoff.
+
 ## Completion Checklist
 
 ### This analysis
@@ -1257,6 +1387,9 @@ or a matched whole-feedback speed comparison. Remaining non-transform import cos
 decomposed, and no general Babel environment-transition guarantee is claimed.
 Opportunity #3's two N files and minimal Move correction now pass full acceptance;
 its single pair shows no meaningful whole-feedback speedup and has the recorded
-deployment-realization/contention limits. Native-tools/Pause failure-lifetime gates,
-other opportunities, native cache/fence compatibility and other SDK loader/resource
+deployment-realization/contention limits. Opportunity #4 measures one navigation
+receiver under its existing default module caching, not all fixtures, browser-lower
+execution or module-cache-disabled/environment-transition behavior; no speedup is
+claimed. Native-tools/Pause failure-lifetime gates, opportunities #5–6, native
+cache/fence compatibility and other SDK loader/resource
 closures remain deferred. Simulations are not promises.
