@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useId, useMemo, useRef, useState 
 import dynamic from "next/dynamic";
 import { parseReviewBlock, reviewExplorerUrl, type ReviewBlock, type ReviewCommitReference, type ReviewSource } from "@/lib/review-notebook";
 import type { DiffContext } from "@/lib/diff-context";
+import type { NotebookTargetState } from "@/lib/guided-reader-state";
 import { CodeBlock } from "./MermaidBlock";
 import { ReviewNotebookSource } from "./ReviewNotebookSource";
 import { useI18n } from "@/hooks/useI18n";
@@ -14,8 +15,10 @@ const GitCommitViewer = dynamic(() => import("./GitCommitViewer").then(module =>
 const CommittedPatchDiff = dynamic(() => import("./CommittedPatchDiff").then(module => module.CommittedPatchDiff), { ssr: false });
 
 async function read<T>(url: string, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const response = await fetch(url, { signal, cache: "no-store" });
   const body = await response.json();
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`);
   return body as T;
 }
@@ -24,11 +27,13 @@ type Material = { head: string } & ({ kind: "source"; source: ReviewSource } |
   { kind: "diff"; patch: string; hasBinaryChanges: boolean; before: string } | { kind: "commit" });
 type Mode = "source" | "diff" | "commit";
 
-function ActiveReviewBlock({ block }: { block: ReviewBlock }) {
+/** Shared reader: guided activation is explicit at the parent; ordinary cards stay collapsed. */
+export function ActiveReviewBlock({ block, activated = false, onWork, readerState }: { block: ReviewBlock; activated?: boolean; onWork?: (work: Promise<unknown>) => void; readerState?: NotebookTargetState }) {
   const { t } = useI18n();
   const navigate = useContext(ReviewNavigationContext);
   const bodyId = useId();
-  const [mode, setMode] = useState<Mode | null>(null);
+  const [mode, setMode] = useState<Mode | null>(() => readerState?.mode !== undefined ? readerState.mode : activated ? block.kind : null);
+  const workObserver = useRef(onWork); workObserver.current = onWork;
   const [material, setMaterial] = useState<Material | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -44,7 +49,7 @@ function ActiveReviewBlock({ block }: { block: ReviewBlock }) {
     const controller = new AbortController();
     const signal = controller.signal;
     setMaterial(null); setError(null); setLoading(true);
-    void (async () => {
+    const work = (async () => {
       // Capture authorization at activation, never replace the authored immutable oid.
       const { head } = await read<{ head: string }>(reviewExplorerUrl(block, "log"), signal);
       if (mode === "source" && block.kind === "source") {
@@ -60,9 +65,11 @@ function ActiveReviewBlock({ block }: { block: ReviewBlock }) {
     })().then(value => { if (!signal.aborted) setMaterial(value); })
       .catch(cause => { if (!signal.aborted) setError(cause instanceof Error ? cause.message : t("review.unavailable")); })
       .finally(() => { if (!signal.aborted) setLoading(false); });
+    workObserver.current?.(work);
     return () => controller.abort();
   }, [block, mode, retry, t]);
-  const toggle = (next: Mode) => { setError(null); setMode(previous => previous === next ? null : next); };
+  const reviewModel = useMemo(() => material?.kind === "diff" && block.kind === "source" ? readerState?.review(block.path, material.patch) : undefined, [block, material, readerState]);
+  const toggle = (next: Mode) => { setError(null); setMode(previous => { const value = previous === next ? null : next; if (readerState) readerState.mode = value; return value; }); };
   const reveal = async () => {
     if (!navigate) return;
     revealController.current?.abort();
@@ -86,25 +93,25 @@ function ActiveReviewBlock({ block }: { block: ReviewBlock }) {
         <button type="button" aria-expanded={mode === "source"} aria-controls={bodyId} onClick={() => toggle("source")}>{t(mode === "source" ? "review.collapseSource" : "review.expandSource")}</button>
         <button type="button" aria-expanded={mode === "diff"} aria-controls={bodyId} onClick={() => toggle("diff")}>{t(mode === "diff" ? "review.collapseDiff" : "review.showDiff")}</button>
       </> : <button type="button" aria-expanded={mode === "commit"} aria-controls={bodyId} onClick={() => toggle("commit")}>{t(mode === "commit" ? "review.collapseCommit" : "review.expandCommit")}</button>}
-      {navigate && <button type="button" disabled={revealing} onClick={() => void reveal()}>{t(revealing ? "review.locating" : "review.reveal")}</button>}
+      {navigate && <button type="button" disabled={revealing} onClick={() => { const work = reveal(); workObserver.current?.(work); }}>{t(revealing ? "review.locating" : "review.reveal")}</button>}
     </div>
     {error && <div role="alert">{error}{mode && <button type="button" className="ml-2 text-accent underline" onClick={() => setRetry(value => value + 1)}>{t("review.retry")}</button>}</div>}
     <div id={bodyId}>
       {mode && loading && <p role="status">{t("review.loading")}</p>}
-      {mode === "source" && material?.kind === "source" && <ReviewNotebookSource source={material.source} />}
+      {mode === "source" && material?.kind === "source" && <ReviewNotebookSource source={material.source} onWork={onWork} />}
       {mode === "diff" && material?.kind === "diff" && block.kind === "source" && <CommittedPatchDiff
-        patch={material.patch} hasBinaryChanges={material.hasBinaryChanges} before={material.before} after={block.oid.slice(0, 8)}
+        patch={material.patch} hasBinaryChanges={material.hasBinaryChanges} before={material.before} after={block.oid.slice(0, 8)} reviewModel={reviewModel} onReadWork={onWork}
         loadContext={signal => read<DiffContext>(reviewExplorerUrl(block, "context", { head: material.head, path: block.path }), signal)} />}
-      {mode === "commit" && material?.kind === "commit" && <div className="review-notebook-commit"><GitCommitViewer cwd={block.cwd} branch={block.branch} head={material.head} oid={block.oid} /></div>}
+      {mode === "commit" && material?.kind === "commit" && <div className="review-notebook-commit"><GitCommitViewer cwd={block.cwd} branch={block.branch} head={material.head} oid={block.oid} getReviewModel={readerState?.review} onReadWork={onWork} /></div>}
     </div>
   </section>;
 }
 
 /** Opted-in, settled Markdown only. Neither parsing nor mounting performs a read. */
-export function ReviewNotebookBlock({ source, isStreaming = false }: { source: string; isStreaming?: boolean }) {
+export function ReviewNotebookBlock({ source, isStreaming = false, onWork }: { source: string; isStreaming?: boolean; onWork?: (work: Promise<unknown>) => void }) {
   const { t } = useI18n();
   const parsed = useMemo(() => parseReviewBlock(source), [source]);
-  if (isStreaming) return <CodeBlock code={source} lang="json" isStreaming />;
-  if (parsed.error) return <div className="review-notebook-invalid"><p role="note">{t("review.inactive", { error: parsed.error })}</p><CodeBlock code={source} lang="json" /></div>;
-  return <ActiveReviewBlock key={source} block={parsed.value!} />;
+  if (isStreaming) return <CodeBlock code={source} lang="json" isStreaming onWork={onWork} />;
+  if (parsed.error) return <div className="review-notebook-invalid"><p role="note">{t("review.inactive", { error: parsed.error })}</p><CodeBlock code={source} lang="json" onWork={onWork} /></div>;
+  return <ActiveReviewBlock key={source} block={parsed.value!} onWork={onWork} />;
 }

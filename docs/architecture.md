@@ -64,7 +64,8 @@ app/api/
   skills/search/route.ts          GET/POST skills.sh search
   subagents/settings/route.ts     GET/PUT built-in subagent feature setting
   worktrees/route.ts              GET/POST/DELETE git worktrees (explicit local base/tip on creation)
-  git/explorer/route.ts           GET worktree-scoped read-only history/commit/file patch
+  git/explorer/route.ts           GET worktree-scoped read-only history/commit/file patch and explicit endpoint comparisons
+  review-notebook/route.ts        GET bounded declared notebook folder / selected mutable text asset; no writes/discovery
   web-auth/route.ts               GET status | POST login | DELETE logout (browser password)
   plugins/check/route.ts          POST check plugin package updates
   project-trust/route.ts          GET/POST project trust for package installs
@@ -143,7 +144,11 @@ lib/
   normalize.ts        normalizeToolCalls() — field name mismatch between file format and our types
   worktree.ts         project/worktree resolution and git worktree operations
   git-explorer.ts       session-independent bounded selected-worktree history/commit/patch/source reads
-  review-notebook.ts    client-safe declarative Markdown review schema, literal ranges and read-only references
+  review-notebook.ts    unchanged v1 declarative review schema, literal ranges and read-only references
+  guided-review.ts      Markdown-AST manifest/step/evidence parser and bounded package validation
+  guided-review-server.ts independently root-authorized bounded regular text/binary snapshots
+  guided-review-assets.ts fixed local raster/PDF MIME/signature/byte admission policy
+  guided-reader-state.ts activation-local target/step state and bounded exact per-file DiffReviewModel retention
   git-graph-layout.ts   adapted MIT active-lane graph layout (see git-graph-layout.LICENSE)
 
 components/
@@ -166,7 +171,11 @@ components/
   BranchNavigator.tsx in-session branch switcher
   ChatMinimap.tsx     scroll minimap alongside the message list
   MarkdownBody.tsx    markdown renderer
-  ReviewNotebookBlock.tsx opt-in lazy pinned source/commit fences and explicit Explorer navigation
+  ReviewNotebookBlock.tsx opt-in lazy pinned source/commit fences, shared explicit guided activation, Explorer navigation
+  GuidedReviewReader.tsx explicit Files entry, transient chapter/step/target navigation, two evidence readers
+  FileMarkdownBody.tsx shared stable sanitized file prose/code/link presentation (guided automatic images/cards disabled)
+  NotebookBinaryEvidence.tsx selected bounded raster/PDF response owner; typed blob URLs revoked on exit
+  NativeDocumentPreview.tsx shared native PDF / sandboxed DOCX presenter, separate from FileViewer lifecycle
   ModelsConfig.tsx    modal for editing models.json (opened from sidebar bottom)
   EnabledModelsSection.tsx  model switches inside ModelsConfig, backed by enabledModels
   ModelContextWindow.tsx  compact managed-model context-budget draft field

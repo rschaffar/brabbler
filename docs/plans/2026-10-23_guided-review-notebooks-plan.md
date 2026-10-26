@@ -22,7 +22,7 @@ Product decisions were gathered through six batched question sets in this sessio
 The primary outcome is thorough code review, not a slide presentation or an
 approval workflow.
 
-Current evidence at local main `c8557e5afec41739801a756a1d8e0b496f0b316c`:
+Historical pre-implementation evidence at local main `c8557e5afec41739801a756a1d8e0b496f0b316c`:
 
 - `docs/review-notebooks.md`, ADR 0029 and `lib/review-notebook.ts` define strict,
   opt-in version-1 `pi-review` source/commit fences. Source is pinned to a full
@@ -100,8 +100,10 @@ not completed implementation or verification.
 
 ## Architecture
 
-The following boundaries are proposals to validate before implementation, not a
-final file format or API design.
+The reader contracts are now implemented in the receiving candidate and documented
+in `docs/review-notebooks.md`; the review-data/forms/handoff sections below remain
+proposals for Increment 2, not delivered behavior. The current slice and remaining
+Increment 1 blockers are tracked below.
 
 ### Package, identity and authoring
 
@@ -259,6 +261,118 @@ answers to a new question version.
 - Automatic grading, AI-driven resolution, automatic branch tracking or silent
   line rebasing. Optional branching routes are not required initially.
 
+## Current receiving candidate
+
+Writer checkout: `guided-review-reader`, branch `feat/guided-review-reader`, based on
+main `3650d2e857f18c7dbcef412f44e435c0f5d363b3`. One receiving candidate; source
+writing is stopped for final review and acceptance. The parent used CodeGraph and
+coordinated a sole implementation writer whose tools required targeted ordinary
+reads. No installed-service access or remote operations occurred.
+
+**Implemented:** strict AST `pi-notebook` v1 manifest / top-level `pi-step` v1
+boundaries; unchanged strict `pi-review` v1; distinct `pi-evidence` v1 compare,
+mutable text-file and web-link targets. Package-global stable step/target IDs,
+unique chapter IDs/paths, flat declared chapters and finite limits reject unsafe
+or malformed packages. Physical cwd/branch/full OIDs support independent repos;
+no alias mapping or authority transfer. Maintained guide contains an illustrative
+folder and contextual `ask_user` briefing; parked packaging/prompt work untouched.
+
+`GuidedReviewEntry` integrates Files Preview with explicit entry/Return, outline,
+free cross-file Back/Next, primary/optional second target and local exploration /
+Return preserving selected step/targets. `FileMarkdownBody` extracts existing file
+Markdown owners without changing ordinary defaults. `ActiveReviewBlock` shares
+source/commit readers, including `ReviewNotebookSource`; feature ranges reuse
+`CommittedPatchDiff`, its `GitDiffToolbar` and `DiffReviewModel`, not a second engine.
+No persistence, forms, human review state or session handoff was added.
+
+Selected raster/PDF files now use the same independently authorized bounded
+regular-file reader: 8 MiB raster / 16 MiB PDF, fixed MIME plus signatures, no
+SVG/HTML/MDX/remote media. `NotebookBinaryEvidence` checks the response, creates only
+owned typed blob URLs, and revokes them on exit. Images reuse `ImagePreview`; PDF
+reuses the extracted `NativeDocumentPreview` from Files. No watch/edit/probe surface.
+Admission is not full format, malware or decoded-pixel validation; native browser
+viewer/decoder behavior remains a verification boundary.
+
+`GuidedReaderState` retains step target selections, source/diff mode and the last
+32 exact immutable file `DiffReviewModel`s (LRU) across target switches/exploration
+and Back/Next. Re-entry still captures fresh authorization and reloads patches;
+matching target/path/patch/incarnation can then reuse reading/search/full/gap context.
+Closing, folder Retry or cwd/index changes discard the activation; mutable assets
+always reload. The optional model factory is forwarded through source/commit/stack
+readers, preserving inline/default consumer behavior. This is deliberately bounded
+retention, not a promise to retain all 512 targets' complete context simultaneously.
+
+Independent prior-snapshot findings are addressed: duplicate JSON properties,
+escaped-equivalent keys and depth/byte ambiguity now refuse across ALL guided
+metadata (including v1 targets; standalone v1 unchanged). Guided prose/assets opt
+out of live review cards, including nested examples. Source/commit/diff/stack/source-
+grammar and Reveal terminal work forward the optional observer. Mounted tests distinguish
+exact expected context rejection objects/operations from unexpected failures and
+change ACTIVE originating contexts while folder/evidence bodies remain pending.
+The superseded slice description is retained in the earlier immutable source
+export `/tmp/pi-web-test-source-NWqJFh/source`; it is not completion evidence.
+
+The final independent review of `/tmp/pi-web-test-source-XepXDA/source` found one
+remaining presenter-work ownership gap: prose/asset `CodeBlock` grammar imports
+and Mermaid import/parse/render could outlive the fixture realm. The optional
+observer now flows through `FileMarkdownBody`'s stable presenter context, direct
+file evidence, review-card fallbacks, and nested Mermaid source. `CodeBlock` passes
+it to the existing `usePrismLanguages` third argument (same root/admission/retry
+policy); `MermaidBlock` publishes the original render promise including its catch
+and state publication. Callback replacement does not restart/replay work, and absent
+observers retain default behavior. The new E-held presenter owner reuses the actual
+gated Prism loader and real Mermaid parser/renderer, holds native render through
+unmount, and joins full originals plus independently captured native capabilities
+before realm restoration. Unsupported SVG measurements are not browser layout proof.
+
+GET-only folder reads independently authorize every contained regular UTF8 file;
+no discovery/new roots/transitive index authority. Only explicit activation reads
+chapters and selected evidence. Compare/compare-patch/compare-context separately
+bind both endpoints, ancestor-only ranges, changed-file admission and physical
+repository incarnation; first-parent operations are unchanged. No mutable fallback,
+revision expressions, remotes, textconv or external diff. Ignored-abort body and
+publication guards prevent obsolete reads/results from taking over the reader.
+
+**Verified so far (focused Nix only):** actual parser policy, native folder/API
+security, native endpoint-tree comparison (earlier+later commits, both endpoint
+reachability, unchanged/escaped paths, divergence and replaced Git-directory
+identity), mounted entry/step/target/focus/exploration/late success/error and active
+context changes, selected blob URL ownership/MIME refusal and native binary API
+admission, plus existing FileViewer behavior. Actual GuidedReviewReader →
+CommittedPatchDiff → Pierre successfully loads patch/full context/Before/After,
+reauthorizes on return, retains search/full/version state across target switching
+and cross-file Back/Next, and fences obsolete context success/error. Capability
+fixtures are not native browser geometry/decoding or Git authority. Source/commit
+model-factory forwarding is implemented; the new complete mounted range-retention
+witness covers comparison targets, not every multi-file commit-stack permutation.
+
+Meaningful production controls: making Next a no-op fails the cross-file heading /
+focus assertion; discarding the retained model fails the real mounted `Before file`
+assertion after reauthorization. Both restored. A type-failing first retention fault
+is preserved separately and is NOT the meaningful runtime red. The mounted
+guided/presenter owner files retain explicit unresolved E holds, not unreviewed promotions. No browser
+work/assertions retired. Static checks have 0 errors / 7 existing unchanged-owner
+warnings after removing this slice's temporary unnecessary-dependency warning.
+
+Final independent delta review reports no material findings: presenter terminal
+work now reaches the fixture owner without changing default admission/retry.
+The explicit E holds remain conservative scheduling classifications, not a claim
+of universal import/descendant closure. The parent also corrected ordinary large
+Markdown being misdiagnosed as an oversized notebook: negative marker admission
+avoids a redundant parse; possible markers still use the strict AST validator.
+Its actual regression fails without the guard and passes with it restored.
+
+**Finite remaining Increment 1 gates:**
+
+1. Fresh complete core/browser/service acceptance on the current-main composition.
+   The earlier 1280/390 focused Markdown bridge (comparison/context and image/PDF
+   transport) does not establish full acceptance of subsequent source changes.
+2. User validation of the usable reader. No PDF selection-anchor or cross-browser
+   native-plugin guarantee; more-than-32-model eviction is an explicit bound.
+
+Increment 2 sidecars/forms/handoff remains a separate implementation package;
+parked authoring packaging/prompt work remains with its existing owner.
+
 ## Plan
 
 ### 0. Close design boundaries before feature code
@@ -284,9 +398,10 @@ answers to a new question version.
 
 ### 1. Usable guided reader
 
-- [ ] Add strict versioned package/step parsing with readable inert fallback and
+- [x] Add strict versioned package/step parsing with readable inert fallback and
   validation of chapter order, duplicate/missing IDs and bounded references;
-  verify parser tests against valid and adversarial fixtures and unchanged v1.
+  focused actual-parser, native missing-chapter and unchanged v1 tests pass.
+  Full acceptance remains separate.
 - [ ] Add explicit Guided entry, chapter/step outline, Back/Next across files,
   synchronized primary evidence, optional comparison evidence and Return to step;
   verify keyboard/touch/narrow layouts, focus and rapid/reordered navigation.
@@ -326,9 +441,68 @@ answers to a new question version.
 
 ## Verification
 
-For this planning-only document, review the decision record against session
-answers, check local links and Markdown structure, and run `git diff --check`.
-No application acceptance is claimed by a plan or a documentation-only check.
+This is an active implementation plan, not a planning-only handoff. Keep the
+current slice and finite blockers above truthful. Documentation/link review and
+`git diff --check` never establish application acceptance.
+
+Focused evidence (dirty candidate, no commit created):
+
+- Failure artifacts retained: `/tmp/guided-reader-focused-{1,2,3}.log` for the
+  parser type error, missing-file diagnostic mismatch and missing fixture
+  `matchMedia` capability, respectively. Corrected source/fixture, not unchanged
+  retries or timeout/error suppression.
+- Navigation defect evidence: `/tmp/guided-reader-navigation-red.log`,
+  `/tmp/pi-web-test-core.UPFflt/run.json`. Actual mounted heading/focus assertion
+  fails; no compile/import/setup error counted as the meaningful red.
+- Preliminary mounted green: `/tmp/pi-web-test-core.keEaZY/run.json`, source
+  export digest `6a2bac9af1272e246b37db367c7d0072ec716572b0b91bde5c0fde64900fdaa5`.
+  Two cases, focused only; not relabelled as final/full acceptance.
+- Prior slice combined focused green: `/tmp/pi-web-test-core.bSqYu2/run.json`,
+  `/tmp/guided-reader-focused-final.log`, export digest
+  `7483316dfd50cc7c13adf3abb018f84942037f861e928e914409c4110f24f41b`:
+  8 files / 57 tests, 17s command wall time. This is the parent-reviewed prior
+  snapshot, not relabelled as current-candidate execution.
+- Current real comparison-owner green: `/tmp/pi-web-test-core.tJK0cp/run.json`.
+  Retention runtime red: `/tmp/guided-reader-retention-runtime-red.log`,
+  `/tmp/pi-web-test-core.GhTT5A/run.json`; the actual retained-Before assertion fails.
+  `/tmp/guided-reader-retention-red.log` is only a type-failing control precondition.
+- Current failures retained at `/tmp/guided-reader-continuation-1.log` and
+  `/tmp/guided-reader-continuation-diff-2.log`: diagnosed fixture teardown order
+  closed frame admission before Pierre's documented unmount notification. The
+  new owner now closes transport/releases peers, independently unmounts, then joins
+  Cards' terminal domain; errors are retained, not suppressed or retried unchanged.
+- Prior coherent reader core: `/tmp/guided-reader-continuation-final.log`,
+  `/tmp/pi-web-test-core.mIJ2gN/run.json`: 14 files / 95 tests, 85s command wall time,
+  four requested/effective workers, export digest
+  `0ecd46c2c9d774f1a3ea2ad59de7067b1d7ef82e762891405e9585aa4c5bf0f5`.
+- **Parent-owned** `nix run .#test -- e2e --group markdown` passed the same prior
+  export: `/tmp/guided-reader-markdown.KQ2mIy.log`,
+  `/tmp/pi-web-test-browser.OXCXrr/run.json`. Both desktop/touch scenario chains,
+  1280/390 guided source/range/context/image/PDF transport and unchanged old checks.
+  Parent reports 245s total command / 123.031s inner test; recorded support
+  preparation 110.979s, definition publication 4.618s. One focused browser sandbox,
+  not full acceptance; no source mutation by parent and no writer e2e invocation.
+- Presenter forwarding runtime control: `/tmp/guided-presenter-forwarding-red.log`,
+  `/tmp/pi-web-test-core.Vqrc2y/run.json`. Omitting CodeBlock observer forwarding
+  fails the real `md asset forwards newly admitted presenter work` assertion; restored.
+  Initial presenter fixture failures remain in `/tmp/guided-presenter-focused-{1,2}.log`:
+  missing `CSSStyleSheet` realm binding, diagnosed and fixed without error suppression
+  or longer deadlines. New fixture remains E-held.
+- Restored presenter/consumer check passed: `/tmp/guided-presenter-focused-final.log`,
+  `/tmp/pi-web-test-core.TvYgAh/run.json`, immutable export
+  `/tmp/pi-web-test-source-7Svmq4/source`, digest
+  `9190e1d9016a39cadd1cb65b29bb59b53d2db71291e05f5bc10954980147d13e`.
+  `nix run .#test -- core --jobs 4` with the 14 exact `--file` selections recorded
+  in that run JSON (presenter, Mermaid, both guided owners, Files/media/diff-parity,
+  Markdown links, highlighting lifetime/failure/behavior, Prism, test-design and v1
+  parser): **14 files / 74 tests**, no failures/skips/cancellations, requested/effective
+  workers 4/4. Command wall **58s**; core driver pre-file preparation/static/realization
+  envelope **32.538s**, selected file window **21.005s**. These are scoped mixed
+  intervals, not summed worker time or cold-cache benchmarks. Typegen/typecheck used
+  matching declared-input evidence; lint ran freshly (0 errors / 7 unchanged-owner
+  warnings). No independent prewarming or full acceptance. After this check, only
+  this plan's evidence/status text changed; application/test inputs remain the
+  frozen checked snapshot. Parent owns the fresh final full-acceptance run.
 
 Implementation follows `docs/testing.md` and `e2e/README.md`: focused core files
 and Markdown/file-workspace browser scenarios during editing, then complete core,

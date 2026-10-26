@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo, type ComponentProps, type CSSProperties } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, type ComponentProps, type CSSProperties } from "react";
 import type { SyntaxHighlighterProps } from "react-syntax-highlighter";
 import SyntaxHighlighter from "react-syntax-highlighter/dist/esm/prism-light";
 import renderSyntaxNode from "react-syntax-highlighter/dist/esm/create-element";
@@ -8,7 +8,7 @@ import { usePrismLanguages } from "@/hooks/usePrismLanguages";
 import { needsPrismLanguage } from "@/lib/prism-languages";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
+import type ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import { useFileEditSession } from "@/hooks/useFileEditSession";
 import {
@@ -20,18 +20,16 @@ import {
   isVideoPath,
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
-import { parseFileLineTarget, parsePdfPageFragment, resolveLocalFileHref, resolveLocalFileLink, type FileLineTarget, type OpenFileLink } from "@/lib/file-links";
+import { type FileLineTarget, type OpenFileLink } from "@/lib/file-links";
 import { navigateToFileLine } from "@/lib/file-line-navigation";
 import { rehypeMarkdownSourceLines } from "@/lib/markdown-source-lines";
 import { parseFrontmatter } from "@/lib/frontmatter";
-import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, markdownUrlTransform, normalizeDisplayMathWithSourceMap } from "@/lib/markdown";
-import { CodeBlock, MermaidBlock } from "./MermaidBlock";
-import { ReviewNotebookBlock } from "./ReviewNotebookBlock";
+import { markdownPreviewRehypePlugins, normalizeDisplayMathWithSourceMap } from "@/lib/markdown";
+import { FileMarkdownBody } from "./FileMarkdownBody";
+import { NativeDocumentPreview } from "./NativeDocumentPreview";
+import { GuidedReviewEntry } from "./GuidedReviewReader";
 import { DelimitedTable } from "./DelimitedTable";
 import { isDelimitedTablePath } from "@/lib/delimited-table";
-import { jumpToMarkdownFragment } from "@/lib/markdown-compat";
-import { BlockedFileLink } from "./BlockedFileLink";
-import { LocalFileLink } from "./LocalFileLink";
 import { FrontmatterCard } from "./FrontmatterCard";
 import { CommittedPatchDiff } from "./CommittedPatchDiff";
 import type { GitFileDiffResponse } from "@/lib/git-types";
@@ -83,47 +81,6 @@ interface FileData {
   truncated: boolean;
   probeEligibility?: { edit: boolean; gitDiff: boolean };
 }
-
-const MarkdownPreviewLinkContext = createContext<{ baseDir?: string; relativeRoot?: string; onOpenFile?: OpenFileLink }>({});
-
-// A stable element type keeps rejection feedback and keyboard focus across watcher reads.
-function MarkdownPreviewLink({ href, children, ...props }: ComponentProps<"a"> & ExtraProps) {
-  delete props.node;
-  const { baseDir, relativeRoot, onOpenFile } = useContext(MarkdownPreviewLinkContext);
-  if (href?.startsWith("#")) return <a href={href} {...props} onClick={jumpToMarkdownFragment}>{children}</a>;
-  const resolution = onOpenFile ? resolveLocalFileLink(href, baseDir, relativeRoot) : null;
-  if (resolution?.kind === "blocked") {
-    return <BlockedFileLink key={href} reason={resolution.reason}>{children}</BlockedFileLink>;
-  }
-  const linkedFile = resolution?.kind === "local" ? resolution.filePath : null;
-  if (!linkedFile || !onOpenFile) return <a href={href} {...props}>{children}</a>;
-  return <LocalFileLink href={href} {...props} filePath={linkedFile} page={parsePdfPageFragment(href) ?? undefined}
-    lineTarget={parseFileLineTarget(href)} onOpenFile={onOpenFile}>{children}</LocalFileLink>;
-}
-
-// These functions are React element types, not render callbacks. Keep both
-// code and its pre ancestor stable so viewer/parent updates do not remount
-// MermaidBlock and reset its rendered SVG, scroll, source choice or zoom dialog.
-const markdownCodeComponents: Components = {
-  code({ className, children, ...props }) {
-    const lang = className?.replace("language-", "").toLowerCase() ?? "";
-    const raw = String(children);
-    const isBlock = className?.includes("language-") || raw.includes("\n");
-    if (isBlock) {
-      if (lang === "pi-review") return <ReviewNotebookBlock source={raw.replace(/\n$/, "")} />;
-      if (lang === "mermaid") {
-        return <MermaidBlock code={raw.replace(/\n$/, "")} defaultPreview />;
-      }
-      return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} />;
-    }
-    return <code className={className} {...props}>{children}</code>;
-  },
-  pre({ children, node }) {
-    // Preserve parser positions on a stable block even when code renders as Mermaid.
-    return <div data-source-line-start={node?.properties.dataSourceLineStart as number | undefined}
-      data-source-line-end={node?.properties.dataSourceLineEnd as number | undefined}>{children}</div>;
-  },
-};
 
 export const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
 
@@ -1003,13 +960,8 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, navigatio
             {error}
           </div>
         ) : (
-          <iframe
-            key={previewKey}
-            src={previewUrl}
-            sandbox={isPdf ? undefined : "allow-same-origin"}
-            title={t("i18n.previewFile", { file: getFileName(filePath) })}
-            style={{ width: "100%", height: "100%", border: "none", background: isPdf ? "var(--bg)" : "#eef1f5" }}
-          />
+          <NativeDocumentPreview key={previewKey} src={previewUrl} pdf={isPdf}
+            title={t("i18n.previewFile", { file: getFileName(filePath) })} />
         )}
       </div>
     </div>
@@ -1978,31 +1930,10 @@ function TextFileViewer({
             {frontmatter?.data && <div data-source-line-start={1} data-source-line-end={viewerContent.slice(0, viewerContent.length - frontmatter.rest.length).split(/\r?\n/).length - 1}>
               <FrontmatterCard data={frontmatter.data} />
             </div>}
-            <MarkdownPreviewLinkContext.Provider value={{ baseDir: markdownDirectory, relativeRoot: cwd ?? markdownDirectory, onOpenFile }}>
-            <ReactMarkdown
-              remarkPlugins={markdownPreviewRemarkPlugins}
-              rehypePlugins={positionedMarkdownPlugins}
-              urlTransform={onOpenFile ? markdownUrlTransform : undefined}
-              components={{
-                ...markdownCodeComponents,
-                a: MarkdownPreviewLink,
-                img({ src, alt, ...props }) {
-                  delete props.node;
-                  const imagePath = typeof src === "string"
-                    ? resolveLocalFileHref(src, markdownDirectory, cwd ?? markdownDirectory)
-                    : null;
-                  const imageSrc = imagePath
-                    ? getFileApiUrl(imagePath, "read", sourceSessionId)
-                    : src;
-                  // Dynamic local paths are served directly by the file API.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  return <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...props} />;
-                },
-              }}
-            >
-              {markdownPreview.markdown}
-            </ReactMarkdown>
-            </MarkdownPreviewLinkContext.Provider>
+            <GuidedReviewEntry key={`${filePath}:${sourceSessionId ?? ""}:${cwd ?? ""}`} filePath={filePath} markdown={viewerContent} cwd={cwd} onOpenFile={onOpenFile} onWork={observeWork}>
+              <FileMarkdownBody markdown={markdownPreview.markdown} baseDir={markdownDirectory} relativeRoot={cwd ?? markdownDirectory}
+                sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} rehypePlugins={positionedMarkdownPlugins} onWork={observeWork} />
+            </GuidedReviewEntry>
           </div>
         ) : useLightweightSource ? (
           <div

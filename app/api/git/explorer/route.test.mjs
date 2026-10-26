@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createJiti } from "jiti";
 
-const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true, moduleCache: false });
+const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true, moduleCache: false, fsCache: false });
 const { NextRequest } = await jiti.import("next/server");
 const { GET } = await jiti.import("./route.ts");
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
@@ -58,6 +58,46 @@ test("read-only Git Explorer routes bind a physical allowed checkout and capture
   git(cwd, "commit", "-qm", "next");
   assert.equal((await request({ cwd, op: "commit", oid: head, head })).status, 409);
   assert.equal((await request(source)).status, 409);
+});
+
+test("explicit comparison uses endpoint trees, independently authorizes both commits and fences repository identity", async t => {
+  const { cwd, head: base } = fixture(t);
+  writeFileSync(join(cwd, "early.txt"), "earlier feature\n");
+  git(cwd, "add", "early.txt"); git(cwd, "commit", "-qm", "earlier");
+  const earlier = git(cwd, "rev-parse", "HEAD");
+  writeFileSync(join(cwd, "late.txt"), "later feature\n");
+  git(cwd, "add", "late.txt"); git(cwd, "commit", "-qm", "later");
+  const head = git(cwd, "rev-parse", "HEAD");
+  writeFileSync(join(cwd, "early.txt"), "MUTABLE POISON\n");
+  const pair = { cwd, head, base, candidate: head, branch: "main", op: "compare" };
+  const run = async values => { const response = await request(values); return { status: response.status, body: await response.json() }; };
+  const compared = await run(pair); assert.equal(compared.status, 200);
+  assert.deepEqual(compared.body.files, [{ status: "A", path: "early.txt" }, { status: "A", path: "late.txt" }]);
+  const file = { ...pair, op: "compare-patch", identity: compared.body.identity, path: "early.txt" };
+  const patch = await run(file); assert.equal(patch.status, 200); assert.match(patch.body.patch, /earlier feature/); assert.doesNotMatch(patch.body.patch, /MUTABLE/);
+  const context = await run({ ...file, op: "compare-context" }); assert.equal(context.status, 200);
+  assert.equal(context.body.oldFile, null); assert.equal(context.body.newFile.contents, "earlier feature\n");
+  assert.equal((await run({ ...file, identity: "0".repeat(64) })).status, 409, "opaque identity is revalidated, not authority");
+  assert.equal((await run({ ...file, path: "base.txt" })).status, 404, "unchanged remains source-only");
+  assert.equal((await run({ ...file, path: "../early.txt" })).status, 400);
+  assert.equal((await run({ ...file, path: ":(glob)*" })).status, 404);
+  assert.equal((await run({ ...pair, base: "HEAD~2" })).status, 400);
+  assert.equal((await run({ ...pair, base: head, candidate: base })).status, 400, "reversed/divergent ranges visibly refuse");
+  assert.equal((await run({ ...pair, identity: compared.body.identity })).status, 400);
+  const duplicate = await GET(new NextRequest(`http://localhost/api/git/explorer?${new URLSearchParams(pair)}&base=${base}`));
+  assert.equal(duplicate.status, 400); await duplicate.json();
+  git(cwd, "branch", "outside", earlier); git(cwd, "switch", "outside");
+  git(cwd, "commit", "--allow-empty", "-qm", "unreachable side"); const outside = git(cwd, "rev-parse", "HEAD"); git(cwd, "switch", "main");
+  for (const field of ["base", "candidate"]) assert.equal((await run({ ...pair, [field]: outside })).status, 404, `independent ${field} reachability`);
+  // Replace the native Git directory while preserving every ref and tree byte.
+  const savedGit = join(cwd, ".git-old"); renameSync(join(cwd, ".git"), savedGit); cpSync(savedGit, join(cwd, ".git"), { recursive: true });
+  assert.equal((await run(file)).status, 409, "same OIDs/branch in a new repository incarnation are stale");
+  const replacement = await run(pair); assert.equal(replacement.status, 200); assert.notEqual(replacement.body.identity, compared.body.identity);
+  git(cwd, "restore", "early.txt"); git(cwd, "merge", "--no-ff", "outside", "-m", "join divergent endpoints");
+  const merged = git(cwd, "rev-parse", "HEAD");
+  assert.equal((await run({ ...pair, head: merged, base: head, candidate: outside })).status, 400, "reachable but divergent endpoints are not a supported feature range");
+  git(cwd, "update-ref", "refs/heads/main", earlier);
+  assert.equal((await run({ ...file, identity: replacement.body.identity })).status, 409);
 });
 
 test("route binds selected local-branch detail and patch to its unchanged tip", async (t) => {

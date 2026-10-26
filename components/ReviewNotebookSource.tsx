@@ -13,12 +13,12 @@ import { needsPrismLanguage } from "@/lib/prism-languages";
 import type { ReviewSource } from "@/lib/review-notebook";
 
 /** Presentation of the already-authorized immutable excerpt; performs no file reads. */
-export function ReviewNotebookSource({ source }: { source: ReviewSource }) {
+export function ReviewNotebookSource({ source, onWork }: { source: ReviewSource; onWork?: (work: Promise<void>) => void }) {
   const { isDark } = useTheme();
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
   const language = getFileLanguage(source.path);
-  const ready = usePrismLanguages(Boolean(source.contents) && needsPrismLanguage(language), root);
+  const ready = usePrismLanguages(Boolean(source.contents) && needsPrismLanguage(language), root, onWork);
   const highlighted = useDeferredHighlight(source.contents, language, ready, root);
   return <div ref={root} className="review-notebook-source" tabIndex={0} role="region" aria-label={t("review.sourceLabel", { path: source.path })}>
     <SyntaxHighlighter

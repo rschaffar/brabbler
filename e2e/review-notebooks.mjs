@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createOwnedRoutes } from "./owned-routes.mjs";
 
@@ -27,21 +27,38 @@ export function seedReviewNotebooks({ gitProject, targetWorktree, env, writeSess
     "```pi-review\n{broken JSON\n```\n\n";
   const document = join(targetWorktree, "review-notebook.md");
   writeFileSync(document, text);
+  const guidedFolder = join(targetWorktree, "guided-review"); mkdirSync(guidedFolder);
+  const guidedIndex = join(guidedFolder, "index.md");
+  const metadata = (language, value) => `\`\`\`${language}\n${JSON.stringify(value)}\n\`\`\`\n`;
+  writeFileSync(guidedIndex, "# Guided review\n\n" + metadata("pi-notebook", { version: 1, id: "reader-bridge", title: "Guided reader bridge", chapters: [
+    { id: "ordering", title: "Ordering", path: "ordering.md" }, { id: "failure", title: "Failure behavior", path: "failure.md" },
+  ] }));
+  writeFileSync(join(guidedFolder, "ordering.md"), metadata("pi-step", { version: 1, id: "inspect", title: "Inspect the immutable evidence" }) +
+    "Compare the implementation with its surrounding context.\n\n" + fence({ ...source, id: "guided-source" }) + "\n\n" +
+    fence({ ...source, id: "guided-code", title: "Implementation", path: "review-source.tsx", start: 2, end: 6 }) + "\n\n" +
+    metadata("pi-evidence", { version: 1, kind: "compare", id: "guided-range", title: "Whole feature range", cwd: gitProject, branch: "feature", base: prior, candidate: oid, path: "z-context.txt" }) + "\n\n" +
+    metadata("pi-evidence", { version: 1, kind: "file", id: "guided-image", title: "Working diagram", path: "assets/pixel.png" }));
+  mkdirSync(join(guidedFolder, "assets"));
+  // Reviewed inline one-pixel raster; no network/codec-generation dependency.
+  writeFileSync(join(guidedFolder, "assets/pixel.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jXioAAAAASUVORK5CYII=", "base64"));
+  writeFileSync(join(guidedFolder, "failure.md"), metadata("pi-step", { version: 1, id: "failure-step", title: "Check the failure boundary" }) +
+    "This second step lives in another chapter file.\n\n" + metadata("pi-evidence", { version: 1, kind: "web", id: "reference", title: "External background", url: "https://example.invalid/no-auto-read" }));
   writeSession(id, [message("review-user", null, "user", "Guided review fixture"),
     message("review-answer", "review-user", "assistant", [{ type: "text", text: text +
-      `\n\n[Open review document](${document})\n\n[Open working source](${join(gitProject, "z-context.txt")}#L50)` }])], targetWorktree);
+      `\n\n[Open review document](${document})\n\n[Open guided review](${guidedIndex})\n\n[Open working source](${join(gitProject, "z-context.txt")}#L50)` }])], targetWorktree);
   writeFileSync(join(gitProject, "z-context.txt"), readFileSync(join(gitProject, "z-context.txt"), "utf8").replace("Explorer changed 50\n", "WORKING TREE ONLY\n"));
   writeFileSync(join(gitProject, "review-source.tsx"), "WORKING CODE ONLY\n");
-  return { id, document, gitProject, targetWorktree, oid, prior, deepOid, git };
+  return { id, document, guidedIndex, gitProject, targetWorktree, oid, prior, deepOid, git };
 }
 
 export async function checkReviewNotebooks(page, { base, fixture: f }) {
   const before = [f.git("rev-parse", "HEAD"), f.git("show-ref"), f.git("status", "--porcelain"), readFileSync(f.document, "utf8")];
-  const requests = [], writes = [];
+  const requests = [], writes = [], assetRequests = [];
   const observe = request => {
     const url = new URL(request.url());
     if (url.pathname === "/api/git/explorer" && url.searchParams.get("cwd") === f.gitProject) requests.push(url);
     if (url.pathname.startsWith("/api/git/") && request.method() !== "GET") writes.push(request.url());
+    if (url.pathname === "/api/review-notebook" && url.searchParams.has("asset")) assetRequests.push(url);
   };
   page.on("request", observe);
   const stop = (scope, id) => scope.locator(`[data-review-stop="${id}"]`);
@@ -187,6 +204,54 @@ export async function checkReviewNotebooks(page, { base, fixture: f }) {
     await stop(preview, "pinned-code").waitFor();
     assert.equal(requests.length, beforePreview, "File preview also leaves review blocks inert");
     await exercise(preview);
+    await page.locator("#file-panel").getByRole("button", { name: "Hide file panel", exact: true }).click();
+    await page.getByRole("link", { name: "Open guided review", exact: true }).click();
+    const startGuided = page.locator("#file-panel").getByRole("button", { name: "Start guided reading", exact: true });
+    await startGuided.waitFor();
+    const beforeGuided = requests.length;
+    assert.equal(assetRequests.length, 0, "no binary assets loaded by ordinary Markdown");
+    await activate(startGuided);
+    const guided = page.getByRole("region", { name: "Guided reading", exact: true });
+    await guided.getByText("Explorer changed 50", { exact: true }).waitFor();
+    assert.ok(requests.length > beforeGuided, "explicit file entry loads actual pinned evidence");
+    await guided.getByRole("combobox", { name: "Second evidence target", exact: true }).selectOption("guided-code");
+    await guided.locator('[data-review-stop="guided-code"] .review-notebook-source-line').first().waitFor();
+    const panes = guided.locator(".guided-evidence"); assert.equal(await panes.count(), 2);
+    const boxes = await Promise.all([panes.nth(0).boundingBox(), panes.nth(1).boundingBox()]);
+    for (const box of boxes) assert.ok(box && box.x >= 0 && box.x + box.width <= page.viewportSize().width + 1, "both evidence readers remain inside Files");
+    if (page.viewportSize().width < 640) assert.ok(boxes[1].y >= boxes[0].y + boxes[0].height, "touch comparison stacks without overlap");
+    await guided.getByRole("combobox", { name: "Evidence target", exact: true }).selectOption("guided-range");
+    const range = guided.getByRole("region", { name: "Primary evidence: Whole feature range", exact: true });
+    await range.getByRole("button", { name: "Show full file", exact: true }).waitFor();
+    await range.getByRole("button", { name: "Unified", exact: true }).click();
+    await range.getByRole("button", { name: "Show full file", exact: true }).click();
+    await range.getByRole("button", { name: "Diff context", exact: true }).waitFor();
+    for (const mode of ["Before", "After"]) {
+      await range.getByRole("group", { name: "File version", exact: true }).getByRole("button", { name: mode, exact: true }).click();
+      await range.getByRole("region", { name: `${mode} file`, exact: true }).waitFor();
+    }
+    await range.getByRole("group", { name: "File version", exact: true }).getByRole("button", { name: "Changes", exact: true }).click();
+    await range.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
+    assert.ok(requests.some(url => url.searchParams.get("op") === "compare-context" && url.searchParams.get("base") === f.prior && url.searchParams.get("candidate") === f.oid && url.searchParams.get("path") === "z-context.txt"));
+    assert.doesNotMatch(await range.innerText(), /WORKING TREE ONLY/);
+    assert.equal(assetRequests.length, 0, "unselected image target stays unread");
+    await guided.getByRole("combobox", { name: "Evidence target", exact: true }).selectOption("guided-image");
+    const image = guided.locator(".guided-binary-evidence img"); await image.waitFor();
+    await page.waitForFunction(node => node.complete && node.naturalWidth > 0, await image.elementHandle());
+    assert.ok((await image.getAttribute("src")).startsWith("blob:"), "native image decodes only its admitted snapshot URL");
+    const imageBounds = await image.boundingBox();
+    assert.ok(imageBounds && imageBounds.x >= 0 && imageBounds.x + imageBounds.width <= page.viewportSize().width + 1, "selected image stays inside Files");
+    assert.equal(assetRequests.filter(url => url.searchParams.get("index") === f.guidedIndex && url.searchParams.get("asset") === "assets/pixel.png").length, 1);
+    await activate(guided.getByRole("button", { name: "Next", exact: true }));
+    await guided.getByRole("heading", { name: "Check the failure boundary", exact: true }).waitFor();
+    assert.equal(await guided.locator('[aria-current="step"]').textContent(), "Check the failure boundary");
+    await activate(guided.getByRole("button", { name: "Back", exact: true }));
+    assert.equal(await guided.getByRole("combobox", { name: "Evidence target", exact: true }).inputValue(), "guided-image", "Back preserves this step's selection");
+    await guided.getByRole("combobox", { name: "Evidence target", exact: true }).selectOption("guided-source");
+    await guided.getByText("Explorer changed 50", { exact: true }).waitFor();
+    await activate(guided.getByRole("button", { name: "Return to document", exact: true }));
+    await startGuided.waitFor();
+    assert.equal(await guided.count(), 0);
     await page.locator("#file-panel").getByRole("button", { name: "Hide file panel", exact: true }).click();
     await page.getByRole("link", { name: "Open working source", exact: true }).click();
     await page.locator("#file-panel").getByText("WORKING TREE ONLY", { exact: true }).waitFor();
