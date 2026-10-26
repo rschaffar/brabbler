@@ -4,6 +4,7 @@ import { useNavigationWork } from "@/lib/navigation-work";
 import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import type { SessionInfo } from "@/lib/types";
 import { useActivityController, useActivityNotifications } from "@/hooks/useActivityController";
+import { useSessionCatalogue } from "@/hooks/useSessionCatalogue";
 import type { ActivityClientController } from "@/lib/activity-client-controller";
 import { sessionFamiliesForWorktree } from "@/lib/session-worktree-filter";
 import { useSessionWorktrees } from "@/hooks/useSessionWorktrees";
@@ -124,11 +125,7 @@ function ToolbarIconButton({
   );
 }
 
-export function sessionListUrl(summary: boolean, force: boolean): string {
-  if (summary) return "/api/sessions?summary=1";
-  if (force) return "/api/sessions?force=1";
-  return "/api/sessions";
-}
+export { sessionListUrl } from "@/lib/session-catalogue-loader";
 
 interface Props {
   selectedSessionId: string | null;
@@ -201,7 +198,6 @@ interface ValidatedProject {
 }
 
 const LAST_CUSTOM_CWD_STORAGE_KEY = "pi-web:last-custom-cwd";
-const SESSION_DETAILS_HYDRATION_DELAY_MS = 750;
 const SESSION_PANE_DEFAULT_HEIGHT = 320;
 const SESSION_PANE_MIN_HEIGHT = 80;
 const EXPLORER_PANE_MIN_HEIGHT = 120;
@@ -408,7 +404,8 @@ function PiWebTitle() {
 export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, onSessionArchived, selectedCwd: selectedCwdProp, selectedCwdState: selectedCwdStateProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, fileRevealRequest, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, activityController, onSessionsChange }: Props) {
   const work = useNavigationWork();
   const { t } = useI18n();
-  const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
+  const { sessions: allSessions, setSessions: setAllSessions, loading, error,
+    loadSessions, refreshActivityCatalogue, invalidate: invalidateCatalogue } = useSessionCatalogue(activityController, refreshKey);
   const { starredIds, starredProjectKeys, toggleStarred, toggleStarredProject } = useStarredSessions();
   const selectedSessionIdRef = useRef(selectedSessionId);
   selectedSessionIdRef.current = selectedSessionId;
@@ -424,12 +421,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkCompleted, setBulkCompleted] = useState(0);
   const [bulkError, setBulkError] = useState<string | null>(null);
-  // Tracked in a ref only: the version is compared against the polled value to
-  // decide whether the list needs reloading, and no render reads it.
-  const sessionListVersionRef = useRef<number | null>(null);
-  const sessionLoadIdRef = useRef(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const lastSyncedCwdPropRef = useRef<string | null>(null);
   // Canonical metadata can relocate the selected chat before the sync effect
@@ -495,7 +486,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   useEffect(() => {
     setPendingReveal(previous => previous && previous.context !== revealContext ? undefined : previous);
   }, [revealContext]);
-  const detailsHydrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const explorerRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileExplorerRef = useRef<FileExplorerHandle>(null);
 
@@ -568,79 +558,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     return () => ro.disconnect();
   }, [sessionSearchActive]);
 
-  const loadSessions = useCallback((showLoading = false, force = false, summary = false) => work.observe((async () => {
-    // A real detail refresh replaces the deferred initial hydration. Otherwise
-    // that timer can supersede a move-owned refresh and falsely report failure.
-    if (!summary && detailsHydrationTimerRef.current) {
-      clearTimeout(detailsHydrationTimerRef.current);
-      detailsHydrationTimerRef.current = null;
-    }
-    const loadId = ++sessionLoadIdRef.current;
-    try {
-      if (showLoading) setLoading(true);
-      const res = await fetch(sessionListUrl(summary, force), {
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as {
-        sessions: SessionInfo[];
-        sessionListVersion: number;
-        runningSessionIds?: string[];
-        completionNotificationSuppressedSessionIds?: string[];
-      };
-      if (loadId !== sessionLoadIdRef.current) return;
-      sessionListVersionRef.current = data.sessionListVersion;
-      setAllSessions(data.sessions);
-      // The catalogue remains Sidebar-owned; only the initial running fallback
-      // may seed the shared observer before its authoritative lightweight poll.
-      activityController.setSessions(data.sessions, data);
-      setError(null);
-      return true;
-    } catch (e) {
-      if (loadId === sessionLoadIdRef.current) setError(String(e));
-      return false;
-    } finally {
-      if (loadId === sessionLoadIdRef.current) setLoading(false);
-    }
-  })()), [activityController, work]);
-
-  useEffect(() => activityController.observeCatalogue(async (version) => {
-    if (version !== sessionListVersionRef.current) await loadSessions();
-  }), [activityController, loadSessions]);
-  const refreshActivityCatalogue = useCallback(() => loadSessions(false, true), [loadSessions]);
   useActivityNotifications({ controller: activityController, snapshot: activity, sessions: allSessions,
     selectedId: selectedSessionId, refreshCatalogue: refreshActivityCatalogue, onBackgroundTaskDone });
-  useEffect(() => () => { ++sessionLoadIdRef.current; }, []);
-
-  const initialLoadDone = useRef(false);
-  useEffect(() => {
-    const isFirst = !initialLoadDone.current;
-    initialLoadDone.current = true;
-    let active = true;
-
-    if (isFirst) {
-      // Header/stat metadata is enough to select the URL session and paint the
-      // sidebar. Hydrate exact counts, names, and first messages once the
-      // selected chat has had a chance to start loading.
-      work.observe(loadSessions(true, false, true).then(() => {
-        if (!active) return;
-        detailsHydrationTimerRef.current = setTimeout(() => {
-          detailsHydrationTimerRef.current = null;
-          if (active) void loadSessions(false, true);
-        }, SESSION_DETAILS_HYDRATION_DELAY_MS);
-      }));
-    } else {
-      void loadSessions(false, true);
-    }
-
-    return () => {
-      active = false;
-      if (detailsHydrationTimerRef.current) {
-        clearTimeout(detailsHydrationTimerRef.current);
-        detailsHydrationTimerRef.current = null;
-      }
-    };
-  }, [loadSessions, refreshKey, work]);
 
   // Browser storage is unavailable during server rendering. Restore the panel
   // preference after hydration so a collapsed explorer stays collapsed on reload.
@@ -958,7 +877,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setAllSessions((current) => current.some((session) => session.id === s.id) ? current : [s, ...current]);
     if (s.cwd) setSelectedCwd(s.cwd);
     onSelectSession(s, false, entryId, blockIndex);
-  }, [onSelectSession]);
+  }, [onSelectSession, setAllSessions]);
 
   const handleNewSession = useCallback(() => {
     if (!selectedCwd || directoryUnavailable) return;
@@ -990,6 +909,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         body: JSON.stringify({ cwd: moveDestination }),
       });
       const data = await readSessionMoveResponse<{ movedIds?: string[] }>(response);
+      invalidateCatalogue();
       // An open chat's cwd and wrapper no longer match the relocated file.
       // Close it rather than letting it send a prompt against the old project.
       if (selectedSessionId && data.movedIds?.includes(selectedSessionId)) {
@@ -1004,7 +924,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } finally {
       setMoveBusy(false);
     }
-  })()), [movingSession, moveDestination, moveBusy, selectedSessionId, onSessionDeleted, loadSessions, setMovingSession, setMoveError, t, work]);
+  })()), [movingSession, moveDestination, moveBusy, selectedSessionId, onSessionDeleted, loadSessions, invalidateCatalogue, setMovingSession, setMoveError, t, work]);
 
   const recentProjects = useMemo(() => {
     const projects = getRecentProjects(allSessions);
@@ -1119,7 +1039,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       const result = await runBulkSessionAction(ids, action, fetch, setBulkCompleted);
       if (result.succeeded.length > 0) {
         // Discard older list fetches so an in-flight response cannot undo the update.
-        sessionLoadIdRef.current += 1;
+        invalidateCatalogue();
         if (action !== "delete") {
           const succeeded = new Set(result.succeeded);
           setAllSessions((current) => current.map((session) => succeeded.has(session.id)
@@ -1173,6 +1093,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         sourceUnavailable={isHistoryOnlySession({ cwdState: sessionWorktrees.inventory?.worktrees.find(entry => entry.path === (sessionFilter?.cwd ?? selectedCwd))?.state
           ?? allSessions.find(session => session.cwd === (sessionFilter?.cwd ?? selectedCwd))?.cwdState })}
         onClose={() => setBulkMoveRequest(null)} onSettled={async (movedIds, failedIds, invalidatedIds, destinationCwd) => {
+          invalidateCatalogue();
           // Unknown effects must invalidate a possibly stale chat, separately
           // from acknowledged/observed moved-result accounting.
           if (selectedSessionIdRef.current && [...movedIds, ...invalidatedIds].includes(selectedSessionIdRef.current)) {
@@ -2137,12 +2058,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     archiveDisabled={family.archiveOwnerId !== family.root.id}
                     onArchived={(id, archived) => {
                       // An older in-flight list response must not undo this action.
-                      sessionLoadIdRef.current += 1;
+                      invalidateCatalogue();
                       setAllSessions((current) => updateSessionArchiveState(current, id, archived));
                       onSessionArchived?.(familySessions.some((item) => item.id === selectedSessionId) ? selectedSessionId! : id);
                       void loadSessions(false, true);
                     }}
                     onDeleted={(id) => {
+                      invalidateCatalogue();
                       onSessionDeleted?.(id);
                       loadSessions();
                     }}

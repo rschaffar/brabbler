@@ -1906,6 +1906,11 @@
       "estimatedMs": 2000
     },
     {
+      "path": "lib/session-catalogue-loader.test.mjs",
+      "lane": "F",
+      "reason": "Actual instance-owned catalogue loader with injected request/body gates, clock and publication ports; no browser/native/SDK startup, real timers, filesystem writes or shared listeners. All admitted bodies are released and loader workflows joined on success/failure."
+    },
+    {
       "path": "lib/session-list-scanner.test.mjs",
       "lane": "N",
       "reason": "Reviewed disposable FS/Git/SDK-profile/session operations or terminating CLI help subprocesses; private environment before imports, no model/provider startup or shared listener; existing bounds unchanged."
