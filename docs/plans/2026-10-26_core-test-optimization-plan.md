@@ -1,10 +1,10 @@
 # Core test optimization — investigation and proposed execution
 
-**Status: investigation complete; implementation proposed, not authorized by this
-plan.** The latest user instruction explicitly supersedes the earlier optimization
-loop: analyze thoroughly with multiple independent subagents and produce a plan.
-No optimization code, test changes, new test runs, profiling runs or benchmarks
-were performed during this investigation. Only this plan is being added.
+**Status: P1 implemented and verified; retained on its feature branch, not
+integrated.** A subsequent explicit user request authorized only opportunity 1 / P1,
+its bounded comparison, complete acceptance and local feature commits. P2–P5 remain
+proposals, not authorized follow-on work. The original investigation below used only
+existing evidence; new P1 measurements are separately identified in this plan.
 
 ## Goal
 
@@ -13,10 +13,10 @@ assertions, error/settlement checks or native authority established by the compl
 browser-retirement work. Distinguish less work, better scheduling, faster focused
 feedback and faster complete acceptance; none implies the others.
 
-**Recommended first batch:** correct trust's missing scheduling estimate, then
-measure the RPC fixture's repeated preparation before choosing a narrow reuse
-change. Take a coherent checkpoint and stop if further complexity is not justified.
-The other opportunities are alternatives, not a commitment to implement them all.
+**Current bounded execution: P1 only.** Correct trust's missing scheduling
+estimate, measure once against an unchanged baseline, complete acceptance and stop.
+The original recommendation to investigate RPC preparation next is deferred;
+no RPC/cache/Git/timer/classification or browser-retirement work is authorized.
 
 Start with the existing four-core-worker budget. There is no promised percentage
 or hard 351.05-second gate: the user made the old performance targets informational.
@@ -30,14 +30,21 @@ Demonstrate any eventual improvement on comparable executions, not simulations.
   ADR 0032 and `docs/testing.md` own current scheduling and acceptance contracts.
 - Isolated planning checkout: `plan/core-test-optimization`, based on local main
   `3f3944e06b83f497b306e8254e54e8cf80054d63`. No application edits or integration
-  are part of this analysis. Implementation requires a subsequent user request.
+  were part of that investigation. P1 received a subsequent explicit user request.
+- P1 implementation starts from current local main
+  `b06f5a463756b539843839c29087c30895697371` (checked, not assumed), in linked worktree
+  `/home/robert/projects/3rdparty/pi-desk-worktrees/project-trust-estimate`, branch
+  `perf/project-trust-estimate`. CodeGraph was initialized there before code research.
+  Implementation commit: `6de0a61a1eba61b1e8e66683418195d52b256366`.
+  The user explicitly withholds rebase/integration/publication/cleanup authority.
 - Do not reopen the browser retirement, invent another obligation census, share
   mutable test runtimes, weaken failure checks, or create a profiling/cache platform
   before a small experiment demonstrates its need.
 
 ## Evidence and measurement limits
 
-All timings below come from the existing successful x86_64 Linux/Nix run:
+The historical investigation timings in this section and the ranked opportunities
+come from the existing successful x86_64 Linux/Nix run:
 
 ```sh
 nix run .#test -- all --workers 4 --jobs 4
@@ -102,8 +109,9 @@ profile. Repeated transformation inside a test is counted in its body.
 
 ### 1. Correct one scheduling estimate — cheapest, low risk
 
-`lib/project-trust.test.mjs` has estimate zero. It starts at pool second252.147 and
-finishes at275.959, after the other workers have finished by264.519.
+In the historical reference run, `lib/project-trust.test.mjs` has estimate zero.
+It starts at pool second252.147 and finishes at275.959, after the other workers
+have finished by264.519.
 
 A frozen-duration replay of the actual scheduler gives:
 
@@ -117,9 +125,11 @@ A frozen-duration replay of the actual scheduler gives:
 **These are simulations, not measured savings.** The model omits dispatch gaps and
 freezes interference; its baseline is0.117s below observed file execution.
 
-Proposed change: one `estimatedMs` entry in live `nix/test-lanes.json`. Preserve the
-scheduler, lane, process isolation, cases and deadlines. Do not rewrite scheduling
-or refresh hundreds of estimates to chase the last modeled second.
+Adopted P1: one `estimatedMs: 24000` entry in live `nix/test-lanes.json`, rounding
+23,811ms to a coarse historical hint as `docs/testing.md` specifies. This is neither
+a deadline nor a resource reservation. The scheduler, lane/reason/holds, process
+isolation, cases and deadlines are unchanged; no other estimate is refreshed.
+The historical simulation above is not relabelled as a measured result.
 
 ### 2. Remove repeated immutable RPC preparation — strongest targeted source lead
 
@@ -272,13 +282,14 @@ Do not build immutable repository seeds: the existing seven-sample pilot in
 per fixture plus seed construction. Never copy linked-worktree administration,
 hardlink mutable indexes/config/refs, reuse approvals or shrink actual fixtures.
 
-## Proposed execution — only after implementation authorization
+## Execution scope — P1 authorized; P2–P5 remain proposals
 
 Keep one writer, one active change and normal four-worker admission. Independent
 review remains useful; packet counts and universal lifetime theorems are not gates.
 
-- [ ] **P1: cheap scheduling candidate.** Update only trust's missing estimate;
-  verify runner/manifest contracts. Keep it a separate commit/measurement dimension.
+- [x] **P1: cheap scheduling candidate.** Update only trust's missing estimate;
+  verify runner/manifest contracts. Separate implementation commit and matched
+  measurement are recorded below. P1-only completion does not authorize P2–P5.
 - [ ] **P2: targeted RPC preparation.** Measure existing fixture phases, implement
   only the demonstrated repeated-work reduction, and keep fresh row initialization.
   If compile preparation is immaterial, retract that hypothesis rather than build
@@ -296,7 +307,9 @@ review remains useful; packet counts and universal lifetime theorems are not gat
 
 ### Proportionate validation and measurement
 
-Use the existing entry points; these are future commands, **not runs performed**:
+The original proposed command menu uses existing entry points. Only the P1 commands
+explicitly recorded in the implementation evidence below were executed; no RPC
+preparation experiment was performed:
 
 ```sh
 # RPC preparation consumers / native counterpart
@@ -338,6 +351,103 @@ not code work removed or a new default. Evaluate separately if requested; never
 compare eight-worker candidate timings with a four-worker baseline as an algorithmic
 speedup. More workers cannot be assumed safe/free for native timing-sensitive cases.
 
+## P1 implementation evidence — 2026-10-26
+
+### Verification and comparable inputs
+
+One sequential baseline/candidate pair used the unchanged entry point:
+
+```sh
+nix run .#test -- all --workers 4 --jobs 4
+```
+
+Both ran native x86_64 Linux, Node 24.21.0, 32 logical CPUs, requested/effective
+four core workers, four browser sandboxes and overlapping core/browser→service
+orchestration. Admission observed 48.797 / 54.629 GiB available memory; these are
+estimates, not reservations or machine-exclusive runs. Dependencies/package/types
+were already realized. Between pair members, the focused candidate command below
+realized its changed lint evidence (41.193s command wall, including realization):
+
+```sh
+nix run .#test -- core --jobs 4 --file lib/test-runner.test.mjs --file lib/test-design.test.mjs --file lib/test-lanes-audit.test.mjs
+```
+
+Focused result: **3 files / 49 tests**, plus 29 exporter contracts and mandatory
+static evidence passed; report `/tmp/pi-web-test-core.TZ6OLH/run.json`. Independent
+read-only review found existing estimate-validation, ordering, exact-discovery,
+private-worker and failure/abort-drain regressions sufficient. No test bodies changed,
+and no new regression pins the precise advisory value. `docs/testing.md` already
+owns the unchanged hint semantics; no guide/policy change is necessary.
+
+| Identity | Baseline | Candidate |
+| --- | --- | --- |
+| Git candidate | `b06f5a463756b539843839c29087c30895697371` | `6de0a61a1eba61b1e8e66683418195d52b256366` |
+| Immutable source | `/nix/store/jpvxgs8avv34lw2lw9yyd4xq7g1nldd5-source` | `/nix/store/dpld3ydr5r8w7shb15cnacn1rqni0zdm-source` |
+| Outer source digest | `dccf7b820e858b2ce428c42ebe718b151b7cd9841f3f6a93ef87eba9cc05c022` | `cf7b966a40a8e42bcedc189649199175bb2ec7e02e216edbab262d9cf38e3bb9` |
+| Export / selection root | `/tmp/pi-web-test-source-14h0oV` | `/tmp/pi-web-test-source-YqzDLi` |
+| Core report | `/tmp/pi-web-test-core.FCCpIn/run.json` | `/tmp/pi-web-test-core.7QiRaQ/run.json` |
+| Immutable core output | `/nix/store/vxyb0g6xi027gsa0i3g3ph52640q9dn9-pi-web-core-checks` | `/nix/store/52f1zbvkinda9aiap0x834b55l61jjh4-pi-web-core-checks` |
+| Detailed artifact directory within output | `artifacts/run-FPxfy6` | `artifacts/run-MdFIpT` |
+| Browser report | `/tmp/pi-web-test-browser.Sh2Ld7/run.json` | `/tmp/pi-web-test-browser.VvoPPu/run.json` |
+| Genuine deployment report | `/tmp/pwv-L2IA3h/run.json` | `/tmp/pwv-ESjwHP/run.json` |
+
+Exported file bytes/modes differ **only** at `nix/test-lanes.json`. Both inventories
+have identical 509 discovered paths/body hashes, all planned lanes/reasons/holds
+and all 4,171 original case outcomes/counts. Only trust's planned estimate changes
+0→24000. Both pass **509 files / 4,171 tests / 14 suites**, **26 groups / 59 exact
+receipts**, genuine Home Manager deployment and unchanged settlement gates, with
+zero skipped/cancelled tests, uncertain core files or observed survivors. Core peak
+workers are four; E starts only after pool drain.
+
+`static-inputs.json` confirms changed static/lint inputs but identical typing source
+`/nix/store/9n8y02gxgzrgl73skdmi7nx309srm2n5-source`, type evidence
+`/nix/store/k4f9lpabgsdmavz87nbxnraqar6mqdss-pi-web-types`, runtime and dependency
+identities. Full candidate acceptance reuses the lint evidence realized by focused
+verification; static reuse is not fresh static execution. Both use production package
+`/nix/store/9xqnp83zglbq9ww1fipc3kks8p4f310r-pi-web-0.9.3`.
+
+### Observed timings and limits
+
+| Interval (seconds) | Baseline | Candidate |
+| --- | ---: | ---: |
+| Full command wall, including in-command realization/export | 395.026 | 383.832 |
+| Outer core command | 389.626 | 380.513 |
+| Core realization/setup before lifecycle / after lifecycle | 1.748 / 0.250 | 1.570 / 0.256 |
+| Core lifecycle | 387.628 | 378.687 |
+| Lifecycle preparation through first-file start / final-file-to-settlement | 0.845 / 0.068 | 0.831 / 0.071 |
+| First-file start → final-file end | 386.715 | 377.785 |
+| Shared F/N pool | 286.771 | 278.476 |
+| Pool drain → final E end (including ~2ms E dispatch) | 99.943 | 99.309 |
+| Cumulative F / N / E file elapsed | 447.319 / 662.086 / 99.899 | 441.494 / 668.032 / 99.265 |
+| Cumulative all-file elapsed | 1209.305 | 1208.791 |
+| Browser support / definition preparation | 3.540 / 4.967 | 3.717 / 4.841 |
+| Browser whole-group client envelope | 229.727 | 229.395 |
+| Browser / deployment outer intervals | 238.237 / 26.073 | 237.956 / 25.141 |
+| Browser-through-service branch | 266.325 | 265.328 |
+
+Preparation intervals include mixed realization/export/static-evidence/setup costs,
+not isolated evaluator/compilation CPU measurements; exporter contracts still run.
+Core and browser/service overlap, so these intervals are **not additive**. Command
+walls exclude model/review/wait time and the separately recorded focused prewarming.
+
+Trust starts at pool second **262.797→100.262**, ends **286.771→138.385** and is no
+longer the final pool straggler. Its own elapsed time increases **23.977→38.124s**
+when scheduled earlier in the pool; total file work is nearly unchanged (**-0.514s**). Observed
+pool improvement is **8.296s**, file-window improvement **8.930s**, lifecycle improvement
+**8.941s**, and complete command improvement **11.194s (2.83%)**. The extra command-wall
+delta includes preparation differences; it is not all scheduling savings. This one
+fresh sequential pair supports the packing hypothesis, not less executed work, a
+repeatable/statistical guarantee, standalone-core CPU savings or the simulated8.194s
+as a measured value. No cold-cache/ARM/CI promise or numerical performance gate is
+claimed. No further benchmark campaign or P2 work was started.
+
+Raw command logs, exact derived comparisons and unchanged-input assertions are
+retained at `/tmp/pi-web-p1-estimate.mcSrPK/{baseline.log,focused.log,candidate.log,comparison.json,source-comparison.json}`.
+The evidence-only plan update follows the tested implementation commit; application,
+test bodies, manifest and runner inputs remain unchanged. Feature resources and all
+historical resources are retained; rebase, integration, publication and cleanup await
+separate user authority.
+
 ## Completion Checklist
 
 ### This analysis
@@ -347,13 +457,16 @@ speedup. More workers cannot be assumed safe/free for native timing-sensitive ca
 - [x] Rank concrete changes, simulations, safety gates and rejected/deferred options.
 - [x] Produce this proposed implementation sequence without running or changing tests.
 
-### Future implementation (not executed)
+### Authorized P1 implementation only
 
-- [ ] Adopted changes preserve original coverage, inputs, native authority and isolation.
-- [ ] Focused checks and relevant fault/settlement evidence pass on identified inputs.
-- [ ] Comparable measurements demonstrate benefit; negative/immaterial ideas are dropped.
-- [ ] Complete core/static/plugin, browser/terminal and deployment acceptance passes.
-- [ ] Owning guides and live scheduling metadata match actual adopted behavior.
+- [x] Adopted change preserves original coverage, inputs, native authority and isolation.
+- [x] Focused runner/manifest and relevant failure/settlement contracts pass on identified inputs.
+- [x] One comparable pair records observed packing benefit and its single-pair limits, not simulated savings.
+- [x] Complete core/static/plugin, browser/terminal and deployment acceptance passes.
+- [x] Existing owning guide and live scheduling metadata match the unchanged advisory semantics.
+
+P1 is complete and retained unintegrated. P2–P5 remain deferred proposals requiring
+new authorization; this multi-opportunity plan is not fully executed or archived.
 
 ## Investigation provenance and known gaps
 
@@ -362,7 +475,8 @@ Six independent read-only sessions covered RPC (`01a1774e-fdd4`), native timers
 (`01a1774e-fddc`) and timing/simulation (`01a17612-7276`). Full sessions remain
 inspectable; the findings above distinguish source facts from future experiments.
 
-**Known gaps:** no phase profile proving the recoverable share of RPC startup,
-no measured cache savings, no approved lane promotions, and no new matched or
-standalone core benchmark. Native cache/fence compatibility and some pinned SDK
-loader/resource closures remain unresolved. Simulations are not promises.
+**Known gaps:** P1 has one matched fresh four/four pair, not repeated statistical,
+standalone-core, cold-cache, ARM or CI timing evidence. Out-of-scope opportunities
+still have no RPC phase profile, measured cache savings or approved lane promotions;
+native cache/fence compatibility and some pinned SDK loader/resource closures remain
+unresolved. Simulations are not promises.
