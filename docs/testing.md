@@ -284,6 +284,31 @@ and initialization order, run every original case, and measure before generalizi
 Typed `.fixture.ts` files stay in type/lint inputs but outside application/package
 inputs; verify those identities rather than hiding dependencies from checking.
 
+### RPC startup transformation preparation
+
+`lib/rpc-startup.fixture.mjs` opts only its retained-dependency loader into
+`rpc-startup-preparation.fixture.mjs`. The fixture-local memory store retains
+successful pinned-Jiti transformed **code strings**, not modules, exports,
+initializers, promises, errors or capability bindings. Its FIFO bounds are256
+entries and8MiB of retained key/code UTF-8 payload, not a process-RSS bound.
+
+Every startup still creates its private roots, environment/globals, loader,
+capabilities and RPC initializer. Installation happens after that boundary and
+before retained imports. Source reads and alias resolution remain current;
+`fsCache:false,moduleCache:false` and existing native-import behavior are unchanged.
+Dependency transformation reuse is not dependency evaluation reuse. No initialized
+RPC/controller/manager/wrapper is shared.
+
+Keys include actual source bytes, exact filename, supported effective callback
+options and relevant Babel environment values. Only the pinned default transformer
+with ordinary scalar inputs/empty Babel configuration is eligible. Custom transforms,
+Babel configuration/plugins, source-map inputs, JSX, accessor/proxy inputs and
+diagnostic modes delegate without reuse; failed or unknown transformation results
+are never retained. This is a bounded RPC-fixture optimization, not permission to
+enable Jiti disk caches or share other test runtimes. Regression controls live with
+the existing serial startup-port tests; measurements and exact input identities
+belong to the [core optimization plan](plans/2026-10-26_core-test-optimization-plan.md).
+
 ### Completion, cost and new-feature checklist
 
 Result, complete owned-work settlement and durable publication are separate
