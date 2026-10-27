@@ -24,7 +24,7 @@ const run=(command,args,input)=>new Promise((resolve,reject)=>{
  child.once("error",reject);child.once("close",(code,signal)=>resolve({code,signal,stdout,stderr}));
  child.stdin.on("error",error=>{if(error.code!=="EPIPE")reject(error)});child.stdin.end(input);
  if(command==="ssh-keygen"&&args[1]==="sign") {
-  save(job.started,{pid:process.pid,signPid:child.pid,socket:process.env.SSH_AUTH_SOCK,passwordPresent:Object.hasOwn(process.env,"PI_WEB_PASSWORD"),controlPresent:Object.hasOwn(process.env,"PI_DESK_SSH_RUNTIME")});
+  save(job.started,{pid:process.pid,signPid:child.pid,socket:process.env.SSH_AUTH_SOCK,passwordPresent:Object.hasOwn(process.env,"BRABBLER_PASSWORD"),controlPresent:Object.hasOwn(process.env,"BRABBLER_SSH_RUNTIME")});
   // The helper signals its own ChildProcess; the browser driver never acts on
   // a detached numeric PID that could have exited or been reused.
   cancelTimer=setInterval(()=>{if(existsSync(job.cancelFile)){clearInterval(cancelTimer);child.kill("SIGKILL")}},25);cancelTimer.unref();

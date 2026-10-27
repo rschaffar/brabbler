@@ -15,7 +15,7 @@ export interface ProjectNativeResources {
 }
 interface Entry { identity: string; selection: NativeResourceSelection }
 const MAX_BYTES = 4 * 1024 * 1024;
-const storePath = (agentDir: string) => join(agentDir, "pi-web", "project-native-resources.json");
+const storePath = (agentDir: string) => join(agentDir, "brabbler", "project-native-resources.json");
 const unavailable = () => new Error("Project native-tool defaults are unavailable");
 
 function readStore(file: string): Map<string, NativeResourceSelection> {

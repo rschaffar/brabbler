@@ -8,7 +8,7 @@ function commandEnvironment(inherited = process.env, platform = process.platform
   const env = { ...inherited };
   for (const key of Object.keys(env)) {
     const name = platform === "win32" ? key.toUpperCase() : key;
-    if (name === "PI_WEB_PASSWORD" || name === "PI_DESK_SSH_RUNTIME") delete env[key];
+    if (name === "BRABBLER_PASSWORD" || name === "BRABBLER_SSH_RUNTIME") delete env[key];
   }
   return env;
 }

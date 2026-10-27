@@ -4,7 +4,7 @@
 // launcher, before loading Next. Its dev supervisor reconstructs worker
 // NODE_OPTIONS from execArgv, so propagate an absolute preload path as well.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { requestGuardPath } = require("./pi-web-node-args");
+const { requestGuardPath } = require("./brabbler-node-args");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 require(requestGuardPath);
 process.execArgv.push("--require", requestGuardPath);
@@ -23,6 +23,6 @@ function option(short, long, fallback) {
 launchManagedNext({ nextBin: require.resolve("next/dist/bin/next"), args, cwd: process.cwd(),
   hostname: option("-H", "--hostname", "0.0.0.0"), port: option("-p", "--port", process.env.PORT || "3000"),
 }).catch(error => {
-  console.error(`[pi-web] startup failed: ${error.message}`);
+  console.error(`[brabbler] startup failed: ${error.message}`);
   process.exit(error.exitCode || 1);
 });

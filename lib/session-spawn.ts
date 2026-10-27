@@ -1,6 +1,6 @@
 import type { SessionEntry } from "./types";
 
-export const SESSION_SPAWN_TYPE = "pi-web:session-spawn";
+export const SESSION_SPAWN_TYPE = "brabbler:session-spawn";
 export interface SessionSpawn { version: 1; sessionId: string; creatorSessionId: string; operationId: string }
 const safeId = (value: unknown): value is string => typeof value === "string" && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(value);
 export function readSessionSpawn(value: unknown, sessionId: string): SessionSpawn | null {

@@ -43,7 +43,7 @@ export async function GET(
     const searchParams = new URL(req.url).searchParams;
     const force = searchParams.get("force") === "1";
 
-    // A live wrapper only reflects the appends pi-web itself made. When another
+    // A live wrapper only reflects the appends brabbler itself made. When another
     // pi process (the TUI) writes the same session file, the in-memory index
     // stays stale. Only probe on ?force=1 (session mount / page refresh): two
     // processes writing one JSONL is unsupported, so post-turn reads must not
@@ -141,7 +141,7 @@ export async function GET(
     // instantiate a wrapper or mutate Pi JSONL merely to inspect it.
     let possibleInterruptedRun = null;
     try { possibleInterruptedRun = readPossibleInterruptedRun(id); }
-    catch (error) { console.error("[pi-web] Could not inspect run journal:", error); }
+    catch (error) { console.error("[brabbler] Could not inspect run journal:", error); }
 
     const nativeResources = subagent ? NO_NATIVE_RESOURCES : readNativeResourceSelection(entries as never);
     return perf?.attach(jsonResponse(

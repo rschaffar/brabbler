@@ -24,7 +24,7 @@ const request = (id, cwd) => move(new Request(`http://localhost/api/sessions/${i
 }), { params: Promise.resolve({ id }) });
 
 test("move persists a nested family, repairs an external fork and refreshes path resolution", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-web-move-"));
+  const dir = await mkdtemp(join(tmpdir(), "brabbler-move-"));
   const previous = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = join(dir, "agent");
   const oldCwd = join(dir, "old");
@@ -40,7 +40,7 @@ test("move persists a nested family, repairs an external fork and refreshes path
   const grandPath = join(dirname(rootPath), `grand_${id}-grand.jsonl`);
   const subagent = (childId, parentId, parentPath) => [
     header(childId, oldCwd, parentPath),
-    JSON.stringify({ type: "custom", customType: "pi-web:subagent", id: `meta-${childId}`, parentId: null,
+    JSON.stringify({ type: "custom", customType: "brabbler:subagent", id: `meta-${childId}`, parentId: null,
       timestamp: "2026-01-01T00:00:00.000Z", data: { version: 1, parentSessionId: parentId,
         parentSessionPath: parentPath, profile: "explore", description: "Read files" } }),
     "",
@@ -112,7 +112,7 @@ test("deleted source checkouts do not strand persisted sessions", async (t) => {
     { name: "removed worktree to plain directory", target: "plain", remove: true },
     { name: "custom deleted worktree to main without inferred identity", target: "main", custom: true, remove: true },
   ]) await t.test(scenario.name, async (t) => {
-    const dir = await mkdtemp(join(tmpdir(), "pi-web-deleted-move-"));
+    const dir = await mkdtemp(join(tmpdir(), "brabbler-deleted-move-"));
     const previous = process.env.PI_CODING_AGENT_DIR;
     process.env.PI_CODING_AGENT_DIR = join(dir, "agent");
     const root = join(dir, "repo"), plain = join(dir, "plain");
@@ -167,7 +167,7 @@ test("deleted source checkouts do not strand persisted sessions", async (t) => {
 });
 
 test("same-project continuation accepts only distinct registered worktree roots", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-web-worktree-move-"));
+  const dir = await mkdtemp(join(tmpdir(), "brabbler-worktree-move-"));
   const previous = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = join(dir, "agent");
   const root = join(dir, "repo");

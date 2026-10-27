@@ -24,7 +24,7 @@ export const weights = Object.freeze({
 });
 
 const store = /^\/nix\/store\/[a-z0-9]{32}-[^/]+$/;
-const packageSuffix = '/lib/node_modules/@agegr/pi-web';
+const packageSuffix = '/lib/node_modules/brabbler';
 export function validateBrowserMetadata(metadata) {
   assert.equal(metadata?.version, 1);
   assert.equal(metadata.backend, 'nix-build-sandbox');
@@ -32,7 +32,7 @@ export function validateBrowserMetadata(metadata) {
   assert.ok(metadata.package.endsWith(packageSuffix));
   const prefix = metadata.package.slice(0, -packageSuffix.length);
   assert.match(prefix, store);
-  assert.equal(metadata.launcher, `${prefix}/bin/pi-web`);
+  assert.equal(metadata.launcher, `${prefix}/bin/brabbler`);
   for (const key of ['node', 'chromium', 'shell', 'tar']) assert.match(metadata[key], /^\/nix\/store\/[a-z0-9]{32}-[^/]+\/bin\/[^/]+$/);
   assert.match(metadata.fontconfig, store);
   assert.equal(typeof metadata.toolPath, 'string');

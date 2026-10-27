@@ -2,8 +2,8 @@ import type { BrowserSshAssertion, BrowserSshCredential } from "./browser-ssh-pr
 import type { SshEnrollmentBegin, SshWireRegistration } from "./ssh-agent-types";
 
 /** Generic originals are read-only forever: older tabs need not cooperate with migration. */
-export const BROWSER_SSH_STORAGE_KEY = "pi-web:browser-ssh-credential:v1";
-export const BROWSER_SSH_STAGED_KEY = "pi-web:browser-ssh-staged:v1";
+export const BROWSER_SSH_STORAGE_KEY = "brabbler:browser-ssh-credential:v1";
+export const BROWSER_SSH_STAGED_KEY = "brabbler:browser-ssh-staged:v1";
 export type SshPublicRecovery = BrowserSshCredential & { origin: string };
 
 export class BrowserSshHttpError extends Error {
@@ -78,8 +78,8 @@ export async function enrollBrowserSshCredential(
   };
   const result = await navigator.credentials.create({ signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]), publicKey: {
     challenge: decodeBrowserBytes(begin.challenge),
-    rp: { id: begin.rpId, name: "Pi Web SSH" },
-    user: { id: crypto.getRandomValues(new Uint8Array(32)), name: "pi-web-ssh", displayName: "Pi Web SSH" },
+    rp: { id: begin.rpId, name: "Brabbler SSH" },
+    user: { id: crypto.getRandomValues(new Uint8Array(32)), name: "brabbler-ssh", displayName: "Brabbler SSH" },
     pubKeyCredParams: [{ type: "public-key", alg: -7 }],
     authenticatorSelection: { authenticatorAttachment: "cross-platform", residentKey: "discouraged", userVerification: "required" },
     extensions, attestation: "none", timeout: 60_000,
@@ -122,8 +122,8 @@ export async function requestBrowserSshAssertion(
 }
 
 /** New writes have identity-bound keys, never a shared mutable slot or manifest. */
-export const BROWSER_SSH_STAGED_PREFIX = "pi-web:browser-ssh-staged:v2:";
-export const BROWSER_SSH_ACK_PREFIX = "pi-web:browser-ssh-ack:v1:";
+export const BROWSER_SSH_STAGED_PREFIX = "brabbler:browser-ssh-staged:v2:";
+export const BROWSER_SSH_ACK_PREFIX = "brabbler:browser-ssh-ack:v1:";
 export const SSH_RECOVERY_MAX_RECORDS = 8;
 // Storage has no prefix iterator. Inspect at most this many key names, but read values
 // only for the two exact legacy slots, eight matching staged keys and exact hint keys.

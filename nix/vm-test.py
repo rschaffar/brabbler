@@ -32,9 +32,9 @@ artifacts: dict[str, str] = {}
 primary: BaseException | None = None
 primary_traceback: TracebackType | None = None
 validation: subprocess.CompletedProcess[str] | None = None
-core_stage = "/var/lib/pi-web-evidence"
-helper_stage = "/var/lib/pi-web-helper-evidence"
-probe_stage = "/var/lib/pi-web-evidence-probe"
+core_stage = "/var/lib/brabbler-evidence"
+helper_stage = "/var/lib/brabbler-helper-evidence"
+probe_stage = "/var/lib/brabbler-evidence-probe"
 started = time.monotonic()
 
 
@@ -60,7 +60,7 @@ def properties():
 
 def service_cgroup(group):
     assert isinstance(group, str) and re.fullmatch(
-        r"/user\.slice/user-1000\.slice/user@1000\.service/(?:[A-Za-z0-9_.@:-]+/)*pi-web\.service", group
+        r"/user\.slice/user-1000\.slice/user@1000\.service/(?:[A-Za-z0-9_.@:-]+/)*brabbler\.service", group
     ) and not any(part in (".", "..") for part in group.split("/")), f"Foreign cgroup: {group}"
     return group
 
@@ -128,7 +128,7 @@ def guest_tree_manifest(source, names=()):
         f"import {{ assertEvidenceTree }} from {json.dumps(f'{support}/vm-evidence.mjs')};\n"
         """const root = process.argv[1], names = JSON.parse(process.argv[2]);
 assert.equal(process.getuid(), 0);
-assert.equal(fs.readFileSync('/etc/pi-web-acceptance-guest', 'utf8').trim(), 'pi-web-nixos-acceptance-v1');
+assert.equal(fs.readFileSync('/etc/brabbler-acceptance-guest', 'utf8').trim(), 'brabbler-nixos-acceptance-v1');
 const initial = fs.lstatSync(root);
 assert.ok(initial.isDirectory() && initial.uid === 0 && (initial.mode & 0o777) === 0o700, 'Root-private evidence staging required');
 assertEvidenceTree(root); // Physical root, entry bound, symlinks, devices and special files.
@@ -195,8 +195,8 @@ def diagnostic_channel_reachable():
     if not machine.is_up():
         return False
     try:
-        code, output = machine.execute("printf %s pi-web-diagnostic-channel-v1", timeout=10)
-        return code == 0 and output == "pi-web-diagnostic-channel-v1"
+        code, output = machine.execute("printf %s brabbler-diagnostic-channel-v1", timeout=10)
+        return code == 0 and output == "brabbler-diagnostic-channel-v1"
     except Exception as error:
         errors.append(f"Diagnostic channel probe: {error}")
         traceback.print_exc()
@@ -231,7 +231,7 @@ def collect_core_evidence(helper_collected):
         # Archive/helper failures never suppress safe journal attempts.
         for filename, argv in (
             ("journal.log", ["journalctl", "-b", "--no-pager", "-o", "short-iso"]),
-            ("service.log", ["journalctl", "-b", "--no-pager", "-o", "short-iso", "_SYSTEMD_USER_UNIT=pi-web.service", "_UID=1000"]),
+            ("service.log", ["journalctl", "-b", "--no-pager", "-o", "short-iso", "_SYSTEMD_USER_UNIT=brabbler.service", "_UID=1000"]),
         ):
             try:
                 require_existing_channel()
@@ -259,7 +259,7 @@ def collect_core_evidence(helper_collected):
             errors.append(f"Missing staged artifacts: {manifest['missing']}")
         # Even an incomplete archive must not suppress export of safe journals.
         copy_evidence(core_stage, "guest")
-        exported = driver.out_dir / "guest" / "pi-web-evidence"
+        exported = driver.out_dir / "guest" / "brabbler-evidence"
         verify_exported_artifacts(exported, artifacts, plan["artifacts"])
         return not collection_failed and helper_collected
     except Exception as error:
@@ -276,7 +276,7 @@ def activation():
     assert code != 0 and output.strip() == "inactive", "User manager started before the default-target proof"
     # Never explicitly start the application or manufacture its startup link.
     command(["systemctl", "start", "user@1000.service"])
-    machine.wait_for_unit("pi-web.service", user=service["user"], timeout=120)
+    machine.wait_for_unit("brabbler.service", user=service["user"], timeout=120)
     machine.wait_for_open_port(service["port"], timeout=120)
     observed = properties()
     assert observed["UMask"] == "0077" and observed["WorkingDirectory"] == service["home"]
@@ -314,7 +314,7 @@ def http_write():
 def restart():
     before = live(proof["activation"]["generation"])
     control("restart")
-    machine.wait_for_unit("pi-web.service", user=service["user"], timeout=120)
+    machine.wait_for_unit("brabbler.service", user=service["user"], timeout=120)
     machine.wait_for_open_port(service["port"], timeout=120)
     after = live()
     assert after["InvocationID"] != before["InvocationID"], "Explicit restart did not change invocation"
@@ -386,7 +386,7 @@ finally:
         collected = collect_core_evidence(helper_collected)
     else:
         errors.append("Guest diagnostic channel unreachable; no reconnect or new boot attempted")
-    receipt = {"version": 1, "kind": "pi-web-service-evidence", "plan": plan,
+    receipt = {"version": 1, "kind": "brabbler-service-evidence", "plan": plan,
                "passed": acceptance_ready and not errors and all(item["status"] == "passed" for item in checks),
                "checks": checks, "proof": proof, "clientsSettled": clients_settled, "settlement": settlement,
                "collectionProbe": probe_passed, "artifactsCollected": collected, "artifacts": artifacts,

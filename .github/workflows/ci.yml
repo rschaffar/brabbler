@@ -48,7 +48,7 @@ jobs:
           status=${statuses[0]}
           if [ "$status" -eq 0 ]; then status=${statuses[1]}; fi
           root=$(awk '/^Private core test root / { print $NF }' test-results/core.log | tail -1)
-          if [[ ! "$root" =~ ^/tmp/pi-web-test-core\.[A-Za-z0-9]+$ ]]; then root="$GITHUB_WORKSPACE/test-results/not-started-core"; status=1; fi
+          if [[ ! "$root" =~ ^/tmp/brabbler-test-core\.[A-Za-z0-9]+$ ]]; then root="$GITHUB_WORKSPACE/test-results/not-started-core"; status=1; fi
           printf 'root=%s\n' "$root" >> "$GITHUB_OUTPUT"
           exit "$status"
       - name: Fresh complete sandboxed browser and terminal acceptance
@@ -62,8 +62,8 @@ jobs:
           statuses=("${PIPESTATUS[@]}")
           status=${statuses[0]}
           if [ "$status" -eq 0 ]; then status=${statuses[1]}; fi
-          root=$(awk '/^Artifacts: \/tmp\/pi-web-test-browser\./ { print $2 }' test-results/e2e.log | tail -1)
-          if [[ ! "$root" =~ ^/tmp/pi-web-test-browser\.[A-Za-z0-9]+$ ]]; then root="$GITHUB_WORKSPACE/test-results/not-started-e2e"; status=1; fi
+          root=$(awk '/^Artifacts: \/tmp\/brabbler-test-browser\./ { print $2 }' test-results/e2e.log | tail -1)
+          if [[ ! "$root" =~ ^/tmp/brabbler-test-browser\.[A-Za-z0-9]+$ ]]; then root="$GITHUB_WORKSPACE/test-results/not-started-e2e"; status=1; fi
           printf 'root=%s\n' "$root" >> "$GITHUB_OUTPUT"
           exit "$status"
       - name: Fresh genuine Home Manager deployment acceptance

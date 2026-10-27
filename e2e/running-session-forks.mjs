@@ -32,7 +32,7 @@ export function waitForForkResponse(page, predicate, options) {
 export async function checkRunningSessionForks(page, { base, api, post, artifacts, width }) {
   const sourceId = `e2e-running-fork-${width}`;
   const sourcePath = `/api/agent/${sourceId}`;
-  await page.context().addInitScript(() => localStorage.setItem("pi-quote-selection-enabled", "true"));
+  await page.context().addInitScript(() => localStorage.setItem("brabbler-quote-selection-enabled", "true"));
   await page.goto(`${base}/?session=${sourceId}`, { waitUntil: "domcontentloaded" });
   await page.getByText(`Later answer ${width}`, { exact: true }).waitFor();
   let origin = await page.evaluate(() => performance.timeOrigin);

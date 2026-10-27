@@ -1,7 +1,7 @@
 import type { LocalePlugin } from "../types";
 import { sshAgentEnglish } from "../ssh-agent-messages";
 
-/** Pi Web 内置英语语言包。 */
+/** Brabbler 内置英语语言包。 */
 export const enLocale: LocalePlugin = {
   id: "en",
   label: "English",
@@ -22,7 +22,7 @@ export const enLocale: LocalePlugin = {
     "common.settings": "Settings",
     "settings.title": "Settings",
     "settings.general": "General",
-    "settings.generalDescription": "Choose how Pi Web looks and which language it uses.",
+    "settings.generalDescription": "Choose how Brabbler looks and which language it uses.",
     "settings.appearance": "Appearance",
     "settings.appearanceDescription": "Select a theme or follow your system preference.",
     "settings.chatContentWidth": "Chat content width",
@@ -66,8 +66,8 @@ export const enLocale: LocalePlugin = {
     "skills.scope.project": "project",
     "skills.scope.path": "path",
     "agents.close": "Close",
-    "agents.builtInTitle": "Enable Pi Web built-in sub-agents",
-    "agents.builtInDescription": "Provides Pi Web's integrated Agent tools and disables a conflicting pi-subagents extension.",
+    "agents.builtInTitle": "Enable Brabbler built-in sub-agents",
+    "agents.builtInDescription": "Provides Brabbler's integrated Agent tools and disables a conflicting pi-subagents extension.",
     "agents.reloadRequired": "Reload the current session to apply this change.",
     "agents.reloadSession": "Reload session",
     "agents.maxConcurrent": "Concurrent sub-agents",
@@ -122,7 +122,7 @@ export const enLocale: LocalePlugin = {
     "agentSwitcher.status.failed": "Failed",
     "agentSwitcher.status.aborted": "Aborted",
     "agentSwitcher.status.interrupted": "Interrupted",
-    "appUpdate.releaseNotes": "Pi Web v{version} is available. View release notes",
+    "appUpdate.releaseNotes": "Brabbler v{version} is available. View release notes",
     "sidebar.hide": "Hide sidebar",
     "sidebar.show": "Show sidebar",
     "theme.light": "Theme: Light",
@@ -629,11 +629,11 @@ export const enLocale: LocalePlugin = {
     "models.enabledUnavailable": "Sign in to this provider to choose its models.",
     "models.refreshCatalog": "Refresh catalog",
     "models.refreshingCatalog": "Refreshing…",
-    "models.refreshCatalogHint": "Fetch the model list this provider publishes now. pi's built-in list is fixed at the pi version pi-web ships with, so a newly released model only shows up after a refresh.",
+    "models.refreshCatalogHint": "Fetch the model list this provider publishes now. pi's built-in list is fixed at the pi version brabbler ships with, so a newly released model only shows up after a refresh.",
     "models.catalogUpdated": "Model list updated from the provider.",
     "models.catalogUnchanged": "Already up to date.",
     "models.catalogUnreachable": "Could not reach the catalog. Check the connection and the provider credential, then try again.",
-    "models.catalogOffline": "PI_OFFLINE is set, so pi-web does not fetch catalogs.",
+    "models.catalogOffline": "PI_OFFLINE is set, so brabbler does not fetch catalogs.",
     "models.enabledCustomEmpty": "No models available from this provider yet. Save your changes, and check that the API key works.",
     "models.enabledStale": "{count} unmatched",
     "models.enabledStaleHint": "A model is available when its provider has a usable credential. An entry matches nothing when that credential is missing, when the model was renamed or deleted, or when the entry was written for another machine.",

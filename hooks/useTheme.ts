@@ -12,7 +12,7 @@ type ThemeState = {
 
 type ToggleOrigin = { x: number; y: number };
 
-const STORAGE_KEY = "pi-theme";
+const STORAGE_KEY = "brabbler-theme";
 const SERVER_SNAPSHOT: ThemeState = { preference: "auto", theme: "light" };
 
 const listeners = new Set<() => void>();

@@ -7,7 +7,7 @@ const http = require("node:http");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const https = require("node:https");
 
-const installed = Symbol.for("pi-web:request-header-guard/v1");
+const installed = Symbol.for("brabbler:request-header-guard/v1");
 const requestEvents = new Set(["request", "checkContinue", "checkExpectation", "upgrade", "connect"]);
 const forbidden = new Set(["x-prerender-revalidate", "x-prerender-revalidate-if-generated"]);
 

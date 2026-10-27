@@ -9,7 +9,7 @@ export async function checkFontPreferences(page, openSettings) {
   const resetFamily = kind => page.getByRole("button", { name: `Reset ${kind} font family`, exact: true });
   const resetWeight = kind => page.getByRole("button", { name: `Reset ${kind} font weight`, exact: true });
   const style = (selector, key) => page.locator(selector).first().evaluate((el, key) => getComputedStyle(el)[key], key);
-  const layout = () => page.evaluate(() => ["pi-chat-content-full-width", "pi-chat-content-width", "pi-chat-content-font-size"].map(key => localStorage.getItem(key)));
+  const layout = () => page.evaluate(() => ["brabbler-chat-content-full-width", "brabbler-chat-content-width", "brabbler-chat-content-font-size"].map(key => localStorage.getItem(key)));
   const previousLayout = await layout();
   assert.equal(await ui.inputValue(), ""); assert.equal(await mono.inputValue(), "");
   assert.equal(await uiWeight.inputValue(), "400"); assert.equal(await monoWeight.inputValue(), "400");
@@ -79,5 +79,5 @@ export async function checkFontPreferences(page, openSettings) {
     }
   }
   await page.setViewportSize({ width: 2560, height: 1100 });
-  assert.deepEqual(await page.evaluate(() => ["pi-ui-font-family", "pi-ui-font-weight", "pi-mono-font-family", "pi-mono-font-weight"].map(key => localStorage.getItem(key))), [null, null, null, null]);
+  assert.deepEqual(await page.evaluate(() => ["brabbler-ui-font-family", "brabbler-ui-font-weight", "brabbler-mono-font-family", "brabbler-mono-font-weight"].map(key => localStorage.getItem(key))), [null, null, null, null]);
 }

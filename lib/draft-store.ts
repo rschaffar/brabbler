@@ -14,7 +14,7 @@ export interface ChatDraft {
 }
 
 const drafts = new Map<string, ChatDraft>();
-const STORAGE_PREFIX = "pi-web:composer-draft:v1:";
+const STORAGE_PREFIX = "brabbler:composer-draft:v1:";
 // Failed writes/removes must not resurrect stale storage during this page's life.
 const localOverrides = new Set<string>();
 

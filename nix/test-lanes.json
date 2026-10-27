@@ -1624,12 +1624,12 @@
       "reason": "Reviewed small private filesystem/settings fixtures and helper boundaries; mutations and fs mocks remain file-process-local; no subprocess work."
     },
     {
-      "path": "lib/pi-web-node-args.test.mjs",
+      "path": "lib/brabbler-node-args.test.mjs",
       "lane": "F",
       "reason": "Reviewed configuration/argument/security helpers on supplied data; no server startup, network or CLI execution."
     },
     {
-      "path": "lib/pi-web-options.test.mjs",
+      "path": "lib/brabbler-options.test.mjs",
       "lane": "N",
       "reason": "Reviewed disposable FS/Git/SDK-profile/session operations or terminating CLI help subprocesses; private environment before imports, no model/provider startup or shared listener; existing bounds unchanged."
     },
@@ -2503,7 +2503,7 @@
     "lib/markdown.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Math normalization itself is string-only, but importing markdown also imports uninspected markdown-compat and file-link/type helpers.",
     "lib/native-mcp-configuration.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Hold: fixture files and symlink targets are private and removed by awaited after hooks, but the dynamically imported SDK validator module and its import effects were not fully inspected.",
     "lib/native-resource-runtime.test.mjs": "SDK 1.4 additions re-reviewed: real RPC/QuickJS queue and navigation fixtures use private roots, named gates, caller/owner aborts and separately joined observed Worker exits. Worker constructor observation and default-capacity env are process-local and restored; cases stay serial. Retain E for the baseline native nested/failure-closure and 2-second MCP deadline admission concerns; no pooled-safety or universal worker-exit claim is made.",
-    "lib/pi-web-source-extension.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Unique native source-tree fixtures are cleaned synchronously, but npm pack --dry-run runs in shared writable source cwd and the npm/SDK import effect boundary was not fully verified; hold packaging subprocess.",
+    "lib/brabbler-source-extension.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Unique native source-tree fixtures are cleaned synchronously, but npm pack --dry-run runs in shared writable source cwd and the npm/SDK import effect boundary was not fully verified; hold packaging subprocess.",
     "lib/plugin-card-details.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Plugin feedback/receipt checks use synthetic objects, but interaction-receipts imports operation-receipts/ask-user/question-set whose runtime effects were not fully inspected.",
     "lib/plugins/project-operations.test.mjs": "Changed host/store tests now release gates and join fullySettled before private-root removal with a controlled scheduler. Retain E pending complete runtime-import/default-composition isolation review; the old 20ms teardown finding is historical, not a demand to retain that implementation.",
     "lib/plugins/review-store.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Review storage is private and most streams are fully consumed, but patch-download response is checked for status only and left neither drained nor cancelled; its generator can continue opening descriptor-backed entry streams across teardown.",

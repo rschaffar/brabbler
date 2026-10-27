@@ -54,7 +54,7 @@ export default function (pi) {
     const last = context.messages.at(-1);
     const input = text(context.messages.findLast(message => message.role === "user"));
     log({ model: model.id, input, lastRole: last?.role, lastTool: last?.toolName });
-    if (input.startsWith("[Pi Web resume ")) return fauxAssistantMessage("Pause fixture resumed main");
+    if (input.startsWith("[Brabbler resume ")) return fauxAssistantMessage("Pause fixture resumed main");
     const childKey = /PAUSE_CHILD ((?:row|global)-[0-9]+)/.exec(input)?.[1];
     if (model.id === "child" && childKey && last?.role === "user") return fauxAssistantMessage([
       fauxText("Partial child evidence " + childKey), ask("child", childKey)
@@ -114,12 +114,12 @@ export async function checkSessionPause(page, { base, api, post, root, agentDir,
     assert.equal(header.id, id);
     return { entries, run: readSubagentRun(entries, id, detail.filePath) };
   };
-  const pauseRows = () => JSON.parse(readFileSync(join(agentDir, "pi-web", "session-pauses.json"), "utf8")).sessions;
+  const pauseRows = () => JSON.parse(readFileSync(join(agentDir, "brabbler", "session-pauses.json"), "utf8")).sessions;
   const continuation = async (id, before) => {
-    const entries = (await saved(id)).entries.filter(entry => entry.type === "message" && entry.message.role === "user" && text(entry.message).startsWith("[Pi Web resume "));
+    const entries = (await saved(id)).entries.filter(entry => entry.type === "message" && entry.message.role === "user" && text(entry.message).startsWith("[Brabbler resume "));
     assert.equal(entries.length, before + 1, "one new literal main continuation");
     const literal = text(entries.at(-1).message);
-    assert.match(literal, /^\[Pi Web resume [0-9a-f-]{36}\]\n/);
+    assert.match(literal, /^\[Brabbler resume [0-9a-f-]{36}\]\n/);
     const seen = requests().filter(row => row.input === literal);
     assert.equal(seen.length, 1, "the provider receives exactly the persisted literal, once");
     assert.equal(seen[0].model, "main");
@@ -263,7 +263,7 @@ export async function checkSessionPause(page, { base, api, post, root, agentDir,
       const afterPause = await api("/api/agent/running");
       for (const id of ids) {
         assert.deepEqual(afterPause.completedRuns.find(item => item.sessionId === id), beforeCompleted.find(item => item.sessionId === id), "pause creates no completion");
-        const receipts = (await saved(id)).entries.filter(entry => entry.customType === "pi-web:interaction-receipt" && entry.data?.request?.method === "ask_user");
+        const receipts = (await saved(id)).entries.filter(entry => entry.customType === "brabbler:interaction-receipt" && entry.data?.request?.method === "ask_user");
         const expectedQuestion = id === mainId ? question("main", key) : id === childId ? question("child", key) : question("peer", "global");
         const receipt = receipts.find(entry => entry.data.request.question === expectedQuestion);
         assert.ok(receipt && ["cancelled", "aborted"].includes(receipt.data.outcome), "saved receipt is cancellation, not an answer or timeout");

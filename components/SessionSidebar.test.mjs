@@ -62,7 +62,7 @@ test('context-menu hook is normal-row-only, transient/bulk rows omit disk contro
   const claims = [];
   const r = await navigationRuntime(t, deny, (window, replace) => {
     replace(globalThis, 'CustomEvent', window.CustomEvent);
-    window.addEventListener('pi-web:session-row-contextmenu', event => { claims.push(event.detail.id); event.preventDefault(); });
+    window.addEventListener('brabbler:session-row-contextmenu', event => { claims.push(event.detail.id); event.preventDefault(); });
   });
   const props = { ...baseRow('a'), session: session('a', '/repo', { modified: new Date().toISOString() }) };
   await r.render(createElement(r.graph.SessionItem, props));
@@ -185,10 +185,10 @@ test('actual vertical Sidebar separator preserves startup fallback, resets to av
   const resetMeasurements = measuredHeights.slice(beforeResetMeasurements);
   assert.ok(resetMeasurements.includes(300) && resetMeasurements.includes(500), 'reset uses both actual live pane refs');
   assert.equal(Number(separator.getAttribute('aria-valuenow')), 400, 'Math.round((300 + 500) / 2), not a relaxed initial-size oracle');
-  assert.equal(h.view.window.localStorage.getItem('pi-web:sidebar-session-pane-height'), '400');
+  assert.equal(h.view.window.localStorage.getItem('brabbler:sidebar-session-pane-height'), '400');
   await h.view.dispatch(separator, new h.view.window.KeyboardEvent('keydown', { bubbles: true, key: 'ArrowDown' }));
   assert.equal(Number(separator.getAttribute('aria-valuenow')), 412);
-  assert.equal(h.view.window.localStorage.getItem('pi-web:sidebar-session-pane-height'), '412');
+  assert.equal(h.view.window.localStorage.getItem('brabbler:sidebar-session-pane-height'), '412');
 });
 
 

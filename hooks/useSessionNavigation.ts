@@ -440,7 +440,7 @@ export function useSessionNavigation(state: ReturnType<typeof useNavigationState
       if (!response.ok || !data.info) throw new Error(data.error ?? `HTTP ${response.status}`);
       handleSelectSession(data.info);
     } catch (error) {
-      console.error("[pi-web] failed to open session:", error instanceof Error ? error.message : error);
+      console.error("[brabbler] failed to open session:", error instanceof Error ? error.message : error);
     }
   })()), [handleSelectSession, sessionCatalog, work]);
 

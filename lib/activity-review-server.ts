@@ -19,7 +19,7 @@ export interface ActivityReviewSnapshot {
 }
 
 export function activityReviewPath(agentDir = getAgentDir()): string {
-  return join(agentDir, "pi-web", "activity-review.json");
+  return join(agentDir, "brabbler", "activity-review.json");
 }
 
 export function validActivityCompletion(value: unknown): value is SessionCompletion {

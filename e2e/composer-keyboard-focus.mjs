@@ -62,8 +62,8 @@ export async function checkFreshComposerFocus(page, alternateSessionId, width) {
   };
   const preferred = width > 640 ? "none" : "read-only";
   const previousPreference = await page.evaluate(preferred => {
-    const previous = localStorage.getItem("pi-tool-preset");
-    localStorage.setItem("pi-tool-preset", preferred);
+    const previous = localStorage.getItem("brabbler-tool-preset");
+    localStorage.setItem("brabbler-tool-preset", preferred);
     return previous;
   }, preferred);
   await showSidebar();
@@ -78,8 +78,8 @@ export async function checkFreshComposerFocus(page, alternateSessionId, width) {
   const expectedTools = preferred === "none" ? [] : ["read", "grep", "find", "ls"];
   assert.deepEqual(created.request().postDataJSON().toolNames, expectedTools, "saved restrictions apply before eager startup");
   await page.evaluate(previous => {
-    if (previous === null) localStorage.removeItem("pi-tool-preset");
-    else localStorage.setItem("pi-tool-preset", previous);
+    if (previous === null) localStorage.removeItem("brabbler-tool-preset");
+    else localStorage.setItem("brabbler-tool-preset", previous);
   }, previousPreference);
   const { sessionId } = await created.json();
   await page.waitForFunction(id => new URL(location.href).searchParams.get("session") === id, sessionId);
@@ -88,7 +88,7 @@ export async function checkFreshComposerFocus(page, alternateSessionId, width) {
   assert.deepEqual(detail.toolNames, expectedTools);
   const draft = "  saved fresh draft\n@\"my file\"  ";
   await input.fill(draft);
-  await page.waitForFunction(({ id, draft }) => JSON.parse(localStorage.getItem(`pi-web:composer-draft:v1:${id}`))?.value === draft,
+  await page.waitForFunction(({ id, draft }) => JSON.parse(localStorage.getItem(`brabbler:composer-draft:v1:${id}`))?.value === draft,
     { id: sessionId, draft });
   await showSidebar();
   await page.locator(`.session-row[data-session-id="${sessionId}"]`).waitFor();
@@ -110,9 +110,9 @@ export async function checkFreshComposerFocus(page, alternateSessionId, width) {
     const previousDraftB = await input.inputValue();
     const receivingDraft = "  receiving B draft\nkeep B unchanged  ";
     await input.fill(receivingDraft);
-    await page.waitForFunction(({ id, value }) => JSON.parse(localStorage.getItem(`pi-web:composer-draft:v1:${id}`))?.value === value,
+    await page.waitForFunction(({ id, value }) => JSON.parse(localStorage.getItem(`brabbler:composer-draft:v1:${id}`))?.value === value,
       { id: alternateSessionId, value: receivingDraft });
-    const storedB = await page.evaluate(id => localStorage.getItem(`pi-web:composer-draft:v1:${id}`), alternateSessionId);
+    const storedB = await page.evaluate(id => localStorage.getItem(`brabbler:composer-draft:v1:${id}`), alternateSessionId);
     const origin = await page.evaluate(() => performance.timeOrigin);
     const savedA = Promise.withResolvers(), releaseA = Promise.withResolvers();
     const patternA = "**/api/agent/new";
@@ -148,9 +148,9 @@ export async function checkFreshComposerFocus(page, alternateSessionId, width) {
       const outgoingDraft = "  outgoing A draft\nlate creation acknowledgement  ";
       await input.fill(outgoingDraft);
       await page.waitForFunction(value => {
-        const open = JSON.parse(sessionStorage.getItem("pi-web:tab-open-session"));
+        const open = JSON.parse(sessionStorage.getItem("brabbler:tab-open-session"));
         return open?.kind === "new" && open.draftId
-          && JSON.parse(localStorage.getItem(`pi-web:composer-draft:v1:new:${open.draftId}:${open.cwd}`))?.value === value;
+          && JSON.parse(localStorage.getItem(`brabbler:composer-draft:v1:new:${open.draftId}:${open.cwd}`))?.value === value;
       }, outgoingDraft);
       await showSidebar();
       await page.locator(`.session-row[data-session-id="${alternateSessionId}"]`).click({ position: { x: 12, y: 12 } });
@@ -162,14 +162,14 @@ export async function checkFreshComposerFocus(page, alternateSessionId, width) {
       await joinRoutes();
       // Network completion alone is not application JSON consumption. The real
       // outgoing promotion must rekey A's literal draft before checking B.
-      await page.waitForFunction(({ id, value }) => JSON.parse(localStorage.getItem(`pi-web:composer-draft:v1:${id}`))?.value === value,
+      await page.waitForFunction(({ id, value }) => JSON.parse(localStorage.getItem(`brabbler:composer-draft:v1:${id}`))?.value === value,
         { id: outgoingId, value: outgoingDraft });
       await frames(page); // rendering opportunity after the observed promotion
       assert.equal(new URL(page.url()).searchParams.get("session"), alternateSessionId, "late A must not adopt into receiving B");
       assert.equal(await input.inputValue(), receivingDraft);
       assert.equal(await receivingInput.evaluate(node => node.isConnected && node === document.querySelector(".chat-input-textarea")), true,
         "late A must not replace B's actual input");
-      assert.equal(await page.evaluate(id => localStorage.getItem(`pi-web:composer-draft:v1:${id}`), alternateSessionId), storedB,
+      assert.equal(await page.evaluate(id => localStorage.getItem(`brabbler:composer-draft:v1:${id}`), alternateSessionId), storedB,
         "late A must leave B's stored draft byte-for-byte unchanged");
       assert.equal(await page.evaluate(() => performance.timeOrigin), origin, "the entire receiving transition stays in one document");
       assert.equal(creationsA, 1, "one real New A is admitted by this bridge");
@@ -185,7 +185,7 @@ export async function checkFreshComposerFocus(page, alternateSessionId, width) {
     }
     if (failures.length) throw new AggregateError(failures, "Default receiving composer bridge failed");
     await input.fill(previousDraftB);
-    await page.waitForFunction(({ id, value }) => (JSON.parse(localStorage.getItem(`pi-web:composer-draft:v1:${id}`))?.value ?? "") === value,
+    await page.waitForFunction(({ id, value }) => (JSON.parse(localStorage.getItem(`brabbler:composer-draft:v1:${id}`))?.value ?? "") === value,
       { id: alternateSessionId, value: previousDraftB });
     // Return to the original saved draft before the unchanged focus/New probes.
     await showSidebar();
@@ -246,9 +246,9 @@ export async function checkFreshComposerFocus(page, alternateSessionId, width) {
     const pendingText = `  ${width}px reload before creation acknowledgement\nkeep this text  `;
     await input.fill(pendingText);
     await page.waitForFunction(text => {
-      const open = JSON.parse(sessionStorage.getItem("pi-web:tab-open-session"));
+      const open = JSON.parse(sessionStorage.getItem("brabbler:tab-open-session"));
       return open?.kind === "new" && open.draftId
-        && JSON.parse(localStorage.getItem(`pi-web:composer-draft:v1:new:${open.draftId}:${open.cwd}`))?.value === text;
+        && JSON.parse(localStorage.getItem(`brabbler:composer-draft:v1:new:${open.draftId}:${open.cwd}`))?.value === text;
     }, pendingText);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForFunction(text => document.querySelector(".chat-input-textarea")?.value === text, pendingText);

@@ -77,7 +77,7 @@ test('actual General native palette radios, generated-title languages, typograph
   await f.click('input[type="radio"][value="zenburn"]');
   assert.equal(setters.at(-1) === initialSetter, true, 'actual useTheme setter identity survives a committed preference update');
   assert.equal(f.view.window.document.documentElement.dataset.theme, 'zenburn');
-  assert.equal(f.view.window.localStorage.getItem('pi-theme'), 'zenburn');
+  assert.equal(f.view.window.localStorage.getItem('brabbler-theme'), 'zenburn');
   assert.equal(f.node('input[value="zenburn"]').checked, true);
   // Original browser palette values, now through every actual General radio and
   // the actual useTheme store. CSS contrast/layout and native keys stay browser-owned.
@@ -85,7 +85,7 @@ test('actual General native palette radios, generated-title languages, typograph
   for (const id of ['auto', 'light', 'mist', 'lilac', 'sand', 'rose', 'dark', 'pine', 'dusk', 'ember', 'slate', 'contrast-light', 'contrast-dark', 'zenburn']) {
     await f.click(`input[type="radio"][value="${id}"]`);
     assert.equal(f.node(`input[value="${id}"]`).checked, true, id);
-    assert.equal(f.view.window.localStorage.getItem('pi-theme'), id, id);
+    assert.equal(f.view.window.localStorage.getItem('brabbler-theme'), id, id);
     assert.equal(f.view.window.document.documentElement.dataset.theme, id === 'auto' ? 'light' : id, id);
     assert.equal(f.view.window.document.documentElement.classList.contains('dark'), dark.has(id), id);
     assert.equal(setters.at(-1) === initialSetter, true, 'same actual setter through the complete palette matrix');
@@ -264,7 +264,7 @@ test('actual remembered Skills loaded adapter and maintenance own content/body/c
   let status = 503;
   f.route('POST', '/api/skills/check', { body: { cwd: '/project' }, reply: () => ({ gate: body, status, data: status === 503 ? { error: 'skill maintenance refused' } : { updates: [] } }) });
   await f.mount(h(c.SettingsPanel, { ...props, initialSection: 'skills' }), { setup(window) {
-    window.localStorage.setItem('pi-web:settings-navigation', JSON.stringify({ selections: { '["skills","/project"]': skills[1].filePath } }));
+    window.localStorage.setItem('brabbler:settings-navigation', JSON.stringify({ selections: { '["skills","/project"]': skills[1].filePath } }));
   } });
   await contentEntered.promise;
   await f.commit(undefined, 'skills.instructions');
@@ -298,7 +298,7 @@ test('actual remembered Plugins loaded adapter preserves compact metadata and jo
   f.route('GET', '/api/plugins/bundled', { query: { cwd: '/project', sessionId: 'session-A' }, reply: { data: { plugins: [] } } });
   f.route('POST', '/api/plugins/check', { body: { cwd: '/project' }, reply: () => ({ gate: checkBody, status, data: status === 503 ? { error: 'plugin maintenance refused' } : { updates: [] } }) });
   await f.mount(h(c.SettingsPanel, { ...props, initialSection: 'plugins' }), { setup(window) {
-    window.localStorage.setItem('pi-web:settings-navigation', JSON.stringify({ selections: { '["plugins","/project"]': 'project\u0000npm:remembered' } }));
+    window.localStorage.setItem('brabbler:settings-navigation', JSON.stringify({ selections: { '["plugins","/project"]': 'project\u0000npm:remembered' } }));
   } });
   assert.equal(f.node('.config-sidebar-item[aria-current="page"]').textContent.trim(), 'npm:remembered');
   const sidebar = f.node('.config-sidebar-list');

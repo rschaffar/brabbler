@@ -67,12 +67,12 @@ interface PendingIndexSave {
 }
 
 declare global {
-	var __piWebScanIndex: Map<string, IndexEntry> | undefined;
-	var __piWebScanIndexLoaded: boolean | undefined;
-	var __piWebScanIndexDir: string | undefined;
-	var __piWebScanIndexSave: PendingIndexSave | undefined;
-	var __piWebScanQueue: Promise<void> | undefined;
-	var __piWebScanFingerprints: WeakMap<ScannedSessionInfo, Readonly<Fingerprint>> | undefined;
+	var __brabblerScanIndex: Map<string, IndexEntry> | undefined;
+	var __brabblerScanIndexLoaded: boolean | undefined;
+	var __brabblerScanIndexDir: string | undefined;
+	var __brabblerScanIndexSave: PendingIndexSave | undefined;
+	var __brabblerScanQueue: Promise<void> | undefined;
+	var __brabblerScanFingerprints: WeakMap<ScannedSessionInfo, Readonly<Fingerprint>> | undefined;
 }
 
 function isRecord(value: unknown): value is RawEntry {
@@ -100,9 +100,9 @@ function sameFingerprint(a: Fingerprint, b: Fingerprint): boolean {
 
 /** Process-validated metadata evidence, never filesystem/operation authority. */
 export function getValidatedSessionScanFingerprint(info: ScannedSessionInfo): Readonly<Fingerprint> | undefined {
-	if (globalThis.__piWebScanIndexDir !== getAgentDir()
-		|| globalThis.__piWebScanIndex?.get(info.path)?.info !== info) return undefined;
-	return globalThis.__piWebScanFingerprints?.get(info);
+	if (globalThis.__brabblerScanIndexDir !== getAgentDir()
+		|| globalThis.__brabblerScanIndex?.get(info.path)?.info !== info) return undefined;
+	return globalThis.__brabblerScanFingerprints?.get(info);
 }
 
 export function matchesSessionScanFingerprint(expected: Readonly<Fingerprint>, stats: Stats): boolean {
@@ -110,12 +110,12 @@ export function matchesSessionScanFingerprint(expected: Readonly<Fingerprint>, s
 }
 
 function validateScanEntry(entry: IndexEntry): void {
-	const evidence = globalThis.__piWebScanFingerprints ??= new WeakMap();
+	const evidence = globalThis.__brabblerScanFingerprints ??= new WeakMap();
 	if (!evidence.has(entry.info)) evidence.set(entry.info, Object.freeze({ ...entry.fp }));
 }
 
 function revokeScanEntry(entry: IndexEntry | undefined): void {
-	if (entry) globalThis.__piWebScanFingerprints?.delete(entry.info);
+	if (entry) globalThis.__brabblerScanFingerprints?.delete(entry.info);
 }
 
 function hasGrown(cached: IndexEntry | undefined, fp: Fingerprint): cached is IndexEntry {
@@ -404,11 +404,11 @@ async function runPool<T>(items: T[], worker: (item: T) => Promise<void>): Promi
 }
 
 function getIndex(): Map<string, IndexEntry> {
-	return globalThis.__piWebScanIndex ??= new Map();
+	return globalThis.__brabblerScanIndex ??= new Map();
 }
 
 function indexFilePath(agentDir: string): string {
-	return join(agentDir, "pi-web-session-index.json");
+	return join(agentDir, "brabbler-session-index.json");
 }
 
 function readResumePoint(value: unknown, fp: Fingerprint): ResumePoint | undefined {
@@ -423,15 +423,15 @@ function readResumePoint(value: unknown, fp: Fingerprint): ResumePoint | undefin
 }
 
 function loadPersistedIndex(agentDir: string): void {
-	if (globalThis.__piWebScanIndexDir !== agentDir) {
+	if (globalThis.__brabblerScanIndexDir !== agentDir) {
 		persistIndex();
-		globalThis.__piWebScanIndex = new Map();
-		globalThis.__piWebScanFingerprints = new WeakMap();
-		globalThis.__piWebScanIndexLoaded = undefined;
-		globalThis.__piWebScanIndexDir = agentDir;
+		globalThis.__brabblerScanIndex = new Map();
+		globalThis.__brabblerScanFingerprints = new WeakMap();
+		globalThis.__brabblerScanIndexLoaded = undefined;
+		globalThis.__brabblerScanIndexDir = agentDir;
 	}
-	if (globalThis.__piWebScanIndexLoaded) return;
-	globalThis.__piWebScanIndexLoaded = true;
+	if (globalThis.__brabblerScanIndexLoaded) return;
+	globalThis.__brabblerScanIndexLoaded = true;
 	const path = indexFilePath(agentDir);
 	if (!existsSync(path)) return;
 	try {
@@ -468,10 +468,10 @@ function loadPersistedIndex(agentDir: string): void {
 }
 
 function persistIndex(): void {
-	const pending = globalThis.__piWebScanIndexSave;
+	const pending = globalThis.__brabblerScanIndexSave;
 	if (!pending) return;
 	clearTimeout(pending.timer);
-	globalThis.__piWebScanIndexSave = undefined;
+	globalThis.__brabblerScanIndexSave = undefined;
 	try {
 		writePrivateFileAtomicSync(pending.path, JSON.stringify({ version: INDEX_FORMAT_VERSION, entries: Object.fromEntries(pending.entries) }));
 	} catch { /* Best-effort cache; a lost save only costs a rescan. */ }
@@ -479,12 +479,12 @@ function persistIndex(): void {
 
 function queueIndexPersist(agentDir: string): void {
 	const path = indexFilePath(agentDir), entries = [...getIndex()];
-	const pending = globalThis.__piWebScanIndexSave;
+	const pending = globalThis.__brabblerScanIndexSave;
 	if (pending?.path === path) { pending.entries = entries; return; }
 	persistIndex();
 	const timer = setTimeout(persistIndex, INDEX_PERSIST_DELAY_MS);
 	timer.unref?.();
-	globalThis.__piWebScanIndexSave = { path, entries, timer };
+	globalThis.__brabblerScanIndexSave = { path, entries, timer };
 }
 
 async function listSessionsInOrder(agentDir: string, deferDetails: boolean): Promise<ScannedSessionInfo[]> {
@@ -536,9 +536,9 @@ async function listSessionsInOrder(agentDir: string, deferDetails: boolean): Pro
 /** Serialize index owners, including summaries and generation-invalidated scans. */
 export function listSessionsIncremental(options: { deferDetails?: boolean } = {}): Promise<ScannedSessionInfo[]> {
 	const agentDir = getAgentDir();
-	const operation = (globalThis.__piWebScanQueue ?? Promise.resolve())
+	const operation = (globalThis.__brabblerScanQueue ?? Promise.resolve())
 		.then(() => listSessionsInOrder(agentDir, options.deferDetails ?? false));
-	globalThis.__piWebScanQueue = operation.then(() => undefined, () => undefined);
+	globalThis.__brabblerScanQueue = operation.then(() => undefined, () => undefined);
 	return operation;
 }
 
@@ -547,11 +547,11 @@ export function flushSessionScanIndexForTests(): void { persistIndex(); }
 
 /** Test seam: call only after outstanding listings settle. */
 export function resetSessionScanIndexForTests(): void {
-	clearTimeout(globalThis.__piWebScanIndexSave?.timer);
-	globalThis.__piWebScanIndex = undefined;
-	globalThis.__piWebScanFingerprints = undefined;
-	globalThis.__piWebScanIndexLoaded = undefined;
-	globalThis.__piWebScanIndexDir = undefined;
-	globalThis.__piWebScanIndexSave = undefined;
-	globalThis.__piWebScanQueue = undefined;
+	clearTimeout(globalThis.__brabblerScanIndexSave?.timer);
+	globalThis.__brabblerScanIndex = undefined;
+	globalThis.__brabblerScanFingerprints = undefined;
+	globalThis.__brabblerScanIndexLoaded = undefined;
+	globalThis.__brabblerScanIndexDir = undefined;
+	globalThis.__brabblerScanIndexSave = undefined;
+	globalThis.__brabblerScanQueue = undefined;
 }

@@ -1,6 +1,6 @@
 import { emptyQuestionDraft, MAX_ANSWER_LENGTH, type QuestionDraft, type QuestionSet } from "./question-set";
 
-const PREFIX = "pi-web:question-draft:";
+const PREFIX = "brabbler:question-draft:";
 const MAX_AGE = 24 * 60 * 60 * 1000;
 const MAX_DRAFTS = 12;
 interface StorageLike { length: number; key(index: number): string | null; getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }

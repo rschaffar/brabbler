@@ -39,7 +39,8 @@ EXCLUDED_NAMES = frozenset({'.git', 'node_modules', '.next', 'test-results',
     'coverage', 'build', 'out', '__pycache__', '.cache', '.config', '.local',
     '.pi', '.ssh', '.gnupg', '.npm', '.npmrc', '.yarnrc', '.yarnrc.yml',
     'private', 'credentials', 'secrets', 'auth.json', 'credentials.json',
-    'settings.json', 'models.json', 'config.json', 'pi-web-accounts.json',
+    'settings.json', 'models.json', 'config.json', 'brabbler-accounts.json',
+    'pi-web-accounts.json',  # Legacy secrets remain excluded, never migrated/read.
     'git-workflow-settings.json', 'next-env.d.ts', '.ds_store', '.pnp',
     '.yarn', '.vercel', '.factory', 'skills-lock.json'})
 SECRET_SUFFIXES = ('.pem', '.key', '.p12', '.pfx', '.tsbuildinfo', '.log')
@@ -80,7 +81,7 @@ def excluded(name):
                                  'yarn-error.log', '.pnpm-debug.log'))
             or (lower.startswith('e2e_') and lower.endswith('.mjs'))
             or lower.endswith(SECRET_SUFFIXES) or lower.endswith(('~', '.bak'))
-            or lower.startswith('.pi-web-'))
+            or lower.startswith(('.brabbler-', '.pi-web-', '.pi-desk-')))
 
 
 def identity(s, directory=False):

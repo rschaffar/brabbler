@@ -123,7 +123,7 @@ async function resumeManagedSessionInternal(sessionId: string, pauseId: string):
   if (!path) throw new Error("Session file not found");
   const manager = getRpcSession(sessionId)?.inner.sessionManager ?? SessionManager.open(path);
   if (root.leafId && !manager.getBranch().some((entry) => entry.id === root.leafId)) throw new Error("The active conversation branch changed after Pause; return to the paused branch before Resume");
-  const marker = root.resumeId ? `[Pi Web resume ${root.resumeId}]` : undefined;
+  const marker = root.resumeId ? `[Brabbler resume ${root.resumeId}]` : undefined;
   const alreadySent = marker && (manager.getBranch() as unknown as SessionEntry[]).some((entry) => entry.type === "message" && entry.message.role === "user"
     && (typeof entry.message.content === "string" ? entry.message.content.startsWith(marker) : Array.isArray(entry.message.content) && entry.message.content.some((part) => part.type === "text" && part.text.startsWith(marker))));
   if (!alreadySent) {

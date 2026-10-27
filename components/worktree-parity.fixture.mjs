@@ -88,7 +88,7 @@ export function history(h, stateText) {
   assert.equal(groups.length, 1); const found = [...groups[0].querySelectorAll('button')].filter(node => node.textContent.endsWith(` · ${stateText}`));
   assert.equal(found.length, 1, h.diagnostic(`one exact historical state ${stateText}`)); return found[0];
 }
-export async function settingsChanged(h) { await h.view.dispatch(h.view.window, new h.view.window.Event('pi-web:bundled-plugin-settings')); }
+export async function settingsChanged(h) { await h.view.dispatch(h.view.window, new h.view.window.Event('brabbler:bundled-plugin-settings')); }
 export async function expand(h, branch = 'unmerged') { await click(h.view, button(h.view, branch)); }
 export const visibleBranches = h => [...h.view.container.querySelectorAll('tr[data-branch]')].map(node => node.getAttribute('data-branch'));
 export const writes = h => h.requests.filter(req => req.options.method === 'POST');

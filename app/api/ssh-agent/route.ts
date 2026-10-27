@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { managedSshAgent } from "@/lib/managed-ssh-agent";
 import { webAuthnOrigin } from "@/lib/browser-ssh-protocol";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
-import { isValidWebSessionToken, PI_WEB_SESSION_COOKIE } from "@/lib/web-auth";
+import { isValidWebSessionToken, BRABBLER_SESSION_COOKIE } from "@/lib/web-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,10 +28,10 @@ async function boundedJson(request: Request): Promise<Record<string, unknown>> {
 }
 
 export async function POST(request: NextRequest) {
-  const password = process.env.PI_WEB_PASSWORD;
-  const cookie = request.cookies.get(PI_WEB_SESSION_COOKIE)?.value;
+  const password = process.env.BRABBLER_PASSWORD;
+  const cookie = request.cookies.get(BRABBLER_SESSION_COOKIE)?.value;
   // Basic/API authentication is deliberately insufficient for browser key management.
-  if (!isValidWebSessionToken(cookie, password)) return NextResponse.json({ error: "Sign in with a configured Pi Web password before using browser SSH" }, { status: 403 });
+  if (!isValidWebSessionToken(cookie, password)) return NextResponse.json({ error: "Sign in with a configured Brabbler password before using browser SSH" }, { status: 403 });
   const rawOrigin = request.headers.get("origin");
   if (!rawOrigin || !isApiRequestAllowed(request) || request.headers.get("sec-fetch-site") === "cross-site") return NextResponse.json({ error: "Same-origin browser request required" }, { status: 403 });
   const json = (value: unknown) => NextResponse.json(value, { headers: { "Cache-Control": "no-store" } });

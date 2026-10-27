@@ -6,7 +6,7 @@ import { writePrivateFileAtomicSync } from "./atomic-file";
 import { validHiddenProjectKey, validHiddenProjectsData, type HiddenProjectsData } from "./hidden-projects";
 
 export function hiddenProjectsPath(agentDir = getAgentDir()): string {
-  return join(agentDir, "pi-web", "hidden-projects.json");
+  return join(agentDir, "brabbler", "hidden-projects.json");
 }
 
 /** Only a missing file means no hidden projects. Corruption and IO failures fail closed. */

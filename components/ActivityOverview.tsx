@@ -57,7 +57,7 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, p
       if (!response.ok) throw new Error(result.error ?? `HTTP ${response.status}`);
       if (result.errors?.length) setControlError(t("activity.pausePartial", { count: result.errors.length }));
     } catch (error) { setControlError(`${t("activity.pauseFailed")} ${String(error)}`); }
-    finally { setPending(false); window.dispatchEvent(new Event("pi-web:activity-refresh")); }
+    finally { setPending(false); window.dispatchEvent(new Event("brabbler:activity-refresh")); }
   };
   const [showHidden, setShowHidden] = useState(false);
   // Restore after hydration; server rendering always starts concealed.

@@ -6,7 +6,7 @@ export const MODEL_SPEED_IDS = ["e2e-model-speed-standard", "e2e-model-speed-fas
 const [A, B, LEGACY] = MODEL_SPEED_IDS;
 const CODEX = { provider: "openai-codex", modelId: "e2e-codex-speed", name: "E2E ChatGPT subscription" };
 const API_MODEL = { provider: "openai", modelId: "e2e-api-speed", name: "E2E OpenAI API (no speed)" };
-const CUSTOM_TYPE = "pi-web:model-speed";
+const CUSTOM_TYPE = "brabbler:model-speed";
 const warning = (page) => page.getByRole("note").filter({ hasText: /Fast uses more subscription quota/ });
 const control = (page) => page.locator('select[aria-label="Model speed"]');
 

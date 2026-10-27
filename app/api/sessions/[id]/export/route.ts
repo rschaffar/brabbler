@@ -251,11 +251,11 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const tempDir = join(tmpdir(), "pi-web-export");
+    const tempDir = join(tmpdir(), "brabbler-export");
     mkdirSync(tempDir, { recursive: true });
 
     const sessionBase = basename(filePath, ".jsonl");
-    const fileName = `pi-session-${sessionBase}.html`;
+    const fileName = `brabbler-session-${sessionBase}.html`;
     const outputPath = join(tempDir, `${randomUUID()}.html`);
 
     try {

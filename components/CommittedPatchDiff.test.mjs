@@ -294,7 +294,7 @@ test('CommittedPatchDiff: actual SSR, CodeView bindings and controls', async t =
     assert.equal(dialog.open, true); assert.equal(dialog.contains(h.view.container.querySelector('.git-diff-code-view')), true);
     assert.equal(await key(h.view, dialog, 'Escape'), true); assert.equal(dialog.open, false);
     assert.equal(h.view.window.document.activeElement === textButton(h.view.container, 'Wide view'), true);
-    const saved = JSON.parse(h.view.window.localStorage.getItem('pi-web:git-diff-preferences'));
+    const saved = JSON.parse(h.view.window.localStorage.getItem('brabbler:git-diff-preferences'));
     assert.deepEqual(saved, { view: 'split', wrap: false }, 'only presentation preferences persist, never contents or search/expansion authority');
     assert.equal(h.requests.length, 0);
   });

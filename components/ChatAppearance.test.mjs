@@ -35,12 +35,12 @@ test('actual General controls share the real persisted appearance snapshot; widt
   assert.equal(root.style.getPropertyValue('--chat-content-max-width'), 'none');
   await f.click(full);
   assert.equal(root.style.getPropertyValue('--chat-content-max-width'), '820px');
-  assert.equal(f.view.window.localStorage.getItem('pi-chat-content-full-width'), 'false');
+  assert.equal(f.view.window.localStorage.getItem('brabbler-chat-content-full-width'), 'false');
   await f.input(width, '1100'); await f.input(size, '18');
   assert.deepEqual(JSON.parse(f.node('#appearance-peer').textContent), { width: 1100, fullWidth: false, fontSize: 18 });
   assert.equal(root.style.getPropertyValue('--chat-content-font-size'), '18px');
-  assert.equal(f.view.window.localStorage.getItem('pi-chat-content-width'), '1100');
-  assert.equal(f.view.window.localStorage.getItem('pi-chat-content-font-size'), '18');
+  assert.equal(f.view.window.localStorage.getItem('brabbler-chat-content-width'), '1100');
+  assert.equal(f.view.window.localStorage.getItem('brabbler-chat-content-font-size'), '18');
   await f.click(full); assert.equal(root.style.getPropertyValue('--chat-content-max-width'), 'none');
   await f.click(f.node('#settings-chat-content-width').closest('.settings-chat-option').querySelector('button.settings-chat-reset'));
   assert.equal(full.getAttribute('aria-checked'), 'false');
@@ -62,7 +62,7 @@ test('actual General resets preserve the original 2000/24 width-size tuple indep
   assert.equal(size.value, '14'); assert.equal(width.value, '2000', 'font-size reset preserves width');
   await f.click(resetWidth());
   const root = f.view.window.document.documentElement, storage = f.view.window.localStorage;
-  assert.deepEqual({ width: storage.getItem('pi-chat-content-width'), fontSize: storage.getItem('pi-chat-content-font-size'),
+  assert.deepEqual({ width: storage.getItem('brabbler-chat-content-width'), fontSize: storage.getItem('brabbler-chat-content-font-size'),
     appliedWidth: root.style.getPropertyValue('--chat-content-max-width'), appliedFontSize: root.style.getPropertyValue('--chat-content-font-size') },
   { width: '820', fontSize: '14', appliedWidth: '820px', appliedFontSize: '14px' });
   assert.equal(resetWidth().disabled, true); assert.equal(resetSize().disabled, true);

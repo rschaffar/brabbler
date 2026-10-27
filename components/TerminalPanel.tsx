@@ -15,7 +15,7 @@ import { createClientCompletion, type ClientCompletion } from "@/lib/client-comp
 import type { TerminalEvent } from "@/lib/terminal-manager";
 import type { TerminalTab } from "./terminal-tab-state";
 
-const TERMINAL_FONT_KEY = "pi-web:terminal-font";
+const TERMINAL_FONT_KEY = "brabbler:terminal-font";
 type TerminalFont = "nerd" | "system";
 
 interface Props {
@@ -103,7 +103,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError, 
     const terminal = new Terminal({
       cursorBlink: true,
       fontFamily: fontRef.current === "nerd"
-        ? '"Pi Web Nerd Font", monospace'
+        ? '"Brabbler Nerd Font", monospace'
         : getComputedStyle(container).getPropertyValue("--font-mono").trim() || "monospace",
       fontSize: fontSizeRef.current,
       fontWeight: monoWeightRef.current,
@@ -145,7 +145,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError, 
       // Apply metrics only when measurable, including after a retained tab is revealed.
       if (disposed || terminalRef.current !== terminal || !container.offsetWidth || !container.offsetHeight) return;
       const fontFamily = fontRef.current === "nerd"
-        ? '"Pi Web Nerd Font", monospace'
+        ? '"Brabbler Nerd Font", monospace'
         : getComputedStyle(container).getPropertyValue("--font-mono").trim() || "monospace";
       const fontWeight = monoWeightRef.current;
       const size = fontSizeRef.current;

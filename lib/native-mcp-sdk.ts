@@ -24,7 +24,7 @@ const nativeImport = (file: string) => import(/* webpackIgnore: true */ pathToFi
 function distribution(): string {
   // SDK 1.4 exposes neither its pure validator nor credential-store constructor.
   // Keep this version-scoped bridge separate from host policy and native engines.
-  const manifest = findPackageJSON("@earendil-works/pi-coding-agent", pathToFileURL(join(__dirname, "pi-web-native-mcp.mjs")).href);
+  const manifest = findPackageJSON("@earendil-works/pi-coding-agent", pathToFileURL(join(__dirname, "brabbler-native-mcp.mjs")).href);
   if (!manifest || JSON.parse(readFileSync(manifest, "utf8")).version !== "1.4.0") throw new Error("Unsupported native MCP SDK version");
   return join(dirname(manifest), "dist");
 }

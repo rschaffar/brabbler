@@ -15,7 +15,7 @@ export function deferredAttentionIds(attention: readonly SessionAttention[], key
     && keys.has(activityRequestKey({ sessionId: request.sessionId, requestId: request.requestId }))).map((request) => request.sessionId));
 }
 
-export const REVIEWED_RUN_TIMES_STORAGE_KEY = "pi-web:reviewed-run-times";
+export const REVIEWED_RUN_TIMES_STORAGE_KEY = "brabbler:reviewed-run-times";
 
 export function hasReviewedRunBaseline(): boolean {
   if (typeof window === "undefined") return false;

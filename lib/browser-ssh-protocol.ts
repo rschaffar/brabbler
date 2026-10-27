@@ -57,7 +57,7 @@ export function sshIdentity(credential: BrowserSshCredential, originValue: strin
   const point = Buffer.concat([Buffer.from([4]), decodeBase64url(jwk.x, 32), decodeBase64url(jwk.y, 32)]);
   if (point.length !== 65) throw new Error("Invalid P-256 point");
   const blob = Buffer.concat([sshString(SSH_SK_TYPE), sshString("nistp256"), sshString(point), sshString(rpId)]);
-  return { credential: { id: credential.id, spki: credential.spki }, key, blob, publicKey: `${SSH_SK_TYPE} ${blob.toString("base64")} pi-web-browser`, rpId, origin };
+  return { credential: { id: credential.id, spki: credential.spki }, key, blob, publicKey: `${SSH_SK_TYPE} ${blob.toString("base64")} brabbler-browser`, rpId, origin };
 }
 
 const hash = (data: Buffer | string) => createHash("sha256").update(data).digest();

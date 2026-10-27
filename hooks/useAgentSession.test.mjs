@@ -333,11 +333,11 @@ test("routes blocking extension requests through deduplicated browser attention 
   match(chatWindowSource, /useAgentSession\(\{ \.\.\.props, onAgentEnd: wrappedOnAgentEnd,\s*deferInitialScroll: Boolean\(restore\[0\]\),\s*\}\)/, "default hook passes original attention/creation props without an override");
   match(completionSource, /if \(!shouldShowBrowserNotification\(\)\) return/);
   doesNotMatch(completionSource, /pushActive/);
-  match(completionSource, /tag: targetSession \? `pi-session-complete:\$\{targetSession\.id\}`/);
+  match(completionSource, /tag: targetSession \? `brabbler-session-complete:\$\{targetSession\.id\}`/);
   doesNotMatch(completionSource, /document\.visibilityState === "visible"/);
   match(attentionSource, /shouldShowBrowserNotification\(\)/);
   match(attentionSource, /claimExtensionAttentionNotification\(request, notifiedAttentionRequestIdsRef\.current\)/);
-  match(attentionSource, /tag: `pi-extension-ui:\$\{request\.id\}`/);
+  match(attentionSource, /tag: `brabbler-extension-ui:\$\{request\.id\}`/);
   match(appShellSource, /const \{ handleAgentEnd, handleAttentionNeeded \} = useShellNotifications\(/, "AppShell consumes actual policy callbacks");
   match(shellNotificationsSource, /return \{ handleAgentEnd, handleAttentionNeeded \};/, "actual policy returns the checked callbacks");
   match(appShellSource, /onAttentionNeeded=\{handleAttentionNeeded\}/);

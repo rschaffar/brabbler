@@ -80,10 +80,10 @@ const defaults: ActivityClientPorts = {
   listen(callback) {
     if (typeof document === "undefined" || typeof window === "undefined") return () => {};
     document.addEventListener("visibilitychange", callback);
-    window.addEventListener("pi-web:activity-refresh", callback);
+    window.addEventListener("brabbler:activity-refresh", callback);
     return () => {
       document.removeEventListener("visibilitychange", callback);
-      window.removeEventListener("pi-web:activity-refresh", callback);
+      window.removeEventListener("brabbler:activity-refresh", callback);
     };
   },
   legacy: {
@@ -91,8 +91,8 @@ const defaults: ActivityClientPorts = {
     clear() {
       if (typeof window === "undefined") return;
       window.localStorage.removeItem(REVIEWED_RUN_TIMES_STORAGE_KEY);
-      window.localStorage.removeItem("pi-web:unread-session-ids");
-      window.localStorage.removeItem("pi-web:subagent-review-ids");
+      window.localStorage.removeItem("brabbler:unread-session-ids");
+      window.localStorage.removeItem("brabbler:subagent-review-ids");
     },
   },
 };

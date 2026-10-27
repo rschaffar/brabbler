@@ -6,7 +6,7 @@ import test from "node:test";
 import { searchSessionContents } from "./session-search.ts";
 
 test("demo content search returns a message target and preserves archived metadata", async (t) => {
-  const root = mkdtempSync(join(tmpdir(), "pi-web-demo-search-"));
+  const root = mkdtempSync(join(tmpdir(), "brabbler-demo-search-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const path = join(root, "session.jsonl");
   writeFileSync(path, JSON.stringify({ type: "message", id: "entry-1", message: {
@@ -24,7 +24,7 @@ test("demo content search returns a message target and preserves archived metada
 });
 
 test("demo content search keeps entry IDs optional without losing the result kind", async (t) => {
-  const root = mkdtempSync(join(tmpdir(), "pi-web-demo-search-"));
+  const root = mkdtempSync(join(tmpdir(), "brabbler-demo-search-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const path = join(root, "session.jsonl");
   writeFileSync(path, JSON.stringify({ type: "message", message: { role: "user", content: "A match" } }) + "\n");

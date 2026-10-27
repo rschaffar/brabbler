@@ -13,7 +13,7 @@ const { I18nProvider } = await jiti.import('../hooks/useI18n.tsx');
 const { freshReviewDraft } = await jiti.import('../lib/notebook-review-drafts.ts');
 const { reduceReview, validateReply } = await jiti.import('../lib/notebook-review.ts');
 const hash = 'a'.repeat(64), nextHash = 'b'.repeat(64);
-const question = { id: 'constructor', shortLabel: 'Inspect', question: 'What do you think?', type: 'single', options: [{ id: 'yes', title: 'Yes' }, { id: 'none', title: 'None', exclusive: true }], required: true, explanation: 'Author reasoning, not grading', context: '![No automatic image](https://example.invalid/no-auto.png)\n\n```python\nprint("author context")\n```\n\n```pi-review\n{"version":99}\n```' };
+const question = { id: 'constructor', shortLabel: 'Inspect', question: 'What do you think?', type: 'single', options: [{ id: 'yes', title: 'Yes' }, { id: 'none', title: 'None', exclusive: true }], required: true, explanation: 'Author reasoning, not grading', context: '![No automatic image](https://example.invalid/no-auto.png)\n\n```python\nprint("author context")\n```\n\n```brabbler-review\n{"version":99}\n```' };
 const step = { id: 'toString', title: 'Current step', markdown: 'Prose', targets: [], questions: [question] };
 const material = { stepId: step.id, title: step.title, chapterPath: 'one.md', prose: 'Prose', guidanceFingerprint: 'c'.repeat(64), fingerprint: hash, targets: [], questions: [{ definition: question, fingerprint: hash }], unavailable: [] };
 function button(v, text) { const b = [...v.container.querySelectorAll('button')].find(b => b.textContent === text); assert.equal(!!b, true, text); return b; }
@@ -135,7 +135,7 @@ test('actual mounted write body held across newer edits, conflict recovery and i
   assert.equal(text.value, 'Newer text while saving');
   await click(v, 'Capture current anchor'); r.conflict(); await click(v, 'Save feedback'); await r.join();
   assert.match(v.container.textContent, /Conflict/); assert.equal(text.value, 'Newer text while saving');
-  assert.match(v.window.localStorage.getItem('pi-notebook-review-draft-v2:%2Fbook%2Findex.md:primary'), /Newer text while saving/);
+  assert.match(v.window.localStorage.getItem('brabbler-notebook-review-draft-v2:%2Fbook%2Findex.md:primary'), /Newer text while saving/);
   await click(v, 'Load saved review record'); await r.join();
   assert.match(v.container.textContent, /Unsaved operation retained/);
   const old = r.hold('inspect'); await click(v, 'Refresh current step identities'); await old.entered.promise;
@@ -192,7 +192,7 @@ for (const order of ['asset-first', 'inspect-first']) test(`actual guided reader
   r.healthy();
 });
 for (const [name, raw] of [['nested-null', JSON.stringify({ ...freshReviewDraft(), questions: [null] })], ['malformed-json', '{broken'], ['oversized', 'x'.repeat(2 * 1024 * 1024 + 1)]]) test(`malformed browser recovery ${name} is preserved and never mounted or overwritten`, async t => {
-  const r = runtime(t), key = 'pi-notebook-review-draft-v2:%2Fbook%2Findex.md:primary'; r.seed(key, raw);
+  const r = runtime(t), key = 'brabbler-notebook-review-draft-v2:%2Fbook%2Findex.md:primary'; r.seed(key, raw);
   const props = { indexPath: '/book/index.md', step, selection: null, onResume() {}, onWork: r.onWork };
   const v = await r.mount(props);
   assert.equal(v.window.localStorage.getItem(key), raw); assert.match(v.container.textContent, /recovery record preserved/);
@@ -208,7 +208,7 @@ for (const [name, raw] of [['nested-null', JSON.stringify({ ...freshReviewDraft(
   assert.match(v.window.localStorage.getItem(key), /Explicitly recovered local draft/); r.healthy();
 });
 test('two mounted same-guide panes own distinct recovery keys and native radio groups, with explicit copy recovery', async t => {
-  const r = runtime(t), prefix = 'pi-notebook-review-draft-v2:%2Fbook%2Findex.md:';
+  const r = runtime(t), prefix = 'brabbler-notebook-review-draft-v2:%2Fbook%2Findex.md:';
   r.seed(prefix + 'alpha', JSON.stringify({ ...freshReviewDraft(), text: 'Alpha recovery' }));
   r.seed(prefix + 'beta', JSON.stringify({ ...freshReviewDraft(), text: 'Beta recovery' }));
   const props = { indexPath: '/book/index.md', step, selection: null, onResume() {}, onWork: r.onWork };
@@ -247,7 +247,7 @@ test('Unavailable evidence permits plain step guidance concerns, explicit unsure
   await click(v, 'Needs attention'); await r.join(); await click(v, 'Anchor to this step');
   await field(v, 'Feedback text', 'Evidence is unavailable; repair this guide');
   assert.equal(button(v, 'Save feedback').disabled, true, 'guidance-only finding drafts are not saveable reviewer decisions');
-  assert.match(v.window.localStorage.getItem('pi-notebook-review-draft-v2:%2Fbook%2Findex.md:primary'), /repair this guide/, 'incomplete classification fields still recover without storage denial');
+  assert.match(v.window.localStorage.getItem('brabbler-notebook-review-draft-v2:%2Fbook%2Findex.md:primary'), /repair this guide/, 'incomplete classification fields still recover without storage denial');
   await select(v, 'Feedback kind', 'guide-issue');
   await click(v, 'Save feedback'); await r.join();
   const saved = r.tip().state.events.find(e => e.operation.kind === 'feedback').operation.item;

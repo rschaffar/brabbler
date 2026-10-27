@@ -12,8 +12,8 @@ import type { LiveProjectOperation } from "./project-operation-host";
 import { createFileProjectOperationStore } from "./project-operation-store";
 import type { ProjectOperationStore } from "./project-operation-store";
 
-const root = () => join(getAgentDir(), "pi-web", "project-operations");
-const key = Symbol.for("pi-web:project-operations/v1");
+const root = () => join(getAgentDir(), "brabbler", "project-operations");
+const key = Symbol.for("brabbler:project-operations/v1");
 const host = globalThis as typeof globalThis & { [key]?: Map<string, LiveProjectOperation> };
 const live = host[key] ??= new Map<string, LiveProjectOperation>();
 

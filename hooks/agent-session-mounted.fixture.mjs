@@ -56,7 +56,7 @@ function scalar(value, depth = 0) {
 let sequence = 0;
 export const provider = "mounted-fixture";
 export const selected = modelId => ({ provider, modelId });
-export const storageKey = key => `pi-web:composer-draft:v1:${key}`;
+export const storageKey = key => `brabbler:composer-draft:v1:${key}`;
 export const command = type => request => request.method === "POST" && request.body?.type === type;
 export const detail = request => request.method === "GET" && /^\/api\/sessions\/[^/]+$/.test(request.path);
 export const models = request => request.path === "/api/models";
@@ -1160,7 +1160,7 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
           installRealm(globalThis, "localStorage", window.localStorage);
           installRealm(globalThis, "sessionStorage", window.sessionStorage);
         }
-        window.localStorage.setItem("pi-tool-preset", preset);
+        window.localStorage.setItem("brabbler-tool-preset", preset);
         replace("requestAnimationFrame", window.requestAnimationFrame.bind(window));
         replace("cancelAnimationFrame", window.cancelAnimationFrame.bind(window));
         if (defaultChat) api.watchFrames();

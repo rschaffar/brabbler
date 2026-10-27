@@ -38,7 +38,7 @@ export async function checkGitExplorerFullscreen(page, { base, sessionId, explor
     const graphNode = await graph.elementHandle(), detailNode = await detail.elementHandle();
     const branch = await explorer.getByRole("combobox", { name: "History branch" }).inputValue();
     const filePanel = page.locator("#file-panel");
-    const savedWidths = () => page.evaluate(() => [localStorage.getItem("pi-sidebar-width"), localStorage.getItem("pi-right-panel-width")]);
+    const savedWidths = () => page.evaluate(() => [localStorage.getItem("brabbler-sidebar-width"), localStorage.getItem("brabbler-right-panel-width")]);
     await page.getByRole("button", { name: "Show file panel", exact: true }).click();
     await filePanel.evaluate(async (node) => {
       await new Promise(requestAnimationFrame);

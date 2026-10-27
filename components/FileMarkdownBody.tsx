@@ -31,7 +31,7 @@ function MarkdownCode({ className, children, ...props }: ComponentProps<"code"> 
     const onWork = useContext(PresenterWorkContext);
     const lang = className?.replace("language-", "").toLowerCase() ?? "", raw = String(children);
     if (className?.includes("language-") || raw.includes("\n")) {
-      if (lang === "pi-review" && reviewCards) return <ReviewNotebookBlock source={raw.replace(/\n$/, "")} onWork={onWork} />;
+      if (lang === "brabbler-review" && reviewCards) return <ReviewNotebookBlock source={raw.replace(/\n$/, "")} onWork={onWork} />;
       if (lang === "mermaid") return <MermaidBlock code={raw.replace(/\n$/, "")} defaultPreview onWork={onWork} />;
       return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} onWork={onWork} />;
     }

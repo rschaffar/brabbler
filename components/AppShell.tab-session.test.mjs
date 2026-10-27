@@ -7,7 +7,7 @@ import { exact } from './navigation-runtime.fixture.mjs';
 import { shellHarness, session, sidebarRoutes } from './navigation-cases.fixture.mjs';
 
 test('URL-only SSR first paint and real mounted tab restoration use different admission phases', async t => {
-  const h = await shellHarness(t, { setup(window) { window.sessionStorage.setItem('pi-web:tab-open-session', JSON.stringify({ kind: 'session', sessionId: 'tab/id' })); } });
+  const h = await shellHarness(t, { setup(window) { window.sessionStorage.setItem('brabbler:tab-open-session', JSON.stringify({ kind: 'session', sessionId: 'tab/id' })); } });
   const html = renderToStaticMarkup(createElement(h.graph.NavigationFirstPaint, { search: '' }));
   assert.match(html, /data-session=""/);
   assert.equal(h.current.state.initialSessionId, 'tab/id', 'layout adoption uses real tab storage after first render');
@@ -20,7 +20,7 @@ test('URL-only SSR first paint and real mounted tab restoration use different ad
 test('explicit URL wins tab memory; background restore avoids redundant router replacement', async t => {
   const h = await shellHarness(t, { search: 'session=url', setup(window) {
     window.history.replaceState(null, '', '?session=url');
-    window.sessionStorage.setItem('pi-web:tab-open-session', 'other-tab');
+    window.sessionStorage.setItem('brabbler:tab-open-session', 'other-tab');
   } });
   assert.equal(h.current.state.initialSessionId, 'url');
   await h.select(session('url'), true);
@@ -53,7 +53,7 @@ test('New records provisional selection synchronously; delete forgets saved tab 
 
 for (const remembered of [null, { kind: 'new', cwd: '/other', draftId: 'foreign' }, { kind: 'new', cwd: '/pending', draftId: 'pending-id' }]) test(`reload recovers matching provisional text identity without startup replay: ${remembered?.draftId ?? 'none'}`, async t => {
   const h = await shellHarness(t, { search: 'cwd=%2Fpending', setup(window) {
-    if (remembered) window.sessionStorage.setItem('pi-web:tab-open-session', JSON.stringify(remembered));
+    if (remembered) window.sessionStorage.setItem('brabbler:tab-open-session', JSON.stringify(remembered));
   }, route(request) {
     exact(request, '/api/cwd/validate', {}, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: { cwd: '/pending' }, signal: true });
     return { cwd: '/pending' };

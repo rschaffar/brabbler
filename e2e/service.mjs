@@ -18,8 +18,8 @@ export function laneFromRegistry(registry, env, uid) {
 }
 
 export function guestLane(env = process.env) {
-  if (readFileSync("/etc/pi-web-acceptance-guest", "utf8").trim() !== "pi-web-nixos-acceptance-v1") throw new Error("Disposable acceptance guest required");
-  const file = realpathSync("/etc/pi-web-acceptance-lanes.json");
+  if (readFileSync("/etc/brabbler-acceptance-guest", "utf8").trim() !== "brabbler-nixos-acceptance-v1") throw new Error("Disposable acceptance guest required");
+  const file = realpathSync("/etc/brabbler-acceptance-lanes.json");
   const stat = statSync(file);
   if (!/^\/nix\/store\/[a-z0-9]{32}-[^/]+$/.test(file) || !stat.isFile() || stat.uid !== 0 || (stat.mode & 0o222)) {
     throw new Error("Immutable root-owned guest lane registry required");
@@ -29,7 +29,7 @@ export function guestLane(env = process.env) {
 
 export function serviceCgroup(group, lane) {
   const prefix = `/user.slice/user-${lane.uid}.slice/user@${lane.uid}.service/`;
-  if (typeof group !== "string" || !group.startsWith(prefix) || !group.endsWith("/pi-web.service") ||
+  if (typeof group !== "string" || !group.startsWith(prefix) || !group.endsWith("/brabbler.service") ||
       !/^\/user\.slice\/[A-Za-z0-9_.@/:-]+$/.test(group) || group.split("/").slice(1).some(part => !part || part === "." || part === "..")) {
     throw new Error("Unexpected lane service cgroup identity");
   }

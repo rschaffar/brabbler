@@ -58,7 +58,7 @@ test('terminal errors preserve server diagnostics and explain non-JSON responses
   const fetch = t.mock.method(globalThis, 'fetch');
   for (const body of [null, '<html>Server error</html>', 'null']) {
     fetch.mock.mockImplementation(async () => new Response(body, { status: 500 }));
-    await assert.rejects(terminalRequest('/api/terminal'), /HTTP 500.*pi-web server log/);
+    await assert.rejects(terminalRequest('/api/terminal'), /HTTP 500.*brabbler server log/);
   }
   fetch.mock.mockImplementation(async () => Response.json({ error: 'Native module missing; run npm rebuild node-pty' }, { status: 500 }));
   await assert.rejects(terminalRequest('/api/terminal'), /Native module missing; run npm rebuild node-pty/);
@@ -238,7 +238,7 @@ test('Nerd retains its bundled family, System follows shared mono, and both weig
   const terminal = h.terminal, source = h.sources.at(-1), fits = h.fits;
   assert.equal(terminal.options.fontWeight, 400);
   await h.fonts('Shared Mono', 600); await h.settle();
-  assert.equal(terminal.options.fontFamily, '"Pi Web Nerd Font", monospace');
+  assert.equal(terminal.options.fontFamily, '"Brabbler Nerd Font", monospace');
   assert.equal(terminal.options.fontWeight, 600); assert.equal(h.fits > fits, true);
   const weightFits = h.fits;
   await h.fonts('Shared Mono', 500); await h.settle();
@@ -253,8 +253,8 @@ test('Nerd retains its bundled family, System follows shared mono, and both weig
   await h.hidden(false); await h.settle();
   assert.equal(terminal.options.fontFamily, '"Hidden Mono", var(--font-mono-default)'); assert.equal(terminal.options.fontWeight, 200); assert.equal(h.fits > hiddenFits, true);
   await h.font('nerd'); await h.settle();
-  assert.equal(terminal.options.fontFamily, '"Pi Web Nerd Font", monospace'); assert.equal(terminal.options.fontWeight, 200);
-  assert.equal(h.view.window.localStorage.getItem('pi-web:terminal-font'), 'nerd');
+  assert.equal(terminal.options.fontFamily, '"Brabbler Nerd Font", monospace'); assert.equal(terminal.options.fontWeight, 200);
+  assert.equal(h.view.window.localStorage.getItem('brabbler:terminal-font'), 'nerd');
   assert.equal(h.terminal === terminal, true); assert.equal(terminal.disposed, false);
   assert.equal(h.sources.at(-1) === source, true); assert.deepEqual(h.afterInitial, []);
 });

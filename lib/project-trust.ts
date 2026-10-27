@@ -2,7 +2,7 @@ import { hasTrustRequiringProjectResources, ProjectTrustStore } from "@earendil-
 import type { ProjectTrustStatus } from "./api-types";
 import { isGitRepositoryTrusted, setGitRepositoryTrusted, trustedGitRepository } from "./project-trust-repository";
 
-/** SDK path decisions (including explicit denial) take precedence over a Pi Web repository grant. */
+/** SDK path decisions (including explicit denial) take precedence over a Brabbler repository grant. */
 export function getProjectTrustStatus(cwd: string, agentDir: string): ProjectTrustStatus {
   const requiresTrust = Boolean(cwd) && hasTrustRequiringProjectResources(cwd);
   if (!requiresTrust) return { requiresTrust: false, trusted: true };
@@ -53,7 +53,7 @@ export function trustProject(cwd: string, agentDir: string): ProjectTrustStatus 
 
 /** Project extensions execute on import/session startup. Keep them and other
  * trust-requiring project resources behind the SDK's explicit trust decision.
- * Pi Web and the CLI share this store. Projects without gated resources retain
+ * Brabbler and the CLI share this store. Projects without gated resources retain
  * their ordinary load path. Reload reads today's persisted decision. */
 export function projectTrustReloadOptions(cwd: string, agentDir: string): { resolveProjectTrust: () => Promise<boolean> } | undefined {
   if (!getProjectTrustStatus(cwd, agentDir).requiresTrust) return undefined;

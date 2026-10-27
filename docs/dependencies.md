@@ -117,8 +117,8 @@ coordinated internal Pi edges are now exact **1.3.0** instead of `^1.2.0`.
 Notable upstream behavior changes:
 
 - Resumed default-tool sessions restore their transcript tool loadout. Explicit
-  persisted Pi Web tool selections and Chat-only restrictions still take precedence.
-- Ambiguous model scopes can include multiple providers with warnings; Pi Web's
+  persisted Brabbler tool selections and Chat-only restrictions still take precedence.
+- Ambiguous model scopes can include multiple providers with warnings; Brabbler's
   stricter exact-ambiguity rejection remains intentional. The settings editor
   reflects both SDK matches for repair; disabling one writes an explicit surviving
   reference with its thinking pin intact. The migration regression checks both

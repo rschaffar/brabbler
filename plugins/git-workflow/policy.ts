@@ -3,7 +3,7 @@ import { readPluginSettings } from "../../lib/plugins/settings";
 import type { PluginSession } from "../../lib/plugins/types";
 import { gitWorkflowManifest } from "./manifest";
 
-export const GIT_POLICY_CONTRACT = "pi-web:git-policy/v1";
+export const GIT_POLICY_CONTRACT = "brabbler:git-policy/v1";
 export function gitPolicy(checkout: string, session: PluginSession) {
   const settings = readPluginSettings(gitWorkflowManifest, checkout, undefined, session);
   if (!settings.enabled) throw new Error("Git Workflow plugin is disabled");

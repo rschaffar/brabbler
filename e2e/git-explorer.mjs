@@ -11,8 +11,8 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   const checkoutHead = execFileSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   await page.goto(`${base}/?session=${sessionId}`, { waitUntil: "domcontentloaded" });
   const quotePreference = await page.evaluate(() => {
-    const saved = localStorage.getItem("pi-quote-selection-enabled");
-    localStorage.setItem("pi-quote-selection-enabled", "true");
+    const saved = localStorage.getItem("brabbler-quote-selection-enabled");
+    localStorage.setItem("brabbler-quote-selection-enabled", "true");
     return saved;
   });
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -141,8 +141,8 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   assert.deepEqual(contextReads, ["z-context.txt", "z-context.txt"], "Failure retries once, then layouts/expansion/reading reuse the same snapshot");
   await checkGitExplorerFullscreen(page, { base, sessionId, explorer, graph, detail, file: longFile });
   await page.evaluate((saved) => {
-    if (saved === null) localStorage.removeItem("pi-quote-selection-enabled");
-    else localStorage.setItem("pi-quote-selection-enabled", saved);
+    if (saved === null) localStorage.removeItem("brabbler-quote-selection-enabled");
+    else localStorage.setItem("brabbler-quote-selection-enabled", saved);
   }, quotePreference);
   const oldViewport = page.viewportSize();
   await page.setViewportSize({ width: 390, height: 844 });

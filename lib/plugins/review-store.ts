@@ -10,7 +10,7 @@ export const REVIEW_PAGE_SIZE = 40;
 export const REVIEW_PREVIEW_BYTES = 256 * 1024;
 export interface ReviewEntry { id: number; label: string; kind: "text" | "patch"; start: number; bytes: number; sha256: string }
 interface Manifest { version: 1; pluginId: string; operationId: string; entries: number; bytes: number; sha256: string }
-const root = () => join(getAgentDir(), "pi-web", "reviews");
+const root = () => join(getAgentDir(), "brabbler", "reviews");
 function directory(id: string) {
   if (!isOperationId(id)) throw new Error("Invalid review identity");
   return join(root(), id);

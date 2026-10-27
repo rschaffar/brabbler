@@ -25,7 +25,7 @@ function post(body, headers = { host: "localhost", "Content-Type": "application/
     body: typeof body === "string" ? body : JSON.stringify(body) }));
 }
 async function fixture(t) {
-  const root = await mkdtemp(join(tmpdir(), "pi-web-agent-usage-"));
+  const root = await mkdtemp(join(tmpdir(), "brabbler-agent-usage-"));
   const previousDir = process.env.PI_CODING_AGENT_DIR, previousRegistry = globalThis.__piSessions;
   process.env.PI_CODING_AGENT_DIR = root;
   globalThis.__piSessions = new Map();

@@ -260,7 +260,7 @@ async function moveSessionFamilyUnlocked(id: string, cwd: string, options: Sessi
     throw error;
   }
   for (const file of stages) {
-    try { unlinkSync(file.backup); } catch (error) { console.error("[pi-web] Session move backup retained:", file.backup, error); }
+    try { unlinkSync(file.backup); } catch (error) { console.error("[brabbler] Session move backup retained:", file.backup, error); }
     invalidateSessionManagerCache(file.source);
     invalidateSessionManagerCache(file.target);
     cacheSessionPath(file.id, file.target);

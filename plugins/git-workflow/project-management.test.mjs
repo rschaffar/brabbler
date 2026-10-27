@@ -23,8 +23,8 @@ function deferred() {
 function fixture(t, mode = "allow", ignored = false) {
   const root = mkdtempSync(join(tmpdir(), "pi-browser-cleanup-test-"));
   const old = process.env.PI_CODING_AGENT_DIR; process.env.PI_CODING_AGENT_DIR = join(root, "agent");
-  const previous = [globalThis.__piSessions, globalThis.__piStartingSessionCwds, globalThis.__piWebTerminals];
-  globalThis.__piSessions = new Map(); globalThis.__piStartingSessionCwds = new Map(); globalThis.__piWebTerminals = new Map();
+  const previous = [globalThis.__piSessions, globalThis.__piStartingSessionCwds, globalThis.__brabblerTerminals];
+  globalThis.__piSessions = new Map(); globalThis.__piStartingSessionCwds = new Map(); globalThis.__brabblerTerminals = new Map();
   const owned = new Map(), executions = [], releases = [];
   t.after(async () => {
     // Only fixture-owned project actions are cancelled. Do not sweep the global
@@ -33,7 +33,7 @@ function fixture(t, mode = "allow", ignored = false) {
     for (const { controller } of executions) controller?.abort();
     for (const release of releases) release();
     const results = await Promise.allSettled([...owned.values()].map(({ done }) => done.fullySettled).concat(executions.map(({ promise }) => promise)));
-    [globalThis.__piSessions, globalThis.__piStartingSessionCwds, globalThis.__piWebTerminals] = previous;
+    [globalThis.__piSessions, globalThis.__piStartingSessionCwds, globalThis.__brabblerTerminals] = previous;
     if (old === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = old;
     const errors = results.filter((item) => item.status === "rejected").map((item) => item.reason);
     try { rmSync(root, { recursive: true, force: true }); } catch (error) { errors.push(error); }
@@ -154,7 +154,7 @@ test("idle chats warn but do not block; managed starting/running sessions and te
     // Observers resolve existing physical ancestors for starting descendant cwds.
     if (use === "idle" || use === "running") globalThis.__piSessions.set(use, { cwd: child, sessionId: use, isRunning: () => use === "running" });
     if (use === "starting") globalThis.__piStartingSessionCwds.set(child, 1);
-    if (use === "terminal") globalThis.__piWebTerminals.set("terminal", { cwd: child, exited: false });
+    if (use === "terminal") globalThis.__brabblerTerminals.set("terminal", { cwd: child, exited: false });
     const op = await f.prepare(f.input()), status = await f.wait(op.id);
     if (use === "idle") {
       assert.equal(status.state, "review", JSON.stringify(status));
@@ -173,7 +173,7 @@ test("unignored files, explicit roots, designated target mismatch, main/selected
     if (reason === "selected") { input.cwd = f.path; allowFileRoot(f.path); }
     const op = await f.prepare(input), review = await f.wait(op.id);
     if (reason === "new-activity") {
-      assert.equal(review.state, "review"); globalThis.__piWebTerminals.set("new", { cwd: f.path, exited: false });
+      assert.equal(review.state, "review"); globalThis.__brabblerTerminals.set("new", { cwd: f.path, exited: false });
       await decideProjectOperation("git-workflow", op.id, f.cwd, "approve");
       assert.equal((await f.wait(op.id, settled)).state, "failed");
     } else assert.equal(review.state, "failed", JSON.stringify(review));
@@ -192,7 +192,7 @@ test("Stop and relevant settings changes cancel pending reviews without effects"
 });
 test("post-effect record failure remains honest and does not retry or roll back removed worktree", async (t) => {
   const f = fixture(t); const input = f.input();
-  const files = createFileProjectOperationStore(() => join(f.root, "agent/pi-web/project-operations"));
+  const files = createFileProjectOperationStore(() => join(f.root, "agent/brabbler/project-operations"));
   let injected = false;
   f.host = createProjectOperationService({ ...files, save(record) {
     if (record.receipt?.completedEffects?.length || record.receipt?.phase === "succeeded") {
@@ -225,13 +225,13 @@ test("worktree-only and branch-only choices preserve the explicitly kept resourc
   });
 });
 test("failed initial record persistence refuses preparation before any resource effect", async (t) => {
-  const f = fixture(t); const privateRoot = join(f.root, "agent/pi-web"); mkdirSync(privateRoot, { recursive: true });
+  const f = fixture(t); const privateRoot = join(f.root, "agent/brabbler"); mkdirSync(privateRoot, { recursive: true });
   writeFileSync(join(privateRoot, "project-operations"), "blocking file");
   await assert.rejects(f.prepare(f.input()));
   assert.ok(existsSync(f.path)); assert.equal(git(f.cwd, "rev-parse", "feature"), f.payload.featureTip);
 });
 test("failed per-step intent persistence does not claim a dispatched deletion", async (t) => {
-  const f = fixture(t), files = createFileProjectOperationStore(() => join(f.root, "agent/pi-web/project-operations"));
+  const f = fixture(t), files = createFileProjectOperationStore(() => join(f.root, "agent/brabbler/project-operations"));
   let injected = false;
   f.host = createProjectOperationService({ ...files, save(record) {
     const receipt = record.receipt;

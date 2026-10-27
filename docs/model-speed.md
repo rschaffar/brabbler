@@ -8,7 +8,7 @@ Fresh and legacy sessions start at Standard. There is no Ultrafast option.
 Fast uses more subscription quota; availability depends on the model and plan.
 The visible Fast note explains this before a prompt is sent. A selection requests
 a tier, not a guaranteed response time or proof of the tier actually delivered.
-Provider errors remain visible; Pi Web does not silently retry Fast as Standard.
+Provider errors remain visible; Brabbler does not silently retry Fast as Standard.
 
 ## Session ownership
 
@@ -19,7 +19,7 @@ current choice, even when their copied history predates it; subsequent changes
 are independent. Wrapper recreation for account/tool changes retains it.
 
 The choice is session-wide, not branch-local. The latest valid version-1
-`pi-web:model-speed` entry wins across the whole session file:
+`brabbler:model-speed` entry wins across the whole session file:
 
 ```json
 {"version":1,"modelSpeed":"fast"}
@@ -40,7 +40,7 @@ The picker is hidden for other providers, including the separate OpenAI API-key
 provider, and unavailable while running, compacting or switching settings.
 Switching to an unsupported model retains the stored preference without adding a
 tier to that provider's requests; returning to ChatGPT restores the choice.
-Pi CLI does not implement this Pi Web metadata.
+Pi CLI does not implement this Brabbler metadata.
 
 ## SDK compatibility and accounting
 

@@ -1,6 +1,6 @@
-# Git in Pi Web
+# Git in Brabbler
 
-Pi Web provides standalone worktree browsing/management, read-only Git status
+Brabbler provides standalone worktree browsing/management, read-only Git status
 and working-file diffs, and independent Git Explorer with committed patches.
 See [Worktrees](worktrees.md) for controls and limitations.
 

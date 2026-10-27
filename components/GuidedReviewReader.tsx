@@ -36,7 +36,7 @@ export function GuidedReviewEntry({ markdown, ...props }: {
   const parsed = useMemo(() => {
     // Ordinary documents need no second Markdown parse or notebook size diagnostic.
     // This is negative admission only; any possible marker still uses the strict AST parser.
-    if (!markdown.includes("pi-notebook")) return { index: null, error: null };
+    if (!markdown.includes("brabbler-notebook")) return { index: null, error: null };
     try { return { index: parseNotebookIndex(markdown), error: null }; }
     catch (error) { return { index: null, error: error instanceof Error ? error.message : "Invalid notebook" }; }
   }, [markdown]);

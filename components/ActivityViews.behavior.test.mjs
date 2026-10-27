@@ -473,8 +473,8 @@ test('global native control intents do not substitute the rendered project/priva
 test('actual Starred owner imports legacy IDs, shares status, filters and unstars without acknowledging navigation', async t => {
   const f = await fixture(t, { sessions: [session('root'), session('legacy', undefined, '/beta')],
     props: { view: 'starred' }, stars: { ids: ['root'] }, running: { completedRuns: [completion('root')] },
-    setup(window) { window.localStorage.setItem('pi-web:starred-sessions', JSON.stringify(['legacy'])); } });
-  assert.equal(f.view.window.localStorage.getItem('pi-web:starred-sessions'), null);
+    setup(window) { window.localStorage.setItem('brabbler:starred-sessions', JSON.stringify(['legacy'])); } });
+  assert.equal(f.view.window.localStorage.getItem('brabbler:starred-sessions'), null);
   assert.deepEqual(f.posts('/api/starred-sessions').map(request => request.body), [{ op: 'import', ids: ['legacy'] }]);
   assert.ok(f.row('legacy')); assert.match(f.row('root').getAttribute('aria-label'), /Ready to review/);
   await f.click(f.row('root'));

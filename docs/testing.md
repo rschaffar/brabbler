@@ -1,4 +1,4 @@
-# Testing Pi Web
+# Testing Brabbler
 
 ## Nix-native acceptance
 
@@ -37,7 +37,7 @@ nix run .#test -- --help
 
 Core and browser acceptance use ordinary Linux Nix build sandboxes. Only the small
 Home Manager deployment suite requires native Linux/KVM, available to its builder
-or fresh-driver user. Neither building/running Pi Web nor browser acceptance needs
+or fresh-driver user. Neither building/running Brabbler nor browser acceptance needs
 nspawn, namespace-root UID allocation or experimental Nix-daemon features.
 Missing sandbox/KVM capabilities fail explicitly; there is no host-run fallback.
 Native x86_64-linux and aarch64-linux definitions exist; a definition is not evidence
@@ -844,7 +844,7 @@ output link (an intentional GC root). Fresh execution keys only the execution
 derivation with a nonce. Nix owns builder containment and build-tree disposal; inner
 lifecycle observations remain bounded, not certification of escaped descendants.
 
-Browser execution prints `/tmp/pi-web-test-browser.*`: `run.json`, preparation log
+Browser execution prints `/tmp/brabbler-test-browser.*`: `run.json`, preparation log
 and per-group driver logs/result links. Each immutable diagnostic output contains
 `result.json`, suite output, exact `coverage.json`, harness receipt, server log,
 events, Chromium context traces/screenshots and a failed-fixture archive on failure.

@@ -58,7 +58,7 @@ let browser;
     assert.ok(Date.now() < deadline, "Service did not become ready; see server.log and events.jsonl");
     await delay(500);
   }
-  const chromiumPath = process.env.PI_WEB_TEST_CHROMIUM || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+  const chromiumPath = process.env.BRABBLER_TEST_CHROMIUM || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
   browser = await harness.launchBrowser(chromium, chromiumPath ? { executablePath: chromiumPath } : undefined);
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
     const context = await harness.newContext(browser, { viewport, locale: "en-US", ...(viewport.width < 500 ? { hasTouch: true, isMobile: true } : {}) }, base);
@@ -129,10 +129,10 @@ let browser;
       await ready();
       const fontSelect = page.getByRole("combobox", { name: "Terminal font" });
       assert.equal(await fontSelect.inputValue(), "nerd");
-      await page.waitForFunction(() => document.fonts.check('13px "Pi Web Nerd Font"'));
+      await page.waitForFunction(() => document.fonts.check('13px "Brabbler Nerd Font"'));
       assert.equal((await fetch(`${base}/fonts/JetBrainsMonoNerdFontMono-Regular.ttf`)).status, 200);
       await fontSelect.selectOption("system");
-      assert.equal(await page.evaluate(() => localStorage.getItem("pi-web:terminal-font")), "system");
+      assert.equal(await page.evaluate(() => localStorage.getItem("brabbler:terminal-font")), "system");
       await fontSelect.selectOption("nerd");
       await run("export PR695_TOKEN=alive; printf '\\nTOKEN:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput("TOKEN:alive:[0-9]+");
@@ -179,7 +179,7 @@ let browser;
       if (viewport.width < 500) await page.locator("#session-sidebar").getByText("Terminal session one", { exact: true }).click();
       await visiblePanel();
       await expectFontWeight(600);
-      assert.match(await terminalPanel.locator(".xterm-rows").evaluate(el => getComputedStyle(el).fontFamily), /Pi Web Nerd Font/);
+      assert.match(await terminalPanel.locator(".xterm-rows").evaluate(el => getComputedStyle(el).fontFamily), /Brabbler Nerd Font/);
       await fontSelect.selectOption("system");
       await page.waitForFunction(() => {
         const rows = [...document.querySelectorAll(".terminal-panel")].find(el => el.getBoundingClientRect().width > 0)?.querySelector(".xterm-rows");
@@ -320,8 +320,8 @@ let browser;
       await waitOutput(`SESSION:alive:${pid}`);
 
       await fontSelect.selectOption("system");
-      await page.waitForFunction(() => JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs") ?? "{}").open === true);
-      const savedTabs = await page.evaluate(() => JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs")));
+      await page.waitForFunction(() => JSON.parse(sessionStorage.getItem("brabbler:terminal-tabs") ?? "{}").open === true);
+      const savedTabs = await page.evaluate(() => JSON.parse(sessionStorage.getItem("brabbler:terminal-tabs")));
       assert.ok(savedTabs.tabs.some((tab) => tab.id === savedTabs.activeId), "the active terminal is persisted before reload");
       disconnect = await terminalDisconnectFixture(base, id);
       await page.route(disconnect.matches, disconnect.route);
@@ -368,14 +368,14 @@ let browser;
 
       await page.getByRole("button", { name: "Restart terminal", exact: true }).click();
       await page.waitForFunction((oldId) => {
-        const saved = JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs"));
+        const saved = JSON.parse(sessionStorage.getItem("brabbler:terminal-tabs"));
         return saved.tabs.length === 1 && saved.tabs[0].id !== oldId;
       }, id);
       await ready();
       assert.equal((await fetch(`${base}/api/terminal/${id}`)).status, 404);
       await run("exit 7");
       await page.getByText("Process exited with code 7", { exact: true }).waitFor();
-      const currentId = await page.evaluate(() => JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs")).tabs[0].id);
+      const currentId = await page.evaluate(() => JSON.parse(sessionStorage.getItem("brabbler:terminal-tabs")).tabs[0].id);
       await page.getByRole("button", { name: "Terminate terminal workspace-a", exact: true }).click();
       await page.locator(".terminal-panel").waitFor({ state: "detached" });
       assert.equal((await fetch(`${base}/api/terminal/${currentId}`)).status, 404);
@@ -473,7 +473,7 @@ let browser;
       await page.getByText("Other workspace session", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Open workspace terminal", exact: true }).click();
       await ready();
-      const workspaceTabs = await page.evaluate(() => JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs")).tabs);
+      const workspaceTabs = await page.evaluate(() => JSON.parse(sessionStorage.getItem("brabbler:terminal-tabs")).tabs);
       assert.deepEqual(workspaceTabs.map((tab) => tab.cwd).sort(), [workspace, otherWorkspace].sort());
       const otherId = workspaceTabs.find((tab) => tab.cwd === otherWorkspace).id;
       assert.equal((await (await fetch(`${base}/api/terminal/${otherId}`)).json()).cwd, otherWorkspace);

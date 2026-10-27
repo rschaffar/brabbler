@@ -91,7 +91,7 @@ export async function createNativeSessionTools(options: { agentDir: string; cwd:
       if (tool.exposure === "hidden") owned.delete(tool.name); else owned.set(tool.name, execute);
     },
   });
-  const factories: InlineExtension[] = [{ name: "pi-web-native-admission", hidden: true, factory(pi) {
+  const factories: InlineExtension[] = [{ name: "brabbler-native-admission", hidden: true, factory(pi) {
     pi.on("tool_call", event => {
       if (event.parentToolCallId && CONTROLS.has(event.toolName)) return { block: true, reason: "Host controls require a direct model call" };
       if (!nativeTool(event.toolName)) return;
@@ -99,11 +99,11 @@ export async function createNativeSessionTools(options: { agentDir: string; cwd:
       catch { return { block: true, reason: "Native tool is not admitted for this session" }; }
     });
   } }];
-  if (selection.codeMode) factories.push({ name: "pi-web-native-codemode", hidden: true,
+  if (selection.codeMode) factories.push({ name: "brabbler-native-codemode", hidden: true,
     factory: pi => createCodemodeExtension({ mode: "on", models: false })(api(pi, tool => tool.name === "codemode")) });
-  if (selection.codeMode || hasMcp) factories.push({ name: "pi-web-native-tool-search", hidden: true,
+  if (selection.codeMode || hasMcp) factories.push({ name: "brabbler-native-tool-search", hidden: true,
     factory: pi => createToolSearchExtension()(api(pi, tool => tool.name === "tool_search")) });
-  if (hasMcp) factories.push({ name: "pi-web-native-mcp", hidden: true, factory: pi => createMcpExtension({
+  if (hasMcp) factories.push({ name: "brabbler-native-mcp", hidden: true, factory: pi => createMcpExtension({
     credentials: emptyMcpCredentials(sdk!), logPath: devNull,
     loadConfig: () => { assertCurrent(); return { servers: entries, errors: [], autoEnableCodemode: false }; },
     createTransport(entry) {

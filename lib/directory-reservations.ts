@@ -1,7 +1,7 @@
 import { isPathWithinRoots, physicalDirectoryPath } from "./path-security";
 
 // Shared across module copies and development reloads, like the managed session registries.
-const registryKey = Symbol.for("pi-web:directory-reservations");
+const registryKey = Symbol.for("brabbler:directory-reservations");
 const host = globalThis as typeof globalThis & { [registryKey]?: Map<symbol, string> };
 function reservations(): Map<symbol, string> {
   return host[registryKey] ??= new Map();

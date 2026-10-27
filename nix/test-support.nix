@@ -2,12 +2,12 @@
 let
   npmHooks = pkgs.npmHooks.override { inherit nodejs; };
 in pkgs.stdenvNoCC.mkDerivation {
-  pname = "pi-web-test-support";
+  pname = "brabbler-test-support";
   version = "1.0.0";
   inherit src nodejs;
   npmDeps = pkgs.fetchNpmDeps {
     inherit src;
-    hash = "sha256-wAY0FSqW6RGMqZ8AgvE7eHbnO+XUN4b5Txh1drFDKxU=";
+    hash = "sha256-P33HFBCPQzGt0uu80TZoK8y8/ngF4K9y3/HgvLAyvrA=";
     fetcherVersion = 2;
   };
   # DOM support is pure JS. Never rebuild node-pty or install another React.

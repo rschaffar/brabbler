@@ -50,7 +50,7 @@ export async function runCapsule(metadataFile, configurationFile, output, root) 
     FONTCONFIG_FILE: metadata.fontconfig,
     SHELL: metadata.shell, E2E_PACKAGE_ROOT: metadata.package, E2E_BASE_URL: 'http://127.0.0.1:30141',
     E2E_SERVICE_BACKEND: 'process', PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: metadata.chromium,
-    PI_WEB_TEST_FIXTURES: fixtureRoot, PI_WEB_TEST_ARTIFACTS: artifacts, PI_WEB_TEST_TMP: path.join(fixtureRoot, 'tmp') };
+    BRABBLER_TEST_FIXTURES: fixtureRoot, BRABBLER_TEST_ARTIFACTS: artifacts, BRABBLER_TEST_TMP: path.join(fixtureRoot, 'tmp') };
   if (groups[group].selector) env[groups[group].selector] = '1';
   const started = performance.now();
   try {

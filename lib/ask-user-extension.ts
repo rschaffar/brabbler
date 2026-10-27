@@ -27,10 +27,10 @@ const setQuestionSchema = Type.Object({
   }), { maxItems: 12, description: "Required for choice questions; omit for text. Every question also allows an alternative written answer and additive details." })),
 });
 
-export const HOST_ASK_USER_EXTENSION_NAME = "pi-web-ask-user";
+export const HOST_ASK_USER_EXTENSION_NAME = "brabbler-ask-user";
 const HOST_PATH = `<inline:${HOST_ASK_USER_EXTENSION_NAME}>`;
 
-/** Only the per-session Pi Web UI context supplies this method. */
+/** Only the per-session Brabbler UI context supplies this method. */
 export interface AskUserUiContext {
   askUser(question: AskUserQuestion, timeout?: number, signal?: AbortSignal): Promise<AskUserAnswer | null>;
   askUserBatch(set: QuestionSet, timeout?: number, signal?: AbortSignal): Promise<SetAnswer[] | null>;
@@ -65,12 +65,12 @@ export function createAskUserExtension(): InlineExtension {
           }), { description: "List of options for the user to choose from" })),
           allowMultiple: Type.Optional(Type.Boolean({ description: "Allow selecting multiple options. Default: false" })),
           allowFreeform: Type.Optional(Type.Boolean({ description: "Add a freeform text option. Default: true" })),
-          allowComment: Type.Optional(Type.Boolean({ description: "Collect additional details alongside choices or a written answer. Default: PI_ASK_USER_ALLOW_COMMENT env var if set, otherwise true." })),
-          displayMode: Type.Optional(Type.Unsafe<"overlay" | "inline">({ type: "string", enum: ["overlay", "inline"], description: "UI rendering mode. Pi Web presents a browser form regardless of terminal layout." })),
-          singleSelectLayout: Type.Optional(Type.Unsafe<"auto" | "list">({ type: "string", enum: ["auto", "list"], description: "Terminal single-select layout; ignored by Pi Web." })),
-          contextExpanded: Type.Optional(Type.Boolean({ description: "Start with oversized context expanded. Default: PI_ASK_USER_CONTEXT_EXPANDED env var if set, otherwise true." })),
-          overlayToggleKey: Type.Optional(Type.String({ description: "Terminal overlay shortcut; ignored by Pi Web." })),
-          commentToggleKey: Type.Optional(Type.String({ description: "Terminal comment shortcut; ignored by Pi Web." })),
+          allowComment: Type.Optional(Type.Boolean({ description: "Collect additional details alongside choices or a written answer. Default: BRABBLER_ASK_USER_ALLOW_COMMENT env var if set, otherwise true." })),
+          displayMode: Type.Optional(Type.Unsafe<"overlay" | "inline">({ type: "string", enum: ["overlay", "inline"], description: "UI rendering mode. Brabbler presents a browser form regardless of terminal layout." })),
+          singleSelectLayout: Type.Optional(Type.Unsafe<"auto" | "list">({ type: "string", enum: ["auto", "list"], description: "Terminal single-select layout; ignored by Brabbler." })),
+          contextExpanded: Type.Optional(Type.Boolean({ description: "Start with oversized context expanded. Default: BRABBLER_ASK_USER_CONTEXT_EXPANDED env var if set, otherwise true." })),
+          overlayToggleKey: Type.Optional(Type.String({ description: "Terminal overlay shortcut; ignored by Brabbler." })),
+          commentToggleKey: Type.Optional(Type.String({ description: "Terminal comment shortcut; ignored by Brabbler." })),
           timeout: Type.Optional(Type.Number({ description: "Auto-dismiss after N milliseconds. Returns null (cancelled) when expired." })),
         }),
         async execute(_toolCallId, params, signal, onUpdate, ctx) {
@@ -96,7 +96,7 @@ export function createAskUserExtension(): InlineExtension {
             } finally {
               pi.events.emit("herdr:blocked", { active: false });
             }
-            const emitFull = parseAskUserPreference(process.env.PI_ASK_USER_EMIT_FULL_EVENTS) ?? false;
+            const emitFull = parseAskUserPreference(process.env.BRABBLER_ASK_USER_EMIT_FULL_EVENTS) ?? false;
             pi.events.emit(answers ? "ask:answered" : "ask:cancelled", emitFull ? details(answers)
               : { title: set.title, questionCount: set.questions.length, cancelled: answers === null });
             return { content: [{ type: "text" as const, text: answers ? `User answered:\n\n${questionSetSummary(set, answers)}` : "User cancelled the question set" }], details: details(answers) };
@@ -110,8 +110,8 @@ export function createAskUserExtension(): InlineExtension {
             options,
             allowMultiple: params.allowMultiple ?? false,
             allowFreeform: params.allowFreeform ?? true,
-            allowComment: params.allowComment ?? parseAskUserPreference(process.env.PI_ASK_USER_ALLOW_COMMENT) ?? true,
-            contextExpanded: params.contextExpanded ?? parseAskUserPreference(process.env.PI_ASK_USER_CONTEXT_EXPANDED) ?? true,
+            allowComment: params.allowComment ?? parseAskUserPreference(process.env.BRABBLER_ASK_USER_ALLOW_COMMENT) ?? true,
+            contextExpanded: params.contextExpanded ?? parseAskUserPreference(process.env.BRABBLER_ASK_USER_CONTEXT_EXPANDED) ?? true,
           };
           const details = (response: AskUserAnswer | null): AskUserDetails => ({
             question: question.question, context: question.context, options, response, cancelled: response === null,
@@ -154,7 +154,7 @@ export function createAskUserExtension(): InlineExtension {
           } finally {
             pi.events.emit("herdr:blocked", { active: false });
           }
-          const emitFull = parseAskUserPreference(process.env.PI_ASK_USER_EMIT_FULL_EVENTS) ?? false;
+          const emitFull = parseAskUserPreference(process.env.BRABBLER_ASK_USER_EMIT_FULL_EVENTS) ?? false;
           if (!answer) {
             if (options.length) pi.events.emit("ask:cancelled", emitFull
               ? { question: question.question, context: question.context, options }
@@ -175,7 +175,7 @@ export function createAskUserExtension(): InlineExtension {
 }
 
 /** Suppress only the recognized external package; do not swallow other tool collisions. */
-export function preferPiWebAskUserExtension(base: LoadExtensionsResult): LoadExtensionsResult {
+export function preferBrabblerAskUserExtension(base: LoadExtensionsResult): LoadExtensionsResult {
   const host = base.extensions.find((extension) => extension.path === HOST_PATH);
   if (!host?.tools.has("ask_user")) return base;
   const legacyPaths = new Set(base.extensions

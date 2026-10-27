@@ -69,7 +69,7 @@ export function useShellNotifications({ selectedSession, handleSelectSession, lo
       targetSession,
       title: targetSession?.name ?? translate("i18n.sessionComplete"),
       body: translate("i18n.taskFinished"),
-      tag: targetSession ? `pi-session-complete:${targetSession.id}` : "pi-session-complete",
+      tag: targetSession ? `brabbler-session-complete:${targetSession.id}` : "brabbler-session-complete",
     });
   }, [deliverSessionNotification, handleSessionSettled, selectedSession, translate]);
 
@@ -85,7 +85,7 @@ export function useShellNotifications({ selectedSession, handleSelectSession, lo
         ? translate("i18n.extensionInputNeeded")
         : request.method === "ask_user" ? request.question
         : request.title,
-      tag: `pi-extension-ui:${request.id}`,
+      tag: `brabbler-extension-ui:${request.id}`,
     });
   }, [deliverSessionNotification, selectedSession, translate]);
 

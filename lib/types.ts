@@ -1,4 +1,4 @@
-// Types mirrored from pi-mono coding-agent session-manager
+// Types mirrored from brabbler-mono coding-agent session-manager
 import type { AskUserAnswer, AskUserQuestion } from "./ask-user";
 
 export interface SessionHeader {
@@ -219,7 +219,7 @@ export type BlockingExtensionUiRequest = Extract<
   { method: "select" | "confirm" | "input" | "editor" | "ask_user" | "ask_user_batch" | "custom" | "plugin_card" }
 >;
 
-/** Lightweight, read-only attention metadata from Pi Web's live wrappers. */
+/** Lightweight, read-only attention metadata from Brabbler's live wrappers. */
 export interface SessionAttention {
   sessionId: string;
   requestId?: string;

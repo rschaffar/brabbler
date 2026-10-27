@@ -16,7 +16,7 @@ export async function runCore(source, system, args) {
   const jobsIndex = parsed.options.indexOf('--jobs');
   const buildBudget = coreBuildBudget(jobsIndex < 0 ? undefined : Number(parsed.options[jobsIndex + 1]));
   const mask = process.umask(0o077);
-  const root = fs.mkdtempSync('/tmp/pi-web-test-core.');
+  const root = fs.mkdtempSync('/tmp/brabbler-test-core.');
   const env = privateEnvironment(root, process.env);
   for (const name of ['home', 'config', 'cache', 'data', 'state', 'runtime', 'agent', 'tmp', 'nix-conf']) {
     fs.mkdirSync(path.join(root, name), { mode: 0o700 });

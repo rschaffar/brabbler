@@ -1,4 +1,4 @@
-const STORAGE_KEY = "pi-show-hidden-projects";
+const STORAGE_KEY = "brabbler-show-hidden-projects";
 
 interface StorageLike {
   getItem(key: string): string | null;

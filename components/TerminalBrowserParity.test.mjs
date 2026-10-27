@@ -29,7 +29,7 @@ async function rangeEnd(f, end) {
 }
 function preference(f, chat) {
   assert.equal(controls(f).slider.value, String(chat));
-  assert.equal(f.view.window.localStorage.getItem('pi-chat-content-font-size'), String(chat));
+  assert.equal(f.view.window.localStorage.getItem('brabbler-chat-content-font-size'), String(chat));
   assert.equal(f.view.window.document.documentElement.style.getPropertyValue('--chat-content-font-size'), `${chat}px`);
   assert.equal(f.view.container.querySelector('output[for="settings-chat-content-font-size"]').textContent, `${chat}px`);
 }

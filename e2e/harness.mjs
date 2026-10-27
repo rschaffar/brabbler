@@ -13,8 +13,8 @@ const ownedProcessScope = "Owned child/pipe closure and original POSIX group abs
 
 const inheritedKeys = [
   "PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
-  "LANG", "LC_ALL", "TZ", "TERM", "SHELL", "PI_WEB_TEST_SHELL",
-  "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", "PI_WEB_TEST_CHROMIUM", "PLAYWRIGHT_BROWSERS_PATH",
+  "LANG", "LC_ALL", "TZ", "TERM", "SHELL", "BRABBLER_TEST_SHELL",
+  "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", "BRABBLER_TEST_CHROMIUM", "PLAYWRIGHT_BROWSERS_PATH",
   "FONTCONFIG_FILE", "FONTCONFIG_PATH", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH",
 ];
 
@@ -30,7 +30,7 @@ export function fixtureEnvironment(root, source = process.env) {
     XDG_STATE_HOME: join(home, "state"), XDG_CACHE_HOME: join(home, "cache"),
     XDG_RUNTIME_DIR: join(root, "runtime"), XDG_CONFIG_DIRS: join(home, "config"), XDG_DATA_DIRS: join(home, "data"),
     TMPDIR: temp, TMP: temp, TEMP: temp, PI_CODING_AGENT_DIR: root,
-    PI_OFFLINE: "1", PI_WEB_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1", JITI_FS_CACHE: "0",
+    PI_OFFLINE: "1", BRABBLER_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1", JITI_FS_CACHE: "0",
     GIT_CONFIG_GLOBAL: join(home, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0",
     HISTFILE: process.platform === "win32" ? "NUL" : "/dev/null", BASH_SILENCE_DEPRECATION_WARNING: "1",
   });
@@ -129,17 +129,17 @@ export function startOwnedServer(command, args, options, { logPath, event, grace
 
 function processServiceConfiguration(root, env) {
   if (env.E2E_SERVICE_BACKEND !== "process") throw new Error("Explicit process service backend required");
-  const match = typeof root === "string" && /^(\/nix\/store\/[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+)\/lib\/node_modules\/@agegr\/pi-web$/.exec(root);
-  if (!match || env.E2E_PACKAGE_ROOT !== root) throw new Error("Process acceptance requires the same canonical Nix-store pi-web package root");
+  const match = typeof root === "string" && /^(\/nix\/store\/[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+)\/lib\/node_modules\/brabbler$/.exec(root);
+  if (!match || env.E2E_PACKAGE_ROOT !== root) throw new Error("Process acceptance requires the same canonical Nix-store brabbler package root");
   if (env.E2E_BASE_URL !== processBaseURL) throw new Error(`Process acceptance requires the exact loopback URL ${processBaseURL}`);
   if (process.platform !== "linux") throw new Error("Process acceptance requires a Linux Nix build sandbox");
-  return Object.freeze({ root, launcher: `${match[1]}/bin/pi-web`, baseURL: processBaseURL });
+  return Object.freeze({ root, launcher: `${match[1]}/bin/brabbler`, baseURL: processBaseURL });
 }
 
 /** One whole group per Nix build sandbox. The runner, not this flag, owns containment. */
 export function processServiceOwner({ root, env, logPath, event = () => {} }, own = startOwnedServer) {
   const target = processServiceConfiguration(root, env);
-  const serviceEnv = { ...env, NODE_ENV: "production", PI_WEB_SKIP_VERSION_CHECK: "1" };
+  const serviceEnv = { ...env, NODE_ENV: "production", BRABBLER_SKIP_VERSION_CHECK: "1" };
   let owned, child, generation, starting, stopping, failure;
   let stopRequested = false;
   const fail = (message) => { failure ??= message; throw new Error(failure); };
@@ -211,29 +211,29 @@ export function createHarness(root, kind, { diagnosticTimeoutMs = 5000, traceTim
   const backend = process.env.E2E_SERVICE_BACKEND ?? "systemd";
   if (backend !== "systemd" && backend !== "process") throw new Error(`Unknown E2E_SERVICE_BACKEND: ${backend}`);
   const processTarget = requireService && backend === "process" ? processServiceConfiguration(root, process.env) : null;
-  if (processTarget && (!process.env.PI_WEB_TEST_ARTIFACTS || !process.env.PI_WEB_TEST_FIXTURES)) {
+  if (processTarget && (!process.env.BRABBLER_TEST_ARTIFACTS || !process.env.BRABBLER_TEST_FIXTURES)) {
     throw new Error("Process acceptance requires explicit private fixture and artifact directories");
   }
   process.umask(0o077);
   const lane = requireService && backend === "systemd" ? guestLane() : null;
   const baseURL = processTarget?.baseURL ?? (lane ? `http://127.0.0.1:${lane.port}` : undefined);
   const parent = join(root, "test-results", "e2e");
-  if (!process.env.PI_WEB_TEST_ARTIFACTS) mkdirSync(parent, { recursive: true });
-  const artifacts = process.env.PI_WEB_TEST_ARTIFACTS ?? mkdtempSync(join(parent, `${kind}-`));
+  if (!process.env.BRABBLER_TEST_ARTIFACTS) mkdirSync(parent, { recursive: true });
+  const artifacts = process.env.BRABBLER_TEST_ARTIFACTS ?? mkdtempSync(join(parent, `${kind}-`));
   const artifactStat = lstatSync(artifacts);
   if (!artifactStat.isDirectory() || realpathSync(artifacts) !== artifacts || (process.platform !== "win32" && (artifactStat.uid !== process.getuid() || (artifactStat.mode & 0o077)))) {
     throw new Error("Artifacts must be an owned private physical directory");
   }
   // Keep socket paths short and outside nix develop's auto-removed TMPDIR.
   // Host temp policies still apply; the manifest records the exact private root.
-  const fixtureRoot = process.env.PI_WEB_TEST_FIXTURES ?? mkdtempSync(join(process.platform === "win32" ? tmpdir() : "/tmp", `pw-${kind}-`));
+  const fixtureRoot = process.env.BRABBLER_TEST_FIXTURES ?? mkdtempSync(join(process.platform === "win32" ? tmpdir() : "/tmp", `pw-${kind}-`));
   const fixtureStat = lstatSync(fixtureRoot);
   if (!fixtureStat.isDirectory() || realpathSync(fixtureRoot) !== fixtureRoot || (process.platform !== "win32" &&
       (fixtureStat.uid !== process.getuid() || (fixtureStat.mode & 0o077)))) throw new Error("Fixtures must be an owned private physical directory");
   if (lane && (!fixtureRoot.startsWith(`${lane.home}/f/`) || !artifacts.startsWith(`${lane.home}/evidence/`))) throw new Error("Fixture/evidence storage must belong to this lane");
   const env = fixtureEnvironment(fixtureRoot);
-  if (process.env.PI_WEB_TEST_TMP) {
-    const temp = process.env.PI_WEB_TEST_TMP, st = lstatSync(temp);
+  if (process.env.BRABBLER_TEST_TMP) {
+    const temp = process.env.BRABBLER_TEST_TMP, st = lstatSync(temp);
     if (!st.isDirectory() || st.uid !== process.getuid() || (st.mode & 0o077)) throw new Error("Temporary storage must be owned and private");
     env.TMPDIR = env.TMP = env.TEMP = temp;
   }

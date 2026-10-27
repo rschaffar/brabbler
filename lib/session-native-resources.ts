@@ -7,7 +7,7 @@ export interface NativeResourceSelection {
   readonly codeMode: boolean;
   readonly mcpServers: readonly McpServerSelection[];
 }
-export const NATIVE_RESOURCE_SELECTION_TYPE = "pi-web:native-resources";
+export const NATIVE_RESOURCE_SELECTION_TYPE = "brabbler:native-resources";
 export const NO_NATIVE_RESOURCES: NativeResourceSelection = Object.freeze({ version: 1, codeMode: false, mcpServers: Object.freeze([]) });
 
 function record(value: unknown, keys: readonly string[]): Record<string, unknown> {

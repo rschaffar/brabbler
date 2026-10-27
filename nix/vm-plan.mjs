@@ -38,14 +38,14 @@ export function combinedBudget(resources, vm, coreJobs) {
 
 export function validateRegistry(registry) {
   assert.equal(registry?.version, 1);
-  assert.match(registry.package, /^\/nix\/store\/[a-z0-9]{32}-[^/]+\/lib\/node_modules\/@agegr\/pi-web$/);
+  assert.match(registry.package, /^\/nix\/store\/[a-z0-9]{32}-[^/]+\/lib\/node_modules\/brabbler$/);
   assert.ok(Array.isArray(registry.lanes) && registry.lanes.length >= 1 && registry.lanes.length <= 4);
   assert.deepEqual(registry.resources, { workers: registry.lanes.length, cpus: registry.lanes.length * 2, memoryMiB: registry.lanes.length * 4096 });
   registry.lanes.forEach((lane, i) => {
     assert.equal(lane.id, `l${i}`); assert.equal(lane.user, `t${i}`); assert.equal(lane.uid, 1000 + i);
     assert.equal(lane.home, `/home/t${i}`); assert.equal(lane.port, 30141 + i);
-    assert.equal(lane.envFile, `${lane.home}/service.env`); assert.equal(lane.unit, 'pi-web.service');
-    assert.match(lane.controller, new RegExp(`^/nix/store/[a-z0-9]{32}-[^/]+/bin/pi-web-test-service-l${i}$`));
+    assert.equal(lane.envFile, `${lane.home}/service.env`); assert.equal(lane.unit, 'brabbler.service');
+    assert.match(lane.controller, new RegExp(`^/nix/store/[a-z0-9]{32}-[^/]+/bin/brabbler-test-service-l${i}$`));
   });
   return registry;
 }

@@ -4,7 +4,7 @@ import { normalizeSetAnswers, parseQuestionSet, questionSetSummary, type SetAnsw
 import { validatePluginCard, validPluginAction } from "./plugins/ui";
 import type { CustomMessage, ExtensionUiRequest, ExtensionUiResponse, SessionEntry, SessionTreeNode } from "./types";
 
-export const INTERACTION_RECEIPT_TYPE = "pi-web:interaction-receipt";
+export const INTERACTION_RECEIPT_TYPE = "brabbler:interaction-receipt";
 export type InteractionRequest = Extract<ExtensionUiRequest, {
   method: "select" | "confirm" | "input" | "editor" | "ask_user" | "ask_user_batch" | "plugin_card";
 }>;

@@ -36,7 +36,7 @@ import { withSessionModelSpeed } from "./session-model-speed-runtime";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createLocalFileLinkGuidanceExtension } from "./local-file-link-guidance";
 import { acceptancePlugin } from "../plugins/acceptance";
-import { createAskUserExtension, preferPiWebAskUserExtension } from "./ask-user-extension";
+import { createAskUserExtension, preferBrabblerAskUserExtension } from "./ask-user-extension";
 import { appendSubagentInputFiles, loadSubagentInputFiles, assertSubagentInputBudget, subagentInputLimits } from "./subagent-input";
 import { parseSubagentModel, SUBAGENT_THINKING_LEVELS } from "./subagent-model";
 import { assertSubagentDirectory, persistChildSession, recordSubagentResult, settleOrphanedSubagent, subagentRunMetadata } from "./subagent-lifecycle";
@@ -213,7 +213,7 @@ export function createSubagentController(
     getSubagentRuns().set(initialRun.sessionId, stored);
     const update = () => {
       try { onUpdate?.(stored.run); }
-      catch (error) { console.error("[pi-web] subagent update listener failed:", error instanceof Error ? error.message : String(error)); }
+      catch (error) { console.error("[brabbler] subagent update listener failed:", error instanceof Error ? error.message : String(error)); }
       dependencies.invalidateSessionList();
     };
     const handleParentAbort = () => {
@@ -239,7 +239,7 @@ export function createSubagentController(
         if (paused) wrapper.finishPause?.(true);
         getSubagentRuns().delete(initialRun.sessionId);
         try { wrapper.onSubagentSettled?.(); }
-        catch (error) { console.error("[pi-web] child settlement listener failed:", error); }
+        catch (error) { console.error("[brabbler] child settlement listener failed:", error); }
       } catch (error) {
         // Retain the failed live record for inspection; do not claim durable success.
         stored.run = { ...result, status: "failed", error: `${result.error ? `${result.error}. ` : ""}Could not persist subagent result: ${error instanceof Error ? error.message : String(error)}` };
@@ -313,7 +313,7 @@ export function createSubagentController(
 
   async function start(request: StartSubagentRequest): Promise<SubagentExecution> {
     const enabled = dependencies.isBuiltInSubagentsEnabled ?? isBuiltInSubagentsEnabled;
-    if (!enabled()) throw new Error("Pi Web built-in sub-agents are disabled");
+    if (!enabled()) throw new Error("Brabbler built-in sub-agents are disabled");
     const parentSessionId = request.parentContext.sessionManager.getSessionId();
     const parent = dependencies.getSession(parentSessionId);
     if (!parent?.isAlive()) throw new Error("Parent session is no longer available");
@@ -336,7 +336,7 @@ export function createSubagentController(
         subagentInputLimits(expectedSubagentModel(parentModelRuntime, modelReference, parent.inner.model)));
       if (isolation === "worktree") {
         const { branch: baseBranch, oid: expectedBaseOid } = await currentLocalBranchTip(parent.cwd);
-        const branch = `pi-web-agent-${randomUUID()}`;
+        const branch = `brabbler-agent-${randomUUID()}`;
         isolatedWorktree = await addWorktree(parent.cwd, {
           branch,
           baseBranch,
@@ -392,7 +392,7 @@ export function createSubagentController(
             ...(!chatOnly && promptPlan.exactSystemPrompt === undefined ? [createLocalFileLinkGuidanceExtension()] : []),
             ...(profile.loadExtensions ? [createAskUserExtension(), acceptancePlugin.extension(childCwd)] : []),
           ],
-          extensionsOverride: (base) => preferUserBashExtension(profile.loadExtensions ? preferPiWebAskUserExtension(base) : base),
+          extensionsOverride: (base) => preferUserBashExtension(profile.loadExtensions ? preferBrabblerAskUserExtension(base) : base),
         },
         ...((profile.loadExtensions || profile.loadSkills)
           ? { resourceLoaderReloadOptions: projectTrustReloadOptions(childCwd, agentDir) }
@@ -503,7 +503,7 @@ export function createSubagentController(
 
   async function resume(request: ResumeSubagentRequest): Promise<SubagentExecution> {
     const enabled = dependencies.isBuiltInSubagentsEnabled ?? isBuiltInSubagentsEnabled;
-    if (!enabled()) throw new Error("Pi Web built-in sub-agents are disabled");
+    if (!enabled()) throw new Error("Brabbler built-in sub-agents are disabled");
     const parentSessionId = request.parentContext.sessionManager.getSessionId();
     if (dependencies.getSession(parentSessionId)?.isPauseRequested?.()) throw new Error("Parent session is paused or pausing");
     const existing = await get(request.sessionId);
@@ -606,7 +606,7 @@ export function createSubagentController(
       if (takeResultConsumed(run)) return;
       if (!parent.isAlive()) throw new Error(`Parent session is no longer available: ${run.parentSessionId}`);
       await parent.inner.sendCustomMessage({
-        customType: "pi-web:subagent-notification",
+        customType: "brabbler:subagent-notification",
         content: subagentNotificationText(run),
         display: true,
         details: subagentToolDetails(run),

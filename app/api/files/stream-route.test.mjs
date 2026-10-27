@@ -96,7 +96,7 @@ test('stream errors reject the full body and late events cannot revive it', asyn
 
 
 test('default file-body composition joins actual descriptor closure on EOF, cancellation and read error', async t => {
-  const owner = backendCase(t), root = await mkdtemp(path.join(tmpdir(), 'pi-web-file-body-'));
+  const owner = backendCase(t), root = await mkdtemp(path.join(tmpdir(), 'brabbler-file-body-'));
   owner.remove(() => rm(root, { recursive: true, force: true }));
   const file = path.join(root, 'native.bin'); await writeFile(file, Buffer.from([0, 255, 128, 3, 4, 5]));
   const streams = [], closed = [];

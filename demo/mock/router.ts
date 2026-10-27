@@ -1,5 +1,5 @@
 /**
- * Routes a Pi Web `/api/*` request to its in-browser mock. Handlers mirror the
+ * Routes a Brabbler `/api/*` request to its in-browser mock. Handlers mirror the
  * real route handlers under app/api in the main project: same paths, methods
  * and response shapes.
  */
@@ -217,7 +217,7 @@ async function cwdRoute(request: MockRequest): Promise<Response> {
       "/": ["Users"],
       "/Users": ["demo"],
       [HOME]: ["code", SCRATCH_ROOT.split("/").pop()!],
-      [`${HOME}/code`]: ["pi-web"],
+      [`${HOME}/code`]: ["brabbler"],
     };
     let names = virtualDirs[path];
     if (!names) {
@@ -247,7 +247,7 @@ const ROUTES: Record<string, Handler> = {
   "project-trust": () => json({ requiresTrust: false, trusted: true }),
   "app-update": () => {
     const version = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
-    return json({ currentVersion: version, latestVersion: version, updateAvailable: false, releaseUrl: `https://github.com/agegr/pi-web/releases/tag/v${version}` });
+    return json({ currentVersion: version, latestVersion: version, updateAvailable: false, releaseUrl: "" });
   },
   git: async (request) => {
     const cwd = request.query("cwd") ?? "";
@@ -279,7 +279,7 @@ export async function handleApiRequest(
     return response;
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
-    console.error("[pi-web demo] mock API failed", url.pathname, cause);
+    console.error("[brabbler demo] mock API failed", url.pathname, cause);
     return error(cause instanceof Error ? cause.message : String(cause), 500);
   }
 }

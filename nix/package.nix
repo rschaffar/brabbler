@@ -3,7 +3,7 @@ let
   manifest = builtins.fromJSON (builtins.readFile (src + "/package.json"));
 in
 stdenv.mkDerivation {
-  pname = "pi-web";
+  pname = "brabbler";
   version = manifest.version;
   inherit src;
   nativeBuildInputs = [ nodejs makeWrapper ];
@@ -35,17 +35,16 @@ stdenv.mkDerivation {
     npm pack --ignore-scripts --offline --pack-destination "$TMPDIR" >/dev/null
     tar -xzf "$TMPDIR"/*.tgz --strip-components=1 -C "$app"
     ln -s ${modules}/node_modules "$app/node_modules"
-    makeWrapper ${nodejs}/bin/node "$out/bin/pi-web" \
-      --add-flags "$app/bin/pi-web.js" \
+    makeWrapper ${nodejs}/bin/node "$out/bin/brabbler" \
+      --add-flags "$app/bin/brabbler.js" \
       --prefix PATH : ${lib.makeBinPath ([ nodejs git ] ++ lib.optionals stdenv.hostPlatform.isLinux [ util-linux ])}
     runHook postInstall
   '';
   passthru = { inherit modules; };
   meta = {
-    description = "Web UI for the Pi coding agent";
-    homepage = "https://github.com/agegr/pi-web";
+    description = "A Pi-based agent development workspace";
     license = [ lib.licenses.mit lib.licenses.ofl ];
-    mainProgram = "pi-web";
+    mainProgram = "brabbler";
     platforms = lib.platforms.unix;
   };
 }

@@ -28,7 +28,7 @@ export function useAudio(suppliedWork?: ComposerWork) {
   const [enabled, setEnabled] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     try {
-      const stored = window.localStorage.getItem("pi-sound-enabled");
+      const stored = window.localStorage.getItem("brabbler-sound-enabled");
       return stored === null ? true : stored === "true";
     } catch {
       return true;
@@ -63,7 +63,7 @@ export function useAudio(suppliedWork?: ComposerWork) {
     const next = !enabledRef.current;
     if (next) unlockAudio(true);
     enabledRef.current = next;
-    try { window.localStorage.setItem("pi-sound-enabled", String(next)); } catch { /* Best-effort persistence. */ }
+    try { window.localStorage.setItem("brabbler-sound-enabled", String(next)); } catch { /* Best-effort persistence. */ }
     setEnabled(next);
   }, [unlockAudio]);
 

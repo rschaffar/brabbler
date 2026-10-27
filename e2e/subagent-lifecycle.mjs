@@ -118,7 +118,7 @@ export async function checkSubagentLifecycle(page, { base, api, post, root, agen
     assert.equal(first.run.turnLimit, 1);
     assert.equal(existsSync(first.run.worktreePath), false);
     assert.ok(first.entries.some(entry => entry.type === "thinking_level_change" && entry.thinkingLevel === "high"));
-    assert.ok(first.entries.some(entry => entry.customType === "pi-web:model-speed" && entry.data.modelSpeed === "fast"));
+    assert.ok(first.entries.some(entry => entry.customType === "brabbler:model-speed" && entry.data.modelSpeed === "fast"));
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByText(/Lifecycle parent report:.*no longer present/s).waitFor();
     const invalidProbes = [];

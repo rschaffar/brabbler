@@ -65,7 +65,7 @@ async function fixture(t) {
     if (previousOffline === undefined) delete process.env.PI_OFFLINE; else process.env.PI_OFFLINE = previousOffline;
     rmSync(root, { recursive: true, force: true });
     globalThis.__piSessionListCache = undefined; globalThis.__piSessionListPromise = undefined;
-    globalThis.__piWebScanIndex = undefined; globalThis.__piWebScanIndexLoaded = undefined;
+    globalThis.__brabblerScanIndex = undefined; globalThis.__brabblerScanIndexLoaded = undefined;
   });
   return { root, cwd, agentDir, faux, start, wrappers };
 }
@@ -97,7 +97,7 @@ test("real model-issued launch uses ordinary independent SDK sessions, exact app
   assert.notEqual(child.sessionId, parent.sessionId); assert.equal(child.isRunning(), true);
   assert.equal(child.inner.getActiveToolNames().includes("start_session"), true);
   const childEntries = getSessionEntries(child.sessionFile);
-  assert.equal(childEntries.some((entry) => entry.type === "custom" && entry.customType === "pi-web:session-spawn" && entry.data.creatorSessionId === parent.sessionId), true);
+  assert.equal(childEntries.some((entry) => entry.type === "custom" && entry.customType === "brabbler:session-spawn" && entry.data.creatorSessionId === parent.sessionId), true);
   assert.equal(childEntries.some((entry) => entry.type === "message" && entry.message.content === "Please start a new session for this task."), false);
   assert.equal(readFileSync(join(f.agentDir, "settings.json"), "utf8"), settingsBefore, "inherited preferences are not global user defaults");
   const info = (await listAllSessions({ force: true })).find((session) => session.id === child.sessionId);
@@ -111,7 +111,7 @@ test("real model-issued launch uses ordinary independent SDK sessions, exact app
   await child.send({ type: "extension_ui_response", id: request.id, answer: { kind: "freeform", text: "Independent" } }); await settled(child);
   const file = child.sessionFile, id = child.sessionId; await child.shutdown();
   const reopened = await startRpcSession(id, file, undefined); f.wrappers.push(reopened.session);
-  assert.equal(reopened.realSessionId, id); assert.equal(SessionManager.open(file).getEntries().filter((entry) => entry.customType === "pi-web:session-spawn").length, 1);
+  assert.equal(reopened.realSessionId, id); assert.equal(SessionManager.open(file).getEntries().filter((entry) => entry.customType === "brabbler:session-spawn").length, 1);
 });
 
 test("real Allow launch skips approval, new IDs do not inherit overrides, disabled tools update live", async (t) => {
@@ -150,7 +150,7 @@ async function assertRetiredLaunch(f, result, { reopen = true } = {}) {
   assert.ok(child, "fixture observed the owned destination");
   assert.equal(child.isAlive(), false); assert.equal(child.isRunning(), false); assert.equal(child.pendingPromptCount, 0);
   const file = child.sessionFile, entries = getSessionEntries(file);
-  assert.ok(entries.some((entry) => entry.customType === "pi-web:session-spawn" && entry.data.sessionId === child.sessionId));
+  assert.ok(entries.some((entry) => entry.customType === "brabbler:session-spawn" && entry.data.sessionId === child.sessionId));
   assert.equal(entries.some((entry) => entry.type === "message" && ["user", "assistant"].includes(entry.message.role)), false);
   assert.ok(readFileSync(file, "utf8"), "failed creation retains its file");
   if (!reopen) {
@@ -283,8 +283,8 @@ test("literal launch refuses transformed/intercepted prompts and late model/tool
     if (mode === "tools") globalThis.__sessionLaunchHook = (_event, _ctx, pi) => { pi.setActiveTools(["bash"]); };
     if (mode === "thinking") globalThis.__sessionLaunchHook = (_event, _ctx, pi) => { pi.setThinkingLevel("high"); };
     if (mode === "model") globalThis.__sessionLaunchHook = async (_event, ctx, pi) => { assert.equal(await pi.setModel(ctx.modelRegistry.find("session-launch-sdk", "faux-2")), true); };
-    if (mode === "speed") globalThis.__sessionLaunchHook = (_event, ctx) => { getRpcSession(ctx.sessionManager.getSessionId()).inner.sessionManager.appendCustomEntry("pi-web:model-speed", { version: 1, modelSpeed: "fast" }); };
-    if (mode === "account") globalThis.__sessionLaunchHook = (_event, ctx) => { getRpcSession(ctx.sessionManager.getSessionId()).inner.sessionManager.appendCustomEntry("pi-web:provider-accounts", { version: 1, accounts: { "session-launch-sdk": "changed-account" } }); };
+    if (mode === "speed") globalThis.__sessionLaunchHook = (_event, ctx) => { getRpcSession(ctx.sessionManager.getSessionId()).inner.sessionManager.appendCustomEntry("brabbler:model-speed", { version: 1, modelSpeed: "fast" }); };
+    if (mode === "account") globalThis.__sessionLaunchHook = (_event, ctx) => { getRpcSession(ctx.sessionManager.getSessionId()).inner.sessionManager.appendCustomEntry("brabbler:provider-accounts", { version: 1, accounts: { "session-launch-sdk": "changed-account" } }); };
     const result = await executeSessionLaunch({ prompt: "Exact task" }, { id: parent.sessionId, cwd: f.cwd }, { sessionLaunchHost, operationReceipt() {} });
     await assertRetiredLaunch(f, result, { reopen: mode !== "account" }); // An unavailable account remains fail-closed on explicit reopen.
   });
@@ -312,7 +312,7 @@ test("destination preview uses startup trust; incomplete subagent metadata fails
   const { trustProject } = await jiti.import("../../lib/project-trust.ts");
   trustProject(destination, f.agentDir);
   assert.equal((await sessionLaunchHost.resolve(request, caller)).modelId, "faux-2");
-  parent.inner.sessionManager.appendCustomEntry("pi-web:subagent", { version: 1 });
+  parent.inner.sessionManager.appendCustomEntry("brabbler:subagent", { version: 1 });
   await assert.rejects(sessionLaunchHost.resolve({ prompt: "Task", cwd: f.cwd }, caller), /ordinary live coding/);
 });
 

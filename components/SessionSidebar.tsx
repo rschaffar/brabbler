@@ -60,7 +60,7 @@ export function getSessionListIndices(count: number, scrollTop: number, viewport
 
 declare global {
   interface Window {
-    piDesktop?: {
+    brabblertop?: {
       selectDirectory: () => Promise<string | null>;
     };
   }
@@ -197,7 +197,7 @@ interface ValidatedProject {
   key: string;
 }
 
-const LAST_CUSTOM_CWD_STORAGE_KEY = "pi-web:last-custom-cwd";
+const LAST_CUSTOM_CWD_STORAGE_KEY = "brabbler:last-custom-cwd";
 const SESSION_PANE_DEFAULT_HEIGHT = 320;
 const SESSION_PANE_MIN_HEIGHT = 80;
 const EXPLORER_PANE_MIN_HEIGHT = 120;
@@ -228,7 +228,7 @@ function displayCwd(cwd: string, homeDir?: string): string {
 
 /**
  * Path label that ellipsizes on the LEFT, keeping the (most relevant) trailing
- * segments visible: "…orkspace/pi-web". Shows as much of the path as fits
+ * segments visible: "…orkspace/brabbler". Shows as much of the path as fits
  * instead of a fixed number of segments. The rtl container moves the ellipsis
  * to the left edge; the inner plaintext bidi isolation keeps the path itself
  * rendered strictly left-to-right (no punctuation reordering).
@@ -358,12 +358,12 @@ function useScramble(target: string, running: boolean): string {
   return display;
 }
 
-function PiWebTitle() {
+function BrabblerTitle() {
   const [showVersion, setShowVersion] = useState(false);
   const [scrambling, setScrambling] = useState(false);
   const revertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const target = showVersion ? `${process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}p${process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}` : "Pi Web";
+  const target = showVersion ? `${process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}p${process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}` : "Brabbler";
   const display = useScramble(target, scrambling);
 
   const triggerScramble = useCallback((toVersion: boolean) => {
@@ -524,7 +524,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     growthDirection: "down",
     maxWidth: SESSION_PANE_MAX_HEIGHT,
     minWidth: SESSION_PANE_MIN_HEIGHT,
-    storageKey: "pi-web:sidebar-session-pane-height",
+    storageKey: "brabbler:sidebar-session-pane-height",
     widthRef: sessionPaneHeightRef,
   });
   const [listViewportH, setListViewportH] = useState(0);
@@ -1149,7 +1149,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <PiWebTitle />
+          <BrabblerTitle />
           <div style={{ display: "flex", gap: 6 }}>
             <button
               onClick={handleNewSession}

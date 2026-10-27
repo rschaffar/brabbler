@@ -32,9 +32,9 @@ export function assertPortClosed(port, { timeoutMs = 5000 } = {}) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    if (fs.readFileSync('/etc/pi-web-acceptance-guest', 'utf8').trim() !== 'pi-web-nixos-acceptance-v1') throw new Error('Disposable guest required');
+    if (fs.readFileSync('/etc/brabbler-acceptance-guest', 'utf8').trim() !== 'brabbler-nixos-acceptance-v1') throw new Error('Disposable guest required');
     const [mode, value] = process.argv.slice(2);
-    if (mode === 'tree' && ['/var/lib/pi-web-evidence', '/var/lib/pi-web-evidence-probe'].includes(value)) assertEvidenceTree(value);
+    if (mode === 'tree' && ['/var/lib/brabbler-evidence', '/var/lib/brabbler-evidence-probe'].includes(value)) assertEvidenceTree(value);
     else if (mode === 'port' && /^3014[1-4]$/.test(value)) await assertPortClosed(Number(value));
     else throw new Error('Unknown evidence check');
   } catch (error) { console.error(error.message); process.exitCode = 1; }

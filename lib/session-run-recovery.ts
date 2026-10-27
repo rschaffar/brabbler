@@ -5,7 +5,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 // This is intentionally not a Pi JSONL entry: new sessions need not have a
 // transcript file when preflight accepts, and Pi may rewrite its session file.
-const runRoot = () => join(getAgentDir(), "pi-web", "run-journal", "v1");
+const runRoot = () => join(getAgentDir(), "brabbler", "run-journal", "v1");
 const validId = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
 
 interface RunStart {

@@ -23,7 +23,7 @@ after(() => {
 const jiti = createJiti(import.meta.url, { fsCache: false });
 const { registerGitPatchContext, readGitPatchContext, GIT_CONTEXT_TTL_MS } = await jiti.import("./context.ts");
 const { splitGitPatch } = await jiti.import("../../lib/git-patch-display.ts");
-const snapshots = globalThis[Symbol.for("pi-web:git-plugin-context")];
+const snapshots = globalThis[Symbol.for("brabbler:git-plugin-context")];
 beforeEach(() => snapshots.clear());
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, "-c", "commit.gpgsign=false", ...args], {
   encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],

@@ -1,5 +1,5 @@
 {
-  description = "Pi Web: Nix-native package, development and acceptance";
+  description = "Brabbler: Nix-native package, development and acceptance";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   inputs.home-manager.url = "github:nix-community/home-manager";
@@ -35,12 +35,12 @@
           };
           mkE2E = { workers ? 1 }: import ./nix/vm-test.nix {
             inherit pkgs home-manager workers;
-            package = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-web;
+            package = self.packages.${pkgs.stdenv.hostPlatform.system}.brabbler;
             homeManagerModule = self.homeManagerModules.default;
           };
           browser = import ./nix/browser-test.nix {
             inherit pkgs;
-            package = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-web;
+            package = self.packages.${pkgs.stdenv.hostPlatform.system}.brabbler;
             modules = modules pkgs;
             src = (sources pkgs).tests;
             flakeSource = self;
@@ -54,7 +54,7 @@
             test-core = {
               type = "app";
               program = pkgs.lib.getExe (pkgs.writeShellApplication {
-                name = "pi-web-test-core";
+                name = "brabbler-test-core";
                 runtimeInputs = [ pkgs.nodejs_24 pkgs.nix ];
                 text = ''exec node ${self}/nix/run-core.mjs ${self} ${pkgs.stdenv.hostPlatform.system} "$@"'';
               });
@@ -62,7 +62,7 @@
             test = {
               type = "app";
               program = pkgs.lib.getExe (pkgs.writeShellApplication {
-                name = "pi-web-test";
+                name = "brabbler-test";
                 runtimeInputs = [ pkgs.nodejs_24 pkgs.python3 pkgs.nix ];
                 text = ''exec node ${self}/nix/test.mjs "$@"'';
               });
@@ -70,7 +70,7 @@
             test-e2e = {
               type = "app";
               program = pkgs.lib.getExe (pkgs.writeShellApplication {
-                name = "pi-web-test-e2e";
+                name = "brabbler-test-e2e";
                 runtimeInputs = [ pkgs.nodejs_24 pkgs.python3 pkgs.nix ];
                 text = ''exec node ${self}/nix/run-browser.mjs ${self} ${pkgs.stdenv.hostPlatform.system} "$@"'';
               });
@@ -78,7 +78,7 @@
             test-service = {
               type = "app";
               program = pkgs.lib.getExe (pkgs.writeShellApplication {
-                name = "pi-web-test-service";
+                name = "brabbler-test-service";
                 runtimeInputs = [ pkgs.nodejs_24 pkgs.python3 pkgs.nix ];
                 text = ''exec node ${self}/nix/run-vm.mjs ${self} ${pkgs.stdenv.hostPlatform.system} "$@"'';
               });
@@ -87,19 +87,19 @@
         };
     in {
       packages = forSystems systems (pkgs: rec {
-        pi-web = pkgs.callPackage ./nix/package.nix {
+        brabbler = pkgs.callPackage ./nix/package.nix {
           src = (sources pkgs).application;
           nodejs = pkgs.nodejs_24;
           modules = modules pkgs;
         };
-        default = pi-web;
+        default = brabbler;
       });
       apps = forSystems systems (pkgs: {
         default = {
           type = "app";
-          program = pkgs.lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.pi-web;
+          program = pkgs.lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.brabbler;
         };
-        pi-web = self.apps.${pkgs.stdenv.hostPlatform.system}.default;
+        brabbler = self.apps.${pkgs.stdenv.hostPlatform.system}.default;
       } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (tests pkgs).apps);
       homeManagerModules.default = import ./nix/home-manager.nix { inherit self; };
       checks = forSystems linuxSystems (pkgs: { inherit (tests pkgs) core e2e service; });

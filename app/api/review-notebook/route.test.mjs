@@ -17,9 +17,9 @@ function fixture(t) {
   const folder = join(root, 'review'); mkdirSync(folder);
   const index = join(folder, 'index.md');
   const manifest = { ...header, chapters: [{ id: 'first', title: 'First', path: 'first.md' }, { id: 'last', title: 'Last', path: 'last.md' }] };
-  writeFileSync(index, fence('pi-notebook', manifest));
-  writeFileSync(join(folder, 'first.md'), fence('pi-step', { ...header, id: 'one' }) + 'First prose');
-  writeFileSync(join(folder, 'last.md'), fence('pi-step', { ...header, id: 'two' }) + 'Last prose');
+  writeFileSync(index, fence('brabbler-notebook', manifest));
+  writeFileSync(join(folder, 'first.md'), fence('brabbler-step', { ...header, id: 'one' }) + 'First prose');
+  writeFileSync(join(folder, 'last.md'), fence('brabbler-step', { ...header, id: 'two' }) + 'Last prose');
   globalThis.__piAllowedRootsCache = { roots: new Set([folder]), expiresAt: Date.now() + 60_000 };
   const request = async (values, headers) => {
     const response = await GET(new NextRequest(`http://localhost/api/review-notebook?${new URLSearchParams(values)}`, { headers: { host: 'localhost', ...headers } }));
@@ -54,9 +54,9 @@ test('symlink chapters/assets, binary/invalid UTF8, traversal, cycles and over-l
   for (const bytes of [Buffer.from([0xff, 0xfe]), Buffer.from('binary\0text'), Buffer.alloc(256 * 1024 + 1, 65)]) {
     writeFileSync(chapter, bytes); assert.notEqual((await f.request({ index: f.index })).status, 200);
   }
-  writeFileSync(chapter, fence('pi-step', { ...header, id: 'last' }));
+  writeFileSync(chapter, fence('brabbler-step', { ...header, id: 'last' }));
   for (const path of ['../outside.md', '/outside.md', 'a/../../outside.md', 'index.md']) {
-    writeFileSync(f.index, fence('pi-notebook', { ...f.manifest, chapters: [{ id: 'escape', title: 'Escape', path }] }));
+    writeFileSync(f.index, fence('brabbler-notebook', { ...f.manifest, chapters: [{ id: 'escape', title: 'Escape', path }] }));
     assert.equal((await f.request({ index: f.index })).status, 400);
   }
   assert.equal((await f.request({ index: f.index, asset: '../outside.md' })).status, 400);

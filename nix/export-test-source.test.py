@@ -63,7 +63,8 @@ class SourceExportTests(unittest.TestCase):
         for name in ['.env', '.env.local', '.npmrc', 'auth.json', 'private/config.json',
                      '.next/cache/data.json', 'node_modules/pkg/index.js', 'test-results/private.json',
                      'lib/.env.secret', 'lib/auth.json', 'lib/private/token.json',
-                     'lib/config.json', 'lib/credentials.json']:
+                     'lib/config.json', 'lib/credentials.json',
+                     'lib/pi-web-accounts.json', 'lib/brabbler-accounts.json']:
             self.put(name, 'DO_NOT_READ')
         secret = self.base / 'outside-secret'
         secret.write_text('DO_NOT_READ')
@@ -75,11 +76,16 @@ class SourceExportTests(unittest.TestCase):
                 self.assertNotIn(Path(name).name,
                     {'.git', '.env', '.env.local', '.env.secret', '.npmrc', 'auth.json',
                      'private', 'node_modules', '.next', 'test-results', 'config.json',
-                     'credentials.json', 'outside-secret'})
+                     'credentials.json', 'outside-secret',
+                     'pi-web-accounts.json', 'brabbler-accounts.json'})
             return real_open(path, *args, **kwargs)
         with patch.object(exporter.os, 'open', side_effect=guarded_open):
             report = self.run_export()
         self.assertNotIn('lib/auth.json', report['before'])
+        for name in ('lib/pi-web-accounts.json', 'lib/brabbler-accounts.json'):
+            self.assertIn(name, report['omittedNames'])
+            self.assertNotIn(name, report['before'])
+            self.assertFalse((self.output / name).exists())
         self.assertFalse((self.output / '.git').exists())
         self.assertIn('.env', report['omittedNames'])
         self.assertIn('lib/private', report['omittedNames'])

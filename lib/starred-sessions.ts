@@ -1,4 +1,4 @@
-export const STARRED_SESSIONS_STORAGE_KEY = "pi-web:starred-sessions";
+export const STARRED_SESSIONS_STORAGE_KEY = "brabbler:starred-sessions";
 
 export function parseStarredSessionIds(value: string | null): Set<string> {
   if (!value) return new Set();

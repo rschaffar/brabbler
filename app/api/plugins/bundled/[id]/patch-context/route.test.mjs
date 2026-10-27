@@ -28,7 +28,7 @@ const { bundledPlugin } = await jiti.import("../../../../../../lib/plugins/regis
 const { DiffContextError } = await jiti.import("../../../../../../lib/diff-context.ts");
 const { registerGitPatchContext, GIT_CONTEXT_TTL_MS } = await jiti.import("../../../../../../plugins/git-workflow/context.ts");
 const plugin = bundledPlugin("git-workflow");
-beforeEach(() => globalThis[Symbol.for("pi-web:git-plugin-context")].clear());
+beforeEach(() => globalThis[Symbol.for("brabbler:git-plugin-context")].clear());
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, "-c", "commit.gpgsign=false", ...args], {
   encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
   env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_"))),

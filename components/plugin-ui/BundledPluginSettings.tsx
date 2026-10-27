@@ -23,8 +23,8 @@ export function BundledPluginSidebar({ cwd, sessionId, selected, onSelect }: { c
     let active = true;
     const refresh = () => { void observe("plugins.bundledSidebar", load(cwd, sessionId).then((entries) => { if (active) { setEntries(entries); setError(""); } }, (error) => { if (active) setError(String(error)); })); };
     refresh();
-    window.addEventListener("pi-web:bundled-plugin-settings", refresh);
-    return () => { active = false; window.removeEventListener("pi-web:bundled-plugin-settings", refresh); };
+    window.addEventListener("brabbler:bundled-plugin-settings", refresh);
+    return () => { active = false; window.removeEventListener("brabbler:bundled-plugin-settings", refresh); };
   }, [cwd, sessionId, observe]);
   return <div className="config-sidebar-group">
     <ConfigSidebarGroupLabel>Bundled plugins</ConfigSidebarGroupLabel>
@@ -100,7 +100,7 @@ function Settings({ cwd, id, sessionId, initialScope = "global", initialField, o
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       setEntry({ ...entry, settings: data.settings });
-      window.dispatchEvent(new Event("pi-web:bundled-plugin-settings"));
+      window.dispatchEvent(new Event("brabbler:bundled-plugin-settings"));
     } catch (error) { setEntry(entry); setError(String(error)); } finally { setBusy(false); }
   })());
   if (!entry) return <p role={error ? "alert" : "status"}>{error || "Loading bundled plugin settings…"}</p>;

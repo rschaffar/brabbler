@@ -8,7 +8,7 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true, fsCache: false });
 
 test("genuine inventory and bulk recovery use the existing mover and preserve archived/mixed-family history", async t => {
-  const root = mkdtempSync(join(tmpdir(), "pi-web-bulk-move-"));
+  const root = mkdtempSync(join(tmpdir(), "brabbler-bulk-move-"));
   const agent = join(root, "agent"), main = join(root, "repo"), missing = `${main}-worktrees/missing`, live = `${main}-worktrees/live`;
   const oldAgent = process.env.PI_CODING_AGENT_DIR, oldSessions = globalThis.__piSessions;
   process.env.PI_CODING_AGENT_DIR = agent; globalThis.__piSessions = new Map();
@@ -25,10 +25,10 @@ test("genuine inventory and bulk recovery use the existing mover and preserve ar
   const create = (cwd, parent, archived = false) => {
     const manager = SessionManager.create(cwd, undefined, parent ? { parentSession: parent.getSessionFile() } : undefined);
     // Match ordinary subagent layout: relation metadata immediately follows header.
-    if (parent) manager.appendCustomEntry("pi-web:subagent", { version: 1, parentSessionId: parent.getSessionId(), parentSessionPath: parent.getSessionFile(), profile: "explore", description: "fixture" });
+    if (parent) manager.appendCustomEntry("brabbler:subagent", { version: 1, parentSessionId: parent.getSessionId(), parentSessionPath: parent.getSessionFile(), profile: "explore", description: "fixture" });
     manager.appendMessage({ role: "user", content: "HISTORY_CANARY /old/path stays literal", timestamp: Date.now() });
     manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "Synthetic persisted reply" }], timestamp: Date.now() });
-    if (archived) manager.appendCustomEntry("pi-web:archive", { version: 1, archived: true });
+    if (archived) manager.appendCustomEntry("brabbler:archive", { version: 1, archived: true });
     return manager;
   };
   const parent = create(missing), child = create(live, parent), archived = create(missing, undefined, true),

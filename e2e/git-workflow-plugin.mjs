@@ -382,7 +382,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
       const saved = await page.request.get(`${base}/api/sessions/${sessionId}?tail=1000&tree=summary`);
       assert.ok(saved.ok(), await saved.text());
       const receipts = (await saved.json()).context.messages.filter((message) => message.role === "custom"
-        && message.customType === "pi-web:interaction-receipt" && message.details?.request?.id === receiptId);
+        && message.customType === "brabbler:interaction-receipt" && message.details?.request?.id === receiptId);
       assert.equal(receipts.length, 1);
       assert.equal(receipts[0].details.request.patchContext, query.get("handle"), "Saved receipt carries the original opaque snapshot handle");
       assert.equal(receipts[0].details.request.patch, undefined, "Receipts reference immutable content instead of repeating it");
@@ -674,7 +674,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     const persisted = await page.request.get(`${base}/api/sessions/${sessionId}?tail=1000&tree=summary`);
     assert.ok(persisted.ok(), await persisted.text());
     const outcomes = (await persisted.json()).context.messages.filter((message) => message.role === "custom"
-      && message.customType === "pi-web:operation-receipt" && message.details?.operationId === cleanupOperationId);
+      && message.customType === "brabbler:operation-receipt" && message.details?.operationId === cleanupOperationId);
     assert.equal(outcomes.length, 1);
     assert.equal(outcomes[0].details.phase, "succeeded");
     assert.equal(outcomes[0].details.authorization.mode, "ask");

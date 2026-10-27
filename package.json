@@ -1,21 +1,14 @@
 {
-  "name": "@agegr/pi-web",
+  "name": "brabbler",
   "version": "0.9.3",
-  "description": "Web UI for the pi coding agent",
-  "homepage": "https://github.com/agegr/pi-web#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/agegr/pi-web.git"
-  },
-  "bugs": {
-    "url": "https://github.com/agegr/pi-web/issues"
-  },
+  "description": "A Pi-based agent development workspace",
+  "private": true,
   "license": "MIT",
   "engines": {
     "node": ">=24.0.0"
   },
   "bin": {
-    "pi-web": "bin/pi-web.js"
+    "brabbler": "bin/brabbler.js"
   },
   "files": [
     "bin",
@@ -70,8 +63,7 @@
     "lint": "eslint .",
     "test:terminal": "nix run .#test -- e2e --group terminal",
     "test:e2e": "nix run .#test -- e2e",
-    "test": "nix run .#test -- core",
-    "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
+    "test": "nix run .#test -- core"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.4.0",

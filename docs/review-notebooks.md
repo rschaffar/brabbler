@@ -1,6 +1,6 @@
 # Review notebooks in Markdown
 
-Use ordinary Markdown for an author-led explanation and opt-in `pi-review` fences
+Use ordinary Markdown for an author-led explanation and opt-in `brabbler-review` fences
 for expandable evidence. A stop can display a pinned source range or a complete
 commit review and reveal that commit in Git Explorer. These are read-only views,
 not executable notebook cells or Git-operation approvals.
@@ -19,10 +19,10 @@ when the source excerpt exists there.
   Split evidence targets or steps when necessary; do not assign them one commit
   merely because they appear in the same explanation.
 - **Single-commit diff:** normally compare the change commit with its parent.
-  `pi-review` source/File diff and commit views use the first parent (the empty
+  `brabbler-review` source/File diff and commit views use the first parent (the empty
   tree for a root commit). Do not substitute the branch base or final tip for
   that parent without explaining the different review scope.
-- **Multi-commit range:** use explicit `pi-evidence` comparison endpoints. Label
+- **Multi-commit range:** use explicit `brabbler-evidence` comparison endpoints. Label
   the target and explain which commits the range includes, why they belong
   together and that the diff compares endpoint trees, not one commit's patch.
 - **Final-candidate source snapshot:** legitimate for reviewing final behavior.
@@ -84,7 +84,7 @@ ID and known source range. Do not use `HEAD`, a short hash or a guessed line num
 
 Read these calls in order. Why can no parsed policy escape before authentication?
 
-```pi-review
+```brabbler-review
 {
   "version": 1,
   "kind": "source",
@@ -140,7 +140,7 @@ commands, URLs, comparisons, symbols or repository aliases. A block is limited t
 refuse. Empty files have no valid positive source range.
 
 Invalid fences show an inactive diagnostic and their escaped JSON. Ordinary
-Markdown readers show the fenced data. The fence language must be `pi-review`;
+Markdown readers show the fenced data. The fence language must be `brabbler-review`;
 ordinary `diff`/`patch` fences remain syntax-highlighted text, not live Git views.
 
 ## Reading and navigation
@@ -174,11 +174,11 @@ without one, even in the same pane. Use **Open here** for a chapter transition.
 
 These prose links read saved working files and highlight their requested source
 lines. They do not relocate or synchronize the historical source/diff readers
-inside `pi-review` cards, whose commit identity remains pinned.
+inside `brabbler-review` cards, whose commit identity remains pinned.
 
 ## Pinning and authorization
 
-The authored **commit** pins the content. On activation Pi Web captures the named
+The authored **commit** pins the content. On activation Brabbler captures the named
 local branch's current tip and uses the existing Explorer reachability/anchoring
 checks around immutable reads. A later branch advance can authorize the same
 pinned commit without updating a guide; it never changes the requested source
@@ -194,7 +194,7 @@ contact remotes, switch branches, invoke an agent or run commands/tests.
 
 ## Scope and next steps
 
-The guided reader below adds a notebook manifest without changing `pi-review` v1.
+The guided reader below adds a notebook manifest without changing `brabbler-review` v1.
 There are still no executable cells, portable aliases or copyable app URL links.
 The optional reviewer record described below adds explicit progress, answers,
 feedback and dependency-based re-review accounting, not approval receipts.
@@ -238,31 +238,31 @@ are never cached this way; each revisit reads a fresh labelled snapshot.
 
 ### Versioned authoring contract
 
-One **top-level** `pi-notebook` JSON fence in `index.md` contains exactly:
+One **top-level** `brabbler-notebook` JSON fence in `index.md` contains exactly:
 
 ````markdown
 # Request-boundary review
 
-```pi-notebook
+```brabbler-notebook
 {"version":1,"id":"request-boundary","title":"Request boundary review","chapters":[{"id":"flow","title":"Request flow","path":"01-flow.md"},{"id":"failures","title":"Failure behavior","path":"02-failures.md"}]}
 ```
 ````
 
-Each chapter contains one or more top-level `pi-step` fences followed by its prose
-and top-level `pi-review` / `pi-evidence` targets, until the next `pi-step` or EOF.
+Each chapter contains one or more top-level `brabbler-step` fences followed by its prose
+and top-level `brabbler-review` / `brabbler-evidence` targets, until the next `brabbler-step` or EOF.
 A step boundary has exactly `version:1`, `id`, `title`. Before-step prose is not a
 step. Embedded examples inside longer code fences and blockquotes are not markers.
 Chapters cannot contain manifests. Chapters are a flat declared list, not recursive
 includes: no discovery, cycles, traversal, repeated paths (case-insensitive), missing
 chapters or duplicate chapter/step/target IDs. Step/target IDs are package-global;
-chapter IDs are unique in the manifest. IDs and titles use the `pi-review` bounds.
+chapter IDs are unique in the manifest. IDs and titles use the `brabbler-review` bounds.
 Unknown fields/versions diagnose without activating a guessed interpretation.
-All metadata admitted into a guided package (including `pi-review` targets) rejects
+All metadata admitted into a guided package (including `brabbler-review` targets) rejects
 duplicate JSON properties, even escaped equivalents, and nesting beyond 32 levels.
-Standalone inline `pi-review` v1 behavior is unchanged. Guided prose and Markdown
+Standalone inline `brabbler-review` v1 behavior is unchanged. Guided prose and Markdown
 assets display review fences as literal examples, not additional undeclared cards.
 
-`pi-evidence` is a **distinct** strict schema; never add these fields to `pi-review`:
+`brabbler-evidence` is a **distinct** strict schema; never add these fields to `brabbler-review`:
 
 | Kind | Exact fields in addition to `version:1`, `id`, `title`, `kind` |
 | --- | --- |
@@ -273,7 +273,7 @@ assets display review fences as literal examples, not additional undeclared card
 Comparison endpoints must each be reachable from the named local branch's
 captured tip. Base must be an ancestor of candidate; divergent/reversed ranges
 visibly refuse. This compares the **two endpoint trees**, including earlier feature
-commits, not candidate's first parent. Unchanged files use pinned `pi-review` source
+commits, not candidate's first parent. Unchanged files use pinned `brabbler-review` source
 instead of a fabricated empty diff. Each comparison captures and revalidates an
 opaque physical repository incarnation, branch tip and endpoints for patch/context
 reads. Identity is not authority. Multi-repository targets carry independently
@@ -361,7 +361,7 @@ document previews retain their existing defaults.
 
 ### Authored questions
 
-A top-level `pi-question` fence belongs to the preceding step (up to six per step).
+A top-level `brabbler-question` fence belongs to the preceding step (up to six per step).
 It has `version:1` plus the existing question-set fields (`id`, `shortLabel`,
 `question`, `type`, optional `context`, `required`, `options`) and optional
 `explanation` (8,000 characters). IDs/options use the existing 1–64 character
@@ -370,7 +370,7 @@ step-scoped; options are question-scoped. All fields/options are strict; duplica
 properties, unknown fields, excessive nesting and duplicate question IDs refuse.
 
 ````markdown
-```pi-question
+```brabbler-question
 {"version":1,"id":"_boundary","shortLabel":"Boundary","question":"Which failure paths deserve closer inspection?","type":"multiple","required":true,"options":[{"id":"early","title":"Early rejection"},{"id":"late","title":"Late extraction"},{"id":"none","title":"None","exclusive":true}],"explanation":"Author guidance: inspect both call order and failure propagation; this is not grading."}
 ```
 ````
@@ -393,7 +393,7 @@ logical items; do not regenerate identities as part of a rewrite or reuse an old
 ID for a different item. Preserve all saved review data, including `review-data`,
 without copying private reviewer responses into examples or reports.
 
-**Stable IDs do not keep answers current.** Pi Web fingerprints effective prose,
+**Stable IDs do not keep answers current.** Brabbler fingerprints effective prose,
 question definitions and evidence identities/bytes, not just IDs. Correcting an
 OID, path, source range, comparison endpoint or substantive prose can keep earlier
 answers and marks accessible as history while making them stale for the corrected
@@ -417,7 +417,7 @@ the normal UI. History preservation is not current-answer preservation.
 ### Material changes, missing evidence and recovery
 
 On explicit record loading/activation, current-step navigation, refresh and decision
-writes, Pi Web checks that step's dependencies. Ordinary document previews and
+writes, Brabbler checks that step's dependencies. Ordinary document previews and
 other chapters do not trigger Git/media inspection. Fingerprints cover effective
 step title/prose, question definitions, exact pinned target identities and relevant
 local-asset bytes. They exclude branch-head advancement, branch authority labels,
@@ -530,7 +530,7 @@ claiming availability. The index above plus this chapter and a similarly structu
 `02-failures.md` form a folder; there are no required sidecars.
 
 ````markdown
-```pi-step
+```brabbler-step
 {"version":1,"id":"reject-before-extract","title":"Can a rejected request reach extraction?"}
 ```
 
@@ -542,20 +542,20 @@ not its introduction. Look for a failure path that reaches extraction before
 validation. The test record must identify the exact tested candidate and command;
 ordering coverage does not establish deployment or performance.
 
-```pi-evidence
+```brabbler-evidence
 {"version":1,"kind":"compare","id":"server-range","title":"Three-commit server range: pre-feature base to final candidate","cwd":"/home/me/projects/server","branch":"feature/request-boundary","base":"1111111111111111111111111111111111111111","candidate":"2222222222222222222222222222222222222222","path":"src/request.ts"}
 ```
 
-```pi-review
+```brabbler-review
 {"version":1,"kind":"source","id":"client-assumption","title":"Client final-candidate source snapshot (not introduction)","cwd":"/home/me/projects/client","branch":"feature/request-client","oid":"3333333333333333333333333333333333333333","path":"src/client.ts","start":24,"end":39}
 ```
 
-```pi-evidence
+```brabbler-evidence
 {"version":1,"kind":"file","id":"test-record","title":"Test record (working asset)","path":"assets/test-record.md"}
 ```
 ````
 
-Use another unique `pi-step` in `02-failures.md`, with prose on missing/error cases
+Use another unique `brabbler-step` in `02-failures.md`, with prose on missing/error cases
 and verified source or web-link targets as appropriate. Keep evidence limitations
 explicit. This example does not install authoring guidance or modify exact prompts;
 the separate authoring-guidance work remains with its existing owner.
@@ -568,7 +568,7 @@ interface must pin them to A and B respectively, not C. These illustrative full
 IDs, paths and ranges must be replaced with verified values:
 
 ````markdown
-```pi-step
+```brabbler-step
 {"version":1,"id":"record-contract","title":"Records and reader contract"}
 ```
 
@@ -576,11 +576,11 @@ Commit A introduces the records. Commit B introduces the reader interface that
 uses them. Inspect each target's File diff against its own commit's first parent.
 The later logging commit C introduces neither declaration.
 
-```pi-review
+```brabbler-review
 {"version":1,"kind":"source","id":"entry-introduction","title":"Entry records introduced in A","cwd":"/home/me/projects/catalog","branch":"feature/record-reader","oid":"1111111111111111111111111111111111111111","path":"src/records.ts","start":1,"end":12}
 ```
 
-```pi-review
+```brabbler-review
 {"version":1,"kind":"source","id":"reader-introduction","title":"RecordReader introduced in B","cwd":"/home/me/projects/catalog","branch":"feature/record-reader","oid":"2222222222222222222222222222222222222222","path":"src/reader.ts","start":1,"end":8}
 ```
 ````

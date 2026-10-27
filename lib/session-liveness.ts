@@ -1,7 +1,7 @@
 const SESSION_LIVENESS_PROTOCOL_VERSION = 1;
-export const SESSION_LIVENESS_REGISTRY_KEY = "@agegr/pi-web/session-liveness/v1";
+export const SESSION_LIVENESS_REGISTRY_KEY = "brabbler/session-liveness/v1";
 export const SESSION_LIVENESS_LEASE_TTL_MS = 90_000;
-const SESSION_LIVENESS_LEASES_KEY = "@agegr/pi-web/session-liveness-leases/v1";
+const SESSION_LIVENESS_LEASES_KEY = "brabbler/session-liveness-leases/v1";
 
 export interface SessionLivenessProvider {
   name: string;
@@ -84,7 +84,7 @@ function createRegistry(): SessionLivenessRegistry {
           }
           if (active) return true;
         } catch (error) {
-          console.error(`[pi-web] Session liveness provider '${provider.name}' failed; preserving the session:`, error);
+          console.error(`[brabbler] Session liveness provider '${provider.name}' failed; preserving the session:`, error);
           return true;
         }
       }
@@ -137,7 +137,7 @@ function scheduleLeaseExpiry(lease: LeaseRecord): void {
 export function acquireSessionLivenessLease(sessionId: string): SessionLivenessLease {
   const leases = getLeaseStore();
   const providerRelease = registerSessionLivenessProvider({
-    name: "pi-web-selected-session",
+    name: "brabbler-selected-session",
     sessionId,
     isActive: () => !lease.released && lease.expiresAt > Date.now(),
   });
@@ -187,7 +187,7 @@ export function renewSessionLivenessLeases(sessionId: string): number {
 }
 
 /**
- * Register session-scoped work that must survive pi-web's automatic idle eviction.
+ * Register session-scoped work that must survive brabbler's automatic idle eviction.
  * Explicit shutdown and runtime replacement still take precedence.
  */
 export function registerSessionLivenessProvider(provider: SessionLivenessProvider): () => void {

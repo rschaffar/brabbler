@@ -1,9 +1,9 @@
 # Pinned SDK command environment patch
 
-Pi Desk's downstream SDK patch owns twelve modular SDK distribution targets, not a
+Brabbler's downstream SDK patch owns twelve modular SDK distribution targets, not a
 sandbox for extensions or a repair of Pi's standalone CLI/RPC bundles. It keeps
 normal `SSH_AUTH_SOCK`, explicit isolation, provider/account configuration and Pi
-session metadata, while removing `PI_WEB_PASSWORD` and `PI_DESK_SSH_RUNTIME` only
+session metadata, while removing `BRABBLER_PASSWORD` and `BRABBLER_SSH_RUNTIME` only
 from final child-process environment copies. The trusted supervised Next worker
 continues to receive its login password and private SSH runtime locator.
 
@@ -13,7 +13,7 @@ continues to receive its login password and private SSH runtime locator.
 **1.4.0** manifest and all twelve target modules by SHA-256, with original and
 patched hashes and exact replacement recipes. It contains only patch snippets,
 not vendored SDK modules. Its self-contained ESM helper is installed at
-`dist/utils/pi-desk-command-env.js` inside the SDK and imports no application code.
+`dist/utils/brabbler-command-env.js` inside the SDK and imports no application code.
 The manifest fingerprint and package version must match exactly. Unexpected local
 modifications or an SDK upgrade refuse instead of attempting a best-effort patch.
 
@@ -80,7 +80,7 @@ replaced or altered. Native MCP's existing isolated transports remain separate.
 
 Interactive-UI-only direct-spawn modules remain outside this twelve-target
 policy: external editor/session sharing, tmux probing and session-selector trash.
-The embedded Pi Web paths do not use those interactive workflows. Standalone
+The embedded Brabbler paths do not use those interactive workflows. Standalone
 CLI/RPC bundled copies are also not modified: filtering the modular `RpcClient`
 launch does not patch the CLI/RPC server executable it might start. Native clipboard
 APIs are not subprocesses and are not changed. Arbitrary trusted extensions may

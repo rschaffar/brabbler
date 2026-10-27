@@ -140,7 +140,7 @@ export async function runBrowserSshSuite() {
   const harness = createHarness(root, "browser");
   const { env, agentDir, fixtureRoot, artifacts } = harness;
   const coverage = createCoverage("ssh-agent", artifacts);
-  env.PI_WEB_PASSWORD = "synthetic-browser-ssh-password";
+  env.BRABBLER_PASSWORD = "synthetic-browser-ssh-password";
   applyFixtureEnvironment(env);
   const project = join(fixtureRoot, "project"); mkdirSync(project);
   const fixtures = seedSshRuntimeFixtures({ root, agentDir, project });
@@ -149,7 +149,7 @@ export async function runBrowserSshSuite() {
   for (const id of ["ssh-desktop", "ssh-mobile"]) writeFileSync(join(sessionRoot, `${id}.jsonl`), [
     { type: "session", version: 3, id, timestamp, cwd: project },
     { type: "model_change", id: "model", parentId: null, timestamp, provider: SSH_PROVIDER, modelId: "faux-1" },
-    { type: "custom", id: "tools", parentId: "model", timestamp, customType: "pi-web:tool-selection", data: { version: 1, tools: ["bash"] } },
+    { type: "custom", id: "tools", parentId: "model", timestamp, customType: "brabbler:tool-selection", data: { version: 1, tools: ["bash"] } },
     { type: "session_info", id: "name", parentId: "tools", timestamp, name: id },
     { type: "message", id: "prompt", parentId: "name", timestamp, message: { role: "user", content: "Synthetic SSH fixture" } },
   ].map(entry => JSON.stringify(entry)).join("\n") + "\n");
@@ -179,7 +179,7 @@ export async function runBrowserSshSuite() {
       // Only virtual credential material moves between two owned synthetic devices.
       for (const credential of credentials) await cdp.send("WebAuthn.addCredential", { authenticatorId, credential });
       await page.goto(`${uiBase}/login?next=${encodeURIComponent(`/?session=${sessionId}`)}`);
-      await page.getByLabel("Password", { exact: true }).fill(env.PI_WEB_PASSWORD);
+      await page.getByLabel("Password", { exact: true }).fill(env.BRABBLER_PASSWORD);
       await page.locator('button[type="submit"]').click();
       await page.getByText("Synthetic SSH fixture", { exact: true }).waitFor();
       const cookie = (await context.cookies(uiBase)).map(item => `${item.name}=${item.value}`).join("; ");
@@ -562,8 +562,8 @@ export async function runBrowserSshSuite() {
       const legacy = { ...sessionKey.credential, origin: uiBase };
       await closeSettings(page, dialog);
       await page.evaluate(value => {
-        localStorage.setItem("pi-web:browser-ssh-credential:v1", JSON.stringify(value));
-        for (const key of Object.keys(localStorage)) if (key.startsWith("pi-web:browser-ssh-ack:v1:")) localStorage.removeItem(key);
+        localStorage.setItem("brabbler:browser-ssh-credential:v1", JSON.stringify(value));
+        for (const key of Object.keys(localStorage)) if (key.startsWith("brabbler:browser-ssh-ack:v1:")) localStorage.removeItem(key);
       }, legacy);
       await page.reload(); await page.getByText("Synthetic SSH fixture", { exact: true }).waitFor();
       dialog = await openSettings(page);
@@ -578,7 +578,7 @@ export async function runBrowserSshSuite() {
       // Remove through the actual row UI. Do not edit the central registry file.
       const keyRow = dialog.getByRole("region", { name: "Registered keys", exact: true }).locator("div").filter({ has: page.locator("strong", { hasText: sessionKey.name }) }).filter({ has: page.getByRole("button", { name: "Remove", exact: true }) }).last();
       await keyRow.getByRole("button", { name: "Remove", exact: true }).click();
-      const removed = capture(page, "remove"); await keyRow.getByRole("button", { name: "Remove from Pi Web", exact: true }).click(); await removed;
+      const removed = capture(page, "remove"); await keyRow.getByRole("button", { name: "Remove from Brabbler", exact: true }).click(); await removed;
       recovery = dialog.getByRole("region", { name: "Public credential recovery", exact: true });
       await recovery.getByLabel("Key name", { exact: true }).fill(`${sessionId} recovered strict`);
       await recovery.getByRole("checkbox", { name: "I accept application-only strict enforcement with unknown credential protection", exact: true }).check();
@@ -589,7 +589,7 @@ export async function runBrowserSshSuite() {
       assert.ok(newKey); assert.notEqual(newKey.id, sessionKey.id); assert.equal(newKey.publicKey, sessionKey.publicKey); assert.equal(newKey.policy, "strict");
       assert.equal(newKey.protection, null); assert.equal(newKey.applicationOnly, true); assert.equal(recovered.connections.length, 0);
       assert.deepEqual((await ceremonies(page)).slice(beforeImport).map(item => [item.method, item.uv, item.completed]), [["get", "required", true]]);
-      assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("pi-web:browser-ssh-credential:v1"))), legacy, "generic recovery original remains untouched");
+      assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("brabbler:browser-ssh-credential:v1"))), legacy, "generic recovery original remains untouched");
       await useBackend(page, dialog, "none", status); await closeSettings(page, dialog);
       writeFileSync(join(artifacts, `ssh-managed-${inputId}.json`), JSON.stringify({ socket: stableSocket, strictPublicKey: strict.publicKey, sessionPublicKey: sessionKey.publicKey, recoveredPublicKey: newKey.publicKey, consumers: consumerEvidence, ceremonies: await ceremonies(page) }, null, 2));
       assert.deepEqual(errors, [], `Browser SSH errors (${inputId})`);

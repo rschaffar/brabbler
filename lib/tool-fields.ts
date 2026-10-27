@@ -1,6 +1,6 @@
 import { isWriteToolName } from "./tool-names";
 
-/** Adapted from upstream pi-web #1324 (083fd11b): all fields or complete JSON. */
+/** Adapted from upstream brabbler #1324 (083fd11b): all fields or complete JSON. */
 export interface ToolField {
   key: string;
   value: string;

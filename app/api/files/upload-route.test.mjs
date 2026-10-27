@@ -13,7 +13,7 @@ const security = await jiti.import("../../../lib/path-security.ts");
 const paths = await jiti.import("../../../lib/paths.ts");
 
 function fixture(t) {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-upload-api-")));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "brabbler-upload-api-")));
   let fileBody;
   t.after(async () => {
     const { closed, errors } = fileBody ? await fileBody.finish() : { closed: true, errors: [] };

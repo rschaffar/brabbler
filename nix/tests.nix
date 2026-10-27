@@ -4,12 +4,12 @@ let
   # This is the original PUBLIC frontend selected for this pinned test PATH.
   # It may itself be a distribution wrapper: never resolve/unwrap it for exec.
   publicGit = "${pkgs.git}/bin/git";
-  forwarder = pkgs.runCommandCC "pi-web-test-git-forwarder" { } ''
-    mkdir -p "$out/bin" "$out/share/pi-web-test"
+  forwarder = pkgs.runCommandCC "brabbler-test-git-forwarder" { } ''
+    mkdir -p "$out/bin" "$out/share/brabbler-test"
     "$CC" -std=c11 -O2 -Wall -Wextra -Werror \
-      ${lib.escapeShellArg ''-DPI_WEB_TEST_GIT_TARGET="${publicGit}"''} \
+      ${lib.escapeShellArg ''-DBRABBLER_TEST_GIT_TARGET="${publicGit}"''} \
       ${./test-git-forwarder.c} -o "$out/bin/git"
-    printf '%s\n' ${lib.escapeShellArg publicGit} > "$out/share/pi-web-test/public-git"
+    printf '%s\n' ${lib.escapeShellArg publicGit} > "$out/share/brabbler-test/public-git"
   '';
   tools = [
     forwarder nodejs pkgs.git pkgs.openssh pkgs.bash pkgs.coreutils pkgs.findutils
@@ -24,18 +24,18 @@ let
   program = mode:
     let
       toolPath = lib.makeBinPath tools;
-      body = pkgs.writeShellScript "pi-web-test-${mode}-body" ''
+      body = pkgs.writeShellScript "brabbler-test-${mode}-body" ''
         set -euo pipefail
         root="$1"
         inventory_only="$2"
         shift 2
         umask 077
         phase=setup
-        phase_start() { phase="$1"; printf 'PI_WEB_TEST_PHASE start %s\n' "$phase"; }
-        phase_done() { printf 'PI_WEB_TEST_PHASE end %s status=0\n' "$phase"; phase=between-phases; }
+        phase_start() { phase="$1"; printf 'BRABBLER_TEST_PHASE start %s\n' "$phase"; }
+        phase_done() { printf 'BRABBLER_TEST_PHASE end %s status=0\n' "$phase"; phase=between-phases; }
         # Keep the original exec/signal path into the runner. This trap reports
         # only an early body/exec failure, never claims descendant settlement.
-        trap 'status=$?; trap - EXIT; if [ "$status" -ne 0 ]; then printf "PI_WEB_TEST_PHASE failed %s status=%s retained=%s\n" "$phase" "$status" "$root" >&2 || :; fi; exit "$status"' EXIT
+        trap 'status=$?; trap - EXIT; if [ "$status" -ne 0 ]; then printf "BRABBLER_TEST_PHASE failed %s status=%s retained=%s\n" "$phase" "$status" "$root" >&2 || :; fi; exit "$status"' EXIT
         phase_start export
         ${pkgs.python3}/bin/python3 -B ${./export-test-source.py} ${src} \
           --output "$root/source" --manifest "$root/source-input.json"
@@ -54,7 +54,7 @@ let
           phase_start link-modules
           ln -s ${modules}/node_modules "$root/source/node_modules"
           mkdir -p "$root/source/lib/testing"
-          support="''${PI_WEB_TEST_SUPPORT_MODULES:?missing declared test support}"
+          support="''${BRABBLER_TEST_SUPPORT_MODULES:?missing declared test support}"
           ln -s "$support/node_modules" "$root/source/lib/testing/node_modules"
           phase_done
         fi
@@ -65,7 +65,7 @@ let
           phase_done
           phase_start static-evidence
           # Bound by mkCore, not a public runner option or a claim of fresh static execution.
-          static_evidence="''${PI_WEB_TEST_STATIC_EVIDENCE:?missing declared static evidence}"
+          static_evidence="''${BRABBLER_TEST_STATIC_EVIDENCE:?missing declared static evidence}"
           cp "$static_evidence/inputs.json" "$root/static-inputs.json"
           cp "$static_evidence/checks.log" "$root/static.log"
           printf 'Static checks: declared-input evidence from %s (may be cached)\n' "$static_evidence"
@@ -81,7 +81,7 @@ let
           --artifacts "$root/artifacts" "$@"
       '';
     in
-    pkgs.writeShellScript "pi-web-test-${mode}" ''
+    pkgs.writeShellScript "brabbler-test-${mode}" ''
       set -euo pipefail
       jobs=8
       jobs_seen=0
@@ -174,7 +174,7 @@ let
       umask 077
         # Private builder-to-check channel, never a public app/runner option.
         # The builder retains this SAME root for copying; no stdout discovery.
-        root="''${PI_WEB_NIX_CHECK_ROOT:?missing internal check root}"
+        root="''${BRABBLER_NIX_CHECK_ROOT:?missing internal check root}"
         case "$root" in /*) ;; *) exit 2 ;; esac
         if [ ! -d "$root" ] || [ -L "$root" ] || \
           [ "$(${pkgs.coreutils}/bin/stat -c '%u:%a' -- "$root")" != "$(${pkgs.coreutils}/bin/id -u):700" ]; then
@@ -194,10 +194,10 @@ let
         XDG_CONFIG_DIRS="$root/config" XDG_DATA_DIRS="$root/data" \
         PI_CODING_AGENT_DIR="$root/agent" TMPDIR="$root/tmp" TMP="$root/tmp" TEMP="$root/tmp" \
         LANG=C.UTF-8 LC_ALL=C.UTF-8 SHELL=${pkgs.bash}/bin/bash \
-        PI_WEB_TEST_SHELL=${pkgs.bash}/bin/bash PI_WEB_TEST_MODULES=${modules}/node_modules \
+        BRABBLER_TEST_SHELL=${pkgs.bash}/bin/bash BRABBLER_TEST_MODULES=${modules}/node_modules \
         PI_OFFLINE=1 JITI_FS_CACHE=0 NEXT_TELEMETRY_DISABLED=1 \
-        PI_WEB_TEST_STATIC_EVIDENCE="''${PI_WEB_TEST_STATIC_EVIDENCE-}" \
-        PI_WEB_TEST_SUPPORT_MODULES="''${PI_WEB_TEST_SUPPORT_MODULES-}" \
+        BRABBLER_TEST_STATIC_EVIDENCE="''${BRABBLER_TEST_STATIC_EVIDENCE-}" \
+        BRABBLER_TEST_SUPPORT_MODULES="''${BRABBLER_TEST_SUPPORT_MODULES-}" \
         GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_GLOBAL=/dev/null \
         GIT_TERMINAL_PROMPT=0 "''${core_env[@]}" \
         ${nodejs}/bin/node ${src}/nix/test-lifecycle.mjs "$root" "$keep_workspace" \
@@ -205,7 +205,7 @@ let
     '';
   coreProgram = program "core";
   coreCheckProgram = program "check";
-  mkCore = { args ? [ ], runId ? "" }: pkgs.runCommand "pi-web-core-checks" { inherit runId; } ''
+  mkCore = { args ? [ ], runId ? "" }: pkgs.runCommand "brabbler-core-checks" { inherit runId; } ''
     set -euo pipefail
     umask 077
     # Keep failures in the ACTUAL build tree for --keep-failed, not /tmp.
@@ -215,9 +215,9 @@ let
     # Capture BOTH statuses immediately; a successful tee cannot repair a
     # failed body. This does not disable errexit in the separate body script.
     set +e
-    PI_WEB_NIX_CHECK_ROOT="$check_root" \
-      PI_WEB_TEST_STATIC_EVIDENCE=${if builtins.elem "--inventory-only" args then "''" else lib.escapeShellArg (toString staticChecks)} \
-      PI_WEB_TEST_SUPPORT_MODULES=${if builtins.elem "--inventory-only" args then "''" else lib.escapeShellArg (toString testSupport)} \
+    BRABBLER_NIX_CHECK_ROOT="$check_root" \
+      BRABBLER_TEST_STATIC_EVIDENCE=${if builtins.elem "--inventory-only" args then "''" else lib.escapeShellArg (toString staticChecks)} \
+      BRABBLER_TEST_SUPPORT_MODULES=${if builtins.elem "--inventory-only" args then "''" else lib.escapeShellArg (toString testSupport)} \
       ${if args == [ ] then coreCheckProgram else coreProgram} ${lib.escapeShellArgs args} 2>&1 | tee "$check_root/driver.log"
     pipeline_status=("''${PIPESTATUS[@]}")
     set -e
@@ -227,7 +227,7 @@ let
     if [ "$final_status" -eq 0 ]; then final_status="$tee_status"; fi
     # This is pipeline status, NOT a success/settlement receipt. Preserve the
     # original nonzero result even if the final diagnostic channel also fails.
-    if ! printf 'PI_WEB_TEST_CHECK pipeline body=%s tee=%s status=%s retained=%s artifacts=%s\n' \
+    if ! printf 'BRABBLER_TEST_CHECK pipeline body=%s tee=%s status=%s retained=%s artifacts=%s\n' \
       "$body_status" "$tee_status" "$final_status" "$check_root" "$check_root/artifacts" >&2; then
       if [ "$final_status" -eq 0 ]; then final_status=1; fi
     fi

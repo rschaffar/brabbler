@@ -46,9 +46,9 @@ export function isMessageGroupAnchor(message: { role?: AgentMessage["role"]; cus
   return message.role === "user"
     || (message.role === "custom" && (
       message.customType === "compaction"
-      || message.customType === "pi-web:interaction-receipt"
-      || message.customType === "pi-web:operation-receipt"
-      || message.customType === "pi-web:subagent-notification"
+      || message.customType === "brabbler:interaction-receipt"
+      || message.customType === "brabbler:operation-receipt"
+      || message.customType === "brabbler:subagent-notification"
     ));
 }
 

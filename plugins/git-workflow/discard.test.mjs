@@ -183,7 +183,7 @@ test("rejection, cancellation and missing browser UI retain exact resources even
     const f = fixture(st); f.set({ discardResources: "allow", approvedArtifactRoots: "generated" }); f.artifact();
     failed(await f.call({}, { pluginCard: answer === "missing" ? undefined : async (_id, card) => {
       assert.ok(card.requiredAcknowledgment); assert.ok(existsSync(f.path)); assert.equal(git(f.cwd, "rev-parse", "feature"), f.tip); return answer;
-    } }), /not approved|live Pi Web browser UI/);
+    } }), /not approved|live Brabbler browser UI/);
     assert.ok(existsSync(join(f.path, "generated/cache"))); assert.equal(git(f.cwd, "rev-parse", "feature"), f.tip);
     assert.equal(f.receipts.at(-1).effectStarted, false);
   });

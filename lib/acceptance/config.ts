@@ -8,7 +8,7 @@ import { trustedGitRepository } from "../project-trust-repository";
 import type { AcceptanceProfile, AcceptanceProject } from "./types";
 
 export const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-export const acceptanceRoot = () => path.join(getAgentDir(), "pi-web", "acceptance");
+export const acceptanceRoot = () => path.join(getAgentDir(), "brabbler", "acceptance");
 export const excludedInput = (name: string) => (name.startsWith(".") && ![".github", ".gitignore"].includes(name))
   || ["node_modules", "result", "test-results", "coverage", "dist", "build", "out", "__pycache__", "private", "credentials", "secrets", "auth.json", "credentials.json", "settings.json", "models.json", "config.json", "next-env.d.ts"].includes(name.toLowerCase())
   || /\.(pem|key|p12|pfx|log|tsbuildinfo)$/i.test(name);

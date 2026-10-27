@@ -1,6 +1,6 @@
-# Worktrees in Pi Web
+# Worktrees in Brabbler
 
-Pi Web can show all Git worktrees for one project in the sidebar. Use this when you want to keep separate checkouts for different branches, while keeping the project's sessions grouped together.
+Brabbler can show all Git worktrees for one project in the sidebar. Use this when you want to keep separate checkouts for different branches, while keeping the project's sessions grouped together.
 
 ## When the Worktree Control Appears
 
@@ -16,7 +16,7 @@ If you are inside a repo subdirectory, open the repository root from the project
 
 ## Switching Worktrees
 
-Use the worktree switcher to choose which checkout Pi Web should use for new work in that project. A merge-branch icon beside a linked checkout (and its selected label) means its current branch tip is contained in local `main`; it does not indicate whether the checkout has uncommitted changes. The selected-checkout checkmark is separate. The badge is omitted when `main` is unavailable, and updates when the switcher reloads.
+Use the worktree switcher to choose which checkout Brabbler should use for new work in that project. A merge-branch icon beside a linked checkout (and its selected label) means its current branch tip is contained in local `main`; it does not indicate whether the checkout has uncommitted changes. The selected-checkout checkmark is separate. The badge is omitted when `main` is unavailable, and updates when the switcher reloads.
 
 Switching worktrees affects:
 
@@ -28,7 +28,7 @@ Existing sessions stay grouped under the same project. Opening an existing sessi
 
 ### Trusting project resources
 
-A new worktree is **not** trusted merely because an agent or the sidebar created it. When project extensions, skills or settings require trust, Pi Web keeps them restricted and offers **Review trust…** for the selected chat's checkout. Choose **Trust this worktree only** to trust just that checkout (the Pi CLI shares this path decision), or **Trust this Git project (all worktrees)** to trust every registered checkout of the same repository, including future worktrees. The broader decision is Pi Web-only; it does not automatically trust those paths in the Pi CLI. Trust enables project-controlled resources that may run local code, not Git mutation permissions or general file access.
+A new worktree is **not** trusted merely because an agent or the sidebar created it. When project extensions, skills or settings require trust, Brabbler keeps them restricted and offers **Review trust…** for the selected chat's checkout. Choose **Trust this worktree only** to trust just that checkout (the Pi CLI shares this path decision), or **Trust this Git project (all worktrees)** to trust every registered checkout of the same repository, including future worktrees. The broader decision is Brabbler-only; it does not automatically trust those paths in the Pi CLI. Trust enables project-controlled resources that may run local code, not Git mutation permissions or general file access.
 
 **Settings → General → Manage trust…** shows the current effective decision even when no resources need trust yet. Stop trusting a worktree to restrict it even under a project grant; clear that override to return to the project's decision. Stopping project-wide trust leaves explicitly trusted worktrees trusted. Changing trust while affected sessions are active is refused; try again once they finish. An unregistered checkout or another repository never inherits a Git project grant.
 
@@ -63,7 +63,7 @@ patches fail rather than showing partial output. Detached HEAD and non-root
 directories cannot be browsed. Explorer never reads uncommitted files, runs checks,
 switches branches, merges or contacts remotes.
 
-The graph layout adapts [binaryplease/git-graph](https://github.com/binaryplease/git-graph) under the MIT license (`lib/git-graph-layout.LICENSE`); Pi Web runs its own bounded read API and does not depend on that project's server.
+The graph layout adapts [binaryplease/git-graph](https://github.com/binaryplease/git-graph) under the MIT license (`lib/git-graph-layout.LICENSE`); Brabbler runs its own bounded read API and does not depend on that project's server.
 
 #### References from review guides
 
@@ -76,7 +76,7 @@ reference. On mobile Reveal opens detail first. A commit outside the loaded grap
 page retains exact detail and offers ordinary older-history paging, not an
 unbounded automatic search. Newer navigation/close/return supersedes late reveals.
 
-Guided Markdown FILE previews also support explicit whole-feature `pi-evidence`
+Guided Markdown FILE previews also support explicit whole-feature `brabbler-evidence`
 comparisons: separate `compare` / `compare-patch` / `compare-context` GETs use full
 base/candidate endpoint trees under one captured local branch tip. Both endpoints
 must be reachable and base must be an ancestor of candidate; divergent ranges
@@ -210,9 +210,9 @@ they are not the manager's exact-reviewed resource-discard path.
 
 ## Creating a Worktree
 
-Choose `New worktree...` from the worktree menu. **Select a local base branch** and review its full expected HEAD commit ID, then choose **Create new branch** and enter a new branch name. There is no default base: existing switcher users must make a selection before creating. The base and expected commit are checked again on the server; if the branch moved, refresh the switcher and select it again. Pi Web does not fetch or select remote-tracking refs automatically. Creation is explicit and never moves or forks a chat.
+Choose `New worktree...` from the worktree menu. **Select a local base branch** and review its full expected HEAD commit ID, then choose **Create new branch** and enter a new branch name. There is no default base: existing switcher users must make a selection before creating. The base and expected commit are checked again on the server; if the branch moved, refresh the switcher and select it again. Brabbler does not fetch or select remote-tracking refs automatically. Creation is explicit and never moves or forks a chat.
 
-Pi Web creates the checkout at:
+Brabbler creates the checkout at:
 
 ```text
 <repo>-worktrees/<branch>
@@ -221,13 +221,13 @@ Pi Web creates the checkout at:
 For example, if the main checkout is:
 
 ```text
-/Users/alex/Documents/Workspace/pi-web
+/Users/alex/Documents/Workspace/brabbler
 ```
 
 and you create branch `codex/worktree-help`, the worktree is created under:
 
 ```text
-/Users/alex/Documents/Workspace/pi-web-worktrees/codex-worktree-help
+/Users/alex/Documents/Workspace/brabbler-worktrees/codex-worktree-help
 ```
 
 To check out an **existing local branch**, explicitly choose **Attach existing local branch** and select it. Its full expected tip is captured and checked before checkout; an already checked-out branch cannot be attached twice. Creating a new branch never reuses an existing one, even when a remote-tracking branch has the same name. Creation uses exactly the selected local base commit, not the current checkout HEAD. Branch names are validated by Git. The source checkout and any checkout of the selected base must be clean, including untracked files; commit, stash, or remove those changes first. Existing destination directories and stale branch tips are rejected. Concurrent external Git writers can still race the checks. Inspect actual state and any partial effects if Git reports a conflict; no automatic retry or rollback is implied.
@@ -239,16 +239,16 @@ Use the remove button next to a non-main worktree, then explicitly confirm its r
 This manual sidebar removal does not delete:
 
 - The Git branch.
-- Pi Web session history.
+- Brabbler session history.
 - The main checkout.
 
-If the worktree has uncommitted or untracked files, Git refuses the removal. Pi Web then offers a force remove action. Force removal discards the uncommitted files in that checkout, so use it only when you no longer need those changes.
+If the worktree has uncommitted or untracked files, Git refuses the removal. Brabbler then offers a force remove action. Force removal discards the uncommitted files in that checkout, so use it only when you no longer need those changes.
 
 You are responsible for not deleting a worktree still needed by a chat or terminal. No chat is moved automatically to make removal possible.
 
 ## Sessions and Worktrees
 
-Pi Web groups sessions by project root, so sessions from the main checkout and linked worktrees appear together.
+Brabbler groups sessions by project root, so sessions from the main checkout and linked worktrees appear together.
 
 Linked-worktree sessions with a known branch show the same branch icon and branch name in the normal session list, Activity, and Starred. Hover over the badge to see the full worktree path. Main-checkout sessions and sessions without a known branch do not show this badge.
 
@@ -321,7 +321,7 @@ Select a Git repository root. Non-Git directories and repo subdirectories show a
 Git allows a branch to be checked out in only one worktree at a time. Switch to the existing worktree for that branch, or remove it first. If a base or attach tip changed since you selected it, refresh the worktree menu and select the branch again.
 
 **A removed worktree still shows up in Git.**
-Git can keep prunable worktree records after a checkout disappears. Pi Web filters those out of the switcher.
+Git can keep prunable worktree records after a checkout disappears. Brabbler filters those out of the switcher.
 
 **The Explorer shows a different branch than the open chat.**
 The Explorer follows the selected worktree. The chat follows the opened session. Click the session again to move the sidebar back to that session's checkout.

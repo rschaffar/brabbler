@@ -170,21 +170,21 @@ export function requestJSON(base, pathname, options = {}) {
 export function parsePtyProof(output, workspace, registry, terminal) {
   const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, 'g');
   const normalized = output.replace(ansi, '').replace(/\r/g, '');
-  const block = normalized.match(/\nPIWEB_BEGIN\n([\s\S]*?)\nPIWEB_END(?:\n|$)/)?.[1];
+  const block = normalized.match(/\nBRABBLER_BEGIN\n([\s\S]*?)\nBRABBLER_END(?:\n|$)/)?.[1];
   assert.ok(block, 'Missing executed PTY proof (input echo is not proof)');
   const lines = block.split('\n');
   assert.equal(lines.length, 8);
   const keys = ['TTY', 'UID', 'PID', 'CWD', 'UNIT', 'FILE', 'OVERRIDE', 'SIZE'];
   const fields = Object.fromEntries(keys.map((key, i) => {
-    assert.ok(lines[i].startsWith(`PIWEB_${key}:`)); return [key, lines[i].slice(`PIWEB_${key}:`.length)];
+    assert.ok(lines[i].startsWith(`BRABBLER_${key}:`)); return [key, lines[i].slice(`BRABBLER_${key}:`.length)];
   }));
   assert.match(fields.TTY, /^\/dev\/pts\/[0-9]+$/); assert.match(fields.PID, /^[1-9][0-9]*$/);
   assert.equal(fields.UID, String(registry.service.uid)); assert.equal(fields.CWD, workspace);
   const environment = serviceEnvironment(registry);
-  assert.equal(fields.UNIT, environment.PI_WEB_SERVICE_UNIT); assert.equal(fields.FILE, environment.PI_WEB_SERVICE_FILE);
-  assert.equal(fields.OVERRIDE, environment.PI_WEB_SERVICE_OVERRIDE); assert.equal(fields.SIZE, `${terminal.rows} ${terminal.cols}`);
+  assert.equal(fields.UNIT, environment.BRABBLER_SERVICE_UNIT); assert.equal(fields.FILE, environment.BRABBLER_SERVICE_FILE);
+  assert.equal(fields.OVERRIDE, environment.BRABBLER_SERVICE_OVERRIDE); assert.equal(fields.SIZE, `${terminal.rows} ${terminal.cols}`);
   return { id: terminal.id, tty: fields.TTY, uid: Number(fields.UID), pid: fields.PID, cwd: fields.CWD,
-    environment: { PI_WEB_SERVICE_UNIT: fields.UNIT, PI_WEB_SERVICE_FILE: fields.FILE, PI_WEB_SERVICE_OVERRIDE: fields.OVERRIDE },
+    environment: { BRABBLER_SERVICE_UNIT: fields.UNIT, BRABBLER_SERVICE_FILE: fields.FILE, BRABBLER_SERVICE_OVERRIDE: fields.OVERRIDE },
     cols: terminal.cols, rows: terminal.rows };
 }
 
@@ -217,7 +217,7 @@ export async function terminalOutput(base, plan, workspace, signal, diagnostics)
             else record.eventTypesOmitted++;
             assert.equal(event.type, 'output', 'PTY exited/closed before live proof'); assert.equal(typeof event.data, 'string');
             transcript.append(event.data); output += event.data;
-            if (output.replace(/\r/g, '').includes('\nPIWEB_END\n')) {
+            if (output.replace(/\r/g, '').includes('\nBRABBLER_END\n')) {
               return finish(null, parsePtyProof(output, workspace, plan.registry, plan.terminal));
             }
           }
@@ -253,13 +253,13 @@ export default pi => {
   pi.registerProvider(faux.provider);
   pi.on('before_agent_start', (event, ctx) => {
     if (ctx.model?.provider !== 'vm-pause') return;
-    faux.setResponses(event.prompt.startsWith('[Pi Web resume ')
+    faux.setResponses(event.prompt.startsWith('[Brabbler resume ')
       ? [fauxAssistantMessage('VM pause resumed')]
       : [fauxAssistantMessage([fauxToolCall('ask_user', { question: 'VM restart question', options: [{ title: 'Keep working' }], allowFreeform: true })], { stopReason: 'toolUse' }), fauxAssistantMessage('Must not run before Resume')]);
   });
 };\n`, { flag: 'wx', mode: 0o600 });
   fs.mkdirSync(path.dirname(plan.session.file), { recursive: true, mode: 0o700 });
-  writePrivateEnvironment(service.envFile, 'PI_WEB_SERVICE_FILE="runtime file $literal"\nPI_WEB_SERVICE_OVERRIDE=runtime-file-wins\n');
+  writePrivateEnvironment(service.envFile, 'BRABBLER_SERVICE_FILE="runtime file $literal"\nBRABBLER_SERVICE_OVERRIDE=runtime-file-wins\n');
   const timestamp = '2026-10-15T00:00:00.000Z';
   const entries = [
     { type: 'session', version: 3, id: plan.session.id, timestamp, cwd: service.home },
@@ -272,8 +272,8 @@ export default pi => {
 }
 
 function activation(plan) {
-  const unit = `${plan.registry.service.home}/.config/systemd/user/pi-web.service`;
-  const link = `${path.dirname(unit)}/default.target.wants/pi-web.service`;
+  const unit = `${plan.registry.service.home}/.config/systemd/user/brabbler.service`;
+  const link = `${path.dirname(unit)}/default.target.wants/brabbler.service`;
   assert.ok(fs.lstatSync(link).isSymbolicLink(), 'Home Manager must create the default.target link');
   const target = fs.realpathSync(link); assert.equal(target, fs.realpathSync(unit));
   assert.match(target, /^\/nix\/store\/[a-z0-9]{32}-[^/]+(?:\/[^/]+)*$/);
@@ -294,7 +294,7 @@ function permissions(plan, pid) {
   const expected = serviceEnvironment(registry), environment = Object.fromEntries(Object.keys(expected).map(key => [key, all[key]]));
   assert.deepEqual(environment, expected); // Only synthetic/allowlisted values enter evidence.
   const cwd = fs.realpathSync(`${proc}/cwd`); assert.equal(cwd, service.home);
-  const launcherScript = `${registry.package}/bin/pi-web.js`;
+  const launcherScript = `${registry.package}/bin/brabbler.js`;
   assert.ok(fs.readFileSync(`${proc}/cmdline`, 'utf8').split('\0').includes(launcherScript));
   const paths = Object.fromEntries([
     ['home', service.home, '0700'], ['fixture', service.fixture, '0700'], ['agent', service.agentDir, '0700'],
@@ -312,16 +312,16 @@ async function productionPty(base, plan, group, diagnostics) {
   assert.equal(created.id, plan.terminal.id);
   // Split markers so the terminal's echo of this command cannot satisfy proof.
   const input = [
-    String.raw`printf '\n%s%s\n' PIWEB_ BEGIN`,
-    String.raw`if test -t 0 && test -t 1; then printf '%s%s:%s\n' PIWEB_ TTY "$(tty)"; fi`,
-    String.raw`printf '%s%s:%s\n' PIWEB_ UID "$(id -u)"`,
-    String.raw`printf '%s%s:%s\n' PIWEB_ PID "$$"`,
-    String.raw`printf '%s%s:%s\n' PIWEB_ CWD "$PWD"`,
-    String.raw`printf '%s%s:%s\n' PIWEB_ UNIT "$PI_WEB_SERVICE_UNIT"`,
-    String.raw`printf '%s%s:%s\n' PIWEB_ FILE "$PI_WEB_SERVICE_FILE"`,
-    String.raw`printf '%s%s:%s\n' PIWEB_ OVERRIDE "$PI_WEB_SERVICE_OVERRIDE"`,
-    String.raw`printf '%s%s:%s\n' PIWEB_ SIZE "$(stty size)"`,
-    String.raw`printf '%s%s\n' PIWEB_ END`,
+    String.raw`printf '\n%s%s\n' BRABBLER_ BEGIN`,
+    String.raw`if test -t 0 && test -t 1; then printf '%s%s:%s\n' BRABBLER_ TTY "$(tty)"; fi`,
+    String.raw`printf '%s%s:%s\n' BRABBLER_ UID "$(id -u)"`,
+    String.raw`printf '%s%s:%s\n' BRABBLER_ PID "$$"`,
+    String.raw`printf '%s%s:%s\n' BRABBLER_ CWD "$PWD"`,
+    String.raw`printf '%s%s:%s\n' BRABBLER_ UNIT "$BRABBLER_SERVICE_UNIT"`,
+    String.raw`printf '%s%s:%s\n' BRABBLER_ FILE "$BRABBLER_SERVICE_FILE"`,
+    String.raw`printf '%s%s:%s\n' BRABBLER_ OVERRIDE "$BRABBLER_SERVICE_OVERRIDE"`,
+    String.raw`printf '%s%s:%s\n' BRABBLER_ SIZE "$(stty size)"`,
+    String.raw`printf '%s%s\n' BRABBLER_ END`,
   ].join('; ') + '\n';
   const controller = new AbortController();
   const output = terminalOutput(base, plan, workspace, controller.signal, diagnostics);
@@ -343,7 +343,7 @@ async function productionPty(base, plan, group, diagnostics) {
 }
 
 function guestPlan(file) {
-  assert.equal(fs.readFileSync('/etc/pi-web-acceptance-guest', 'utf8').trim(), 'pi-web-nixos-acceptance-v1');
+  assert.equal(fs.readFileSync('/etc/brabbler-acceptance-guest', 'utf8').trim(), 'brabbler-nixos-acceptance-v1');
   const real = fs.realpathSync(file), stat = fs.statSync(real);
   assert.match(real, /^\/nix\/store\/[a-z0-9]{32}-[^/]+$/);
   assert.ok(stat.isFile() && stat.uid === 0 && !(stat.mode & 0o222), 'Immutable root-owned service registry required');
@@ -368,7 +368,7 @@ async function pauseBeforeRestart(base, plan, diagnostics) {
   assert.deepEqual((await requestJSON(base, '/api/activity/pause', { method: 'POST', body: { action: 'pause', sessionId: plan.session.id }, diagnostics })).errors, []);
   const snapshot = await pauseObservation(base, plan, diagnostics, value => value.pauses.some(row => row.sessionId === plan.session.id && row.state === 'paused') && !value.runningSessionIds.includes(plan.session.id));
   assert.equal(snapshot.attention.some(row => row.sessionId === plan.session.id), false);
-  const file = path.join(plan.registry.service.agentDir, 'pi-web', 'session-pauses.json');
+  const file = path.join(plan.registry.service.agentDir, 'brabbler', 'session-pauses.json');
   physical(file, '0600', plan.registry.service.uid);
   const pause = JSON.parse(fs.readFileSync(file, 'utf8')).sessions.find(row => row.sessionId === plan.session.id);
   assert.ok(pause.waiting.some(value => value.includes('VM restart question')));
@@ -381,13 +381,13 @@ async function resumeAfterRestart(base, plan, diagnostics) {
   assert.equal(pause?.state, 'paused'); assert.equal(pause.interrupted, undefined);
   assert.equal(snapshot.runningSessionIds.includes(plan.session.id), false);
   assert.equal(snapshot.attention.some(row => row.sessionId === plan.session.id), false);
-  assert.equal(fs.readFileSync(plan.session.file, 'utf8').includes('[Pi Web resume '), false, 'restart must not auto-continue');
+  assert.equal(fs.readFileSync(plan.session.file, 'utf8').includes('[Brabbler resume '), false, 'restart must not auto-continue');
   assert.deepEqual((await requestJSON(base, '/api/activity/pause', { method: 'POST', body: { action: 'resume', sessionId: plan.session.id, pauseId: pause.id }, diagnostics })).errors, []);
   await pauseObservation(base, plan, diagnostics, value => !value.runningSessionIds.includes(plan.session.id) && !value.pauses.some(row => row.sessionId === plan.session.id));
   const detail = await requestJSON(base, `/api/sessions/${plan.session.id}`, { diagnostics });
   assert.ok(JSON.stringify(detail).includes('VM pause resumed'));
   const entries = fs.readFileSync(plan.session.file, 'utf8').trim().split('\n').map(line => JSON.parse(line));
-  const resumes = entries.filter(entry => entry.type === 'message' && entry.message.role === 'user' && JSON.stringify(entry.message.content).includes('[Pi Web resume '));
+  const resumes = entries.filter(entry => entry.type === 'message' && entry.message.role === 'user' && JSON.stringify(entry.message.content).includes('[Brabbler resume '));
   assert.equal(resumes.length, 1); assert.ok(JSON.stringify(resumes[0]).includes('VM restart question'));
 }
 

@@ -10,7 +10,7 @@ const R0 = '0'.repeat(64), R1 = '1'.repeat(64), R2 = '2'.repeat(64), R3 = '3'.re
 const R4 = '4'.repeat(64), R5 = '5'.repeat(64), R6 = '6'.repeat(64), R7 = '7'.repeat(64);
 // Controlled external wire revisions ONLY. Never filesystem/revision authority.
 const note = (text, revision) => ({ text, revision });
-const key = scope => `pi-web:scratchpad:${JSON.stringify(scope === null ? null : { projectId: scope })}`;
+const key = scope => `brabbler:scratchpad:${JSON.stringify(scope === null ? null : { projectId: scope })}`;
 const draft = (f, scope) => {
   const raw = f.snapshotStorage().find(([name]) => name === key(scope))?.[1];
   return raw === undefined ? null : JSON.parse(raw);

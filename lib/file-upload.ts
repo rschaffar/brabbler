@@ -123,7 +123,7 @@ export function writeUploadFile(
     catch { throw new UploadWriteError("File is not writable", 403); }
   }
 
-  const temporary = path.join(target.directory, `.pi-web-upload-${randomUUID()}.tmp`);
+  const temporary = path.join(target.directory, `.brabbler-upload-${randomUUID()}.tmp`);
   let staged = false;
   try {
     // Never unlink the original before all bytes have been written successfully.

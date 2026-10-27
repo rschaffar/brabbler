@@ -15,7 +15,7 @@ async function* lines(path: string): AsyncGenerator<string> {
 export async function* sortedDirectoryNames(directory: string, guard: () => void, batchSize = 4096): AsyncGenerator<string> {
   let scratch: string | undefined; let sequence = 0; let batch: string[] = []; const runs: string[] = [];
   const flush = async () => {
-    scratch ??= await mkdtemp(join(tmpdir(), "pi-git-inventory-"));
+    scratch ??= await mkdtemp(join(tmpdir(), "brabbler-git-inventory-"));
     const path = join(scratch, String(sequence++)); const file = await open(path, "wx", 0o600);
     try { await file.writeFile(batch.sort().map((name) => JSON.stringify(name) + "\n").join("")); }
     finally { await file.close(); }

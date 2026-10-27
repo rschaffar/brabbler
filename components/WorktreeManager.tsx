@@ -128,8 +128,8 @@ export function WorktreeManager({ cwd, onClose, onChanged, onSelectCheckout, onR
       setOperation((op) => op?.state === "dispatched" ? op : null);
       setRefresh((v) => v + 1);
     };
-    window.addEventListener("pi-web:bundled-plugin-settings", changed);
-    return () => window.removeEventListener("pi-web:bundled-plugin-settings", changed);
+    window.addEventListener("brabbler:bundled-plugin-settings", changed);
+    return () => window.removeEventListener("brabbler:bundled-plugin-settings", changed);
   }, [cancelOperation]);
   useEffect(() => {
     const controller = new AbortController();

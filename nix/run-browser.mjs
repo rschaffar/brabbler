@@ -65,7 +65,7 @@ function definitionEntry(entry, group) {
   assert.equal(entry.outputName, 'out');
   if (group !== undefined) {
     // Bind the known group to the unchanged factory's names, not just a set of paths.
-    const name = `-pi-web-browser-${group}-diagnostics`;
+    const name = `-brabbler-browser-${group}-diagnostics`;
     assert.ok(entry.drvPath.endsWith(`${name}.drv`) && entry.expectedOutputPath.endsWith(name), 'Definition group/path differs');
   }
 }
@@ -219,11 +219,11 @@ export async function runBrowser(source, system, args) {
   const group = option('--group') ?? 'all';
   const budget = workerBudget({ requested: option('--workers') ? Number(option('--workers')) : group === 'all' ? undefined : 1 });
   const preparationBudget = browserPreparationBudget(budget);
-  const sourceDigest = process.env.PI_WEB_SOURCE_DIGEST ?? '';
+  const sourceDigest = process.env.BRABBLER_SOURCE_DIGEST ?? '';
   if (sourceDigest && !/^[a-f0-9]{64}$/.test(sourceDigest)) throw new Error('Invalid verified source digest');
   const hostNamespaces = Object.fromEntries(['net', 'pid', 'mnt'].map(name => [name, fs.readlinkSync(`/proc/self/ns/${name}`)]));
   const mask = process.umask(0o077);
-  const root = fs.mkdtempSync('/tmp/pi-web-test-browser.');
+  const root = fs.mkdtempSync('/tmp/brabbler-test-browser.');
   const env = privateEnvironment(root, process.env);
   for (const name of ['home', 'config', 'cache', 'data', 'state', 'runtime', 'agent', 'tmp', 'nix-conf', 'groups']) {
     fs.mkdirSync(path.join(root, name), { mode: 0o700 });

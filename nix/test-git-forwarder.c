@@ -7,11 +7,11 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#ifndef PI_WEB_TEST_GIT_TARGET
+#ifndef BRABBLER_TEST_GIT_TARGET
 #error "The original public Git frontend must be supplied; no fallback"
 #endif
 
-static const char target[] = PI_WEB_TEST_GIT_TARGET;
+static const char target[] = BRABBLER_TEST_GIT_TARGET;
 
 int main(int argc, char **argv) {
     (void)argc;

@@ -1,20 +1,20 @@
-# Pi Desk
+# Brabbler
 
 **A personal coding workspace for Pi.**
 
-Pi Desk brings conversations, agents, project files, terminals, and Git history into one local browser workspace. It runs on your machine and uses the configuration and session files of the [Pi coding agent](https://github.com/earendil-works/pi).
+Brabbler brings conversations, agents, project files, terminals, and Git history into one local browser workspace. It runs on your machine and uses the configuration and session files of the [Pi coding agent](https://github.com/earendil-works/pi).
 
-This is my personal project, shaped around the way I work. It started from [Pi Web](https://github.com/agegr/pi-web) by **agegr and its contributors**, and I now maintain my own branch independently. Pi Web provided the foundation; Pi Desk is where I continue developing the workspace for my own needs.
+This is my personal project, shaped around the way I work. It started from [Pi Web](https://github.com/agegr/pi-web) by **agegr and its contributors**, and I now maintain it independently as Brabbler.
 
-> Pi Desk is an independently maintained fork, not an official Pi Web release. The upstream npm package and hosted demo belong to Pi Web, not to this project.
+> Brabbler is an independently maintained fork, not an official Pi Web release. The upstream npm package and hosted demo belong to Pi Web, not to this project.
 
-[Getting started](#getting-started) · [Features](#what-is-on-the-desk) · [Development](#development) · [Credits](#credits-and-license)
+[Getting started](#getting-started) · [Features](#features) · [Development](#development) · [Credits](#credits-and-license)
 
 ![The upstream Pi Web interface, showing a conversation, tool calls, and project navigation](./docs/screenshot2.png)
 
 *An inherited Pi Web screenshot of the interface this project builds on.*
 
-## What is on the desk?
+## Features
 
 - **Conversations in context.** Browse and resume sessions grouped by project, search history, star useful chats, archive old work, and export conversations. Fork into a new session or branch within an existing one.
 - **An overview of agent work.** See sessions that need input, are working, or are ready to review. Built-in subagents can handle focused tasks, with inspectable sessions and results. Their feature switch is off by default.
@@ -30,7 +30,7 @@ The Activity view tracks runs managed by this app; it is not a monitor for unrel
 
 ## Getting started
 
-Run the code from **this repository** to use Pi Desk. Installing `@agegr/pi-web` from npm gives you upstream Pi Web instead.
+Run the code from **this repository** to use Brabbler. Installing `@agegr/pi-web` from npm gives you upstream Pi Web instead.
 
 ### From source
 
@@ -40,74 +40,77 @@ Clone this repository and enter its checkout. Builds and supported development t
 
 ```bash
 nix develop
-PI_WEB_SKIP_VERSION_CHECK=1 npm run dev
+BRABBLER_SKIP_VERSION_CHECK=1 npm run dev
 ```
 
 Nix realizes the pinned tools and dependencies automatically. The manual development shell materializes a worktree-local dependency copy; automated acceptance does not need one. Do not run `npm ci` over Nix-managed dependencies. There is no non-Nix dependency installation or acceptance fallback.
 
 Open **[http://127.0.0.1:30141](http://127.0.0.1:30141)**. If you have not configured a model provider, open **Models** to sign in or add an API key. The development server binds to loopback by default.
 
-`PI_WEB_SKIP_VERSION_CHECK=1` disables the inherited upstream npm version checks and running-version reload prompts. It does not update this fork; update the source checkout deliberately.
+Brabbler does not query upstream Pi Web for updates. Update this source checkout deliberately. `BRABBLER_SKIP_VERSION_CHECK=1` disables running-version reload prompts.
 
-### Inspecting Pi Web's own source
+### Inspecting Brabbler's own source
 
-Installed packages include the first-party TypeScript/CSS source alongside the built app. In an ordinary Pi Web agent session, call `pi_web_source` when investigating Pi Web itself; it returns this installation's package path and version so the agent can read only the relevant files (`app/`, `components/`, `hooks/`, `lib/`, `plugins/`). No source text is added to the prompt automatically. Chat-only sessions do not load this tool. The installed copy is a reference, not a checkout for edits.
+Installed packages include the first-party TypeScript/CSS source alongside the built app. In an ordinary Brabbler agent session, call `brabbler_source` when investigating Brabbler itself; it returns this installation's package path and version so the agent can read only the relevant files (`app/`, `components/`, `hooks/`, `lib/`, `plugins/`). No source text is added to the prompt automatically. Chat-only sessions do not load this tool. The installed copy is a reference, not a checkout for edits.
 
 ### Nix installation
 
 For an installed application rather than a development server, the flake provides a package and launcher for x86_64/aarch64 Linux and aarch64 macOS. From a committed checkout:
 
 ```bash
-PI_WEB_SKIP_VERSION_CHECK=1 nix run . -- --no-open
+BRABBLER_SKIP_VERSION_CHECK=1 nix run . -- --no-open
 ```
 
 To install that checkout into your Nix profile:
 
 ```bash
-nix profile install /path/to/checkout#pi-web
-PI_WEB_SKIP_VERSION_CHECK=1 pi-web
+nix profile install /path/to/checkout#brabbler
+BRABBLER_SKIP_VERSION_CHECK=1 brabbler
 ```
 
-Nix builds the production package in an isolated builder; that same package is used by browser and deployment acceptance. Installation/activation is separate from testing. The output is a Nix package, not a separately published Pi Desk npm package.
+Nix builds the production package in an isolated builder; that same package is used by browser and deployment acceptance. Installation/activation is separate from testing. The output is a Nix package, not a separately published Brabbler npm package.
 
 On Linux, the flake also exports a Home Manager module:
 
 ```nix
 { inputs, pkgs, ... }: {
-  imports = [ inputs.pi-web.homeManagerModules.default ];
-  services.pi-web = {
+  imports = [ inputs.brabbler.homeManagerModules.default ];
+  services.brabbler = {
     enable = true;
-    package = inputs.pi-web.packages.${pkgs.system}.default;
-    environment.PI_WEB_SKIP_VERSION_CHECK = "1";
+    package = inputs.brabbler.packages.${pkgs.system}.default;
+    environment.BRABBLER_SKIP_VERSION_CHECK = "1";
   };
 }
 ```
 
-Point the `pi-web` flake input at your chosen revision of **this repository**. The module runs a loopback-only user service; credentials remain outside the Nix store. For password-protected or proxied deployments, use a runtime `environmentFile` for secrets and configure TLS separately.
+Point the `brabbler` flake input at your chosen revision of **this repository**. The module runs a loopback-only user service; credentials remain outside the Nix store. For password-protected or proxied deployments, use a runtime `environmentFile` for secrets and configure TLS separately.
 
 ## Configuration and local data
 
-The project name is Pi Desk, but the code still uses inherited `pi-web` command names, package metadata, `PI_WEB_*` environment variables, and storage paths. Those names are retained for compatibility; this README does not rename the application internals.
+The package, launcher, Nix outputs and Home Manager service are named `brabbler`. Application-owned configuration uses `BRABBLER_*`; application-owned state and metadata use Brabbler namespaces. Pi's `.pi/` directories, native session files, SDK names and `PI_CODING_AGENT_DIR` stay unchanged, as does the π icon.
+
+**This is a breaking rename, without legacy aliases or automatic migration.** Do not activate it against an existing Pi Web/Pi Desk installation before the separate one-time migration. See [the rename and cutover guide](docs/brabbler-rename.md).
 
 | Setting | Purpose | Default |
 | --- | --- | --- |
-| `PI_WEB_APP_NAME` | Installed PWA name; whitespace is trimmed and blank values use the default | `Pi Web` |
-| `PI_WEB_PASSWORD` | Enable browser password authentication | Disabled |
-| `PI_WEB_ALLOWED_HOSTS` | Allow additional exact proxy or custom hostnames | Unset |
-| `PI_WEB_SKIP_VERSION_CHECK=1` | Disable inherited upstream version checks and reload prompts | Unset |
-| `PI_WEB_IDLE_TIMEOUT_MS` | Idle-session eviction delay; `0` disables it | `600000` (10 minutes) |
-| `PI_WEB_SSE_BACKLOG_LIMIT_BYTES` | Agent SSE disconnect threshold in queued bytes (not a maximum frame size); see [session contracts](docs/session-internals.md#sse-reconnect-on-page-refresh-mid-stream) | `16777216` (16 MiB) |
+| `BRABBLER_APP_NAME` | Installed PWA name; whitespace is trimmed and blank values use the default | `Brabbler` |
+| `BRABBLER_PASSWORD` | Enable browser password authentication | Disabled |
+| `BRABBLER_ALLOWED_HOSTS` | Allow additional exact proxy or custom hostnames | Unset |
+| `BRABBLER_SKIP_VERSION_CHECK=1` | Disable running-version reload prompts | Unset |
+| `BRABBLER_PUSH_SUBJECT` | Operator contact (`mailto:` or `https:` URL) required for Web Push delivery | Unset |
+| `BRABBLER_IDLE_TIMEOUT_MS` | Idle-session eviction delay; `0` disables it | `600000` (10 minutes) |
+| `BRABBLER_SSE_BACKLOG_LIMIT_BYTES` | Agent SSE disconnect threshold in queued bytes (not a maximum frame size); see [session contracts](docs/session-internals.md#sse-reconnect-on-page-refresh-mid-stream) | `16777216` (16 MiB) |
 | `PI_CODING_AGENT_DIR` | Override Pi's agent-data directory | `~/.pi/agent` |
 
-The installed `pi-web` launcher supports `--port`, `--hostname`, and `--no-open`; use `pi-web --help` for details. `PORT`, `PI_WEB_HOSTNAME`, and `PI_WEB_NO_OPEN` are its corresponding environment options. The `npm run dev` script has its own fixed loopback address and port.
+The installed `brabbler` launcher supports `--port`, `--hostname`, and `--no-open`; use `brabbler --help` for details. `PORT`, `BRABBLER_HOSTNAME`, and `BRABBLER_NO_OPEN` are its corresponding environment options. The `npm run dev` script has its own fixed loopback address and port.
 
-Set `PI_WEB_APP_NAME` before starting the server, for example `PI_WEB_APP_NAME='Pi Desk' pi-web`. Restart after changing it; no rebuild is required. The browser manages when an already installed PWA adopts the new name. This setting changes neither page titles nor icons.
+Set `BRABBLER_APP_NAME` before starting the server, for example `BRABBLER_APP_NAME='Brabbler' brabbler`. Restart after changing it; no rebuild is required. The browser manages when an already installed PWA adopts the new name. This setting changes neither page titles nor icons.
 
 Provider requests honor `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`.
 
 ### Security boundaries
 
-Serve through the installed `pi-web` launcher or this repository's maintained npm dev/start scripts. They install a request-header guard before Next.js so a build's preview ID cannot bypass application authentication. Do not substitute the dependency's bare `next` server or an arbitrary custom server; those omit this boundary. No writable copy of the Nix store is needed.
+Serve through the installed `brabbler` launcher or this repository's maintained npm dev/start scripts. They install a request-header guard before Next.js so a build's preview ID cannot bypass application authentication. Do not substitute the dependency's bare `next` server or an arbitrary custom server; those omit this boundary. No writable copy of the Nix store is needed.
 
 File references are a read-only exception for intentional conversation links and recognized coding/subagent sources, not permission derived from system prompts, remote-tool text or opaque receipts. This is not a sandbox for extensions or a general prompt-injection defense. See [the security boundary decision](docs/adr/0026-request-and-file-reference-boundaries.md) for limits. Existing processes need an explicitly deployed update/restart to acquire these fixes.
 
@@ -115,9 +118,9 @@ File references are a read-only exception for intentional conversation links and
 
 **New session** on a saved user message copies the history before that message into an independent chat, even while the original is running. **Ask in new chat** on a saved response copies history through that response. Neither stops the original or copies its running tools, queued messages, or pending questions. **Edit from here** changes the original conversation and remains unavailable while it is running.
 
-Pi Desk reads Pi's local session files and shares its default model settings and credentials with the CLI. Back up your agent-data directory before experimenting with sessions or configuration you care about.
+Brabbler reads Pi's local session files and shares its default model settings and credentials with the CLI. Back up your agent-data directory before experimenting with sessions or configuration you care about.
 
-Additional provider accounts are stored in `~/.pi/agent/pi-web-accounts.json`. Sessions save opaque account IDs, not the credentials themselves. A session bound to a deleted account fails rather than silently using a different identity. Changing a project's account default affects new sessions, not existing ones.
+Additional provider accounts are stored in `~/.pi/agent/brabbler-accounts.json`. Sessions save opaque account IDs, not the credentials themselves. A session bound to a deleted account fails rather than silently using a different identity. Changing a project's account default affects new sessions, not existing ones.
 
 Treat account files, API keys, session histories, and interaction receipts as private. Do not commit them to this repository or include them unredacted in issue reports. File drafts survive switching tabs, but are not persisted across a browser reload.
 
@@ -133,7 +136,7 @@ Use **Settings → General → Privacy → Hidden projects** to exclude selected
 
 The **eye button** beside Activity's project filter reveals hidden activity. Revealed rows carry a crossed-eye marker. Concealing a selected hidden project resets the filter to All projects. The reveal choice is saved in this browser's `localStorage` and survives focus changes, leaving Activity, mobile chat navigation and page reloads; it is not synced to other browsers or devices. If browser storage is unavailable, the choice lasts only while Activity remains mounted. Privacy loading or errors still withhold all Activity rows without resetting the choice.
 
-Project choices are shared across browsers through the private, versioned `~/.pi/agent/pi-web/hidden-projects.json` file (`PI_CODING_AGENT_DIR` applies). Other clients refresh on focus/visibility return and every 15 seconds while visible. Missing storage means no hidden projects; unreadable/corrupt settings withhold Activity and offer Retry rather than showing private rows. Saved hidden entries remain editable even if their sessions disappear. While any project is hidden, sessions with unresolved project identity or missing subagent ancestry are also withheld until metadata arrives (or explicitly revealed); provisional worktree paths are not offered as separate settings entries.
+Project choices are shared across browsers through the private, versioned `~/.pi/agent/brabbler/hidden-projects.json` file (`PI_CODING_AGENT_DIR` applies). Other clients refresh on focus/visibility return and every 15 seconds while visible. Missing storage means no hidden projects; unreadable/corrupt settings withhold Activity and offer Retry rather than showing private rows. Saved hidden entries remain editable even if their sessions disappear. While any project is hidden, sessions with unresolved project identity or missing subagent ancestry are also withheld until metadata arrives (or explicitly revealed); provisional worktree paths are not offered as separate settings entries.
 
 **This is Activity-only concealment, not an access-control or global screen-sharing mode.** The sidebar, Starred, open chats, toolbar activity indicators and desktop/push notifications remain unchanged. Check those surfaces before screen sharing.
 
@@ -144,12 +147,12 @@ Project choices are shared across browsers through the private, versioned `~/.pi
 For an installed launcher on a trusted network, require a long random password before binding to a non-loopback address:
 
 ```bash
-PI_WEB_PASSWORD='replace-with-a-long-random-password' \
-PI_WEB_SKIP_VERSION_CHECK=1 \
-pi-web --hostname 0.0.0.0 --no-open
+BRABBLER_PASSWORD='replace-with-a-long-random-password' \
+BRABBLER_SKIP_VERSION_CHECK=1 \
+brabbler --hostname 0.0.0.0 --no-open
 ```
 
-A password does not encrypt HTTP traffic. Use HTTPS through a trusted reverse proxy or a trusted VPN. For a proxy, add its exact external hostname to `PI_WEB_ALLOWED_HOSTS`; this does not change the bind address. Keep real secrets in a protected runtime environment, not in source files or Nix options.
+A password does not encrypt HTTP traffic. Use HTTPS through a trusted reverse proxy or a trusted VPN. For a proxy, add its exact external hostname to `BRABBLER_ALLOWED_HOSTS`; this does not change the bind address. Keep real secrets in a protected runtime environment, not in source files or Nix options.
 
 ## Development
 
@@ -202,9 +205,10 @@ For npm dependency changes, use `nix develop .#update` and `npm install --packag
 - [Workspace terminal](./docs/terminal.md)
 - [Browser-backed FIDO SSH agent](./docs/browser-ssh-agent.md)
 - [English interface messages](./docs/i18n.md)
-- [Inherited release tooling](./docs/release.md)—not an authorization to publish under upstream's package name
+- [Release status](./docs/release.md)—no publication target is configured
+- [Breaking rename and later cutover](./docs/brabbler-rename.md)
 
-Some guides still use the Pi Web name. They describe the inherited implementation and the independently maintained changes in this checkout.
+Historical decision and acceptance records retain the names and artifact paths that were true when they were written.
 
 ### Repository layout
 
@@ -215,7 +219,7 @@ hooks/        Client state and interaction hooks
 lib/          Session, agent, model, file, Git, and security core
 plugins/      Optional bundled plugins
 public/       Static assets and PWA files
-bin/          Inherited pi-web launcher
+bin/          Brabbler launcher and managed runtime helpers
 nix/          Package/dependencies, sandboxed core/browser and deployment VM checks
 docs/         User guides, contributor notes, and design decisions
 e2e/          Browser and terminal integration tests
@@ -224,7 +228,7 @@ demo/         Inherited standalone demo source
 
 ## Credits and license
 
-Pi Desk exists because of the work that came before it:
+Brabbler exists because of the work that came before it:
 
 - **[Pi Web](https://github.com/agegr/pi-web)** by **agegr and its contributors**—the original browser UI and the foundation of this fork. Thank you for making it open source.
 - **[Pi](https://github.com/earendil-works/pi)**—the coding-agent runtime and SDK this workspace runs on.

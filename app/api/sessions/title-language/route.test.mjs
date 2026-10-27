@@ -6,7 +6,7 @@ import test, { after } from "node:test";
 import { createJiti } from "jiti";
 
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
-const testAgentDir = await mkdtemp(join(tmpdir(), "pi-web-title-language-"));
+const testAgentDir = await mkdtemp(join(tmpdir(), "brabbler-title-language-"));
 process.env.PI_CODING_AGENT_DIR = testAgentDir;
 
 const jiti = createJiti(import.meta.url, {
@@ -36,7 +36,7 @@ test("title language defaults to auto and survives server-side reloads", async (
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { language: "en" });
   assert.deepEqual(await (await GET()).json(), { language: "en" });
-  assert.deepEqual(JSON.parse(await readFile(join(testAgentDir, "pi-web", "title-settings.json"), "utf8")), { language: "en" });
+  assert.deepEqual(JSON.parse(await readFile(join(testAgentDir, "brabbler", "title-settings.json"), "utf8")), { language: "en" });
   response = await PUT(request({ language: "auto" }));
   assert.deepEqual(await response.json(), { language: "auto" });
 });

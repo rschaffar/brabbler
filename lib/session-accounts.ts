@@ -2,7 +2,7 @@ import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { SessionEntry } from "./types";
 import type { AccountSelection } from "./provider-accounts";
 
-export const SESSION_ACCOUNTS_TYPE = "pi-web:provider-accounts";
+export const SESSION_ACCOUNTS_TYPE = "brabbler:provider-accounts";
 
 /** A complete snapshot; an empty map explicitly returns the session to Pi defaults. */
 export function readSessionAccounts(entries: readonly SessionEntry[]): AccountSelection | undefined {

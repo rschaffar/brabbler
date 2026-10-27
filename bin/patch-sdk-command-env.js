@@ -70,7 +70,7 @@ function inspectSdkCommandEnvironment(sdkRoot) {
   if (metadata.name !== payload.packageName || metadata.version !== payload.packageVersion) throw refusal("SDK_VERSION");
   if (manifest.sha256 !== payload.packageJsonSha256) throw refusal("SDK_MANIFEST_UNKNOWN");
   if (payload.schemaVersion !== 1 || payload.files.length !== EXPECTED_TARGET_COUNT
-    || payload.patchId !== "pi-desk-sdk-command-env-1.4.0-v2"
+    || payload.patchId !== "brabbler-sdk-command-env-1.4.0-v2"
     || digest(payload.helper.content) !== payload.helper.sha256) throw refusal("SDK_PATCH_DATA");
   const paths = new Set();
   const files = payload.files.map(recipe => {
@@ -117,7 +117,7 @@ function applySdkCommandEnvironment(sdkRoot = resolveInstalledSdkRoot()) {
   const staged = [];
   try {
     for (const file of writes) {
-      const temporary = path.join(path.dirname(file.path), `.pi-desk-sdk-env-${randomUUID()}.tmp`);
+      const temporary = path.join(path.dirname(file.path), `.brabbler-sdk-env-${randomUUID()}.tmp`);
       let descriptor;
       try {
         descriptor = fs.openSync(temporary, "wx", 0o600);

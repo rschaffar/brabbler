@@ -134,7 +134,7 @@ for (const obsoleteError of [false, true]) test(`actual manager inventory A/B/A 
   await click(h.view, button(h.view, 'Refresh')); const old = held.at(-1); await h.headers(old);
   // A settings invalidation is a legitimate superseder while ordinary Refresh
   // is disabled. It exercises the actual production listener/context boundary.
-  await h.view.dispatch(h.view.window, new h.view.window.Event('pi-web:bundled-plugin-settings'));
+  await h.view.dispatch(h.view.window, new h.view.window.Event('brabbler:bundled-plugin-settings'));
   const current = held.at(-1); assert.equal(old.options.signal.aborted, true); assert.equal(current === old, false);
   const currentCapture = inventory([rowData('branch:current', { branch: 'current' })], {
     captureId: 'opaque-current-capture', target: { branch: 'unfinished', tip: OID64, configured: 'main', source: 'project', temporary: true, missingConfigured: false },
@@ -214,7 +214,7 @@ test('actual manager held history reserves prepare slot; current-context reset a
   } }); await h.idle(); await h.expand();
   await click(h.view, historyButtons(h)[0]); const old = held.at(-1); await h.headers(old);
   assert.equal(review(h).disabled, true, 'history selection reserves operation slot');
-  await h.view.dispatch(h.view.window, new h.view.window.Event('pi-web:bundled-plugin-settings'));
+  await h.view.dispatch(h.view.window, new h.view.window.Event('brabbler:bundled-plugin-settings'));
   assert.equal(old.options.signal.aborted, true);
   await h.body(old, historical); await h.idle();
   assert.equal(operationRegions(h).length, 0, h.diagnostic('obsolete history must not publish an operation region'));
@@ -232,7 +232,7 @@ test('actual manager pending preparation delivered after context invalidation se
     if (req.url.pathname === ACTIONS) return { handled: true, data: undefined };
     assert.equal(body.decision, 'stop'); assert.equal(body.cwd, ROOT); return { handled: true, data: { ...pending, state: 'cancelled', card: undefined } };
   } }); await h.idle(); await h.expand(); await click(h.view, review(h)); const prepare = writes[0];
-  await h.view.dispatch(h.view.window, new h.view.window.Event('pi-web:bundled-plugin-settings'));
+  await h.view.dispatch(h.view.window, new h.view.window.Event('brabbler:bundled-plugin-settings'));
   await h.reply(prepare, pending); await h.idle();
   assert.equal(writes.filter(req => req.url.pathname !== ACTIONS).length >= 1, true);
   assert.ok(writes.slice(1).every(req => JSON.parse(req.options.body).decision === 'stop'));

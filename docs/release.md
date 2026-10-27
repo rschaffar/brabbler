@@ -1,179 +1,34 @@
-# Release Checklist
+# Brabbler release status
 
-This repo publishes two artifacts for each release:
+Brabbler is an independently maintained, Pi-based application derived from
+[Pi Web](https://github.com/agegr/pi-web). This checkout is not an upstream Pi Web
+release and must not publish to upstream's npm package or GitHub repository.
 
-- npm package: `@agegr/pi-web`
-- GitHub Release: `agegr/pi-web`
+## Current distribution
 
-Use this checklist from a clean `main` checkout.
+- Application/package/CLI name: `brabbler`.
+- The npm manifest is deliberately `private: true`; no publication destination
+  or canonical Brabbler repository URL has been selected.
+- The inherited publication script has been removed. Brabbler does not discover
+  updates from upstream npm or advertise upstream releases as its own.
+- Build the production package only inside an isolated Nix builder. See
+  [Testing](testing.md) and the README's Nix installation instructions.
+- Package builds, acceptance, local Git integration and service activation are
+  different operations. None authorizes publication, a push, a new repository,
+  or activation of the installed service.
 
-## 1. Preflight
+## Before any future release
 
-```bash
-git status --short --branch
-git log --oneline --decorate -5
-gh auth status
-npm whoami
-node -e "const p=require('./package.json'); console.log(p.version)"
-```
+Choose and verify the real repository and distribution ownership first. Update
+metadata and release/update configuration deliberately, retain original licenses
+and attribution, and obtain explicit authorization for each exact remote action.
+Do not substitute an assumed URL or reuse upstream publishing credentials.
 
-Expected:
+Verify the exact candidate with full Nix-native core, browser/terminal and genuine
+Home Manager deployment acceptance. Inspect the isolated production artifact's
+packed inventory: built assets and first-party source must be present; private
+state, credentials, tests and writable dependencies must not be packed.
 
-- `git status` is clean, or only contains changes you intentionally plan to release.
-- GitHub is authenticated as an account that can push and create releases.
-- npm is authenticated as an account that can publish `@agegr/pi-web`.
-
-## 2. Publish to npm
-
-```bash
-npm run release
-```
-
-The release script runs:
-
-```bash
-npm version patch --no-git-tag-version && npm run build && npm publish --access public
-```
-
-Notes:
-
-- This bumps `package.json` and `package-lock.json`.
-- It intentionally runs a production build. Do not run `next build` during normal development; release work is the exception.
-- Review distributed dependency licenses/notices for npm, Nix and demo output using [Dependency maintenance](dependencies.md#redistribution-licenses); development-only classification and unused optional features do not prove absence from a shipped artifact.
-- Before publishing a release, inspect `npm pack --dry-run --json --ignore-scripts` **after the production build**. Confirm that `.next/` and first-party source (`app/`, `components/`, `hooks/`, `lib/`, `plugins/`) are present, and that local data, dependencies, and caches are absent. The package allowlist and `lib/pi-web-source-extension.test.mjs` check the source portion during normal development; the production artifact itself can only be checked during release.
-- If `npm view @agegr/pi-web version` briefly shows the previous version, check the exact version instead:
-
-```bash
-npm view @agegr/pi-web@<version> version --registry https://registry.npmjs.org/
-npm view @agegr/pi-web versions --json --registry https://registry.npmjs.org/
-```
-
-## 3. Commit the Version Bump
-
-Replace `<version>` with the new package version, for example `0.7.5`.
-
-```bash
-git diff -- package.json package-lock.json
-git add package.json package-lock.json
-git commit -m "Release v<version>"
-```
-
-## 4. Tag and Push
-
-```bash
-git tag -a v<version> -m "v<version>"
-git push origin main --tags
-```
-
-Confirm the tag does not already exist before creating it when unsure:
-
-```bash
-git ls-remote --tags origin v<version>
-gh release view v<version> --repo agegr/pi-web
-```
-
-## 5. Generate Release Notes from Commits
-
-Use the previous release tag as the base.
-
-```bash
-git log --oneline --decorate v<previous>..v<version>
-git log --format='%h%x09%s%n%b' v<previous>..v<version>
-git diff --stat v<previous>..v<version>
-```
-
-Write the release notes from those commits, not from memory. Include both Chinese and English sections. Keep commit hashes next to each item when useful.
-
-Suggested structure:
-
-```markdown
-## 中文
-
-基于 `v<previous>..v<version>` 的提交整理。
-
-### 新增
-
-- ...
-
-### 修复
-
-- ...
-
-### 改进
-
-- ...
-
-### 内部调整
-
-- 发布 npm 包 `@agegr/pi-web@<version>`。
-
-## English
-
-Prepared from commits in `v<previous>..v<version>`.
-
-### Added
-
-- ...
-
-### Fixed
-
-- ...
-
-### Improved
-
-- ...
-
-### Internal
-
-- Published npm package `@agegr/pi-web@<version>`.
-```
-
-## 6. Create or Update the GitHub Release
-
-Create a new release:
-
-```bash
-gh release create v<version> \
-  --repo agegr/pi-web \
-  --verify-tag \
-  --title "v<version>" \
-  --notes-file release-notes.md
-```
-
-If the release already exists and only the notes need updating:
-
-```bash
-gh release edit v<version> \
-  --repo agegr/pi-web \
-  --notes-file release-notes.md
-```
-
-You can avoid a temporary file by passing notes through stdin:
-
-```bash
-gh release edit v<version> --repo agegr/pi-web --notes-file - <<'EOF'
-## 中文
-
-...
-
-## English
-
-...
-EOF
-```
-
-## 7. Final Verification
-
-```bash
-gh release view v<version> --repo agegr/pi-web
-npm view @agegr/pi-web@<version> version --registry https://registry.npmjs.org/
-git status --short --branch
-git log --oneline --decorate -3
-```
-
-Expected:
-
-- GitHub Release exists and is not a draft unless intentionally published as one.
-- npm exact version resolves.
-- `main` is aligned with `origin/main`.
-- `HEAD` points at the release commit and `v<version>` tag.
+Existing installations need the separately authorized one-time cutover described
+in [the breaking rename guide](brabbler-rename.md). No migration, activation or
+publication has occurred merely because this source change exists.

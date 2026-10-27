@@ -5,7 +5,7 @@ const { spawn } = require("node:child_process");
 const os = require("node:os");
 const { createSshAgentRouter } = require("./ssh-agent-router");
 const { wireChildProcessLifecycle } = require("./process-lifecycle");
-const { getNextNodeArgs } = require("./pi-web-node-args");
+const { getNextNodeArgs } = require("./brabbler-node-args");
 const { checkSdkCommandEnvironment } = require("./patch-sdk-command-env");
 
 async function launchManagedNext(options, services = {}) {
@@ -27,11 +27,11 @@ async function launchManagedNext(options, services = {}) {
     if (aborted) {
       const error = new Error("Startup cancelled"); error.exitCode = 128 + os.constants.signals[aborted]; throw error;
     }
-    const childEnvironment = { ...environment, PI_WEB_HOSTNAME: options.hostname };
-    delete childEnvironment.PI_DESK_SSH_RUNTIME;
+    const childEnvironment = { ...environment, BRABBLER_HOSTNAME: options.hostname };
+    delete childEnvironment.BRABBLER_SSH_RUNTIME;
     if (router) {
-      childEnvironment.SSH_AUTH_SOCK = router.socketPath; childEnvironment.PI_DESK_SSH_RUNTIME = router.root;
-      if (environment === process.env) { process.env.SSH_AUTH_SOCK = router.socketPath; process.env.PI_DESK_SSH_RUNTIME = router.root; }
+      childEnvironment.SSH_AUTH_SOCK = router.socketPath; childEnvironment.BRABBLER_SSH_RUNTIME = router.root;
+      if (environment === process.env) { process.env.SSH_AUTH_SOCK = router.socketPath; process.env.BRABBLER_SSH_RUNTIME = router.root; }
     }
     const child = spawnNext(process.execPath, getNextNodeArgs(options.nextBin, options.args), {
       cwd: options.cwd, stdio: options.stdio || "inherit", env: childEnvironment,

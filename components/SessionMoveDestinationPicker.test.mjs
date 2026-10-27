@@ -15,7 +15,7 @@ test("move filters match case-insensitive parts of names and paths without alter
   assert.deepEqual(filterMoveOptions(options, "MOVE link"), [options[1]]);
   assert.deepEqual(filterMoveOptions(options, "REPO"), [options[0]]);
   assert.deepEqual(filterMoveOptions(options, "missing"), []);
-  assert.deepEqual(filterMoveOptions([{ value: "/Projects/Pi-Web", label: "/Projects/Pi-Web" }], " pi-web "), [{ value: "/Projects/Pi-Web", label: "/Projects/Pi-Web" }]);
+  assert.deepEqual(filterMoveOptions([{ value: "/Projects/Brabbler", label: "/Projects/Brabbler" }], " brabbler "), [{ value: "/Projects/Brabbler", label: "/Projects/Brabbler" }]);
 });
 
 test("exact current directory excludes neither siblings nor the rest of the project", () => {

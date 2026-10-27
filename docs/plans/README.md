@@ -20,6 +20,19 @@ Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
 
+## Brabbler rename
+
+The [verified source rename](archived/2026-10-27_brabbler-rename-plan.md) implements
+the clean Brabbler identity break, with Pi-native storage/interfaces and the π
+icon retained. Full application acceptance passed 525 files / 4,309 tests, all
+26 browser/terminal groups / 59 scenarios and the genuine deployment VM in
+467.988 seconds. [The cutover guide](../brabbler-rename.md) owns durable naming
+and separate migration requirements. No compatibility reader or committed
+migration tool was added. User selected local-main integration; exact Git
+execution and cleanup remain separately gated, and archival is not their receipt.
+Live migration, activation, URL changes and the foreign NixOS consumer are not
+claimed implemented by this source change.
+
 ## Production profiling and payload closure
 
 The user explicitly requested closure after all three catalogue slices were verified.

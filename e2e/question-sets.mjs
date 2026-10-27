@@ -105,7 +105,7 @@ export async function checkQuestionSets(page, width) {
     ];
     await finish(answers);
     assert.equal(commands.filter((c) => c.type === "extension_ui_response").length, 1);
-    assert.equal(await page.evaluate((requestId) => Object.keys(sessionStorage).some((key) => key.startsWith("pi-web:question-draft:") && key.endsWith(requestId)), id), false);
+    assert.equal(await page.evaluate((requestId) => Object.keys(sessionStorage).some((key) => key.startsWith("brabbler:question-draft:") && key.endsWith(requestId)), id), false);
     const receipt = page.locator(`[data-interaction-receipt="${id}"]`);
     await page.reload({ waitUntil: "domcontentloaded" });
     await receipt.getByRole("button", { name: /Answered.*E2E question set/ }).click();

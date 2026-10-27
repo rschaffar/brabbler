@@ -150,10 +150,10 @@ function collectNestedCodingArguments(message: unknown, references: FileReferenc
 }
 
 function collectSubagentNotification(entry: unknown, out: string[]): void {
-  if (field(entry, "customType") !== "pi-web:subagent-notification" || field(entry, "display") !== true) return;
+  if (field(entry, "customType") !== "brabbler:subagent-notification" || field(entry, "display") !== true) return;
   const details = field(entry, "details");
   const sessionId = field(details, "sessionId");
-  if (field(details, "kind") !== "pi-web-subagent" || typeof sessionId !== "string" || !isValidSessionId(sessionId)
+  if (field(details, "kind") !== "brabbler-subagent" || typeof sessionId !== "string" || !isValidSessionId(sessionId)
     || typeof field(details, "profile") !== "string" || field(details, "runInBackground") !== true
     || !["completed", "failed", "aborted", "interrupted"].includes(String(field(details, "status")))) return;
   collectText(field(entry, "content"), out);

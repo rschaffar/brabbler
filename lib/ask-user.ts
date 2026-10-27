@@ -2,7 +2,7 @@
  * Web-focused adaptation of pi-ask-user 0.15.0 (edlsh/pi-ask-user,
  * commit 705fdc60eaea5b9588f3aa6a6cb6a577516b17af).
  * Copyright (c) 2026 Enzo Lucchesi. MIT license: ./ask-user.LICENSE.
- * Keep the tool's answer and event contract; Pi Web owns its browser UI.
+ * Keep the tool's answer and event contract; Brabbler owns its browser UI.
  */
 
 export interface AskUserOption {

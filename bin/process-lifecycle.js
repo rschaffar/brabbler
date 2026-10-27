@@ -32,13 +32,13 @@ function wireChildProcessLifecycle(
     if (!owner.settle) { parentProcess.exit(code); return; }
     let settled;
     try { settled = owner.settle(); }
-    catch (error) { log(`[pi-web] owner cleanup failed: ${error.message}`); parentProcess.exit(code || 1); return; }
+    catch (error) { log(`[brabbler] owner cleanup failed: ${error.message}`); parentProcess.exit(code || 1); return; }
     if (!settled || typeof settled.then !== "function") { parentProcess.exit(code); return; }
     let timer, finalCode = code;
     Promise.race([
       settled,
       new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("owner cleanup timed out")), owner.timeoutMs ?? 1000); }),
-    ]).catch(error => { finalCode = code || 1; log(`[pi-web] owner cleanup failed: ${error.message}`); })
+    ]).catch(error => { finalCode = code || 1; log(`[brabbler] owner cleanup failed: ${error.message}`); })
       .finally(() => { clearTimeout(timer); parentProcess.exit(finalCode); });
   }
 
@@ -55,7 +55,7 @@ function wireChildProcessLifecycle(
   function handleError(error) {
     const failedToSpawn = child.pid === undefined;
     log(
-      `[pi-web] ${failedToSpawn ? "could not run the Next.js process" : "Next.js process error"}: ${error.message}`,
+      `[brabbler] ${failedToSpawn ? "could not run the Next.js process" : "Next.js process error"}: ${error.message}`,
     );
 
     if (failedToSpawn) {
@@ -71,7 +71,7 @@ function wireChildProcessLifecycle(
       }
 
       shuttingDown = true;
-      try { owner.stopAdmission?.(); } catch (error) { log(`[pi-web] owner admission shutdown failed: ${error.message}`); }
+      try { owner.stopAdmission?.(); } catch (error) { log(`[brabbler] owner admission shutdown failed: ${error.message}`); }
       shutdownTimer = setTimeout(forceKill, timeoutMs);
       shutdownTimer.unref();
       child.kill(signal);
@@ -89,7 +89,7 @@ function wireChildProcessLifecycle(
     // the window closing with no stated reason.
     if (!shuttingDown) {
       log(
-        `[pi-web] Next.js exited unexpectedly (${signal ? `signal ${signal}` : `code ${code}`})`,
+        `[brabbler] Next.js exited unexpectedly (${signal ? `signal ${signal}` : `code ${code}`})`,
       );
     }
 

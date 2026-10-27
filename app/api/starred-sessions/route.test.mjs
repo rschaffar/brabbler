@@ -6,11 +6,11 @@ import test, { after } from "node:test";
 import { createJiti } from "jiti";
 
 const original = process.env.PI_CODING_AGENT_DIR;
-const agentDir = await mkdtemp(join(tmpdir(), "pi-web-starred-"));
+const agentDir = await mkdtemp(join(tmpdir(), "brabbler-starred-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true, moduleCache: false });
 const { GET, POST } = await jiti.import("./route.ts");
-const file = join(agentDir, "pi-web", "starred-sessions.json");
+const file = join(agentDir, "brabbler", "starred-sessions.json");
 
 after(async () => {
   if (original === undefined) delete process.env.PI_CODING_AGENT_DIR;

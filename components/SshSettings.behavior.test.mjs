@@ -130,7 +130,7 @@ test('existing recovery acknowledgement, actual remove, and NEW strict reimport 
   await h.click('Remove');
   const removed = statusView({ registryRevision: 'registry-3' });
   h.expect('remove', { action: 'remove', keyId: existing.id, revision: 'registry-2' }, removed);
-  h.setSnapshot(removed); await h.click('Remove from Pi Web'); await h.settle();
+  h.setSnapshot(removed); await h.click('Remove from Brabbler'); await h.settle();
   assert.equal(h.current.status.registry.keys.length, 0);
   const row = recovery(h), name = row.querySelector('input:not([type="checkbox"])');
   assert.equal(h.button('Import with strict verification', row).disabled, true);
@@ -182,7 +182,7 @@ test('mismatched durable recovery acknowledgement stays visible and retries only
   await h.proof(publicCredential, () => h.click('Import with strict verification', row));
   assert.equal(h.current.busy, false); assert.notEqual(h.current.error, '');
   assert.equal(h.current.recovery.length, 1); assert.equal(h.actions().filter(action => action === 'begin-import').length, 1);
-  assert.equal(Object.keys(h.view.window.localStorage).some(key => key.startsWith('pi-web:browser-ssh-ack:v1:')), false);
+  assert.equal(Object.keys(h.view.window.localStorage).some(key => key.startsWith('brabbler:browser-ssh-ack:v1:')), false);
   assert.deepEqual(JSON.parse(h.view.window.localStorage.getItem(genericKey)), publicCredential);
   noAuthority(h); h.assertComplete();
 });

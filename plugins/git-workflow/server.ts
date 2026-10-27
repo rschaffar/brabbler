@@ -140,7 +140,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
     const files = op.mode === "files" ? await fileSelection(cwd, op.files) : undefined;
     if (op.mode !== "staged" && op.mode !== "files") throw new Error("Invalid commit mode");
     if (op.mode === "staged" && op.files !== undefined) throw new Error("Staged mode commits the complete staged set, not selected paths");
-    const scratch = mkdtempSync(join(tmpdir(), "pi-web-git-preview-"));
+    const scratch = mkdtempSync(join(tmpdir(), "brabbler-git-preview-"));
     try {
       const index = join(scratch, "index");
       const original = toNativePath((await git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"])).trim());
@@ -324,7 +324,7 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
   });
   let attemptedEffect: string | undefined;
   const record = (phase: PluginOperationReceipt["phase"], summary?: string) => {
-    if (!receipt || !ui.operationReceipt) throw new Error("Git operations require durable Pi Web operation receipts");
+    if (!receipt || !ui.operationReceipt) throw new Error("Git operations require durable Brabbler operation receipts");
     receipt = { ...receipt, phase, effectStarted: started, completedEffects: [...effects], attemptedEffect, ...(summary ? { summary: summary.slice(0, 16000) } : {}) };
     ui.operationReceipt(gitWorkflowManifest.id, structuredClone(receipt));
   };
@@ -339,7 +339,7 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     if (origin.effective[op.action] !== policy[op.action]) throw new Error("Policy changed during preparation");
     const operationId = randomUUID();
     snapshot.card.operationId = operationId;
-    if (!ui.prepareReview) throw new Error("Git operations require durable Pi Web review attachments");
+    if (!ui.prepareReview) throw new Error("Git operations require durable Brabbler review attachments");
     const review = await ui.prepareReview(gitWorkflowManifest.id, operationId, (writer) => buildGitReview(writer, op, snapshot, signal, onProgress));
     snapshot.card = { ...compactGitCard(snapshot.card, options?.presentation), review };
     const artifactApproval = !!snapshot.cleanup?.unapprovedArtifacts.length;
@@ -353,7 +353,7 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     onProgress?.(`Exact review saved: ${review.entries} entries, ${review.bytes} bytes. Awaiting authorization/checks.`);
     if (signal?.aborted) throw new Error("Cancelled before execution");
     if (mode === "ask") {
-      if (!ui.pluginCard) throw new Error("Ask requires the live Pi Web browser UI");
+      if (!ui.pluginCard) throw new Error("Ask requires the live Brabbler browser UI");
       const cancellation = new AbortController();
       const unsubscribe = onPluginSettingsChange((id) => {
         if (id !== gitWorkflowManifest.id) return;
@@ -390,7 +390,7 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
       record("checking");
     }
     if (!resourceOperation) await revalidate();
-    const scratch = mkdtempSync(join(tmpdir(), "pi-web-git-effect-"));
+    const scratch = mkdtempSync(join(tmpdir(), "brabbler-git-effect-"));
     let output: string;
     let releaseReservation: (() => void) | undefined;
     try {

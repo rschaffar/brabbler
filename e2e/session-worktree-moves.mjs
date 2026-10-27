@@ -21,9 +21,9 @@ export async function checkSessionWorktreeMoves(page, { base, api, post, agentDi
     const records = [{ type: "session", version: 3, id, timestamp: stamp, cwd, ...(parent ? { parentSession: paths.get(parent) } : {}) },
       { type: "message", id: "user", parentId: null, timestamp: stamp, message: { role: "user", content: `Session tools ${name} HISTORY_CANARY`, timestamp: Date.parse(stamp) } },
       { type: "message", id: "reply", parentId: "user", timestamp: stamp, message: { role: "assistant", content: [{ type: "text", text: "Synthetic saved reply" }], timestamp: Date.parse(stamp) } }];
-    if (parent) records.splice(1, 0, { type: "custom", customType: "pi-web:subagent", id: "relation", parentId: null, timestamp: stamp,
+    if (parent) records.splice(1, 0, { type: "custom", customType: "brabbler:subagent", id: "relation", parentId: null, timestamp: stamp,
       data: { version: 1, parentSessionId: parent, parentSessionPath: paths.get(parent), profile: "explore", description: name } });
-    if (archived) records.push({ type: "custom", customType: "pi-web:archive", id: "archive", parentId: "reply", timestamp: stamp, data: { version: 1, archived: true } });
+    if (archived) records.push({ type: "custom", customType: "brabbler:archive", id: "archive", parentId: "reply", timestamp: stamp, data: { version: 1, archived: true } });
     writeFileSync(path, records.map(record => JSON.stringify(record)).join("\n") + "\n", { flag: "wx", mode: 0o600 });
     return id;
   };

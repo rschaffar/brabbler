@@ -69,7 +69,7 @@ const root = process.env.E2E_PACKAGE_ROOT;
 assert.match(root ?? "", /^\/nix\/store\//, "Nix-built application package required");
 const harness = createHarness(root, "browser");
 const { artifacts, agentDir, env: fixtureEnv } = harness;
-if (group === "history") fixtureEnv.PI_WEB_APP_NAME = "  E2E Pi Desk  ";
+if (group === "history") fixtureEnv.BRABBLER_APP_NAME = "  E2E Brabbler  ";
 let coverage;
 try {
 coverage = createCoverage(group, artifacts);
@@ -173,7 +173,7 @@ let nativeToolsFixture;
     message("old", "root", "assistant", "Inactive branch answer"),
     message("new", "root", "assistant", "Active branch answer"),
   ], branchCwd);
-  const recoveryDir = join(agentDir, "pi-web", "run-journal", "v1", BRANCH);
+  const recoveryDir = join(agentDir, "brabbler", "run-journal", "v1", BRANCH);
   mkdirSync(recoveryDir, { recursive: true });
   const seedRecoveryRun = (runId) => writeFileSync(join(recoveryDir, `${runId}.start.json`), JSON.stringify({
     version: 1, runId, sessionId: BRANCH, ownerPid: 99999999,
@@ -265,14 +265,14 @@ let nativeToolsFixture;
   for (const [index, id] of ACTIVITY_SUBAGENTS.entries()) {
     const parentSessionId = index === 3 ? OTHER : BRANCH;
     writeSession(id, [
-      { type: "custom", id: "meta", parentId: null, timestamp, customType: "pi-web:subagent", data: {
+      { type: "custom", id: "meta", parentId: null, timestamp, customType: "brabbler:subagent", data: {
         version: 1, parentSessionId,
         parentSessionPath: join(sessionDir, `2026-08-23T00-00-00-000Z_${parentSessionId}.jsonl`),
         profile: "explore", description: id, task: "Activity bulk review fixture", createdAt: timestamp,
       } },
       message("prompt", "meta", "user", id),
       message("answer", "prompt", "assistant", "Fixture result"),
-      { type: "custom", id: "result", parentId: "answer", timestamp, customType: "pi-web:subagent-result",
+      { type: "custom", id: "result", parentId: "answer", timestamp, customType: "brabbler:subagent-result",
         data: { version: 1, status: "completed", completedAt: timestamp } },
     ], index === 3 ? otherProject : project, parentSessionId);
   }
@@ -509,7 +509,7 @@ let nativeToolsFixture;
           // The cross-tab font check creates an initial opaque about:blank page.
           // Seed only app documents, where browser storage is actually available.
           if (location.protocol !== "http:" && location.protocol !== "https:") return;
-          if (localStorage.getItem("pi-chat-content-width") === null) localStorage.setItem("pi-chat-content-width", "820");
+          if (localStorage.getItem("brabbler-chat-content-width") === null) localStorage.setItem("brabbler-chat-content-width", "820");
         });
       }
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
@@ -817,7 +817,7 @@ let nativeToolsFixture;
         seedInterruptedRun: () => seedRecoveryRun(`${viewport.width}-activity-recovery`),
         subagentIds: ACTIVITY_SUBAGENTS,
         seedSubagentCompletions: () => {
-          const path = join(agentDir, "pi-web", "activity-review.json");
+          const path = join(agentDir, "brabbler", "activity-review.json");
           return new Map([BRANCH, ...ACTIVITY_SUBAGENTS].map((sessionId) => {
             const { at } = activityReview.recordActivityCompletion(sessionId, path);
             return [sessionId, at];
@@ -1225,7 +1225,7 @@ let nativeToolsFixture;
         // PRIVATE-WITNESS-BODY-UI
         await versionValue(initialVersion.consumer);
         await versionValue(ownVersion('ui.initial.answer', () => versionPage.getByText('E2E final answer', { exact: true }).waitFor()));
-        const reloadWeb = versionPage.getByRole('button', { name: 'Reload Pi Web' });
+        const reloadWeb = versionPage.getByRole('button', { name: 'Reload Brabbler' });
         assert.equal(await versionValue(ownVersion('ui.initial.notice-count', () => reloadWeb.count())), 0, 'The running version should not show a reload prompt');
         versionRouteTried = true;
         await versionValue(ownVersion('route.register.exact', () => versionPage.route('**/api/app-version', versionRouteAdapter), { adapter: versionRouteAdapter }));
@@ -1233,7 +1233,7 @@ let nativeToolsFixture;
         await versionValue(ownVersion('ui.changed.visibility', () => versionPage.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))));
         await versionValue(changedVersion.consumer);
         await versionValue(ownVersion('ui.changed.notice', () => reloadWeb.waitFor()));
-        assert.ok(await versionValue(ownVersion('ui.changed.text', () => versionPage.getByText('Pi Web v99.99.99 is running.').isVisible())));
+        assert.ok(await versionValue(ownVersion('ui.changed.text', () => versionPage.getByText('Brabbler v99.99.99 is running.').isVisible())));
         const cancel = admitVersionDialog('dismiss');
         await versionValue(ownVersion('ui.cancel.click', () => reloadWeb.click()));
         assert.equal(cancel.events.length, 1, 'one actually admitted native Cancel callback; never wait for an unadmitted dialog');

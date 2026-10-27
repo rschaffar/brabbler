@@ -4,7 +4,7 @@
 
 ## Answering a set
 
-Context sections start expanded in live question cards, including set-level and per-question context, and remain collapsible. Legacy single questions also expand long context by default; an explicit `contextExpanded` argument or `PI_ASK_USER_CONTEXT_EXPANDED` environment preference still overrides that default. Completed receipts remain collapsed.
+Context sections start expanded in live question cards, including set-level and per-question context, and remain collapsible. Legacy single questions also expand long context by default; an explicit `contextExpanded` argument or `BRABBLER_ASK_USER_CONTEXT_EXPANDED` environment preference still overrides that default. Completed receipts remain collapsed.
 
 - Use the labelled question buttons (desktop), question selector (mobile), or Back/Next to move freely. Required questions must have a main answer. Optional questions must be answered or explicitly skipped.
 - Single choice, multiple choice and text questions can be mixed. Recommendations are labels, never defaults. An exclusive option such as None cannot be combined with another option; an empty selection is not an answer.
@@ -26,7 +26,7 @@ No cross-device draft syncing or exact pending-request recovery after a server r
 
 ## Tool contract
 
-Use either the legacy `question` plus optional `options`/flags, or `title` and `questions`. Mixing those modes is rejected. The legacy result remains `details.response`; optional comments now also accompany written answers. Comments default on unless explicitly disabled or overridden by `PI_ASK_USER_ALLOW_COMMENT`.
+Use either the legacy `question` plus optional `options`/flags, or `title` and `questions`. Mixing those modes is rejected. The legacy result remains `details.response`; optional comments now also accompany written answers. Comments default on unless explicitly disabled or overridden by `BRABBLER_ASK_USER_ALLOW_COMMENT`.
 
 Example batch:
 
@@ -79,7 +79,7 @@ There are 1–6 questions (2–4 encouraged), up to 12 options per choice questi
 ]
 ```
 
-Cancellation returns `answers: null, cancelled: true`; timeout/Stop outcomes remain available in receipts. Tool results include human-readable questions, selected labels, alternative text and additional details. Events redact answers unless the existing explicit `PI_ASK_USER_EMIT_FULL_EVENTS` opt-in is enabled.
+Cancellation returns `answers: null, cancelled: true`; timeout/Stop outcomes remain available in receipts. Tool results include human-readable questions, selected labels, alternative text and additional details. Events redact answers unless the existing explicit `BRABBLER_ASK_USER_EMIT_FULL_EVENTS` opt-in is enabled.
 
 Batch only independent decisions that make sense together. Ask dependent follow-ups after receiving the set; no conditional/hidden questions exist. This browser extension does not change the standalone Pi TUI package. Existing running wrappers must be reloaded to pick up a changed tool schema after deployment.
 

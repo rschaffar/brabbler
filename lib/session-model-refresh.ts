@@ -300,7 +300,7 @@ export async function applySessionModelDefinition(
       for (const member of state.members) {
         if (!member.alive()) continue;
         try { member.settled?.(); }
-        catch { console.error("[pi-web] model refresh settlement observer failed"); }
+        catch { console.error("[brabbler] model refresh settlement observer failed"); }
       }
     }
   })();
