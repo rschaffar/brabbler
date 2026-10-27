@@ -153,10 +153,12 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
       side: model.reading === "diff" ? anchor.side : undefined, offset: anchor.offset, align: "start", behavior: "instant" });
     if (viewport.current) viewport.current.scrollLeft = model.scrollLeft;
   }, [ensureContext, model, observeRead]);
+  // The retained model mutates in place; renderer options depend on its current values, not only its identity.
+  const { context, full } = model;
   const options = useMemo<CodeViewReactOptions<undefined, undefined>>(() => ({
     diffStyle: view === "unified" ? "unified" : "split", themeType: isDark ? "dark" : "light", disableFileHeader: true,
-    hunkSeparators: loadContext || model.context ? "line-info" : "metadata", expansionLineCount: 20,
-    expandUnchanged: model.full, loadDiffFiles: loadContext || model.context ? loader : undefined,
+    hunkSeparators: loadContext || context ? "line-info" : "metadata", expansionLineCount: 20,
+    expandUnchanged: full, loadDiffFiles: loadContext || context ? loader : undefined,
     overflow: wrap ? "wrap" : "scroll", tokenizeMaxLength: 100_000, unsafeCSS: GAP_CSS,
     layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
     onPostRender: () => { requestAnimationFrame(bindViewer); },
@@ -176,7 +178,7 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
       }).catch(() => { if (mounted.current && model.reading === mode && generation === selectionGeneration.current) onReviewSelection(null); });
       observeRead(work);
     } } : {}),
-  }), [view, isDark, loadContext, model, loader, wrap, bindViewer, onReviewSelection, ensureContext, observeRead, file?.name]);
+  }), [view, isDark, loadContext, model, context, full, loader, wrap, bindViewer, onReviewSelection, ensureContext, observeRead, file?.name]);
   const contextFile = model.reading === "before" ? model.context?.oldFile : model.context?.newFile;
   const diffVersion = file?.isPartial ? 0 : 1;
   const items = useMemo(() => file ? model.reading === "diff"

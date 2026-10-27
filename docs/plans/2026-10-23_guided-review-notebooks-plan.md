@@ -123,12 +123,12 @@ review/
   review-data/
 ```
 
-Keep prose in Markdown. Define explicit, versioned declarative metadata for
-notebook identity, chapter order, stable step/target/question IDs and references.
-Decide whether the index carries this metadata or a small companion manifest is
-needed. The folder presentation is agreed; serialization is not. Unknown versions
-or malformed metadata remain inert diagnostics with ordinary documents readable.
-Preserve existing v1 fences rather than adding unrecognized fields to them.
+Keep prose in Markdown. The delivered serialization uses the index's strict
+`pi-notebook` manifest, chapter `pi-step` boundaries and distinct `pi-question` /
+`pi-evidence` declarations, with stable identities and references. The maintained
+contract lives in `docs/review-notebooks.md`. Unknown versions or malformed metadata
+remain inert diagnostics with ordinary documents readable. Existing `pi-review` v1
+fences stay compatible rather than accepting unrecognized fields.
 
 A repository mapping may resolve logical IDs to physical checkouts for portability,
 but it grants neither file access nor Git authority. References retain full
@@ -268,11 +268,12 @@ answers to a new question version.
 
 ## Current receiving candidate
 
-Writer checkout: `guided-review-workflow`, branch `feat/guided-review-workflow`, based
-on main `74c4fdaf659df2509a8ee3a452a82edaf3d5ff51`. Sole source writer; parent owns Git
-lifecycle, final independent review, installed bridge and complete acceptance. No
-service access, dev server, checkout production build, staging/commit or remote
-operation occurred; other repositories/worktrees were not mutated.
+Checkout: `guided-review-workflow`, branch `feat/guided-review-workflow`, started
+on main `74c4fdaf659df2509a8ee3a452a82edaf3d5ff51` and cleanly rebased onto
+`9b8f024280efb0dff9313c3d770ba9d0651e12dc`. One source writer; parent owns final
+acceptance and Git lifecycle. The interactive implementation is committed; final
+shared-renderer correction follows. No integration, host-service access, dev server,
+checkout production build or remote operation occurred; unrelated worktrees are intact.
 
 **Interactive implementation:** strict reviewer schema/reducer, fsync/exclusive-link
 numbered snapshot store/API, explicit recording vs reading, reload resume/four
@@ -296,8 +297,9 @@ displayed-snapshot binding, full recovery validation, stale selection failure fe
 restricted observed contexts, independent pane radios/recovery, per-batch JSON,
 exact submitted-field revisions and explicit plain-step anchors. Parent additionally
 identified aggregate read accounting and unavailable-evidence challenge gaps; actual
-native/mounted regressions now cover corrections. These owners changed from that
-snapshot: parent final delta review is required, not unchanged-source clearance.
+native/mounted regressions now cover corrections. Subsequent narrowed storage and
+UI delta reviews reported no remaining material findings; their scope is not a
+claim that the complete composed suite passed.
 
 **Latest delta from reviewed thNSFa:** enforce guidance-only/non-finding identity
 for every feedback version and stored replay; invalidate a mutable snapshot's old
@@ -315,7 +317,8 @@ retains method/path/body records for every observed agent request and allows onl
 that exact known read-only non-GET tuple for the fixture session. Prompt/execution,
 other-session, extra-key, malformed and new-session commands fail in actual helper
 regressions. No old native/read-only assertion or console/HTTP failure is filtered.
-Parent browser failure and the required rerun are retained in the evidence ledger.
+The corrected installed desktop/touch rerun passed (298s command / 192.918s capsule).
+Both failed and passing evidence are retained in the ledger.
 
 **Final focused evidence:** the post-review candidate passed **16 files / 82 tests**
 and static checks in **70s**; exact selection/snapshot/artifacts are below. Earlier
@@ -326,13 +329,16 @@ named runtime assertions and were restored. Raw commands/reports/chronology:
 composed focused evidence is recorded below. New test files retain explicit E
 holds; no browser assertions/input chains were retired.
 
-**Remaining gates are verification, not deferred feature scope:** parent independent
-delta review, installed Markdown desktop/touch workflow and complete
-core/browser/service acceptance. Application/test/bridge source writing is stopped;
-only this final evidence/status text follows the pass. No browser/full-all execution
-is performed by this writer.
-The full plan stays active until these pass. No intermediate reader-only runtime
-user-validation pause remains; rough interaction direction is already approved.
+**Remaining gates are verification and Git lifecycle, not deferred feature scope.**
+The first fresh current-main complete run failed in both mounted and installed
+ordinary Git previews: a retained-model memo lost its mutable context/full field
+dependencies. Independent diagnosis reproduced the exact failure; restoring the
+field snapshots passed four focused files / 27 tests without weakening assertions.
+See the evidence ledger for exact candidates, source digests, failure/cancellation
+status and the subsequent fix. Complete core/browser/terminal/service acceptance
+must pass on the corrected composition before integration. Source writing stops
+for export. The full plan stays active until that gate and the approved local Git
+handoff finish. No intermediate reader-only runtime-validation pause remains.
 Parked authoring packaging/prompt work remains with its existing owner.
 
 ### Historical merged-reader implementation

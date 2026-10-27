@@ -179,14 +179,42 @@ hold, not a scheduling promotion.
   Parent must rerun the retained failed installed bridge and final acceptance; this
   focused result does not close those gates or invent user runtime validation.
 
-## Parent-owned remaining evidence
+## Parent-owned installed bridge and current-main composition
 
-The installed Markdown bridge source preserves both original input chains and
-read-only assertions before writes; it adds recording/forms/source Selection,
-cross-chapter batch draft, exact-destination composer, pasted reply, reviewer
-resolution, saved reload/resume and stale required-question re-review. The writer
-has not executed that browser tail. No runtime user validation is invented; rough
-interaction direction was approved and the user requested full implementation
-without an intermediate reader validation stop.
+The installed Markdown desktop/mobile bridge passed after the diagnosed catalogue-read
+assertion correction: `/tmp/guided-workflow-markdown-fixed.i9cx5d.log`,
+`/tmp/pi-web-test-browser.OaMXUZ/run.json`, immutable diagnostics
+`/nix/store/ffkm83ddhxnsxrj2j3lz7bwm7vnzy5dg-pi-web-browser-markdown-diagnostics`.
+Command wall **298s**, capsule **192.918s**. Existing chains/read-only assertions remain;
+recording/forms/source Selection, cross-chapter batch draft, exact composer destination,
+pasted replies, reviewer resolution, saved reload/resume and changed required questions
+ran at both widths. This is automated installed-browser evidence, not invented user validation.
 
-The active plan owns current final-focused evidence and parent acceptance status.
+The feature was committed and cleanly rebased onto local main
+`9b8f024280efb0dff9313c3d770ba9d0651e12dc`, producing candidate
+`8c88cbf0dbb4b45a74c4efa11c59c859f7f85089`. Fresh full acceptance
+`nix run .#test -- all --workers 4 --jobs 4` **failed**, command wall **381s**:
+`/tmp/guided-workflow-all.Rro3MF.log`, core `/tmp/pi-web-test-core.JCuvJK/run.json`,
+browser `/tmp/pi-web-test-browser.t8xSA8/run.json`; source SHA-256
+`4ed2141feb4f5244122345024a2d291b7f4e124fea41ca2c607b18ec38174423`.
+Four/four was deliberately selected instead of twelve/four because concurrent
+CPU-heavy processes exceeded 100% each and host load was 18.79; available RAM was
+47,650 MiB. Core stopped at 275 passed / 1 failed / 246 not started of 522 files.
+The Git-plugin installed bridge independently failed at the same missing line 2500;
+Markdown was interrupted, not passed. Other partial passes are not full acceptance.
+
+Independent diagnosis reproduced the exact unchanged mounted failure once with one
+worker (`/tmp/guided-review-plugin-card-focused.5WA4TE.log`) and compared actual main.
+The added optional selection callback required the retained model as a memo dependency,
+but replacing its `context`/`full` dependencies with only model identity hid in-place
+presentation mutations from Pierre's options. Restoring the current field dependencies
+fixed the original regression without assertion, fixture or deadline changes.
+Four focused files / **27 tests passed**, command wall **112s**:
+`/tmp/guided-workflow-context-fix.SUvMqy.log`, `/tmp/pi-web-test-core.d7tVAK/run.json`,
+source SHA-256 `d90970e65866d80a1565f45efaf8f077c1f05adfdd3fb9313b5b638f288a5079`.
+The fields are subsequently bound as explicit render-time snapshots so the linter
+recognizes both values alongside the retained model (no suppression). The final
+composed suite must verify that exact follow-up. Source writing is stopped for export.
+
+The active plan owns current acceptance/integration status. No host service,
+publication, unrelated guidance worktree or user-runtime-validation claim is involved.
