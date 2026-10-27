@@ -10,10 +10,10 @@ import {
 } from "@/lib/request-security";
 import {
   isValidWebSessionToken,
-  isValidBasicAuthorization,
-  isWebPasswordEnabled,
   BRABBLER_SESSION_COOKIE,
 } from "@/lib/web-auth";
+
+import { getWebAuthState, signingKey, verifyBasicAuthorization, isAuthBusy } from "@/lib/web-auth-state";
 
 function tooManyAttempts(retryAfterMs: number): NextResponse {
   return new NextResponse("Too many failed attempts", {
@@ -25,7 +25,7 @@ function tooManyAttempts(retryAfterMs: number): NextResponse {
   });
 }
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const isApiRequest = request.nextUrl.pathname === "/api"
     || request.nextUrl.pathname.startsWith("/api/");
   const isTrustedRequest = isApiRequest
@@ -34,20 +34,24 @@ export function proxy(request: NextRequest) {
 
   if (!isTrustedRequest) {
     if (!isApiRequest) {
-      return new NextResponse("Untrusted request", { status: 403 });
+      return new NextResponse("Untrusted request", { status: 403, headers: { "Cache-Control": "no-store" } });
     }
-    return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+    return NextResponse.json({ error: "Untrusted API request" }, { status: 403, headers: { "Cache-Control": "no-store" } });
   }
 
-  const password = process.env.BRABBLER_PASSWORD;
-  if (!isWebPasswordEnabled(password)) {
+  const state = getWebAuthState();
+  if (state.mode === "locked") {
+    return NextResponse.json({ error: "Authentication locked; run brabbler auth setup locally or repair authentication configuration.", setupNeeded: true },
+      { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
+  if (state.mode === "disabled") {
     if (request.nextUrl.pathname === "/login") {
-      return NextResponse.redirect(new URL("/", request.url));
+      return NextResponse.redirect(new URL("/", request.url), { headers: { "Cache-Control": "no-store" } });
     }
     return NextResponse.next();
   }
 
-  let authenticated = isValidWebSessionToken(request.cookies.get(BRABBLER_SESSION_COOKIE)?.value, password);
+  let authenticated = isValidWebSessionToken(request.cookies.get(BRABBLER_SESSION_COOKIE)?.value, signingKey(state));
   const authorization = isApiRequest ? request.headers.get("authorization") : null;
   if (!authenticated && authorization && /^Basic\s/i.test(authorization)) {
     // Every Basic header is a password guess, so it shares the login form's
@@ -58,13 +62,19 @@ export function proxy(request: NextRequest) {
     // guesser a fresh short block.
     const retryAfterMs = getAuthRetryAfterMs();
     if (retryAfterMs > 0) return tooManyAttempts(retryAfterMs);
-    authenticated = isValidBasicAuthorization(authorization, password);
+    try { authenticated = await verifyBasicAuthorization(authorization, state); }
+    catch (error) {
+      if (isAuthBusy(error)) return tooManyAttempts(1000);
+      return NextResponse.json({ error: "Authentication unavailable" }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    }
+    // A rotation while the KDF was running cannot authorize using the old verifier.
+    authenticated &&= signingKey(getWebAuthState()) === signingKey(state);
     if (!authenticated) recordAuthFailure();
   }
   if (request.nextUrl.pathname === "/login") {
     return authenticated
-      ? NextResponse.redirect(new URL("/", request.url))
-      : NextResponse.next();
+      ? NextResponse.redirect(new URL("/", request.url), { headers: { "Cache-Control": "no-store" } })
+      : NextResponse.next({ headers: { "Cache-Control": "no-store" } });
   }
   if (request.nextUrl.pathname === "/api/web-auth") return NextResponse.next();
 
@@ -74,7 +84,7 @@ export function proxy(request: NextRequest) {
       if (request.nextUrl.search) {
         loginUrl.searchParams.set("next", `${request.nextUrl.pathname}${request.nextUrl.search}`);
       }
-      return NextResponse.redirect(loginUrl);
+      return NextResponse.redirect(loginUrl, { headers: { "Cache-Control": "no-store" } });
     }
     return new NextResponse("Authentication required", {
       status: 401,

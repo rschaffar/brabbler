@@ -33,6 +33,9 @@ function getHelpText() {
   return `Usage: brabbler [options]
 
 Start the Brabbler UI server.
+Local password setup: brabbler auth setup [--replace]
+  Reads a hidden, confirmed passphrase from the controlling TTY, never argv.
+  --replace explicitly rotates existing secure credentials and revokes sessions.
 
 Options:
   -p, --port <port>          Server port (default: 30141, or PORT)
@@ -45,7 +48,9 @@ Environment:
   BRABBLER_HOSTNAME            Default hostname when --hostname is omitted
   BRABBLER_NO_OPEN             Set to 1/true/yes/on to disable browser open
   BRABBLER_APP_NAME            PWA manifest name (trimmed; default Brabbler)
-  BRABBLER_PASSWORD            Enable browser password login and API Basic Auth
+  BRABBLER_PASSWORD            Explicit env password (conflicts with local credentials)
+  BRABBLER_REQUIRE_AUTH        Set to 1 to lock until authentication is configured
+  PI_CODING_AGENT_DIR          Agent state root (default ~/.pi/agent)
   BRABBLER_ALLOWED_HOSTS       Extra exact proxy/custom hostnames, comma-separated
   BRABBLER_SKIP_VERSION_CHECK  Set to 1 to disable running-version reload prompts
   BRABBLER_PUSH_SUBJECT        Operator contact URL required for Web Push

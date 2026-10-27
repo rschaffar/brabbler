@@ -34,6 +34,11 @@ in
       default = "%h/.pi/agent";
       description = "Pi's mutable agent/session directory (systemd user unit specifiers are expanded).";
     };
+    requireAuth = mkOption {
+      type = types.bool;
+      default = false;
+      description = "Fail closed until local brabbler auth setup or an explicit runtime BRABBLER_PASSWORD is configured. No passphrase enters the Nix store.";
+    };
     environmentFile = mkOption {
       type = types.nullOr types.str;
       default = null;
@@ -65,6 +70,7 @@ in
         Environment = [
           "PI_CODING_AGENT_DIR=${cfg.agentDir}"
           "BRABBLER_SKIP_VERSION_CHECK=1"
+          "BRABBLER_REQUIRE_AUTH=${if cfg.requireAuth then "1" else "0"}"
         ] ++ lib.mapAttrsToList (name: value: "${name}=${value}") cfg.environment
           ++ lib.optional (cfg.allowedHosts != [ ])
             "BRABBLER_ALLOWED_HOSTS=${lib.concatStringsSep "," cfg.allowedHosts}";

@@ -20,6 +20,18 @@ Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
 
+## Local CLI web authentication
+
+The [verified CLI-auth implementation](archived/2026-10-27_cli-web-auth-plan.md)
+adds private local `brabbler auth setup`, salted scrypt credentials, independent
+session signing and fail-closed required authentication. Full Nix acceptance
+passed **526 files / 4,316 tests**, **26 browser/terminal groups / 60 scenarios**
+and the genuine deployment VM in **506.373s**, with resource-admitted four/four
+overlap. [Feature contracts](../feature-internals.md) and README own behavior;
+the archive retains exact evidence and the corrected inventory failure. The user
+selected local-main integration; its exact Git gate and foreign consumer/live
+cutover remain separate and are not execution claims in this source plan.
+
 ## Brabbler rename
 
 The [verified source rename](archived/2026-10-27_brabbler-rename-plan.md) implements

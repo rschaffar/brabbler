@@ -114,7 +114,7 @@ export const sshAgentEnglish = {
   "sshAgent.compatibility": "Requires a secure top-level page, a configured Brabbler password and a signed web login. SSH consumers need OpenSSH 10.3 or the agent-signature compatibility backport; destination support is separate. Firefox and Chrome on Linux and Android are UX targets, not verified hardware compatibility. Socket support remains Unix-oriented.",
   "sshAgent.auth.checking": "Checking SSH management access…",
   "sshAgent.auth.ready": "Signed web login available",
-  "sshAgent.auth.password-required": "SSH management requires BRABBLER_PASSWORD to be configured and a signed web login. No agent polling or discovery is running.",
+  "sshAgent.auth.password-required": "SSH management requires local CLI authentication (brabbler auth setup) or BRABBLER_PASSWORD, and a signed web login. No agent polling or discovery is running.",
   "sshAgent.auth.login-required": "Sign in with the configured web password, then Refresh agents. Basic/API authentication alone cannot manage SSH. Polling is stopped.",
   "sshAgent.auth.error": "Could not check SSH management access. Use Refresh agents to try the access check again.",
   "sshAgent.signIn": "Sign in",

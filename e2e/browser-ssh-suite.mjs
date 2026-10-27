@@ -1,6 +1,7 @@
 // Managed process-wide SSH, real Chromium/SDK/OpenSSH only.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { setupInstalledAuth } from "../nix/auth-setup.fixture.mjs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
@@ -140,7 +141,8 @@ export async function runBrowserSshSuite() {
   const harness = createHarness(root, "browser");
   const { env, agentDir, fixtureRoot, artifacts } = harness;
   const coverage = createCoverage("ssh-agent", artifacts);
-  env.BRABBLER_PASSWORD = "synthetic-browser-ssh-password";
+  const webPassword = "synthetic-browser-ssh-password";
+  env.BRABBLER_REQUIRE_AUTH = "1";
   applyFixtureEnvironment(env);
   const project = join(fixtureRoot, "project"); mkdirSync(project);
   const fixtures = seedSshRuntimeFixtures({ root, agentDir, project });
@@ -163,9 +165,50 @@ export async function runBrowserSshSuite() {
     for (;;) {
       await server.check();
       const response = await fetch(`${base}/api/web-auth`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
-      if (response?.ok) break;
+      if (response) {
+        await response.text();
+        if (response.status === 503) break;
+      }
       assert.ok(performance.now() < deadline, "SSH test service readiness"); await delay(250);
     }
+    await coverage.run("ssh-agent/local-cli-auth@en-desktop", async () => {
+      const raw = async (path, { password, cookie, basic } = {}) => {
+        const response = await fetch(`${base}${path}`, { method: password === undefined ? "GET" : "POST",
+          headers: { "Content-Type": "application/json", ...(cookie ? { Cookie: cookie } : {}),
+            ...(basic ? { Authorization: `Basic ${Buffer.from(`pi:${basic}`).toString("base64")}` } : {}) },
+          body: password === undefined ? undefined : JSON.stringify({ password }), signal: AbortSignal.timeout(5000) });
+        const text = await response.text();
+        assert.equal(text.includes(webPassword), false, "auth errors never reflect passphrases");
+        return { status: response.status, headers: response.headers, text };
+      };
+      for (const path of ["/api/sessions", "/api/web-auth", "/api/ssh-agent"]) {
+        const response = await raw(path, { basic: webPassword });
+        assert.equal(response.status, 503); assert.equal(response.headers.get("cache-control"), "no-store");
+      }
+      await setupInstalledAuth(root, env, webPassword, { confirmation: "synthetic mismatch passphrase", expectedCode: 1 });
+      assert.equal((await raw("/api/sessions")).status, 503);
+      await setupInstalledAuth(root, env, webPassword);
+      await setupInstalledAuth(root, env, webPassword, { expectedCode: 1 });
+      const file = join(agentDir, "brabbler/auth/credentials.json"), bytes = readFileSync(file);
+      assert.equal(bytes.includes(Buffer.from(webPassword)), false);
+      writeFileSync(file, "{");
+      assert.equal((await raw("/api/sessions", { basic: webPassword })).status, 503);
+      assert.equal((await raw("/api/web-auth", { password: webPassword })).status, 503);
+      writeFileSync(file, bytes);
+      const wrong = await raw("/api/web-auth", { password: "synthetic wrong password" });
+      assert.equal(wrong.status, 401);
+      assert.equal((await raw("/api/sessions", { basic: webPassword })).status, 429);
+      await delay(JSON.parse(wrong.text).retryAfterMs + 20); // real server throttle deadline, not a settlement join
+      const correct = await raw("/api/web-auth", { password: webPassword });
+      assert.equal(correct.status, 200);
+      const cookie = correct.headers.get("set-cookie").split(";")[0];
+      assert.equal((await raw("/api/sessions", { cookie })).status, 200);
+      assert.equal((await raw("/api/sessions", { basic: webPassword })).status, 200);
+      assert.equal((await raw("/api/ssh-agent", { basic: webPassword, password: webPassword })).status, 403, "Basic cannot manage SSH");
+      await setupInstalledAuth(root, env, webPassword, { replace: true });
+      assert.equal((await raw("/api/sessions", { cookie })).status, 401, "rotation revokes existing cookie");
+      assert.equal((await raw("/api/ssh-agent", { cookie })).status, 401);
+    });
     const browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
     const login = async (inputId, sessionId, credentials = []) => {
       const context = await harness.newContext(browser, browserInputs[inputId].options, uiBase);
@@ -179,7 +222,7 @@ export async function runBrowserSshSuite() {
       // Only virtual credential material moves between two owned synthetic devices.
       for (const credential of credentials) await cdp.send("WebAuthn.addCredential", { authenticatorId, credential });
       await page.goto(`${uiBase}/login?next=${encodeURIComponent(`/?session=${sessionId}`)}`);
-      await page.getByLabel("Password", { exact: true }).fill(env.BRABBLER_PASSWORD);
+      await page.getByLabel("Password", { exact: true }).fill(webPassword);
       await page.locator('button[type="submit"]').click();
       await page.getByText("Synthetic SSH fixture", { exact: true }).waitFor();
       const cookie = (await context.cookies(uiBase)).map(item => `${item.name}=${item.value}`).join("; ");

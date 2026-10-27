@@ -22,6 +22,18 @@ const { launchManagedNext } = require("./ssh-agent-launch");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { commandEnvironment } = require("./command-env");
 
+if (process.argv[2] === "auth") {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { runAuthSetup } = require("./auth-cli");
+  const task = process.argv[3] === "setup"
+    ? runAuthSetup(process.argv.slice(4))
+    : Promise.reject(new Error("Usage: brabbler auth setup [--replace]"));
+  task.catch((error) => {
+    // Known CLI/store messages contain no user input or credential bytes.
+    console.error(error.code ? "Auth setup failed; inspect private state locally." : error.message);
+    process.exitCode = 1;
+  });
+} else {
 let launchOptions;
 try {
   launchOptions = parseLaunchOptions();
@@ -59,7 +71,17 @@ try {
 }
 
 const loopbackHostnames = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
-const passwordEnabled = Boolean(process.env.BRABBLER_PASSWORD);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { readCredentials } = require("./web-auth-store");
+const required = process.env.BRABBLER_REQUIRE_AUTH;
+let authLocked = required !== undefined && !["", "0", "1"].includes(required);
+let passwordEnabled = Boolean(process.env.BRABBLER_PASSWORD);
+try {
+  const credentials = readCredentials();
+  if (credentials && passwordEnabled) authLocked = true;
+  passwordEnabled ||= Boolean(credentials);
+} catch { authLocked = true; }
+authLocked ||= required === "1" && !passwordEnabled;
 
 if (!fs.existsSync(nextDir)) {
   console.error("Build artifacts not found. Please report this issue.");
@@ -67,7 +89,11 @@ if (!fs.existsSync(nextDir)) {
 }
 
 if (!loopbackHostnames.has(hostname)) {
-  if (passwordEnabled) {
+  if (authLocked) {
+    console.warn(
+      `Warning: brabbler is listening on ${hostname} with authentication required and access locked until valid authentication is configured. Use HTTPS or a trusted VPN before signing in.`,
+    );
+  } else if (passwordEnabled) {
     console.warn(
       `Warning: brabbler is listening on ${hostname} with password authentication over HTTP. Use HTTPS or a trusted VPN to protect the password in transit.`,
     );
@@ -132,3 +158,4 @@ child.stdout.on("data", (chunk) => {
   console.error(`[brabbler] startup failed: ${error.message}`);
   process.exit(error.exitCode || 1);
 });
+}
