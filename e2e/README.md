@@ -198,6 +198,13 @@ cross-project New/persisted-empty-session/editable-composer assertions before it
 responsive return. The same complete `activity-family-usage.mjs` fragment runs at every width: this pilot does **not** mount the wider AppShell
 metrics/Agents composition, so its browser proof is not deleted.
 
+The desktop metrics projection drains its original native and page response bodies
+before the existing cross-document navigation, then rebinds the same projection in
+the new document. Both owners are captured for independent failure cleanup. The
+responsive adapter keeps its original navigation and separate route/natural-body
+observations. Synthetic helper regressions are not substitutes for these Chromium
+inputs.
+
 Controller and mounted client matrices live in the [Activity core recipe](../docs/testing.md#activity-client-pilot-recipe).
 Native Pause ledger negatives and the actual Acceptance-job/Activity-observer
 independence bridge remain native-owned. Responsive geometry can augment read-only
