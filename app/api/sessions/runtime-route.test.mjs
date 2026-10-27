@@ -13,6 +13,7 @@ const jiti = createJiti(import.meta.url, {
   moduleCache: false,
   fsCache: false,
 });
+const { encodeSessionCatalogue, decodeSessionCatalogue } = await jiti.import("../../../lib/session-catalogue-wire.ts");
 const {
   deleteSession,
   getSessionDetail,
@@ -283,6 +284,9 @@ test("session listing returns a gzip-compressed response when the client accepts
   const manager = SessionManager.create(dir);
   manager.appendMessage({ role: "user", content: firstMessage, timestamp: Date.now() });
   manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "done" }], timestamp: Date.now() });
+  const sibling = SessionManager.create(dir);
+  sibling.appendMessage({ role: "user", content: firstMessage, timestamp: Date.now() });
+  sibling.appendMessage({ role: "assistant", content: [{ type: "text", text: "done" }], timestamp: Date.now() });
   invalidateSessionListCache();
 
   const response = await native.routes.getSessionList(new Request("http://localhost/api/sessions", {
@@ -293,7 +297,23 @@ test("session listing returns a gzip-compressed response when the client accepts
   assert.equal(response.headers.get("Content-Encoding"), "gzip");
   assert.match(response.headers.get("Vary") ?? "", /(?:^|,\s*)Accept-Encoding(?:\s*,|$)/i);
   const payload = JSON.parse(gunzipSync(Buffer.from(await response.arrayBuffer())).toString("utf8"));
+  assert.equal(payload.sessions.length, 2);
   assert.equal(payload.sessions[0].firstMessage, firstMessage);
+  for (const query of ["compact=1", "summary=1&compact=1", "force=1&compact=1"]) for (const encoding of ["identity", "gzip"]) {
+    const compact = await native.routes.getSessionList(new Request(`http://localhost/api/sessions?${query}`, {
+      headers: { "Accept-Encoding": encoding },
+    }));
+    const raw = Buffer.from(await compact.arrayBuffer());
+    const encoded = JSON.parse((encoding === "gzip" ? gunzipSync(raw) : raw).toString("utf8"));
+    assert.equal(compact.status, 200);
+    assert.equal(compact.headers.get("Content-Encoding"), encoding === "gzip" ? "gzip" : null);
+    assert.equal(encoded.sessions.format, 1, "compact route shares repeated text instead of resending full rows");
+    assert.equal(encoded.sessions.rows.length, 2);
+    assert.deepEqual(decodeSessionCatalogue(encoded.sessions), payload.sessions, 'native compact summary/force metadata remains exact');
+    assert.equal(encoded.sessions.strings[encoded.sessions.rows[0].firstMessage], firstMessage);
+    assert.ok(Buffer.byteLength(JSON.stringify(encoded.sessions)) < Buffer.byteLength(JSON.stringify(payload.sessions)) * 0.6,
+      "actual compact route JSON removes the duplicate large prompt");
+  }
 });
 
 test("deleting an unpersisted session shuts down its runtime and invalidates caches", async (t) => {
@@ -526,7 +546,7 @@ const { mergeSessionLists } = await jiti.import("../../../lib/session-reader.ts"
 
 test("list GET selects summary or forced scan, joins runtime projection, and is never cacheable", async t => {
   const owner = backendCase(t);
-  for (const query of ["", "?force=1", "?summary=1", "?summary=1&force=1", "?summary=true&force=true"]) {
+  for (const query of ["", "?force=1", "?summary=1", "?summary=1&force=1", "?summary=true&force=true", "?compact=1", "?force=1&compact=1", "?summary=1&compact=1", "?compact=true"]) {
     const calls = [], persisted = [{ id: "saved", path: "/fixture/saved.jsonl", cwd: "/fixture",
       created: "2026-01-01T00:00:00.000Z", modified: "2026-01-01T00:00:00.000Z",
       messageCount: 1, firstMessage: "Saved fixture", transient: false }];
@@ -535,6 +555,7 @@ test("list GET selects summary or forced scan, joins runtime projection, and is 
       messageCount: 1, firstMessage: "Runtime fixture", transient: true }];
     const { GET } = await loadBackend(new URL("./route.ts", import.meta.url), {
       "next/server": next, "@/lib/perf": { startServerPerf: () => undefined },
+      "@/lib/session-catalogue-wire": { encodeSessionCatalogue },
       "@/lib/json-response": { jsonResponse: (_req, data, init) => Response.json(data, init) },
       "@/lib/rpc-manager": { getRpcSessionInfos: () => runtime, getRunningRpcSessionIds: () => ["transient"], getCompletionNotificationSuppressedRpcSessionIds: () => ["transient"] },
       "@/lib/session-reader": {

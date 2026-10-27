@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { click, button, exact } from './navigation-runtime.fixture.mjs';
 import { shellHarness, session } from './navigation-cases.fixture.mjs';
+import { encodeSessionCatalogue } from '../lib/session-catalogue-wire.ts';
 
 for (const initial of ['activity', 'starred', 'git', null]) test(`background adoption preserves ${initial}; explicit selection forwards current entry and closes overview`, async t => {
   const h = await shellHarness(t);
@@ -34,15 +35,18 @@ for (const width of [390, 820, 1440]) test(`real overview buttons preserve indep
 });
 
 test('A/B/A workspace generations reject old success/error and use the current catalogue/callback', async t => {
-  const h = await shellHarness(t, { route(request) { exact(request, '/api/sessions'); return undefined; } });
+  const h = await shellHarness(t, { route(request) { exact(request, '/api/sessions', { compact: '1' }); return undefined; } });
   const { setLastOpenSession } = h.graph.workspaceMemory;
   setLastOpenSession('/a', 'a'); setLastOpenSession('/b', 'b');
   await h.cwd('/a'); const oldA = h.latest('/api/sessions'); await h.headers(oldA);
   await h.cwd('/b'); const oldB = h.latest('/api/sessions'); await h.headers(oldB);
   await h.cwd('/a'); const newA = h.latest('/api/sessions'); await h.headers(newA);
-  const a = session('a', '/a', { projectRoot: '/a', projectKey: '/a' });
-  await h.body(newA, { sessions: [a] });
+  const text = 'full remembered prompt '.repeat(100) + 'tail sentinel';
+  const a = session('a', '/a', { projectRoot: '/a', projectKey: '/a', firstMessage: text });
+  const encoded = JSON.parse(JSON.stringify(encodeSessionCatalogue([a, { ...a, id: 'peer' }]))); assert.equal(encoded.format, 1);
+  await h.body(newA, { sessions: encoded });
   assert.equal(h.current.state.selectedSession.id, 'a');
+  assert.deepEqual(h.current.state.selectedSession, a, 'workspace HTTP fallback decodes exact full metadata before adoption');
   const key = h.current.state.sessionKey;
   await h.body(oldA, { sessions: [session('a', '/old', { projectKey: '/a' })] });
   await h.body(oldB, { sessions: [session('b', '/b', { projectKey: '/b' })] });
@@ -55,7 +59,7 @@ test('A/B/A workspace generations reject old success/error and use the current c
 });
 
 test('all explicit transition admissions invalidate remembered restores; late creation refreshes but cannot adopt another draft', async t => {
-  const h = await shellHarness(t, { route(request) { exact(request, '/api/sessions', {}, request.options.cache ? { cache: 'no-store' } : {}); return undefined; } });
+  const h = await shellHarness(t, { route(request) { exact(request, '/api/sessions', { compact: '1' }, request.options.cache ? { cache: 'no-store' } : {}); return undefined; } });
   const { setLastOpenSession } = h.graph.workspaceMemory;
   for (const transition of ['cwd', 'select', 'new', 'created', 'fork', 'deleted']) {
     await h.command(c => c.navigation.handleSessionsChange([]));
@@ -158,7 +162,7 @@ test('page-memory scrolls are session-local and archive restoration never clears
 
 for (const rememberedCwd of ['/draft-project', '/draft-project-worktree']) test(`navigation parks passive text/images across actual remembered-session adoption: ${rememberedCwd}`, async t => {
   const cwd = '/draft-project', remembered = session('remembered', rememberedCwd, { projectRoot: cwd, projectKey: cwd });
-  const h = await shellHarness(t, { route(request) { exact(request, '/api/sessions'); return undefined; } });
+  const h = await shellHarness(t, { route(request) { exact(request, '/api/sessions', { compact: '1' }); return undefined; } });
   const { draftStore } = h.graph;
   await h.cwd(cwd, cwd, cwd);
   const passive = h.current.state.activeNewSessionDraftKeyRef.current;

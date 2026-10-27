@@ -164,7 +164,42 @@ Release immediately gates admission/publication and cancels hydration. Synchrono
 Strict replay retains the instance; terminal disposal joins admitted bodies through
 the existing navigation-work observer. Current callback/controller ports are used
 at publication. Activity receipt, suppression and completion-tone authority remain
-unchanged. No payload projection or production latency guarantee is implied.
+unchanged. Coordination itself does not project payloads or imply a production
+latency guarantee.
+
+### Lossless catalogue transport
+
+Browser catalogue reads opt into `GET /api/sessions?compact=1`, also with summary
+or force. The outer reply/version/running/suppression metadata is unchanged; only
+`sessions` may become `{format: 1, strings, rows}` instead of an array. The stateless
+`lib/session-catalogue-wire.ts` codec shares repeated first messages, names,
+directory/project identities, branches and subagent descriptions/profiles through
+response-local numeric references in those fixed slots. IDs, file paths, dates,
+counts, flags and relation discriminants retain their normal representation.
+Conservative JSON UTF-8 savings include the table, envelope and actual index digit
+widths; unprofitable/unique catalogues stay arrays. This is not a persistent index,
+a cross-request dictionary, a new metadata authority or additional content I/O.
+
+`readSessionCatalogueReply` completely decodes at the Sidebar, remembered-workspace
+restore and selected-session hydration HTTP boundaries, before any controller,
+state or selected-row merge. Unknown formats, non-string tables, malformed transport
+structure/selected slots or invalid references fail the existing read/error path,
+never partial publication. There is no codec-specific retry; a failed startup
+summary still permits the existing 750ms hydration fallback. This is not complete
+SessionInfo schema validation. Legacy arrays remain accepted, and default API reads, detail/context and
+server search keep their existing full-data contracts. Row/relation copies isolate
+decoded models from encoded transport objects. Existing lifecycle/epoch/navigation
+guards and request cadence remain unchanged.
+
+No first message, name or task description is truncated. Agents searches the full
+raw first message even when a title hides it; Activity/Agents/search retain full
+labels/tooltips, and Sidebar/mobile still collapse complete skill envelopes before
+their 50-unit fallback. Clone/prompt/history data is untouched. Unique text can
+still dominate a response; sharing does not bound decoded memory. JSON byte savings
+are not a promise of gzip-transfer or deployed latency improvement: compare those
+separately after an authorized rebuild/measurement. [Production performance](production-performance.md)
+owns recorded empirical findings and the deferred production/SPA measurement
+follow-ups; the executed implementation plan is archived.
 
 ### Running state polling + reconciliation
 - The sidebar polls `/api/agent/running` every 2.5 seconds while the tab is visible and pauses polling in background tabs. The session-list response remains the initial fallback.

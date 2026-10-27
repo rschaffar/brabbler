@@ -24,7 +24,7 @@ test('actual auto-name button admits compacted persisted history and trims ackno
 
 test('transient and truly empty sessions refuse the real control; server hydration clears transient before naming', async t => {
   const h = await shellHarness(t, { route(request) {
-    exact(request, '/api/sessions', {}, { cache: 'no-store' }); return { sessions: [session('a', '/repo', { messageCount: 3 })] };
+    exact(request, '/api/sessions', { compact: '1' }, { cache: 'no-store' }); return { sessions: [session('a', '/repo', { messageCount: 3 })] };
   } });
   await h.select(session('a', '/repo', { transient: true, messageCount: 3 }));
   assert.equal(button(h.view, 'Generate title').disabled, true);

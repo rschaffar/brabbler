@@ -134,7 +134,7 @@ test('pure session-window, archive structural-sharing and catalogue URL matrices
   assert.deepEqual(getSessionListIndices(5, 80000, 335, 1999), [0, 1, 2, 3, 4]);
   assert.deepEqual(getSessionListIndices(0, 80000, 335, 1999), []);
   assert.equal(getSessionListIndices(2000, 0, 0).length, 28);
-  assert.deepEqual([[true, false], [true, true], [false, true], [false, false]].map(args => sessionListUrl(...args)), ['/api/sessions?summary=1', '/api/sessions?summary=1', '/api/sessions?force=1', '/api/sessions']);
+  assert.deepEqual([[true, false], [true, true], [false, true], [false, false]].map(args => sessionListUrl(...args)), ['/api/sessions?summary=1&compact=1', '/api/sessions?summary=1&compact=1', '/api/sessions?force=1&compact=1', '/api/sessions?compact=1']);
   const sessions = [{ id: 'root', archived: false }, { id: 'child' }];
   const archived = updateSessionArchiveState(sessions, 'root', true);
   assert.equal(archived[0].archived, true); assert.equal(archived[1] === sessions[1], true);

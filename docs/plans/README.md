@@ -15,11 +15,24 @@ on 2026-10-27.
 | [Explorer fullscreen](2026-10-13_git-explorer-fullscreen-plan.md) | Dedicated already-paginated history/graph and unsupported/non-Git fullscreen browser cases, including expand/restore state retention. |
 | [Eight-worker benchmark](2026-10-22_eight-worker-acceptance-plan.md) | Resource-admitted overlapping 8-core/8-browser measurement, or explicit retirement/deferral. The newer 12/4 experiment does not supply 8/8 proof. |
 | [Core test optimization](2026-10-26_core-test-optimization-plan.md) | Delivered slices are integrated. Deferred native-wait/cache/remaining cost leads and original ownership-task performance measurements remain proposals with this owner, not automatic next work. |
-| [Production profiling](2026-10-26_pi-web-production-profiling-plan.md) | Profiling, relation reuse and refresh coalescing are integrated. Compact payloads, successful SPA-switch capture and post-coalescing production comparison remain separately scoped future work. |
 
 Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
+
+## Production profiling and payload closure
+
+The user explicitly requested closure after all three catalogue slices were verified.
+The [executed plan](archived/2026-10-26_pi-web-production-profiling-plan.md) retains
+profiling, relation reuse, refresh coalescing, lossless compact transport and failed/
+successful acceptance evidence. Final composed candidate `0f75818` on `8c25dd7`
+passed **523 files / 4,291 tests**, **26 browser/terminal groups / 59 receipts** and
+genuine deployment VM checks in **423.975s**. This is not a production benchmark.
+[Production performance](../production-performance.md) owns durable findings and
+the deferred production/SPA measurements; [Session contracts](../session-internals.md)
+owns mechanisms. No measurement is claimed complete by the handoff. Exact local
+integration/cleanup remains with the receiving session's gated Git receipts;
+archival is not approval, execution evidence or deployment.
 
 ## Guided review workflow acceptance
 

@@ -1,27 +1,42 @@
 # Pi Web production latency — profiling plan
 
-**Current disposition (2026-10-27): profiling, relation reuse and refresh coalescing
-are delivered and integrated.** Relation reuse (`ade48c7`) entered main through
-`3650d2e`; refresh coalescing, independently reviewed and fully sandbox-verified at
-`3bdd333651ed908a8ea07d47d67212d9bab32327`, entered main through `4422eed`.
-`docs/session-internals.md` owns the delivered mechanisms. The old writer/worktree,
-unintegrated and execution-authority statements below are historical, not current
-resource claims or permission to restart work.
+**Closed 2026-10-27 at the user's explicit request:** profiling and all three
+implementation slices are complete, independently reviewed and fully verified.
+The final composed payload candidate `0f75818b50fc534b71985dc0c87e05aaf141d85b`
+on main `8c25dd7` passed complete Nix acceptance below. Closure prose is a subsequent
+documentation-only delta, not a claim that tests ran at its later commit ID.
 
-**Remaining owner:** this plan retains compact payload proposals, the deferred
-successful normal SPA row-click/switch capture and a separately authorized
-post-coalescing production comparison. The earlier relation-reuse production
-comparison does not measure the later coalescing change. No deployment, live probe,
-inspector activation, publication or new implementation is authorized by this sweep.
+[Production performance](../../production-performance.md) now owns durable empirical
+findings, limits and every deferred production/SPA measurement. [Session contracts](../../session-internals.md)
+owns the implemented mechanisms. Exact local integration and cleanup remain owned
+by the receiving session's gated Git operations and durable receipts: archival is
+not approval or a claim those operations have already executed. No live deployment,
+restart, probe, inspector activation or remote publication occurred in this slice.
+Earlier active-status, authority and worktree observations below are historical.
+
+**Delivered history:** profiling, relation reuse and refresh coalescing are
+integrated. Relation reuse (`ade48c7`) entered main through `3650d2e`; refresh
+coalescing, fully sandbox-verified at `3bdd333651ed908a8ea07d47d67212d9bab32327`,
+entered main through `4422eed`. `docs/session-internals.md` owns their mechanisms.
+Old writer/worktree, unintegrated and execution-authority statements below are
+historical, not current resource claims or permission to restart work. The sweep
+itself did not authorize another implementation.
+
+**Follow-up handoff:** the user accepted [Production performance](../../production-performance.md)
+as the current owner of the deferred successful normal SPA row-click/switch capture
+and post-coalescing/payload production comparison. Neither was performed or claimed
+complete by archival. The relation-reuse comparison does not measure later changes;
+future execution needs a fresh bounded request.
 
 **Previous slice:** relation reuse was implemented, independently reviewed,
 and fully sandbox-verified at `ade48c7a9aa6904f0ddeb5dde63afff9bfe12747`.
 That first coherent-candidate checkpoint preceded the user's later rebuild and
 measured improvement recorded in Package4 below. Its original unmeasured-gain and
-worktree/base statements are historical, not current directions. This plan now retains deferred follow-ups; refresh coalescing is delivered and
-the original profiling procedure remains evidence. Historical source/check authority
-does not authorize another slice, live deployment, restart, inspector activation
-or remote publication.
+worktree/base statements are historical, not current directions. This plan owns
+compact transport and deferred follow-ups; refresh coalescing is delivered and the
+original profiling procedure remains evidence. Historical source/check authority
+does not authorize another slice. The user's later request supplies Package 5's
+authority; deployment, restart, inspector activation and publication stay gated.
 
 **Earlier profiling checkpoint: complete; dominant production bottleneck identified.
 No optimization had been implemented at that checkpoint.** The user authorized local
@@ -44,11 +59,193 @@ than treating static complexity or acceptance-file elapsed time as attribution.
 The measured investigation below supplies the evidence. Relation reuse is now
 implemented and measured after the user's rebuild. The delivered coalescing slice removes
 redundant Sidebar catalogue admissions while preserving paint, mutation freshness,
-forced/ordinary semantics, failures and owned body settlement. Compact payloads
-remain later work. Obtain complete sandboxed acceptance; do not infer another
+forced/ordinary semantics, failures and owned body settlement. The active slice
+reduces catalogue JSON through lossless sharing, not truncated prompts or changed
+search semantics. Obtain complete sandboxed acceptance; do not infer another
 production speedup before separately authorized deployment and measurement.
 
 ## Plan
+
+### Package 5 — complete: lossless compact catalogue transport
+
+The user requested the remaining payload slice. The consumer audit rejects a
+blind bounded `firstMessage` DTO: Agents filters the entire raw first message even
+when a title hides it; Activity/Agents/search expose full labels/tooltips; Sidebar
+and mobile collapse the complete skill envelope before their 50-unit fallback.
+Selection adopts catalogue rows directly, and refresh merges overwrite selected
+metadata. No browser uses catalogue text as clone/prompt/copy authority, but a
+finite prefix still cannot preserve the existing search/presentation contract.
+
+**Design:** an opt-in `compact=1` catalogue response may encode its `sessions` as
+`{format: 1, strings, rows}`. Share repeated text across firstMessage, directory/
+project identity, name/branch and subagent profile/description. Only encode when
+conservative byte savings cover the envelope; unique/small inputs retain ordinary
+arrays. Decode to exact ordinary SessionInfo rows before Sidebar/controller or
+navigation state sees them. Leave default HTTP arrays, server search, canonical
+scanner/reader data, persisted schema, request count and freshness policy intact.
+There is no new cache, file read, metadata authority or user-visible truncation.
+
+- [x] Audit actual search/title/preview/selection consumers, including Agents' full
+  four-field search, skill expansion, canonical name and selected-row merges.
+- [x] Independently review the lossless design and saved plan before source edits;
+  accepted refinements below resolve the saved-checklist omissions. No design
+  blocker remains; do not silently reduce consumer semantics.
+- [x] Add the stateless versioned codec and opt-in route projection; preserve all
+  metadata, empty/absent names, numeric fields, order, relation identities and
+  returned-object isolation. Reject bad versions/tables/references, never publish
+  partially decoded rows. Validate table strings and reject nonfinite, fractional,
+  negative and out-of-range references. Retain legacy arrays for rolling compatibility.
+- [x] Use one shared reply normalizer at all three HTTP boundaries: Sidebar,
+  workspace restore and selected-session hydration. Decode before publication;
+  leave direct detail/context and search matching unchanged.
+- [x] Verify actual codec round trips/byte savings/fallback, malformed wire data,
+  native route summary/force/runtime/gzip parity, frozen inputs, Unicode/escaping
+  and index-digit boundaries. Feed encoded HTTP bodies to mounted Sidebar and both
+  navigation paths; nine-subagent Agents search must find a late raw-message hit
+  despite its title and preserve labels/selection. Retain the native baseline red
+  and independently bypass each boundary's decoder for meaningful wiring reds.
+  Keep native lifetimes/test lanes; update the maintained session guide.
+- [x] Independently review settled source/tests; take the first coherent candidate
+  checkpoint with measured synthetic response bytes, not a production extrapolation.
+  Conservative saving includes JSON/UTF-8 escaping, index digit widths and the
+  table/envelope overhead. Measure identity and gzip bytes separately; do not add
+  adaptive double-compression or infer transfer savings from decoded JSON alone.
+- [x] Rebase on current main and obtain complete Nix acceptance, normally
+  `nix run .#test -- all --workers 4 --jobs 12` if 32 CPUs/43 GiB admits overlap,
+  otherwise document the concrete fallback. Record candidate, source binding,
+  preparation/execution envelopes, full command runtime and retained failures.
+- [x] Record verified completion and hand off exact local integration/cleanup to
+  the receiving session's gated Git lifecycle and durable receipts, separately from
+  plan archival. No deployment/restart/live capture or optional optimization.
+
+**Package-5 focused evidence:** native unchanged-production sharing regression
+failed its intended assertion (`format` undefined versus1), not static/import/setup,
+in **45.432s** (`baseline-red.log`, `/tmp/pi-web-test-core.QPt8CZ/run.json`). The
+first candidate run (**60.146s**) exposed three fixture assumptions: explicit
+backend admission needed the real codec; the selected-hydrator locator still
+expected an empty query; and an Agents assertion wrongly expected its hidden
+canonical title visible despite description precedence. Correct only those fixture
+expectations/capability wiring; no application workaround, timeout or error waiver.
+
+Final focused2 selected **11files /99tests**, all passed with static evidence in
+**67.826s**, `/tmp/pi-web-test-core.kgcPDX/run.json`, source
+`/nix/store/bk52l4br8qcj917dd2n4icis90qxm8af-source`, core output
+`/nix/store/j6jgvy4547argw8g39pnkqgqzmlzvavj-pi-web-core-checks`. Frozen synthetic
+1,000-row/20-prompt-group fixture: JSON **8,116,281 →335,795bytes**, gzip
+**35,341 →7,371bytes**. Those are actual generated-response counts, not measurements
+of the private production catalogue or a latency extrapolation. Pure codec file is
+F (in-memory inputs/gzip only); existing native/mounted owners retain their lanes.
+
+Three independent private exports bypassed exactly one HTTP decoder each. All
+passed statics and failed only their corresponding mounted case: Sidebar delivered
+an envelope instead of rows (`allSessions.find`); workspace adoption remained null;
+hydration retained `saved` instead of the full prompt. Runtime protocol failures
+in the first two are not misrepresented as assertion messages; hydration has the
+named full-text assertion. Their **66.541/72.911/73.245s** commands ran concurrently
+under one coordinated budget, so times are not additive or benchmark comparisons.
+Reports: `/tmp/pi-web-test-core.My1sts/run.json`,
+`/tmp/pi-web-test-core.yMSQMr/run.json`, `/tmp/pi-web-test-core.mK0Wwr/run.json`.
+Receiving production inputs stayed unchanged from focused2. Independent settled
+review found no application blocker; guide wording was narrowed to selected-slot
+validation and no codec-specific retries (existing summary fallback remains).
+
+First complete12/4run at rebased `30589164800a7a273a8e586a95a50791c8290176`
+failed in **222.060s**: adjacent `lib/rpc-manager.test.mjs` had another explicit
+catalogue-route capability map that rejected the new codec import before handler
+invocation. Core stopped **18passed /1failed /498notstarted**, with532/533cases
+passed; browser peer cancellation remains incomplete acceptance. Preserve `full.log`,
+`full-command.json`, `/tmp/pi-web-test-core.1yAclw/run.json` and
+`/tmp/pi-web-test-browser.0xwn1r/run.json`. Add only the real encoder to that map;
+no assertions, handler calls, suppression authority, cleanup or deadlines change.
+Independent follow-up review confirms its N classification remains appropriate.
+Corrected focused RPC execution passed **69/69** with statics in **107.044s**,
+`focused-rpc.log`, `/tmp/pi-web-test-core.pg6FUg/run.json`.
+
+Second full12/4run at `6094b03daac881d2bd130aa4df64a19fc8e90976` completed core
+**517files /4,254tests /14suites** with no failures/skips/cancellations, but browser
+coverage remained incomplete: Markdown hit its unchanged30s pointer deadline while
+the clipped peer label was covered by hover actions; Activity remained in overview
+without a completed capsule. The outer tool600s deadline interrupted the command,
+so there is no successful complete-command duration. Parent cancelled the exact
+remaining task-owned Activity Nix client through pidfd/SIGINT and observed exit;
+this is not a completed inner settlement receipt. Core report
+`/tmp/pi-web-test-core.ngknpZ/run.json`, browser
+`/tmp/pi-web-test-browser.0e1EKx/run.json`, retained `full-2.log` and
+`full-2-interruption.json`; no deployment checks ran.
+
+An unchanged focused Activity diagnosis (**74.549s**, `diagnostic-activity.log`,
+`/tmp/pi-web-test-browser.6uzBJK/run.json`) passed the initial overview, then exposed
+an actual test-consumer incompatibility: subagent-lifecycle's original observed
+browser body assumed an array (`nativeRows.find`). Decode that same admitted body
+with the installed-package codec; retain every native parent/family/queue/terminal/
+worktree/Toolbar assertion, never substitute another API request. Markdown selects
+the same exact fixture-ID row with an ordinary pointer at its unobstructed label
+edge, retaining answer/URL/editor/host/Files/save assertions. No force click, error
+filter, scenario retirement or browser deadline change. Independent review found
+these bounded and a separate audit found no other affected observed-body consumer.
+
+Both changed groups passed focused acceptance: Activity **130.404s**, Markdown
+**184.634s**, running as two coordinated one-sandbox selections with the same source.
+Those times overlap and are not complete acceptance or a benchmark. Crucially,
+these fixes address the demonstrated body incompatibility and pointer obstruction;
+they do not establish the cause or fix of the earlier Activity overview stall.
+Earlier failures remain retained; the complete runs below supersede this pending
+checkpoint, not its historical failure evidence.
+
+**Package-5 complete acceptance:** `beb1a934629dac4216b32da0a98f45037d15ccfd`
+passed `nix run .#test -- all --workers 4 --jobs 12` in **383.464s**, including
+realization:517files/4,254tests/14suites,26groups/59receipts and genuine Home Manager
+VM proof. Reports `/tmp/pi-web-test-core.AirZdh/run.json`,
+`/tmp/pi-web-test-browser.8TnHke/run.json`, `/tmp/pwv-ph1dxQ/run.json`; source
+`/nix/store/2ppyvj23iaybgx3qzv912zrpxa9ygci1-source`, digest
+`f5308c00003974415c38f7debad2775de858ee6783b409a1d047cbc1062fd205`.
+A separately developed notebook-review workflow then entered main as `8c25dd7`;
+that changes application/test inputs, so this earlier pass was not relabelled as
+proof of the later composition. User continuation after a restart resumed the
+recorded task without replaying completed operations.
+
+**Final current-main composition:** rebased candidate
+`0f75818b50fc534b71985dc0c87e05aaf141d85b` on
+`8c25dd7006ff1b9045709fc565c959576f49698e` passed the same full command in
+**423.975s**, including realization. All **523core files /4,291tests /14suites**,
+**26browser/terminal groups /59receipts** and genuine Home Manager deployment,
+HTTP/PTY/restart/shutdown checks passed. No failures, skips, cancellations or
+unstarted core files. Requested/effective core12/12, browser4, overlap admitted
+with32CPUs and sufficient43GiB headroom; this was not a machine reservation.
+
+Core driver **297.087s**, before-lifecycle setup/static/realization envelope
+**35.975s**, test-file envelope **259.594s**. Browser support/realization
+**101.896s**, definition publication **6.753s**, group-client envelope **248.984s**,
+driver **357.637s**. VM driver **59.027s**, guest evidence **18.236s**. Overlapping
+envelopes are not additive; VM subtraction is not isolated realization. No deliberate
+independent prewarming; previous runs' prerequisites were available, while the new
+upstream application required its own package. Neither full run is a matched
+performance benchmark or a deployed speedup claim.
+
+Authoritative reports `/tmp/pi-web-test-core.sVWnFi/run.json`,
+`/tmp/pi-web-test-browser.m5GenG/run.json`, `/tmp/pwv-0wnudK/run.json`; immutable
+source `/nix/store/fhf3w88w66k1v6f2x9hbbz4v4x9sivx5-source`, digest
+`a38e5d26e795d370ff403b6c7bca426d78a327865140b2be487c5aba7b8a5542`, package
+`/nix/store/5i29mjyqzgbjnnq0m4m16jzbzrff1yjf-pi-web-0.9.3`. Core output
+`/nix/store/66s9w29365xdwzzirknx25hw98kjqchf-pi-web-core-checks`.
+`acceptance-summary-4.json` verifies all expected/completed inventories, source/run
+bindings, native/client settlement, closed browser ports and guest inactive/MainPID0/
+absent-or-empty cgroups/refused port. Scope remains ordinary Nix containment and
+bounded owned observations, not escaped-descendant certification. Earlier Activity
+stall cause remains unestablished; successful later runs do not retroactively fix it.
+
+All commands/logs/private fault exports remain under
+`/tmp/pi-web-catalogue-payload-evidence-1793089574/`. Final source/link checks and
+confirmation that application/test/harness inputs are unchanged cover the subsequent
+evidence/guide/archive delta. Those proportional checks are not another full-suite
+execution. Local integration remains gated separately; live comparison is deferred.
+
+**Stop/limits:** if sharing does not remove meaningful response bytes, reconsider
+before optional expansion. Unique prompt text remains complete and can dominate;
+this slice does not bound decoded client memory, shrink the private index or prove
+a browser latency gain. Changing preview/search semantics, adding lazy full-text
+requests or persistent dictionaries requires a scope decision. Post-rebuild timing
+and the historical deferred SPA observation remain separately authorized follow-ups.
 
 ### Package 4 — completed: Sidebar catalogue refresh coalescing
 
@@ -521,7 +718,7 @@ production owner was established. No speedup is claimed.
    `components/SessionSidebar.tsx:569–632,754–775` waits for the summary catalogue
    before initial session adoption, then schedules forced detail hydration after
    750 ms. That timer is not an additional awaited chat-opening gate.
-   [Summary/detail routing](../../app/api/sessions/route.ts#L19-L38) reaches
+   [Summary/detail routing](../../../app/api/sessions/route.ts#L19-L38) reaches
    [enumeration/stat/scanning](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-list-scanner.ts#L468-L518), then
    [synchronous relation prefix/tail reads and project attachment](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-reader.ts#L141-L258).
    Relation work is outside the incremental transcript cache. Run completion,
@@ -529,26 +726,26 @@ production owner was established. No speedup is claimed.
    overlapping catalogue requests. Project resolution has stale-while-revalidate
    caching; distinguish cold Git resolution from warm/background refreshes.
 2. **Recurring client Activity work.** Accepted visible-tab polls
-   [publish fresh snapshot identities](../../lib/activity-client-controller.ts#L135-L159)
+   [publish fresh snapshot identities](../../../lib/activity-client-controller.ts#L135-L159)
    even without semantic changes. Installed `components/AppShell.tsx:184–186`
    constructs all Activity sections for its badge. The
-   [section-ordering child search](../../lib/activity.ts#L109-L127) is quadratic
+   [section-ordering child search](../../../lib/activity.ts#L109-L127) is quadratic
    in each populated section, not necessarily in the entire catalogue. Idle
    history still incurs catalogue-wide linear work. Poll scheduling is 2.5 seconds
    after settlement; one controller is shared within a page, not across clients.
 3. **Selected-chat history and SDK startup.** The
-   [history route](../../app/api/sessions/[id]/route.ts#L63-L89) builds the full
+   [history route](../../../app/api/sessions/[id]/route.ts#L63-L89) builds the full
    tree and all-entry statistics despite returning a bounded message window.
    A [manager cache miss](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-reader.ts#L468-L547) opens/parses the
    file synchronously; files above 64 MiB are not retained in that cache. A live
    wrapper can avoid that open. Installed `hooks/useAgentSession.ts:1067–1094`
    maintains the selected chat's SSE connection, whose
-   [cold path starts the SDK wrapper](../../app/api/agent/[id]/events/route.ts#L16-L30).
+   [cold path starts the SDK wrapper](../../../app/api/agent/[id]/events/route.ts#L16-L30).
    Installed `lib/rpc-manager.ts:3002–3297` constructs session-bound resources.
    This warm-up runs alongside history loading; do not add them as serial costs.
 4. **Periodic synchronous persistence.** A dirty scan queues a five-second
    coalesced [full index serialization/write](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-list-scanner.ts#L448-L465)
-   through the [synchronously flushed atomic writer](../../lib/atomic-file.ts#L9-L21).
+   through the [synchronously flushed atomic writer](../../../lib/atomic-file.ts#L9-L21).
    Background scheduling does not make that work nonblocking. It is conditional
    on dirty scans, not a guaranteed write on every idle poll.
 
@@ -561,16 +758,16 @@ other scenarios are not globally exonerated by this host-local sample.
 
 ## Plan Relationship
 
-- [Core test optimization](2026-10-26_core-test-optimization-plan.md) owns fixture
+- [Core test optimization](../2026-10-26_core-test-optimization-plan.md) owns fixture
   transformations, scheduling/native-wait opportunities and its existing evidence.
   Opportunity #4 now has a recorded bounded negative finding on main. This plan
   neither restarts that work nor assumes other tasks have stopped; coordinate
   with their owners before future capture, and never use their worktrees/checks.
-- The older [server Activity plan](archived/2026-09-25_server-activity-review-plan.md) covers
+- The older [server Activity plan](2026-09-25_server-activity-review-plan.md) covers
   shared completion/review semantics, not performance attribution. Do not reopen
   it or reuse its historical command menu. Current
-  [architecture](../architecture.md), [session](../session-internals.md),
-  [feature](../feature-internals.md) and [testing](../testing.md) guides govern.
+  [architecture](../../architecture.md), [session](../../session-internals.md),
+  [feature](../../feature-internals.md) and [testing](../../testing.md) guides govern.
 - The original checkpoint owned interactive production profiling only; the current
   Plan owns the verified relation-reuse slice and now-authorized refresh coalescing.
   It is not another test
@@ -619,9 +816,10 @@ configuration change or instrumented deployment is a separate stop-and-ask point
   The achieved scope is three distinct 15-second quiet windows and two deep-link
   openings; the failed continuous/row-click attempts above are retained. Resource,
   long-task and timer observations are not full browser CPU or exact paint metrics.
-- [ ] Deferred: a successful normal SPA row-click/switch measurement. Do not relabel
-  deep-link navigation as this scenario; the identified server bottleneck does not
-  require extending this checkpoint into a navigation-correctness investigation.
+- [x] Deferred obligation transferred, not measured: [Production performance](../../production-performance.md)
+  now explicitly owns a successful normal SPA row-click/switch capture, per the
+  user's closure decision. Deep-link navigation is not this scenario; archival
+  makes no new navigation or deployed-performance claim.
 - [x] If an already-authorized agent is naturally running, capture one user-selected
   sluggish action during that activity and compare with the quiet observation.
   Reuse the reload/switch action if it matches the symptom; do not add a broad
@@ -671,7 +869,7 @@ indiscriminately.
 
 ### 3. Attribute only the leading costs with bounded probes
 
-- [x] Check existing `Server-Timing` from [lib/perf.ts](../../lib/perf.ts#L21-L67):
+- [x] Check existing `Server-Timing` from [lib/perf.ts](../../../lib/perf.ts#L21-L67):
   it was not enabled, so no reuse is claimed and no configuration was changed.
   Its environment switch is read at module load;
   enabling it is not permission to restart/change the installed service.
@@ -725,7 +923,7 @@ requests as if they were serial contributions to user latency.
   cause of every reported symptom. Any controlled causal experiment is proposed
   separately; do not disable correctness/safety in the live app to create an A/B.
 - [x] Map only the identified hot owners to existing retained test evidence/source.
-  The [existing bounded relation test](../../lib/session-reader.test.mjs#L576)
+  The [existing bounded relation test](../../../lib/session-reader.test.mjs#L576)
   exercises one private child, stubs scanner rows and prohibits full SDK manager
   opens. It protects bounded reading/status semantics, not this 5,305-row production
   scale or a latency budget. The production hot pass is compiled catalogue work,

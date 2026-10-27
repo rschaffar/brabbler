@@ -96,6 +96,32 @@ test('real search control covers description/profile/name/first message, preserv
   assert.equal(view.container.querySelector('input[type="search"]') === null, true, 'eight does not show search');
 });
 
+test('lossless catalogue body retains late first-message search despite a title and full description/selection', async t => {
+  const http = controlledLeafFetch(t), render = await production();
+  const { encodeSessionCatalogue, readSessionCatalogueReply } = await jiti.import('../lib/session-catalogue-wire.ts');
+  const text = 'complete raw first message '.repeat(200) + 'late-needle';
+  const description = 'full task description '.repeat(100) + 'description tail';
+  const original = [ { ...main, firstMessage: text }, ...Array.from({ length: 9 }, (_, i) => info(`child-${i}`)) ];
+  original[1] = info('titled-hit', 'completed', { name: 'Canonical title', firstMessage: text,
+    relation: { kind: 'subagent', parentSessionId: 'main', profile: 'Explore', description, status: 'completed' } });
+  const body = JSON.parse(JSON.stringify({ sessions: encodeSessionCatalogue(original) })); assert.equal(body.sessions.format, 1);
+  const { sessions } = await readSessionCatalogueReply({ json: async () => body });
+  const picked = [];
+  const view = await mountContent(t, http, render({ rootSession: sessions[0], subagents: sessions.slice(1), onSelectSession: value => picked.push(value) }));
+  await inputText(view, view.container.querySelector('input[aria-label="Search agents"]'), 'LATE-NEEDLE');
+  assert.deepEqual(ids(view), ['main', 'titled-hit'], 'match beyond any finite display prefix remains searchable');
+  const hit = rowFor(view, 'titled-hit');
+  assert.ok([...hit.querySelectorAll('[title]')].some(node => node.title === description), 'full description tooltip survives');
+  assert.equal(hit.textContent.includes('Canonical title'), false, 'description hides the title, not its search authority');
+  assert.ok(hit.textContent.includes('Explore'));
+  await click(view, hit);
+  assert.equal(picked[0] === sessions[1], true, 'exact reconstructed row selected');
+  assert.equal(picked[0].firstMessage, text); assert.equal(picked[0].relation.description, description);
+  assert.equal(picked[0].name, 'Canonical title');
+  await inputText(view, view.container.querySelector('input[aria-label="Search agents"]'), 'canonical title');
+  assert.deepEqual(ids(view), ['main', 'titled-hit'], 'hidden canonical name remains searchable too');
+});
+
 test('persisted status labels update on the same row and live running takes precedence', async t => {
   const http = controlledLeafFetch(t);
   const render = await production();

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { jsonResponse } from "@/lib/json-response";
+import { encodeSessionCatalogue } from "@/lib/session-catalogue-wire";
 import {
   attachSessionProjectInfo,
   getSessionListVersion,
@@ -35,7 +36,8 @@ export async function GET(req: Request) {
       attachSessionProjectInfo(getRpcSessionInfos()),
     ]);
     perf?.span("scan+projects");
-    const sessions = mergeSessionLists(persistedSessions, runtimeSessions);
+    const merged = mergeSessionLists(persistedSessions, runtimeSessions);
+    const sessions = searchParams.get("compact") === "1" ? encodeSessionCatalogue(merged) : merged;
     return perf?.attach(jsonResponse(
       req,
       {

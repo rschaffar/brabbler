@@ -70,7 +70,7 @@ test('real Sidebar URL restoration and real Activity publication reach the defau
   const r = await navigationRuntime(t, sidebarRoutes([saved], request => {
     if (request.url.pathname === '/api/sessions') {
       const query = Object.fromEntries(request.url.searchParams);
-      assert.ok(JSON.stringify(query) === '{}' || JSON.stringify(query) === '{"force":"1"}' || JSON.stringify(query) === '{"summary":"1"}');
+      assert.ok(['{"compact":"1"}', '{"force":"1","compact":"1"}', '{"summary":"1","compact":"1"}'].includes(JSON.stringify(query)));
       exact(request, '/api/sessions', query, { cache: 'no-store' });
       return { handled: true, data: { sessions: [saved], sessionListVersion: 1, runningSessionIds: ['running'] } };
     }
@@ -162,8 +162,8 @@ test('actual URL catalogue adoption preserves both overviews; mobile New keeps i
         const r = await navigationRuntime(t, sidebarRoutes([saved], request => {
           if (request.url.pathname === '/api/sessions') {
             const query = JSON.stringify(Object.fromEntries(request.url.searchParams));
-            assert.equal(['{}', '{"force":"1"}', '{"summary":"1"}'].includes(query), true, 'declared catalogue query');
-            exact(request, '/api/sessions', query === '{}' ? {} : query === '{"force":"1"}' ? { force: '1' } : { summary: '1' }, { cache: 'no-store' });
+            assert.equal(['{"compact":"1"}', '{"force":"1","compact":"1"}', '{"summary":"1","compact":"1"}'].includes(query), true, 'declared catalogue query');
+            exact(request, '/api/sessions', query === '{"compact":"1"}' ? { compact: '1' } : query === '{"force":"1","compact":"1"}' ? { force: '1', compact: '1' } : { summary: '1', compact: '1' }, { cache: 'no-store' });
             catalogueRequests.push(request);
             return { handled: true, data: holdCatalogue ? undefined : catalogueData };
           }
@@ -239,7 +239,7 @@ test('actual URL catalogue adoption preserves both overviews; mobile New keeps i
         const beforeHydration = catalogueRequests.length;
         await act(async () => { current.navigation.handleSessionSettled(); });
         const oldSources = catalogueRequests.slice(beforeHydration);
-        assert.equal(oldSources.some(request => request.url.search === ''), true, 'the actual selected-source hydrator is held');
+        assert.equal(oldSources.some(request => request.url.search === '?compact=1'), true, 'the actual selected-source hydrator is held');
         // Admit original JSON bodies, not a fake completed hydrate result. Do
         // not join while another accepted body is intentionally held.
         for (const request of oldSources) await r.headers(request);
