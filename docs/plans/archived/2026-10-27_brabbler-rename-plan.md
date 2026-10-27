@@ -18,7 +18,7 @@ The existing account, Claude CLI, Explorer and acceptance/performance plans reta
 - [x] Update visible application/demo branding and maintained documentation; preserve original upstream/license attribution and historical evidence. Disable inherited upstream publication/update targeting rather than inventing a new remote identity; source review findings are addressed, including valid checkout-only demo commands.
 - [x] Review the coherent source change for missed branding, security/environment-patch consistency, obsolete references and accidental third-party/history rewrites. Independent runtime/packaging review approved the corrected source; branding/doc findings were fixed and checked. Legacy secret denials are retained as security exclusions, not compatibility readers.
 - [x] Run focused checks, then full Nix-native core/browser/deployment acceptance on the settled candidate; evidence below records the exact command, results, timings and artifact paths.
-- [ ] Commit the verified change; resolve completion through the Git workflow, with integration and cleanup separately gated.
+- [x] Commit the verified source as `2d7a34db16ab2cf35d4bdf4dcd626931c29fe04f`; user selected local `main` integration by unsigned non-fast-forward merge. Rebase found the candidate already current. Exact merge/cleanup approvals and execution receipts, not this source document, own final lifecycle outcomes.
 
 ## Verification checkpoint
 
@@ -46,4 +46,4 @@ Do not activate the renamed package against existing live data before the separa
 - [x] Current application interfaces consistently use Brabbler; retained old names have attribution, third-party, historical or security-exclusion reasons.
 - [x] No normal-runtime compatibility fallback, migration tool, release, host deployment or live-data modification was introduced. Only isolated deployment acceptance ran.
 - [x] Required application acceptance passed and independent-review findings were resolved; the standalone-demo compilation limit is explicit.
-- [ ] Git completion disposition and any remaining separate migration/NixOS work are reported honestly.
+- [x] Git completion intent is local `main` by unsigned non-fast-forward merge, with exact execution separately gated. Migration, activation, hostname/URL and the foreign NixOS input update remain separate work; none is represented as executed here.

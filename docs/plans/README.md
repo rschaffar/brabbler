@@ -10,7 +10,6 @@ on 2026-10-27.
 
 | Plan | Remaining scope |
 | --- | --- |
-| [Brabbler rename](2026-10-27_brabbler-rename-plan.md) | Clean application-identity break, maintained docs and exact-candidate acceptance. Live migration, deployment URL and separate NixOS consumer changes remain outside this change. |
 | [Multi-provider accounts](2026-09-25_multi-provider-accounts-plan.md) | Account-scoped real OAuth/device completion, cancellation and provider refresh evidence, plus explicit isolation-review disposition; implementation is integrated. Synthetic browser authorization is not live-provider proof. |
 | [Claude CLI sessions](2026-09-26_claude-cli-sessions-plan.md) | Backend/policy/protocol work is not delivered on main. Retained feature branches are not integration evidence. |
 | [Explorer fullscreen](2026-10-13_git-explorer-fullscreen-plan.md) | Dedicated already-paginated history/graph and unsupported/non-Git fullscreen browser cases, including expand/restore state retention. |
@@ -20,6 +19,19 @@ on 2026-10-27.
 Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
+
+## Brabbler rename
+
+The [verified source rename](archived/2026-10-27_brabbler-rename-plan.md) implements
+the clean Brabbler identity break, with Pi-native storage/interfaces and the π
+icon retained. Full application acceptance passed 525 files / 4,309 tests, all
+26 browser/terminal groups / 59 scenarios and the genuine deployment VM in
+467.988 seconds. [The cutover guide](../brabbler-rename.md) owns durable naming
+and separate migration requirements. No compatibility reader or committed
+migration tool was added. User selected local-main integration; exact Git
+execution and cleanup remain separately gated, and archival is not their receipt.
+Live migration, activation, URL changes and the foreign NixOS consumer are not
+claimed implemented by this source change.
 
 ## Production profiling and payload closure
 
