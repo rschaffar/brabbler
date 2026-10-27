@@ -343,13 +343,17 @@ retire old tests or constitute full candidate acceptance.
 The completed batched rollout **did not adopt** its model/session prototype:
 unexpected asynchronous React ownership diagnostics remained unresolved, failed
 source/reviews were retained and original bytes restored. That historical outcome
-is not current status for the unfinished complete-ownership feature; its
-[active plan](plans/2026-10-23_complete-test-ownership-plan.md) owns verified private
-replacements and remaining gaps. Neither private passes nor this guide establish
-shipping/adoption. Do not suppress the old diagnostics or infer a product defect.
+is not the final complete-ownership result: later qualified replacements and
+browser retirements were accepted and integrated. The
+[maintained ownership ledger](test-ownership.md#delivered-ownership-and-proof-limits)
+owns the final family/bridge boundaries and explicit performance deferral; the
+[archived execution record](plans/archived/2026-10-23_complete-test-ownership-plan.md)
+retains exact evidence. Do not suppress the old diagnostics, infer a product defect
+or treat an earlier private pass as shipping evidence by itself.
 
-Model/session, Files mode/Diff/grammar, parked/queued workspace and menu obligations
-retain their mixed/native/browser owners until exact replacements qualify. Broad-
+Future model/session, Files mode/Diff/grammar, parked/queued workspace and menu
+changes retain their sufficient mixed/native/browser owners unless an exact
+replacement is qualified. Broad-
 import holds require actual dependency/effect/settlement review, not promotion from
 a focused green or faster schedule. Reconcile existing maps rather than treating
 historical pending language as a request to repeat completed discovery.

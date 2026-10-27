@@ -1,5 +1,14 @@
 # Native session tools — reduced first release
 
+## Closure — reduced first release completed (2026-10-27)
+
+Integrated lineage `ff69773` is on audited main. Complete three-level acceptance
+and its input bindings remain below; pending integration is historical. Current
+contracts belong to `docs/native-session-tools.md`. Broader MCP/OAuth/configuration,
+child grants and Nix promotion were excluded, not delivered or retired by this
+closure; their parked owners remain untouched. See the
+[closure index](../README.md#closure-evidence). No deployment or cleanup is inferred.
+
 ## Goal
 
 Deliver SDK-native, browser-controlled MCP selection and tools-only Code-mode for ordinary sessions. User approved this reduced scope on 2026-10-21 after reviewing the maintenance cost of the broader configuration/OAuth project.

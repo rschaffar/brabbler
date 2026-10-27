@@ -1,8 +1,18 @@
 # Integrated Git workflow: historical design and implementation evidence
 
+## Disposition — retired, not fully implemented (2026-10-27)
+
+Historical integration `1d70af2` is on audited main. The policy-driven successor
+ultimately became the completed removal, not an owner required to finish this
+roadmap. [ADR 0014](../../adr/0014-remove-managed-git-workflow.md) explicitly retires
+every outstanding grant, orchestration, ownership, admission, cleanup, migration
+and instruction-alignment obligation below. None transfers into the optional
+plugin backlog. Original successor wording, current-slice labels and checkboxes
+are historical evidence, not active instructions or completed acceptance.
+
 ## Status — retired as a future-work queue
 
-On 2026-09-29 the user clarified that Git tooling should apply reusable project policies to explicit operations across multiple worktrees and repositories, without binding or moving conversations. [ADR 0011](../adr/0011-policy-driven-git-tools.md) supersedes the conflicting direction in ADR 0010. The [policy-driven Git tools plan](2026-09-29_policy-driven-git-tools-plan.md) is the sole active successor and maps every outstanding workstream below to a new owner or explicit retirement.
+On 2026-09-29 the user clarified that Git tooling should apply reusable project policies to explicit operations across multiple worktrees and repositories, without binding or moving conversations. [ADR 0011](../../adr/0011-policy-driven-git-tools.md) supersedes the conflicting direction in ADR 0010. The [policy-driven Git tools plan](2026-09-29_policy-driven-git-tools-plan.md) is the sole active successor and maps every outstanding workstream below to a new owner or explicit retirement.
 
 This plan is **not fully completed** and is not archived as completed work. Original checkboxes, authorizations, source checkpoints and verification below are historical evidence, not an instruction to implement the superseded start/finish, task-ownership, handoff or mandatory source-adoption model. Delivered settings, history and Git safety mechanisms remain reusable. The six-commit feature, including Nix packaging, was subsequently integrated into local `rst-main` as `1d70af2044051fad527c534d6385afe83988c061`; that integration did not complete the original roadmap. Nix package consumption/activation is separate from the unimplemented instruction-alignment work.
 
@@ -12,7 +22,7 @@ Make Pi Web Git a coherent, optionally automated task workflow: layered defaults
 
 **Status:** staged application implementation in progress. The user's “alright. give it a shot” after the single-panel UX review authorizes Pi Web source changes in the existing linked worktree. It does not grant live execution consent or authorize Nix changes/activation, integration, publication, or cleanup. Global/Project/Session configuration stays in **one Workflow home**.
 
-[ADR 0010](../adr/0010-integrated-git-workflow.md) records the accepted target and the narrower first implementation slice. A plan is not an authorization record for runtime actions. Current repository/global approval rules remain unchanged.
+[ADR 0010](../../adr/0010-integrated-git-workflow.md) records the accepted target and the narrower first implementation slice. A plan is not an authorization record for runtime actions. Current repository/global approval rules remain unchanged.
 
 ## Original plan relationship (superseded)
 
@@ -67,8 +77,8 @@ The frequent primitive is a policy-aware `git_commit`; `git_workflow` coordinate
 
 - [x] Investigate current settings, tool, transcript, SDK, and Nix instruction ownership; record source evidence and the prior recommendation's retraction in ADR 0010 and this plan.
 - [x] Record the user's confirmation that tools should execute/ask/refuse under effective policy and the subsequent single-Workflow-home UX requirement; withdraw the separate `Settings → Git workflow` proposal in ADR 0010.
-- [x] Create the isolated sample-data [visual prototype](assets/integrated-git-workflow.html), [desktop study](assets/integrated-git-workflow-desktop.png), and [mobile inheritance study](assets/integrated-git-workflow-mobile.png). Evidence: local Chrome through an isolated `agent-browser` session, dark 1220×1000 and light 390×1100 viewports; prototype assertions passed for scoped save labels, draft retention, saved-parent inheritance isolation, reset-to-inherit, unchanged task choices, selected-scope-only save, single expanded row, and mobile horizontal containment. No browser errors reported. This is not application E2E or backend verification.
-- [x] Review the concrete one-panel UX using [the prototype](assets/integrated-git-workflow.html) and desktop/mobile studies; record the subsequent explicit implementation go-ahead in ADR 0010. Source implementation is authorized; live grants and repository lifecycle approvals are not.
+- [x] Create the isolated sample-data [visual prototype](../assets/integrated-git-workflow.html), [desktop study](../assets/integrated-git-workflow-desktop.png), and [mobile inheritance study](../assets/integrated-git-workflow-mobile.png). Evidence: local Chrome through an isolated `agent-browser` session, dark 1220×1000 and light 390×1100 viewports; prototype assertions passed for scoped save labels, draft retention, saved-parent inheritance isolation, reset-to-inherit, unchanged task choices, selected-scope-only save, single expanded row, and mobile horizontal containment. No browser errors reported. This is not application E2E or backend verification.
+- [x] Review the concrete one-panel UX using [the prototype](../assets/integrated-git-workflow.html) and desktop/mobile studies; record the subsequent explicit implementation go-ahead in ADR 0010. Source implementation is authorized; live grants and repository lifecycle approvals are not.
 - [ ] Specify a capability/authorization matrix in `lib/` design fixtures covering Off/Manual/Ask/Automatic, global/project/session origins, read-only/Chat-only/subagent sessions, and repository restrictions; acceptance is a reviewed truth table with no route/tool mismatch.
 - [x] Spike crash-safe action journaling around commit ref/index update and integration apply using disposable repositories; acceptance is fault-injection evidence distinguishing unchanged, committed, partial, and uncertain results without duplicate execution.
 - [ ] Audit session startup, move/fork, active terminals/subagents, and malformed-session inventory against checkout admission; acceptance is reproducible adversarial tests and an explicit list of remaining cleanup blockers.

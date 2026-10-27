@@ -1,5 +1,14 @@
 # Provider account usage limits in the composer
 
+## Closure — completed (2026-10-27)
+
+Integrated lineage `56cbdde` is on audited main. Account usage and Pi-default login
+controls are delivered; live OAuth verification remains with the separate active
+multi-provider plan. Current contracts belong to `docs/model-internals.md` and
+README. See the [closure evidence and owner index](../README.md#closure-evidence).
+The original execution record below, including its unchecked integration note,
+is historical, not an active task or a claim of new original-tip verification.
+
 ## Goal
 
 Show each account's remaining weekly and 5-hour quota when the provider reports those windows, include Pi default in account management with a way to change its login, and show the selected account's limits beside its name in the composer. The user's OpenAI example refers to the `openai-codex` ChatGPT subscription, not OpenAI API-key billing.

@@ -1,5 +1,21 @@
 # Complete behavioral test ownership — execution plan
 
+## Closure — correctness/browser retirement completed (2026-10-27)
+
+Integrated lineage `5dcc30f` through `3f3944e` is on audited main. Final 509-file /
+4,171-test, all-browser/terminal and genuine deployment acceptance remains recorded
+below. Original unintegrated/current-slice/authorization statements are historical,
+not remaining work or a fresh-session instruction.
+
+The [maintained ledger](../../test-ownership.md#delivered-ownership-and-proof-limits),
+[Writing tests](../../test-writing.md), [Testing](../../testing.md) and ADR 0034 own
+final boundaries, accepted proof limits and durable results. The original matched
+NET/ceiling miss and unmeasured Panel median remain explicitly deferred to the
+[core optimization owner](../2026-10-26_core-test-optimization-plan.md), not passed
+performance gates or a reason to reopen correctness. Historical handoff/reflection
+companions are archived, not active restart instructions. See the
+[closure index](../README.md#closure-evidence). No external resource cleanup is implied.
+
 > **Implementation resumed by explicit user request in the current session.**
 > Authorization covers implementation, coordinated checks and reviewable feature
 > commits only. No rebase, merge, resource cleanup, publication or ordinary-session
@@ -41,8 +57,8 @@ contracts. See [reflection](2026-10-23_complete-test-ownership-reflection.md) an
   `c694c01405ead47d97ba0adfdf68f867e4af512d`; subsequent evidence-only documentation
   does not change the tested application/test inputs. Branch/worktree remain
   unintegrated; no rebase, cleanup, publication or ordinary-session launch occurred.
-- [Testing](../testing.md), [Writing tests](../test-writing.md),
-  [browser acceptance](../../e2e/README.md), ADR0034 and applicable product guides
+- [Testing](../../testing.md), [Writing tests](../../test-writing.md),
+  [browser acceptance](../../../e2e/README.md), ADR0034 and applicable product guides
   remain owning contracts. No new framework/backend/runner or acceptance fallback.
 - Evidence root **R** is `/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo`.
   The [pause record](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/PAUSE-HANDOFF.md)
@@ -50,7 +66,7 @@ contracts. See [reflection](2026-10-23_complete-test-ownership-reflection.md) an
 - The original untracked 674-line plan is preserved byte-for-byte in
   [the pre-replan evidence](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/documentation-replan/before/docs/plans/2026-10-23_complete-test-ownership-plan.md).
   It is a superseded revision, **not** an archived completed plan. The
-  [original 68 census](../test-ownership.md) is baseline inventory, not a new backlog.
+  [original 68 census](../../test-ownership.md) is baseline inventory, not a new backlog.
   Reuse the existing [finite original-input review](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/final-68-retirement-input-review/report.md);
   its scope does not close the later surviving-step browser audit.
 

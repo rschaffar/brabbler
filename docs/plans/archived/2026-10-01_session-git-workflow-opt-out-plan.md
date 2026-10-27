@@ -1,5 +1,14 @@
 # Per-chat Pi Web Git workflow opt-out
 
+## Disposition — retired with historically incomplete verification (2026-10-27)
+
+Historical integration `d8771e1` is on audited main. Managed-Workflow removal
+retired this escape hatch. [ADR 0014](../../adr/0014-remove-managed-git-workflow.md)
+is the explicit owner retiring every unmet browser/race/eviction/selected-project/
+re-enable/quarantine obligation below, not claiming those checks passed. Current
+optional plugin settings are not evidence that the old feature was completed.
+The original unchecked tasks and failed checks remain historical, not an active queue.
+
 ## Goal
 
 Let the operator turn off Pi Web's integrated Git workflow for one persisted chat, including an already-created chat, without confusing it with scoped enablement or Pause. Re-enabling restores the captured task; neither transition disposes of admission evidence or authorizes a Git operation.

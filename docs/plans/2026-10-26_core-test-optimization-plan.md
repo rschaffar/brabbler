@@ -1,15 +1,20 @@
 # Core test optimization — investigation and proposed execution
 
-**Status: P1–P3 and opportunity #4 are integrated; #4 stopped without a cache.
-Opportunity #6's fixture-only reduction is reviewed and fully accepted, retained
-unintegrated at the user's direction. A subsequent explicit request authorizes
-production identity/checkpoint optimization without a Git-library migration;
-that follow-up is now independently reviewed and fully accepted below, retained
-unintegrated. A subsequent explicit request authorizes an internal application
-presentation parameter, replacement of the combined 25-root native boundary case,
-and bounded investigation of other tests sized by presentation limits. That new
-slice is now reviewed and passes the composed source-bound acceptance below,
-retained unintegrated; #5 remains deferred.** P3 and its
+**Current disposition (2026-10-27): all delivered slices are accepted and integrated.**
+P1–P3, the #4 negative finding, #6 fixture setup, async production identity/checkpoints
+and presentation-budget follow-up are on audited main. The latter three are included
+through integration `b9774c0`, an ancestor of audited main `74c4fda`.
+
+**Remaining owner:** this plan retains deferred #5 native-wait overlap, the separate
+Node compile-cache proposal, unresolved native-resource/lifetime candidates and
+other evidence-backed cost leads. It also owns the original complete-ownership
+matched NET/Panel measurements deferred by the user, not a requirement to repeat
+that completed correctness migration or automatically launch benchmarks. No new
+optimization or measurement is authorized by this documentation sweep.
+
+The execution/evidence sections below retain their original candidate identities;
+old “unintegrated,” writer/worktree and authority statements are historical, not
+current blockers or resource claims. #4 stopped without a cache. P3 and its
 Move correction were merged into local main at `666a75ef71ae6ae5057fa4e5b1b2124c6ebf3b19`; the five prior
 feature worktrees/branches were subsequently cleaned up by explicit request.
 Their retained-state narratives below are historical, not current resource claims.

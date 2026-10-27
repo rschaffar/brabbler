@@ -36,13 +36,13 @@ External filesystem writers and other server processes are not locked out by the
 
 ## Verification
 
-The common offline baseline includes permission/destination, feedback/link validation and scanner/index tests in `lib/session-launch.test.mjs`, `lib/plugin-card-details.test.mjs` and `lib/session-spawn.test.mjs`. Separate real SDK/tool acceptance:
+Sandboxed core acceptance includes permission/destination, feedback/link validation and scanner/index tests in `lib/session-launch.test.mjs`, `lib/plugin-card-details.test.mjs` and `lib/session-spawn.test.mjs`, plus real SDK/tool coverage in `plugins/session-launch/runtime.test.mjs`. Focused iteration from the Linux worktree root:
 
 ```sh
-nix develop --offline --no-write-lock-file -c sh -c \
-  'env -i PATH="$PATH" LANG=C.UTF-8 PI_OFFLINE=1 node --experimental-strip-types --test plugins/session-launch/runtime.test.mjs'
-nix develop --offline --no-write-lock-file .#test -c env \
-  E2E_SESSION_LAUNCH_ONLY=1 npm run test:e2e
+nix run .#test -- core --file lib/session-launch.test.mjs \
+  --file lib/plugin-card-details.test.mjs --file lib/session-spawn.test.mjs \
+  --file plugins/session-launch/runtime.test.mjs
+nix run .#test -- e2e --group session-launch
 ```
 
-Browser acceptance uses the real launch service and independent SDK wrappers with a deterministic faux provider, never a live credential or provider endpoint. The general browser suite includes this flow. See [Testing](testing.md) and [browser fixtures](../e2e/README.md).
+These are focused selections, not complete acceptance. The installed-package browser group uses the real launch service and independent SDK wrappers with a deterministic faux provider, never a live credential or provider endpoint. Complete acceptance includes this group, all other browser/terminal groups, core/static/plugin checks and the genuine Home Manager deployment VM. No manual dependency preparation or development server is needed. See [Testing](testing.md) and [browser fixtures](../e2e/README.md).

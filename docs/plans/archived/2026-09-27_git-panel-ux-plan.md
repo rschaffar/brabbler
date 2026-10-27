@@ -1,5 +1,14 @@
 # Git panel and worktree-switching UX
 
+## Disposition — delivered historically, then retired (2026-10-27)
+
+The integrated lineage is `8f62860` / `63e667e` through `c106056` on audited main;
+the older pre-rebase `eca3c69` below is not its integrated lineage. The three
+managed sidecars/settings selector were deliberately removed.
+[ADR 0014](../../adr/0014-remove-managed-git-workflow.md) owns their retirement,
+not a requirement to restore them or migrate their UX into the optional plugin.
+The original implementation/check record below is historical, not current behavior.
+
 ## Goal
 
 Make the three top-bar Git icons open their content in one click, styled and positioned like Activity, and replace the repeated per-worktree Continue/Fork button list with a single destination selector and contextual actions.

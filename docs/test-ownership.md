@@ -1,10 +1,44 @@
-# Test ownership cleanup ledger
+# Test ownership ledger
 
-This is the **baseline census and obligation index**, not live implementation
-status. The [active cleanup plan](plans/2026-10-23_complete-test-ownership-plan.md)
-solely owns current blockers, verified/private/source-only states and next work.
-Reuse its linked input reviews and maps; do not launch another68-file census from
-the historical Pending labels below. This file is not a runner, coverage percentage
+## Delivered ownership and proof limits
+
+The complete-ownership migration and bounded browser retirement are **complete and
+integrated** at `3f3944e06b83f497b306e8254e54e8cf80054d63`. The
+[archived execution record](plans/archived/2026-10-23_complete-test-ownership-plan.md)
+and its historical handoff/reflection preserve exact input maps, failures and
+qualification evidence; none is a live restart instruction. Final acceptance
+covered 509 core files / 4,171 tests / 14 suites, all 26 browser/terminal groups and
+the genuine deployment VM in a recorded 386s four/four command. Source digest:
+`f59b90e6cca74fc87312f41c9ea456891998c122583caebb78d2015964906139`.
+
+| Delivered family | Primary ownership and retained bridge |
+| --- | --- |
+| Navigation, composer, model/session state | Real mounted components/hooks own currentness, drafts, events and ignored-abort bodies. Installed browser retains physical focus/selection/IME/scroll, same-document History and persisted default-UI/SDK connections. |
+| Reading, Thinking, tools and version | Actual producer/controller/React owners carry repeated state and failure matrices. Native clipboard, real history/PWA and the retained version Cancel/Accept/reload bridge remain. |
+| Files and uploads | Mounted FileViewer/Workspace and actual request owners carry state/lifetime matrices. Native path/write/watch authority, Changed/Search callers, external writers and all six original same-node Save-watcher inputs remain independently exercised. |
+| Git cards and reviews | Real Card/Pierre/picker/receipt owners carry reading state, pagination and exact callback/body failure obligations. Native Git identities, fresh authorization, immutable cold bodies, approvals, commits, download and persisted reload bridges remain. |
+| Activity and settings/privacy | Real instance controllers and mounted views own projections, controls and mutation currentness. Installed responsive geometry, native family/metrics, first New/restoration and server durability bridges remain. |
+| Backend, resources, terminal and service | Actual routes and private native fixtures own filesystem/Git/SDK/process boundaries; installed Chromium and genuine Home Manager VM retain networking, PTY, activation/restart and bounded shutdown proofs. |
+
+Original work/body/catch/finally completion, external acknowledgement and native
+settlement remain distinct. SAME-error and independent release/join/restore
+controls do not prove arbitrary escaped-descendant closure or browser geometry.
+Live F/N/E rationales and unresolved holds remain in `nix/test-lanes.json`; migration
+does not automatically promote them. No new census or optional proof expansion is
+required solely because historical records contain Pending labels.
+
+The failed matched 421.959→430.232s pair is retained; final 386s correctness is
+**not** a matched NET speedup or Panel-median result. The user explicitly made the
+original 351.05s complete / 20.5s Panel targets informational for this bounded
+finish. Deferred cost/measurement work belongs to the
+[core optimization plan](plans/2026-10-26_core-test-optimization-plan.md), not an
+unfinished correctness gate or permission to start another benchmark. The later
+12/4 benchmark is a different experiment, not retrospective satisfaction of 4/4 NET.
+
+## Historical baseline and obligation index
+
+The census below is historical, not live implementation status. Reuse the linked
+input reviews and maps; do not launch another 68-file census from its Pending labels. This file is not a runner, coverage percentage
 or scheduling registry. Original paths refer to census revision
 `90b9dce1affaae161057e0b9292795ba35246a9e`; the continuation starts at
 `29be95e872e6c070f4e198456603ac1c79b6c501`. Current executable policy remains
@@ -15,11 +49,10 @@ batch added proof but deficient portions remained. **Prior migrated** covers onl
 its reviewed obligation, not every consumer/native/browser lifetime. These labels
 are not new claims that later private work never happened. Final closure requires
 reconciling exact owner/bridge/proof-limit evidence, not relabelling this table.
-All original native/SSR inputs remain unless separately reviewed. The user's
-expanded scope now REQUIRES browser reduction before completion, not a later
-follow-up. Each retired browser obligation must have an exact demonstrated real
-lower owner and retained default/native/browser bridge; every retained browser
-case must state a concrete failure only that boundary can catch.
+All original native/SSR inputs remain unless separately reviewed. The expanded scope required actual browser reduction before completion; that
+bounded obligation was delivered. Future retirements still require a demonstrated
+real lower owner and retained default/native/browser bridge, with a concrete
+incremental failure for each retained browser step/input.
 
 ## Receiving-candidate evidence index
 
@@ -28,20 +61,23 @@ and [finite independent retirement review](/home/robert/.cache/pi-web-complete-o
 They justify the mapped four-file cull, including intentional absence of
 `hooks/model-scope-startup.test.mjs` and
 `hooks/useAgentSession.model-selection.test.mjs`; their real mounted/native owners
-remain. They do not close the later surviving-browser audit or whole acceptance.
+remain. Those original maps alone did not close the later surviving-browser audit or
+whole acceptance; the final qualified B1–B8 dispositions and acceptance in the
+archived execution record do.
 
 [Receiving composition](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/resumed-implementation/composition.json)
 initially bound exact source deltas from qualified Thinking/Tool Second (including
 Sixth), without Navigation Fourth or the then-conditional LM version cut. Both
 Thinking/Copy observer lanes and all eighteen normal Settings cases remain.
 Later finite Thinking, Tool and composer retirements have separate source-bound
-results in the active plan. The [qualified Web/version retirement](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/resumed-implementation/web-version-browser-result.json)
+results in the archived execution record. The [qualified Web/version retirement](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/resumed-implementation/web-version-browser-result.json)
 closes the specific original-JSON/primary/support handoff and reuses the exact
 qualified native port: LD keeps real Cancel/Accept/reload, LM loses only its
 second version ceremony, not main physical History/PWA. Node JSON/emulated close,
 native after-success continuations and real native actions remain distinct proofs.
-The active plan's B1–B8 map owns remaining added/receiving/browser/performance gaps;
-no historical count or private source proposal is a completion claim.
+The archived execution record's final B1–B8 map closes the bounded
+added/receiving/browser correctness obligations and explicitly defers performance.
+Earlier partial/source-only rows remain historical; they are not current blockers.
 
 ## Original 68-file inventory
 
@@ -138,9 +174,9 @@ Paths abbreviated in the Family column still name exact original files.
 The latest guidance in requested session
 `01a16ad7-c3a7-73ef-85b0-1fb4edfc2831` restores the original optimization goal:
 exhaustive state/interaction/race matrices belong in actual controllers/mounted
-React; browser coverage is the last necessary layer. The final consolidated map
-remains open, but substantial source-bound maps/reviews already exist in the active
-plan's evidence. Reconcile those; do not infer closure from68-file or test counts.
+React; browser coverage is the last necessary layer. The final consolidated owner/bridge dispositions were qualified in the archived
+execution record. Reuse its exact source-bound maps/reviews; do not infer closure
+from 68-file or test counts alone.
 
 Retain thin installed-app controls/API/SSE/reload/restoration journeys; materially
 different responsive geometry/overflow/visibility/scroll; genuine focus/selection/
@@ -156,19 +192,20 @@ fresh definitions/inventory/receipt expectations explicitly; no required-input
 skip, fixture weakening or hidden reduction. Fewer journeys must carry more
 integration value, not less proof.
 
-Completion additionally requires measured NET end-to-end feedback improvement at
-4 browser workers/4 core jobs against a matched settled unreduced reference, while
-retaining the original timing ceilings. Record browser, core, preparation and
-focused feedback separately; transferred cost or wider concurrency is not a gain.
-The historical342s baseline is not current or matched-candidate evidence.
+The original task also sought matched NET end-to-end improvement at four browser /
+four core workers and the original timing ceilings. The later explicit user
+decision deferred those performance gates for this bounded correctness finish;
+the failed pair remains evidence, not a passed target. Future performance claims
+still need comparable browser/core/preparation/whole-command measurements:
+transferred cost or wider concurrency is not work removed. The historical 342s
+baseline is not current or matched-candidate evidence.
 
 ## Evidence and final closure
 
 The initial accepted baseline is449files/3470tests/12suites,26browser/terminal
  groups/59receipts plus genuine deployment,342s at4/4; this is not new execution.
 Parent preserves source/hash-bound packet maps, original assertions/tuples, runtime
-fault witnesses, failed variants, focused outcomes and final acceptance. Complete
-status and exact retained boundaries belong in the active plan and its final
-consolidated mapping; the baseline table is not a second current-status document.
-No merge until original obligations, added gaps, actual browser retirements and
-matched performance gates close.
+fault witnesses, failed variants, focused outcomes and final acceptance. Final correctness, actual browser retirements and exact retained boundaries are
+recorded in the archived execution record and summarized above. The baseline table
+is not a second current-status document. Integration is recorded above; historical
+pause, unintegrated and performance-gate statements do not reopen the finished task.

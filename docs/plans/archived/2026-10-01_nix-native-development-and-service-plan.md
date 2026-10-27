@@ -1,5 +1,14 @@
 # Nix-native development and Pi Web service
 
+## Closure — completed historical milestone (2026-10-27)
+
+Integrated lineage `cb1ce1e` is on audited main. Later isolated Nix production and
+genuine Home Manager deployment acceptance resolve the original package-execution
+deferral; old managed-check machinery was subsequently removed. Current behavior
+and commands belong to README, `docs/testing.md` and `e2e/README.md`.
+See the [closure index](../README.md#closure-evidence). Original no-build, environment,
+integration and resource observations below are historical, not current recipes.
+
 ## Goal
 
 Make the Pi Web flake the primary source for a reproducible development environment and runnable application; export a reusable Home Manager user-service module. Prevent Pi Web's managed Git verification environment from causing spurious test failures or inheriting server secrets. These changes are one feature worktree; deployment, NixOS activation, remote publication and integration still require separate authority.

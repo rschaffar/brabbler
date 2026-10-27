@@ -1,5 +1,14 @@
 # Persistent interaction cards
 
+## Closure — completed (2026-10-27)
+
+Integrated lineage `23fb676` is on audited main. Later complete acceptance includes
+question and optional-plugin historical receipt/reload flows; the old pre-rebase
+and pending-integration notes below are not the current verification boundary.
+Current contracts belong to `docs/questions.md` and `docs/feature-internals.md`.
+See the [closure evidence](../README.md#closure-evidence). The original record is
+historical; it is not relabelled as fresh execution or historical approval proof.
+
 ## Goal
 
 Keep completed questions and approval cards in branch-aware chat history as collapsed, read-only receipts, including the exact displayed diffs, with no durable UI state or separate store. Implementation is authorized by the user's request; integration and cleanup require separate approval.

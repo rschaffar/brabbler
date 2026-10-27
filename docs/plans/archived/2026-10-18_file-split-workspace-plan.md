@@ -20,7 +20,7 @@ Research baseline: local `rst-main` at `1fe0a04c2d6d11e0c301457e379289d3a61f1508
 
 ## Plan Relationship
 
-No existing active plan found for file tab groups or cross-pane document links. [Git Explorer sidecar](../2026-09-28_git-explorer-sidecar-branches-plan.md) and [Explorer fullscreen](../2026-10-13_git-explorer-fullscreen-plan.md) own adjacent surfaces, not a general file workspace. This proposal does not reopen their Git APIs, immutable review rendering or outstanding checks.
+No existing active plan found for file tab groups or cross-pane document links. [Git Explorer sidecar](2026-09-28_git-explorer-sidecar-branches-plan.md) and [Explorer fullscreen](../2026-10-13_git-explorer-fullscreen-plan.md) own adjacent surfaces, not a general file workspace. This proposal does not reopen their Git APIs, immutable review rendering or outstanding checks.
 
 The supplied review document is an example workflow, not an input to change or copy into this repository.
 

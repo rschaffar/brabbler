@@ -1,5 +1,14 @@
 # Session search that follows the sidebar
 
+## Closure — completed (2026-10-27)
+
+Integrated lineage `1515ae8` is on audited main. Later complete installed-browser
+acceptance exercises the surviving project/status search flow; the host Chromium
+library blocker below is historical. Current scope/limits belong to README and
+`docs/session-internals.md`. See the [closure evidence](../README.md#closure-evidence).
+Original pending boxes are retained as checkpoint evidence, not active work or a
+claim that the old host-browser command was rerun on its original tip.
+
 ## Goal
 
 Make session search behave like a filter on the currently selected project's Active or Archived chats by default. Searching across projects, or across both archive states, must require an explicit, visible choice. Improve findability and result clarity without building a persistent search index or changing session files.

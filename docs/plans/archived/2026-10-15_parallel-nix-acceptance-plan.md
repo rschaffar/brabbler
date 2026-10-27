@@ -1,5 +1,14 @@
 # Bounded parallel packaged-service acceptance
 
+## Closure — completed historical milestone (2026-10-27)
+
+Integrated lineage `3b7ab9d` is on audited main. The measured 658s complete result
+and its limits remain below and in `docs/testing.md`; ADR 0025 later replaces shared-
+VM browser lanes with ordinary sandboxes and a small deployment guest. Current
+operations belong to `docs/testing.md` and `e2e/README.md`. See the
+[closure index](../README.md#closure-evidence). Original pending-integration and
+resource observations are historical, not current topology or cleanup authority.
+
 ## Goal
 
 Replace the measured 45m44s VM run with substantially faster complete acceptance: remove demonstrated duplicate scenario execution, split the long aggregate, and run independent groups in isolated bounded lanes inside one NixOS guest. Preserve every substantive assertion/input variant, original browser deadlines, actual production package and real Home Manager service behavior. Measure the resulting full run rather than claiming a theoretical speedup.

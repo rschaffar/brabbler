@@ -1,7 +1,18 @@
-# Complete test ownership — fresh-session handoff
+# Complete test ownership — historical fresh-session handoff
+
+## Disposition — historical companion, no active restart (2026-10-27)
+
+The bounded ownership/browser-retirement task completed acceptance and was integrated
+at `3f3944e`. Current final boundaries belong to the
+[maintained ledger](../../test-ownership.md#delivered-ownership-and-proof-limits);
+the [archived execution plan](2026-10-23_complete-test-ownership-plan.md) retains
+its exact final evidence. The quoted pause, open blockers, dirty state, no-current-
+acceptance and numerical performance gates below describe an earlier checkpoint.
+They do not override the later explicit performance deferral or authorize a restart.
+Do not launch the retained prompt; no implementation or cleanup remains owned here.
 
 The block below is the **historical handoff used for the resumed session**.
-The [active plan](2026-10-23_complete-test-ownership-plan.md) now owns the adopted
+The [execution plan](2026-10-23_complete-test-ownership-plan.md) then owned the adopted
 receiving commit, early whole-feedback result and required bounded next decision.
 Do not treat the block's old HEAD, source-only status or absence of current full
 acceptance as current state. For a later restart, validate the exact HEAD supplied

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for policy-independent comparison, human-approved commits, explicitly authorized verification and separately approved exact local merges. Agent-driven cleanup and safe post-run relocation remain open in the [implementation plan](../plans/2026-09-27_agent-git-review-plan.md).
+Accepted for policy-independent comparison, human-approved commits, explicitly authorized verification and separately approved exact local merges. Agent-driven cleanup and safe post-run relocation were left open in the [historical implementation plan](../plans/archived/2026-09-27_agent-git-review-plan.md), then explicitly retired by [ADR 0014](0014-remove-managed-git-workflow.md); they are not an active backlog.
 
 ## Context
 

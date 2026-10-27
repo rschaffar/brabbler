@@ -1,5 +1,19 @@
 # Session Git policy, workflow presets and execution receipts
 
+## Closure — Pi Web scope completed (2026-10-27)
+
+Integrated application lineage `ead699c` is on audited main; the old application
+integration blocker below is stale. Current contracts belong to
+`docs/git-workflow-plugin.md` and ADR 0016. Recorded rebased acceptance remains
+scoped to its inputs; live-model obedience remains explicitly unevaluated.
+
+The separate Nix commit `67c1de6d6b6adf9fb65ef73a089becd7ce5c2c1b` and its
+integration/activation disposition remain with that repository's isolated change;
+see the [explicit external handoff](../README.md#separate-nix-handoff).
+This closure does not verify or retire foreign work, activate instructions or clean
+up resources. Original checkpoint and unchecked integration statements below are
+historical, not current Pi Web tasks.
+
 ## Goal
 
 Use explicit user-configured global/project/session choices instead of redundant lifecycle questions, retain `ask_user` for every workflow choice set to Ask, and persist honest execution cards for both interactive and policy-authorized Git operations.
