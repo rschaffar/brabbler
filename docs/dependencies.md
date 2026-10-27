@@ -70,6 +70,14 @@ user-agent API consumer was found in the repository; external extensions require
 their own compatibility review. Upgrade checks use synthetic providers/transport,
 not live entitlement or cache-hit measurements.
 
+The 2026-10-27 combined candidate passed complete Nix acceptance: **525 core files /
+4,307 tests**, **26 browser/terminal groups / 59 receipts**, and the genuine Home
+Manager deployment VM in **441s**, with twelve core workers/four browser sandboxes.
+The [archived execution record](plans/archived/2026-10-27_pi-sdk-1.4-upgrade-plan.md)
+retains exact candidate/source/package identities, phase intervals, failed runs and
+review limits. This is synthetic acceptance, not host deployment or live-provider
+certification.
+
 A fresh 2026-10-27 lock-only `npm audit --json` reports the SDK's unchanged nested
 Undici **8.10.2** for [EventSource parser memory growth](https://github.com/advisories/GHSA-4qv8-2p9j-2685),
 [SRI algorithm-token bypass](https://github.com/advisories/GHSA-f72v-6w45-q472) and
