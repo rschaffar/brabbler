@@ -1,6 +1,6 @@
 # Native session tools
 
-The reduced feature composes SDK 1.3.0 MCP, tools-only Code-mode and Tool search for ordinary sessions. Complete Nix acceptance and desktop/mobile browser evidence are recorded in the [archived implementation record](plans/archived/2026-10-21_native-session-tools-plan.md). It does not introduce a configuration-management system.
+The reduced feature composes SDK 1.4.0 MCP, tools-only Code-mode and Tool search for ordinary sessions. Complete Nix acceptance and desktop/mobile browser evidence are recorded in the [archived implementation record](plans/archived/2026-10-21_native-session-tools-plan.md). It does not introduce a configuration-management system.
 
 ## Configuration and selection
 
@@ -38,7 +38,7 @@ No MCP credential file is read or written. The native store receives an empty, w
 
 Direct/deferred/hidden exposure remains native. Indirect tools use Tool search when Code-mode is off. Deferred tools are not automatically activated by preset changes; hidden tools remain unreachable. Effective SDK definition identity, not name/registration alone, owns execution. Host subagent/session-launch controls remain direct-model-only.
 
-Captured project authority checks explicit persisted trust even after its defining file disappears. Retirement closes dispatch immediately; binding, native shutdown and public disposal then settle in order behind a same-SDK-ID barrier. Failed disposal leaves that identity unavailable rather than permitting overlap. Already-created HTTP sessions may send native cleanup DELETE during close, not further work/auth/reconnect requests. Cancellation cannot undo dispatched external actions.
+Captured project authority checks explicit persisted trust even after its defining file disappears. Retirement closes dispatch and aborts a fixed owner signal immediately, including executions already queued for SDK worker capacity. Caller cancellation is combined with that signal. Binding and native extension shutdown are followed by a drain of admitted execution results before public disposal and same-SDK-ID barrier release. This drain is not a worker-exit receipt: the SDK retains capacity until actual worker exit, which can follow result completion. Synthetic native tests separately observe and join real worker exits. Failed disposal leaves that identity unavailable rather than permitting overlap. Already-created HTTP sessions may send native cleanup DELETE during close, not further work/auth/reconnect requests. Cancellation cannot undo dispatched external actions.
 
 The bounded pre-acceptance launch-refusal path cannot acquire native tools; the user may enable them after the independent launch has been accepted.
 
@@ -50,6 +50,8 @@ Code-mode's `details.calls` are complete display snapshots. Temporary IDs may be
 
 ## Maintenance boundary
 
-`native-mcp-sdk.ts` isolates the small unavoidable SDK 1.3 private surface (pure validator/namespace, native credential-store constructor and transport helpers). It resolves the application's installed package with Node 24 metadata, verifies exact SDK/transport versions, and does not reimplement engines. SDK upgrades require reassessing this bridge and running installed-package acceptance.
+`native-mcp-sdk.ts` isolates the small unavoidable SDK 1.4 private surface (pure validator/namespace, native credential-store constructor and transport helpers). It resolves the application's installed package with Node 24 metadata, verifies exact SDK/transport versions, and does not reimplement engines. SDK upgrades require reassessing this bridge and running installed-package acceptance.
+
+Code-mode defaults to two process-wide workers. SDK 1.4 queues excess calls for up to 60 seconds (bounded by a shorter script deadline); retirement/caller abort must remove queued work without late worker admission. `PI_CODEMODE_MAX_WORKERS` remains an explicit operator SDK setting, not an automatic capacity increase by this host.
 
 OAuth, browser config editing, child grants, whole-configuration layering and Nix promotion remain deliberately outside this release. Normal immutable Nix packaging is unchanged. No host deployment is implied by implementation or local integration.

@@ -44,7 +44,7 @@ Pi CLI does not implement this Pi Web metadata.
 
 ## SDK compatibility and accounting
 
-`lib/session-model-speed-runtime.ts` adapts the pinned Pi SDK **1.0.0**. Only
+`lib/session-model-speed-runtime.ts` adapts the pinned Pi SDK **1.4.0**. Only
 matching session chat streams on the native `openai-codex` /
 `openai-codex-responses` path use Standard → `default` or Fast → `priority`.
 The request must carry both the owning agent's current run signal and payload

@@ -80,7 +80,7 @@ function activityReceipts(page) {
 // Only the two existing read-only running projections use this boundary. The
 // original route callback and both native/page bodies remain owned; the separate
 // registered adapter acknowledges the dispatcher, never the operation result.
-function activityProjection(page, project) {
+export function activityProjection(page, project) {
   const pattern = "**/api/agent/running", errors = [], originals = [];
   const retain = error => { if (!errors.includes(error)) errors.push(error); };
   const read = async (route, projecting) => {
@@ -134,7 +134,7 @@ function activityProjection(page, project) {
     return original.then(() => undefined, retain); // exact registered ACK adapter; original outcome is retained above
   };
   let attempted = false, finishing;
-  return {
+  const projection = {
     beginDisposal() { owned.beginDisposal(); },
     async install() { attempted = true; await page.route(pattern, registered); },
     finish() {
@@ -149,7 +149,18 @@ function activityProjection(page, project) {
         if (errors.length) throw new AggregateError(errors, "Activity projection callback and independent cleanup failed");
       })();
     },
+    async navigate(url, options, retainReplacement) {
+      // A browser response body belongs to its document, not just its route.
+      // Finish both original bodies before the existing cross-document input.
+      await projection.finish();
+      await page.goto(url, options);
+      const next = activityProjection(page, project);
+      retainReplacement(next); // capture before fallible route installation
+      await next.install();
+      return next;
+    },
   };
+  return projection;
 }
 
 /** Deliberately open Activity before catalogue-driven URL session adoption.
@@ -589,7 +600,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   const [childA, childB, workingChild, otherChild] = subagentIds;
   const completed = seedSubagentCompletions();
   let metricsChildRunning = true;
-  const metricsProjection = activityProjection(page, snapshot => ({ ...snapshot,
+  let metricsProjection = activityProjection(page, snapshot => ({ ...snapshot,
     runningSessionIds: [...new Set([...snapshot.runningSessionIds, ...(metricsChildRunning ? [workingChild] : [])])],
   }));
   projections.push(metricsProjection);
@@ -606,6 +617,9 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
     await checkActivityFamilyUsage(page, width, {
       base, api, selectedSessionId, otherSessionId, subagentIds, overview: reloadedOverview, parentReady,
       setMetricsChildRunning: (value) => { metricsChildRunning = value; },
+      navigate: async (url, options) => {
+        metricsProjection = await metricsProjection.navigate(url, options, next => projections.push(next));
+      },
     });
 
     const before = await api("/api/agent/running");

@@ -10,7 +10,7 @@ continues to receive its login password and private SSH runtime locator.
 ## Installation and verification
 
 `bin/sdk-command-env-payload.js` pins the public `@earendil-works/pi-coding-agent`
-**1.3.0** manifest and all twelve target modules by SHA-256, with original and
+**1.4.0** manifest and all twelve target modules by SHA-256, with original and
 patched hashes and exact replacement recipes. It contains only patch snippets,
 not vendored SDK modules. Its self-contained ESM helper is installed at
 `dist/utils/pi-desk-command-env.js` inside the SDK and imports no application code.
@@ -90,6 +90,10 @@ hygiene, not isolation; a successful check is not a whole-SDK sandbox certificat
 The patch adds import lines to distributed JavaScript; existing upstream source
 maps are not regenerated and can show pre-patch coordinates. Reassess this bounded
 patch on every SDK change rather than widening accepted fingerprints casually.
+The 1.4 rebase retains all twelve targets and replacement recipes: eight originals
+are unchanged; grep, shell, tools-manager and clipboard-command have new exact
+fingerprints. Upstream `rg --no-config`, Windows resolution and detached POSIX
+clipboard behavior remain intact. No new environment hook replaces this policy.
 
 ## Regression ownership
 

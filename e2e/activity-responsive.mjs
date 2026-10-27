@@ -131,6 +131,7 @@ export async function checkActivityResponsiveTail(page, width, {
     await checkActivityFamilyUsage(page, width, {
       base, api, selectedSessionId, otherSessionId, subagentIds, overview, parentReady,
       setMetricsChildRunning: (value) => { metricsChildRunning = value; },
+      navigate: (url, options) => page.goto(url, options),
     });
     assert.deepEqual(mutationPosts, [], "metrics and layout never acknowledge or pause a session");
 

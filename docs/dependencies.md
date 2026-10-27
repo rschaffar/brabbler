@@ -36,16 +36,63 @@ protocol; the SDK uses the same package/version. Release age alone does not
 justify a replacement. Any future replacement must prove cross-process and SDK
 interoperability, including the existing stale-delete/concurrent-login regression.
 
-## Pi SDK 1.3.0 compatibility
+## Pi SDK 1.4.0 compatibility
 
-The four direct Pi package pins are now exactly **1.3.0**; the coordinated
-MCP, codemode and telemetry packages also resolve **1.3.0**, with no older SDK
-copies. Normal npm resolution with strict engine checks required no force flags,
-new overrides or peer edits. No external package resolution changed. Demo has no
-Pi dependency; its independent manifests/lock and the Nix toolchain inputs remain
-unchanged in that SDK-only upgrade. Node 22 and TypeScript 5 were preserved at
-that checkpoint; the subsequently approved runtime/compiler migration is recorded
-below. Native PTY, proper-lockfile and KaTeX choices remain unchanged.
+The four direct Pi package pins and coordinated MCP, codemode and telemetry
+packages resolve exactly **1.4.0**, without older SDK copies. Selective lock-only
+resolution uses strict engines and disabled lifecycle scripts; no force flags,
+new overrides or peer edits are needed. The existing ESLint peer warnings remain
+as documented below. The only added external resolution is pi-tui's
+`marked-cjk-friendly` **0.1.2** (MIT, Node >=18, peer marked >=15); all other
+external resolutions are unchanged. Demo has no Pi dependency and retains its
+independent manifests/lock. Node 24.21.0, TypeScript 6.0.3, native PTY, locking/math
+pins and flake inputs are unchanged.
+
+The exact twelve-target [child-environment patch](sdk-command-environment.md)
+and both private MCP version guards move together with the SDK. Their reviewed
+upstream helpers retain their interfaces; neither a broad version bypass nor a
+new engine is needed. Native owners now abort already-admitted queued executions
+on retirement and drain their results before disposal. This is not worker-exit
+proof; SDK capacity remains held until actual exit. Public tree navigation also
+reapplies the session-wide explicit builtin pin without reactivating SDK-inactive
+extensions. These host boundaries have real native red/green regressions.
+
+SDK 1.4 removes fixed compaction/branch-summary output caps; model/context limits
+apply instead. Compaction reserve still controls its trigger, and branch reserve
+still controls input-history selection. Larger possible summaries are not a
+cost/latency guarantee. Truncated recovery persists paired assistant/result
+omissions while retaining raw history; the JSONL v3 format and session-manager
+implementation are unchanged. Responses tool updates can retain removed
+declarations on the wire; execution remains constrained by current host/SDK
+admission. Retry/413 and blank-tool-output fixes are adopted without changing host
+account/catalog or Codex speed policies. No changed Pi-AI telemetry/transcript/
+user-agent API consumer was found in the repository; external extensions require
+their own compatibility review. Upgrade checks use synthetic providers/transport,
+not live entitlement or cache-hit measurements.
+
+The 2026-10-27 combined candidate passed complete Nix acceptance: **525 core files /
+4,307 tests**, **26 browser/terminal groups / 59 receipts**, and the genuine Home
+Manager deployment VM in **441s**, with twelve core workers/four browser sandboxes.
+The [archived execution record](plans/archived/2026-10-27_pi-sdk-1.4-upgrade-plan.md)
+retains exact candidate/source/package identities, phase intervals, failed runs and
+review limits. This is synthetic acceptance, not host deployment or live-provider
+certification.
+
+A fresh 2026-10-27 lock-only `npm audit --json` reports the SDK's unchanged nested
+Undici **8.10.2** for [EventSource parser memory growth](https://github.com/advisories/GHSA-4qv8-2p9j-2685),
+[SRI algorithm-token bypass](https://github.com/advisories/GHSA-f72v-6w45-q472) and
+[excessive content-encoding error handling](https://github.com/advisories/GHSA-xjj6-f33q-929c).
+The highest severity is high; coding-agent is also reported as an affected parent.
+That nested resolution was already present with SDK 1.3. The root application's
+Undici **8.12.2** is fixed for those ranges. Modular SDK `http-dispatcher.js`
+loads the nested library but its dispatcher/global-fetch installation is invoked
+by standalone CLI/RPC entrypoints, not the maintained embedded session path; Pi
+Desk's own instrumentation/dispatcher uses the root library. This bounded import/
+call review is not whole-artifact or arbitrary-extension reachability proof.
+Retain the nested advisory and reassess on the next SDK/dispatcher change rather
+than applying npm's suggested SDK downgrade or an unreviewed override. The older
+braces/sprintf-js matching below describes its dated checkpoint, not this fresh
+audit's results; no security-clean claim follows from either scope.
 
 SDK 1.2.0 introduced personalized OpenRouter catalogs via `/models/user` and
 persisted model lists, limits and prices. Additional accounts continue to require
@@ -79,9 +126,11 @@ Notable upstream behavior changes:
 - Malformed complete tool arguments carry `argumentsError` and are refused before
   execution instead of executing a partially parsed prefix. Cross-model reasoning
   is omitted from outgoing provider context; saved history is not rewritten.
-- Codemode admits at most **two live workers across sessions per SDK module
-  instance**, counting cancelled workers until actual exit. Capacity fails promptly;
-  cancellation acknowledgement is not worker-settlement proof.
+- Codemode defaults to **two live workers across sessions per SDK module
+  instance**, counting cancelled workers until actual exit. SDK 1.4 queues at
+  capacity for up to 60 seconds (or a shorter script deadline) and exposes
+  `PI_CODEMODE_MAX_WORKERS` for explicit operator configuration. The host does not
+  raise that limit; cancellation acknowledgement is not worker-settlement proof.
 - Kimi Coding now uses OpenAI Chat Completions with a default endpoint ending in
   `/coding/v1`; custom base-URL overrides must include `/v1`. OpenCode's bundled
   endpoints move from `/zen` to `/inference`. No local settings or credentials are
