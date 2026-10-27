@@ -144,6 +144,19 @@ Receiving production inputs stayed unchanged from focused2. Independent settled
 review found no application blocker; guide wording was narrowed to selected-slot
 validation and no codec-specific retries (existing summary fallback remains).
 
+First complete12/4run at rebased `30589164800a7a273a8e586a95a50791c8290176`
+failed in **222.060s**: adjacent `lib/rpc-manager.test.mjs` had another explicit
+catalogue-route capability map that rejected the new codec import before handler
+invocation. Core stopped **18passed /1failed /498notstarted**, with532/533cases
+passed; browser peer cancellation remains incomplete acceptance. Preserve `full.log`,
+`full-command.json`, `/tmp/pi-web-test-core.1yAclw/run.json` and
+`/tmp/pi-web-test-browser.0xwn1r/run.json`. Add only the real encoder to that map;
+no assertions, handler calls, suppression authority, cleanup or deadlines change.
+Independent follow-up review confirms its N classification remains appropriate.
+Corrected focused RPC execution passed **69/69** with statics in **107.044s**,
+`focused-rpc.log`, `/tmp/pi-web-test-core.pg6FUg/run.json`. Complete corrected
+acceptance remains pending; no unchanged retry erases the retained first failure.
+
 All commands/logs/private fault exports remain under
 `/tmp/pi-web-catalogue-payload-evidence-1793089574/`. Full sandbox acceptance,
 exact integration and optional live comparison are not implied by this checkpoint.
