@@ -1,17 +1,16 @@
 import '../lib/testing/client-native-boundary.fixture.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { scratchpadFixture } from './scratchpad-panel.fixture.mjs';
+import { scratchpadFixture, SCRATCHPAD_PROJECT_A as RICH, SCRATCHPAD_PROJECT_B as OTHER } from './scratchpad-panel.fixture.mjs';
 
-// Original appearance/scratchpad tuples: RICH and OTHER are browser-suite's
-// actual fixture IDs. ED and ES retain the exact old literal notes, not generic A/B.
-const RICH = 'e2e-rich-session', OTHER = 'e2e-other-project';
+// Canonical project IDs are scripted metadata inputs, not a copied resolver.
+// ED and ES retain the original literal note corpus while scope changes to project.
 const ED = 'scratch-en-desktop', ES = 'scratch-en-mobile-short';
 const R0 = '0'.repeat(64), R1 = '1'.repeat(64), R2 = '2'.repeat(64), R3 = '3'.repeat(64);
 const R4 = '4'.repeat(64), R5 = '5'.repeat(64), R6 = '6'.repeat(64), R7 = '7'.repeat(64);
 // Controlled external wire revisions ONLY. Never filesystem/revision authority.
 const note = (text, revision) => ({ text, revision });
-const key = scope => `pi-web:scratchpad:${JSON.stringify(scope)}`;
+const key = scope => `pi-web:scratchpad:${JSON.stringify(scope === null ? null : { projectId: scope })}`;
 const draft = (f, scope) => {
   const raw = f.snapshotStorage().find(([name]) => name === key(scope))?.[1];
   return raw === undefined ? null : JSON.parse(raw);
@@ -31,28 +30,28 @@ async function load(f, global, local) {
   await f.render();
   await replyReads(f, mark, global, local);
 }
-async function editSaved(f, scope, sessionId, text, revision, acknowledged) {
-  f.save(sessionId, text, revision);
+async function editSaved(f, scope, projectId, text, revision, acknowledged) {
+  f.save(projectId, text, revision);
   const mark = f.markOperations();
   await f.input(scope, text);
   assert.equal(f.editor(scope).value, text, 'actual editor receives the original literal input');
   const writer = f.onePendingOperation(mark, 'explicit editor change');
-  await f.reply(f.next('PUT', sessionId), note(text, acknowledged), 200, { operation: writer });
+  await f.reply(f.next('PUT', projectId), note(text, acknowledged), 200, { operation: writer });
   assert.equal(f.status(scope), 'Saved to server');
 }
-async function select(f, sessionId, text, revision) {
-  f.read(sessionId);
+async function select(f, projectId, text, revision, projectCwd = f.projectCwd(projectId)) {
+  f.read(projectId);
   const mark = f.markOperations();
-  await f.rerender({ sessionId });
-  const read = f.onePendingOperation(mark, 'selected-session refresh');
-  await f.reply(f.next('GET', sessionId), note(text, revision), 200, { operation: read });
+  await f.rerender({ projectCwd });
+  const read = f.onePendingOperation(mark, 'selected-project refresh');
+  await f.reply(f.next('GET', projectId), note(text, revision), 200, { operation: read });
 }
 
-test('NT-buttons: actual Global Undo/Redo after reopen preserve the original session note', async t => {
+test('NT-buttons: actual Global Undo/Redo after reopen preserve the original project note', async t => {
   const f = await scratchpadFixture(t);
   await load(f, note('', R0), note('', R0));
   await editSaved(f, 'Global', null, ED, R0, R1);
-  await editSaved(f, 'This session', RICH, `${ED}-session`, R0, R2);
+  await editSaved(f, 'Project', RICH, `${ED}-session`, R0, R2);
   await editSaved(f, 'Global', null, `${ED} xyz`, R1, R3);
   await f.rerender({ open: false });
   f.read(null); f.read(RICH);
@@ -63,29 +62,98 @@ test('NT-buttons: actual Global Undo/Redo after reopen preserve the original ses
   const undo = f.markOperations();
   await f.click('Undo Global notes');
   assert.equal(f.editor().value, ED, 'NT-buttons: Undo Global button routes to actual global history');
-  assert.equal(f.editor('This session').value, `${ED}-session`, 'Undo never touches the other scope');
+  assert.equal(f.editor('Project').value, `${ED}-session`, 'Undo never touches the other scope');
   await f.reply(f.next('PUT', null), note(ED, R4), 200, { operation: f.onePendingOperation(undo, 'Undo button writer') });
   f.save(null, `${ED} xyz`, R4);
   const redo = f.markOperations();
   await f.click('Redo Global notes');
   assert.equal(f.editor().value, `${ED} xyz`, 'NT-buttons: Redo Global button restores the original xyz input');
-  assert.equal(f.editor('This session').value, `${ED}-session`);
+  assert.equal(f.editor('Project').value, `${ED}-session`);
   await f.reply(f.next('PUT', null), note(`${ED} xyz`, R5), 200, { operation: f.onePendingOperation(redo, 'Redo button writer') });
   await f.complete();
 });
 
-test('NT-scope: OTHER is independent, global is shared, and switching back restores current session', async t => {
+test('NT-scope: OTHER is independent, global is shared, and switching back restores current project', async t => {
   const f = await scratchpadFixture(t);
   await load(f, note(`${ED} xyz`, R1), note(`${ED}-session`, R2));
+  assert.equal(f.editor('Project').disabled, false, 'selected project works without any saved-chat prop');
+  await editSaved(f, 'Project', RICH, `${ED}-project edit`, R2, R6);
+  await select(f, RICH, `${ED}-project edit`, R6, '/worktrees/rich');
+  assert.equal(f.button('Undo Project notes').disabled, false, 'same canonical project retains history across checkout changes');
+  f.save(RICH, `${ED}-session`, R6);
+  const projectUndo = f.markOperations();
+  await f.click('Undo Project notes');
+  await f.reply(f.next('PUT', RICH), note(`${ED}-session`, R2), 200, { operation: f.onePendingOperation(projectUndo, 'shared project Undo') });
+  assert.equal(f.button('Redo Project notes').disabled, false);
   await select(f, OTHER, '', R0);
   assert.equal(f.editor().value, `${ED} xyz`, 'NT-scope: OTHER retains global notes');
-  assert.equal(f.editor('This session').value, '', 'OTHER starts with its own server note');
-  await editSaved(f, 'This session', OTHER, `${ED}-other`, R0, R3);
+  assert.equal(f.editor('Project').value, '', 'OTHER starts with its own server note');
+  await editSaved(f, 'Project', OTHER, `${ED}-other`, R0, R3);
   await select(f, RICH, `${ED}-session`, R2);
-  assert.equal(f.editor('This session').value, `${ED}-session`, 'NT-scope: switchback restores original current-session note');
+  assert.equal(f.editor('Project').value, `${ED}-session`, 'NT-scope: switchback restores original project note');
+  assert.equal(f.button('Redo Project notes').disabled, false, 'A/B/A preserves the original project history');
   assert.equal(f.editor().value, `${ED} xyz`);
   await select(f, OTHER, `${ED}-other`, R3);
-  assert.equal(f.editor('This session').value, `${ED}-other`);
+  assert.equal(f.editor('Project').value, `${ED}-other`);
+  await f.complete();
+});
+
+test('NT-project-metadata: obsolete success/error bodies after A/B/A cannot replace the current project context', async t => {
+  for (const oldStatus of [200, 400]) {
+    const f = await scratchpadFixture(t, { projects: {
+      '/projects/rich': { projectId: RICH, root: '/projects/rich', hold: true },
+      '/projects/other': { projectId: OTHER, root: '/projects/other' },
+    } });
+    f.read(null); await f.render();
+    await f.reply(f.next('GET', null), note('global', R0));
+    const obsolete = f.projectRequests('/projects/rich');
+    assert.equal(obsolete.length > 0, true, 'original A metadata request entered');
+    for (const request of obsolete) await f.headers(request, oldStatus);
+    f.read(OTHER); await f.rerender({ projectCwd: '/projects/other' });
+    await f.reply(f.next('GET', OTHER), note('project B', R1));
+    f.read(RICH); await f.rerender({ projectCwd: '/projects/rich' });
+    const current = f.projectRequests('/projects/rich').filter(request => !obsolete.includes(request));
+    assert.equal(current.length > 0, true, 'new A metadata request entered independently');
+    for (const request of current) await f.reply(request, { projectId: RICH, root: '/projects/rich/current' });
+    await f.reply(f.next('GET', RICH), note('current project A', R2));
+    for (const request of obsolete) await f.body(request, { projectId: RICH, root: '/projects/rich/obsolete' });
+    assert.equal(f.editor('Project')?.value, 'current project A', 'obsolete metadata error cannot hide the current project editor');
+    assert.equal(f.section('Project').querySelector('p[title]')?.getAttribute('title'), '/projects/rich/current', 'obsolete metadata success cannot replace current project context');
+    await f.complete(); await f.dispose();
+  }
+});
+
+test('NT-no-project: Global stays editable while no folder is selected; selecting a folder needs no chat', async t => {
+  const f = await scratchpadFixture(t);
+  f.read(null); await f.render({ projectCwd: null });
+  await f.reply(f.next('GET', null), note('global', R0));
+  assert.equal(f.editor('Project'), null);
+  assert.equal(f.status('Project'), 'Select a project to keep notes shared across its chats.');
+  f.read(RICH); await f.rerender({ projectCwd: '/projects/rich' });
+  await f.reply(f.next('GET', RICH), note('', R0));
+  await editSaved(f, 'Project', RICH, 'folder before chat', R0, R1);
+  assert.equal(f.editor().value, 'global');
+  await f.complete();
+});
+
+test('NT-project-retry: a current metadata refusal leaves Global available and retries the selected project without a chat', async t => {
+  const f = await scratchpadFixture(t, { projects: {
+    '/projects/rich': { projectId: RICH, root: '/projects/rich', hold: true },
+  } });
+  f.read(null); await f.render();
+  await f.reply(f.next('GET', null), note('global remains', R0));
+  const refused = f.projectRequests('/projects/rich');
+  for (const request of refused) await f.reply(request, { error: 'unavailable' }, 400);
+  assert.equal(f.editor('Project'), null);
+  assert.equal(f.section('Project').querySelector('[role="alert"]').textContent, 'Could not resolve this project. Your notes are retained; select an available folder or retry.');
+  assert.equal(f.editor().value, 'global remains');
+  f.read(RICH); await f.click('Retry');
+  const retried = f.projectRequests('/projects/rich').filter(request => !refused.includes(request));
+  assert.equal(retried.length > 0, true);
+  for (const request of retried) await f.reply(request, { projectId: RICH, root: '/projects/rich' });
+  await f.reply(f.next('GET', RICH), note('', R0));
+  await editSaved(f, 'Project', RICH, 'after explicit retry', R0, R1);
+  assert.equal(f.editor().value, 'global remains');
   await f.complete();
 });
 
@@ -94,23 +162,23 @@ test('NT-currentness: original short-input OTHER save completes after switchback
   // The original ES context follows ED's persisted local/global/OTHER story.
   await load(f, note(`${ED}-local`, R1), note(`${ED}-session`, R2));
   await editSaved(f, 'Global', null, ES, R1, R3);
-  await editSaved(f, 'This session', RICH, `${ES}-session`, R2, R4);
+  await editSaved(f, 'Project', RICH, `${ES}-session`, R2, R4);
   await editSaved(f, 'Global', null, `${ES} xyz`, R3, R7);
   await select(f, OTHER, `${ED}-other`, R5);
   f.save(OTHER, `${ES}-other`, R5);
   const otherEdit = f.markOperations();
-  await f.input('This session', `${ES}-other`);
+  await f.input('Project', `${ES}-other`);
   const otherWriter = f.onePendingOperation(otherEdit, 'OTHER save before switching');
   const held = f.next('PUT', OTHER);
   await f.headers(held); // Accepted original write/body continues while unobserved.
   await select(f, RICH, `${ES}-session`, R4);
-  assert.equal(f.editor('This session').value, `${ES}-session`);
+  assert.equal(f.editor('Project').value, `${ES}-session`);
   await f.body(held, note(`${ES}-other`, R6), { operation: otherWriter });
-  assert.equal(f.editor('This session').value, `${ES}-session`, 'NT-currentness: obsolete OTHER completion cannot replace current text');
+  assert.equal(f.editor('Project').value, `${ES}-session`, 'NT-currentness: obsolete OTHER completion cannot replace current text');
   assert.equal(f.editor().value, `${ES} xyz`);
-  assert.equal(f.status('This session'), 'Saved to server');
+  assert.equal(f.status('Project'), 'Saved to server');
   await select(f, OTHER, `${ES}-other`, R6);
-  assert.equal(f.editor('This session').value, `${ES}-other`);
+  assert.equal(f.editor('Project').value, `${ES}-other`);
   await select(f, RICH, `${ES}-session`, R4);
   await f.complete();
 });
@@ -145,7 +213,7 @@ test('NT-conflict-reload: focused stale409 retains mine, reload recovers it, Sav
   assert.equal(f.editor().value, `${ED}-local`, 'NT-conflict: focused local mine survives409 instead of remote overwrite');
   assert.equal(f.view.window.document.activeElement === focused, true, 'focused editor survives conflict publication');
   assert.equal(f.section('Global').querySelector('pre').textContent, `${ED}-external`);
-  assert.equal(f.editor('This session').value, `${ED}-session`);
+  assert.equal(f.editor('Project').value, `${ED}-session`);
   const recovery = f.snapshotStorage();
   await f.complete(); await f.dispose();
 
@@ -172,8 +240,8 @@ test('NT-conflict-reload: focused stale409 retains mine, reload recovers it, Sav
   const reloaded = await scratchpadFixture(t, { storage: cleanStorage });
   await load(reloaded, note(`${ED}-local`, R5), note(`${ED}-session`, R2));
   assert.equal(reloaded.editor().value, `${ED}-local`);
-  assert.equal(reloaded.editor('This session').value, `${ED}-session`);
-  for (const name of ['Undo Global notes', 'Redo Global notes', 'Undo This session notes', 'Redo This session notes']) {
+  assert.equal(reloaded.editor('Project').value, `${ED}-session`);
+  for (const name of ['Undo Global notes', 'Redo Global notes', 'Undo Project notes', 'Redo Project notes']) {
     assert.equal(reloaded.button(name).disabled, true, `NT-history-reset: ${name} unavailable after reload`);
   }
   await reloaded.complete();
@@ -204,7 +272,7 @@ test('NT-short-recovery: actual pending short-input draft recovers stale and a s
   await r.click('Save my version');
   await r.reply(r.next('PUT', null), note(`${ES}-local`, R5), 200, { operation: r.onePendingOperation(nextResolve, 'short next-revision resolution') });
   assert.equal(r.status(), 'Saved to server');
-  assert.equal(r.editor('This session').value, `${ES}-session`);
+  assert.equal(r.editor('Project').value, `${ES}-session`);
   await r.complete();
 });
 
@@ -298,7 +366,7 @@ test('NT-teardown: held write/body, read/body and independent peer/header all re
   const heldRead = f.onePendingOperation(heldRefresh, 'held clean-session refresh');
   await f.headers(f.next('GET', RICH));
   f.read(OTHER);
-  const peer = f.peer(() => f.transport.read(OTHER));
+  const peer = f.peer(() => f.transport.read({ projectId: OTHER }));
   await f.dispose();
   const [result] = await Promise.allSettled([peer]);
   assert.equal(result.status, 'rejected');
@@ -351,10 +419,10 @@ test('NT-setup-failure: earliest disposer releases ALL independent HTTP peers ev
   let trace, requests;
   const contains = error => error === primary || (error instanceof AggregateError && error.errors.some(contains));
   await assert.rejects(scratchpadFixture(t, {
-    plans: [{ method: 'GET', sessionId: null }, { method: 'GET', sessionId: OTHER }],
+    plans: [{ method: 'GET', projectId: null }, { method: 'GET', projectId: OTHER }],
     setup(window, domain) {
       trace = domain.phases; requests = domain.requests;
-      for (const query of ['', '?sessionId=e2e-other-project']) {
+      for (const query of ['', `?projectId=${OTHER}`]) {
         jobs.push(domain.peer(async () => {
           const response = await window.fetch(`/api/scratchpad${query}`, { cache: 'no-store' });
           return response.json();

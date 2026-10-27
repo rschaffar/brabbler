@@ -326,6 +326,11 @@ let nativeToolsFixture;
     git("worktree", "add", targetWorktree, "target");
     writeSession(GIT, [message("root", null, "user", "E2E Git browsing conversation"),
       message("answer", "root", "assistant", "Ready to browse Git history")], gitProject);
+    if (group === "appearance") writeSession(BRANCH, [
+      message("root", null, "user", "Branch root"),
+      message("old", "root", "assistant", "Inactive branch answer"),
+      message("new", "root", "assistant", "Active branch answer"),
+    ], targetWorktree);
     if (group === "markdown") reviewNotebookFixture = seedReviewNotebooks({ gitProject, targetWorktree, env: fixtureEnv, writeSession, message });
   }
 
@@ -514,11 +519,11 @@ let nativeToolsFixture;
       assert.deepEqual(errors, [], "Chat appearance browser/server errors");
       await harness.closeContext(context); context = undefined; page = undefined;
     });
-    for (const inputId of ["en-desktop", "en-mobile-short"]) await coverage.run(`appearance/${inputId === "en-desktop" ? "notes-native" : "notes-touch-layout"}@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-short"]) await coverage.run(`appearance/${inputId === "en-desktop" ? "notes-project-native-v2" : "notes-project-touch-layout-v2"}@${inputId}`, async () => {
       context = await newInputContext(inputId);
       page = await context.newPage();
       const errors = harness.errorsFor(context);
-      if (inputId === "en-desktop") await checkNotesNativeJourney(page, { base, sessionId: RICH });
+      if (inputId === "en-desktop") await checkNotesNativeJourney(page, { base, sessionId: RICH, projectCwd: project, gitSessionId: GIT, linkedSessionId: BRANCH, gitCwd: gitProject, linkedCwd: targetWorktree });
       else await checkNotesTouchGeometry(page, { base, sessionId: RICH });
       assert.deepEqual(errors, [], `Scratchpad browser/server errors: ${inputId}`);
       await harness.closeContext(context); context = undefined; page = undefined;

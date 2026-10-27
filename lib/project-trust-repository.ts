@@ -48,8 +48,8 @@ function git(cwd: string, args: string[]): string {
   });
 }
 
-/** Verify membership afresh; cached sidebar grouping is not a trust boundary. */
-export function trustedGitRepository(cwd: string): TrustedGitRepository | null {
+/** Verify registration afresh without reading or initializing trust identities. */
+export function registeredGitRepository(cwd: string): Omit<TrustedGitRepository, "key"> | null {
   try {
     const physical = realpathSync(cwd);
     const checkout = realpathSync(toNativePath(git(physical, ["rev-parse", "--show-toplevel"]).trim()));
@@ -63,13 +63,22 @@ export function trustedGitRepository(cwd: string): TrustedGitRepository | null {
       .flatMap((path) => { try { return [realpathSync(toNativePath(path))]; } catch { return []; } });
     if (!samePath(physical, checkout) || !entries.some((path) => samePath(path, checkout))) return null;
     if (!statSync(common).isDirectory()) return null;
-    // A marker in the common Git directory distinguishes a replacement at the same path,
-    // even if the filesystem reuses the old directory inode. Reads never create it.
-    const id = readMarker(common);
-    return { key: id ? JSON.stringify([common, id]) : null, common, root: entries[0], checkout, worktrees: entries };
+    return { common, root: entries[0], checkout, worktrees: entries };
   } catch {
     return null;
   }
+}
+
+/** Trust callers still fail closed on invalid markers; grouping alone grants nothing. */
+export function trustedGitRepository(cwd: string): TrustedGitRepository | null {
+  const repository = registeredGitRepository(cwd);
+  if (!repository) return null;
+  try {
+    // A marker distinguishes replacement at the same path, even with inode reuse.
+    // Reads never create it. Personal grouping callers use registration only.
+    const id = readMarker(repository.common);
+    return { key: id ? JSON.stringify([repository.common, id]) : null, ...repository };
+  } catch { return null; }
 }
 
 /** Native defaults have their own shared identity. Creating their marker must

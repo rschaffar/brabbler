@@ -34,7 +34,7 @@ app/api/
   sessions/[id]/route.ts          GET/PATCH/DELETE session
   sessions/[id]/move/route.ts     POST relocate an idle session family to another cwd
   starred-sessions/route.ts        GET list | POST set/import stars
-  scratchpad/route.ts              GET/PUT revisioned global or session personal notes
+  scratchpad/route.ts              GET/PUT Global/Project notes; selected-project resolution and legacy session compatibility
   activity/review/route.ts         POST acknowledge/import settled completions
   sessions/[id]/context/route.ts  GET ?leafId= — context for a specific leaf
   sessions/[id]/export/route.ts   GET exported HTML for a session
@@ -106,7 +106,7 @@ lib/
   agent-client.ts      typed fetch helper for /api/agent commands
   draft-store.ts       local draft persistence helpers
   scratchpad.ts        bounded personal-note wire contract
-  scratchpad-server.ts private locked atomic note storage and content revisions
+  scratchpad-server.ts private locked atomic notes, content revisions and read-only canonical project identity
   scratchpad-client.ts per-note autosave, same-tab recovery and undo/redo ownership
   file-access.ts       allowed file roots for /api/files and worktrees
   file-paths.ts        client/server path encoding helpers

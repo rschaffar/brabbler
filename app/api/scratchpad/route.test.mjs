@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJiti } from "jiti";
@@ -8,7 +8,9 @@ const previous = process.env.PI_CODING_AGENT_DIR;
 const agent = mkdtempSync(join(tmpdir(), "scratchpad-route-"));
 process.env.PI_CODING_AGENT_DIR = agent;
 after(() => { if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous; rmSync(agent, { recursive: true, force: true }); });
-const { GET, PUT } = await createJiti(import.meta.url, { alias: { "@": process.cwd() } }).import("./route.ts");
+const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, fsCache: false });
+const { GET, PUT } = await jiti.import("./route.ts");
+const { allowFileRoot } = await jiti.import("../../../lib/file-access.ts");
 const request = (body, headers = {}) => new Request("http://localhost/api/scratchpad", { method: "PUT", headers: { Host: "localhost", "Content-Type": "application/json", ...headers }, body: typeof body === "string" ? body : JSON.stringify(body) });
 const read = (query = "", headers = {}) => GET(new Request(`http://localhost/api/scratchpad${query}`, { headers: { Host: "localhost", ...headers } }));
 test("guarded note API supports global/session persistence, no-store reads and explicit conflicts", async () => {
@@ -20,6 +22,30 @@ test("guarded note API supports global/session persistence, no-store reads and e
   assert.equal((await PUT(request({ sessionId: "session", text: "local", revision: initial.revision }))).status, 200);
   assert.equal((await (await read("?sessionId=session")).json()).text, "local");
   assert.equal((await (await read()).json()).text, "global");
+});
+test("project resolution admits only selected roots and preserves project/global/legacy separation without a chat", async () => {
+  const project = join(agent, "selected-folder"), other = join(agent, "another-folder");
+  mkdirSync(project); mkdirSync(other); allowFileRoot(project); allowFileRoot(other);
+  const resolve = cwd => read(`?${new URLSearchParams({ projectCwd: cwd })}`);
+  const resolved = await resolve(project); assert.equal(resolved.status, 200);
+  const first = await resolved.json();
+  const second = await (await resolve(other)).json();
+  assert.equal(first.root, project); assert.notEqual(first.projectId, second.projectId);
+  const initial = await (await read(`?projectId=${first.projectId}`)).json();
+  assert.equal(initial.text, "");
+  const saved = await PUT(request({ projectId: first.projectId, text: "all project chats", revision: initial.revision }));
+  assert.equal(saved.status, 200); const note = await saved.json();
+  assert.deepEqual(await (await read(`?projectId=${first.projectId}`)).json(), note);
+  assert.equal((await (await read(`?projectId=${second.projectId}`)).json()).text, "");
+  assert.equal((await (await read()).json()).text, "global");
+  assert.equal((await (await read("?sessionId=session")).json()).text, "local");
+  assert.equal((await resolve(agent)).status, 403, "an admitted child does not grant its parent");
+  assert.equal((await resolve("relative")).status, 400);
+  for (const query of ["?projectId=", "?projectId=bad", `?projectId=${first.projectId}&sessionId=session`, "?sessionId=session&sessionId=other", "?unknown=scope"]) {
+    assert.equal((await read(query)).status, 400);
+  }
+  assert.equal((await PUT(request({ projectId: first.projectId, sessionId: null, text: "ambiguous", revision: note.revision }))).status, 400);
+  assert.equal((await PUT(request({ projectId: "bad", text: "bad", revision: note.revision }))).status, 400);
 });
 test("rejects hostile origins/hosts, malformed scopes, non-JSON, malformed and oversized input", async () => {
   assert.equal((await read("", { Host: "evil.example" })).status, 403);

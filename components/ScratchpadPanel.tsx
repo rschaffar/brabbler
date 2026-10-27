@@ -3,18 +3,18 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
-import { SCRATCHPAD_MAX_LENGTH } from "@/lib/scratchpad";
-import { ScratchpadController, type ScratchpadWorkObserver } from "@/lib/scratchpad-client";
+import { SCRATCHPAD_MAX_LENGTH, type ScratchpadProject, type ScratchpadScope } from "@/lib/scratchpad";
+import { resolveScratchpadProject, ScratchpadController, type ScratchpadWorkObserver } from "@/lib/scratchpad-client";
 import "./ScratchpadPanel.css";
 
-function NoteEditor({ controller, session, open }: { controller: ScratchpadController; session: boolean; open: boolean }) {
+function NoteEditor({ controller, project, open, projectRoot }: { controller: ScratchpadController; project: boolean; open: boolean; projectRoot?: string }) {
   const { t } = useI18n();
   const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const before = useRef({ start: 0, end: 0 });
   const composing = useRef(false);
   const [copyFailed, setCopyFailed] = useState(false);
-  const label = t(session ? "scratchpad.session" : "scratchpad.global");
+  const label = t(project ? "scratchpad.project" : "scratchpad.global");
   useEffect(() => {
     if (!open) return;
     void controller.refresh();
@@ -24,8 +24,8 @@ function NoteEditor({ controller, session, open }: { controller: ScratchpadContr
     return () => { window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
   }, [controller, open]);
   useEffect(() => {
-    if (open && view.ready && !session) textarea.current?.focus();
-  }, [open, view.ready, session]);
+    if (open && view.ready && !project) textarea.current?.focus();
+  }, [open, view.ready, project]);
   useLayoutEffect(() => {
     if (view.selection && textarea.current && !composing.current) {
       textarea.current.setSelectionRange(view.selection.start, view.selection.end);
@@ -45,7 +45,8 @@ function NoteEditor({ controller, session, open }: { controller: ScratchpadContr
       <button type="button" disabled={!view.canRedo} onClick={() => history("redo")} aria-label={t("scratchpad.redo", { scope: label })} title={t("scratchpad.redo", { scope: label })}>↷</button>
       <button type="button" disabled={!view.ready && !view.text} onClick={() => { void copyText(view.text).then(() => setCopyFailed(false), () => setCopyFailed(true)); }} aria-label={t("scratchpad.copy", { scope: label })} title={t("scratchpad.copy", { scope: label })}>{t("scratchpad.copyShort")}</button>
     </div>
-    <p className="scratchpad-hint">{t(session ? "scratchpad.sessionHint" : "scratchpad.globalHint")}</p>
+    <p className="scratchpad-hint">{t(project ? "scratchpad.projectHint" : "scratchpad.globalHint")}</p>
+    {projectRoot && <p className="scratchpad-hint" style={{ overflowWrap: "anywhere" }} title={projectRoot}>{projectRoot}</p>}
     <textarea ref={textarea} aria-label={label} value={view.text} disabled={!view.ready}
       maxLength={SCRATCHPAD_MAX_LENGTH} spellCheck placeholder={t("scratchpad.placeholder")}
       onBlur={() => controller.breakGroup()}
@@ -85,17 +86,39 @@ function NoteEditor({ controller, session, open }: { controller: ScratchpadContr
   </section>;
 }
 
-export function ScratchpadPanel({ open, sessionId, onClose, onWork }: { open: boolean; sessionId: string | null; onClose: () => void; onWork?: ScratchpadWorkObserver }) {
+export function ScratchpadPanel({ open, projectCwd, onClose, onWork }: { open: boolean; projectCwd: string | null; onClose: () => void; onWork?: ScratchpadWorkObserver }) {
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
-  const [controllers] = useState(() => new Map<string | null, ScratchpadController>());
-  const controllerFor = (id: string | null) => {
-    let controller = controllers.get(id);
+  const [selection, setSelection] = useState<{ cwd: string; project: ScratchpadProject | null; failed: boolean } | null>(null);
+  const [resolveKey, setResolveKey] = useState(0);
+  const observeWork = useRef(onWork);
+  observeWork.current = onWork;
+  useEffect(() => {
+    if (!open || !projectCwd) return;
+    let current = true;
+    setSelection({ cwd: projectCwd, project: null, failed: false });
+    const work = (async () => {
+      try {
+        const project = await resolveScratchpadProject(projectCwd);
+        if (current) setSelection({ cwd: projectCwd, project, failed: false });
+      } catch {
+        if (current) setSelection({ cwd: projectCwd, project: null, failed: true });
+      }
+    })();
+    observeWork.current?.(work);
+    return () => { current = false; };
+  }, [open, projectCwd, resolveKey]);
+  const current = selection?.cwd === projectCwd ? selection : null;
+  const project = current?.project;
+  const [controllers] = useState(() => new Map<string, ScratchpadController>());
+  const controllerFor = (scope: ScratchpadScope) => {
+    const key = JSON.stringify(scope);
+    let controller = controllers.get(key);
     if (!controller) {
       let storage = null;
       try { storage = window.sessionStorage; } catch { /* Reported when a draft cannot be persisted. */ }
-      controller = new ScratchpadController(id, storage, undefined, onWork);
-      controllers.set(id, controller);
+      controller = new ScratchpadController(scope, storage, undefined, onWork);
+      controllers.set(key, controller);
     }
     return controller;
   };
@@ -113,9 +136,12 @@ export function ScratchpadPanel({ open, sessionId, onClose, onWork }: { open: bo
       <header><h2 id="scratchpad-title">{t("scratchpad.title")}</h2><button type="button" onClick={onClose} aria-label={t("scratchpad.close")}>×</button></header>
       <p className="scratchpad-intro">{t("scratchpad.intro")}</p>
       <div className="scratchpad-editors">
-        <NoteEditor controller={controllerFor(null)} session={false} open={open} />
-        {sessionId ? <NoteEditor key={sessionId} controller={controllerFor(sessionId)} session open={open} />
-          : <section className="scratchpad-note scratchpad-unavailable"><h3>{t("scratchpad.session")}</h3><p>{t("scratchpad.noSession")}</p></section>}
+        <NoteEditor controller={controllerFor(null)} project={false} open={open} />
+        {projectCwd && project ? <NoteEditor key={project.projectId} controller={controllerFor({ projectId: project.projectId })} project projectRoot={project.root} open={open} />
+          : <section className="scratchpad-note scratchpad-unavailable" aria-label={t("scratchpad.project")}><h3>{t("scratchpad.project")}</h3>
+            <p role={current?.failed ? "alert" : "status"}>{t(!projectCwd ? "scratchpad.noProject" : current?.failed ? "scratchpad.projectError" : "scratchpad.loading")}</p>
+            {projectCwd && current?.failed && <button type="button" onClick={() => setResolveKey(key => key + 1)}>{t("scratchpad.retry")}</button>}
+          </section>}
       </div>
       <footer>{t("scratchpad.undoHint")}</footer>
     </div>

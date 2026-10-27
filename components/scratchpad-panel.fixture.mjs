@@ -36,11 +36,18 @@ function storageBytes(storage) {
   return Array.from({ length: storage.length }, (_, i) => storage.key(i)).sort().map(key => [key, storage.getItem(key)]);
 }
 
+export const SCRATCHPAD_PROJECT_A = 'a'.repeat(64), SCRATCHPAD_PROJECT_B = 'b'.repeat(64);
+const defaultProjects = {
+  '/projects/rich': { projectId: SCRATCHPAD_PROJECT_A, root: '/projects/rich' },
+  '/projects/other': { projectId: SCRATCHPAD_PROJECT_B, root: '/projects/other' },
+  '/worktrees/rich': { projectId: SCRATCHPAD_PROJECT_A, root: '/projects/rich' },
+};
+
 // Scratchpad-only HTTP/Storage/Visibility adapter. Cards owns guards, real
 // React/JSDOM/Jiti, console/runtime collection and realm-before-host restoration.
 // Replies are SCRIPTED external inputs, never an implementation of revision,
 // history, conflict, save or recovery decisions. Native revisions stay native.
-export async function scratchpadFixture(t, { storage = [], plans = [], setup } = {}) {
+export async function scratchpadFixture(t, { storage = [], plans = [], projects = defaultProjects, setup } = {}) {
   const failures = [], originals = [], operations = [], requests = [], pending = [...plans], cleanups = [];
   const focusSubscriptions = new Set(), visibilitySubscriptions = new Set();
   const teardownError = new Error('owned Scratchpad HTTP shutdown');
@@ -135,12 +142,16 @@ export async function scratchpadFixture(t, { storage = [], plans = [], setup } =
           assert.equal(url.origin, 'https://fixture.invalid');
           assert.equal(url.pathname, '/api/scratchpad');
           assert.equal(url.hash, ''); assert.equal(url.username, ''); assert.equal(url.password, '');
-          const plan = pending.shift();
+          const projectCwd = url.searchParams.get('projectCwd');
+          const metadata = projectCwd === null ? null : projects[projectCwd];
+          if (projectCwd !== null) assert.equal(Boolean(metadata), true, 'only a declared project metadata capability may enter');
+          const plan = metadata ? { method: 'GET', projectCwd, metadata } : pending.shift();
           assert.equal(Boolean(plan), true, 'only a predeclared exact Scratchpad request may enter');
           const request = { url, options, method: options.method ?? 'GET', plan,
             headers: deferred(), body: deferred(), jsonCalls: 0, headersSent: false, bodySent: false };
           assert.equal(request.method, plan.method);
-          exactQuery(request, plan.method === 'GET' && plan.sessionId !== null ? { sessionId: plan.sessionId } : {});
+          exactQuery(request, plan.projectCwd ? { projectCwd: plan.projectCwd }
+            : plan.method === 'GET' && plan.projectId !== null ? { projectId: plan.projectId } : {});
           exactHeaders(request, plan.method === 'PUT' ? { 'Content-Type': 'application/json' } : {});
           if (plan.method === 'GET') {
             assert.deepEqual(Object.keys(options), ['cache']);
@@ -149,7 +160,7 @@ export async function scratchpadFixture(t, { storage = [], plans = [], setup } =
           } else {
             assert.deepEqual(Object.keys(options).sort(), ['body', 'headers', 'method']);
             request.payload = JSON.parse(options.body);
-            assert.deepEqual(request.payload, { sessionId: plan.sessionId, text: plan.text, revision: plan.revision }, 'exact default-transport scope/text/read-revision');
+            assert.deepEqual(request.payload, { ...(plan.projectId === null ? { sessionId: null } : { projectId: plan.projectId }), text: plan.text, revision: plan.revision }, 'exact default-transport scope/text/read-revision');
           }
           request.sendHeaders = status => {
             request.headersSent = true;
@@ -166,6 +177,10 @@ export async function scratchpadFixture(t, { storage = [], plans = [], setup } =
           };
           requests.push(request);
           const port = observe(request.headers.promise);
+          if (metadata && !metadata.hold && !closing) {
+            request.sendHeaders(200);
+            request.sendBody({ projectId: metadata.projectId, root: metadata.root });
+          }
           if (closing) {
             // Settlement only, NEVER successful admission/coverage. Still observe
             // and release both recognized late ports without stranding a peer.
@@ -253,15 +268,21 @@ export async function scratchpadFixture(t, { storage = [], plans = [], setup } =
       get view() { return h.view; },
       get subscriptions() { return focusSubscriptions.size + visibilitySubscriptions.size; },
       expect(plan) { checked(() => { assert.equal(closing, false); pending.push(plan); }); },
-      read(sessionId) { api.expect({ method: 'GET', sessionId }); },
-      save(sessionId, text, revision) { api.expect({ method: 'PUT', sessionId, text, revision }); },
-      next(method, sessionId) {
-        const request = requests.find(value => !value.bodySent && value.method === method && value.plan.sessionId === sessionId);
-        assert.equal(Boolean(request), true, `entered actual ${method} ${JSON.stringify(sessionId)}`);
+      projectCwd(projectId) {
+        const cwd = Object.keys(projects).find(cwd => projects[cwd].projectId === projectId);
+        assert.equal(Boolean(cwd), true, 'declared project input');
+        return cwd;
+      },
+      projectRequests(cwd) { return requests.filter(request => request.plan.projectCwd === cwd); },
+      read(projectId) { api.expect({ method: 'GET', projectId }); },
+      save(projectId, text, revision) { api.expect({ method: 'PUT', projectId, text, revision }); },
+      next(method, projectId) {
+        const request = requests.find(value => !value.bodySent && value.method === method && value.plan.projectId === projectId);
+        assert.equal(Boolean(request), true, `entered actual ${method} ${JSON.stringify(projectId)}`);
         return request;
       },
       async render(changes = {}) {
-        await render({ open: true, sessionId: 'e2e-rich-session', onClose() {}, onWork, ...changes });
+        await render({ open: true, projectCwd: '/projects/rich', onClose() {}, onWork, ...changes });
       },
       async rerender(changes) { await render(changes); },
       node, section, editor, button,
