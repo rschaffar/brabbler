@@ -108,6 +108,7 @@ Code paths in the guides are relative to the repository root.
 | Worktrees, Git Explorer, immutable diff/context review | [Worktrees](docs/worktrees.md); [feature contracts](docs/feature-internals.md#git-explorer) |
 | Optional Git tools, policy, approvals, operation receipts and cleanup | [Git plugin](docs/git-workflow-plugin.md); [feature contracts](docs/feature-internals.md#git-operations) |
 | Browser questions, blocking cards and interaction receipts | [Questions](docs/questions.md); [feature contracts](docs/feature-internals.md#browser-native-ask_user) |
+| Authoring or revising guided review notebooks, historical references and saved answers | [Review notebooks](docs/review-notebooks.md) — read before authoring or changing notebook material |
 | Terminal behavior | [Terminal](docs/terminal.md) |
 | Adding or moving tests, owner recipes and assertion dispositions | [Writing tests](docs/test-writing.md) |
 | Verification and browser fixtures | [Testing](docs/testing.md); [browser/terminal acceptance](e2e/README.md) |
