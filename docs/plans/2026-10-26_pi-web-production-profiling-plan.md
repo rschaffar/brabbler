@@ -1,27 +1,38 @@
 # Pi Web production latency — profiling plan
 
-**Current disposition (2026-10-27): profiling, relation reuse and refresh coalescing
-are delivered and integrated.** Relation reuse (`ade48c7`) entered main through
-`3650d2e`; refresh coalescing, independently reviewed and fully sandbox-verified at
-`3bdd333651ed908a8ea07d47d67212d9bab32327`, entered main through `4422eed`.
-`docs/session-internals.md` owns the delivered mechanisms. The old writer/worktree,
-unintegrated and execution-authority statements below are historical, not current
-resource claims or permission to restart work.
+**Current status: Package 5 lossless compact catalogue transport implemented,
+independently reviewed and focused-verified; full acceptance pending.**
+The user's later request authorizes this source/test slice, not deployment,
+live capture, inspector activation or remote publication. Current writer uses
+`perf/catalogue-payload` in
+`/home/robert/projects/3rdparty/pi-desk-worktrees/catalogue-payload`, starting at
+local main `74c4fdaf659df2509a8ee3a452a82edaf3d5ff51` and rebasing onto
+`9b8f024280efb0dff9313c3d770ba9d0651e12dc`. A concurrent documentation sweep
+corrected the old delivered status; the user approved combining those corrections
+with this newly authorized package after a plan-only rebase conflict.
 
-**Remaining owner:** this plan retains compact payload proposals, the deferred
-successful normal SPA row-click/switch capture and a separately authorized
-post-coalescing production comparison. The earlier relation-reuse production
-comparison does not measure the later coalescing change. No deployment, live probe,
-inspector activation, publication or new implementation is authorized by this sweep.
+**Delivered history:** profiling, relation reuse and refresh coalescing are
+integrated. Relation reuse (`ade48c7`) entered main through `3650d2e`; refresh
+coalescing, fully sandbox-verified at `3bdd333651ed908a8ea07d47d67212d9bab32327`,
+entered main through `4422eed`. `docs/session-internals.md` owns their mechanisms.
+Old writer/worktree, unintegrated and execution-authority statements below are
+historical, not current resource claims or permission to restart work. The sweep
+itself did not authorize another implementation.
+
+**Remaining owner:** this plan owns Package 5 and retains the deferred successful
+normal SPA row-click/switch capture and a separately authorized post-coalescing/
+payload production comparison. The relation-reuse comparison does not measure
+these later changes. No deployment, live probe or publication is authorized.
 
 **Previous slice:** relation reuse was implemented, independently reviewed,
 and fully sandbox-verified at `ade48c7a9aa6904f0ddeb5dde63afff9bfe12747`.
 That first coherent-candidate checkpoint preceded the user's later rebuild and
 measured improvement recorded in Package4 below. Its original unmeasured-gain and
-worktree/base statements are historical, not current directions. This plan now retains deferred follow-ups; refresh coalescing is delivered and
-the original profiling procedure remains evidence. Historical source/check authority
-does not authorize another slice, live deployment, restart, inspector activation
-or remote publication.
+worktree/base statements are historical, not current directions. This plan owns
+compact transport and deferred follow-ups; refresh coalescing is delivered and the
+original profiling procedure remains evidence. Historical source/check authority
+does not authorize another slice. The user's later request supplies Package 5's
+authority; deployment, restart, inspector activation and publication stay gated.
 
 **Earlier profiling checkpoint: complete; dominant production bottleneck identified.
 No optimization had been implemented at that checkpoint.** The user authorized local
@@ -44,11 +55,105 @@ than treating static complexity or acceptance-file elapsed time as attribution.
 The measured investigation below supplies the evidence. Relation reuse is now
 implemented and measured after the user's rebuild. The delivered coalescing slice removes
 redundant Sidebar catalogue admissions while preserving paint, mutation freshness,
-forced/ordinary semantics, failures and owned body settlement. Compact payloads
-remain later work. Obtain complete sandboxed acceptance; do not infer another
+forced/ordinary semantics, failures and owned body settlement. The active slice
+reduces catalogue JSON through lossless sharing, not truncated prompts or changed
+search semantics. Obtain complete sandboxed acceptance; do not infer another
 production speedup before separately authorized deployment and measurement.
 
 ## Plan
+
+### Package 5 — active: lossless compact catalogue transport
+
+The user requested the remaining payload slice. The consumer audit rejects a
+blind bounded `firstMessage` DTO: Agents filters the entire raw first message even
+when a title hides it; Activity/Agents/search expose full labels/tooltips; Sidebar
+and mobile collapse the complete skill envelope before their 50-unit fallback.
+Selection adopts catalogue rows directly, and refresh merges overwrite selected
+metadata. No browser uses catalogue text as clone/prompt/copy authority, but a
+finite prefix still cannot preserve the existing search/presentation contract.
+
+**Design:** an opt-in `compact=1` catalogue response may encode its `sessions` as
+`{format: 1, strings, rows}`. Share repeated text across firstMessage, directory/
+project identity, name/branch and subagent profile/description. Only encode when
+conservative byte savings cover the envelope; unique/small inputs retain ordinary
+arrays. Decode to exact ordinary SessionInfo rows before Sidebar/controller or
+navigation state sees them. Leave default HTTP arrays, server search, canonical
+scanner/reader data, persisted schema, request count and freshness policy intact.
+There is no new cache, file read, metadata authority or user-visible truncation.
+
+- [x] Audit actual search/title/preview/selection consumers, including Agents' full
+  four-field search, skill expansion, canonical name and selected-row merges.
+- [x] Independently review the lossless design and saved plan before source edits;
+  accepted refinements below resolve the saved-checklist omissions. No design
+  blocker remains; do not silently reduce consumer semantics.
+- [x] Add the stateless versioned codec and opt-in route projection; preserve all
+  metadata, empty/absent names, numeric fields, order, relation identities and
+  returned-object isolation. Reject bad versions/tables/references, never publish
+  partially decoded rows. Validate table strings and reject nonfinite, fractional,
+  negative and out-of-range references. Retain legacy arrays for rolling compatibility.
+- [x] Use one shared reply normalizer at all three HTTP boundaries: Sidebar,
+  workspace restore and selected-session hydration. Decode before publication;
+  leave direct detail/context and search matching unchanged.
+- [x] Verify actual codec round trips/byte savings/fallback, malformed wire data,
+  native route summary/force/runtime/gzip parity, frozen inputs, Unicode/escaping
+  and index-digit boundaries. Feed encoded HTTP bodies to mounted Sidebar and both
+  navigation paths; nine-subagent Agents search must find a late raw-message hit
+  despite its title and preserve labels/selection. Retain the native baseline red
+  and independently bypass each boundary's decoder for meaningful wiring reds.
+  Keep native lifetimes/test lanes; update the maintained session guide.
+- [x] Independently review settled source/tests; take the first coherent candidate
+  checkpoint with measured synthetic response bytes, not a production extrapolation.
+  Conservative saving includes JSON/UTF-8 escaping, index digit widths and the
+  table/envelope overhead. Measure identity and gzip bytes separately; do not add
+  adaptive double-compression or infer transfer savings from decoded JSON alone.
+- [ ] Rebase on current main and obtain complete Nix acceptance, normally
+  `nix run .#test -- all --workers 4 --jobs 12` if 32 CPUs/43 GiB admits overlap,
+  otherwise document the concrete fallback. Record candidate, source binding,
+  preparation/execution envelopes, full command runtime and retained failures.
+- [ ] Record completion and exact local integration through Git approval. Stop
+  before deployment/restart/live capture or another optional optimization.
+
+**Package-5 focused evidence:** native unchanged-production sharing regression
+failed its intended assertion (`format` undefined versus1), not static/import/setup,
+in **45.432s** (`baseline-red.log`, `/tmp/pi-web-test-core.QPt8CZ/run.json`). The
+first candidate run (**60.146s**) exposed three fixture assumptions: explicit
+backend admission needed the real codec; the selected-hydrator locator still
+expected an empty query; and an Agents assertion wrongly expected its hidden
+canonical title visible despite description precedence. Correct only those fixture
+expectations/capability wiring; no application workaround, timeout or error waiver.
+
+Final focused2 selected **11files /99tests**, all passed with static evidence in
+**67.826s**, `/tmp/pi-web-test-core.kgcPDX/run.json`, source
+`/nix/store/bk52l4br8qcj917dd2n4icis90qxm8af-source`, core output
+`/nix/store/j6jgvy4547argw8g39pnkqgqzmlzvavj-pi-web-core-checks`. Frozen synthetic
+1,000-row/20-prompt-group fixture: JSON **8,116,281 →335,795bytes**, gzip
+**35,341 →7,371bytes**. Those are actual generated-response counts, not measurements
+of the private production catalogue or a latency extrapolation. Pure codec file is
+F (in-memory inputs/gzip only); existing native/mounted owners retain their lanes.
+
+Three independent private exports bypassed exactly one HTTP decoder each. All
+passed statics and failed only their corresponding mounted case: Sidebar delivered
+an envelope instead of rows (`allSessions.find`); workspace adoption remained null;
+hydration retained `saved` instead of the full prompt. Runtime protocol failures
+in the first two are not misrepresented as assertion messages; hydration has the
+named full-text assertion. Their **66.541/72.911/73.245s** commands ran concurrently
+under one coordinated budget, so times are not additive or benchmark comparisons.
+Reports: `/tmp/pi-web-test-core.My1sts/run.json`,
+`/tmp/pi-web-test-core.yMSQMr/run.json`, `/tmp/pi-web-test-core.mK0Wwr/run.json`.
+Receiving production inputs stayed unchanged from focused2. Independent settled
+review found no application blocker; guide wording was narrowed to selected-slot
+validation and no codec-specific retries (existing summary fallback remains).
+
+All commands/logs/private fault exports remain under
+`/tmp/pi-web-catalogue-payload-evidence-1793089574/`. Full sandbox acceptance,
+exact integration and optional live comparison are not implied by this checkpoint.
+
+**Stop/limits:** if sharing does not remove meaningful response bytes, reconsider
+before optional expansion. Unique prompt text remains complete and can dominate;
+this slice does not bound decoded client memory, shrink the private index or prove
+a browser latency gain. Changing preview/search semantics, adding lazy full-text
+requests or persistent dictionaries requires a scope decision. Post-rebuild timing
+and the historical deferred SPA observation remain separately authorized follow-ups.
 
 ### Package 4 — completed: Sidebar catalogue refresh coalescing
 

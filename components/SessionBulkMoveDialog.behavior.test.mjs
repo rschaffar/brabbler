@@ -136,7 +136,7 @@ test('default Sidebar uncertain move retains selected unavailable history until 
         return { handled: true, data: { projectRoot: ROOT, mainCwd: ROOT, worktrees: [] } };
       }
       if (committed && req.url.pathname === '/api/sessions' && req.url.searchParams.get('force') === '1') {
-        exact(req, '/api/sessions', { force: '1' }, { cache: 'no-store' });
+        exact(req, '/api/sessions', { force: '1', compact: '1' }, { cache: 'no-store' });
         canonicalReads.push(req); return { handled: true, data: undefined };
       }
       if (committed && req.url.pathname === '/api/sessions/worktrees' && req.url.searchParams.get('project') === DEST) {

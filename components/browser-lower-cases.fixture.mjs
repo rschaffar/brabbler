@@ -22,7 +22,7 @@ export async function sidebar(t, { initial = IDS.map(id => session(id)), overrid
     }
     assert.equal(r.options.method ?? 'GET', 'GET', `undeclared write ${url}`);
     if (url.pathname === '/api/sessions') {
-      const query = Object.fromEntries(url.searchParams); assert.ok(['{}', '{"force":"1"}', '{"summary":"1"}'].includes(JSON.stringify(query)));
+      const query = Object.fromEntries(url.searchParams); assert.ok(['{"compact":"1"}', '{"force":"1","compact":"1"}', '{"summary":"1","compact":"1"}'].includes(JSON.stringify(query)));
       exact(r, url.pathname, query, { cache: 'no-store' }); return { sessions, sessionListVersion: 1, runningSessionIds: [] };
     }
     if (url.pathname === '/api/home') { exact(r, url.pathname); return { home: '/home/fixture' }; }

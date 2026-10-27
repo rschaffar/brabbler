@@ -48,7 +48,7 @@ export function sidebarRoutes(sessions, override, { listings = new Map([['/repo'
     assert.equal(options.method ?? 'GET', 'GET', `undeclared write: ${url.pathname}`);
     if (url.pathname === '/api/sessions') {
       const query = Object.fromEntries(url.searchParams);
-      assert.ok(JSON.stringify(query) === '{}' || JSON.stringify(query) === '{"force":"1"}' || JSON.stringify(query) === '{"summary":"1"}');
+      assert.ok(['{"compact":"1"}', '{"force":"1","compact":"1"}', '{"summary":"1","compact":"1"}'].includes(JSON.stringify(query)));
       exact(request, '/api/sessions', query, { cache: 'no-store' });
       return { sessions, sessionListVersion: 1, runningSessionIds: [] };
     }

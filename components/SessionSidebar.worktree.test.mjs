@@ -4,6 +4,7 @@ import test from 'node:test';
 import { act, createElement } from 'react';
 import { navigationRuntime, exact, session, click, button, inputText } from './navigation-runtime.fixture.mjs';
 import { sidebarRoutes } from './navigation-cases.fixture.mjs';
+import { encodeSessionCatalogue } from '../lib/session-catalogue-wire.ts';
 const oid = 'a'.repeat(40), tip = 'b'.repeat(40);
 const wt = { projectRoot: '/repo', projectKey: '/repo', isGit: true, isTopLevel: true, currentWorktreePath: '/repo/wt',
   worktrees: [{ path: '/repo', branch: 'main', isMain: true }, { path: '/repo/wt', branch: 'feature', isMain: false }],
@@ -107,8 +108,15 @@ for (const mode of ['create', 'attach']) test(`actual worktree ${mode} requires 
 
 test('Strict Sidebar warm bootstrap publishes once and skips unnecessary detail hydration', async t => {
   const catalogues = [], publications = [];
-  const r = await navigationRuntime(t, sidebarRoutes([session('a')], request => {
-    if (request.url.pathname === '/api/sessions') catalogues.push(request);
+  const text = 'full prompt beyond a bounded preview '.repeat(100) + 'tail sentinel';
+  const saved = [session('a', '/repo', { firstMessage: text }), session('b', '/repo', { firstMessage: text })];
+  const encoded = JSON.parse(JSON.stringify(encodeSessionCatalogue(saved))); assert.equal(encoded.format, 1);
+  let reply = { sessions: encoded, sessionListVersion: 1, runningSessionIds: [] };
+  const r = await navigationRuntime(t, sidebarRoutes(saved, request => {
+    if (request.url.pathname === '/api/sessions') {
+      catalogues.push(request);
+      return { handled: true, data: reply };
+    }
   }));
   const activity = r.graph.createActivityClientController({ visible: () => false });
   r.releaseOnClose(() => activity.dispose());
@@ -116,12 +124,22 @@ test('Strict Sidebar warm bootstrap publishes once and skips unnecessary detail 
     onSelectSession() {}, onSessionsChange: rows => { if (rows.length) publications.push(rows); } };
   await r.render(createElement(r.graph.SessionSidebar, props)); await r.settled();
   assert.equal(catalogues.length, 1, 'Strict replay must not create a second forced bootstrap');
-  exact(catalogues[0], '/api/sessions', { summary: '1' }, { cache: 'no-store' });
+  exact(catalogues[0], '/api/sessions', { summary: '1', compact: '1' }, { cache: 'no-store' });
   assert.ok(r.view.container.querySelector('[data-session-id="a"]'));
   assert.equal(r.pendingTimerCount(750), 0, 'complete warm summary needs no forced hydration');
   assert.ok(publications.length > 0);
+  assert.deepEqual(publications.at(-1), saved, 'actual Sidebar decodes before catalogue/controller publication');
+  const beforeInvalid = publications.length;
+  reply = { ...reply, sessions: { ...encoded, rows: [encoded.rows[0], { ...encoded.rows[1], firstMessage: -1 }] } };
   await r.render(createElement(r.graph.SessionSidebar, { ...props, refreshKey: 1 })); await r.settled();
-  assert.equal(catalogues.length, 2); exact(catalogues[1], '/api/sessions', { force: '1' }, { cache: 'no-store' });
+  assert.equal(catalogues.length, 2); exact(catalogues[1], '/api/sessions', { force: '1', compact: '1' }, { cache: 'no-store' });
+  assert.equal(publications.length, beforeInvalid, 'bad later row cannot partially publish');
+  assert.ok(r.view.container.textContent.includes('Invalid compact session catalogue'));
+  reply = { ...reply, sessions: encoded };
+  await r.render(createElement(r.graph.SessionSidebar, { ...props, refreshKey: 2 })); await r.settled();
+  assert.equal(catalogues.length, 3, 'explicit good refresh recovers without automatic retry');
+  assert.deepEqual(publications.at(-1), saved);
+  assert.equal(r.view.container.textContent.includes('Invalid compact session catalogue'), false);
 });
 
 test('held startup summary coalesces real version and unlisted-running notification refreshes', async t => {
@@ -142,7 +160,7 @@ test('held startup summary coalesces real version and unlisted-running notificat
   assert.equal(catalogues.length, 1, 'real passive demands wait for the held summary');
   await r.reply(catalogues[0], { sessions: [session('a')], sessionListVersion: 1, runningSessionIds: ['a'] });
   assert.ok(r.view.container.querySelector('[data-session-id="a"]'), 'summary paints before the forced body settles');
-  assert.equal(catalogues.length, 2); exact(catalogues[1], '/api/sessions', { force: '1' }, { cache: 'no-store' });
+  assert.equal(catalogues.length, 2); exact(catalogues[1], '/api/sessions', { force: '1', compact: '1' }, { cache: 'no-store' });
   await r.reply(catalogues[1], { sessions: [session('a')], sessionListVersion: 2, runningSessionIds: ['a'] });
   await activity.whenIdle(); await r.settled();
   assert.equal(catalogues.length, 2); assert.equal(r.pendingTimerCount(750), 0);

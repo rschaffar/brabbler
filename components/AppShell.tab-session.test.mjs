@@ -138,12 +138,21 @@ test('late uncertain-Move settlement never restores its captured source after ca
 });
 
 test('real created and forked transitions share saved-session tab/workspace persistence outside Sidebar selection', async t => {
+  const { encodeSessionCatalogue } = await import('../lib/session-catalogue-wire.ts');
+  const text = 'full hydration prompt '.repeat(100) + 'tail sentinel';
+  const saved = session('saved', '/repo', { name: 'Saved title', firstMessage: text });
+  const forked = session('forked', '/repo', { name: 'Fork title', firstMessage: text });
+  const encoded = JSON.parse(JSON.stringify(encodeSessionCatalogue([saved, forked]))); assert.equal(encoded.format, 1);
   const h = await shellHarness(t, { route(request) {
-    exact(request, '/api/sessions', {}, { cache: 'no-store' }); return { sessions: [session('saved'), session('forked')] };
+    exact(request, '/api/sessions', { compact: '1' }, { cache: 'no-store' }); return { sessions: encoded };
   } });
   await h.command(c => c.navigation.handleNewSession('draft', '/repo'));
   await h.command(c => c.navigation.handleSessionCreated(session('saved'), 'new:draft:/repo')); await h.settled();
+  assert.equal(h.current.state.selectedSession.firstMessage, text, 'created-session hydration decodes the HTTP body');
+  assert.equal(h.current.state.selectedSession.name, saved.name);
   assert.equal(h.graph.tabMemory.getTabOpen().sessionId, 'saved'); assert.equal(h.graph.workspaceMemory.getLastOpenSession('/repo'), 'saved');
   await h.command(c => c.navigation.handleSessionForked('forked')); await h.settled();
+  assert.equal(h.current.state.selectedSession.firstMessage, text, 'fork hydration preserves complete metadata');
+  assert.equal(h.current.state.selectedSession.name, forked.name);
   assert.equal(h.graph.tabMemory.getTabOpen().sessionId, 'forked'); assert.equal(h.graph.workspaceMemory.getLastOpenSession('/repo'), 'forked');
 });

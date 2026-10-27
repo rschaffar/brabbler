@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActivityClientController } from "@/lib/activity-client-controller";
 import { SessionCatalogueLoader, sessionListUrl, type CatalogueReply } from "@/lib/session-catalogue-loader";
 import { useNavigationWork } from "@/lib/navigation-work";
+import { readSessionCatalogueReply } from "@/lib/session-catalogue-wire";
 import type { SessionInfo } from "@/lib/types";
 
 /** The Sidebar's single catalogue lifecycle, separate from Activity receipt authority. */
@@ -19,7 +20,7 @@ export function useSessionCatalogue(activityController: ActivityClientController
     async read(mode) {
       const response = await fetch(sessionListUrl(mode === "summary", mode === "force"), { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return await response.json() as CatalogueReply;
+      return readSessionCatalogueReply<CatalogueReply>(response);
     },
     publish(data) {
       latestReply.current = data;

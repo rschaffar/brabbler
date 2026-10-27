@@ -19,7 +19,7 @@ interface Ports {
 type Waiter = { kind: "version" | "detail" | "force"; after: number; resolve(value: boolean): void };
 
 export function sessionListUrl(summary: boolean, force: boolean): string {
-  return summary ? "/api/sessions?summary=1" : force ? "/api/sessions?force=1" : "/api/sessions";
+  return summary ? "/api/sessions?summary=1&compact=1" : force ? "/api/sessions?force=1&compact=1" : "/api/sessions?compact=1";
 }
 
 /** One Sidebar lifetime; metadata transport coordination, never mutation authority. */

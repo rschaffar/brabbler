@@ -12,6 +12,8 @@ import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import type { ToolEntry } from "@/lib/tool-presets";
 import { mergeCatalogRow } from "@/components/session-catalog-helpers";
 import { useNavigationWork } from "@/lib/navigation-work";
+import { readSessionCatalogueReply } from "@/lib/session-catalogue-wire";
+import { sessionListUrl } from "@/lib/session-catalogue-loader";
 
 function parkedNewSessionDraftKey(cwd: string): string { return `parked-new:${cwd}`; }
 
@@ -215,8 +217,8 @@ export function useSessionNavigation(state: ReturnType<typeof useNavigationState
       adopt({ sessions: sessionCatalog });
       return;
     }
-    work.observe(fetch("/api/sessions")
-      .then((r) => (r.ok ? (r.json() as Promise<{ sessions: SessionInfo[] }>) : null))
+    work.observe(fetch(sessionListUrl(false, false))
+      .then((r) => (r.ok ? readSessionCatalogueReply<{ sessions: SessionInfo[] }>(r) : null))
       .then(adopt)
       .catch(() => {
         // Network hiccup: keep the remembered session for a later retry.
@@ -386,8 +388,8 @@ export function useSessionNavigation(state: ReturnType<typeof useNavigationState
   }, [closeOverview, invalidateWorkspaceRestore, router, isMobile, activeNewSessionDraftKeyRef, chatInputRef, setSelectedSession, setNewSessionCwd, setNewSessionDraftId, setPersistentNewSessionDraftId, setSessionKey, setChatHidden, setBranchTree, setBranchActiveLeafId, setSystemPrompt, setSystemTools, setSystemInfoLoading, setActiveTopPanel, setSidebarOpen]);
 
   const hydrateSelectedSession = useCallback((sessionId: string) => {
-    work.observe(fetch("/api/sessions", { cache: "no-store" })
-      .then((r) => (r.ok ? (r.json() as Promise<{ sessions: SessionInfo[] }>) : null))
+    work.observe(fetch(sessionListUrl(false, false), { cache: "no-store" })
+      .then((r) => (r.ok ? readSessionCatalogueReply<{ sessions: SessionInfo[] }>(r) : null))
       .then((d) => {
         const full = d?.sessions.find((s) => s.id === sessionId);
         if (!full) return;
