@@ -68,6 +68,15 @@ On mobile, New closes covering Activity/Starred/Git overviews and reveals chat i
 
 `lib/draft-store.ts` keeps text and image drafts in page memory and mirrors **text only** to per-draft versioned browser `localStorage` keys after edits. Reload/browser restart can restore literal unsent text for that session in the same browser profile/origin. Rekey, clear-on-send and rejected-submission restoration update storage too. Images remain memory-only. Storage corruption, privacy restrictions or quota failures fall back to in-page drafts; persistence is best-effort, not a server save or cross-device synchronization. Other open tabs are independent editors, not live-synchronized drafts; their last successful stored edit is what a new page can restore. Failed writes/removes cannot resurrect old stored text within the current page. Passive welcome drafts keep their existing project parking lifecycle.
 
+Guided-review batches use the existing selected chat only. FileWorkspace scopes
+its optional handoff callback to the visible active view; AppShell validates the
+preview's captured destination against its latest selected session and mounted
+composer. `insertText(text, {atEnd:true})` appends the exact delimited batch without
+replacing a cursor selection or changing attachments. It rejects an absent textarea.
+Other insertion callers retain their cursor semantics. Preparing/drafting does not
+create a session, start an agent, submit text or approve tests/fixes/Git. Normal Send
+is a second action; the notebook persists Prepared/Drafted, not a sent receipt.
+
 ### Fresh composer and quote focus
 
 Explicit New actions request desktop composer focus once after the intended fresh draft mounts, with the caret after any restored draft. The request is bound to draft identity and navigation revision; mobile, visible modal/native dialogs, inline card/quote/picker ownership, subsequent pointer/key interaction and intervening control focus take priority. Covered/inert, hidden, disabled and composing textareas refuse the request. Ordinary mounting, session selection, polling and streaming never request this autofocus. The imperative focus handle changes only DOM focus/selection, not draft text or session configuration.

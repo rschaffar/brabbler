@@ -131,8 +131,9 @@ contact remotes, switch branches, invoke an agent or run commands/tests.
 ## Scope and next steps
 
 The guided reader below adds a notebook manifest without changing `pi-review` v1.
-There are still no executable cells, portable aliases, copyable app URL links,
-human review acknowledgments, persistent notes or computed change accounting.
+There are still no executable cells, portable aliases or copyable app URL links.
+The optional reviewer record described below adds explicit progress, answers,
+feedback and dependency-based re-review accounting, not approval receipts.
 Ordinary file links still open saved working content, not historical permalinks.
 
 Keep test evidence honest in the prose: identify the tested candidate, command,
@@ -140,12 +141,12 @@ result, artifact and limitations. Opening is not reviewing; reviewing is not
 approval; a coverage summary is not new execution evidence. Future progression,
 notes and coverage support must preserve these distinctions.
 
-## Guided folders (reader slice)
+## Guided folders
 
-**Status:** implemented reader slice, not completion of the full guided-reader
-increment. Installed-browser/native decoding checks, independent review and complete acceptance remain pending in the
-[active plan](plans/2026-10-23_guided-review-notebooks-plan.md). No forms, resume
-sidecars, progress writes or agent handoff are implemented.
+The guided reader and optional interactive reviewer record share the same evidence
+readers. The [active plan](plans/2026-10-23_guided-review-notebooks-plan.md) records
+candidate-specific verification: focused checks are not full browser/deployment
+acceptance. Reading does not require enabling recording.
 
 Open `index.md` in Files **Preview**, then choose **Start guided reading**.
 Ordinary preview/scroll does not load chapters or notebook Git evidence. Start
@@ -160,8 +161,9 @@ Local supported prose links inside a step can be explored in the evidence area;
 **Return to current step** restores its selected targets and heading focus. Other
 file links use ordinary Files navigation. **Return to document** unmounts evidence
 and restores the Start trigger. All reader navigation is local to this file view,
-not session cwd, sidebar checkout or terminal navigation. Selection and reading
-state are in memory only. Step/target selection and source/diff mode survive target
+not session cwd, sidebar checkout or terminal navigation. Evidence selection and reading
+state remain in memory. The separately activated reviewer record persists resume,
+explicit progress, answers and feedback; it does not persist every diff viewport. Step/target selection and source/diff mode survive target
 switches, exploration and Back/Next during this activation. The last **32 immutable
 file DiffReviewModels** retain Before/After, full/gap context, search and reading
 anchors across renderer remounts (least-recently-used eviction). Returning still
@@ -244,6 +246,171 @@ fallback. Native decoding/plugin behavior and memory limits remain browser-owned
 byte admission is not a full malware/content or decoded-pixel validator. Pinned code
 never uses this mutable asset API. No PDF selection anchors are promised. Ordinary
 document previews retain their existing defaults.
+
+## Interactive reviewer record
+
+1. Start guided reading. **Load saved review record** reads history and restores
+   the last saved step without enabling writes. **Enable review recording** is a
+   separate explicit action. The panel shows the physical notebook/index and fixed
+   `review-data` destination: local files only, never automatically staged,
+   committed or published. A reference-only index cannot authorize sibling reads
+   or writes; read-only/unavailable recording leaves the reader usable.
+2. Use Back/Next freely. Navigation only records a resume position after recording
+   is enabled; it does not mark a step reviewed. Choose **Not reviewed**, **In
+   progress**, **Needs attention** or **Reviewed** explicitly. Required authored
+   questions need a *current-version recorded outcome* before Reviewed, not a
+   correct answer. Answer, unsure, not-applicable and skip are distinct; all four
+   count as recorded presence. Unsaved form fields alone do not count.
+3. Add a question, finding or guide issue. **Anchor to this step** deliberately
+   excludes a target/range. Alternatively capture a selected target or supported
+   source/text selection. Pinned source includes exact OID/path/one-based range;
+   diffs use Pierre's public committed-selection callback, actual side/range and
+   loaded immutable context, forwarded through the shared source/commit/stack
+   readers. Cross-side ranges are not guessed. Generic prose/text retains the
+   quote/context without invented source coordinates. Native images/PDFs/web links
+   support target-level feedback only, not image regions/PDF text coordinates.
+   Source/prose selection also has explicit capture controls for keyboard users.
+4. The tray spans chapters. Edit feedback or explicitly Resolve/Reopen it; neither
+   Reviewed nor an agent reply resolves anything. Deleted step/target anchors,
+   old answer definitions, marks and feedback edits remain accessible in history
+   and recovery JSON; old coordinates are never silently rebased. Guidance-only
+   anchors cannot become recorded findings through an edit or stored-history replay; text
+   edits still preserve unavailable/deleted anchors.
+5. Select items, then **Prepare in chat** to freeze item versions and their relevant
+   guidance/question/evidence identities. Preview shows the exact delimited prompt,
+   existing session ID/label and reply path. Selection and preparation send nothing.
+   **Add batch to chat draft** checks the *currently selected* session still matches,
+   appends after existing unsent text without replacing its selection, and keeps
+   attached images. Missing/switched/unmounted chat refuses and retains the preview.
+   It never creates a session or submits a model turn/agent-execution command.
+   Revealing the existing chat may trigger its normal read-only tool catalogue
+   request; that is not a prompt or execution. Normal chat **Send** is a second
+   explicit action. Saved batch status is Prepared or Drafted, never a sent/executed
+   receipt. No fixes, tests, Git operations or publication are authorized by it.
+6. The prompt instructs the agent to write the batch's fixed raw JSON reply file,
+   or return JSON for **Import pasted JSON reply** when file writing is unavailable.
+   **Import agent reply file** uses the same validation/copy pipeline. Replies name
+   the frozen batch/item versions and investigated fingerprint; unknown, duplicate,
+   stale, orphan or forged reviewer fields refuse visibly. Partial replies are
+   allowed and shown incomplete. Imported replies appear beside the original item;
+   later feedback versions label their earlier investigation historical/stale.
+
+### Authored questions
+
+A top-level `pi-question` fence belongs to the preceding step (up to six per step).
+It has `version:1` plus the existing question-set fields (`id`, `shortLabel`,
+`question`, `type`, optional `context`, `required`, `options`) and optional
+`explanation` (8,000 characters). IDs/options use the existing 1–64 character
+`[a-zA-Z0-9_-]` grammar, including leading underscores/hyphens. Question identity is
+step-scoped; options are question-scoped. All fields/options are strict; duplicate
+properties, unknown fields, excessive nesting and duplicate question IDs refuse.
+
+````markdown
+```pi-question
+{"version":1,"id":"_boundary","shortLabel":"Boundary","question":"Which failure paths deserve closer inspection?","type":"multiple","required":true,"options":[{"id":"early","title":"Early rejection"},{"id":"late","title":"Late extraction"},{"id":"none","title":"None","exclusive":true}],"explanation":"Author guidance: inspect both call order and failure propagation; this is not grading."}
+```
+````
+
+Text, single and multiple choice reuse `QuestionFields` and the pure selection
+helper from live question sets; recommendations are not defaults, exclusive choices
+remain exclusive, alternative text and additional details remain separate. Notebook
+contexts use restricted file Markdown (no automatic images/live review cards), with
+presenter work owned by the existing observer. Radio groups are scoped to each
+live view. Reveal explanations are attributed to the author, not graded. Notebook
+outcomes are an adapter, not a relaxation of live `normalizeSetAnswer`: a required
+live question still rejects skip. No blocking request/receipt lifecycle is mounted.
+
+### Material changes, missing evidence and recovery
+
+On explicit record loading/activation, current-step navigation, refresh and decision
+writes, Pi Web checks that step's dependencies. Ordinary document previews and
+other chapters do not trigger Git/media inspection. Fingerprints cover effective
+step title/prose, question definitions, exact pinned target identities and relevant
+local-asset bytes. They exclude branch-head advancement, branch authority labels,
+chapter reorder and sidecar writes. JSON object key order is normalized. Prose
+normalizes CRLF/CR to LF, trailing line whitespace and outer blank space only;
+other prose/Markdown changes are material. Question-version fingerprints include
+relevant step/evidence dependencies. Changed required questions need fresh outcomes.
+
+Missing objects/authority/assets are **Unavailable**, not fabricated changed content.
+Guidance has its own version identity: non-affirmative progress and plain step
+questions/guide issues can still be recorded with explicit guidance-only provenance.
+Unsure/not-applicable/skip can be recorded in an unavailable context, but cannot
+silently satisfy a recovered material version. Reviewed/affirmative answers remain
+fail-closed. Displayed mutable snapshots report their actual response/byte digest;
+refreshing identity alone cannot record old displayed A as inspected B. Use **Reload
+displayed evidence** and refresh identities, or reload changed authored chapters.
+The UI never silently rebinds old prose, selections or answers to new material.
+Reloading/changing a displayed mutable snapshot clears its current text selection:
+capture again from the new snapshot, or use the target-level fallback. Historical
+anchors remain unchanged.
+
+Saving/Saved, Conflict, Possibly committed/no acknowledgement, and error states are
+explicit. There is no automatic retry or last-write-wins overwrite. Reload the
+record and reconcile the submission ID/exact operation (pasted reply bytes also
+match the imported digest) before explicit retry/discard. Lost acknowledgement does
+not prove nothing landed. Unsaved fields and batch-bound pasted replies recover
+best-effort in browser localStorage, separately per file-view owner. The recovery
+picker explicitly copies another pane/previous activation's record without changing
+its original. Each record is at most 2 MiB, 512 question versions and 100 reply
+drafts; inventory examines at most 256 browser keys. Nothing silently prunes history.
+Malformed/oversized recovery bytes are preserved, never applied to React or silently
+overwritten; export then explicitly discard. That action validates and persists
+current fields before clearing the warning, so an immediate reload does not lose
+kept edits; failure preserves the rejected record. Storage denial/quota failure warns and
+keeps fields/export in memory. This is local browser recovery, not a secret store,
+server save, live multi-tab collaboration or cross-device synchronization.
+
+### Sidecar protocol and finite limits
+
+```text
+review-data/
+  reviewer/0000000001.json        # complete version-1 snapshots, append only
+  reviewer/0000000002.json
+  replies/<batch-id>.json        # mutable agent raw output, imported only explicitly
+  imported-replies/<batch-id>-<sha256>.json  # immutable exact-byte private copies
+```
+
+There is no mutable `current.json` authority pointer. GET validates without mkdir,
+import, cleanup or migration. Writes independently reuse the lexical/physical
+allowed-root boundary, regular no-follow bounded files, directory/index device/inode
+identity and OS mode/access checks. They recapture/revalidate around asynchronous
+request reads and effects. Only literal one-level folders (0700) and files (0600)
+are created; existing paths are never chmodded and metadata never adds roots.
+Snapshots carry notebook ID, consecutive sequence, previous exact-byte SHA-256,
+submission ID and complete reviewer event history. Unknown/malformed history,
+unsupported versions, holes and changed hashes preserve bytes and refuse.
+
+Append stages random same-directory `wx` bytes, writes fully, fsyncs, revalidates
+history/expected tip, exclusively **links** the next numbered slot, fsyncs the
+directory, and validates committed history again. No overwrite rename or exclusive-
+copy fallback exists. Only the owned stage under the same captured identity is
+cleaned; known bounded private-stage leftovers have no authority and are not
+silently removed. Unsupported hardlinks/directory fsync explicitly refuse recording.
+Cooperating same-slot writers conflict; errors after installation are possibly
+committed. Import checks the expected tip before effects, reserves staging/install
+inventory capacity, validates the frozen investigation and privately copies exact
+raw bytes (never hardlinks mutable agent output). Identical submission/bytes reconcile
+without another revision; same submission with different bytes conflicts. A late
+race after copy can leave a preserved unreferenced immutable copy, not a decision.
+
+Limits: 2 MiB request/snapshot, depth 32, 512 reviewer events, 1,024 numbered revision
+ceiling and 64 MiB reviewer-history bytes; every event consumes a revision, so the
+512-event bound is normally reached first. At most 1,040 entries per sidecar child
+directory (including known stages), reserving two entries for a pending stage/install;
+reply JSON is 256 KiB, batches at most 100 items. Current-step local-asset inspection
+consumes at most **32 MiB including overflow-sentinel reads**; it bounds each read
+by the remaining budget before reading and stops later file bodies after exhaustion
+or a failed read. Individual reader asset limits above remain unchanged. Resume
+writes coalesce while another write owns admission. Quota errors retain drafts and
+history; there is no silent pruning/migration on open.
+
+These sidecars are not cryptographic reviewer attestations. Arbitrary external
+editors are not strictly excluded; their changes are never overwritten, hashes and
+expected tips are checked, and post-link ambiguity is surfaced. A fresh client
+cannot detect a completely rewritten valid chain without an independent checkpoint.
+Fsync/link tests are not a universal power-loss, filesystem or browser-plugin guarantee.
+See [ADR 0036](adr/0036-guided-review-recording.md) for the ownership decision.
 
 ### Contextual authoring example
 

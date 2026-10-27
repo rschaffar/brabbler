@@ -12,7 +12,10 @@ review loop.
 the sample chapter and static desktop/narrow-screen sketches. After reviewing
 them, the user approved the rough interaction direction and authorized implementation,
 including architectural refactoring and adaptation of existing components where
-needed. The drawings are not a pixel-perfect contract. Migration of another
+needed. The drawings are not a pixel-perfect contract. The later request explicitly
+said to implement until done with the **full plan**; the old intermediate reader-only
+user-validation stop is removed. This records authority, not invented live runtime
+validation. Migration of another
 repository's review material, external authoring-session launch, remote publication
 and installed-service changes remain unauthorized.
 
@@ -100,14 +103,15 @@ not completed implementation or verification.
 
 ## Architecture
 
-The reader contracts are now implemented in the receiving candidate and documented
-in `docs/review-notebooks.md`; the review-data/forms/handoff sections below remain
-proposals for Increment 2, not delivered behavior. The current slice and remaining
-Increment 1 blockers are tracked below.
+Reader contracts are merged. The receiving workflow candidate implements the
+review-data/forms/handoff contracts, documented in `docs/review-notebooks.md` and
+ADR 0036. These sections describe the agreed architecture, not another reader-only
+milestone. Candidate verification and parent-owned final gates are tracked below.
 
 ### Package, identity and authoring
 
-A conceptual package, with exact sidecar names/schema still to be designed:
+The implemented package uses strict index/chapters and the fixed numbered reviewer,
+raw-reply and immutable-import sidecars described in the maintained guide:
 
 ```text
 review/
@@ -189,7 +193,7 @@ Opening a notebook does not grant write permission. Design explicit write
 activation through the established file/security boundary; reference-only access
 must stay read-only. Do not create a new broad allowed root from notebook metadata.
 
-Propose a single-reviewer initial UX with conflict detection for concurrent tabs
+Use the implemented single-reviewer initial UX with conflict detection for concurrent tabs
 and external/agent edits, not live collaboration. Validate versioned schemas,
 bounded payloads, literal destinations and physical containment; reject symlink
 escapes and unexpected files. Use atomic durable writes and expected-revision
@@ -224,8 +228,9 @@ coordinates; never guess an anchor against newer material.
 
 A selected feedback batch freezes item IDs/versions and relevant guide/evidence
 identities. Preview its destination, request and included content before explicit
-handoff. Decide whether the transport drafts into an existing session or performs
-an explicitly confirmed send; do not launch sessions or agents automatically.
+handoff. Draft through FileWorkspace/FileViewer into the existing selected chat, validating
+the latest session ID in AppShell. Normal chat Send is a second explicit action;
+do not launch sessions or agents automatically.
 Submitted review prose is untrusted task material, not system instructions.
 
 Replies reference the exact batch/item versions and investigated material, with
@@ -263,11 +268,78 @@ answers to a new question version.
 
 ## Current receiving candidate
 
-Writer checkout: `guided-review-reader`, branch `feat/guided-review-reader`, based on
-main `3650d2e857f18c7dbcef412f44e435c0f5d363b3`. One receiving candidate; source
-writing is stopped for final review and acceptance. The parent used CodeGraph and
-coordinated a sole implementation writer whose tools required targeted ordinary
-reads. No installed-service access or remote operations occurred.
+Writer checkout: `guided-review-workflow`, branch `feat/guided-review-workflow`, based
+on main `74c4fdaf659df2509a8ee3a452a82edaf3d5ff51`. Sole source writer; parent owns Git
+lifecycle, final independent review, installed bridge and complete acceptance. No
+service access, dev server, checkout production build, staging/commit or remote
+operation occurred; other repositories/worktrees were not mutated.
+
+**Interactive implementation:** strict reviewer schema/reducer, fsync/exclusive-link
+numbered snapshot store/API, explicit recording vs reading, reload resume/four
+states, shared text/single/multiple fields, editable versioned outcomes, attributed
+explanations, actual step/target/text/range anchors, cross-chapter editable tray,
+versioned historical/orphaned records, frozen selected batches, exact current-chat
+composer draft, immutable raw-file/pasted-JSON reply imports and reviewer-only
+resolution. Per-live-view/workspace browser recovery validates nested shapes,
+preserves rejected bytes/newer edits and keeps batch-bound pasted drafts/previews.
+
+Dependency identities exclude branch advancement/chapter reorder/sidecars and bind
+actual displayed mutable bytes. Unavailable evidence still permits guidance-only
+non-affirmative progress/step concerns and explicit unsure/NA/skip; these never
+silently satisfy recovered material or allow Reviewed. Current-step local-asset
+reads are bounded by the remaining aggregate budget before body consumption.
+
+Independent reviews of `/tmp/pi-web-test-source-mZbSDp/source` found three storage/
+ID issues and eight UI/lifecycle issues. Their corrections include pre-effect import
+CAS/capacity, exact-byte retry reconciliation, existing leading `_`/`-` question IDs,
+displayed-snapshot binding, full recovery validation, stale selection failure fences,
+restricted observed contexts, independent pane radios/recovery, per-batch JSON,
+exact submitted-field revisions and explicit plain-step anchors. Parent additionally
+identified aggregate read accounting and unavailable-evidence challenge gaps; actual
+native/mounted regressions now cover corrections. These owners changed from that
+snapshot: parent final delta review is required, not unchanged-source clearance.
+
+**Latest delta from reviewed thNSFa:** enforce guidance-only/non-finding identity
+for every feedback version and stored replay; invalidate a mutable snapshot's old
+text selection on displayed body/generation changes; persist current fields before
+explicitly discarding malformed recovery. Native/mounted regressions cover rejected
+conversion without tip/byte effects, deleted-anchor text edits, both A/B selection
+orders and immediate recovery reload. The UI mirrors the all-version Save gate;
+incomplete local classification drafts remain recoverable without becoming reviewer
+operations. Removing each correction meaningfully fails
+its named runtime assertions; faults are restored.
+
+Parent's installed Markdown attempt failed the new blanket agent-POST count on an
+exact existing-session `get_tools` catalogue read, not an auto-prompt. The bridge now
+retains method/path/body records for every observed agent request and allows only
+that exact known read-only non-GET tuple for the fixture session. Prompt/execution,
+other-session, extra-key, malformed and new-session commands fail in actual helper
+regressions. No old native/read-only assertion or console/HTTP failure is filtered.
+Parent browser failure and the required rerun are retained in the evidence ledger.
+
+**Final focused evidence:** the post-review candidate passed **16 files / 82 tests**
+and static checks in **70s**; exact selection/snapshot/artifacts are below. Earlier
+thNSFa (15/79), correction regressions (6/39) and all first failures remain historical
+input-bound evidence. Five earlier plus three latest actual production faults failed
+named runtime assertions and were restored. Raw commands/reports/chronology:
+[workflow evidence](assets/guided-review-notebooks/workflow-evidence.md). Final
+composed focused evidence is recorded below. New test files retain explicit E
+holds; no browser assertions/input chains were retired.
+
+**Remaining gates are verification, not deferred feature scope:** parent independent
+delta review, installed Markdown desktop/touch workflow and complete
+core/browser/service acceptance. Application/test/bridge source writing is stopped;
+only this final evidence/status text follows the pass. No browser/full-all execution
+is performed by this writer.
+The full plan stays active until these pass. No intermediate reader-only runtime
+user-validation pause remains; rough interaction direction is already approved.
+Parked authoring packaging/prompt work remains with its existing owner.
+
+### Historical merged-reader implementation
+
+The following describes the earlier reader candidate and its input-bound evidence,
+not current workflow execution. Its parent used CodeGraph and targeted ordinary
+reads. Complete reader acceptance remains historical evidence, not this candidate's.
 
 **Implemented:** strict AST `pi-notebook` v1 manifest / top-level `pi-step` v1
 boundaries; unchanged strict `pi-review` v1; distinct `pi-evidence` v1 compare,
@@ -367,24 +439,23 @@ rebased onto local main `4422eedcdcd407f536c629a4c7eaf5fbc84a0d29`, passes compl
 core/browser/terminal/service acceptance. Evidence below binds that exact candidate;
 subsequent plan-only status text does not constitute a new runtime execution.
 
-**Remaining Increment 1 gate:** user validation of the usable reader. No PDF
-selection-anchor or cross-browser native-plugin guarantee; more-than-32-model
-eviction is an explicit bound.
-
-Increment 2 sidecars/forms/handoff remains a separate implementation package;
-parked authoring packaging/prompt work remains with its existing owner.
+The old **intermediate user-validation stop** is superseded by the explicit request
+to complete the full plan after rough interaction approval. No runtime validation
+is invented. PDF region/text anchoring and cross-browser native-plugin guarantees
+are not promised; the 32-model bound remains explicit. Interactive implementation
+is now in the receiving candidate above.
 
 ## Plan
 
 ### 0. Close design boundaries before feature code
 
-- [ ] Inspect the then-current notebook, file/security/write, question, session and
+- [x] Inspect the then-current notebook, file/security/write, question, session and
   diff contracts, coordinating the separate authoring-guidance work; record exact
   reused owners and bounded extension points in this plan.
-- [ ] Specify package metadata, IDs, repository mapping, base/candidate comparison,
+- [x] Specify package metadata, IDs, repository mapping, base/candidate comparison,
   non-code provenance/renderer limits and navigation state; validate with one
   example folder covering a feature range and a second repository.
-- [ ] Specify sidecar write authorization, schemas, conflict/recovery behavior,
+- [x] Specify sidecar write authorization, schemas, conflict/recovery behavior,
   reviewer/agent ownership, invalidation rules and handoff transport; review these
   boundaries before implementing persistence or session integration.
 - [x] Produce a desktop/narrow-screen interaction sketch and a realistic sample
@@ -393,7 +464,7 @@ parked authoring packaging/prompt work remains with its existing owner.
 - [x] Obtain user acceptance of the interaction specimen; the user approved the
   rough design after clarifying existing-component reuse and separately authorized
   implementation and architectural refactoring. No remote/service authority given.
-- [ ] Map shared reader/form primitives and refactor cohesive production owners as
+- [x] Map shared reader/form primitives and refactor cohesive production owners as
   needed, preserving existing defaults and regression coverage; avoid duplicating
   diff controls, reading state, immutable loaders or blocking-question lifecycles.
 
@@ -417,29 +488,40 @@ parked authoring packaging/prompt work remains with its existing owner.
   contracts. No parked prompt/packaging work or exact-mode behavior was changed.
 - [x] Run focused checks, meaningful defect controls, independent boundary review
   and full Nix acceptance; exact candidate, command, results and artifacts below.
-- [ ] Obtain user validation of the usable reader before calling Increment 1 fully
-  accepted. Increment 2 remains pending and the overall plan stays active.
+- [x] Remove the superseded reader-only validation stop: rough direction is approved
+  and the user requested full implementation. No runtime user validation is invented.
 
 ### 2. Usable interactive review loop
 
-- [ ] Add explicitly activated, authorized sidecar persistence for resume/review
-  states with atomic writes, expected revisions and recovery; verify read-only
-  access, reload/restart, path escapes, interrupted writes and conflicting tabs.
-- [ ] Add asynchronous authored forms and versioned answers, including required
-  response gating only for Reviewed; verify text/choice/explanations, distinct
-  unsure/NA/skip, answer editing, free navigation and no live agent blocking.
-- [ ] Add anchored questions/findings/guide issues and a selectable review tray;
-  verify exact source/diff/text identity, supported renderer selections, target
-  fallback and preservation of orphaned/deleted anchors.
-- [ ] Add previewed explicit feedback-batch handoff and validated per-item agent
-  replies beside originals; verify frozen batch identities, partial/duplicate/stale
-  responses, no implicit implementation authorization and reviewer-only resolution.
-- [ ] Add dependency-based stale/re-review accounting with preserved history;
-  verify changed evidence/questions/assets affect only dependent items and that
-  branch advance, reorder and sidecar updates do not invalidate pinned reviews.
-- [ ] Update the maintained notebook/feature/architecture/question guides and ADR
-  boundaries as appropriate; run focused contracts and independent safety review,
-  then complete acceptance and user validation of the full feedback loop.
+- [x] Implement explicit authorized recording, numbered durable append/CAS,
+  recovery, resume and four states. Actual native/model owners cover inert GET,
+  independent roots/symlinks, async-body swaps, short writes/fsync ambiguity,
+  tamper/holes, bounded inventory and gated two-process same-slot conflict.
+- [x] Implement shared asynchronous text/single/multiple forms, editable versioned
+  outcomes, attributed explanations and required-presence gating only for Reviewed.
+  Actual model/mounted owners cover explicit outcomes, inherited/leading `_`/`-`
+  IDs, retained drafts, unavailable contexts and unchanged live required-skip policy.
+- [x] Implement step/target/source/Pierre range/text anchors and cross-chapter
+  editable/resolved/reopened tray, retaining historical/deleted anchors. Mounted
+  public-renderer callbacks cover held success/rejection/abort across new selections;
+  native browser Selection/geometry bridge is separately parent-owned.
+- [x] Implement frozen item/material batches, exact preview/current-session draft,
+  validated raw/pasted replies/private immutable copies and reviewer-only resolution.
+  Actual composer retains text/attachments; native import owners cover partial,
+  stale/forged/duplicate identities, byte survival, pre-effect CAS, capacity and
+  exact-submission retry reconciliation. No sent/executed/implementation authority.
+- [x] Implement material/guidance/question identities, preserved history and
+  displayed-snapshot binding. Native/mounted owners cover changed assets/questions,
+  unavailable contexts and stale responses. Final composed focused selection also
+  covers branch advancement/chapter reorder/sidecar/key-order exclusions.
+- [x] Update maintained notebook/feature/architecture/question/session/test guides
+  and ADR 0036. Add the full workflow tail to the original Markdown desktop/touch
+  chains, keeping original assertions before writes and exact-batch shared-history
+  reply assertions. This is browser source, not fabricated runtime execution.
+- [ ] Parent verifies final focused candidate evidence and independent delta review,
+  runs installed Markdown workflow then complete core/browser/service acceptance,
+  and follows Git lifecycle. Archive only after real completion. No intermediate
+  runtime-user-validation stop or partial-scope handback is authorized.
 
 ## Verification
 
@@ -447,7 +529,61 @@ This is an active implementation plan, not a planning-only handoff. Keep the
 current slice and finite blockers above truthful. Documentation/link review and
 `git diff --check` never establish application acceptance.
 
-### Complete reader acceptance
+### Interactive focused verification
+
+**Latest post-review candidate:**
+
+- `nix run .#test -- core --jobs 4` with the exact 16 `--file` selections in
+  `/tmp/guided-workflow-post-review-final-focused.log`: **passed, 16 files / 82
+  tests**, no skips/cancellations, static 0 errors / 7 pre-existing warnings;
+  requested/effective workers **4/4**. Includes all workflow owners, the new exact
+  browser command-observation helper, and unchanged shared question/reader/Pierre/
+  workspace/presenter/bounded-body owners. This is not full acceptance.
+- Export `/tmp/pi-web-test-source-sgeNHO/source`, outer content/mode SHA-256
+  `1b19c92c9ff46a91f6f3595bd0e123aed3443d84b04967f81c8d5301a44d5ca8`;
+  `/tmp/pi-web-test-core.kIoCxM/run.json`; immutable diagnostics
+  `/nix/store/v7qma0dd8p4q8zyrz8y5zby9h0gjd8vs-pi-web-core-checks`.
+- **70s whole command** (whole-second wall clock), including in-run realization;
+  core-driver envelope **65.131s**, before-first-file realization/static/setup
+  envelope **41.724s**, file execution window **23.242s**. No separate prewarming,
+  cold-cache/benchmark or universal closure claim; model/review time excluded.
+- The latest native guidance-edit and mounted snapshot-selection/recovery
+  regressions pass; their deliberate missing-invariant/stale-selection/remove-only
+  faults fail named runtime assertions and are restored. The prior parent browser
+  failure is retained in the evidence ledger. Installed bridge rerun and full
+  core/browser/service acceptance remain parent-owned; no browser pass is claimed.
+- Application/test/bridge writing is stopped. Subsequent edits record evidence and
+  status only in docs. New helper test keeps an explicit E hold. Parent final review
+  and full acceptance must bind the resulting candidate.
+
+**Earlier thNSFa pass**, retained without relabelling it as later corrections or a
+browser pass:
+
+- `nix run .#test -- core --jobs 4` with the exact 15 `--file` selections in
+  `/tmp/guided-workflow-final-focused-v2.log`: **passed, 15 files / 79 tests**, no
+  skips/cancellations, static 0 errors / 7 pre-existing warnings; requested/effective
+  workers **4/4**. This is focused execution, not complete acceptance.
+- Exact immutable export `/tmp/pi-web-test-source-thNSFa/source`, outer SHA-256
+  `de957f9e4d81c3dd2e4f6c8b5a2950fe15ac3d9ca303cba123a8c3507a2fdfc6`;
+  run `/tmp/pi-web-test-core.GwfqPz/run.json`, immutable output
+  `/nix/store/bzk9m6vwqfbvhd9mz51rndbq6p0mrs9q-pi-web-core-checks` (summary,
+  individual TAP/errors, lifecycle/static manifests retained).
+- **149s whole command** (whole-second wall clock), including in-run realization;
+  core-driver envelope **139.843s**, before-first-file realization/static/setup
+  envelope **106.293s**, file execution window **33.350s**. No separate prewarming
+  or machine-exclusive/cold-cache/speedup claim; model/review/coordination excluded.
+- Covers actual model/recovery/question policy, native store/API (including native
+  Git fingerprint exclusions), mounted reader/snapshot/races/forms/tray/imports,
+  actual composer/Pierre and unchanged default question/workspace/presenter owners.
+  Installed-browser geometry/Selection/deployment remain parent-owned. No browser
+  or full-all execution by this writer. New E holds remain explicit.
+- Five restored meaningful production controls and failed setup/diagnostic runs
+  remain in [workflow evidence](assets/guided-review-notebooks/workflow-evidence.md).
+  Source writing was subsequently resumed only on the explicit post-review request
+  for the three corrections and installed-bridge assertion fix above. Parent final
+  review/acceptance must bind the resulting candidate, not this historical pass.
+
+### Complete reader acceptance (historical)
 
 - Tested commit: `532a17656be3f38c06dc19c774a206b6d4eadac8`, on main
   `4422eedcdcd407f536c629a4c7eaf5fbc84a0d29`; immutable source digest
@@ -534,20 +670,22 @@ a justified retry. Do not label focused or older runs as complete new-tip eviden
 
 These boxes describe feature completion, not completion of this planning session.
 
-- [ ] User-accepted sample folder and desktop/narrow interaction define the agreed
-  reader and feedback workflow; remaining schema/transport decisions are resolved.
+- [x] User-approved rough sample/desktop/narrow interaction defines the workflow;
+  schemas/current-chat-draft transport are resolved. Runtime validation is not
+  invented and is no longer an intermediate implementation stop.
 - [x] Reader implementation handles feature ranges, pinned architecture and
   independently authorized repository targets, selected evidence formats and free
-  chapter/step navigation; complete automated acceptance passes. User validation
-  remains separately open above.
-- [ ] Interactive increment preserves answers, explicit progress, anchored
+  chapter/step navigation; complete reader acceptance is historical. The workflow
+  has its own final verification gate above.
+- [x] Interactive increment preserves answers, explicit progress, anchored
   feedback, selected batch context, item replies and reviewer-owned resolution.
-- [ ] Re-review accounting distinguishes content changes, lost authorization and
+- [x] Re-review accounting distinguishes content changes, lost authorization and
   unchanged pinned material, retaining inspectable historical records.
 - [ ] Read/write/network/session boundaries have adversarial and race coverage;
   opened, reviewed, approved and tested remain visibly distinct.
-- [ ] Each runtime increment has independent review, complete acceptance evidence
-  and user validation; maintained guides/ADRs own delivered behavior.
+- [ ] Parent final independent review and complete acceptance verify the entire
+  workflow; maintained guides/ADR own delivered behavior. The rough interaction
+  approval/full-plan request supersedes the old intermediate user stop.
 - [ ] Local Git handoff follows repository policy. Remote publication, deployment
   and feature cleanup are separately authorized; no other project's review files
   are changed without that project's applicable authorization.

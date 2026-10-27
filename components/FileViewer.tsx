@@ -27,6 +27,7 @@ import { parseFrontmatter } from "@/lib/frontmatter";
 import { markdownPreviewRehypePlugins, normalizeDisplayMathWithSourceMap } from "@/lib/markdown";
 import { FileMarkdownBody } from "./FileMarkdownBody";
 import { NativeDocumentPreview } from "./NativeDocumentPreview";
+import type { ReviewBatchDraft, ReviewChatDestination } from "@/lib/review-handoff";
 import { GuidedReviewEntry } from "./GuidedReviewReader";
 import { DelimitedTable } from "./DelimitedTable";
 import { isDelimitedTablePath } from "@/lib/delimited-table";
@@ -46,6 +47,9 @@ import {
 export type { FileViewerState } from "@/lib/file-viewer-state";
 
 interface Props {
+  reviewDraftOwner?: string;
+  reviewDestination?: ReviewChatDestination;
+  onReviewBatchDraft?: ReviewBatchDraft;
   filePath: string;
   cwd?: string;
   sourceSessionId?: string | null;
@@ -969,6 +973,8 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, navigatio
 }
 
 export function FileViewer({
+  reviewDraftOwner,
+  reviewDestination, onReviewBatchDraft,
   filePath,
   cwd,
   sourceSessionId,
@@ -1005,6 +1011,7 @@ export function FileViewer({
   }
   return (
     <TextFileViewer
+      reviewDestination={reviewDestination} onReviewBatchDraft={onReviewBatchDraft} reviewDraftOwner={reviewDraftOwner}
       filePath={filePath}
       cwd={cwd}
       sourceSessionId={sourceSessionId}
@@ -1030,6 +1037,8 @@ export function FileViewer({
 }
 
 function TextFileViewer({
+  reviewDraftOwner,
+  reviewDestination, onReviewBatchDraft,
   filePath,
   cwd,
   sourceSessionId,
@@ -1930,7 +1939,7 @@ function TextFileViewer({
             {frontmatter?.data && <div data-source-line-start={1} data-source-line-end={viewerContent.slice(0, viewerContent.length - frontmatter.rest.length).split(/\r?\n/).length - 1}>
               <FrontmatterCard data={frontmatter.data} />
             </div>}
-            <GuidedReviewEntry key={`${filePath}:${sourceSessionId ?? ""}:${cwd ?? ""}`} filePath={filePath} markdown={viewerContent} cwd={cwd} onOpenFile={onOpenFile} onWork={observeWork}>
+            <GuidedReviewEntry key={`${filePath}:${sourceSessionId ?? ""}:${cwd ?? ""}`} filePath={filePath} markdown={viewerContent} cwd={cwd} onOpenFile={onOpenFile} onWork={observeWork} reviewDraftOwner={reviewDraftOwner} reviewDestination={reviewDestination} onReviewBatchDraft={onReviewBatchDraft}>
               <FileMarkdownBody markdown={markdownPreview.markdown} baseDir={markdownDirectory} relativeRoot={cwd ?? markdownDirectory}
                 sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} rehypePlugins={positionedMarkdownPlugins} onWork={observeWork} />
             </GuidedReviewEntry>

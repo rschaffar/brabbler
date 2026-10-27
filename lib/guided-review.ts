@@ -3,6 +3,8 @@ import remarkParse from "remark-parse";
 import type { Code } from "mdast";
 import { isReviewSourcePath, parseReviewBlock, type ReviewBlock } from "./review-notebook";
 import { isNotebookAssetPath } from "./guided-review-assets";
+import { parseQuestionSet, type SetQuestion } from "./question-set";
+export interface NotebookQuestion extends SetQuestion { explanation?: string }
 
 /** Declarative identities, never access grants. All counts apply to the complete package. */
 export const GUIDED_LIMITS = { documentBytes: 256 * 1024, packageBytes: 2 * 1024 * 1024, chapters: 32, steps: 256, targets: 512 } as const;
@@ -10,13 +12,13 @@ export interface NotebookIndex { version: 1; id: string; title: string; chapters
 export type Evidence = ReviewBlock | { version: 1; id: string; title: string } & (
   { kind: "compare"; cwd: string; branch: string; base: string; candidate: string; path: string } |
   { kind: "file"; path: string } | { kind: "web"; url: string });
-export interface GuidedStep { id: string; title: string; markdown: string; targets: Evidence[] }
+export interface GuidedStep { id: string; title: string; markdown: string; targets: Evidence[]; questions?: NotebookQuestion[] }
 export interface GuidedChapter { id: string; title: string; path: string; steps: GuidedStep[] }
 export interface GuidedNotebook { index: NotebookIndex; chapters: GuidedChapter[] }
 const id = (v: unknown): v is string => typeof v === "string" && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(v);
 const title = (v: unknown): v is string => typeof v === "string" && !!v.trim() && v.length <= 240 && !/[\x00-\x1f]/.test(v);
-function object(source: string): Record<string, unknown> {
-  if (source.length > 16_384 || new TextEncoder().encode(source).length > 16_384) throw new Error("Metadata exceeds 16,384 bytes");
+export function strictJsonObject(source: string, maximum = 16_384): Record<string, unknown> {
+  if (source.length > maximum || new TextEncoder().encode(source).length > maximum) throw new Error(maximum === 16_384 ? "Metadata exceeds 16,384 bytes" : `JSON exceeds ${maximum} bytes`);
   const v: unknown = JSON.parse(source);
   // JSON.parse validates grammar but silently overwrites duplicate properties.
   // Walk actual string tokens (including escaped quotes/backslashes); decode key
@@ -45,6 +47,7 @@ function object(source: string): Record<string, unknown> {
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("Expected a JSON object");
   return v as Record<string, unknown>;
 }
+const object = strictJsonObject;
 function fields(v: Record<string, unknown>, keys: string[]) {
   if (Object.keys(v).some(k => !keys.includes(k)) || keys.some(k => !(k in v))) throw new Error("Unknown or missing metadata field");
 }
@@ -104,6 +107,18 @@ export function parseNotebookChapter(markdown: string): GuidedStep[] {
       if (ids.has(v.id as string)) throw new Error("Duplicate step id"); ids.add(v.id as string);
       step = { id: v.id as string, title: v.title as string, markdown: "", targets: [] }; steps.push(step);
       start = node.position!.end.offset!;
+    } else if (node.lang === "pi-question") {
+      if (!step) throw new Error("Questions must follow a pi-step boundary");
+      const v = object(node.value);
+      const allowed = ["version", "id", "shortLabel", "question", "context", "type", "required", "options", "explanation"];
+      if (Object.keys(v).some(k => !allowed.includes(k)) || v.version !== 1) throw new Error("Invalid question fields/version");
+      if (v.explanation !== undefined && (typeof v.explanation !== "string" || v.explanation.length > 8000)) throw new Error("Invalid author explanation");
+      if (Array.isArray(v.options) && v.options.some(o => !o || typeof o !== "object" || Object.keys(o).some(k => !["id", "title", "description", "recommended", "exclusive"].includes(k)))) throw new Error("Invalid option fields");
+      const parsed = parseQuestionSet({ title: "Notebook", questions: [v] });
+      if (!parsed) throw new Error("Invalid authored question");
+      const questions = step.questions ??= [];
+      if (questions.length >= 6 || questions.some(q => q.id === v.id)) throw new Error("Duplicate question id or more than six questions per step");
+      questions.push({ ...parsed.questions[0], ...(v.explanation !== undefined ? { explanation: v.explanation as string } : {}) });
     } else if (node.lang === "pi-review" || node.lang === "pi-evidence") {
       if (!step) throw new Error("Evidence must follow a pi-step boundary");
       object(node.value); // Guided-package ambiguity/depth policy also covers unchanged v1 targets.
@@ -127,7 +142,7 @@ export function validateNotebook(notebook: GuidedNotebook): GuidedNotebook {
 }
 /** Remove only parser-owned top-level evidence, not example fences inside code. */
 export function stepProse(markdown: string): string {
-  const evidence = fences(markdown, "pi-review").concat(fences(markdown, "pi-evidence")).sort((a, b) => b.position!.start.offset! - a.position!.start.offset!);
+  const evidence = fences(markdown, "pi-review").concat(fences(markdown, "pi-evidence"), fences(markdown, "pi-question")).sort((a, b) => b.position!.start.offset! - a.position!.start.offset!);
   for (const node of evidence) markdown = markdown.slice(0, node.position!.start.offset) + markdown.slice(node.position!.end.offset);
   return markdown;
 }

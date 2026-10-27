@@ -22,6 +22,15 @@
 }
 
 /* Guided readers stay inside Files; narrow layouts stack both evidence targets. */
+.notebook-review-panel { min-width: 0; margin-top: 16px; border-top: 1px solid var(--border); padding: 12px 0; font-size: 13px; overflow-wrap: anywhere; }
+.notebook-review-panel section, .notebook-review-panel article { min-width: 0; margin: 12px 0; padding: 10px; border: 1px solid var(--border); border-radius: 6px; }
+.notebook-review-panel label { display: grid; gap: 5px; margin: 8px 0; }
+.notebook-review-panel input[type="checkbox"] { width: auto; justify-self: start; }
+.notebook-review-panel textarea, .notebook-review-panel select { width: 100%; max-width: 100%; min-width: 0; padding: 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); }
+.notebook-review-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; font-size: 11px; }
+.notebook-review-panel button { padding: 5px 8px; margin: 3px; border: 1px solid var(--border); border-radius: 4px; }
+.notebook-review-panel button:disabled { opacity: 0.5; cursor: not-allowed; }
+.notebook-review-panel aside { border-left: 3px solid var(--accent); padding-left: 8px; }
 .guided-reader { min-width: 0; color: var(--text); }
 .guided-reader-toolbar, .guided-target-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; }
 .guided-reader-layout { display: grid; grid-template-columns: minmax(120px, 180px) minmax(0, 1fr); gap: 16px; }

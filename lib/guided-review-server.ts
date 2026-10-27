@@ -9,7 +9,7 @@ export class NotebookReadError extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
 }
 /** Root admission and physical containment are checked for EVERY file, not inherited from an index. */
-function readNotebookBytes(file: string, roots: Set<string>, maximum: number, folder?: string): Buffer {
+export function readNotebookBytes(file: string, roots: Set<string>, maximum: number, folder?: string): Buffer {
   if (!path.isAbsolute(file) || !isFilePathAllowed(file, roots)) throw new NotebookReadError("Access denied", 403);
   const physical = fs.realpathSync(file);
   if (!isExistingFilePathAllowed(file, roots)) throw new NotebookReadError("Access denied", 403);

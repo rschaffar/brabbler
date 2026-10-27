@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { parseReviewBlock, reviewExplorerUrl, type ReviewBlock, type ReviewCommitReference, type ReviewSource } from "@/lib/review-notebook";
+import type { EvidenceSelection } from "@/lib/review-handoff";
 import type { DiffContext } from "@/lib/diff-context";
 import type { NotebookTargetState } from "@/lib/guided-reader-state";
 import { CodeBlock } from "./MermaidBlock";
@@ -28,7 +29,7 @@ type Material = { head: string } & ({ kind: "source"; source: ReviewSource } |
 type Mode = "source" | "diff" | "commit";
 
 /** Shared reader: guided activation is explicit at the parent; ordinary cards stay collapsed. */
-export function ActiveReviewBlock({ block, activated = false, onWork, readerState }: { block: ReviewBlock; activated?: boolean; onWork?: (work: Promise<unknown>) => void; readerState?: NotebookTargetState }) {
+export function ActiveReviewBlock({ block, activated = false, onWork, readerState, onReviewSelection }: { block: ReviewBlock; activated?: boolean; onWork?: (work: Promise<unknown>) => void; readerState?: NotebookTargetState; onReviewSelection?: (selection: EvidenceSelection | null) => void }) {
   const { t } = useI18n();
   const navigate = useContext(ReviewNavigationContext);
   const bodyId = useId();
@@ -98,11 +99,11 @@ export function ActiveReviewBlock({ block, activated = false, onWork, readerStat
     {error && <div role="alert">{error}{mode && <button type="button" className="ml-2 text-accent underline" onClick={() => setRetry(value => value + 1)}>{t("review.retry")}</button>}</div>}
     <div id={bodyId}>
       {mode && loading && <p role="status">{t("review.loading")}</p>}
-      {mode === "source" && material?.kind === "source" && <ReviewNotebookSource source={material.source} onWork={onWork} />}
+      {mode === "source" && material?.kind === "source" && <ReviewNotebookSource source={material.source} onWork={onWork} onReviewSelection={onReviewSelection} />}
       {mode === "diff" && material?.kind === "diff" && block.kind === "source" && <CommittedPatchDiff
-        patch={material.patch} hasBinaryChanges={material.hasBinaryChanges} before={material.before} after={block.oid.slice(0, 8)} reviewModel={reviewModel} onReadWork={onWork}
+        patch={material.patch} hasBinaryChanges={material.hasBinaryChanges} before={material.before} after={block.oid.slice(0, 8)} reviewModel={reviewModel} onReadWork={onWork} onReviewSelection={onReviewSelection}
         loadContext={signal => read<DiffContext>(reviewExplorerUrl(block, "context", { head: material.head, path: block.path }), signal)} />}
-      {mode === "commit" && material?.kind === "commit" && <div className="review-notebook-commit"><GitCommitViewer cwd={block.cwd} branch={block.branch} head={material.head} oid={block.oid} getReviewModel={readerState?.review} onReadWork={onWork} /></div>}
+      {mode === "commit" && material?.kind === "commit" && <div className="review-notebook-commit"><GitCommitViewer cwd={block.cwd} branch={block.branch} head={material.head} oid={block.oid} getReviewModel={readerState?.review} onReadWork={onWork} onReviewSelection={onReviewSelection} /></div>}
     </div>
   </section>;
 }

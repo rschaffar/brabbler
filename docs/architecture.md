@@ -21,6 +21,11 @@ Browser                Next.js Server              AgentSession (in-process)
 ```
 
 **Session browsing** (read-only): reads `.jsonl` files through SDK `SessionManager` helpers and `lib/session-reader.ts` — no AgentSession created.
+Guided review recording uses its dedicated local sidecars, never session transcript
+or Git authority. Preparing a batch only appends to the current existing composer;
+normal Send is a second explicit action. [ADR 0036](adr/0036-guided-review-recording.md)
+and [the notebook guide](review-notebooks.md) own persistence and handoff boundaries.
+
 **Sending a message**: `startRpcSession()` in `lib/rpc-manager.ts` creates an AgentSession in-process.
 
 ---
@@ -65,7 +70,8 @@ app/api/
   subagents/settings/route.ts     GET/PUT built-in subagent feature setting
   worktrees/route.ts              GET/POST/DELETE git worktrees (explicit local base/tip on creation)
   git/explorer/route.ts           GET worktree-scoped read-only history/commit/file patch and explicit endpoint comparisons
-  review-notebook/route.ts        GET bounded declared notebook folder / selected mutable text asset; no writes/discovery
+  review-notebook/route.ts        GET bounded declared folder / selected text+byte-digest or binary asset; no writes/discovery
+  review-data/route.ts            inert GET history | explicit POST inspect/enable/reviewer operation/reply import
   web-auth/route.ts               GET status | POST login | DELETE logout (browser password)
   plugins/check/route.ts          POST check plugin package updates
   project-trust/route.ts          GET/POST project trust for package installs
@@ -149,6 +155,10 @@ lib/
   guided-review-server.ts independently root-authorized bounded regular text/binary snapshots
   guided-review-assets.ts fixed local raster/PDF MIME/signature/byte admission policy
   guided-reader-state.ts activation-local target/step state and bounded exact per-file DiffReviewModel retention
+  notebook-review.ts    strict reviewer reducer, histories, frozen batches and reply identity validation
+  notebook-review-store.ts independently authorized fsync/exclusive-link numbered snapshots and private reply copies
+  notebook-review-drafts.ts bounded full browser-recovery schema, per-view/batch fields and rejected-byte preservation
+  review-handoff.ts    current existing-session composer contract; no session start/send API
   git-graph-layout.ts   adapted MIT active-lane graph layout (see git-graph-layout.LICENSE)
 
 components/
@@ -172,7 +182,9 @@ components/
   ChatMinimap.tsx     scroll minimap alongside the message list
   MarkdownBody.tsx    markdown renderer
   ReviewNotebookBlock.tsx opt-in lazy pinned source/commit fences, shared explicit guided activation, Explorer navigation
-  GuidedReviewReader.tsx explicit Files entry, transient chapter/step/target navigation, two evidence readers
+  GuidedReviewReader.tsx explicit Files entry, chapter/step/target navigation, two evidence readers and displayed-snapshot identity
+  NotebookReviewPanel.tsx separate write activation, persistent forms/progress/tray, history and exact chat/reply preview
+  QuestionFields.tsx  shared presentation/selection for live questions and asynchronous notebook outcomes
   FileMarkdownBody.tsx shared stable sanitized file prose/code/link presentation (guided automatic images/cards disabled)
   NotebookBinaryEvidence.tsx selected bounded raster/PDF response owner; typed blob URLs revoked on exit
   NativeDocumentPreview.tsx shared native PDF / sandboxed DOCX presenter, separate from FileViewer lifecycle

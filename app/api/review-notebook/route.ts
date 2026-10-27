@@ -1,8 +1,9 @@
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getAllowedFileRoots } from "@/lib/file-access";
 import { isApiRequestAllowed } from "@/lib/request-security";
-import { NotebookReadError, readNotebook, readNotebookBinary, readNotebookText } from "@/lib/guided-review-server";
+import { NotebookReadError, readNotebook, readNotebookBinary, readNotebookBytes } from "@/lib/guided-review-server";
 import { isReviewSourcePath } from "@/lib/review-notebook";
 import { isNotebookAssetPath, notebookAssetMime } from "@/lib/guided-review-assets";
 
@@ -28,7 +29,10 @@ export async function GET(request: NextRequest) {
           "Content-Security-Policy": "default-src 'none'; sandbox", "Cross-Origin-Resource-Policy": "same-origin",
         } });
       }
-      return NextResponse.json({ content: readNotebookText(path.join(path.dirname(index), asset), roots, path.dirname(index)), mutable: true });
+      const bytes = readNotebookBytes(path.join(path.dirname(index), asset), roots, 256 * 1024, path.dirname(index));
+      const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      if (content.includes("\0")) throw new NotebookReadError("Binary text evidence is unsupported");
+      return NextResponse.json({ content, contentDigest: createHash("sha256").update(bytes).digest("hex"), mutable: true });
     }
     return NextResponse.json(readNotebook(index, roots));
   } catch (error) {

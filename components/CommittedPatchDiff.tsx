@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getFiletypeFromFileName, preloadHighlighter, type FileDiffContentsLoader } from "@pierre/diffs";
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions } from "@pierre/diffs/react";
+import type { EvidenceSelection } from "@/lib/review-handoff";
 import type { LoadDiffContext } from "@/lib/diff-context";
 import { createDiffReview, matchingLines, rememberExpansion, validLine, validateReviewContext,
   type DiffLineTarget, type DiffReviewModel, type ReadingMode } from "@/lib/git-diff-review";
@@ -16,10 +17,11 @@ const GAP_CSS = `[data-expand-all-button] { display: flex !important; }`;
 
 /** Display only: the original patch and its approval scope never change. */
 export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, independentScroll = false,
-  view: controlledView, wrap: controlledWrap, reviewModel, loadContext, onRefresh, onReadWork, onWork }: {
+  view: controlledView, wrap: controlledWrap, reviewModel, loadContext, onRefresh, onReadWork, onWork, onReviewSelection }: {
   patch: string; hasBinaryChanges: boolean; before: string; after: string;
   independentScroll?: boolean; view?: PatchView; wrap?: boolean;
   reviewModel?: DiffReviewModel; loadContext?: LoadDiffContext; onRefresh?: () => void;
+  onReviewSelection?: (selection: EvidenceSelection | null) => void;
   /** Parent-owned observation of the complete default highlighter handler. */
   onWork?: (work: Promise<void>) => void;
   /** Observation only: retain complete highlighter/context/action work, including caught failures. */
@@ -44,6 +46,7 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
   const [matchIndex, setMatchIndex] = useState(-1), [searchSide, setSearchSide] = useState<"additions" | "deletions">("additions");
   const [navigationError, setNavigationError] = useState<string | null>(null);
   const viewer = useRef<CodeViewHandle<undefined, undefined>>(null);
+  const selectionGeneration = useRef(0);
   const viewport = useRef<HTMLDivElement>(null), dialog = useRef<HTMLDialogElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null), wideButton = useRef<HTMLButtonElement>(null);
   const mounted = useRef(false), pending = useRef<Promise<NonNullable<DiffReviewModel["context"]>> | null>(null);
@@ -157,7 +160,23 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
     overflow: wrap ? "wrap" : "scroll", tokenizeMaxLength: 100_000, unsafeCSS: GAP_CSS,
     layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
     onPostRender: () => { requestAnimationFrame(bindViewer); },
-  }), [view, isDark, loadContext, model.context, model.full, loader, wrap, bindViewer]);
+    ...(onReviewSelection ? { enableLineSelection: true, onLineSelected: (range: import("@pierre/diffs").SelectedLineRange | null) => {
+      const generation = ++selectionGeneration.current;
+      if (!range || (range.endSide && range.endSide !== range.side)) { onReviewSelection(null); return; }
+      const side = model.reading === "before" ? "deletions" : model.reading === "after" ? "additions" : range.side ?? "additions";
+      const start = Math.min(range.start, range.end), end = Math.max(range.start, range.end);
+      if (end - start > 400) { onReviewSelection(null); return; }
+      const mode = model.reading;
+      const work = ensureContext().then(context => {
+        if (!mounted.current || model.reading !== mode || generation !== selectionGeneration.current) return;
+        const contents = side === "deletions" ? context.oldFile?.contents : context.newFile?.contents;
+        if (contents === undefined) { onReviewSelection(null); return; }
+        const lines = contents.split("\n"), quote = lines.slice(start - 1, end).join("\n").slice(0, 8000);
+        onReviewSelection(quote ? { start, end, side, quote, context: lines.slice(Math.max(0, start - 3), end + 2).join("\n").slice(0, 8000), path: file?.name } : null);
+      }).catch(() => { if (mounted.current && model.reading === mode && generation === selectionGeneration.current) onReviewSelection(null); });
+      observeRead(work);
+    } } : {}),
+  }), [view, isDark, loadContext, model, loader, wrap, bindViewer, onReviewSelection, ensureContext, observeRead, file?.name]);
   const contextFile = model.reading === "before" ? model.context?.oldFile : model.context?.newFile;
   const diffVersion = file?.isPartial ? 0 : 1;
   const items = useMemo(() => file ? model.reading === "diff"

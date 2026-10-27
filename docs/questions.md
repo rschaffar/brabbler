@@ -83,12 +83,23 @@ Cancellation returns `answers: null, cancelled: true`; timeout/Stop outcomes rem
 
 Batch only independent decisions that make sense together. Ask dependent follow-ups after receiving the set; no conditional/hidden questions exist. This browser extension does not change the standalone Pi TUI package. Existing running wrappers must be reloaded to pick up a changed tool schema after deployment.
 
+## Asynchronous notebook questions are a separate lifecycle
+
+[Guided notebooks](review-notebooks.md#authored-questions) reuse the safe question
+shapes/fields but not a pending session request, complete-set submission, expiry,
+blocking card or receipt. Their explicit unsure/not-applicable/skip outcomes count
+as recorded notebook presence, even for required questions; only Reviewed is gated,
+never Back/Next. `normalizeSetAnswer` still rejects a required **live** skip. Authored
+explanations are optional attributed guidance, not grading. Notebook contexts disable
+automatic images/review cards and forward presenter work; live defaults stay unchanged.
+
 ## Implementation and verification
 
 - `lib/question-set.ts`: bounded parsing, ID-based normalization and summaries.
 - `lib/question-set-drafts.ts`: best-effort same-tab recovery with bounded retention.
 - `lib/ask-user-extension.ts`: tool schema and batching guidance.
 - `lib/rpc-manager.ts`: `askUserBatch()` uses the existing pending-request lifecycle as `ask_user_batch`.
+- `components/QuestionFields.tsx` and `selectQuestionOption` in `lib/question-set.ts`: shared presentation and pure exclusive-choice selection. Live callers keep existing context rendering/request naming; notebook callers supply restricted observer-aware context and per-view radio scope.
 - `components/QuestionSetDialog.tsx` and `QuestionSetReview.tsx`: live navigation and read-only review/history.
 - `lib/interaction-receipts.ts`: recognized batch snapshots; legacy receipts stay compatible.
 

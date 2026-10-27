@@ -5,6 +5,7 @@ import { act, createElement, useEffect, useLayoutEffect } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { deferred } from '../lib/testing/async.fixture.mjs';
 import { packet, click, choose, input, key, textButton } from './cards-git.fixture.mjs';
+import { boundedErrors } from './files-diagnostics.fixture.mjs';
 
 const modified = `diff --git a/notes.txt b/notes.txt
 index 4824a54..d914290 100644
@@ -21,7 +22,9 @@ const rootPatch = count => `diff --git a/notes.txt b/notes.txt\nnew file mode 10
 // and application React identity in one physical graph. Subcases are serial;
 // each unmounts its actual reader. There is no CodeView/renderer/hook double.
 test('CommittedPatchDiff: actual SSR, CodeView bindings and controls', async t => {
-  const h = await packet(t), api = await h.load('@pierre/diffs');
+  let h;
+  t.after(async () => { try { await h?.cleanup(); } catch (error) { console.log(boundedErrors(error)); throw error; } });
+  h = await packet(t); const api = await h.load('@pierre/diffs');
   const { CommittedPatchDiff } = await h.load('./CommittedPatchDiff.tsx');
   const { createDiffReview } = await h.load('../lib/git-diff-review.ts');
   const render = (patch, hasBinaryChanges = false, extra = {}) => renderToStaticMarkup(createElement(CommittedPatchDiff, {
@@ -173,6 +176,46 @@ test('CommittedPatchDiff: actual SSR, CodeView bindings and controls', async t =
     assert.equal(moves.length, previousMoves, 'late frame cannot bind a disposed reader');
     assert.equal(scrollNotifications, previousNotifications, 'actual CodeView scroll subscription was removed');
     assert.equal(model.anchors.after === retained, true, 'unmounted callbacks preserve the retained anchor');
+  });
+
+  await run('public Pierre committed selections retain real range/side/quote and clear fences held context', async st => {
+    const captured = [], model = createDiffReview(rootPatch(8)), from = h.work.length;
+    await show({ patch: model.patch, reviewModel: model, onReviewSelection: value => captured.push(value) });
+    await awaitReads(from); await h.frames.fire(h.frames.take());
+    let start = h.work.length;
+    await act(async () => current().instance.setSelectedLines({ id: 'diff', range: { start: 2, end: 3, side: 'additions' } }));
+    await awaitReads(start);
+    assert.deepEqual(captured.at(-1), { start: 2, end: 3, side: 'additions', quote: 'Line 2\nLine 3', context: 'Line 1\nLine 2\nLine 3\nLine 4\nLine 5', path: 'notes.txt' });
+    await act(async () => current().instance.getRenderedItems()[0].instance.setSelectedLines(null)); assert.equal(captured.at(-1), null);
+    const matchingContext = { oldFile: { name: 'notes.txt', contents: 'First line\nOld text\n', cacheKey: 'pinned:old' }, newFile: { name: 'notes.txt', contents: 'First line\nNew text\n', cacheKey: 'pinned:new' } };
+    const gate = deferred(), entered = deferred(); st.after(() => gate.resolve(matchingContext));
+    await h.render(null);
+    const partial = createDiffReview(modified), before = h.work.length;
+    await show({ patch: modified, reviewModel: partial, loadContext: async () => { entered.resolve(); return gate.promise; }, onReviewSelection: value => captured.push(value) });
+    await awaitReads(before); await h.frames.fire(h.frames.take()); start = h.work.length;
+    await act(async () => current().instance.setSelectedLines({ id: 'diff', range: { start: 2, end: 2, side: 'deletions' } }));
+    await entered.promise;
+    await act(async () => current().instance.getRenderedItems()[0].instance.setSelectedLines(null));
+    gate.resolve(matchingContext);
+    await awaitReads(start); assert.equal(partial.context === matchingContext, true, 'held original context validates and publishes');
+    assert.equal(captured.at(-1), null, 'late full-file body cannot restore a cleared selection');
+  });
+
+  for (const outcome of ['success', 'rejection']) await run(`obsolete selection context ${outcome}/abort never clears a newer target selection`, async st => {
+    const gate = deferred(), entered = deferred(), selected = [], matching = { oldFile: { name: 'notes.txt', contents: 'First line\nOld text\n', cacheKey: 'old' }, newFile: { name: 'notes.txt', contents: 'First line\nNew text\n', cacheKey: 'new' } };
+    st.after(() => gate.resolve(matching));
+    const a = createDiffReview(modified), from = h.work.length;
+    await show({ patch: modified, reviewModel: a, loadContext: async () => { entered.resolve(); return gate.promise; }, onReviewSelection: value => selected.push({ owner: 'A', value }) });
+    await awaitReads(from); await h.frames.fire(h.frames.take()); const pendingFrom = h.work.length;
+    await act(async () => current().instance.setSelectedLines({ id: 'diff', range: { start: 2, end: 2, side: 'deletions' } })); await entered.promise;
+    const contextOriginal = h.work[pendingFrom].promise;
+    const terminal = contextOriginal.catch(error => { if (outcome === 'success') assert.equal(error.name, 'AbortError'); else assert.equal(error, rejection); h.expectFailure(error); }); h.onReadWork(terminal);
+    await h.render(null); const b = createDiffReview(rootPatch(8)), bFrom = h.work.length;
+    await show({ patch: b.patch, reviewModel: b, onReviewSelection: value => selected.push({ owner: 'B', value }) }); await awaitReads(bFrom); await h.frames.fire(h.frames.take());
+    const selectionFrom = h.work.length; await act(async () => current().instance.setSelectedLines({ id: 'diff', range: { start: 3, end: 3, side: 'additions' } })); await awaitReads(selectionFrom);
+    const rejection = new Error('Obsolete A selection body failed'); if (outcome === 'success') gate.resolve(matching); else gate.reject(rejection);
+    await awaitReads(pendingFrom);
+    assert.equal(selected.at(-1).owner, 'B'); assert.equal(selected.at(-1).value.quote, 'Line 3');
   });
 
   await run('gap controls bind actual shadow buttons once, handle Enter/Space and replay comparison-local expansion', async () => {

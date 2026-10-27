@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { EvidenceSelection } from "@/lib/review-handoff";
 import { CommittedPatchDiff } from "./CommittedPatchDiff";
 import { GitDiffToolbar } from "./GitDiffToolbar";
 import { ReviewFileBrowser } from "./ReviewFileBrowser";
@@ -12,10 +13,11 @@ import type { GitDiffPreferences } from "@/lib/git-diff-preferences";
 
 type ContextLoader = (id: string, signal: AbortSignal) => Promise<DiffContext>;
 type ReviewModelFactory = (path: string, patch: string) => DiffReviewModel;
-function ExpandedPatch({ file, load, loadContext, reviews, before, after, view, wrap, immediate, onReadWork, getReviewModel }: GitDiffPreferences & {
+function ExpandedPatch({ file, load, loadContext, reviews, before, after, view, wrap, immediate, onReadWork, getReviewModel, onReviewSelection }: GitDiffPreferences & {
   file: DisplayFile; load?: (id: string, signal: AbortSignal) => Promise<DisplayPatch>;
   loadContext?: ContextLoader; reviews: Map<string, DiffReviewModel>;
   before: string; after: string; immediate: boolean; getReviewModel?: ReviewModelFactory;
+  onReviewSelection?: (selection: EvidenceSelection | null) => void;
   onReadWork?: (work: Promise<void>) => void;
 }) {
   // Observation only: forward the original promise; its result is not consumed.
@@ -58,15 +60,16 @@ function ExpandedPatch({ file, load, loadContext, reviews, before, after, view, 
     {!visible ? <p className="py-3 text-xs text-text-muted">Diff renders when scrolled into view.</p>
       : error ? <div role="alert" className="py-2 text-xs text-text-muted">{error} <button type="button" className="text-accent underline" onClick={() => setRetry((value) => value + 1)}>Retry</button></div>
         : !value ? <p role="status" className="py-3 text-xs text-text-muted">Loading patch…</p>
-          : <CommittedPatchDiff {...value} before={before} after={after} view={view} wrap={wrap} reviewModel={review} loadContext={loadContext ? context : undefined} onReadWork={observeRead} />}
+          : <CommittedPatchDiff {...value} before={before} after={after} view={view} wrap={wrap} reviewModel={review} loadContext={loadContext ? context : undefined} onReadWork={observeRead} onReviewSelection={onReviewSelection} />}
   </div>;
 }
 
 /** Expanding or reading a file never changes the operation's approval scope. */
-export function GitPatchStack({ files, before, after, loadPatch, loadContext, completePatch, navigation = false, onReadWork, getReviewModel }: {
+export function GitPatchStack({ files, before, after, loadPatch, loadContext, completePatch, navigation = false, onReadWork, getReviewModel, onReviewSelection }: {
   files: DisplayFile[]; before: string; after: string; navigation?: boolean;
   loadPatch?: (id: string, signal: AbortSignal) => Promise<DisplayPatch>;
   loadContext?: ContextLoader; completePatch?: string; getReviewModel?: ReviewModelFactory;
+  onReviewSelection?: (selection: EvidenceSelection | null) => void;
   onReadWork?: (work: Promise<void>) => void;
 }) {
   const [expanded, setExpanded] = useState(() => new Set(files[0] ? [files[0].id] : []));
@@ -86,7 +89,7 @@ export function GitPatchStack({ files, before, after, loadPatch, loadContext, co
       return <section aria-label={`File changes: ${file.path}`}>
         <p className="text-xs text-text-muted">{file.status}</p>
         <ExpandedPatch key={selected.id} file={file} load={load} loadContext={context} reviews={reviews.current}
-          before={before} after={after} {...preferences} immediate onReadWork={onReadWork} getReviewModel={getReviewModel} />
+          before={before} after={after} {...preferences} immediate onReadWork={onReadWork} getReviewModel={getReviewModel} onReviewSelection={onReviewSelection} />
       </section>;
     }}
   </ReviewFileBrowser>
@@ -114,7 +117,7 @@ export function GitPatchStack({ files, before, after, loadPatch, loadContext, co
           {file.additions !== undefined && <span className="shrink-0 text-text-muted">+{file.additions} −{file.deletions}</span>}
         </button>
         {expanded.has(file.id) && <ExpandedPatch file={file} load={load} loadContext={context} reviews={reviews.current}
-          before={before} after={after} view={view} wrap={wrap} immediate={index === 0} onReadWork={onReadWork} getReviewModel={getReviewModel} />}
+          before={before} after={after} view={view} wrap={wrap} immediate={index === 0} onReadWork={onReadWork} getReviewModel={getReviewModel} onReviewSelection={onReviewSelection} />}
       </section>)}
     </div>
     {completePatch !== undefined && <details className="mt-3 text-xs text-text-muted">
