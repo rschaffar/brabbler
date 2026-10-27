@@ -1,4 +1,4 @@
-import { SCRATCHPAD_MAX_LENGTH, validScratchpadNote, type ScratchpadNote } from "./scratchpad";
+import { SCRATCHPAD_MAX_LENGTH, scratchpadScopeFields, validScratchpadScope, validScratchpadNote, type ScratchpadNote, type ScratchpadProject, type ScratchpadScope } from "./scratchpad";
 
 export interface ScratchpadStorage {
   getItem(key: string): string | null;
@@ -6,21 +6,21 @@ export interface ScratchpadStorage {
   removeItem(key: string): void;
 }
 export interface ScratchpadTransport {
-  read(sessionId: string | null): Promise<ScratchpadNote>;
-  save(sessionId: string | null, text: string, revision: string): Promise<ScratchpadNote | { current: ScratchpadNote }>;
+  read(scope: ScratchpadScope): Promise<ScratchpadNote>;
+  save(scope: ScratchpadScope, text: string, revision: string): Promise<ScratchpadNote | { current: ScratchpadNote }>;
 }
 export const scratchpadTransport: ScratchpadTransport = {
-  async read(sessionId) {
-    const query = sessionId === null ? "" : `?${new URLSearchParams({ sessionId })}`;
+  async read(scope) {
+    const query = scope === null ? "" : `?${new URLSearchParams(scratchpadScopeFields(scope) as Record<string, string>)}`;
     const response = await fetch(`/api/scratchpad${query}`, { cache: "no-store" });
     const data: unknown = await response.json();
     if (!response.ok || !validScratchpadNote(data)) throw new Error("read");
     return data;
   },
-  async save(sessionId, text, revision) {
+  async save(scope, text, revision) {
     const response = await fetch("/api/scratchpad", {
       method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, text, revision }),
+      body: JSON.stringify({ ...scratchpadScopeFields(scope), text, revision }),
     });
     const data = await response.json();
     if (response.status === 409 && validScratchpadNote(data?.current)) return { current: data.current };
@@ -28,6 +28,13 @@ export const scratchpadTransport: ScratchpadTransport = {
     return data;
   },
 };
+export async function resolveScratchpadProject(cwd: string): Promise<ScratchpadProject> {
+  const response = await fetch(`/api/scratchpad?${new URLSearchParams({ projectCwd: cwd })}`, { cache: "no-store" });
+  const data = await response.json() as ScratchpadProject;
+  if (!response.ok || !data || !validScratchpadScope({ projectId: data.projectId }) || typeof data.root !== "string" || !data.root) throw new Error("project");
+  return data;
+}
+
 export interface ScratchpadView {
   text: string;
   ready: boolean;
@@ -60,8 +67,8 @@ export class ScratchpadController {
     text: "", ready: false, loading: false, saving: false, dirty: false, error: null,
     recoveryUnavailable: false, conflict: null, canUndo: false, canRedo: false, selection: null,
   };
-  constructor(readonly sessionId: string | null, private storage: ScratchpadStorage | null, private transport = scratchpadTransport, private onWork?: ScratchpadWorkObserver) {
-    this.storageKey = `pi-web:scratchpad:${JSON.stringify(sessionId)}`;
+  constructor(readonly scope: ScratchpadScope, private storage: ScratchpadStorage | null, private transport = scratchpadTransport, private onWork?: ScratchpadWorkObserver) {
+    this.storageKey = `pi-web:scratchpad:${JSON.stringify(scope)}`;
     try {
       const raw = storage?.getItem(this.storageKey);
       const draft = raw ? JSON.parse(raw) : null;
@@ -95,7 +102,7 @@ export class ScratchpadController {
     if (this.view.loading || this.view.saving || this.view.conflict || (this.view.ready && this.view.dirty && this.view.error !== "load")) return;
     this.publish({ loading: true, error: null });
     try {
-      const remote = await this.transport.read(this.sessionId);
+      const remote = await this.transport.read(this.scope);
       const dirty = this.view.dirty;
       if (dirty && this.base && this.base.revision !== remote.revision && this.view.text !== remote.text) {
         this.publish({ ready: true, conflict: remote });
@@ -169,7 +176,7 @@ export class ScratchpadController {
       while (this.view.dirty && !this.view.conflict) {
         const text = this.view.text;
         this.uncertain = true;
-        const result = await this.transport.save(this.sessionId, text, this.base.revision);
+        const result = await this.transport.save(this.scope, text, this.base.revision);
         if ("current" in result) { this.publish({ conflict: result.current }); break; }
         this.base = result;
         this.uncertain = false;

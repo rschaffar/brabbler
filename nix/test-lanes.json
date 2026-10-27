@@ -123,7 +123,7 @@
     {
       "path": "app/api/scratchpad/route.test.mjs",
       "lane": "N",
-      "reason": "Actual scratchpad API stores hashed-scope notes only beneath unique private agent root; saves await stable-path lock release and after-hook removes root synchronously.",
+      "reason": "Actual scratchpad API stores Global/Project/legacy notes beneath a unique private agent root; selected-folder metadata uses fresh bounded synchronous Git reads and existing file-root admission, without wrapper startup or trust writes. Route promises include body and stable-path lock release; isolated after-hook removes the fixture root synchronously.",
       "estimatedMs": 1000
     },
     {
@@ -621,7 +621,7 @@
     {
       "path": "components/ScratchpadPanel.policy.test.mjs",
       "lane": "F",
-      "reason": "Exact first-native fence; real Panel/Controller/default-transport originals, original literal desktop/short inputs, successful coalesced same-writer and same-revision refresh/nested-drain ownership. Independent phased realm/host restoration with domain-owned LIFO console/native overrides. Actual named policy faults, matching late-HTTP/fresh-peer after-hook negatives, restored22/159 and finite independent review close known P2s. Not native modal/physical/filesystem or future/escaped idle authority. Parent source/dependency binding below; fresh complete-core gate still required. AST ownership and F/N/E isolation are independent."
+      "reason": "Real Panel/Controller/default transport with declared external project metadata and process-local HTTP/storage/visibility only. Existing original read/body/coalesced-writer/nested-drain ownership and phased realm/host teardown remain; project A/B/A aliases, history and obsolete metadata bodies add no native effects. Metadata IDs are supplied inputs, not a copied resolver. Not native modal/layout/Git/filesystem or future/escaped idle authority; native/API and installed bridges remain separate. AST ownership and F/N/E isolation are independent."
     },
     {
       "path": "components/SessionBulkMoveDialog.behavior.test.mjs",
@@ -1866,7 +1866,7 @@
     {
       "path": "lib/scratchpad-client.test.mjs",
       "lane": "F",
-      "reason": "Scratchpad controller uses Map-backed storage and supplied deferred transport; pending promises are synthetic/process-local and cannot perform real saves.",
+      "reason": "Scratchpad controller uses Map-backed Global/Project/legacy storage and supplied deferred transport; pending promises are synthetic/process-local and cannot perform real saves or Git resolution.",
       "estimatedMs": 1000
     },
     {
@@ -2492,7 +2492,7 @@
     "lib/question-set.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Draft storage and UI/events are injected memory fakes, but ask-user-extension imports the pi-ai runtime barrel whose complete transitive import effects remain unverified.",
     "lib/request-header-guard.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: HTTP guard fixtures use ephemeral loopback listeners with awaited close and synchronous bounded children; however Next option-utils transitive import effects were not inspected completely.",
     "lib/running-session-forks-e2e.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: waitForForkResponse is exercised with synthetic promises and rejection observation only, but imported composer-keyboard-focus/async-condition helper closure was not read.",
-    "lib/scratchpad-server.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Scratchpad writes/atomic temp paths are under unique fixture roots and saves await lock release, but proper-lockfile and pinned SDK import-side effects were not resolved.",
+    "lib/scratchpad-server.test.mjs": "Unresolved E hold retained: private unique note/Git fixtures now also check registered worktree/folder identities with synchronous owned Git commands. Saves await lock release, but prior proper-lockfile and pinned SDK import-side-effect isolation concerns remain unresolved; no scheduling promotion is claimed.",
     "lib/session-list-scanner-tail.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Real private scanner fixtures restore fs hooks and cancel index-save timers, but every case has a real 10-second deadline. Overlap cleanup releases a gate without awaiting the outstanding listings before reset/removal, so timeout/failure teardown is not certified.",
     "lib/session-model-speed-sdk.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Real SDK chat/cache warmer uses mocked fetch and awaits main prompt settlement, but finally calls wrapper.destroy without awaiting extension shutdown/disposal before restoring fetch/env and deleting files. Main-stream completion is not lifecycle cleanup.",
     "lib/session-move.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Actual relocation and in-process route stay inside the unique agent fixture, but real catalogue scans schedule a captured-path index-save timer. Teardown restores env/removes root without flushing or resetting that pending writer.",

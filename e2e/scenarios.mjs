@@ -32,7 +32,7 @@ export const scenarios = {
   "native-tools": ["native-tools/selected-runtime-native-v2@en-desktop", "native-tools/modal-layout@en-mobile-tall"],
   "trust": ["trust/worktree-caller-cwd-reset-native-v5@en-desktop", "trust/worktree-compact-restriction-native-v5@en-mobile-tall"],
   "git-plugin": ["git-plugin/pagination-owned-v8@en-desktop", "git-plugin/pagination-owned-v8@en-mobile-tall"],
-  "appearance": ["appearance/legacy-width-bridge-v2@numeric-wide", "appearance/layout-native-v2@legacy-desktop", "appearance/notes-native@en-desktop", "appearance/notes-touch-layout@en-mobile-short"],
+  "appearance": ["appearance/legacy-width-bridge-v2@numeric-wide", "appearance/layout-native-v2@legacy-desktop", "appearance/notes-project-native-v2@en-desktop", "appearance/notes-project-touch-layout-v2@en-mobile-short"],
   "timestamps": ["timestamps/usage-time-geometry-v3@en-desktop", "timestamps/process-hit-test-v3@en-mobile-tall", "timestamps/usage-time-geometry-v3@legacy-desktop", "timestamps/process-hit-test-v3@legacy-mobile"],
   "diff-context": ["diff-context/d409-render-merge-v2@legacy-desktop"],
   "markdown": ["markdown/render-files-native-v3@legacy-desktop", "markdown/render-touch-wiring-v2@legacy-mobile"],

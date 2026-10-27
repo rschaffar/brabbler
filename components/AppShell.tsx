@@ -1451,7 +1451,7 @@ export function AppShell() {
         onConfirm={(choice) => void handleTrustProject(choice)}
       />
     )}
-    {scratchpadMounted && <ScratchpadPanel open={scratchpadOpen} sessionId={selectedSession && !selectedSession.transient ? selectedSession.id : null} onClose={() => setScratchpadOpen(false)} />}
+    {scratchpadMounted && <ScratchpadPanel open={scratchpadOpen} projectCwd={activeCwd} onClose={() => setScratchpadOpen(false)} />}
     <SshSigningCards controller={sshController} />
     </FileLinkMenuContext.Provider>
     </ReviewNavigationContext.Provider>
