@@ -71,6 +71,7 @@ export async function checkSubagentLifecycle(page, { base, api, post, root, agen
     return snapshot.running === true && snapshot.state?.isStreaming === false && snapshot.state?.isPromptRunning === false;
   }, parentId);
   const { readSubagentRun } = await createJiti(import.meta.url).import(join(root, "lib/subagents.ts"));
+  const { decodeSessionCatalogue } = await createJiti(import.meta.url, { fsCache: false }).import(join(root, "lib/session-catalogue-wire.ts"));
   const saved = async id => {
     const detail = await api(`/api/sessions/${id}`);
     const path = relative(agentDir, detail.filePath);
@@ -181,7 +182,8 @@ export async function checkSubagentLifecycle(page, { base, api, post, root, agen
     await page.reload({ waitUntil: "domcontentloaded" });
     assert.equal((await saved(queued.id)).run.runId, stopped.run.runId);
     const [catalogueRead, runningRead] = await Promise.all([catalogue.original, running.original]);
-    const nativeRows = catalogueRead.body.sessions;
+    // Inspect the original admitted browser body, not a replacement API read.
+    const nativeRows = decodeSessionCatalogue(catalogueRead.body.sessions);
     const nativeParent = nativeRows.find(row => row.id === parentId);
     assert.equal(nativeParent?.cwd, cwd, "application catalogue carries this actual native parent");
     assert.deepEqual(nativeRows.filter(row => row.relation?.kind === "subagent" && row.relation.parentSessionId === parentId).map(row => row.id).sort(), childIds);

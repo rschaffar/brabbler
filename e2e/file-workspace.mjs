@@ -169,7 +169,9 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
     if (await button.count()) await button.click();
   };
   await showSidebar();
-  await page.getByText("Split owner peer", { exact: true }).click();
+  // The clipped label's geometric center can sit beneath hover actions. Use
+  // the same native row selection at its unobstructed label edge, never force.
+  await page.locator(`[data-session-id="${fixture.peerSessionId}"]`).click({ position: { x: 20, y: 20 } });
   await page.getByText("Peer review context", { exact: true }).waitFor();
   await page.waitForFunction(id => new URLSearchParams(location.search).get("session") === id, fixture.peerSessionId);
   await page.getByRole("link", { name: "Shared edit source", exact: true }).click();
@@ -196,7 +198,7 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   await panel.getByRole("button", { name: "Go to editor", exact: true }).waitFor();
   await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
   await showSidebar();
-  await page.getByText("Split review source", { exact: true }).click();
+  await page.locator(`[data-session-id="${fixture.sessionId}"]`).click({ position: { x: 20, y: 20 } });
   await page.waitForFunction(id => new URLSearchParams(location.search).get("session") === id, fixture.sessionId);
   await page.getByRole("button", { name: "Show file panel", exact: true }).click();
   await panel.getByRole("button", { name: "Expand file panel", exact: true }).click();

@@ -154,8 +154,37 @@ passed; browser peer cancellation remains incomplete acceptance. Preserve `full.
 no assertions, handler calls, suppression authority, cleanup or deadlines change.
 Independent follow-up review confirms its N classification remains appropriate.
 Corrected focused RPC execution passed **69/69** with statics in **107.044s**,
-`focused-rpc.log`, `/tmp/pi-web-test-core.pg6FUg/run.json`. Complete corrected
-acceptance remains pending; no unchanged retry erases the retained first failure.
+`focused-rpc.log`, `/tmp/pi-web-test-core.pg6FUg/run.json`.
+
+Second full12/4run at `6094b03daac881d2bd130aa4df64a19fc8e90976` completed core
+**517files /4,254tests /14suites** with no failures/skips/cancellations, but browser
+coverage remained incomplete: Markdown hit its unchanged30s pointer deadline while
+the clipped peer label was covered by hover actions; Activity remained in overview
+without a completed capsule. The outer tool600s deadline interrupted the command,
+so there is no successful complete-command duration. Parent cancelled the exact
+remaining task-owned Activity Nix client through pidfd/SIGINT and observed exit;
+this is not a completed inner settlement receipt. Core report
+`/tmp/pi-web-test-core.ngknpZ/run.json`, browser
+`/tmp/pi-web-test-browser.0e1EKx/run.json`, retained `full-2.log` and
+`full-2-interruption.json`; no deployment checks ran.
+
+An unchanged focused Activity diagnosis (**74.549s**, `diagnostic-activity.log`,
+`/tmp/pi-web-test-browser.6uzBJK/run.json`) passed the initial overview, then exposed
+an actual test-consumer incompatibility: subagent-lifecycle's original observed
+browser body assumed an array (`nativeRows.find`). Decode that same admitted body
+with the installed-package codec; retain every native parent/family/queue/terminal/
+worktree/Toolbar assertion, never substitute another API request. Markdown selects
+the same exact fixture-ID row with an ordinary pointer at its unobstructed label
+edge, retaining answer/URL/editor/host/Files/save assertions. No force click, error
+filter, scenario retirement or browser deadline change. Independent review found
+these bounded and a separate audit found no other affected observed-body consumer.
+
+Both changed groups passed focused acceptance: Activity **130.404s**, Markdown
+**184.634s**, running as two coordinated one-sandbox selections with the same source.
+Those times overlap and are not complete acceptance or a benchmark. Crucially,
+these fixes address the demonstrated body incompatibility and pointer obstruction;
+they do not establish the cause or fix of the earlier Activity overview stall.
+Full corrected acceptance remains pending; earlier failures remain retained.
 
 All commands/logs/private fault exports remain under
 `/tmp/pi-web-catalogue-payload-evidence-1793089574/`. Full sandbox acceptance,
