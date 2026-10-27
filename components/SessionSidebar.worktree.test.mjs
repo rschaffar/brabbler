@@ -105,10 +105,72 @@ for (const mode of ['create', 'attach']) test(`actual worktree ${mode} requires 
   assert.match(r.view.container.textContent, /controlled conflict/);
 });
 
+test('Strict Sidebar warm bootstrap publishes once and skips unnecessary detail hydration', async t => {
+  const catalogues = [], publications = [];
+  const r = await navigationRuntime(t, sidebarRoutes([session('a')], request => {
+    if (request.url.pathname === '/api/sessions') catalogues.push(request);
+  }));
+  const activity = r.graph.createActivityClientController({ visible: () => false });
+  r.releaseOnClose(() => activity.dispose());
+  const props = { selectedCwd: '/repo', selectedSessionId: null, activityController: activity,
+    onSelectSession() {}, onSessionsChange: rows => { if (rows.length) publications.push(rows); } };
+  await r.render(createElement(r.graph.SessionSidebar, props)); await r.settled();
+  assert.equal(catalogues.length, 1, 'Strict replay must not create a second forced bootstrap');
+  exact(catalogues[0], '/api/sessions', { summary: '1' }, { cache: 'no-store' });
+  assert.ok(r.view.container.querySelector('[data-session-id="a"]'));
+  assert.equal(r.pendingTimerCount(750), 0, 'complete warm summary needs no forced hydration');
+  assert.ok(publications.length > 0);
+  await r.render(createElement(r.graph.SessionSidebar, { ...props, refreshKey: 1 })); await r.settled();
+  assert.equal(catalogues.length, 2); exact(catalogues[1], '/api/sessions', { force: '1' }, { cache: 'no-store' });
+});
+
+test('held startup summary coalesces real version and unlisted-running notification refreshes', async t => {
+  const catalogues = [];
+  const r = await navigationRuntime(t, sidebarRoutes([session('a')], request => {
+    if (request.url.pathname === '/api/sessions') {
+      catalogues.push(request); return { handled: true, data: undefined };
+    }
+    if (request.url.pathname === '/api/agent/running') {
+      exact(request, '/api/agent/running', {}, { cache: 'no-store', signal: true });
+      return { handled: true, data: { sessionListVersion: 1, runningSessionIds: ['a'] } };
+    }
+  }));
+  const activity = r.graph.createActivityClientController({ visible: () => true });
+  r.releaseOnClose(() => activity.dispose());
+  await r.render(createElement(r.graph.SessionSidebar, { selectedCwd: '/repo', selectedSessionId: null,
+    activityController: activity, onSelectSession() {} }));
+  assert.equal(catalogues.length, 1, 'real passive demands wait for the held summary');
+  await r.reply(catalogues[0], { sessions: [session('a')], sessionListVersion: 1, runningSessionIds: ['a'] });
+  assert.ok(r.view.container.querySelector('[data-session-id="a"]'), 'summary paints before the forced body settles');
+  assert.equal(catalogues.length, 2); exact(catalogues[1], '/api/sessions', { force: '1' }, { cache: 'no-store' });
+  await r.reply(catalogues[1], { sessions: [session('a')], sessionListVersion: 2, runningSessionIds: ['a'] });
+  await activity.whenIdle(); await r.settled();
+  assert.equal(catalogues.length, 2); assert.equal(r.pendingTimerCount(750), 0);
+});
+
+test('actual Sidebar unmount drains admitted catalogue JSON without late publication or replacement', async t => {
+  const catalogues = [], published = [];
+  const r = await navigationRuntime(t, sidebarRoutes([session('a')], request => {
+    if (request.url.pathname === '/api/sessions') { catalogues.push(request); return { handled: true, data: undefined }; }
+  }));
+  const activity = r.graph.createActivityClientController({ visible: () => false });
+  r.releaseOnClose(() => activity.dispose());
+  await r.render(createElement(r.graph.SessionSidebar, { selectedCwd: '/repo', selectedSessionId: null,
+    activityController: activity, onSelectSession() {}, onSessionsChange: rows => { if (rows.length) published.push(rows); } }));
+  assert.equal(catalogues.length, 1);
+  await r.headers(catalogues[0]); assert.equal(catalogues[0].jsonCalls, 1);
+  await r.view.unmount();
+  await r.body(catalogues[0], { sessions: [session('late')], sessionListVersion: 9 });
+  await r.settled();
+  assert.equal(catalogues[0].bodyReturned, true);
+  assert.equal(published.length, 0); assert.equal(catalogues.length, 1);
+  assert.equal(r.pendingTimerCount(750), 0);
+});
+
 test('a real detail refresh retires pending summary hydration without hiding HTTP refresh failures', async t => {
   let visible = false, version = 1;
   const held = [];
-  const r = await navigationRuntime(t, sidebarRoutes([session('a')], request => {
+  const r = await navigationRuntime(t, sidebarRoutes([session('a', '/repo', { detailsPending: true, firstMessage: '' })], request => {
     if (request.url.pathname === '/api/agent/running') {
       exact(request, '/api/agent/running', {}, { signal: true, cache: 'no-store' });
       return { handled: true, data: { sessionListVersion: version, runningSessionIds: [] } };

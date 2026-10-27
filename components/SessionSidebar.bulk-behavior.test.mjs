@@ -39,9 +39,11 @@ test('actual Sidebar two-family 409/200 archive keeps only failure selected, ret
   assert.equal(checkbox(h, IDS[0]).checked, true);
   assert.equal(h.view.container.querySelector(`[data-session-id="${IDS[1]}"]`) === null, true);
   const canonical = [session(IDS[0]), session(IDS[1], ROOT, { archived: true })];
+  assert.equal(oldReads.includes(h.latest('/api/sessions')), true, 'post-mutation refresh queues behind the old body');
+  for (const old of oldReads) await h.body(old, { sessions: IDS.map(id => session(id)), sessionListVersion: 1 });
+  assert.equal(h.view.container.querySelector(`[data-session-id="${IDS[1]}"]`) === null, true, 'drained stale JSON cannot undo optimistic archive');
   const current = h.latest('/api/sessions'); assert.equal(oldReads.includes(current), false);
   await h.reply(current, { sessions: canonical, sessionListVersion: 2 });
-  for (const old of oldReads) await h.body(old, { sessions: IDS.map(id => session(id)), sessionListVersion: 1 });
   await h.idle();
   assert.equal(h.view.container.querySelector(`[data-session-id="${IDS[1]}"]`) === null, true, 'obsolete JSON cannot undo accepted mutation');
   assert.match(bulk(h).textContent, /1 failed, 1 succeeded/);

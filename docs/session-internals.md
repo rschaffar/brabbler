@@ -136,10 +136,26 @@ scanner's stat observation can wait until the next rebuild, not a transactional
 snapshot, authorization or integrity proof. First reads after restart and changed
 files still perform bounded relation parsing.
 
-Sidebar startup paints a summary before deferred detail hydration. Starting any
-real detail refresh cancels that pending startup timer, so it cannot supersede a
-move-owned refresh and produce a false refresh-failure warning. Stale-response
-publication guards and genuine HTTP/JSON failure reporting remain independent.
+`useSessionCatalogue` gives each Sidebar one `SessionCatalogueLoader`: one active
+HTTP/body workflow, merged pending demand and separate caller waiters. A successful
+nonempty summary with no `detailsPending` rows skips forced initial hydration;
+pending, empty or failed summaries retain the one-shot 750ms fallback unless a
+real detail demand claims it. Strict Effects replays observation, not bootstrap.
+
+Version observations can join a covering summary; unmatched observations receive
+one post-observation attempt. Tokens are opaque (including resets), not numerically
+ordered, and mismatch never starts an equality-retry loop. Notifications retain
+forced refresh semantics. Explicit mutation requests advance publication epochs
+immediately; stale bodies/errors/finally drain without overriding optimistic state.
+A qualifying newer follow-up can settle earlier mutation callers successfully.
+Forced demand cannot settle from ordinary work. Serial refreshes can wait behind a
+slow older body; this adds no abort policy, timeout or polling-cadence change.
+
+Release immediately gates admission/publication and cancels hydration. Synchronous
+Strict replay retains the instance; terminal disposal joins admitted bodies through
+the existing navigation-work observer. Current callback/controller ports are used
+at publication. Activity receipt, suppression and completion-tone authority remain
+unchanged. No payload projection or production latency guarantee is implied.
 
 ### Running state polling + reconciliation
 - The sidebar polls `/api/agent/running` every 2.5 seconds while the tab is visible and pauses polling in background tabs. The session-list response remains the initial fallback.

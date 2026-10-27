@@ -234,7 +234,7 @@ export async function navigationRuntime(t, route, setup = () => {}, lifecycle = 
       await act(async () => { for (const timer of intervals.values()) if (timer.delay === 15000) timer.callback(); });
     },
     get intervalCount() { return intervals.size; },
-    pendingTimerCount() { return timers.size; },
+    pendingTimerCount(delay) { return delay === undefined ? timers.size : [...timers.values()].filter(timer => timer.delay === delay).length; },
     headers(request, status = 200) {
       return act(async () => {
         assert.ok(transport.requests.includes(request));

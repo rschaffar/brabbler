@@ -107,11 +107,13 @@ test('default Sidebar bridge publishes catalogue, selects actual rows, and archi
   for (const peer of peers.filter(request => request !== old)) await h.reply(peer, { sessions, sessionListVersion: 1 });
   await h.headers(old);
   await click(h.view, button(h.view, 'Archive', row(h.view, 'a')));
+  assert.equal(h.latest('/api/sessions') === old, true, 'replacement waits for the old body, not a second concurrent decode');
+  assert.equal(h.view.container.querySelector('[data-session-id="a"]') === null, true, 'acknowledged family leaves immediately');
+  await h.body(old, { sessions, sessionListVersion: 1 });
+  assert.equal(h.view.container.querySelector('[data-session-id="a"]') === null, true, 'stale body cannot undo optimistic archive');
   const refresh = h.latest('/api/sessions');
   assert.notEqual(refresh === old, true);
-  assert.equal(h.view.container.querySelector('[data-session-id="a"]') === null, true, 'acknowledged family leaves immediately');
   await h.headers(refresh); await h.body(refresh, { sessions: [session('a', '/repo', { archived: true }), session('b')], sessionListVersion: 2 });
-  await h.body(old, { sessions, sessionListVersion: 1 });
   for (const peer of h.requests.filter(request => request.url.pathname === '/api/sessions' && request !== old && request !== refresh && !request.answered)) await h.reply(peer, { sessions: [session('a', '/repo', { archived: true }), session('b')], sessionListVersion: 2 });
   assert.equal(h.view.container.querySelector('[data-session-id="a"]') === null, true);
   await h.settled();

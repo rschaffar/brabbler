@@ -1,16 +1,21 @@
 # Pi Web production latency — profiling plan
 
-**Current status: first relation-reuse slice implemented, independently reviewed,
-and fully sandbox-verified at `ade48c7a9aa6904f0ddeb5dde63afff9bfe12747`.**
-This is the first coherent-candidate checkpoint, not completion of the optional
-refresh/payload work or proof of a deployed production latency improvement.
-Profiling observations below remain the pre-change installed-service baseline. The
-user subsequently requested thorough planning/review and implementation. The
-current Plan below owns that continuation; the retained profiling sections describe
-the earlier checkpoint, not a continuing prohibition on source edits or sandboxed
-checks. No live deployment, restart, fresh inspector probe or remote publication
-is authorized. Continue in the existing clean dedicated worktree, whose base still
-matches current local main `b9774c017d1617ebf37bd37ceb9852c717096ec8`.
+**Current status: refresh coalescing implemented, independently reviewed and fully
+sandbox-verified at `3bdd333651ed908a8ea07d47d67212d9bab32327`.**
+Current writer uses `perf/catalogue-refresh-coalescing` in
+`/home/robert/projects/3rdparty/pi-desk-worktrees/catalogue-refresh-coalescing`,
+starting at local main `3650d2e857f18c7dbcef412f44e435c0f5d363b3`. The original
+profiling worktree/branch were removed on the user's later cleanup request.
+No deployment, live probe, publication or unrelated task changes are authorized.
+
+**Previous slice:** relation reuse was implemented, independently reviewed,
+and fully sandbox-verified at `ade48c7a9aa6904f0ddeb5dde63afff9bfe12747`.
+That first coherent-candidate checkpoint preceded the user's later rebuild and
+measured improvement recorded in Package4 below. Its original unmeasured-gain and
+worktree/base statements are historical, not current directions. The current Plan
+owns refresh coalescing; the original profiling procedure remains evidence. New
+source/check work is authorized, but live deployment, restart, inspector activation
+and remote publication remain separately gated.
 
 **Earlier profiling checkpoint: complete; dominant production bottleneck identified.
 No optimization had been implemented at that checkpoint.** The user authorized local
@@ -30,13 +35,136 @@ Find where Deep Thought's installed Pi Web loses time during opening/reloading
 and ordinary use, particularly with a large saved-session catalogue. Rank the
 actual foreground critical-path costs and recurring responsiveness costs, rather
 than treating static complexity or acceptance-file elapsed time as attribution.
-The measured investigation below supplies the evidence. Now remove repeated
-relation reads/parsing for unchanged files as one bounded implementation slice,
-preserve current bounded parsing/freshness/security contracts, and obtain complete
-sandboxed acceptance. Do not promise a production speedup before separately
-authorized deployment and measurement.
+The measured investigation below supplies the evidence. Relation reuse is now
+implemented and measured after the user's rebuild. The active slice removes
+redundant Sidebar catalogue admissions while preserving paint, mutation freshness,
+forced/ordinary semantics, failures and owned body settlement. Compact payloads
+remain later work. Obtain complete sandboxed acceptance; do not infer another
+production speedup before separately authorized deployment and measurement.
 
 ## Plan
+
+### Package 4 — active: Sidebar catalogue refresh coalescing
+
+The user rebuilt, then authorized three timing-only ordinary reloads. Installed
+reference `4x2hbyhrg67sw4a04kzc39fgg9hmzxnk-pi-web-0.9.3` matches the integrated
+reader/scanner; the other13scoped files match the original baseline. Chrome155,
+warm service, visible loopback reloads: enabled-composer upper bounds
+**1,266.6 /1,056.0 /1,000.8 ms**, median **1,056.0 ms**, versus **7,260.2 ms** before
+(85.45% less observed median waiting). Still **5 /4 /4** catalogue responses,
+**48.33 /38.67 /38.67 MB decoded**, and **280–312 ms** maximum timer delay.
+Evidence: `/tmp/pi-web-after-rebuild.64BKvL/comparison.json` and `environment.json`.
+These are three ordinary observations, not statistical/mobile/INP/cold-start proof.
+
+- [x] Inspect Sidebar, Activity version callbacks/notifications and mutation call
+  sites; independent design review selected one instance-owned catalogue loader
+  behind a production hook. Activity polling, acknowledgement and tone rules stay
+  unchanged. This plan remains the single owner; payload work stays deferred.
+- [x] Add regression tests and a meaningful runtime counterexample for the actual
+  loader and mounted Sidebar wiring.
+  Warm nonempty complete summary needs no deferred forced hydration; pending,
+  empty and failed summaries cannot certify completeness. Preserve the existing
+  one-shot750msfallback when needed and not replaced by a detail demand.
+- [x] Implement one active workflow and merged pending demands. Distinguish summary,
+  ordinary version observation and forced notification/mutation requirements.
+  Explicit mutation requests immediately invalidate prior publication and wait for
+  a qualifying post-mutation response; ordinary work never masquerades as forced.
+  Coalesce queued demands, not distinct mutations arriving after a flight starts.
+- [x] Keep precise caller waiters and actual body/work ownership. Older mutation
+  waiters can succeed through a newer eligible refresh, never through stale data.
+  Errors/finally from obsolete epochs cannot publish. Serial refreshes can wait
+  behind a slow old body; no abort, new timeout, cadence or error-filter changes.
+- [x] Handle opaque/decreasing version tokens with equality and local observation
+  order, not numeric monotonicity or retry-until-equal loops. A post-observation
+  attempt is bounded; later reconciliation remains with the existing Activity poll.
+- [x] Hook lifecycle must tolerate Strict Effects without a second bootstrap; gate
+  publication/admission immediately on release, defer terminal closure only for
+  synchronous replay, cancel hydration and join every admitted body on real unmount.
+  Use current callbacks; remove old Sidebar load-id/timer authorities. Retain
+  optimistic archive/move/bulk invalidation and caller refresh-result semantics.
+- [x] Verify runtime reds/greens, force strength, summary/detail timing, startup
+  overlap, opaque A/B/A/restart tokens, mutations during initial/follow-up reads,
+  actual mounted publication/error/Strict/unmount behavior and existing native/UI
+  bridges. Update `docs/session-internals.md`; independently review settled delta.
+- [x] Once source/review settle, rebase onto current main and run full sandboxed
+  acceptance with `nix run .#test -- all --workers 4 --jobs 12` when32CPUs/43GiB
+  admits overlap, otherwise documented4/4fallback. The peer acceptance experiment
+  integrated as `29bfc3a8f2798c10d7feed968d833da48472cff3` during this work; adopt
+  its ADR0035budget guidance without changing this slice's application design.
+  Coordinate actual concurrent runs; keep all existing deadlines/checks.
+- [x] Record actual request work removed, exact source/evidence, preparation versus
+  execution and full command runtime. Integrate only through exact Git approval;
+  deployed speed gain needs a separately authorized rebuild/comparison.
+
+**Package-4 focused checkpoint:** actual source/hook, mutation wiring and test
+ownership independently reviewed without unresolved material findings. Focused
+Nix static +3files **35/35** passed in40s; evidence
+`/tmp/pi-web-catalogue-coalescing.7ODs3F/focused-3.log` and
+`/tmp/pi-web-test-core.9Tss3s/run.json`. The first invocation's49s lint failure
+(missing fixture comma) is preserved in `focused-1.log`; correctedfocused2passed
+29/29 in41s, before six additional lifecycle/late-demand cases.
+A private exported-source defect (`complete=false`) passed static and failed the
+actual deferred-opportunity assertion, **2 requests versus expected1**, in39s:
+`fault-warm-hydration.log`, `/tmp/pi-web-test-core.ivO1In/run.json`. The receiving
+worktree never contained that fault.
+
+First complete run at rebased `6ca2264d78db7b95864b25ab6ccf7cf307c149f3`
+failed in277.115s: adjacent `SessionSidebar.bulk-behavior.test.mjs` still expected
+parallel post-archive admission before releasing oldJSON. The optimistic partial
+archive had already passed; keep that assertion and require stale-body suppression,
+then canonical freshness after draining the oldbody. This is the same intentional
+serialization adaptation as the earlier single-archive test, not a deadline/error
+waiver. Original `full.log`, `full-command.json`,
+`/tmp/pi-web-test-core.pgTt2t/run.json` and browser-peer cancellation remain retained;
+core stopped277passed/1failed/233notstarted, so no full pass is claimed. Independent
+review found the adapted409/200/retry/restore/delete obligations intact. New focused
+four-owner execution passed **37/37 in40s**: `focused-4.log`,
+`/tmp/pi-web-test-core.qWjdBg/run.json`.
+
+**Package-4 complete acceptance:** candidate
+`3bdd333651ed908a8ea07d47d67212d9bab32327` (rebasedonto29bfc3a) passed
+`nix run .#test -- all --workers 4 --jobs 4` in **368.130s**, including realization.
+Four/four was the documented ADR0035fallback:32CPUs but only **35.706GiB available**,
+not the43GiB required for12/4overlap. Requested/effective core **4/4**, browser **4**;
+all **511files /4,226tests /14suites**, **26groups /59receipts** and genuine deployed
+Home Manager/HTTP/PTY/restart/shutdown guest checks passed, with no skipped,
+cancelled or unstarted core cases. All browser expected/completed lists and
+source/run bindings match; owned clients settled, browser ports closed, guest
+MainPID0/cgroups absent-or-empty/port refused. Scope is the ordinary Nix containment
+and bounded owned observations, not unobserved escaped-descendant certification.
+
+Core driver **363.072s**, file execution envelope **360.084s**. Browser support
+**3.680s**, definition publication **5.175s**, group-client execution envelope
+**233.050s**, total driver **241.908s**. Guest driver **77.718s**, guest proof interval
+**20.053s**; do not claim their subtraction is isolated realization. These overlapping
+envelopes are not additive. No deliberate separate prewarming: the changed-fixture
+rerun could reuse prerequisites realized during the retained failed firstfull.
+No matched acceptance or deployed application speedup is inferred from these times.
+
+Evidence root `/tmp/pi-web-catalogue-coalescing.7ODs3F/`: `full-2-command.json`,
+`full-2.log`, `acceptance-summary.json`. Authoritative reports:
+`/tmp/pi-web-test-core.xbrhCL/run.json`, `/tmp/pi-web-test-browser.E3bBfH/run.json`,
+`/tmp/pwv-Cfuc8c/run.json`; core output
+`/nix/store/xp3k4pi6d34wp27wpjyaxfbvfx380d5k-pi-web-core-checks`.
+Snapshot `/nix/store/r9wkg4m4pwa66qi2j82gxgm1m1wrcsaf-source`, outer digest
+`0da3e2f4be531b1fed55a3f90b8baf10b30498fab54656d4b8706c5701df55d0`, package
+`/nix/store/83pv7gd90fxlfnng8c1ri7q8ivhi71jy-pi-web-0.9.3`.
+
+Measured work-removal evidence is controlled actual-owner admission: one warm
+complete bootstrap, two requests for overlapping summary/version/forced startup,
+no duplicate Strict bootstrap and no obsolete hydration. The fault proves an extra
+forced response is detected. The real deployed4–5responses baseline has not yet
+been remeasured with this code. Payloads, Activity receipt/cadence and backend
+relations are unchanged. Stop before DTO expansion. A documentation-only evidence
+follow-up uses source/link checks and confirms application/test inputs unchanged;
+these checks do not relabel the suite as a new-tip run.
+
+**Package-4 completion:** loader/hook and mutation wiring reviewed; focused and
+complete acceptance pass; fewer redundant admissions demonstrated without weakening
+freshness, failures, body joins or initial paint. Stop at this checkpoint before
+compact DTOs. If safe sharing needs authority/cadence changes, stop for a decision.
+
+### Earlier implementation packages (verified history)
 
 This is the sole active implementation control; the original profiling procedure
 below is historical evidence. User authorization covers source/tests/documentation
@@ -438,7 +566,8 @@ other scenarios are not globally exonerated by this host-local sample.
   [architecture](../architecture.md), [session](../session-internals.md),
   [feature](../feature-internals.md) and [testing](../testing.md) guides govern.
 - The original checkpoint owned interactive production profiling only; the current
-  Plan now owns the authorized first relation-reuse slice. It is not another test
+  Plan owns the verified relation-reuse slice and now-authorized refresh coalescing.
+  It is not another test
   optimization slice, a change to Activity acknowledgement or a Git-cost census.
 
 ## Profiling non-goals (earlier checkpoint)
