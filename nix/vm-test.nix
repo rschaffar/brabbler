@@ -8,6 +8,7 @@ let
     mkdir -p "$out"
     cp ${./service-plan.mjs} "$out/service-plan.mjs"
     cp ${./service-smoke.mjs} "$out/service-smoke.mjs"
+    cp ${./auth-setup.fixture.mjs} "$out/auth-setup.fixture.mjs"
     cp ${./vm-evidence.mjs} "$out/vm-evidence.mjs"
   '';
   controller = pkgs.writeShellApplication {
@@ -114,6 +115,7 @@ let
           home.stateVersion = "24.11";
           services.brabbler = {
             enable = true;
+            requireAuth = true;
             inherit package;
             port = 30141;
             agentDir = "%h/fixtures/agent";

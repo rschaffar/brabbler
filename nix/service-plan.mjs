@@ -44,7 +44,7 @@ export function serviceEnvironment(registry) {
   validateServiceRegistry(registry);
   return {
     HOME: registry.service.home, PI_CODING_AGENT_DIR: registry.service.agentDir, BRABBLER_SKIP_VERSION_CHECK: '1',
-    PI_OFFLINE: '1', NODE_ENV: 'production', SHELL: registry.shell,
+    PI_OFFLINE: '1', NODE_ENV: 'production', SHELL: registry.shell, BRABBLER_REQUIRE_AUTH: '1',
     BRABBLER_SERVICE_UNIT: 'unit-value', BRABBLER_SERVICE_FILE: 'runtime file $literal',
     BRABBLER_SERVICE_OVERRIDE: 'runtime-file-wins', BRABBLER_SERVICE_RUNTIME: '/run/user/1000',
   };

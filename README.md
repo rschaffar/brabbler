@@ -78,12 +78,13 @@ On Linux, the flake also exports a Home Manager module:
   services.brabbler = {
     enable = true;
     package = inputs.brabbler.packages.${pkgs.system}.default;
+    requireAuth = true; # locked until local CLI setup (or runtime env password)
     environment.BRABBLER_SKIP_VERSION_CHECK = "1";
   };
 }
 ```
 
-Point the `brabbler` flake input at your chosen revision of **this repository**. The module runs a loopback-only user service; credentials remain outside the Nix store. For password-protected or proxied deployments, use a runtime `environmentFile` for secrets and configure TLS separately.
+Point the `brabbler` flake input at your chosen revision of **this repository**. The module runs a loopback-only user service; credentials remain outside the Nix store. For password-protected deployments, enable `services.brabbler.requireAuth = true` and run the local setup below as the service user. No SOPS passphrase or secret Nix value is needed. `services.brabbler.agentDir` and the CLI's `PI_CODING_AGENT_DIR` must select the same directory (expand `%h` to your home path in the shell). An explicit `BRABBLER_PASSWORD` in a runtime `environmentFile` remains an alternative; do not combine it with stored credentials. Configure TLS separately.
 
 ## Configuration and local data
 
@@ -94,7 +95,8 @@ The package, launcher, Nix outputs and Home Manager service are named `brabbler`
 | Setting | Purpose | Default |
 | --- | --- | --- |
 | `BRABBLER_APP_NAME` | Installed PWA name; whitespace is trimmed and blank values use the default | `Brabbler` |
-| `BRABBLER_PASSWORD` | Enable browser password authentication | Disabled |
+| `BRABBLER_PASSWORD` | Explicit environment password alternative; conflicts with stored credentials | Unset |
+| `BRABBLER_REQUIRE_AUTH=1` | Fail closed until authentication is configured; Home Manager: `services.brabbler.requireAuth` | Off |
 | `BRABBLER_ALLOWED_HOSTS` | Allow additional exact proxy or custom hostnames | Unset |
 | `BRABBLER_SKIP_VERSION_CHECK=1` | Disable running-version reload prompts | Unset |
 | `BRABBLER_PUSH_SUBJECT` | Operator contact (`mailto:` or `https:` URL) required for Web Push delivery | Unset |
@@ -144,11 +146,31 @@ Project choices are shared across browsers through the private, versioned `~/.pi
 
 **This is a coding agent with access to your machine, not a public chat service.** Keep it on loopback unless you deliberately configure remote access.
 
-For an installed launcher on a trusted network, require a long random password before binding to a non-loopback address:
+### Local password setup
+
+Run on the server, as the user running Brabbler (a local terminal or SSH TTY):
 
 ```bash
-BRABBLER_PASSWORD='replace-with-a-long-random-password' \
-BRABBLER_SKIP_VERSION_CHECK=1 \
+# If customized, set the SAME agent directory for setup and the service:
+# export PI_CODING_AGENT_DIR="$HOME/.pi/agent"
+brabbler auth setup
+# Explicit passphrase change/reset; requires existing valid secure state:
+brabbler auth setup --replace
+```
+
+The CLI reads a **hidden, confirmed** passphrase from the controlling TTY, never from arguments, stdin pipes or an environment variable. Use at least 12 characters (up to 1024 UTF-8 bytes). First setup refuses existing credentials; `--replace` rotates the salt and independent session-signing key and immediately revokes existing web sessions. Setup is local only: there is no first-visitor browser enrollment.
+
+Private Linux state lives in `$PI_CODING_AGENT_DIR/brabbler/auth/credentials.json` (default `~/.pi/agent/brabbler/auth/credentials.json`): a versioned salted scrypt verifier and a separate random cookie key, **not the plaintext passphrase**. Back it up privately. Credential files must be owned physical single-link regular files, mode `0600`; `brabbler/` and `auth/` must be owned physical directories, mode `0700`. Symlinks, malformed records and unsafe permissions lock the server even when required mode is off. Setup/read use Linux descriptor-relative filesystem access; unsupported platforms fail closed for local credentials.
+
+`BRABBLER_REQUIRE_AUTH=1` (or Home Manager `services.brabbler.requireAuth = true`) returns setup-needed HTTP 503 until configured, including API/Basic/SSH requests. Invalid flag values also lock. Without the flag and without credentials, existing unauthenticated local mode remains available. A nonempty `BRABBLER_PASSWORD` explicitly enables the environment mode only when no stored credentials exist; coexistence locks, and setup refuses while it is set. There are no legacy `PI_WEB_*` fallbacks. Environment-mode cookies revoke on server restart; stored-mode cookies survive restart but revoke on replacement.
+
+If state is corrupt/insecure, repair it deliberately as the local owner; setup never silently overwrites it. After a crashed setup, inspect and remove only its private `setup.lock` when no setup process remains. For lost/corrupt credentials that cannot be repaired, stop the service, retain a private backup, remove the broken credential file locally, and run setup again **with required mode kept enabled**. No automatic recovery unlocks the server.
+
+For an installed launcher on a trusted network, configure authentication first and require it before binding beyond loopback:
+
+```bash
+brabbler auth setup
+BRABBLER_REQUIRE_AUTH=1 BRABBLER_SKIP_VERSION_CHECK=1 \
 brabbler --hostname 0.0.0.0 --no-open
 ```
 

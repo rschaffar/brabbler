@@ -5,6 +5,9 @@ import http from 'node:http';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { fileURLToPath } from 'node:url';
+import { setupInstalledAuth } from './auth-setup.fixture.mjs';
+let authCookie;
+const authPassword = 'synthetic-vm-local-passphrase';
 import { createServicePlan, serviceCgroup, serviceEnvironment, validateServiceRegistry, validateWorkspace } from './service-plan.mjs';
 
 export const diagnosticLimits = Object.freeze({ requests: 16, bodyBytes: 8192, transcriptBytes: 32768, errorBytes: 8192 });
@@ -88,7 +91,7 @@ function endpoint(base, pathname) {
 // Completion still waits for request closure on all paths. A rejected status or
 // header drains only a bounded body prefix within the ORIGINAL absolute deadline.
 // No pooled sockets, redirects, subprocesses or background client acquisitions.
-function ownedRequest(base, pathname, { method = 'GET', body, timeoutMs = 5000, signal, diagnostics } = {}, consume) {
+function ownedRequest(base, pathname, { method = 'GET', body, timeoutMs = 5000, signal, diagnostics, expectedStatus = 200, cookie = authCookie } = {}, consume) {
   const target = endpoint(base, pathname), payload = body === undefined ? undefined : JSON.stringify(body);
   if (signal?.aborted) return Promise.reject(new Error('HTTP probe aborted'));
   const captured = capturePrefix(diagnosticLimits.bodyBytes);
@@ -115,8 +118,10 @@ function ownedRequest(base, pathname, { method = 'GET', body, timeoutMs = 5000, 
       response?.destroy(); request.destroy(); deliver();
     };
     const abort = () => finish(new Error('HTTP probe aborted'));
-    const request = http.request(target, { method, agent: false, headers: payload === undefined ? {} : {
-      'content-type': 'application/json', 'content-length': Buffer.byteLength(payload),
+    const request = http.request(target, { method, agent: false, headers: {
+      ...(cookie ? { cookie } : {}), ...(payload === undefined ? {} : {
+        'content-type': 'application/json', 'content-length': Buffer.byteLength(payload),
+      }),
     } }, incoming => {
       response = incoming; incoming.pause(); incoming.setEncoding('utf8');
       record.status = incoming.statusCode ?? null;
@@ -131,7 +136,7 @@ function ownedRequest(base, pathname, { method = 'GET', body, timeoutMs = 5000, 
         if (pendingFailure) finish(pendingFailure);
       });
       try {
-        assert.equal(incoming.statusCode, 200, `HTTP ${incoming.statusCode}: ${pathname}`);
+        assert.equal(incoming.statusCode, expectedStatus, `HTTP ${incoming.statusCode}: ${pathname}`);
         consume(incoming, finish);
       } catch (error) {
         // Preserve this exact error even if draining later times out or resets.
@@ -391,6 +396,29 @@ async function resumeAfterRestart(base, plan, diagnostics) {
   assert.equal(resumes.length, 1); assert.ok(JSON.stringify(resumes[0]).includes('VM restart question'));
 }
 
+async function loginAuth(base) {
+  return ownedRequest(base, '/api/web-auth', { method: 'POST', body: { password: authPassword }, cookie: '' }, (response, finish) => {
+    response.once('end', () => {
+      const cookie = response.headers['set-cookie']?.[0]?.split(';')[0];
+      if (!cookie?.startsWith('brabbler_session=')) return finish(new Error('Missing signed authentication cookie'));
+      finish(null, cookie);
+    });
+  });
+}
+async function configureAuth(base, plan) {
+  for (const path of ['/api/sessions', '/api/web-auth', '/api/ssh-agent']) {
+    await ownedRequest(base, path, { expectedStatus: 503 }, (response, finish) => {
+      assert.equal(response.headers['cache-control'], 'no-store');
+      response.once('end', () => finish(null, true));
+    });
+  }
+  const env = { ...process.env, HOME: plan.registry.service.home, PI_CODING_AGENT_DIR: plan.registry.service.agentDir };
+  const cli = await setupInstalledAuth(plan.registry.package, env, authPassword);
+  assert.equal(cli.hidden, true); assert.equal(cli.confirmed, true);
+  authCookie = await loginAuth(base);
+  // Private synthetic cookie bridges the REAL user-unit restart, not a re-created token.
+  fs.writeFileSync(path.join(plan.registry.service.fixture, 'web-cookie'), authCookie, { flag: 'wx', mode: 0o600 });
+}
 async function main() {
   const [mode, file, extra] = process.argv.slice(2), plan = guestPlan(file);
   process.umask(0o077);
@@ -399,12 +427,19 @@ async function main() {
     if (mode === 'seed') return seed(plan);
     if (mode === 'activation') return activation(plan);
     if (mode === 'permissions') return permissions(plan, extra);
+    if (mode === 'restart-read' || mode === 'pty') {
+      const file = path.join(plan.registry.service.fixture, 'web-cookie');
+      physical(file, '0600', plan.registry.service.uid); authCookie = fs.readFileSync(file, 'utf8');
+    }
     if (mode === 'restart-read') {
       const session = await sessionSnapshot(base, plan, diagnostics);
+      // Stored key and verifier survive a new genuine systemd InvocationID.
+      assert.ok(await loginAuth(base));
       await resumeAfterRestart(base, plan, diagnostics);
       return session;
     }
     if (mode === 'http-write') {
+      await configureAuth(base, plan);
       const initial = await requestJSON(base, '/api/sessions', { diagnostics });
       assert.deepEqual(initial.sessions.map(session => session.id), [plan.session.id]);
       assert.equal((await requestJSON(base, `/api/sessions/${plan.session.id}`, {

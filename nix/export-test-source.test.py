@@ -64,6 +64,7 @@ class SourceExportTests(unittest.TestCase):
                      '.next/cache/data.json', 'node_modules/pkg/index.js', 'test-results/private.json',
                      'lib/.env.secret', 'lib/auth.json', 'lib/private/token.json',
                      'lib/config.json', 'lib/credentials.json',
+                     'lib/synthetic-agent/brabbler/auth/credentials.json',
                      'lib/pi-web-accounts.json', 'lib/brabbler-accounts.json']:
             self.put(name, 'DO_NOT_READ')
         secret = self.base / 'outside-secret'
@@ -82,6 +83,12 @@ class SourceExportTests(unittest.TestCase):
         with patch.object(exporter.os, 'open', side_effect=guarded_open):
             report = self.run_export()
         self.assertNotIn('lib/auth.json', report['before'])
+        # The local web-auth record includes a signing key, not just a verifier.
+        # Even when agent state is misplaced below an admitted tree, never open it.
+        credential = 'lib/synthetic-agent/brabbler/auth/credentials.json'
+        self.assertIn(credential, report['omittedNames'])
+        self.assertNotIn(credential, report['before'])
+        self.assertFalse((self.output / credential).exists())
         for name in ('lib/pi-web-accounts.json', 'lib/brabbler-accounts.json'):
             self.assertIn(name, report['omittedNames'])
             self.assertNotIn(name, report['before'])

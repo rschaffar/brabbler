@@ -68,7 +68,7 @@ export function createWebSessionToken(
 
 export function isValidWebSessionToken(
   token: string | undefined,
-  password = process.env.BRABBLER_PASSWORD,
+  password: string | undefined,
   now = Date.now(),
 ): boolean {
   if (!token || !isWebPasswordEnabled(password)) return false;

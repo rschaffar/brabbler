@@ -4,6 +4,11 @@
   "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. Automatic selection remains capped at four; widths through eight are explicit opt-in experiments whose isolation review is not proof of native timing margins or complete acceptance. Re-review when resource/fixture behavior changes. The 2026-10-22 audit JSON is immutable historical evidence, not live authority or a current source-byte/reason/estimate requirement. Live unresolved holds carry the concerns still requiring review; source digests alone do not prove isolation. Original73 plus12 finite additional clients re-reviewed at coherent union; SessionTools pending Apply peer fixed with actual failure-settlement contrast. Native closed gates bind configured Jiti L, eager SDK I/V and actual external-root X; 3 bounded guarded in-process F, 9 native N eligible, runtime generation/catalogue and invoked trust discovery are now separately source-bound N at their selected inputs. Fresh combined four-job run required; no worker/deadline/runner policy change. Current explicit Source/input projection closes finite Worktree/Terminal, Cards/Pierre/FDIFF, Usage/SSH UI, runtime/trust and actual queue domains, with passive native SSH/RPC error-retention remedies. No browser/native retirement or universal constructor/escaped/future work certification; complete combined four-job validation remains required.",
   "files": [
     {
+      "path": "lib/web-auth-store.test.mjs",
+      "lane": "N",
+      "reason": "Real credential/CLI/proxy/login/SSH admission owners use per-case mkdtemp agent/HOME, private regular/symlink/hardlink fixtures and process-local auth symbols. Every asynchronous scrypt attempt is awaited (including all concurrent outcomes), native controlling-PTY CLI exits are joined, synchronous CLI refusals have no service children, and registered teardown restores environment/throttle before private-root removal. SSH tests reject before managed dispatch. Title settings writes use explicit fixture paths with restored process-local umask; whole-launcher VM execution replaces only argument/build-artifact/child-launch capabilities and uses the real store, without source extraction or copied authentication policy. No native SDK operation, SSH listener, fixed port, provider or source-relative write is admitted. Cases stay serial."
+    },
+    {
       "path": "lib/e2e-activity-navigation.test.mjs",
       "lane": "E",
       "reason": "Actual Activity projection and owned-route callbacks use supplied process-local page/native-body/document ports only; named gates, captured replacement owners and complete observed outcomes close every case including failures. No real browser/network/native operation is invoked. Retain E pending complete transitive import-effect review of the Activity fixture barrel; this is not browser or universal closure proof."
@@ -2334,8 +2339,8 @@
     },
     {
       "path": "lib/web-auth-proxy.test.mjs",
-      "lane": "F",
-      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+      "lane": "N",
+      "reason": "Synthetic requests and process-local environment/throttle plus synchronous descriptor-backed credential absence reads under the runner-private agent directory. All async proxy calls are awaited; no service, provider, KDF child or source mutation. Existing real one-second throttle assertions remain unchanged."
     },
     {
       "path": "lib/web-auth.test.mjs",

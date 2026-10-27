@@ -40,7 +40,7 @@ export function readTitleModel(path = getTitleLanguagePath()): TitleModelSelecti
 }
 
 function writeTitleSettings(settings: { language: TitleLanguage; model: TitleModelSelection | null }, path: string): void {
-  mkdirSync(dirname(path), { recursive: true });
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   writePrivateFileAtomicSync(path, JSON.stringify({ language: settings.language, ...(settings.model ? { model: settings.model } : {}) }, null, 2));
 }
 
