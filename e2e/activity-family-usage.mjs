@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
  * Activity2500ms and usage3000ms defaults remain unchanged.
  */
 export async function checkActivityFamilyUsage(page, width, {
-  base, api, selectedSessionId, otherSessionId, subagentIds, overview, parentReady, setMetricsChildRunning,
+  base, api, selectedSessionId, otherSessionId, subagentIds, overview, parentReady, setMetricsChildRunning, navigate,
 }) {
   const mobile = width <= 640;
   const desktop = width === 1280;
@@ -103,7 +103,7 @@ export async function checkActivityFamilyUsage(page, width, {
     }
     // Preserve the original selected OTHER prerequisite, including mobile, and
     // return to the project Activity panel with the controlled working child.
-    await page.goto(`${base}/?session=${otherSessionId}`, { waitUntil: "domcontentloaded" });
+    await navigate(`${base}/?session=${otherSessionId}`, { waitUntil: "domcontentloaded" });
     await page.getByText("Other workspace task", { exact: true }).last().waitFor();
     await page.getByRole("button", { name: /^Activity/ }).click();
     await overview.getByRole("combobox", { name: "Project" }).selectOption({ label: "project" });
