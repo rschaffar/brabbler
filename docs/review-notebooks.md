@@ -5,6 +5,70 @@ for expandable evidence. A stop can display a pinned source range or a complete
 commit review and reveal that commit in Git Explorer. These are read-only views,
 not executable notebook cells or Git-operation approvals.
 
+## Choose references before authoring
+
+For every step, decide whether it reviews an introduced change, a deliberate
+multi-commit range or final behavior. A commit containing a symbol is not
+necessarily the commit that introduced or changed it. Pinning everything to the
+final branch tip can show an unrelated commit in the reader's commit view, even
+when the source excerpt exists there.
+
+- **Introduced change:** inspect Git history and the actual patch, then use the
+  introducing/change commit for that claim. Check each symbol separately: records
+  and an interface discussed in one step may have different introducing commits.
+  Split evidence targets or steps when necessary; do not assign them one commit
+  merely because they appear in the same explanation.
+- **Single-commit diff:** normally compare the change commit with its parent.
+  `pi-review` source/File diff and commit views use the first parent (the empty
+  tree for a root commit). Do not substitute the branch base or final tip for
+  that parent without explaining the different review scope.
+- **Multi-commit range:** use explicit `pi-evidence` comparison endpoints. Label
+  the target and explain which commits the range includes, why they belong
+  together and that the diff compares endpoint trees, not one commit's patch.
+- **Final-candidate source snapshot:** legitimate for reviewing final behavior.
+  Label it as a snapshot at the exact candidate, not an introducing commit. If
+  the step also explains history, supply the introducing commits separately.
+  Keep test-result claims tied to the exact tested candidate, command, result,
+  artifact and limitations; test source or a later snapshot is not a pass receipt.
+
+Use read-only local Git inspection, for example (variables are verified local
+identities; paths and symbols below are generic):
+
+```sh
+git log --reverse --format='%H %s' "$base..$candidate" -- src/records.ts src/reader.ts
+git log -p -S 'interface RecordReader' "$candidate" -- src/reader.ts
+git show --format=fuller "$change" -- src/reader.ts
+git rev-parse "$change^1"           # first parent, if the commit has one
+git cat-file -e "$change^{commit}"
+git show "$change:src/reader.ts"    # inspect coordinates in this version
+```
+
+A search match is a lead, not proof of introduction: inspect the patch, follow
+renames or earlier history where needed, and verify the symbol's meaning matches
+the prose. Resolve full commit IDs before writing metadata; revision expressions
+such as `$change^1` belong in inspection commands, not authored `oid` fields.
+
+### Audit the whole notebook
+
+Before delivery, and after correcting an existing notebook, audit **all steps and
+targets**, not just the first reported mismatch:
+
+- Check each physical checkout, literal local branch, commit object and branch
+  reachability. Do not fetch missing objects or substitute another revision.
+- Verify paths, file types and one-based inclusive source ranges at each pinned
+  commit, not against the working file. Verify comparison endpoint existence,
+  ancestry/order and the changed path; use pinned source for unchanged context.
+- Read the actual patch/source beside the step's prose and evidence title. Does
+  each reference support the claimed introduction, change, range or snapshot?
+  Object existence and schema validation alone cannot establish that history.
+- Check test-evidence candidate identities independently. Report unavailable or
+  unverified material honestly; distinguish Git/source checks from browser checks.
+
+Write direct, simple English. Explain the review question, relevant mechanisms,
+risks and evidence limits without patronizing analogies or elementary programming
+tutorials. Simpler wording must not remove technical depth. Use generic examples;
+do not copy private code, branch names or saved reviewer responses into guidance.
+
 ## Write a source stop
 
 Place the explanation before the fence: what problem this code solves, what to
@@ -320,6 +384,36 @@ live view. Reveal explanations are attributed to the author, not graded. Noteboo
 outcomes are an adapter, not a relaxation of live `normalizeSetAnswer`: a required
 live question still rejects skip. No blocking request/receipt lifecycle is mounted.
 
+### Revise a saved notebook safely
+
+Before changing an existing notebook, check whether it has saved review data and
+whether the requested correction changes reviewed material. Preserve the notebook
+location and stable notebook/chapter/step/target/question/option IDs for the same
+logical items; do not regenerate identities as part of a rewrite or reuse an old
+ID for a different item. Preserve all saved review data, including `review-data`,
+without copying private reviewer responses into examples or reports.
+
+**Stable IDs do not keep answers current.** Pi Web fingerprints effective prose,
+question definitions and evidence identities/bytes, not just IDs. Correcting an
+OID, path, source range, comparison endpoint or substantive prose can keep earlier
+answers and marks accessible as history while making them stale for the corrected
+material. Required questions then need fresh current-version outcomes before
+Reviewed. Even an OID change to identical source bytes changes the pinned identity.
+
+If preserving current answers conflicts with the correction, stop before changing
+that material and use `ask_user` to explain the affected steps and get the user's
+choice: correct this notebook with earlier answers retained as historical and
+re-review needed, or leave the reviewed version intact and author a separate
+corrected notebook with a new notebook identity. Do not promise both corrected
+material and unchanged current-answer status. A separate version must not move or
+rebind the original review history.
+
+Never edit/rewrite reviewer snapshots, hashes, fingerprints, saved answers or
+imported history to make old answers appear current. Never silently rebind answers
+or feedback to new material. After an agreed correction, report the affected steps
+and expected staleness, and let the reviewer reload and record new outcomes through
+the normal UI. History preservation is not current-answer preservation.
+
 ### Material changes, missing evidence and recovery
 
 On explicit record loading/activation, current-step navigation, refresh and decision
@@ -440,16 +534,20 @@ claiming availability. The index above plus this chapter and a similarly structu
 {"version":1,"id":"reject-before-extract","title":"Can a rejected request reach extraction?"}
 ```
 
-Read the guard before the extraction call. Compare the complete feature's change
-with the client assumption. Look for a failure path that reaches extraction before
-validation. The listed tests cover ordering, not deployment or performance.
+Read the guard before the extraction call. The server comparison deliberately
+spans all three request-validation commits, from the pre-feature base to the final
+candidate; it is not a single introducing commit. Compare that range with the
+client's final-source snapshot, which shows the resulting failure expectation,
+not its introduction. Look for a failure path that reaches extraction before
+validation. The test record must identify the exact tested candidate and command;
+ordering coverage does not establish deployment or performance.
 
 ```pi-evidence
-{"version":1,"kind":"compare","id":"server-range","title":"Whole server feature","cwd":"/home/me/projects/server","branch":"feature/request-boundary","base":"1111111111111111111111111111111111111111","candidate":"2222222222222222222222222222222222222222","path":"src/request.ts"}
+{"version":1,"kind":"compare","id":"server-range","title":"Three-commit server range: pre-feature base to final candidate","cwd":"/home/me/projects/server","branch":"feature/request-boundary","base":"1111111111111111111111111111111111111111","candidate":"2222222222222222222222222222222222222222","path":"src/request.ts"}
 ```
 
 ```pi-review
-{"version":1,"kind":"source","id":"client-assumption","title":"Client failure expectation","cwd":"/home/me/projects/client","branch":"feature/request-client","oid":"3333333333333333333333333333333333333333","path":"src/client.ts","start":24,"end":39}
+{"version":1,"kind":"source","id":"client-assumption","title":"Client final-candidate source snapshot (not introduction)","cwd":"/home/me/projects/client","branch":"feature/request-client","oid":"3333333333333333333333333333333333333333","path":"src/client.ts","start":24,"end":39}
 ```
 
 ```pi-evidence
@@ -461,3 +559,33 @@ Use another unique `pi-step` in `02-failures.md`, with prose on missing/error ca
 and verified source or web-link targets as appropriate. Keep evidence limitations
 explicit. This example does not install authoring guidance or modify exact prompts;
 the separate authoring-guidance work remains with its existing owner.
+
+### Separate introducing commits in one step
+
+Suppose a branch adds `Entry` records in commit A, adds `RecordReader` in commit B,
+then changes logging in final candidate C. A step about introducing the records and
+interface must pin them to A and B respectively, not C. These illustrative full
+IDs, paths and ranges must be replaced with verified values:
+
+````markdown
+```pi-step
+{"version":1,"id":"record-contract","title":"Records and reader contract"}
+```
+
+Commit A introduces the records. Commit B introduces the reader interface that
+uses them. Inspect each target's File diff against its own commit's first parent.
+The later logging commit C introduces neither declaration.
+
+```pi-review
+{"version":1,"kind":"source","id":"entry-introduction","title":"Entry records introduced in A","cwd":"/home/me/projects/catalog","branch":"feature/record-reader","oid":"1111111111111111111111111111111111111111","path":"src/records.ts","start":1,"end":12}
+```
+
+```pi-review
+{"version":1,"kind":"source","id":"reader-introduction","title":"RecordReader introduced in B","cwd":"/home/me/projects/catalog","branch":"feature/record-reader","oid":"2222222222222222222222222222222222222222","path":"src/reader.ts","start":1,"end":8}
+```
+````
+
+For an intentional combined A–B comparison, set `base` to A's parent and `candidate`
+to B, and label it as a two-commit range. A separate final-behavior target may pin
+C, titled **Final-candidate source snapshot at C — not the introducing commit**.
+Do not transfer test results from A or B to C without execution evidence for C.
