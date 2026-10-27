@@ -1,15 +1,18 @@
 # Pi Web production latency — profiling plan
 
-**Current status: Package 5 lossless compact catalogue transport implemented,
-independently reviewed and focused-verified; full acceptance pending.**
-The user's later request authorizes this source/test slice, not deployment,
-live capture, inspector activation or remote publication. Current writer uses
-`perf/catalogue-payload` in
-`/home/robert/projects/3rdparty/pi-desk-worktrees/catalogue-payload`, starting at
-local main `74c4fdaf659df2509a8ee3a452a82edaf3d5ff51` and rebasing onto
-`9b8f024280efb0dff9313c3d770ba9d0651e12dc`. A concurrent documentation sweep
-corrected the old delivered status; the user approved combining those corrections
-with this newly authorized package after a plan-only rebase conflict.
+**Closed 2026-10-27 at the user's explicit request:** profiling and all three
+implementation slices are complete, independently reviewed and fully verified.
+The final composed payload candidate `0f75818b50fc534b71985dc0c87e05aaf141d85b`
+on main `8c25dd7` passed complete Nix acceptance below. Closure prose is a subsequent
+documentation-only delta, not a claim that tests ran at its later commit ID.
+
+[Production performance](../../production-performance.md) now owns durable empirical
+findings, limits and every deferred production/SPA measurement. [Session contracts](../../session-internals.md)
+owns the implemented mechanisms. Exact local integration and cleanup remain owned
+by the receiving session's gated Git operations and durable receipts: archival is
+not approval or a claim those operations have already executed. No live deployment,
+restart, probe, inspector activation or remote publication occurred in this slice.
+Earlier active-status, authority and worktree observations below are historical.
 
 **Delivered history:** profiling, relation reuse and refresh coalescing are
 integrated. Relation reuse (`ade48c7`) entered main through `3650d2e`; refresh
@@ -19,10 +22,11 @@ Old writer/worktree, unintegrated and execution-authority statements below are
 historical, not current resource claims or permission to restart work. The sweep
 itself did not authorize another implementation.
 
-**Remaining owner:** this plan owns Package 5 and retains the deferred successful
-normal SPA row-click/switch capture and a separately authorized post-coalescing/
-payload production comparison. The relation-reuse comparison does not measure
-these later changes. No deployment, live probe or publication is authorized.
+**Follow-up handoff:** the user accepted [Production performance](../../production-performance.md)
+as the current owner of the deferred successful normal SPA row-click/switch capture
+and post-coalescing/payload production comparison. Neither was performed or claimed
+complete by archival. The relation-reuse comparison does not measure later changes;
+future execution needs a fresh bounded request.
 
 **Previous slice:** relation reuse was implemented, independently reviewed,
 and fully sandbox-verified at `ade48c7a9aa6904f0ddeb5dde63afff9bfe12747`.
@@ -62,7 +66,7 @@ production speedup before separately authorized deployment and measurement.
 
 ## Plan
 
-### Package 5 — active: lossless compact catalogue transport
+### Package 5 — complete: lossless compact catalogue transport
 
 The user requested the remaining payload slice. The consumer audit rejects a
 blind bounded `firstMessage` DTO: Agents filters the entire raw first message even
@@ -106,12 +110,13 @@ There is no new cache, file read, metadata authority or user-visible truncation.
   Conservative saving includes JSON/UTF-8 escaping, index digit widths and the
   table/envelope overhead. Measure identity and gzip bytes separately; do not add
   adaptive double-compression or infer transfer savings from decoded JSON alone.
-- [ ] Rebase on current main and obtain complete Nix acceptance, normally
+- [x] Rebase on current main and obtain complete Nix acceptance, normally
   `nix run .#test -- all --workers 4 --jobs 12` if 32 CPUs/43 GiB admits overlap,
   otherwise document the concrete fallback. Record candidate, source binding,
   preparation/execution envelopes, full command runtime and retained failures.
-- [ ] Record completion and exact local integration through Git approval. Stop
-  before deployment/restart/live capture or another optional optimization.
+- [x] Record verified completion and hand off exact local integration/cleanup to
+  the receiving session's gated Git lifecycle and durable receipts, separately from
+  plan archival. No deployment/restart/live capture or optional optimization.
 
 **Package-5 focused evidence:** native unchanged-production sharing regression
 failed its intended assertion (`format` undefined versus1), not static/import/setup,
@@ -184,11 +189,56 @@ Both changed groups passed focused acceptance: Activity **130.404s**, Markdown
 Those times overlap and are not complete acceptance or a benchmark. Crucially,
 these fixes address the demonstrated body incompatibility and pointer obstruction;
 they do not establish the cause or fix of the earlier Activity overview stall.
-Full corrected acceptance remains pending; earlier failures remain retained.
+Earlier failures remain retained; the complete runs below supersede this pending
+checkpoint, not its historical failure evidence.
+
+**Package-5 complete acceptance:** `beb1a934629dac4216b32da0a98f45037d15ccfd`
+passed `nix run .#test -- all --workers 4 --jobs 12` in **383.464s**, including
+realization:517files/4,254tests/14suites,26groups/59receipts and genuine Home Manager
+VM proof. Reports `/tmp/pi-web-test-core.AirZdh/run.json`,
+`/tmp/pi-web-test-browser.8TnHke/run.json`, `/tmp/pwv-ph1dxQ/run.json`; source
+`/nix/store/2ppyvj23iaybgx3qzv912zrpxa9ygci1-source`, digest
+`f5308c00003974415c38f7debad2775de858ee6783b409a1d047cbc1062fd205`.
+A separately developed notebook-review workflow then entered main as `8c25dd7`;
+that changes application/test inputs, so this earlier pass was not relabelled as
+proof of the later composition. User continuation after a restart resumed the
+recorded task without replaying completed operations.
+
+**Final current-main composition:** rebased candidate
+`0f75818b50fc534b71985dc0c87e05aaf141d85b` on
+`8c25dd7006ff1b9045709fc565c959576f49698e` passed the same full command in
+**423.975s**, including realization. All **523core files /4,291tests /14suites**,
+**26browser/terminal groups /59receipts** and genuine Home Manager deployment,
+HTTP/PTY/restart/shutdown checks passed. No failures, skips, cancellations or
+unstarted core files. Requested/effective core12/12, browser4, overlap admitted
+with32CPUs and sufficient43GiB headroom; this was not a machine reservation.
+
+Core driver **297.087s**, before-lifecycle setup/static/realization envelope
+**35.975s**, test-file envelope **259.594s**. Browser support/realization
+**101.896s**, definition publication **6.753s**, group-client envelope **248.984s**,
+driver **357.637s**. VM driver **59.027s**, guest evidence **18.236s**. Overlapping
+envelopes are not additive; VM subtraction is not isolated realization. No deliberate
+independent prewarming; previous runs' prerequisites were available, while the new
+upstream application required its own package. Neither full run is a matched
+performance benchmark or a deployed speedup claim.
+
+Authoritative reports `/tmp/pi-web-test-core.sVWnFi/run.json`,
+`/tmp/pi-web-test-browser.m5GenG/run.json`, `/tmp/pwv-0wnudK/run.json`; immutable
+source `/nix/store/fhf3w88w66k1v6f2x9hbbz4v4x9sivx5-source`, digest
+`a38e5d26e795d370ff403b6c7bca426d78a327865140b2be487c5aba7b8a5542`, package
+`/nix/store/5i29mjyqzgbjnnq0m4m16jzbzrff1yjf-pi-web-0.9.3`. Core output
+`/nix/store/66s9w29365xdwzzirknx25hw98kjqchf-pi-web-core-checks`.
+`acceptance-summary-4.json` verifies all expected/completed inventories, source/run
+bindings, native/client settlement, closed browser ports and guest inactive/MainPID0/
+absent-or-empty cgroups/refused port. Scope remains ordinary Nix containment and
+bounded owned observations, not escaped-descendant certification. Earlier Activity
+stall cause remains unestablished; successful later runs do not retroactively fix it.
 
 All commands/logs/private fault exports remain under
-`/tmp/pi-web-catalogue-payload-evidence-1793089574/`. Full sandbox acceptance,
-exact integration and optional live comparison are not implied by this checkpoint.
+`/tmp/pi-web-catalogue-payload-evidence-1793089574/`. Final source/link checks and
+confirmation that application/test/harness inputs are unchanged cover the subsequent
+evidence/guide/archive delta. Those proportional checks are not another full-suite
+execution. Local integration remains gated separately; live comparison is deferred.
 
 **Stop/limits:** if sharing does not remove meaningful response bytes, reconsider
 before optional expansion. Unique prompt text remains complete and can dominate;
@@ -668,7 +718,7 @@ production owner was established. No speedup is claimed.
    `components/SessionSidebar.tsx:569–632,754–775` waits for the summary catalogue
    before initial session adoption, then schedules forced detail hydration after
    750 ms. That timer is not an additional awaited chat-opening gate.
-   [Summary/detail routing](../../app/api/sessions/route.ts#L19-L38) reaches
+   [Summary/detail routing](../../../app/api/sessions/route.ts#L19-L38) reaches
    [enumeration/stat/scanning](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-list-scanner.ts#L468-L518), then
    [synchronous relation prefix/tail reads and project attachment](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-reader.ts#L141-L258).
    Relation work is outside the incremental transcript cache. Run completion,
@@ -676,26 +726,26 @@ production owner was established. No speedup is claimed.
    overlapping catalogue requests. Project resolution has stale-while-revalidate
    caching; distinguish cold Git resolution from warm/background refreshes.
 2. **Recurring client Activity work.** Accepted visible-tab polls
-   [publish fresh snapshot identities](../../lib/activity-client-controller.ts#L135-L159)
+   [publish fresh snapshot identities](../../../lib/activity-client-controller.ts#L135-L159)
    even without semantic changes. Installed `components/AppShell.tsx:184–186`
    constructs all Activity sections for its badge. The
-   [section-ordering child search](../../lib/activity.ts#L109-L127) is quadratic
+   [section-ordering child search](../../../lib/activity.ts#L109-L127) is quadratic
    in each populated section, not necessarily in the entire catalogue. Idle
    history still incurs catalogue-wide linear work. Poll scheduling is 2.5 seconds
    after settlement; one controller is shared within a page, not across clients.
 3. **Selected-chat history and SDK startup.** The
-   [history route](../../app/api/sessions/[id]/route.ts#L63-L89) builds the full
+   [history route](../../../app/api/sessions/[id]/route.ts#L63-L89) builds the full
    tree and all-entry statistics despite returning a bounded message window.
    A [manager cache miss](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-reader.ts#L468-L547) opens/parses the
    file synchronously; files above 64 MiB are not retained in that cache. A live
    wrapper can avoid that open. Installed `hooks/useAgentSession.ts:1067–1094`
    maintains the selected chat's SSE connection, whose
-   [cold path starts the SDK wrapper](../../app/api/agent/[id]/events/route.ts#L16-L30).
+   [cold path starts the SDK wrapper](../../../app/api/agent/[id]/events/route.ts#L16-L30).
    Installed `lib/rpc-manager.ts:3002–3297` constructs session-bound resources.
    This warm-up runs alongside history loading; do not add them as serial costs.
 4. **Periodic synchronous persistence.** A dirty scan queues a five-second
    coalesced [full index serialization/write](/nix/store/slv4p16p1ac1ag70gvsw3j5a79gqjjkz-pi-web-0.9.3/lib/node_modules/@agegr/pi-web/lib/session-list-scanner.ts#L448-L465)
-   through the [synchronously flushed atomic writer](../../lib/atomic-file.ts#L9-L21).
+   through the [synchronously flushed atomic writer](../../../lib/atomic-file.ts#L9-L21).
    Background scheduling does not make that work nonblocking. It is conditional
    on dirty scans, not a guaranteed write on every idle poll.
 
@@ -708,16 +758,16 @@ other scenarios are not globally exonerated by this host-local sample.
 
 ## Plan Relationship
 
-- [Core test optimization](2026-10-26_core-test-optimization-plan.md) owns fixture
+- [Core test optimization](../2026-10-26_core-test-optimization-plan.md) owns fixture
   transformations, scheduling/native-wait opportunities and its existing evidence.
   Opportunity #4 now has a recorded bounded negative finding on main. This plan
   neither restarts that work nor assumes other tasks have stopped; coordinate
   with their owners before future capture, and never use their worktrees/checks.
-- The older [server Activity plan](archived/2026-09-25_server-activity-review-plan.md) covers
+- The older [server Activity plan](2026-09-25_server-activity-review-plan.md) covers
   shared completion/review semantics, not performance attribution. Do not reopen
   it or reuse its historical command menu. Current
-  [architecture](../architecture.md), [session](../session-internals.md),
-  [feature](../feature-internals.md) and [testing](../testing.md) guides govern.
+  [architecture](../../architecture.md), [session](../../session-internals.md),
+  [feature](../../feature-internals.md) and [testing](../../testing.md) guides govern.
 - The original checkpoint owned interactive production profiling only; the current
   Plan owns the verified relation-reuse slice and now-authorized refresh coalescing.
   It is not another test
@@ -766,9 +816,10 @@ configuration change or instrumented deployment is a separate stop-and-ask point
   The achieved scope is three distinct 15-second quiet windows and two deep-link
   openings; the failed continuous/row-click attempts above are retained. Resource,
   long-task and timer observations are not full browser CPU or exact paint metrics.
-- [ ] Deferred: a successful normal SPA row-click/switch measurement. Do not relabel
-  deep-link navigation as this scenario; the identified server bottleneck does not
-  require extending this checkpoint into a navigation-correctness investigation.
+- [x] Deferred obligation transferred, not measured: [Production performance](../../production-performance.md)
+  now explicitly owns a successful normal SPA row-click/switch capture, per the
+  user's closure decision. Deep-link navigation is not this scenario; archival
+  makes no new navigation or deployed-performance claim.
 - [x] If an already-authorized agent is naturally running, capture one user-selected
   sluggish action during that activity and compare with the quiet observation.
   Reuse the reload/switch action if it matches the symptom; do not add a broad
@@ -818,7 +869,7 @@ indiscriminately.
 
 ### 3. Attribute only the leading costs with bounded probes
 
-- [x] Check existing `Server-Timing` from [lib/perf.ts](../../lib/perf.ts#L21-L67):
+- [x] Check existing `Server-Timing` from [lib/perf.ts](../../../lib/perf.ts#L21-L67):
   it was not enabled, so no reuse is claimed and no configuration was changed.
   Its environment switch is read at module load;
   enabling it is not permission to restart/change the installed service.
@@ -872,7 +923,7 @@ requests as if they were serial contributions to user latency.
   cause of every reported symptom. Any controlled causal experiment is proposed
   separately; do not disable correctness/safety in the live app to create an A/B.
 - [x] Map only the identified hot owners to existing retained test evidence/source.
-  The [existing bounded relation test](../../lib/session-reader.test.mjs#L576)
+  The [existing bounded relation test](../../../lib/session-reader.test.mjs#L576)
   exercises one private child, stubs scanner rows and prohibits full SDK manager
   opens. It protects bounded reading/status semantics, not this 5,305-row production
   scale or a latency budget. The production hot pass is compiled catalogue work,

@@ -197,7 +197,9 @@ labels/tooltips, and Sidebar/mobile still collapse complete skill envelopes befo
 their 50-unit fallback. Clone/prompt/history data is untouched. Unique text can
 still dominate a response; sharing does not bound decoded memory. JSON byte savings
 are not a promise of gzip-transfer or deployed latency improvement: compare those
-separately after an authorized rebuild/measurement.
+separately after an authorized rebuild/measurement. [Production performance](production-performance.md)
+owns recorded empirical findings and the deferred production/SPA measurement
+follow-ups; the executed implementation plan is archived.
 
 ### Running state polling + reconciliation
 - The sidebar polls `/api/agent/running` every 2.5 seconds while the tab is visible and pauses polling in background tabs. The session-list response remains the initial fallback.
