@@ -14,13 +14,23 @@ on 2026-10-27.
 | [Claude CLI sessions](2026-09-26_claude-cli-sessions-plan.md) | Backend/policy/protocol work is not delivered on main. Retained feature branches are not integration evidence. |
 | [Explorer fullscreen](2026-10-13_git-explorer-fullscreen-plan.md) | Dedicated already-paginated history/graph and unsupported/non-Git fullscreen browser cases, including expand/restore state retention. |
 | [Eight-worker benchmark](2026-10-22_eight-worker-acceptance-plan.md) | Resource-admitted overlapping 8-core/8-browser measurement, or explicit retirement/deferral. The newer 12/4 experiment does not supply 8/8 proof. |
-| [Guided review notebooks](2026-10-23_guided-review-notebooks-plan.md) | User validation of the accepted reader; Increment 2 persistence, forms, anchored feedback, batch handoff/replies and re-review accounting. |
 | [Core test optimization](2026-10-26_core-test-optimization-plan.md) | Delivered slices are integrated. Deferred native-wait/cache/remaining cost leads and original ownership-task performance measurements remain proposals with this owner, not automatic next work. |
 | [Production profiling](2026-10-26_pi-web-production-profiling-plan.md) | Profiling, relation reuse and refresh coalescing are integrated. Compact payloads, successful SPA-switch capture and post-coalescing production comparison remain separately scoped future work. |
 
 Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
+
+## Guided review workflow acceptance
+
+The [complete implementation record](archived/2026-10-23_guided-review-notebooks-plan.md)
+now closes both notebook increments, not another reader-only milestone. The composed
+candidate `bda3cf5` on `9b8f024` passed full Nix acceptance: **522 files / 4,285 tests**,
+**26 browser/terminal groups / 59 receipts**, genuine deployment VM, **585s**. The
+[notebook guide](../review-notebooks.md) and [ADR 0036](../adr/0036-guided-review-recording.md)
+own delivered contracts. Exact local integration/cleanup disposition remains owned
+by the receiving session's gated Git receipts; archival is not integration approval.
+The historical audit and lineage table below retain their original scope.
 
 ## Closure evidence
 
@@ -42,7 +52,7 @@ Later recorded complete Nix acceptance at
   `/tmp/pi-web-test-browser.cLZIMq/run.json`, `/tmp/pwv-a1eQTs/run.json`;
   command log `/tmp/guided-reader-composed-all.ZSqi9O.log`.
 - Exact preparation/execution intervals, admission and limits remain in the
-  [reader acceptance record](2026-10-23_guided-review-notebooks-plan.md#complete-reader-acceptance).
+  [reader acceptance record](archived/2026-10-23_guided-review-notebooks-plan.md#complete-reader-acceptance).
 
 This later evidence resolves obsolete browser-library/full-suite blockers only
 for relevant surviving flows. It does not certify an absent scenario, live OAuth,

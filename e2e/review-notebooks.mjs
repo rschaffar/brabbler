@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createOwnedRoutes } from "./owned-routes.mjs";
+import { checkGuidedReviewWorkflow } from "./guided-review-workflow.mjs";
 
 const fence = value => "```pi-review\n" + JSON.stringify(value, null, 2) + "\n```";
 export function seedReviewNotebooks({ gitProject, targetWorktree, env, writeSession, message }) {
@@ -34,7 +35,11 @@ export function seedReviewNotebooks({ gitProject, targetWorktree, env, writeSess
     { id: "ordering", title: "Ordering", path: "ordering.md" }, { id: "failure", title: "Failure behavior", path: "failure.md" },
   ] }));
   writeFileSync(join(guidedFolder, "ordering.md"), metadata("pi-step", { version: 1, id: "inspect", title: "Inspect the immutable evidence" }) +
-    "Compare the implementation with its surrounding context.\n\n" + fence({ ...source, id: "guided-source" }) + "\n\n" +
+    "Compare the implementation with its surrounding context.\n\n" +
+    metadata("pi-question", { version: 1, id: "constructor", shortLabel: "Judgment", question: "Is the boundary understandable?", type: "single", required: true, options: [{ id: "clear", title: "Clear" }, { id: "inspect", title: "Needs inspection" }], explanation: "The author recommends checking rejection before extraction, not grading the reviewer." }) +
+    metadata("pi-question", { version: 1, id: "notes", shortLabel: "Understanding", question: "What did you inspect?", type: "text", required: false }) +
+    metadata("pi-question", { version: 1, id: "design", shortLabel: "Design", question: "Which design properties matter?", type: "multiple", required: false, options: [{ id: "local", title: "Locality" }, { id: "durable", title: "Durability" }, { id: "none", title: "None", exclusive: true }] }) +
+    fence({ ...source, id: "guided-source" }) + "\n\n" +
     fence({ ...source, id: "guided-code", title: "Implementation", path: "review-source.tsx", start: 2, end: 6 }) + "\n\n" +
     metadata("pi-evidence", { version: 1, kind: "compare", id: "guided-range", title: "Whole feature range", cwd: gitProject, branch: "feature", base: prior, candidate: oid, path: "z-context.txt" }) + "\n\n" +
     metadata("pi-evidence", { version: 1, kind: "file", id: "guided-image", title: "Working diagram", path: "assets/pixel.png" }));
@@ -258,6 +263,7 @@ export async function checkReviewNotebooks(page, { base, fixture: f }) {
     assert.deepEqual(writes, []);
     assert.deepEqual([f.git("rev-parse", "HEAD"), f.git("show-ref"), f.git("status", "--porcelain"), readFileSync(f.document, "utf8")], before);
     console.log(`PASS: ${page.viewportSize().width}px lazy revision-bound review stops, immutable diff/context, file previews, explicit Explorer reveal and read-only navigation`);
+    await checkGuidedReviewWorkflow(page, { base, fixture: f });
   } finally {
     page.off("request", observe);
     // Leave the next owned Markdown chain a clean presentation without touching its fixtures.

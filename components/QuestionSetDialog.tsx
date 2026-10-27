@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
-import { draftAnswer, MAX_ANSWER_LENGTH, type QuestionDraft, type SetAnswer } from "@/lib/question-set";
+import { draftAnswer, type QuestionDraft, type SetAnswer } from "@/lib/question-set";
 import { clearQuestionDraft, loadQuestionDrafts, saveQuestionDrafts } from "@/lib/question-set-drafts";
 import type { ExtensionUiRequest } from "@/lib/types";
 import { BlockingCard } from "./BlockingCard";
 import { MarkdownBody } from "./MarkdownBody";
 import { QuestionSetReview } from "./QuestionSetReview";
+import { QuestionFields } from "./QuestionFields";
 
 type Request = Extract<ExtensionUiRequest, { method: "ask_user_batch" }>;
 export function QuestionSetDialog({ request, sessionId, onRespond, onSubmissionWork }: {
@@ -52,15 +53,6 @@ export function QuestionSetDialog({ request, sessionId, onRespond, onSubmissionW
   const update = (patch: Partial<QuestionDraft>) => {
     setDrafts((current) => ({ ...current, [question.id]: { ...current[question.id], skipped: false, ...patch } }));
     setError(false);
-  };
-  const select = (id: string) => {
-    if (!draft) return;
-    const option = question.options.find((o) => o.id === id)!;
-    const selections = question.type === "single" || draft.writing || draft.skipped ? [id]
-      : draft.selections.includes(id) ? draft.selections.filter((i) => i !== id)
-        : option.exclusive ? [id]
-          : [...draft.selections.filter((i) => !question.options.find((o) => o.id === i)?.exclusive), id];
-    update({ writing: false, selections });
   };
   const send = async (cancelled = false) => {
     if (sending.current || remaining === 0 || (!cancelled && !valid)) return;
@@ -137,43 +129,7 @@ export function QuestionSetDialog({ request, sessionId, onRespond, onSubmissionW
       {review ? <>
         <p className="text-xs text-text-muted">{t("chat.questionsNotSent")}</p>
         <QuestionSetReview set={request} answers={answers} onEdit={submitting ? undefined : setPage} />
-      </> : question && draft && <fieldset disabled={submitting} className="m-0 grid min-w-0 gap-3 border-0 p-0">
-        <legend className="blocking-card-section-title">{t(question.required ? "chat.questionsRequired" : "chat.questionsOptional")}</legend>
-        {question.context && <details open className="min-w-0 text-xs text-text-muted">
-          <summary className="cursor-pointer">{t("chat.questionsWhy")}</summary>
-          <MarkdownBody>{question.context}</MarkdownBody>
-        </details>}
-        {question.options.length > 0 && <fieldset className="m-0 grid min-w-0 gap-2 border-0 p-0">
-          <legend className="blocking-card-section-title">{t(question.type === "multiple" ? "chat.askUserMultiple" : "chat.askUserSingle")}</legend>
-          {question.options.map((option) => {
-            const active = !draft.skipped && !draft.writing && draft.selections.includes(option.id);
-            return <label key={option.id} className="blocking-card-choice" data-selected={active}>
-              <input type={question.type === "multiple" ? "checkbox" : "radio"} name={`question-${request.id}-${question.id}`}
-                checked={active} onChange={() => select(option.id)} className="mt-0.5 accent-accent" />
-              <span className="min-w-0"><strong className="block text-[13px] font-medium">{option.title}
-                {option.recommended && <span className="ml-2 text-xs text-text-muted">{t("chat.questionsRecommended")}</span>}
-              </strong>{option.description && <span className="mt-1 block whitespace-pre-wrap text-xs text-text-muted">{option.description}</span>}</span>
-            </label>;
-          })}
-          <label className="blocking-card-choice" data-selected={draft.writing && !draft.skipped}>
-            <input type="radio" name={`question-${request.id}-${question.id}`} checked={draft.writing && !draft.skipped}
-              onChange={() => update({ writing: true })} className="accent-accent" />{t("chat.questionsAlternative")}
-          </label>
-        </fieldset>}
-        {draft.writing && <label className="grid gap-1 text-xs text-text-muted">{t("chat.askUserAnswerPlaceholder")}
-          <textarea value={draft.text} onChange={(e) => update({ text: e.target.value })} rows={3} maxLength={MAX_ANSWER_LENGTH}
-            className="blocking-card-field resize-y" />
-        </label>}
-        <label className="grid gap-1 text-xs text-text-muted">{t("chat.questionsDetails")}
-          <textarea value={draft.comment} onChange={(e) => update({ comment: e.target.value })} rows={2} maxLength={MAX_ANSWER_LENGTH}
-            placeholder={t("chat.questionsDetailsHint")} className="blocking-card-field resize-y" />
-        </label>
-        {!question.required && <label className="flex items-center gap-2 text-xs text-text-muted">
-          <input type="checkbox" checked={draft.skipped} onChange={(e) => update({ skipped: e.target.checked })} className="accent-accent" />
-          {t("chat.questionsSkip")}
-        </label>}
-        {draft.skipped && <p className="text-xs text-text-muted">{t("chat.questionsSkipHint")}</p>}
-      </fieldset>}
+      </> : question && draft && <QuestionFields question={question} draft={draft} update={update} disabled={submitting} name={`question-${request.id}-${question.id}`} />}
     </BlockingCard>
   </div>;
 }

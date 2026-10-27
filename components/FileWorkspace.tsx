@@ -21,6 +21,8 @@ export interface FileWorkspaceHandle {
 }
 export interface FileWorkspaceStatus { count: number; groups: { id: string; label: string }[]; canSplit: boolean }
 interface Props {
+  reviewDestination?: import("@/lib/review-handoff").ReviewChatDestination;
+  onReviewBatchDraft?: import("@/lib/review-handoff").ReviewBatchDraft;
   workspaceKey: string;
   active: boolean;
   presented: boolean;
@@ -46,6 +48,9 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
   const { t } = useI18n();
   const { onStatus, onFocusWorkspace, onShowFiles, workspaceKey, presented } = props;
   const [store] = useState(() => new FileWorkspaceStore());
+  // Independent live workspaces/tabs must not overwrite each other's recovery.
+  // Previous activations remain explicitly recoverable through the notebook picker.
+  const [reviewOwnerNamespace] = useState(() => crypto.randomUUID());
   const bank = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   const [edits] = useState(() => new FileEditSessions());
   const root = useRef<HTMLDivElement>(null);
@@ -236,6 +241,9 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
           follow: { sourceGroup: groupId, right: canSplit(groupId, "right"), below: canSplit(groupId, "below") } }}>
           <FileViewer filePath={view.filePath} cwd={view.cwd} sourceSessionId={view.sourceSessionId} gitRefreshKey={props.gitRefreshKey}
             onWork={props.onWork}
+            reviewDraftOwner={`${reviewOwnerNamespace}:${composite(key, view.id)}`}
+            reviewDestination={visible && props.active ? props.reviewDestination : undefined}
+            onReviewBatchDraft={visible && props.active ? props.onReviewBatchDraft : undefined}
             navigationId={view.viewerRevision} initialDisplayMode={view.initialDisplayMode} initialState={view.viewerState}
             initialPage={view.page} initialLineTarget={view.lineTarget} watchEnabled={visible && props.active}
             onEditingChange={() => commit(key, state => patchFileView(state, view.id, { preview: false }))}

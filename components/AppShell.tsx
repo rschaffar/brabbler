@@ -20,6 +20,7 @@ import { ActivityViews } from "./ActivityViews";
 import { useActivityController, useActivityOwner } from "@/hooks/useActivityController";
 import { useHiddenProjects } from "@/hooks/useHiddenProjects";
 import { getActivitySections } from "@/lib/activity";
+import { prepareReviewDraft, type ReviewBatchDraft } from "@/lib/review-handoff";
 import { FileWorkspace, type FileWorkspaceHandle, type FileWorkspaceStatus } from "./FileWorkspace";
 import { FileLinkMenuContext } from "./LocalFileLink";
 import type { FileDisposition } from "@/lib/file-workspace";
@@ -403,6 +404,15 @@ export function AppShell() {
   const handleFileLineMention = useCallback((relativePath: string, startLine: number, endLine: number) => {
     setChatHidden(false);
     chatInputRef.current?.insertText(buildFileLineMentionText(relativePath, startLine, endLine));
+    if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
+  }, [isMobile]);
+
+  const reviewDestination = selectedSession ? { id: selectedSession.id, label: selectedSession.name || selectedSession.id } : undefined;
+  const reviewDestinationRef = useRef(reviewDestination);
+  useLayoutEffect(() => { reviewDestinationRef.current = reviewDestination; });
+  const handleReviewBatchDraft = useCallback<ReviewBatchDraft>((expected, text) => {
+    prepareReviewDraft(expected, reviewDestinationRef.current, chatInputRef.current, text);
+    setChatHidden(false);
     if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
   }, [isMobile]);
 
@@ -1383,6 +1393,7 @@ export function AppShell() {
             </div>
             <div style={{ flex: 1, minHeight: 0 }}>
             <FileWorkspace ref={fileWorkspaceRef} workspaceKey={fileWorkspaceKey}
+              reviewDestination={reviewDestination} onReviewBatchDraft={handleReviewBatchDraft}
               active={rightPanelOpen && activeFileTabId === "files"} presented={activeFileTabId === "files"} gitRefreshKey={explorerRefreshKey}
               onRevealFile={location => {
                 setRightPanelExpanded(false);

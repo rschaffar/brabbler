@@ -1,7 +1,7 @@
 # Guided review: interaction draft
 
 **Interaction direction approved; static specimen, not shipped UI.** This is the
-interaction specimen for the [active plan](../../2026-10-23_guided-review-notebooks-plan.md),
+interaction specimen for the [implementation record](../../archived/2026-10-23_guided-review-notebooks-plan.md),
 not a competing plan or final serialization format. The user accepted the rough
 layout and workflow, explicitly not a pixel-perfect specification, and separately
 authorized implementation with architectural refactoring and component adaptation.

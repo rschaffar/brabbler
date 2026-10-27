@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, truncateSync } from 'node:fs';
 import { join } from 'node:path';
@@ -61,7 +62,7 @@ test('symlink chapters/assets, binary/invalid UTF8, traversal, cycles and over-l
   assert.equal((await f.request({ index: f.index, asset: '../outside.md' })).status, 400);
   assert.equal((await f.request({ index: f.index, asset: 'page.html' })).status, 400);
   writeFileSync(join(f.folder, 'data.json'), '{"mutable":true}');
-  assert.deepEqual((await f.request({ index: f.index, asset: 'data.json' })).body, { content: '{"mutable":true}', mutable: true });
+  assert.deepEqual((await f.request({ index: f.index, asset: 'data.json' })).body, { content: '{"mutable":true}', contentDigest: createHash('sha256').update('{"mutable":true}').digest('hex'), mutable: true });
 });
 
 test('selected raster/PDF responses independently authorize bounded regular bytes, signature/MIME and non-executable response headers', async t => {

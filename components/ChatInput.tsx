@@ -101,7 +101,7 @@ export interface ChatInputHandle {
   /** Joins admitted local async actions, not server persistence or native media. */
   whenSettled?: () => Promise<void>;
   focus: () => void;
-  insertText: (text: string) => void;
+  insertText: (text: string, options?: { atEnd?: boolean }) => void;
   insertIfEmpty: (text: string) => void;
   replaceMessage: (message: UserMessage) => void;
   prependText: (text: string) => void;
@@ -850,14 +850,15 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
         ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
       });
     },
-    insertText(text: string) {
+    insertText(text: string, options?: { atEnd?: boolean }) {
       const ta = textareaRef.current;
+      if (!ta && options?.atEnd) throw new Error("Chat composer textarea is not mounted");
       if (!ta) {
         setValue((v) => v + (v ? " " : "") + text);
         return;
       }
-      const start = ta.selectionStart ?? ta.value.length;
-      const end = ta.selectionEnd ?? ta.value.length;
+      const start = options?.atEnd ? ta.value.length : ta.selectionStart ?? ta.value.length;
+      const end = options?.atEnd ? ta.value.length : ta.selectionEnd ?? ta.value.length;
       const before = ta.value.slice(0, start);
       const after = ta.value.slice(end);
       const sep = before.length > 0 && !before.endsWith(" ") ? " " : "";

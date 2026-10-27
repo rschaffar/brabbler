@@ -28,6 +28,7 @@ export type SetAnswer =
 export const MAX_SET_QUESTIONS = 6;
 export const MAX_ANSWER_LENGTH = 20_000;
 const ID = /^[a-zA-Z0-9_-]{1,64}$/;
+export function isQuestionSetId(value: unknown): value is string { return typeof value === "string" && ID.test(value); }
 function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -45,7 +46,7 @@ export function parseQuestionSet(value: unknown): QuestionSet | null {
   const questions: SetQuestion[] = [];
   const ids = new Set<string>();
   for (const q of value.questions) {
-    if (!record(q) || typeof q.id !== "string" || !ID.test(q.id) || ids.has(q.id)
+    if (!record(q) || !isQuestionSetId(q.id) || ids.has(q.id)
       || !text(q.shortLabel, 60) || !text(q.question, 2000) || !optionalText(q.context, 8000)
       || !["single", "multiple", "text"].includes(q.type as string)
       || (q.required !== undefined && typeof q.required !== "boolean")) return null;
@@ -54,7 +55,7 @@ export function parseQuestionSet(value: unknown): QuestionSet | null {
     const options: QuestionSetOption[] = [];
     const optionIds = new Set<string>();
     for (const o of raw) {
-      if (!record(o) || typeof o.id !== "string" || !ID.test(o.id) || optionIds.has(o.id)
+      if (!record(o) || !isQuestionSetId(o.id) || optionIds.has(o.id)
         || !text(o.title, 200) || !optionalText(o.description, 2000)
         || (o.recommended !== undefined && typeof o.recommended !== "boolean")
         || (o.exclusive !== undefined && typeof o.exclusive !== "boolean")) return null;
@@ -114,6 +115,14 @@ export interface QuestionDraft {
 }
 export function emptyQuestionDraft(q: SetQuestion): QuestionDraft {
   return { selections: [], writing: q.type === "text", text: "", comment: "", skipped: false };
+}
+export function selectQuestionOption(question: SetQuestion, draft: QuestionDraft, id: string): Partial<QuestionDraft> {
+  const option = question.options.find(o => o.id === id);
+  if (!option) return {};
+  const selections = question.type === "single" || draft.writing || draft.skipped ? [id]
+    : draft.selections.includes(id) ? draft.selections.filter(i => i !== id)
+      : option.exclusive ? [id] : [...draft.selections.filter(i => !question.options.find(o => o.id === i)?.exclusive), id];
+  return { writing: false, selections };
 }
 export function draftAnswer(q: SetQuestion, draft: QuestionDraft): SetAnswer | null {
   return normalizeSetAnswer(draft.skipped ? { id: q.id, kind: "skipped" }

@@ -98,7 +98,22 @@ deadlines. Duplication is judged by the exact obligation/input and sufficient ow
 not merely by membership in different integration chains. Preserve the necessary
 connection or physical step, not all of its functional neighbors.
 
-The Markdown media helper seeds synthetic PCM WAV and a tiny VP8 WebM from reviewed inline bytes (with provenance/hash), not downloaded fixtures or runtime ffmpeg. Desktop/mobile checks observe zero eager media/remote requests, native playback and seeking, session-scoped external-reference range reads/denials, corrupt-file feedback and explicit repair reload, narrow layout, covered-pane/session teardown and no automatic resumption. Direct authorization negatives use Node HTTP, preserving unfiltered browser console/5xx reporting. These are native Chromium proofs, not every browser/codec combination; the static demo and Markdown-file previews are outside this feature's scope.
+The Markdown media helper seeds synthetic PCM WAV and a tiny VP8 WebM from reviewed inline bytes (with provenance/hash), not downloaded fixtures or runtime ffmpeg. Desktop/mobile checks observe zero eager media/remote requests, native playback and seeking, session-scoped external-reference range reads/denials, corrupt-file feedback and explicit repair reload, narrow layout, covered-pane/session teardown and no automatic resumption. Direct authorization negatives use Node HTTP, preserving unfiltered browser console/5xx reporting. The existing notebook Markdown chain also retains all read-only assertions before
+its interactive tail. At both original desktop/touch inputs, that tail connects native
+recording/forms/source Selection, cross-chapter frozen preview, existing-composer
+append without Send, pasted reply import, reviewer resolution, saved reload/resume
+and changed-required-question re-review. Partial-reply assertions bind the exact
+batch across the shared desktop/mobile fixture history. The no-model-turn/agent-
+execution assertion retains structured method/path/body observations and permits
+only the exact existing-fixture-session `POST {"type":"get_tools"}` catalogue tuple
+among non-GET requests; other sessions, extra fields, new sessions and all prompt/
+execution commands fail. Ordinary GET observations remain in diagnostics. No
+console/HTTP failures are filtered. Programmatic native Selection
+API use is not a claim about physical iOS/Android selection handles. Reducer/mounted/
+native store owners retain policy and race matrices; no prior browser assertions are
+retired. Candidate-specific execution is recorded in the active guided-review plan.
+
+These are native Chromium proofs, not every browser/codec combination; the static demo and Markdown-file previews are outside this feature's scope.
 
 ## Contributor recipes and proof boundaries
 
