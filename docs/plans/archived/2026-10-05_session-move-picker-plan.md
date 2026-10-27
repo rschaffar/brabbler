@@ -1,5 +1,13 @@
 # Session move destination picker
 
+## Closure — completed (2026-10-27)
+
+Integrated lineage `6a0678d` is on audited main; the pending approval handoff below
+is stale. Later accepted installed-browser Move coverage exercises the destination
+controls and relocation. Current contracts belong to `docs/session-internals.md`.
+See the [closure evidence](../README.md#closure-evidence). Original lifecycle and
+verification notes below remain historical, not new approval or cleanup receipts.
+
 ## Goal
 Improve only the existing Move to project destination picker with Project and Worktree/directory selection, including the current project. Keep the existing relocation endpoint and standalone worktree management unchanged.
 

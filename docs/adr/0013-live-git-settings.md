@@ -4,7 +4,7 @@
 
 ## Status
 
-Accepted direction, 2026-10-04; implementation and acceptance remain in Phase 7 of the [sole workflow plan](../plans/2026-09-29_policy-driven-git-tools-plan.md). The user authorized removing the redundant task layer and explicitly chose **Use today’s saved settings**, rather than converting captured task choices into chat overrides.
+Historical accepted direction, 2026-10-04; Phase 7 of the [archived workflow plan](../plans/archived/2026-09-29_policy-driven-git-tools-plan.md) was superseded by removal. [ADR 0014](0014-remove-managed-git-workflow.md) retires the remaining implementation and acceptance obligations. The user authorized removing the redundant task layer and explicitly chose **Use today’s saved settings**, rather than converting captured task choices into chat overrides.
 
 This supersedes captured-task configuration, task Apply/adoption, duplicate early preferences and automatic worktree/chat continuation in ADRs [0007](0007-session-git-workflow.md), [0010](0010-integrated-git-workflow.md) and [0011](0011-policy-driven-git-tools.md). It does not supersede [ADR 0012](0012-optimistic-git-invocations.md), independent authorization, required checks or stronger repository instructions. A design decision is not deployment or acceptance evidence.
 
@@ -26,7 +26,7 @@ Creation provenance remains independent of mutable policy. Old, copied, forked, 
 
 New session creation records identity/provenance, not a copy of policy defaults. Its original-manager publication awaits the first pre-model SDK context boundary after persistence; SDK 1.0.0's `before_agent_start` precedes first-user persistence and is too early. Optional publication failure retires the original publication capability without retrying or aborting ordinary chat; the current process stays ineligible. A late storage failure is not a crash-atomic rollback guarantee. The proof binds the first trusted materialized-file observation, not an unavailable SDK creation descriptor or continuous filesystem monitoring. Explicit fork/recreation/move handling carries applicable preferences and opt-out restrictions, never grants, pending capabilities or fresh-origin eligibility.
 
-A narrowly authenticated absent→published-wrapper conflict may permit one wholly fresh settings GET, never rehabilitate its failed original context. Original file/header/history and physical selection continuity remain constraints, not transferable CAS or native authority. This adds no startup wait or write/operation retry. The [maintained guide](../git-workflow.md#bounded-settings-metadata-reload) owns the bounded proof and refusal rules; focused source re-review is complete with the early-header P2 closed. Browser/full acceptance remain pending; scoped implementation results do not establish general cold-start or installed acceptance.
+A narrowly authenticated absent→published-wrapper conflict may permit one wholly fresh settings GET, never rehabilitate its failed original context. Original file/header/history and physical selection continuity remain constraints, not transferable CAS or native authority. This adds no startup wait or write/operation retry. The then-current guide owned the bounded proof and refusal rules; focused source re-review completed with early-header P2 closed. Those managed contracts are now retired; see the [current Git overview](../git-workflow.md). Browser/full acceptance remain pending; scoped implementation results do not establish general cold-start or installed acceptance.
 
 ### One operation model, genuine actors
 

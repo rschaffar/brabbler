@@ -1,5 +1,13 @@
 # Worktree-scoped read-only Git Explorer
 
+## Closure — completed (2026-10-27)
+
+Integrated lineage `538f54f` is on audited main; the pending integration note below
+is stale. Current history, identity, bounds and browser contracts belong to
+`docs/worktrees.md`; later complete acceptance covers the surviving Explorer flow.
+See the [closure evidence](../README.md#closure-evidence). The original record,
+including its old managed-Workflow relationships, is historical, not active work.
+
 ## Goal
 
 Let a user choose a worktree in the sidebar, then browse its current branch's visual commit graph, commit metadata, changed files and per-file patches without opening or modifying a chat. No integration policy, remote request, Git mutation or additional server.

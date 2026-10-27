@@ -1,5 +1,13 @@
 # Navigable question sets
 
+## Closure — completed (2026-10-27)
+
+Integrated lineage `fe77710` is on audited main. Mixed-set drafts, navigation,
+atomic submission, acknowledgement retry and receipts are covered by later accepted
+installed-browser flows. Current contracts and limits belong to `docs/questions.md`.
+See the [closure evidence](../README.md#closure-evidence). Original commit/merge
+handoff and unchecked boxes below are historical, not active tasks or new receipts.
+
 ## Goal
 
 Implement the approved chat design: one `ask_user` call can present 1–6 related independent questions, with mixed single/multiple/text answers, free navigation, review and atomic submission. Every batch question supports a written alternative main answer and separate additive details. Keep legacy single-question calls compatible.

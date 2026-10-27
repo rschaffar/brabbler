@@ -71,7 +71,7 @@ historical input-bound evidence, not acceptance of this pilot.
   layering, mounted support and proof limits.
 - [ADR0031](../../adr/0031-project-acceptance-coordination.md) owns Acceptance jobs
   independently of sessions/observers. This pilot must preserve that contract.
-- The [server-side activity review plan](../2026-09-25_server-activity-review-plan.md)
+- The [server-side activity review plan](2026-09-25_server-activity-review-plan.md)
   owns its ledger/API feature and legacy outstanding checklist. This pilot does
   not declare those obligations complete, rewrite its history, or change the
   server receipt format/authorization/retention policy.

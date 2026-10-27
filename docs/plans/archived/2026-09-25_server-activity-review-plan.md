@@ -1,5 +1,14 @@
 # Server-side activity review
 
+## Closure — completed (2026-10-27)
+
+Integrated lineage `8eb2d81` is on audited main. Later accepted Activity coverage
+includes peer acknowledgement and reload persistence; native disk re-read remains
+the accepted persistence proof, not a newly claimed full browser-server restart.
+Current owners are `docs/feature-internals.md` and `docs/activity-testing.md`.
+See the [closure evidence](../README.md#closure-evidence). Original pending checks
+and integration notes below are historical, not an active queue.
+
 ## Goal
 
 Make Pi Web-managed run completions and their Ready to review acknowledgements shared by devices using the same Pi Web server and agent directory. An acknowledged result must disappear on other devices, and unreviewed results must survive a Pi Web restart.

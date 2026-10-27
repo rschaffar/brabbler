@@ -1,5 +1,14 @@
 # Session Git workflow
 
+## Disposition — retired, not current functionality (2026-10-27)
+
+Historical integration `b08085e` is on audited main. The later managed-Workflow
+removal retires this product model and every unmet obligation below.
+[ADR 0014](../../adr/0014-remove-managed-git-workflow.md) is the explicit disposition
+owner; no old task, transition, consent or automation work transfers into the
+optional plugin backlog. Checkboxes below are historical, not a completion claim
+or active queue. Private data and unrelated resources remain untouched.
+
 ## Goal
 
 Let a user choose a project's default Git workflow and override it per chat, so agents can work in the intended checkout, make reviewable feature commits, and prepare a local integration without repeatedly asking for choices. A saved preference never approves an unseen integration, cleanup, or remote operation.

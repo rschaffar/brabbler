@@ -1,5 +1,14 @@
 # Human-reviewed recovery after a failed check and later branch movement
 
+## Disposition — delivered historically, then retired (2026-10-27)
+
+Historical integration `3cf76a1` is on audited main. The old recovery route, panel,
+quarantine proofs and tickets were deliberately removed.
+[ADR 0014](../../adr/0014-remove-managed-git-workflow.md) retires all remaining
+recovery obligations; no live record is disposed of by this documentation change.
+The unchecked integration note and original private-state observations below are
+historical, not current resource claims or active recovery instructions.
+
 ## Goal
 
 Allow an operator to dispose of a **failed/cancelled** Pi Web Git check whose original production containment proof and unchanged pre/post check snapshots survive, even if the repository later moved, without presenting the old check as passed or bypassing admission.

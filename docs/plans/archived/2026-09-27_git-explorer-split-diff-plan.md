@@ -1,5 +1,14 @@
 # Side-by-side committed patches in Git Explorer
 
+## Closure — completed historical milestone (2026-10-27)
+
+Integrated lineage `623197a` is on audited main. Later complete acceptance covers
+the surviving committed-diff browser/native flow. Pierre and authorized full
+context supersede the original renderer/API restriction; current behavior belongs
+to `docs/worktrees.md`. See the [closure evidence](../README.md#closure-evidence).
+Original unchecked boxes and unchanged-retry observations below are historical;
+this closure does not assert a fresh full run or approval provenance at the old tip.
+
 ## Goal
 
 Replace the raw patch in Git Explorer commit tabs with a legible old/new side-by-side view. Keep unified text available, and retain the current committed-object API and its bounds.

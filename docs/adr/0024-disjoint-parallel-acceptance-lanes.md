@@ -61,7 +61,7 @@ profile and executes serially. CI overlaps the levels on separate runner machine
 Cached checks are never reported as fresh execution. Operational commands and
 measured results belong in [testing](../testing.md), the
 [browser guide](../../e2e/README.md) and the
-[implementation plan](../plans/2026-10-15_parallel-nix-acceptance-plan.md).
+[implementation plan](../plans/archived/2026-10-15_parallel-nix-acceptance-plan.md).
 
 ## Alternatives rejected
 

@@ -1,5 +1,14 @@
 # Effective development and verification
 
+## Closure — completed historical milestone (2026-10-27)
+
+Integrated lineage `277db23` is on audited main. Current three-level Nix acceptance
+supersedes the offline/dev-server commands below; diagnostics and bounded lifecycle
+contracts belong to `docs/testing.md` and `e2e/README.md`. Historical reset attribution
+remains unproven, not a new blocker or a claimed fix. See the
+[closure index](../README.md#closure-evidence). Original pending-merge, backup and
+resource observations below are historical, not current execution instructions.
+
 ## Goal
 
 Implement the approved instruction changes plus reliable browser diagnostics,

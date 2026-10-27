@@ -1,5 +1,19 @@
 # Remove managed Git Workflow
 
+## Closure — removal integrated and surviving application accepted (2026-10-27)
+
+Removal lineage `3aeb5b5` through `10f6a0f` is on audited main. The final failed
+historical recheck below remains a failure; no exact-`3aeb5b5` full rerun is
+invented. Later complete Nix acceptance covers the surviving application; see the
+[closure evidence](../README.md#closure-evidence). The old pending-integration and
+must-rerun statements below are historical checkpoints, not active work.
+
+Durable owners are [ADR 0014](../../adr/0014-remove-managed-git-workflow.md) and
+[Git overview](../../git-workflow.md), with current verification in
+[Testing](../../testing.md). The optional plugin does not restore managed Workflow.
+Source closure establishes neither historical approval provenance nor deployment,
+publication or cleanup; private data/history remain untouched.
+
 ## Goal
 
 Remove the managed Git Workflow completely and restore a useful Pi Web with fast, reliable developer tests. The user's final removal decision supersedes the live-settings migration, four-tool redesign, earlier delivery/acceptance obligations, and their product ADRs. Historical source verification is not acceptance of this removal.

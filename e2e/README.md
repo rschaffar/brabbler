@@ -135,9 +135,12 @@ needed swatch geometry, native keys/media and a representative installed reload;
 do not automatically reload every palette again in every context. Measure actual
 removed work and browser critical-path time separately from full-feedback time.
 Faster core or advisory scheduling alone does not complete browser retirement.
-The inventory above describes checked-in chains, not adoption of private cuts. The
-[active ownership plan](../docs/plans/2026-10-23_complete-test-ownership-plan.md)
-separates verified private reductions from source-only and conditional proposals.
+The inventory above describes checked-in chains, not adoption of private cuts.
+The bounded ownership/browser-retirement task is complete and integrated; its
+[maintained ledger](../docs/test-ownership.md#delivered-ownership-and-proof-limits)
+owns final retained boundaries and performance deferral. The
+[archived execution record](../docs/plans/archived/2026-10-23_complete-test-ownership-plan.md)
+keeps earlier private/source-only states separate from final accepted reductions.
 Reuse exact unaffected bridge/control evidence; new controls need a named changed
 boundary, not a quota. Final complete acceptance remains mandatory.
 

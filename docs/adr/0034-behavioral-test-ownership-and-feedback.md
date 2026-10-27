@@ -197,8 +197,21 @@ value, never as deadlines, resource admission or coverage authority.
 
 Current authoring guidelines belong in [Writing tests](../test-writing.md);
 executable recipes remain in `docs/testing.md` and `e2e/README.md`;
-source-bound measurements, retractions and implementation status belong in the
-test-suite architecture overhaul plan. Keep scoped proofs and cold preparation
-separate from warm performance samples. Complete static/core/browser/service
-acceptance and matched performance evidence are distinct completion gates; this
-decision alone never certifies either.
+source-bound measurements and retractions remain with their recorded candidates.
+Final ownership and retained proof limits belong in the
+[maintained ownership ledger](../test-ownership.md#delivered-ownership-and-proof-limits),
+not a historical plan's intermediate Pending labels. Keep scoped proofs and cold
+preparation separate from warm performance samples. This decision alone never
+certifies complete static/core/browser/service acceptance or a speedup.
+
+### Delivery disposition
+
+The subsequent complete-ownership/browser-retirement task was accepted and
+integrated at `3f3944e06b83f497b306e8254e54e8cf80054d63`; its final correctness run
+covered 509 files / 4,171 tests, all 26 browser/terminal groups and the genuine VM.
+The user explicitly deferred the original matched four/four NET and Panel timing
+gates for that bounded finish. The failed timing pair remains visible, not waived
+into a claimed speedup. Deferred optimization/measurement belongs to the
+[core optimization plan](../plans/2026-10-26_core-test-optimization-plan.md).
+This task-specific disposition does not relax correctness, isolation, fresh native
+authority or the evidence required for future performance claims.

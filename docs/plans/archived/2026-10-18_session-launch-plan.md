@@ -1,5 +1,14 @@
 # Agent-created ordinary sessions
 
+## Closure — completed with maintained-doc handoff (2026-10-27)
+
+Integrated lineage `3f1bce8` is on audited main; rebased acceptance and failed runs
+remain recorded below. `docs/session-launch.md` now owns current behavior and Nix
+core/session-launch browser commands, replacing obsolete offline/dev-server recipes.
+See the [closure index](../README.md#closure-evidence). Original integration and
+worktree statements are historical, not current blockers, approval provenance or
+resource-cleanup claims. Live-provider and native-Windows limits remain explicit.
+
 ## Goal
 
 Implement the user-approved launch contract: a fresh ordinary session, independent runtime and initial prompt, creator-setting defaults with explicit proposed changes, Deny/Ask/Allow at global/project/session scope, exact approval with request-changes feedback, and navigation links both ways. Implementation is authorized; integration and cleanup retain their separate gates.

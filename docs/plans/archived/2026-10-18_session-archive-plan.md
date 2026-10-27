@@ -1,5 +1,14 @@
 # Session archive plan
 
+## Closure — completed (2026-10-27)
+
+Integrated lineage `680870c` is on audited main. Later complete installed-browser
+acceptance includes archive/inline restore, mobile archive/search/restore and bulk
+flows; the host `libglib-2.0.so.0` blocker below is historical. Current contracts
+belong to README and `docs/session-internals.md`. See the
+[closure evidence](../README.md#closure-evidence). The original unchecked browser
+items are checkpoint evidence, not active work or a new original-tip test claim.
+
 ## Goal
 
 Add a reversible archive action alongside permanent deletion. Archived sessions remain in their Pi JSONL files, disappear from the default session list and content search, and remain available in an Archived sidebar view for restore or delete.

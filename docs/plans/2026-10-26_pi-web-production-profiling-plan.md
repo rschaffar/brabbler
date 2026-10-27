@@ -1,21 +1,27 @@
 # Pi Web production latency — profiling plan
 
-**Current status: refresh coalescing implemented, independently reviewed and fully
-sandbox-verified at `3bdd333651ed908a8ea07d47d67212d9bab32327`.**
-Current writer uses `perf/catalogue-refresh-coalescing` in
-`/home/robert/projects/3rdparty/pi-desk-worktrees/catalogue-refresh-coalescing`,
-starting at local main `3650d2e857f18c7dbcef412f44e435c0f5d363b3`. The original
-profiling worktree/branch were removed on the user's later cleanup request.
-No deployment, live probe, publication or unrelated task changes are authorized.
+**Current disposition (2026-10-27): profiling, relation reuse and refresh coalescing
+are delivered and integrated.** Relation reuse (`ade48c7`) entered main through
+`3650d2e`; refresh coalescing, independently reviewed and fully sandbox-verified at
+`3bdd333651ed908a8ea07d47d67212d9bab32327`, entered main through `4422eed`.
+`docs/session-internals.md` owns the delivered mechanisms. The old writer/worktree,
+unintegrated and execution-authority statements below are historical, not current
+resource claims or permission to restart work.
+
+**Remaining owner:** this plan retains compact payload proposals, the deferred
+successful normal SPA row-click/switch capture and a separately authorized
+post-coalescing production comparison. The earlier relation-reuse production
+comparison does not measure the later coalescing change. No deployment, live probe,
+inspector activation, publication or new implementation is authorized by this sweep.
 
 **Previous slice:** relation reuse was implemented, independently reviewed,
 and fully sandbox-verified at `ade48c7a9aa6904f0ddeb5dde63afff9bfe12747`.
 That first coherent-candidate checkpoint preceded the user's later rebuild and
 measured improvement recorded in Package4 below. Its original unmeasured-gain and
-worktree/base statements are historical, not current directions. The current Plan
-owns refresh coalescing; the original profiling procedure remains evidence. New
-source/check work is authorized, but live deployment, restart, inspector activation
-and remote publication remain separately gated.
+worktree/base statements are historical, not current directions. This plan now retains deferred follow-ups; refresh coalescing is delivered and
+the original profiling procedure remains evidence. Historical source/check authority
+does not authorize another slice, live deployment, restart, inspector activation
+or remote publication.
 
 **Earlier profiling checkpoint: complete; dominant production bottleneck identified.
 No optimization had been implemented at that checkpoint.** The user authorized local
@@ -36,7 +42,7 @@ and ordinary use, particularly with a large saved-session catalogue. Rank the
 actual foreground critical-path costs and recurring responsiveness costs, rather
 than treating static complexity or acceptance-file elapsed time as attribution.
 The measured investigation below supplies the evidence. Relation reuse is now
-implemented and measured after the user's rebuild. The active slice removes
+implemented and measured after the user's rebuild. The delivered coalescing slice removes
 redundant Sidebar catalogue admissions while preserving paint, mutation freshness,
 forced/ordinary semantics, failures and owned body settlement. Compact payloads
 remain later work. Obtain complete sandboxed acceptance; do not infer another
@@ -44,7 +50,7 @@ production speedup before separately authorized deployment and measurement.
 
 ## Plan
 
-### Package 4 — active: Sidebar catalogue refresh coalescing
+### Package 4 — completed: Sidebar catalogue refresh coalescing
 
 The user rebuilt, then authorized three timing-only ordinary reloads. Installed
 reference `4x2hbyhrg67sw4a04kzc39fgg9hmzxnk-pi-web-0.9.3` matches the integrated
@@ -560,7 +566,7 @@ other scenarios are not globally exonerated by this host-local sample.
   Opportunity #4 now has a recorded bounded negative finding on main. This plan
   neither restarts that work nor assumes other tasks have stopped; coordinate
   with their owners before future capture, and never use their worktrees/checks.
-- The older [server Activity plan](2026-09-25_server-activity-review-plan.md) covers
+- The older [server Activity plan](archived/2026-09-25_server-activity-review-plan.md) covers
   shared completion/review semantics, not performance attribution. Do not reopen
   it or reuse its historical command menu. Current
   [architecture](../architecture.md), [session](../session-internals.md),

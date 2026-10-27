@@ -608,6 +608,28 @@ candidate diagnostic `d44f40e5`; the expanded SSH whole-group hint is separately
 refreshed from its post-rebase installed run. Each source is recorded beside the
 values. Hints are not deadlines, admission or coverage authority.
 
+### Complete-ownership delivery checkpoint
+
+The later complete-ownership/browser-retirement task passed final four/four
+correctness acceptance in a recorded **386s**: **509 files / 4,171 tests / 14 suites**,
+all **26 browser/terminal groups** and genuine Home Manager deployment. Immutable
+source `/nix/store/s7i5y24h0llqrqmxjhlxkk7r20flysgc-source`, digest
+`f59b90e6cca74fc87312f41c9ea456891998c122583caebb78d2015964906139`;
+core `/tmp/pi-web-test-core.17IFHZ/run.json`, browser
+`/tmp/pi-web-test-browser.V6qaaX/run.json`, deployment `/tmp/pwv-0CjZyF/run.json`.
+Core lifecycle was 378.804s; browser 234.292s and deployment 74.681s overlap and are
+not additive. Command time includes in-run preparation, not model/review time.
+
+Integration is recorded at `3f3944e06b83f497b306e8254e54e8cf80054d63`. The
+[ownership ledger](test-ownership.md#delivered-ownership-and-proof-limits) owns final
+boundaries; the [archived record](plans/archived/2026-10-23_complete-test-ownership-plan.md)
+retains original inputs, faults, failed runs and exact qualifications. Its earlier
+matched **421.959→430.232s** pair did not demonstrate NET improvement. The user
+explicitly made the original 351.05s complete / 20.5s Panel gates informational
+for the bounded correctness finish. Neither 386s nor the separate measured 12/4
+profile is retrospective matched four/four NET or Panel-median proof. Deferred
+cost/measurement work belongs to the active core optimization plan.
+
 ### Historical timing
 
 The following retained measurements and release/source narratives describe their
@@ -617,7 +639,7 @@ The previous all-browser-in-VM architecture passed fresh complete acceptance in
 **10m58s** on 2026-10-15 (32-logical-CPU native x86_64 host), down from 52m11s.
 That result is historical, **not a benchmark for this split**. Its exact inputs,
 resource estimates, prerequisite reuse and failures remain in the
-[parallel-acceptance plan](plans/2026-10-15_parallel-nix-acceptance-plan.md).
+[parallel-acceptance plan](plans/archived/2026-10-15_parallel-nix-acceptance-plan.md).
 Implementation and complete evidence are recorded in the
 [completed sandboxed-browser plan](plans/archived/2026-10-16_sandboxed-browser-acceptance-plan.md).
 

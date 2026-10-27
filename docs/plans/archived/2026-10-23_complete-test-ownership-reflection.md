@@ -1,5 +1,16 @@
 # Complete test ownership — reflection and process decision
 
+## Disposition — historical assessment, not current status (2026-10-27)
+
+The bounded ownership/browser-retirement task subsequently completed correctness
+acceptance and was integrated at `3f3944e`. Its final owner/bridge/proof-limit and
+performance-deferral disposition belongs to the
+[maintained ledger](../../test-ownership.md#delivered-ownership-and-proof-limits).
+The pause, incomplete/private-source findings and missing whole acceptance below
+are historical observations, not current blockers or restart authority. The failed
+matched speed comparison remains true evidence; later correctness does not turn it
+into a speedup. This assessment and the handoff are archived companions.
+
 ## Recommendation
 
 **Materially replan execution; keep the architecture and correctness boundaries.**
@@ -9,8 +20,9 @@ credible completion claims. Consolidate one candidate, finish finite browser cut
 and confront whole-feedback cost early. Implementation remains **PAUSED**. This
 recommendation grants no resumption, integration, cleanup or policy waiver.
 
-The [active plan](2026-10-23_complete-test-ownership-plan.md) owns remaining work;
-the [handoff](2026-10-23_complete-test-ownership-handoff.md) owns restart instructions.
+At this assessment, the [execution plan](2026-10-23_complete-test-ownership-plan.md)
+owned remaining work and the [handoff](2026-10-23_complete-test-ownership-handoff.md)
+recorded restart instructions. Both are now historical.
 
 ## Assessment against the three goals
 
@@ -76,9 +88,9 @@ marker/vector witness. Preserve that finding; stop expanding generic theorems.
 | --- | --- |
 | The three goals; pause; candid assessment; documentation-only commit; no tests/agents/implementation now | Explicit latest user request. |
 | Finish the remaining cleanup before any merge; actual aggressive browser retirement | Explicit earlier user requests, including [continue-until-done and browser clarification](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/requested-browser-reduction-discussion.md#L1548) and [the follow-up discussion](/home/robert/.cache/pi-web-complete-ownership/run.VpOwBo/linked-session-01a16fd4-transcript.md). The agent initially omitted browser retirement from completion; the user corrected that drift. Earlier implementation authority is superseded by the pause. |
-| Real production owners, exact obligation/input mapping, meaningful runtime faults, independent review, real native/default bridges and complete settlement | [ADR 0034](../adr/0034-behavioral-test-ownership-and-feedback.md), maintained authoring contracts and later bounded correctness agreements. Preserve original Error objects, original input/lifetime premises and P1/M16/independent Acceptance authority. These are not optional ceremonies. |
+| Real production owners, exact obligation/input mapping, meaningful runtime faults, independent review, real native/default bridges and complete settlement | [ADR 0034](../../adr/0034-behavioral-test-ownership-and-feedback.md), maintained authoring contracts and later bounded correctness agreements. Preserve original Error objects, original input/lifetime premises and P1/M16/independent Acceptance authority. These are not optional ceremonies. |
 | Complete sandboxed core/static/plugins, installed browser/terminal and genuine Home Manager VM; linked feature worktree and gated local integration | Repository/global rules, not a new demand to rerun all acceptance after every edit or evidence commit. |
-| Matched 4/4 NET improvement; complete feedback ≤351.05s; Panel median ≤20.5s | Inherited task/accepted-plan and [maintained timing contracts](../testing.md#current-overhaul-evidence-boundary). The historical conversation includes agent-proposed measurement mechanics; do not call every detail a verbatim original user requirement. No waiver is assumed here. |
+| Matched 4/4 NET improvement; complete feedback ≤351.05s; Panel median ≤20.5s | Inherited task/accepted-plan and [maintained timing contracts](../../testing.md#current-overhaul-evidence-boundary). The historical conversation includes agent-proposed measurement mechanics; do not call every detail a verbatim original user requirement. No waiver is assumed here. |
 | One repository writer and coordinated source export/acceptance budget | Repository/global safeguards. Parent-only execution of every operation and plaintext-only delegate packets were stronger task mechanics, not universal requirements. |
 | Exact source/commands/results, truthful definitions and retired/private-ID rejection before callbacks | Existing correctness/evidence contract. A saved binding is not execution authority. |
 | Hundreds of private roots, repeated mirrors, per-change report/erratum/addendum stages, broad fault matrices and repeated reviews of unchanged code | Agent-selected mechanics. No required count of snapshots, reports, controls, reviews or receipts follows from the contracts above. |

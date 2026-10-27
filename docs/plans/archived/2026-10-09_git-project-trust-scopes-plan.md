@@ -1,5 +1,14 @@
 # Git project and worktree trust scopes
 
+## Closure — completed (2026-10-27)
+
+Integrated lineage `c09460c` is on audited main. Trust remains independent of the
+removed managed Workflow. Current scope, precedence and revocation contracts belong
+to `docs/worktrees.md` and `docs/feature-internals.md`; acceptance and limits are
+retained below and in the [closure index](../README.md#closure-evidence).
+The old integration checkbox is stale. Separate cleanup of old branches, backups
+or scratch checkouts is neither required for feature closure nor authorized here.
+
 ## Goal
 
 Replace automatic trust inheritance for agent-created worktrees with an explicit choice: trust only the selected checkout, or trust the Git project including its current and future registered worktrees. Present the user experience for review before implementation. Trust governs project-local Pi resources that may execute code; it does not authorize Git writes or file access.

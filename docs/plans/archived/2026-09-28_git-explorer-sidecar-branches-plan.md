@@ -1,5 +1,13 @@
 # Git Explorer sidecar and local branch browsing
 
+## Closure — completed (2026-10-27)
+
+Integrated lineage `f9c5f46` is on audited main; the pending integration note below
+is stale. Current sidecar, read-only branch selection and copy controls belong to
+`docs/worktrees.md`. Historical acceptance and later surviving-flow acceptance are
+recorded in the [closure index](../README.md#closure-evidence). Original retries
+remain observations, not demonstrated fixes; old unchecked boxes are not active work.
+
 ## Goal
 
 Keep the selected worktree's read-only Git graph and commit/diff detail adjacent in a wide panel beside chat, with a local-branch selector defaulting to the worktree's checked-out branch and copy controls for full commit ID and message.

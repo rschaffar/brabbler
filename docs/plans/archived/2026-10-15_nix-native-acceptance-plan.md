@@ -1,5 +1,14 @@
 # Nix-native package and VM acceptance
 
+## Closure — completed historical milestone (2026-10-27)
+
+Integrated lineage `34ac894` is on audited main. Complete rebased acceptance remains
+recorded below. Later ADRs 0024–0025 supersede sequential browser-heavy VM placement;
+current commands, boundaries and empirical results belong to `docs/testing.md` and
+`e2e/README.md`. See the [closure index](../README.md#closure-evidence).
+Original authority, pending integration and architecture statements are historical,
+not an instruction to restore the old topology. ARM/CI gaps remain stated limits.
+
 ## Goal
 
 Replace the split npm/offline-dev-server verification paths with two Nix-owned test levels: fast sandboxed core checks and complete end-to-end acceptance of the actual installed production package in one NixOS VM. Nix realizes prerequisites automatically. There is no preparation requirement, non-Nix fallback, development-server acceptance, or host-service contact.

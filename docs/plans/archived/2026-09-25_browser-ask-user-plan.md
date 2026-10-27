@@ -1,5 +1,14 @@
 # Browser-native ask_user
 
+## Closure — completed (2026-10-27)
+
+Integrated lineage `43abbe9` is on audited main. Later complete Nix acceptance
+includes the actual question/answer, reconnect/reload, expiry and mobile-cancel
+flow; the old history-scroll/library blockers below are no longer the verification
+boundary. Current contracts belong to `docs/questions.md`. See the
+[closure evidence](../README.md#closure-evidence). Original checkboxes and failures
+below are historical, not active work or a claimed fix of the old unchanged retry.
+
 ## Goal
 
 Pi Web owns an MIT-attributed, web-focused `ask_user` implementation that keeps the installed tool's parameters, results and event semantics while presenting real browser controls instead of an ANSI terminal panel. The separate Pi TUI installation remains untouched.
