@@ -144,9 +144,9 @@ notes and coverage support must preserve these distinctions.
 ## Guided folders
 
 The guided reader and optional interactive reviewer record share the same evidence
-readers. The [active plan](plans/2026-10-23_guided-review-notebooks-plan.md) records
-candidate-specific verification: focused checks are not full browser/deployment
-acceptance. Reading does not require enabling recording.
+readers. The [implementation record](plans/archived/2026-10-23_guided-review-notebooks-plan.md)
+records complete candidate-specific acceptance; focused checks alone are not full
+browser/deployment acceptance. Reading does not require enabling recording.
 
 Open `index.md` in Files **Preview**, then choose **Start guided reading**.
 Ordinary preview/scroll does not load chapters or notebook Git evidence. Start

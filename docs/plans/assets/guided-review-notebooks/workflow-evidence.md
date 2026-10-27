@@ -216,5 +216,35 @@ The fields are subsequently bound as explicit render-time snapshots so the linte
 recognizes both values alongside the retained model (no suppression). The final
 composed suite must verify that exact follow-up. Source writing is stopped for export.
 
-The active plan owns current acceptance/integration status. No host service,
-publication, unrelated guidance worktree or user-runtime-validation claim is involved.
+## Corrected complete acceptance
+
+Final composed candidate **`bda3cf5cf7cb1973471c4864d5518405cd6d7604`** on local main
+**`9b8f024280efb0dff9313c3d770ba9d0651e12dc`** passed:
+`nix run .#test -- all --workers 4 --jobs 4`, exit 0, **585s** command wall.
+Requested/effective core workers **4/4**, browser sandboxes **4/4**, overlap admitted;
+4/4 retained because of observed concurrent CPU-heavy work. Actual selected resources:
+32 CPUs / 54,242,037,760 bytes available, overlap estimate 16 CPUs / 28,991,029,248
+bytes. Admission is not a machine-wide reservation. No deadline increase.
+
+- **522 core files / 4,285 tests / 14 suites**, all pass; no skips/cancellations.
+  Static **0 errors / 7 pre-existing warnings**, plugin checks pass.
+- **26 browser/terminal groups / 59 expected receipts**, all pass. Includes ordinary
+  Git-card line-2500 jump and complete installed desktop/touch notebook workflow.
+- Genuine Home Manager deployment NixOS VM passes and settles; no host service used.
+- `/tmp/guided-workflow-corrected-all.SRN5W0.log`;
+  `/tmp/pi-web-test-core.fHK9Jm/run.json`;
+  `/tmp/pi-web-test-browser.iQnhk3/run.json`; `/tmp/pwv-v7dIYt/run.json`.
+- Source `/tmp/pi-web-test-source-Gy1ZcG/source`, SHA-256
+  `5eb83eed2a9cc8cc7b74b9a962a5c549bc12914d814ee0a397821095d46d91c2`;
+  `/tmp/pi-web-test-source-Gy1ZcG/selection.json` owns exact admission.
+- Core immutable diagnostics `/nix/store/7wv0scbk8rdbi4nfrx4mj06daxznq877-pi-web-core-checks`.
+  Core prep-to-first-file **51.359s**, file window **514.820s**. Browser support
+  **115.001s**, manifest **6.738s**, group window **373.475s**. VM command **82.181s**,
+  VM script **22.51s**. Overlapping intervals are not serial totals; no separate
+  prewarming or cold-cache/speedup claim. Model/review/coordination time is excluded.
+
+The [curated implementation record](../../archived/2026-10-23_guided-review-notebooks-plan.md)
+owns final acceptance and transfers only exact local Git disposition to the receiving
+session's gated operation receipts. Subsequent changes are evidence/archive/link prose
+only, not new application/test/Nix inputs or a claim of a newer-tip full run. No host
+service, publication, unrelated guidance worktree or invented user-runtime validation.
