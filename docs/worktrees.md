@@ -76,6 +76,15 @@ reference. On mobile Reveal opens detail first. A commit outside the loaded grap
 page retains exact detail and offers ordinary older-history paging, not an
 unbounded automatic search. Newer navigation/close/return supersedes late reveals.
 
+Guided Markdown FILE previews also support explicit whole-feature `pi-evidence`
+comparisons: separate `compare` / `compare-patch` / `compare-context` GETs use full
+base/candidate endpoint trees under one captured local branch tip. Both endpoints
+must be reachable and base must be an ancestor of candidate; divergent ranges
+refuse. An opaque physical repository incarnation is rechecked for patch/context,
+never treated as permission. Unchanged files remain pinned source context. These
+operations do not change Explorer's first-parent commit semantics; see the
+[authoring contract and current reader limits](review-notebooks.md#guided-folders-reader-slice).
+
 #### Full-file diff review
 
 Explorer, Files-panel and Git approval/receipt diffs share virtualized Pierre

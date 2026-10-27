@@ -21,6 +21,24 @@
   --font-mono-font: var(--font-mono);
 }
 
+/* Guided readers stay inside Files; narrow layouts stack both evidence targets. */
+.guided-reader { min-width: 0; color: var(--text); }
+.guided-reader-toolbar, .guided-target-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; }
+.guided-reader-layout { display: grid; grid-template-columns: minmax(120px, 180px) minmax(0, 1fr); gap: 16px; }
+.guided-outline { font-size: 12px; overflow-wrap: anywhere; }
+.guided-outline ol { padding-left: 16px; }
+.guided-outline button { text-align: left; padding: 6px; border-radius: 4px; }
+.guided-outline [aria-current="step"] { background: var(--bg-selected); color: var(--accent); }
+.guided-step { min-width: 0; display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr); gap: 16px; }
+.guided-prose, .guided-evidence-area, .guided-evidence { min-width: 0; overflow-wrap: anywhere; }
+.guided-evidence-panes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.guided-evidence { border: 1px solid var(--border); border-radius: 6px; padding: 8px; overflow: auto; }
+.guided-file-evidence { max-height: 75vh; overflow: auto; }
+.guided-target-controls select { max-width: 100%; background: var(--bg-panel); color: var(--text); border: 1px solid var(--border); padding: 6px; }
+.guided-target-controls label { min-width: 0; display: grid; gap: 4px; font-size: 12px; }
+@media (max-width: 1200px) { .guided-step { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) { .guided-reader-layout, .guided-evidence-panes { grid-template-columns: minmax(0, 1fr); } .guided-outline { max-height: 180px; overflow: auto; } }
+
 /* Declarative Markdown review stops share the existing immutable Git readers. */
 .review-notebook-block { min-width: 0; margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); color: var(--text); font-size: 13px; overflow-wrap: anywhere; }
 .review-notebook-heading { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }

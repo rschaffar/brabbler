@@ -22,7 +22,7 @@ Product decisions were gathered through six batched question sets in this sessio
 The primary outcome is thorough code review, not a slide presentation or an
 approval workflow.
 
-Current evidence at local main `c8557e5afec41739801a756a1d8e0b496f0b316c`:
+Historical pre-implementation evidence at local main `c8557e5afec41739801a756a1d8e0b496f0b316c`:
 
 - `docs/review-notebooks.md`, ADR 0029 and `lib/review-notebook.ts` define strict,
   opt-in version-1 `pi-review` source/commit fences. Source is pinned to a full
@@ -100,8 +100,10 @@ not completed implementation or verification.
 
 ## Architecture
 
-The following boundaries are proposals to validate before implementation, not a
-final file format or API design.
+The reader contracts are now implemented in the receiving candidate and documented
+in `docs/review-notebooks.md`; the review-data/forms/handoff sections below remain
+proposals for Increment 2, not delivered behavior. The current slice and remaining
+Increment 1 blockers are tracked below.
 
 ### Package, identity and authoring
 
@@ -259,6 +261,119 @@ answers to a new question version.
 - Automatic grading, AI-driven resolution, automatic branch tracking or silent
   line rebasing. Optional branching routes are not required initially.
 
+## Current receiving candidate
+
+Writer checkout: `guided-review-reader`, branch `feat/guided-review-reader`, based on
+main `3650d2e857f18c7dbcef412f44e435c0f5d363b3`. One receiving candidate; source
+writing is stopped for final review and acceptance. The parent used CodeGraph and
+coordinated a sole implementation writer whose tools required targeted ordinary
+reads. No installed-service access or remote operations occurred.
+
+**Implemented:** strict AST `pi-notebook` v1 manifest / top-level `pi-step` v1
+boundaries; unchanged strict `pi-review` v1; distinct `pi-evidence` v1 compare,
+mutable text-file and web-link targets. Package-global stable step/target IDs,
+unique chapter IDs/paths, flat declared chapters and finite limits reject unsafe
+or malformed packages. Physical cwd/branch/full OIDs support independent repos;
+no alias mapping or authority transfer. Maintained guide contains an illustrative
+folder and contextual `ask_user` briefing; parked packaging/prompt work untouched.
+
+`GuidedReviewEntry` integrates Files Preview with explicit entry/Return, outline,
+free cross-file Back/Next, primary/optional second target and local exploration /
+Return preserving selected step/targets. `FileMarkdownBody` extracts existing file
+Markdown owners without changing ordinary defaults. `ActiveReviewBlock` shares
+source/commit readers, including `ReviewNotebookSource`; feature ranges reuse
+`CommittedPatchDiff`, its `GitDiffToolbar` and `DiffReviewModel`, not a second engine.
+No persistence, forms, human review state or session handoff was added.
+
+Selected raster/PDF files now use the same independently authorized bounded
+regular-file reader: 8 MiB raster / 16 MiB PDF, fixed MIME plus signatures, no
+SVG/HTML/MDX/remote media. `NotebookBinaryEvidence` checks the response, creates only
+owned typed blob URLs, and revokes them on exit. Images reuse `ImagePreview`; PDF
+reuses the extracted `NativeDocumentPreview` from Files. No watch/edit/probe surface.
+Admission is not full format, malware or decoded-pixel validation; native browser
+viewer/decoder behavior remains a verification boundary.
+
+`GuidedReaderState` retains step target selections, source/diff mode and the last
+32 exact immutable file `DiffReviewModel`s (LRU) across target switches/exploration
+and Back/Next. Re-entry still captures fresh authorization and reloads patches;
+matching target/path/patch/incarnation can then reuse reading/search/full/gap context.
+Closing, folder Retry or cwd/index changes discard the activation; mutable assets
+always reload. The optional model factory is forwarded through source/commit/stack
+readers, preserving inline/default consumer behavior. This is deliberately bounded
+retention, not a promise to retain all 512 targets' complete context simultaneously.
+
+Independent prior-snapshot findings are addressed: duplicate JSON properties,
+escaped-equivalent keys and depth/byte ambiguity now refuse across ALL guided
+metadata (including v1 targets; standalone v1 unchanged). Guided prose/assets opt
+out of live review cards, including nested examples. Source/commit/diff/stack/source-
+grammar and Reveal terminal work forward the optional observer. Mounted tests distinguish
+exact expected context rejection objects/operations from unexpected failures and
+change ACTIVE originating contexts while folder/evidence bodies remain pending.
+The superseded slice description is retained in the earlier immutable source
+export `/tmp/pi-web-test-source-NWqJFh/source`; it is not completion evidence.
+
+The final independent review of `/tmp/pi-web-test-source-XepXDA/source` found one
+remaining presenter-work ownership gap: prose/asset `CodeBlock` grammar imports
+and Mermaid import/parse/render could outlive the fixture realm. The optional
+observer now flows through `FileMarkdownBody`'s stable presenter context, direct
+file evidence, review-card fallbacks, and nested Mermaid source. `CodeBlock` passes
+it to the existing `usePrismLanguages` third argument (same root/admission/retry
+policy); `MermaidBlock` publishes the original render promise including its catch
+and state publication. Callback replacement does not restart/replay work, and absent
+observers retain default behavior. The new E-held presenter owner reuses the actual
+gated Prism loader and real Mermaid parser/renderer, holds native render through
+unmount, and joins full originals plus independently captured native capabilities
+before realm restoration. Unsupported SVG measurements are not browser layout proof.
+
+GET-only folder reads independently authorize every contained regular UTF8 file;
+no discovery/new roots/transitive index authority. Only explicit activation reads
+chapters and selected evidence. Compare/compare-patch/compare-context separately
+bind both endpoints, ancestor-only ranges, changed-file admission and physical
+repository incarnation; first-parent operations are unchanged. No mutable fallback,
+revision expressions, remotes, textconv or external diff. Ignored-abort body and
+publication guards prevent obsolete reads/results from taking over the reader.
+
+**Verified so far (focused Nix only):** actual parser policy, native folder/API
+security, native endpoint-tree comparison (earlier+later commits, both endpoint
+reachability, unchanged/escaped paths, divergence and replaced Git-directory
+identity), mounted entry/step/target/focus/exploration/late success/error and active
+context changes, selected blob URL ownership/MIME refusal and native binary API
+admission, plus existing FileViewer behavior. Actual GuidedReviewReader →
+CommittedPatchDiff → Pierre successfully loads patch/full context/Before/After,
+reauthorizes on return, retains search/full/version state across target switching
+and cross-file Back/Next, and fences obsolete context success/error. Capability
+fixtures are not native browser geometry/decoding or Git authority. Source/commit
+model-factory forwarding is implemented; the new complete mounted range-retention
+witness covers comparison targets, not every multi-file commit-stack permutation.
+
+Meaningful production controls: making Next a no-op fails the cross-file heading /
+focus assertion; discarding the retained model fails the real mounted `Before file`
+assertion after reauthorization. Both restored. A type-failing first retention fault
+is preserved separately and is NOT the meaningful runtime red. The mounted
+guided/presenter owner files retain explicit unresolved E holds, not unreviewed promotions. No browser
+work/assertions retired. Static checks have 0 errors / 7 existing unchanged-owner
+warnings after removing this slice's temporary unnecessary-dependency warning.
+
+Final independent delta review reports no material findings: presenter terminal
+work now reaches the fixture owner without changing default admission/retry.
+The explicit E holds remain conservative scheduling classifications, not a claim
+of universal import/descendant closure. The parent also corrected ordinary large
+Markdown being misdiagnosed as an oversized notebook: negative marker admission
+avoids a redundant parse; possible markers still use the strict AST validator.
+Its actual regression fails without the guard and passes with it restored.
+
+**Verified reader candidate:** `532a17656be3f38c06dc19c774a206b6d4eadac8`,
+rebased onto local main `4422eedcdcd407f536c629a4c7eaf5fbc84a0d29`, passes complete
+core/browser/terminal/service acceptance. Evidence below binds that exact candidate;
+subsequent plan-only status text does not constitute a new runtime execution.
+
+**Remaining Increment 1 gate:** user validation of the usable reader. No PDF
+selection-anchor or cross-browser native-plugin guarantee; more-than-32-model
+eviction is an explicit bound.
+
+Increment 2 sidecars/forms/handoff remains a separate implementation package;
+parked authoring packaging/prompt work remains with its existing owner.
+
 ## Plan
 
 ### 0. Close design boundaries before feature code
@@ -284,24 +399,26 @@ answers to a new question version.
 
 ### 1. Usable guided reader
 
-- [ ] Add strict versioned package/step parsing with readable inert fallback and
+- [x] Add strict versioned package/step parsing with readable inert fallback and
   validation of chapter order, duplicate/missing IDs and bounded references;
-  verify parser tests against valid and adversarial fixtures and unchanged v1.
-- [ ] Add explicit Guided entry, chapter/step outline, Back/Next across files,
-  synchronized primary evidence, optional comparison evidence and Return to step;
-  verify keyboard/touch/narrow layouts, focus and rapid/reordered navigation.
-- [ ] Add authorized immutable feature-range evidence and pinned multi-repository
-  targets, retaining per-commit first-parent behavior; verify endpoint/context
-  identity, unchanged-source context, authorization loss and no working fallback.
-- [ ] Integrate the selected Markdown, diagrams/images, table/data and PDF evidence
-  types under declared limits/provenance, with external references as links;
-  verify safe fallbacks, changed/missing assets and absence of automatic networking.
-- [ ] Extend the coordinated agent authoring guidance with contextual `ask_user`
-  briefing and a complete folder example; verify agents can validate generated
-  references without source reverse engineering or expanding exact prompt modes.
-- [ ] Run focused reader/parser/security checks, independent boundary review and
-  complete Nix acceptance; record candidate, commands, results, timings and
-  artifacts, then obtain user acceptance of this usable reader increment.
+  focused actual-parser, native missing-chapter and unchanged v1 tests pass.
+  Full acceptance remains separate.
+- [x] Add explicit Guided entry, chapter/step outline, cross-file Back/Next,
+  synchronized primary/second evidence and Return; actual mounted currentness/focus
+  tests and installed 1280/390 keyboard/touch geometry bridges pass in full acceptance.
+- [x] Add independently authorized immutable feature-range and per-repository
+  targets without changing first-parent operations; actual native endpoint,
+  reachability/incarnation/path tests and mounted/shared-reader context tests pass.
+- [x] Integrate Markdown, Mermaid/raster images, table/data and native PDF evidence
+  with explicit mutable-asset limits and web links only; native admission, owned
+  snapshot lifecycle and installed comparison/image/PDF transport bridges pass.
+- [x] Document contextual `ask_user` author briefing and a complete folder format
+  in the maintained guide; production parser/native reference validators cover its
+  contracts. No parked prompt/packaging work or exact-mode behavior was changed.
+- [x] Run focused checks, meaningful defect controls, independent boundary review
+  and full Nix acceptance; exact candidate, command, results and artifacts below.
+- [ ] Obtain user validation of the usable reader before calling Increment 1 fully
+  accepted. Increment 2 remains pending and the overall plan stays active.
 
 ### 2. Usable interactive review loop
 
@@ -326,17 +443,70 @@ answers to a new question version.
 
 ## Verification
 
-For this planning-only document, review the decision record against session
-answers, check local links and Markdown structure, and run `git diff --check`.
-No application acceptance is claimed by a plan or a documentation-only check.
+This is an active implementation plan, not a planning-only handoff. Keep the
+current slice and finite blockers above truthful. Documentation/link review and
+`git diff --check` never establish application acceptance.
+
+### Complete reader acceptance
+
+- Tested commit: `532a17656be3f38c06dc19c774a206b6d4eadac8`, on main
+  `4422eedcdcd407f536c629a4c7eaf5fbc84a0d29`; immutable source digest
+  `a347597642b33b93da61d26d00182e948c75a0dcb71bc6e9ee0853988edce5ac`,
+  export `/tmp/pi-web-test-source-tUhdUC/source`.
+- `nix run .#test -- all --workers 4 --jobs 12`: **passed**, exit 0,
+  **393s end-to-end command**, including in-run realization, excluding model work,
+  approval wait and coordination. All **516 core files / 4,243 tests / 14 suites**,
+  **26 complete browser/terminal groups / 59 scenario receipts**, and genuine Home
+  Manager VM deployment/settlement passed. No skipped/cancelled tests or retired
+  assertions.
+- Explicit 4 browser / 12 core requested and effective, overlapping levels. Before
+  launch the host had 32 CPUs and about 43.4 GiB available; runner admission stayed
+  fail-closed. Exact admission: `/tmp/pi-web-test-source-tUhdUC/selection.json`.
+- Core: **276.303s** outer envelope, **36.950s** realization/static/setup before the
+  first file, **238.904s** file execution window. Browser: **325.509s** outer
+  envelope, **101.468s** support preparation, **7.024s** definition publication,
+  **216.376s** capsule execution envelope. Service: **60.403s** outer envelope,
+  **19.40s** guest test script. Overlapping intervals are not additive; no cold-cache
+  or speedup claim. Earlier runs warmed shared prerequisites; the composed changed
+  application package was built in-run.
+- Evidence: `/tmp/guided-reader-composed-all.ZSqi9O.log`,
+  `/tmp/pi-web-test-core.ePKx16/run.json`,
+  `/tmp/pi-web-test-browser.cLZIMq/run.json`, `/tmp/pwv-a1eQTs/run.json`.
+  Core/static artifacts are retained at
+  `/nix/store/vknf0l017ah562v7bhsmd1mpk3zf55fc-pi-web-core-checks`.
+- The earlier candidate `dcc4150b1e78f583026a753feaf7d51b803b3c77` passed full
+  4/4 acceptance in **388s** (`/tmp/guided-reader-all.1UFHJJ.log`). Main then
+  advanced with independently authored Sidebar catalogue coalescing, so the merge
+  gate refused stale state without Git effects. Rebase was clean; complete fresh
+  acceptance above covers this composition instead of relabelling the old run.
+  Different source and worker widths make the two durations non-comparable.
+- Independent native/reader/presenter reviews found no remaining material issues.
+  New mounted files retain their explicit conservative E holds; no scheduling
+  promotion, universal closure claim or error suppression was used.
+
+### Focused controls and retained history
+
+Actual production defects meaningfully failed and were restored: Next no-op
+(`/tmp/guided-reader-navigation-red.log`), lost retained comparison model
+(`/tmp/guided-reader-retention-runtime-red.log`), missing presenter forwarding
+(`/tmp/guided-presenter-forwarding-red.log`), and ordinary large-file misdiagnosis
+(`/tmp/guided-reader-ordinary-red.rGBMJv.log`). Setup/type failures are not counted
+as these runtime witnesses. Final focused guard/presenter/comparison green:
+`/tmp/guided-reader-final-focused.e0SiJ5.log`,
+`/tmp/pi-web-test-core.U9CUUf/run.json` (3 files / 8 cases, 43s command).
+The earlier installed Markdown bridge passed at 1280/390 in **245s** total /
+**123.031s** execution (`/tmp/guided-reader-markdown.KQ2mIy.log`); its evidence is
+not relabelled as the final source run. Detailed earlier focused/failure chronology
+remains in the preceding plan commit and retained logs, not a second work queue.
 
 Implementation follows `docs/testing.md` and `e2e/README.md`: focused core files
 and Markdown/file-workspace browser scenarios during editing, then complete core,
 full browser/terminal inventory and genuine Home Manager deployment acceptance for
-each settled runtime increment. Normal fresh command, when resource-admitted:
+each settled runtime increment. Current preferred command when 12/4 overlap is
+resource-admitted; use the documented 4/4 fallback otherwise:
 
 ```sh
-nix run .#test -- all --workers 4 --jobs 4
+nix run .#test -- all --workers 4 --jobs 12
 ```
 
 Coordinate resource admission and immutable source export; use only isolated Nix
@@ -366,8 +536,10 @@ These boxes describe feature completion, not completion of this planning session
 
 - [ ] User-accepted sample folder and desktop/narrow interaction define the agreed
   reader and feedback workflow; remaining schema/transport decisions are resolved.
-- [ ] Reader increment handles feature ranges, architecture and multiple repos,
-  all selected evidence formats, comparisons and free chapter/step navigation.
+- [x] Reader implementation handles feature ranges, pinned architecture and
+  independently authorized repository targets, selected evidence formats and free
+  chapter/step navigation; complete automated acceptance passes. User validation
+  remains separately open above.
 - [ ] Interactive increment preserves answers, explicit progress, anchored
   feedback, selected batch context, item replies and reviewer-owned resolution.
 - [ ] Re-review accounting distinguishes content changes, lost authorization and

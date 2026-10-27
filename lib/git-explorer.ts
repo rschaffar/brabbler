@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 // @ts-expect-error Native Node tests require the .ts suffix; Next resolves it too.
 import { gitExecEnv } from "./git-exec.ts";
@@ -174,6 +175,10 @@ async function commitFiles(cwd: string, oid: string, parents: string[]): Promise
     ? ["diff", "--name-status", "--no-renames", "-z", parents[0], oid, "--"]
     : ["diff-tree", "--root", "--no-commit-id", "--name-status", "-r", "--no-renames", "-z", oid, "--"];
   const output = await git(cwd, args);
+  return parseChangedFiles(output);
+}
+
+function parseChangedFiles(output: string): ExplorerFile[] {
   const parts = output.split("\0");
   if (parts.at(-1) === "") parts.pop();
   if (parts.length % 2 !== 0) throw new GitExplorerError("UNAVAILABLE", "Invalid changed-file list");
@@ -233,4 +238,50 @@ export async function explorerPatch(cwd: string, head: string, oid: string, path
   const patch = await git(cwd, args, MAX_PATCH_BYTES);
   await anchored(cwd, head, branch);
   return { oid, path, patch, hasBinaryChanges: /^(?:Binary files .+ differ|GIT binary patch)$/m.test(patch) };
+}
+
+/** Opaque incarnation binding, NOT a capability. The route independently authorizes cwd. */
+async function comparisonIdentity(cwd: string): Promise<string> {
+  const dirs = await git(cwd, ["rev-parse", "--absolute-git-dir", "--path-format=absolute", "--git-common-dir"]);
+  const entries = [cwd, ...dirs.trimEnd().split("\n")].map(directory => {
+    const physical = realpathSync(toNativePath(directory)), stat = statSync(physical);
+    return [physical, stat.dev, stat.ino];
+  });
+  return createHash("sha256").update(JSON.stringify(entries)).digest("hex");
+}
+
+async function comparisonGuard(cwd: string, head: string, base: string, candidate: string, branch: string, expectedIdentity?: string) {
+  requireOid(base); requireOid(candidate);
+  if (!branch) throw new GitExplorerError("INVALID", "Comparison requires a literal local branch");
+  await anchored(cwd, head, branch);
+  const identity = await comparisonIdentity(cwd);
+  if (expectedIdentity !== undefined && identity !== expectedIdentity) throw new GitExplorerError("STALE", "Repository identity changed; reopen comparison");
+  await reachable(cwd, head, base);
+  await reachable(cwd, head, candidate);
+  try { await git(cwd, ["merge-base", "--is-ancestor", base, candidate]); }
+  catch { throw new GitExplorerError("INVALID", "Divergent comparison: base must be an ancestor of candidate"); }
+  return identity;
+}
+
+/** Separate explicit tree-pair semantics; existing commit readers remain first-parent. */
+export async function explorerCompare(cwd: string, head: string, base: string, candidate: string, branch: string) {
+  const identity = await comparisonGuard(cwd, head, base, candidate, branch);
+  const files = parseChangedFiles(await git(cwd, ["diff", "--name-status", "--no-renames", "-z", base, candidate, "--"]));
+  await comparisonGuard(cwd, head, base, candidate, branch, identity);
+  return { head, base, candidate, identity, files };
+}
+
+export async function explorerCompareFile(cwd: string, head: string, base: string, candidate: string, branch: string,
+  identity: string, path: string, context = false) {
+  if (!/^[0-9a-f]{64}$/.test(identity) || !isReviewSourcePath(path)) throw new GitExplorerError("INVALID", "Invalid comparison identity/path");
+  await comparisonGuard(cwd, head, base, candidate, branch, identity);
+  const comparison = await explorerCompare(cwd, head, base, candidate, branch);
+  if (comparison.identity !== identity) throw new GitExplorerError("STALE", "Repository identity changed; reopen comparison");
+  if (!comparison.files.some(file => file.path === path)) throw new GitExplorerError("NOT_FOUND", "File was not changed in this comparison; use pinned source instead");
+  const result = context ? await readGitFileContext(cwd, base, candidate, path) : await (async () => {
+    const patch = await git(cwd, ["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=3", base, candidate, "--", path], MAX_PATCH_BYTES);
+    return { base, candidate, path, patch, hasBinaryChanges: /^(?:Binary files .+ differ|GIT binary patch)$/m.test(patch) };
+  })();
+  await comparisonGuard(cwd, head, base, candidate, branch, identity);
+  return result;
 }

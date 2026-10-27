@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import type { ExplorerFile } from "@/lib/git-explorer";
 import { copyText } from "@/lib/clipboard";
 import type { DiffContext } from "@/lib/diff-context";
+import type { DiffReviewModel } from "@/lib/git-diff-review";
 
 // Keep the diff parser/renderer out of the normal chat and sidebar bundles.
 const GitPatchStack = dynamic(() => import("./GitPatchStack").then((module) => module.GitPatchStack), {
@@ -38,9 +39,10 @@ function CopyCommitField({ label, value }: { label: string; value: string }) {
 }
 
 /** Committed objects only. Never reads the working tree or authorizes a Git action. */
-export function GitCommitViewer({ cwd, branch, head, oid, onReadWork }: {
+export function GitCommitViewer({ cwd, branch, head, oid, onReadWork, getReviewModel }: {
   cwd: string; branch: string; head: string; oid: string;
   onReadWork?: (work: Promise<void>) => void;
+  getReviewModel?: (path: string, patch: string) => DiffReviewModel;
 }) {
   const readObserver = useRef(onReadWork);
   readObserver.current = onReadWork;
@@ -79,7 +81,7 @@ export function GitCommitViewer({ cwd, branch, head, oid, onReadWork }: {
       <div className="mt-5 min-w-0">
         {files.length === 0 ? <p className="text-xs text-text-muted">No changes against the first parent.</p>
           : <GitPatchStack key={`${branch}:${head}:${oid}`} files={files} loadPatch={loadPatch} loadContext={loadContext}
-            before={detail.parents[0]?.slice(0, 8) ?? "empty tree"} after={oid.slice(0, 8)} />}
+            before={detail.parents[0]?.slice(0, 8) ?? "empty tree"} after={oid.slice(0, 8)} onReadWork={onReadWork} getReviewModel={getReviewModel} />}
       </div>
     </>}
   </section>;

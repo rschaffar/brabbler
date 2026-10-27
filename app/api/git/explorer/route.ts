@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import { NextRequest, NextResponse } from "next/server";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
-import { explorerCommit, explorerFileContext, explorerLog, explorerPatch, explorerSource, GitExplorerError } from "@/lib/git-explorer";
+import { explorerCompare, explorerCompareFile, explorerCommit, explorerFileContext, explorerLog, explorerPatch, explorerSource, GitExplorerError } from "@/lib/git-explorer";
 import { DiffContextError } from "@/lib/git-file-context";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,9 @@ export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const cwd = params.get("cwd") ?? "";
   const op = params.get("op");
-  const fields = op === "log" ? ["cwd", "op", ...(params.has("skip") ? ["skip"] : []), ...(params.has("head") ? ["head"] : []), ...(params.has("branch") ? ["branch"] : [])]
+  const fields = op === "compare" ? ["cwd", "op", "head", "base", "candidate", "branch"]
+    : op === "compare-patch" || op === "compare-context" ? ["cwd", "op", "head", "base", "candidate", "branch", "identity", "path"]
+    : op === "log" ? ["cwd", "op", ...(params.has("skip") ? ["skip"] : []), ...(params.has("head") ? ["head"] : []), ...(params.has("branch") ? ["branch"] : [])]
     : op === "commit" ? ["cwd", "op", "head", "oid", ...(params.has("branch") ? ["branch"] : [])]
     : op === "patch" || op === "context" ? ["cwd", "op", "head", "oid", "path", ...(params.has("branch") ? ["branch"] : [])]
     : op === "source" ? ["cwd", "op", "head", "oid", "path", "start", "end", ...(params.has("branch") ? ["branch"] : [])] : [];
@@ -33,6 +35,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(await explorerLog(cwd, rawSkip === null ? 0 : Number(rawSkip), expectedHead, params.get("branch") ?? undefined));
     }
     const head = params.get("head") ?? "";
+    if (op === "compare") return NextResponse.json(await explorerCompare(cwd, head, params.get("base")!, params.get("candidate")!, params.get("branch")!));
+    if (op === "compare-patch" || op === "compare-context") return NextResponse.json(await explorerCompareFile(cwd, head, params.get("base")!, params.get("candidate")!, params.get("branch")!, params.get("identity")!, params.get("path")!, op === "compare-context"));
     const oid = params.get("oid") ?? "";
     if (op === "source") {
       const start = params.get("start") ?? "", end = params.get("end") ?? "";

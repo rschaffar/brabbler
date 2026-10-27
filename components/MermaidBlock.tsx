@@ -15,6 +15,8 @@ interface MermaidBlockProps {
   code: string;
   isStreaming?: boolean;
   defaultPreview?: boolean;
+  /** Observe the original import/parse/render/publication handler without changing its lifetime. */
+  onWork?: (work: Promise<unknown>) => void;
 }
 
 const ZOOM_STEP = 0.25;
@@ -37,7 +39,8 @@ type RenderState =
   | { key: string; status: "error" }
   | { key: string; status: "ready"; svg: string };
 
-export function MermaidBlock({ code, isStreaming, defaultPreview = false }: MermaidBlockProps) {
+export function MermaidBlock({ code, isStreaming, defaultPreview = false, onWork }: MermaidBlockProps) {
+  const workObserver = useRef(onWork); workObserver.current = onWork;
   const { isDark } = useTheme();
   const { t } = useI18n();
   const [showPreview, setShowPreview] = useState(defaultPreview);
@@ -75,9 +78,10 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
       }
     };
 
-    render().catch(() => {
+    const work = render().catch(() => {
       if (!cancelled) setRenderState({ key: currentKey, status: "error" });
     });
+    workObserver.current?.(work);
 
     return () => {
       cancelled = true;
@@ -97,7 +101,7 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
   ), [isStreaming, previewVisible, t]);
 
   if (!previewVisible) {
-    return <CodeBlock code={code} lang="mermaid" headerAction={previewButton} isStreaming={isStreaming} />;
+    return <CodeBlock code={code} lang="mermaid" headerAction={previewButton} isStreaming={isStreaming} onWork={onWork} />;
   }
 
   const body = renderState?.key === currentKey && renderState.status === "error" ? (
@@ -257,6 +261,7 @@ interface CodeBlockProps {
   lang: string;
   headerAction?: ReactNode;
   isStreaming?: boolean;
+  onWork?: (work: Promise<unknown>) => void;
 }
 
 /**
@@ -269,13 +274,13 @@ interface CodeBlockProps {
  * monospace text — highlighting a growing block re-tokenizes all of it on
  * every chunk, which is the single most expensive part of streamed rendering.
  */
-export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isStreaming }: CodeBlockProps) {
+export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isStreaming, onWork }: CodeBlockProps) {
   const { isDark } = useTheme();
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   // Preload during live code, but never tokenize until the reply has settled.
-  const languagesReady = usePrismLanguages(Boolean(code) && needsPrismLanguage(lang));
+  const languagesReady = usePrismLanguages(Boolean(code) && needsPrismLanguage(lang), undefined, onWork);
   const highlighted = useDeferredHighlight(code, lang, !isStreaming && languagesReady, root);
 
   const copy = () => {

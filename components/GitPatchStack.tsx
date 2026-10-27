@@ -11,10 +11,11 @@ import type { DiffContext } from "@/lib/diff-context";
 import type { GitDiffPreferences } from "@/lib/git-diff-preferences";
 
 type ContextLoader = (id: string, signal: AbortSignal) => Promise<DiffContext>;
-function ExpandedPatch({ file, load, loadContext, reviews, before, after, view, wrap, immediate, onReadWork }: GitDiffPreferences & {
+type ReviewModelFactory = (path: string, patch: string) => DiffReviewModel;
+function ExpandedPatch({ file, load, loadContext, reviews, before, after, view, wrap, immediate, onReadWork, getReviewModel }: GitDiffPreferences & {
   file: DisplayFile; load?: (id: string, signal: AbortSignal) => Promise<DisplayPatch>;
   loadContext?: ContextLoader; reviews: Map<string, DiffReviewModel>;
-  before: string; after: string; immediate: boolean;
+  before: string; after: string; immediate: boolean; getReviewModel?: ReviewModelFactory;
   onReadWork?: (work: Promise<void>) => void;
 }) {
   // Observation only: forward the original promise; its result is not consumed.
@@ -47,10 +48,11 @@ function ExpandedPatch({ file, load, loadContext, reviews, before, after, view, 
   }, [file, load, visible, retry]);
   const review = useMemo(() => {
     if (!value) return undefined;
+    if (getReviewModel) return getReviewModel(file.id, value.patch);
     let model = reviews.get(file.id);
     if (!model || model.patch !== value.patch) { model = createDiffReview(value.patch); reviews.set(file.id, model); }
     return model;
-  }, [file.id, reviews, value]);
+  }, [file.id, reviews, value, getReviewModel]);
   const context = useCallback((signal: AbortSignal) => loadContext!(file.id, signal), [loadContext, file.id]);
   return <div ref={ref} className="min-w-0 px-2 pb-2">
     {!visible ? <p className="py-3 text-xs text-text-muted">Diff renders when scrolled into view.</p>
@@ -61,10 +63,10 @@ function ExpandedPatch({ file, load, loadContext, reviews, before, after, view, 
 }
 
 /** Expanding or reading a file never changes the operation's approval scope. */
-export function GitPatchStack({ files, before, after, loadPatch, loadContext, completePatch, navigation = false, onReadWork }: {
+export function GitPatchStack({ files, before, after, loadPatch, loadContext, completePatch, navigation = false, onReadWork, getReviewModel }: {
   files: DisplayFile[]; before: string; after: string; navigation?: boolean;
   loadPatch?: (id: string, signal: AbortSignal) => Promise<DisplayPatch>;
-  loadContext?: ContextLoader; completePatch?: string;
+  loadContext?: ContextLoader; completePatch?: string; getReviewModel?: ReviewModelFactory;
   onReadWork?: (work: Promise<void>) => void;
 }) {
   const [expanded, setExpanded] = useState(() => new Set(files[0] ? [files[0].id] : []));
@@ -84,7 +86,7 @@ export function GitPatchStack({ files, before, after, loadPatch, loadContext, co
       return <section aria-label={`File changes: ${file.path}`}>
         <p className="text-xs text-text-muted">{file.status}</p>
         <ExpandedPatch key={selected.id} file={file} load={load} loadContext={context} reviews={reviews.current}
-          before={before} after={after} {...preferences} immediate onReadWork={onReadWork} />
+          before={before} after={after} {...preferences} immediate onReadWork={onReadWork} getReviewModel={getReviewModel} />
       </section>;
     }}
   </ReviewFileBrowser>
@@ -112,7 +114,7 @@ export function GitPatchStack({ files, before, after, loadPatch, loadContext, co
           {file.additions !== undefined && <span className="shrink-0 text-text-muted">+{file.additions} −{file.deletions}</span>}
         </button>
         {expanded.has(file.id) && <ExpandedPatch file={file} load={load} loadContext={context} reviews={reviews.current}
-          before={before} after={after} view={view} wrap={wrap} immediate={index === 0} onReadWork={onReadWork} />}
+          before={before} after={after} view={view} wrap={wrap} immediate={index === 0} onReadWork={onReadWork} getReviewModel={getReviewModel} />}
       </section>)}
     </div>
     {completePatch !== undefined && <details className="mt-3 text-xs text-text-muted">

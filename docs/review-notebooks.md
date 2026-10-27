@@ -130,12 +130,167 @@ contact remotes, switch branches, invoke an agent or run commands/tests.
 
 ## Scope and next steps
 
-This first increment deliberately has no executable cells, repository manifest,
-portable aliases, copyable app URL links, immutable side-pane tabs, human review
-acknowledgments, persistent notes or computed change accounting. Ordinary file
-links still open saved working content and are not historical permalinks.
+The guided reader below adds a notebook manifest without changing `pi-review` v1.
+There are still no executable cells, portable aliases, copyable app URL links,
+human review acknowledgments, persistent notes or computed change accounting.
+Ordinary file links still open saved working content, not historical permalinks.
 
 Keep test evidence honest in the prose: identify the tested candidate, command,
 result, artifact and limitations. Opening is not reviewing; reviewing is not
 approval; a coverage summary is not new execution evidence. Future progression,
 notes and coverage support must preserve these distinctions.
+
+## Guided folders (reader slice)
+
+**Status:** implemented reader slice, not completion of the full guided-reader
+increment. Installed-browser/native decoding checks, independent review and complete acceptance remain pending in the
+[active plan](plans/2026-10-23_guided-review-notebooks-plan.md). No forms, resume
+sidecars, progress writes or agent handoff are implemented.
+
+Open `index.md` in Files **Preview**, then choose **Start guided reading**.
+Ordinary preview/scroll does not load chapters or notebook Git evidence. Start
+loads only the declared index and chapters, then activates the first selected
+step's first target. The outline and Back/Next navigate freely across chapter
+files. **Evidence** selects a meaningful target by title; **Compare with** adds a
+different target. Both remain visible, stacked on small screens. Each immutable
+source retains its existing Source/File diff controls; feature ranges use the
+same diff toolbar, Before/After, context and reading model as Explorer.
+
+Local supported prose links inside a step can be explored in the evidence area;
+**Return to current step** restores its selected targets and heading focus. Other
+file links use ordinary Files navigation. **Return to document** unmounts evidence
+and restores the Start trigger. All reader navigation is local to this file view,
+not session cwd, sidebar checkout or terminal navigation. Selection and reading
+state are in memory only. Step/target selection and source/diff mode survive target
+switches, exploration and Back/Next during this activation. The last **32 immutable
+file DiffReviewModels** retain Before/After, full/gap context, search and reading
+anchors across renderer remounts (least-recently-used eviction). Returning still
+reauthorizes and reloads the patch before reusing a matching model; comparisons
+also require the same physical repository incarnation. Closing/Return to document,
+Retry folder or originating cwd/index changes discards this state. Mutable assets
+are never cached this way; each revisit reads a fresh labelled snapshot.
+
+### Versioned authoring contract
+
+One **top-level** `pi-notebook` JSON fence in `index.md` contains exactly:
+
+````markdown
+# Request-boundary review
+
+```pi-notebook
+{"version":1,"id":"request-boundary","title":"Request boundary review","chapters":[{"id":"flow","title":"Request flow","path":"01-flow.md"},{"id":"failures","title":"Failure behavior","path":"02-failures.md"}]}
+```
+````
+
+Each chapter contains one or more top-level `pi-step` fences followed by its prose
+and top-level `pi-review` / `pi-evidence` targets, until the next `pi-step` or EOF.
+A step boundary has exactly `version:1`, `id`, `title`. Before-step prose is not a
+step. Embedded examples inside longer code fences and blockquotes are not markers.
+Chapters cannot contain manifests. Chapters are a flat declared list, not recursive
+includes: no discovery, cycles, traversal, repeated paths (case-insensitive), missing
+chapters or duplicate chapter/step/target IDs. Step/target IDs are package-global;
+chapter IDs are unique in the manifest. IDs and titles use the `pi-review` bounds.
+Unknown fields/versions diagnose without activating a guessed interpretation.
+All metadata admitted into a guided package (including `pi-review` targets) rejects
+duplicate JSON properties, even escaped equivalents, and nesting beyond 32 levels.
+Standalone inline `pi-review` v1 behavior is unchanged. Guided prose and Markdown
+assets display review fences as literal examples, not additional undeclared cards.
+
+`pi-evidence` is a **distinct** strict schema; never add these fields to `pi-review`:
+
+| Kind | Exact fields in addition to `version:1`, `id`, `title`, `kind` |
+| --- | --- |
+| `compare` | `cwd`, `branch`, full lowercase `base`, full lowercase `candidate`, literal repository-relative `path` |
+| `file` | Literal folder-relative `path` ending in `.md`, `.txt`, `.json`, `.csv`, `.tsv`, `.mmd`, `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp` or `.pdf` |
+| `web` | Bounded `url` with HTTP(S), no embedded credentials; links only, never fetched/embedded automatically |
+
+Comparison endpoints must each be reachable from the named local branch's
+captured tip. Base must be an ancestor of candidate; divergent/reversed ranges
+visibly refuse. This compares the **two endpoint trees**, including earlier feature
+commits, not candidate's first parent. Unchanged files use pinned `pi-review` source
+instead of a fabricated empty diff. Each comparison captures and revalidates an
+opaque physical repository incarnation, branch tip and endpoints for patch/context
+reads. Identity is not authority. Multi-repository targets carry independently
+authorized physical cwd/branch/full OIDs, without aliases or implicit rebinding.
+
+Limits: 32 chapters, 256 total steps, 512 total targets; guided metadata 16,384 UTF-8
+bytes / depth 32, index/chapter/local text asset 256 KiB each and index+chapters
+2 MiB total. Text must be regular UTF-8; NUL/binary and invalid UTF-8 refuse.
+Selected raster assets are at most **8 MiB**, PDFs **16 MiB**. All files must be
+physically contained and individually allowed by the existing file-root boundary;
+symlinks and special files refuse.
+The GET-only `/api/review-notebook?index=…` reads declared chapters; `&asset=…` reads
+one selected supported local asset. Exact reference-only index access cannot
+authorize sibling chapters/assets, grant new roots, write, watch or probe editing.
+
+Local evidence is explicitly labelled **Mutable working asset** and read as a
+bounded snapshot, without FileViewer edit/Git probes/watchers. Markdown/diagrams
+reuse sanitized file Markdown and Mermaid; CSV/TSV uses the existing table, JSON
+and text the escaped code presenter. No HTML/MDX execution. Automatic images in
+guided prose/assets are replaced by labels, including remote images. A selected
+raster/PDF target instead reads bounded bytes from the notebook API: extension and
+signature must match a fixed MIME, served with `nosniff`, no-store, same-origin
+resource policy and a restrictive sandbox CSP. SVG, HTML, MDX and remote media URLs
+are not supported. Signatures are admission checks, not full document validation.
+
+`NotebookBinaryEvidence` accepts a local index/path, never an authored browser URL.
+It checks response MIME/size/signature again and constructs an owned typed blob URL.
+Images reuse `ImagePreview` (including its explicit zoom action); PDFs reuse Files'
+`NativeDocumentPreview` native viewer, not an HTML renderer. URLs are revoked on
+exit/context change; obsolete bodies cannot create a player or revive a URL. There
+are no watch/edit/probe APIs or remote URL embeds. Image decode failures are visible;
+PDF support depends on the browser's native viewer, with Download this snapshot as
+fallback. Native decoding/plugin behavior and memory limits remain browser-owned;
+byte admission is not a full malware/content or decoded-pixel validator. Pinned code
+never uses this mutable asset API. No PDF selection anchors are promised. Ordinary
+document previews retain their existing defaults.
+
+### Contextual authoring example
+
+First inspect the actual feature range and relevant repositories, then use the
+existing `ask_user` contract to brief the reviewer. For example (adapt the observed
+scope rather than repeating generic questions):
+
+```json
+{
+  "title":"Request boundary review",
+  "context":"I found a three-commit request-validation change and a separate client adapter. The high-risk boundary is rejection before extraction; deployment has not been tested.",
+  "questions":[
+    {"id":"scope","shortLabel":"Scope","question":"Review the entire feature range or focus on the server boundary?","type":"single","options":[{"id":"range","title":"Whole range plus client adapter","recommended":true},{"id":"server","title":"Server boundary only"}]},
+    {"id":"depth","shortLabel":"Depth","question":"How familiar are you with the request pipeline, and which failure cases deserve extra explanation?","type":"text"},
+    {"id":"material","shortLabel":"Material","question":"Any additional design references or test evidence to include?","type":"text","required":false}
+  ]
+}
+```
+
+After the answer, author `01-flow.md` like this. Values below are illustrative;
+replace physical checkouts/branches/full OIDs and verify paths/coordinates before
+claiming availability. The index above plus this chapter and a similarly structured
+`02-failures.md` form a folder; there are no required sidecars.
+
+````markdown
+```pi-step
+{"version":1,"id":"reject-before-extract","title":"Can a rejected request reach extraction?"}
+```
+
+Read the guard before the extraction call. Compare the complete feature's change
+with the client assumption. Look for a failure path that reaches extraction before
+validation. The listed tests cover ordering, not deployment or performance.
+
+```pi-evidence
+{"version":1,"kind":"compare","id":"server-range","title":"Whole server feature","cwd":"/home/me/projects/server","branch":"feature/request-boundary","base":"1111111111111111111111111111111111111111","candidate":"2222222222222222222222222222222222222222","path":"src/request.ts"}
+```
+
+```pi-review
+{"version":1,"kind":"source","id":"client-assumption","title":"Client failure expectation","cwd":"/home/me/projects/client","branch":"feature/request-client","oid":"3333333333333333333333333333333333333333","path":"src/client.ts","start":24,"end":39}
+```
+
+```pi-evidence
+{"version":1,"kind":"file","id":"test-record","title":"Test record (working asset)","path":"assets/test-record.md"}
+```
+````
+
+Use another unique `pi-step` in `02-failures.md`, with prose on missing/error cases
+and verified source or web-link targets as appropriate. Keep evidence limitations
+explicit. This example does not install authoring guidance or modify exact prompts;
+the separate authoring-guidance work remains with its existing owner.
