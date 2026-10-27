@@ -362,8 +362,8 @@ Markdown being misdiagnosed as an oversized notebook: negative marker admission
 avoids a redundant parse; possible markers still use the strict AST validator.
 Its actual regression fails without the guard and passes with it restored.
 
-**Verified reader candidate:** `dcc4150b1e78f583026a753feaf7d51b803b3c77`,
-rebased onto local main `29bfc3a8f2798c10d7feed968d833da48472cff3`, passes complete
+**Verified reader candidate:** `532a17656be3f38c06dc19c774a206b6d4eadac8`,
+rebased onto local main `4422eedcdcd407f536c629a4c7eaf5fbc84a0d29`, passes complete
 core/browser/terminal/service acceptance. Evidence below binds that exact candidate;
 subsequent plan-only status text does not constitute a new runtime execution.
 
@@ -449,31 +449,37 @@ current slice and finite blockers above truthful. Documentation/link review and
 
 ### Complete reader acceptance
 
-- Tested commit: `dcc4150b1e78f583026a753feaf7d51b803b3c77`, on main
-  `29bfc3a8f2798c10d7feed968d833da48472cff3`; immutable source digest
-  `1e30f361fc877d3f785a586887be005295b9b6b12269c6e8cc10bb5b79de5dfa`,
-  export `/tmp/pi-web-test-source-4ZNZEH/source`.
-- `nix run .#test -- all --workers 4 --jobs 4`: **passed**, exit 0,
-  **388s end-to-end command**, including in-run realization, excluding model work
-  and coordination. All **515 core files / 4,225 tests / 14 suites**, **26 complete
-  browser/terminal groups / 59 scenario receipts**, and genuine Home Manager VM
-  deployment/settlement passed. No skipped/cancelled tests or retired assertions.
-- Explicit 4 browser / 4 core requested and effective, overlapping levels. The
-  rebased repository recommends 12 core / 4 browser only with 43 GiB available;
-  pre-launch availability was about 41 GiB, so its documented 4/4 fallback retained
-  overlap. Exact admission: `/tmp/pi-web-test-source-4ZNZEH/selection.json`.
-- Core: **383.609s** outer envelope, **34.867s** realization/static/setup before the
-  first file, **348.361s** selected file execution window. Browser: **307.523s**
-  outer envelope, **80.865s** support preparation, **4.939s** definition publication,
-  **221.224s** capsule execution envelope (**767.450s** summed group work). Service:
-  **63.211s** outer envelope, **20.16s** guest test script. Overlapping intervals
-  are not additive; no cold-cache or speedup claim. Earlier focused work warmed
-  shared prerequisites; the final changed application package was built in-run.
-- Evidence: `/tmp/guided-reader-all.1UFHJJ.log`,
-  `/tmp/pi-web-test-core.GLucsc/run.json`,
-  `/tmp/pi-web-test-browser.QsgQO6/run.json`, `/tmp/pwv-MK9odT/run.json`.
+- Tested commit: `532a17656be3f38c06dc19c774a206b6d4eadac8`, on main
+  `4422eedcdcd407f536c629a4c7eaf5fbc84a0d29`; immutable source digest
+  `a347597642b33b93da61d26d00182e948c75a0dcb71bc6e9ee0853988edce5ac`,
+  export `/tmp/pi-web-test-source-tUhdUC/source`.
+- `nix run .#test -- all --workers 4 --jobs 12`: **passed**, exit 0,
+  **393s end-to-end command**, including in-run realization, excluding model work,
+  approval wait and coordination. All **516 core files / 4,243 tests / 14 suites**,
+  **26 complete browser/terminal groups / 59 scenario receipts**, and genuine Home
+  Manager VM deployment/settlement passed. No skipped/cancelled tests or retired
+  assertions.
+- Explicit 4 browser / 12 core requested and effective, overlapping levels. Before
+  launch the host had 32 CPUs and about 43.4 GiB available; runner admission stayed
+  fail-closed. Exact admission: `/tmp/pi-web-test-source-tUhdUC/selection.json`.
+- Core: **276.303s** outer envelope, **36.950s** realization/static/setup before the
+  first file, **238.904s** file execution window. Browser: **325.509s** outer
+  envelope, **101.468s** support preparation, **7.024s** definition publication,
+  **216.376s** capsule execution envelope. Service: **60.403s** outer envelope,
+  **19.40s** guest test script. Overlapping intervals are not additive; no cold-cache
+  or speedup claim. Earlier runs warmed shared prerequisites; the composed changed
+  application package was built in-run.
+- Evidence: `/tmp/guided-reader-composed-all.ZSqi9O.log`,
+  `/tmp/pi-web-test-core.ePKx16/run.json`,
+  `/tmp/pi-web-test-browser.cLZIMq/run.json`, `/tmp/pwv-a1eQTs/run.json`.
   Core/static artifacts are retained at
-  `/nix/store/qgkwg0i5sbgny4h9ldpa0r0gz7lm54ym-pi-web-core-checks`.
+  `/nix/store/vknf0l017ah562v7bhsmd1mpk3zf55fc-pi-web-core-checks`.
+- The earlier candidate `dcc4150b1e78f583026a753feaf7d51b803b3c77` passed full
+  4/4 acceptance in **388s** (`/tmp/guided-reader-all.1UFHJJ.log`). Main then
+  advanced with independently authored Sidebar catalogue coalescing, so the merge
+  gate refused stale state without Git effects. Rebase was clean; complete fresh
+  acceptance above covers this composition instead of relabelling the old run.
+  Different source and worker widths make the two durations non-comparable.
 - Independent native/reader/presenter reviews found no remaining material issues.
   New mounted files retain their explicit conservative E holds; no scheduling
   promotion, universal closure claim or error suppression was used.
